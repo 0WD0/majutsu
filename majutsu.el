@@ -613,6 +613,17 @@ The results of this fn are fed into `majutsu--parse-log-entries'."
           (insert "\n"))
         (goto-char (point-min))))))
 
+
+;;;###autoload
+(defalias 'majutsu #'majutsu-log
+  "Begin using Majutsu.
+
+This alias for `majutsu-log' exists for better discoverability.
+
+Instead of invoking this alias for `majutsu-log' using
+\"M-x majutsu RET\", you should bind a key to `majutsu-log'.")
+
+
 (defun majutsu-log-refresh (&optional _ignore-auto _noconfirm)
   "Refresh the majutsu log buffer."
   (interactive)
