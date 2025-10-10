@@ -1134,12 +1134,6 @@ Instead of invoking this alias for `majutsu-log' using
             (message "Tracking bookmark '%s'" choice)))
       (message "No remote bookmarks found"))))
 
-(defun majutsu-tug ()
-  "Run jj tug command."
-  (interactive)
-  (let ((result (majutsu--run-command "tug")))
-    (majutsu-log-refresh)
-    (message "Tug completed: %s" (string-trim result))))
 
 ;; Bookmark transient menu
 ;;;###autoload
@@ -1152,9 +1146,7 @@ Instead of invoking this alias for `majutsu-log' using
   "Internal transient for jj bookmark operations."
   :transient-non-suffix t
   ["Bookmark Operations"
-   [("t" "Tug" majutsu-tug
-     :description "Run jj tug command")
-    ("c" "Create bookmark" majutsu-bookmark-create
+   [("c" "Create bookmark" majutsu-bookmark-create
      :description "Create new bookmark")
     ("T" "Track remote" majutsu-bookmark-track
      :description "Track remote bookmark")]
