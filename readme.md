@@ -67,6 +67,7 @@ buffer (`*majutsu-log:project-name*`).
 - `d` - Describe changeset at point (opens message buffer)
 - `e` - Edit changeset (jj edit)
 - `u` - Undo last operation
+- `R` - Redo last operation
 - `s` - Squash
 - `N` - New changeset here
 

@@ -60,6 +60,7 @@ The function must accept one argument: the buffer to display."
     (define-key map (kbd "c") 'majutsu-commit)
     (define-key map (kbd "e") 'majutsu-edit-changeset)
     (define-key map (kbd "u") 'majutsu-undo)
+    (define-key map (kbd "R") 'majutsu-redo)
     (define-key map (kbd "N") 'majutsu-new)
     (define-key map (kbd "s") 'majutsu-squash-transient)
     (define-key map (kbd "c") 'majutsu-commit)
@@ -89,6 +90,7 @@ The function must accept one argument: the buffer to display."
                  ("c" "Commit" majutsu-commit)
                  ("e" "Edit changeset" majutsu-edit-changeset)
                  ("u" "Undo last change" majutsu-undo)
+                 ("R" "Redo last change" majutsu-redo)
                  ("N" "New changeset" majutsu-new)
                  ("a" "Abandon changeset" majutsu-abandon)
                  ("d" "Describe changeset" majutsu-describe)
@@ -1167,6 +1169,15 @@ Instead of invoking this alias for `majutsu-log' using
   (interactive)
   (let ((commit-id (majutsu-get-changeset-at-point)))
     (majutsu--run-command "undo")
+    (majutsu-log-refresh)
+    (when commit-id
+      (majutsu-goto-commit commit-id))))
+
+(defun majutsu-redo ()
+  "Redo the last undone change."
+  (interactive)
+  (let ((commit-id (majutsu-get-changeset-at-point)))
+    (majutsu--run-command "redo")
     (majutsu-log-refresh)
     (when commit-id
       (majutsu-goto-commit commit-id))))
