@@ -1,6 +1,6 @@
-# Jujutsu mode for Emacs
+# Majutsu (Jujutsu) for Emacs
 
-jj-mode provides a magit-inspired interface for
+Majutsu provides a magit-inspired interface for
 [Jujutsu](https://github.com/martinvonz/jj), offering an efficient way to
 interact with JJ repositories from within Emacs.
 
@@ -26,32 +26,32 @@ interact with JJ repositories from within Emacs.
 
 ### Doom Emacs
 ```lisp
-(package! jj-mode :recipe (:host github :repo "bolivier/jj-mode.el"))
+(package! majutsu :recipe (:host github :repo "bolivier/majutsu"))
 ```
 
 ### use-package with straight.el
 ```lisp
-(use-package jj-mode
-  :straight (:host github :repo "bolivier/jj-mode.el"))
+(use-package majutsu
+  :straight (:host github :repo "bolivier/majutsu"))
 ```
 
 ### use-package with built-in package-vc integration
 ```lisp
-(use-package jj-mode
-  :vc (:url "https://github.com/bolivier/jj-mode.el"))
+(use-package majutsu
+  :vc (:url "https://github.com/bolivier/majutsu"))
 ```
 
 ### Manual
 Clone this repository and add it to your load path:
 ```lisp
-(add-to-list 'load-path "/path/to/jj-mode")
-(require 'jj-mode)
+(add-to-list 'load-path "/path/to/majutsu")
+(require 'majutsu)
 ```
 
 ## Usage
 
-Start with `M-x jj-log` to open the main interface. Each project gets its own
-buffer (`*jj-log:project-name*`).
+Start with `M-x majutsu-log` to open the main interface. Each project gets its own
+buffer (`*majutsu-log:project-name*`).
 
 ### Key Bindings
 
@@ -99,7 +99,7 @@ When editing commit/describe messages:
 
 ### Workflow Example
 
-1. `M-x jj-log` - Open JJ interface
+1. `M-x majutsu-log` - Open JJ interface
 2. Navigate to desired changeset with `j`/`k`
 3. `c` - Commit current changes
 4. Edit message, `C-c C-c` to finish
@@ -111,7 +111,7 @@ When editing commit/describe messages:
 
 ```lisp
 ;; Customize jj executable path if needed
-(setq jj-executable "/path/to/jj")
+(setq majutsu-executable "/path/to/jj")
 ```
 
 ## Contributing

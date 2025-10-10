@@ -1,4 +1,4 @@
-;;; jj-mode.el -*- lexical-binding: t; -*-
+;;; majutsu.el -*- lexical-binding: t; -*-
 
 (require 'magit)
 (require 'magit-section)
@@ -8,117 +8,117 @@
 (require 'seq)
 (require 'subr-x)
 
-(defgroup jj nil
+(defgroup majutsu nil
   "Interface to jj version control system."
   :group 'tools)
 
-(defcustom jj-executable "jj"
+(defcustom majutsu-executable "jj"
   "Path to jj executable."
   :type 'string
-  :group 'jj)
+  :group 'majutsu)
 
-(defcustom jj-debug nil
+(defcustom majutsu-debug nil
   "Enable debug logging for jj operations."
   :type 'boolean
-  :group 'jj)
+  :group 'majutsu)
 
-(defcustom jj-show-command-output t
+(defcustom majutsu-show-command-output t
   "Show jj command output in messages."
   :type 'boolean
-  :group 'jj)
+  :group 'majutsu)
 
-(defcustom jj-log-sections-hook '(jj-log-insert-logs
-                                  jj-log-insert-status
-                                  jj-log-insert-diff)
+(defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
+                                  majutsu-log-insert-status
+                                  majutsu-log-insert-diff)
   "Hook run to insert sections in the log buffer."
   :type 'hook
-  :group 'jj)
+  :group 'majutsu)
 
-(defcustom jj-log-display-function #'pop-to-buffer
-  "Function called to display the jj log buffer.
+(defcustom majutsu-log-display-function #'pop-to-buffer
+  "Function called to display the majutsu log buffer.
 The function must accept one argument: the buffer to display."
   :type '(choice
           (function-item switch-to-buffer)
           (function-item pop-to-buffer)
           (function-item display-buffer)
           (function :tag "Custom function"))
-:group 'jj)
+:group 'majutsu)
 
-(defvar jj-mode-map
+(defvar majutsu-mode-map
   (let ((map (make-sparse-keymap)))
     ;; Navigation
     (define-key map (kbd "n") 'magit-section-forward)
     (define-key map (kbd "p") 'magit-section-backward)
     (define-key map (kbd "M-n") 'magit-section-forward-sibling)
     (define-key map (kbd "M-p") 'magit-section-backward-sibling)
-    (define-key map (kbd ".") 'jj-goto-current)
+    (define-key map (kbd ".") 'majutsu-goto-current)
     (define-key map (kbd "TAB") 'magit-section-toggle)
     (define-key map (kbd "q") 'quit-window)
 
     ;; Basic operations
-    (define-key map (kbd "g") 'jj-log-refresh)
-    (define-key map (kbd "c") 'jj-commit)
-    (define-key map (kbd "e") 'jj-edit-changeset)
-    (define-key map (kbd "u") 'jj-undo)
-    (define-key map (kbd "N") 'jj-new)
-    (define-key map (kbd "s") 'jj-squash-transient)
-    (define-key map (kbd "c") 'jj-commit)
-    (define-key map (kbd "d") 'jj-describe)
-    (define-key map (kbd "a") 'jj-abandon)
+    (define-key map (kbd "g") 'majutsu-log-refresh)
+    (define-key map (kbd "c") 'majutsu-commit)
+    (define-key map (kbd "e") 'majutsu-edit-changeset)
+    (define-key map (kbd "u") 'majutsu-undo)
+    (define-key map (kbd "N") 'majutsu-new)
+    (define-key map (kbd "s") 'majutsu-squash-transient)
+    (define-key map (kbd "c") 'majutsu-commit)
+    (define-key map (kbd "d") 'majutsu-describe)
+    (define-key map (kbd "a") 'majutsu-abandon)
 
     ;; Advanced Operations
-    (define-key map (kbd "RET") 'jj-enter-dwim)
-    (define-key map (kbd "b") 'jj-bookmark-transient)
-    (define-key map (kbd "r") 'jj-rebase-transient)
-    (define-key map (kbd "G") 'jj-git-transient)
+    (define-key map (kbd "RET") 'majutsu-enter-dwim)
+    (define-key map (kbd "b") 'majutsu-bookmark-transient)
+    (define-key map (kbd "r") 'majutsu-rebase-transient)
+    (define-key map (kbd "G") 'majutsu-git-transient)
 
     ;; Experimental
-    (define-key map (kbd "D") 'jj-diff)
-    (define-key map (kbd "E") 'jj-diffedit-emacs)
-    (define-key map (kbd "M") 'jj-diffedit-smerge)
-    (define-key map (kbd "?") 'jj-mode-transient)
+    (define-key map (kbd "D") 'majutsu-diff)
+    (define-key map (kbd "E") 'majutsu-diffedit-emacs)
+    (define-key map (kbd "M") 'majutsu-diffedit-smerge)
+    (define-key map (kbd "?") 'majutsu-mode-transient)
     map)
-  "Keymap for `jj-mode'.")
+  "Keymap for `majutsu-mode'.")
 
 ;;;###autoload
-(transient-define-prefix jj-mode-transient ()
+(transient-define-prefix majutsu-mode-transient ()
   "JJ commands transient menu."
   [:description "JJ Commands" :class transient-columns
                 ["Basic Operations"
-                 ("g" "Refresh log" jj-log-refresh)
-                 ("c" "Commit" jj-commit)
-                 ("e" "Edit changeset" jj-edit-changeset)
-                 ("u" "Undo last change" jj-undo)
-                 ("N" "New changeset" jj-new)
-                 ("a" "Abandon changeset" jj-abandon)
-                 ("d" "Describe changeset" jj-describe)
-                 ("s" "Squash changeset" jj-squash-transient)]
+                 ("g" "Refresh log" majutsu-log-refresh)
+                 ("c" "Commit" majutsu-commit)
+                 ("e" "Edit changeset" majutsu-edit-changeset)
+                 ("u" "Undo last change" majutsu-undo)
+                 ("N" "New changeset" majutsu-new)
+                 ("a" "Abandon changeset" majutsu-abandon)
+                 ("d" "Describe changeset" majutsu-describe)
+                 ("s" "Squash changeset" majutsu-squash-transient)]
                 ["Advanced Operations"
-                 ("r" "Rebase changeset" jj-rebase-transient)
-                 ("b" "Bookmark operations" jj-bookmark-transient)
-                 ("G" "Git operations" jj-git-transient)]
+                 ("r" "Rebase changeset" majutsu-rebase-transient)
+                 ("b" "Bookmark operations" majutsu-bookmark-transient)
+                 ("G" "Git operations" majutsu-git-transient)]
                 ["Experimental"
-                 ("D" "Show diff" jj-diff)
-                 ("E" "DiffEdit (ediff)" jj-diffedit-emacs)
-                 ("M" "DiffEdit (smerge)" jj-diffedit-smerge)]
+                 ("D" "Show diff" majutsu-diff)
+                 ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
+                 ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
                 ["Exit"
                  ("?" "Show cool help" transient-help)
                  ("q" "Quit transient" transient-quit-one)]])
 
-(define-derived-mode jj-mode magit-section-mode "JJ"
+(define-derived-mode majutsu-mode magit-section-mode "Majutsu"
   "Major mode for interacting with jj version control system."
-  :group 'jj
+  :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function 'jj-log-refresh)
+  (setq-local revert-buffer-function 'majutsu-log-refresh)
   ;; Clear rebase selections when buffer is killed
-  (add-hook 'kill-buffer-hook 'jj-rebase-clear-selections nil t)
+  (add-hook 'kill-buffer-hook 'majutsu-rebase-clear-selections nil t)
   ;; Clear squash selections when buffer is killed
-  (add-hook 'kill-buffer-hook 'jj-squash-clear-selections nil t))
+  (add-hook 'kill-buffer-hook 'majutsu-squash-clear-selections nil t))
 
-(defvar-local jj--repo-root nil
+(defvar-local majutsu--repo-root nil
   "Cached repository root for the current buffer.")
 
-(defconst jj--log-template
+(defconst majutsu--log-template
 "'\x1e' ++
 if(self.root(),
   format_root_commit(self),
@@ -153,65 +153,65 @@ if(self.root(),
 "
 "Template for formatting log entries.")
 
-(defun jj--root ()
+(defun majutsu--root ()
   "Find root of the current repository."
-  (let ((root (or (and (boundp 'jj--repo-root) jj--repo-root)
+  (let ((root (or (and (boundp 'majutsu--repo-root) majutsu--repo-root)
                   (locate-dominating-file default-directory ".jj"))))
     (unless root
       (user-error "Cannot find root -- not in a JJ repo"))
     root))
 
-(defun jj--debug (format-string &rest args)
-  "Log debug message if jj-debug is enabled."
-  (when jj-debug
-    (message "[jj-mode] %s" (apply #'format format-string args))))
+(defun majutsu--debug (format-string &rest args)
+  "Log debug message if majutsu-debug is enabled."
+  (when majutsu-debug
+    (message "[majutsu-mode] %s" (apply #'format format-string args))))
 
-(defun jj--message-with-log (format-string &rest args)
+(defun majutsu--message-with-log (format-string &rest args)
   "Display message and log if debug enabled."
   (let ((msg (apply #'format format-string args)))
-    (jj--debug "User message: %s" msg)
+    (majutsu--debug "User message: %s" msg)
     (message "%s" msg)))
 
-(defun jj--run-command (&rest args)
+(defun majutsu--run-command (&rest args)
   "Run jj command with ARGS and return output."
   (let ((start-time (current-time))
         (safe-args (seq-remove #'null args))
         result exit-code)
-    (jj--debug "Running command: %s %s" jj-executable (string-join safe-args " "))
+    (majutsu--debug "Running command: %s %s" majutsu-executable (string-join safe-args " "))
     (with-temp-buffer
-      (setq exit-code (apply #'process-file jj-executable nil t nil safe-args))
+      (setq exit-code (apply #'process-file majutsu-executable nil t nil safe-args))
       (setq result (buffer-string))
-      (jj--debug "Command completed in %.3f seconds, exit code: %d"
+      (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                  (float-time (time-subtract (current-time) start-time))
                  exit-code)
-      (when (and jj-show-command-output (not (string-empty-p result)))
-        (jj--debug "Command output: %s" (string-trim result)))
+      (when (and majutsu-show-command-output (not (string-empty-p result)))
+        (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun jj--run-command-color (&rest args)
+(defun majutsu--run-command-color (&rest args)
   "Run jj command with ARGS and return colorized output."
-  (jj--debug "Running color command: %s --color=always %s" jj-executable (string-join args " "))
+  (majutsu--debug "Running color command: %s --color=always %s" majutsu-executable (string-join args " "))
   (let ((start-time (current-time))
         result exit-code)
     (with-temp-buffer
       (let ((process-environment (cons "FORCE_COLOR=1" (cons "CLICOLOR_FORCE=1" process-environment))))
-        (setq exit-code (apply #'process-file jj-executable nil t nil "--color=always" args))
+        (setq exit-code (apply #'process-file majutsu-executable nil t nil "--color=always" args))
         (setq result (ansi-color-apply (buffer-string)))
-        (jj--debug "Color command completed in %.3f seconds, exit code: %d"
+        (majutsu--debug "Color command completed in %.3f seconds, exit code: %d"
                    (float-time (time-subtract (current-time) start-time))
                    exit-code)
         result))))
 
-(defun jj--run-command-async (callback &rest args)
+(defun majutsu--run-command-async (callback &rest args)
   "Run jj command with ARGS asynchronously and call CALLBACK with output."
-  (jj--debug "Starting async command: %s %s" jj-executable (string-join args " "))
-  (let ((buffer (generate-new-buffer " *jj-async*"))
+  (majutsu--debug "Starting async command: %s %s" majutsu-executable (string-join args " "))
+  (let ((buffer (generate-new-buffer " *majutsu-async*"))
         (start-time (current-time)))
     (set-process-sentinel
-     (apply #'start-file-process "jj" buffer jj-executable args)
+     (apply #'start-file-process "jj" buffer majutsu-executable args)
      (lambda (process _event)
        (let ((exit-code (process-exit-status process)))
-         (jj--debug "Async command completed in %.3f seconds, exit code: %d"
+         (majutsu--debug "Async command completed in %.3f seconds, exit code: %d"
                     (float-time (time-subtract (current-time) start-time))
                     exit-code)
          (when (eq (process-status process) 'exit)
@@ -219,7 +219,7 @@ if(self.root(),
              (funcall callback (buffer-string)))
            (kill-buffer (process-buffer process))))))))
 
-(defun jj--suggest-help (command-name error-msg)
+(defun majutsu--suggest-help (command-name error-msg)
   "Provide helpful suggestions when COMMAND-NAME fails with ERROR-MSG."
   (let ((suggestions
          (cond
@@ -242,15 +242,15 @@ if(self.root(),
            "Use --allow-new flag to push new bookmarks.")
           ((and (string= command-name "git") (string-match-p "authentication" error-msg))
            "Check your git credentials and remote repository access.")
-          (t "Check 'jj help' or enable debug mode (M-x customize-variable jj-debug) for more info."))))
+          (t "Check 'jj help' or enable debug mode (M-x customize-variable majutsu-debug) for more info."))))
     (when suggestions
-      (jj--message-with-log "💡 %s" suggestions))))
+      (majutsu--message-with-log "💡 %s" suggestions))))
 
-(defun jj--handle-command-result (command-args result &optional success-msg error-msg)
+(defun majutsu--handle-command-result (command-args result &optional success-msg error-msg)
   "Handle command result with proper error checking and messaging."
   (let ((trimmed-result (string-trim result))
         (command-name (car command-args)))
-    (jj--debug "Command result for '%s': %s"
+    (majutsu--debug "Command result for '%s': %s"
                (string-join command-args " ")
                trimmed-result)
 
@@ -264,7 +264,7 @@ if(self.root(),
           (string-match-p "^Warning:\\|^warning:" trimmed-result)
           (string-match-p "^fatal:" trimmed-result))
 
-      ;; Provide jj-specific contextual suggestions
+      ;; Provide majutsu-specific contextual suggestions
       (cond
        ;; Working copy issues
        ((string-match-p "working copy is stale\\|concurrent modification" trimmed-result)
@@ -301,17 +301,17 @@ if(self.root(),
         (message "%s" success-msg))
       t))))
 
-(defun jj--with-progress (message command-func)
+(defun majutsu--with-progress (message command-func)
   "Execute COMMAND-FUNC with minimal progress indication."
   (let ((start-time (current-time))
         result)
-    (jj--debug "Starting operation: %s" message)
+    (majutsu--debug "Starting operation: %s" message)
     (setq result (funcall command-func))
-    (jj--debug "Operation completed in %.3f seconds"
+    (majutsu--debug "Operation completed in %.3f seconds"
                (float-time (time-subtract (current-time) start-time)))
     result))
 
-(defun jj--extract-bookmark-names (text)
+(defun majutsu--extract-bookmark-names (text)
   "Extract bookmark names from jj command output TEXT."
   (let ((names '())
         (start 0))
@@ -321,7 +321,7 @@ if(self.root(),
     (nreverse names)))
 
 
-(defun jj--get-bookmark-names (&optional all-remotes)
+(defun majutsu--get-bookmark-names (&optional all-remotes)
   "Return bookmark names.
 When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
   (let* ((template (if all-remotes
@@ -330,12 +330,12 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (args (append '("bookmark" "list")
                        (and all-remotes '("--all"))
                        (list "-T" template))))
-    (split-string (apply #'jj--run-command args) "\n" t)))
+    (split-string (apply #'majutsu--run-command args) "\n" t)))
 
-(defun jj--handle-push-result (cmd-args result success-msg)
+(defun majutsu--handle-push-result (cmd-args result success-msg)
   "Enhanced push result handler with bookmark analysis."
   (let ((trimmed-result (string-trim result)))
-    (jj--debug "Push result: %s" trimmed-result)
+    (majutsu--debug "Push result: %s" trimmed-result)
 
     ;; Always show the raw command output first (like CLI)
     (unless (string-empty-p trimmed-result)
@@ -347,7 +347,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
           (string-match-p "Refusing to create new remote bookmark" trimmed-result)
           (string-match-p "would create new heads" trimmed-result))
       ;; Extract bookmark names that couldn't be pushed
-      (let ((bookmark-names (jj--extract-bookmark-names trimmed-result)))
+      (let ((bookmark-names (majutsu--extract-bookmark-names trimmed-result)))
         (if bookmark-names
             (message "💡 Use 'jj git push --allow-new' to push new bookmarks: %s"
                      (string-join bookmark-names ", "))
@@ -369,7 +369,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
       (message "💡 Run 'jj git fetch' first to update remote tracking")
       nil)
 
-     ;; Analyze jj-specific push patterns and provide contextual help
+     ;; Analyze majutsu-specific push patterns and provide contextual help
      ((string-match-p "Nothing changed" trimmed-result)
       (message "💡 Nothing to push - all bookmarks are up to date")
       t)
@@ -385,7 +385,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
         (message "%s" success-msg))
       t))))
 
-(defun jj--analyze-status-for-hints (status-output)
+(defun majutsu--analyze-status-for-hints (status-output)
   "Analyze jj status output and provide helpful hints."
   (when (and status-output (not (string-empty-p status-output)))
     (cond
@@ -405,32 +405,32 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
      ((string-match-p "Working copy changes:" status-output)
       (message "💡 Commit changes with 'jj commit' or describe with 'jj describe'")))))
 
-(defclass jj-commit-section (magit-section)
+(defclass majutsu-commit-section (magit-section)
   ((commit-id :initarg :commit-id)
    (author :initarg :author)
    (date :initarg :date)
    (description :initarg :description)
    (bookmarks :initarg :bookmarks)))
 
-(defclass jj-commits-section (magit-section) ())
-(defclass jj-status-section (magit-section) ())
-(defclass jj-diff-stat-section (magit-section) ())
-(defclass jj-log-graph-section (magit-section) ())
-(defclass jj-log-entry-section (magit-section)
+(defclass majutsu-commits-section (magit-section) ())
+(defclass majutsu-status-section (magit-section) ())
+(defclass majutsu-diff-stat-section (magit-section) ())
+(defclass majutsu-log-graph-section (magit-section) ())
+(defclass majutsu-log-entry-section (magit-section)
   ((commit-id :initarg :commit-id)
    (description :initarg :description)
    (bookmarks :initarg :bookmarks)))
-(defclass jj-diff-section (magit-section) ())
-(defclass jj-file-section (magit-section)
+(defclass majutsu-diff-section (magit-section) ())
+(defclass majutsu-file-section (magit-section)
   ((file :initarg :file)))
-(defclass jj-hunk-section (magit-section)
+(defclass majutsu-hunk-section (magit-section)
   ((file :initarg :file)
    (start :initarg :hunk-start)
    (header :initarg :header)))
 
 
 
-(defun jj-parse-log-entries (&optional buf)
+(defun majutsu-parse-log-entries (&optional buf)
   "Get log line pairs from BUF (defaults to `current-buffer').
 
 This somewhat naively runs log, splits on newlines, and partitions the
@@ -438,9 +438,9 @@ lines into pairs.
 
 Each pair SHOULD be (line-with-changeset-id-and-email description-line).
 
-The results of this fn are fed into `jj--parse-log-entries'."
+The results of this fn are fed into `majutsu--parse-log-entries'."
   (with-current-buffer (or buf (current-buffer))
-    (let ((log-output (jj--run-command-color "log" "-T" jj--log-template)))
+    (let ((log-output (majutsu--run-command-color "log" "-T" majutsu--log-template)))
       (when (and log-output (not (string-empty-p log-output)))
         (let ((lines (split-string log-output "\n" t)))
           (cl-loop for line in lines
@@ -460,7 +460,7 @@ The results of this fn are fed into `jj--parse-log-entries'."
                    else collect
                    (list :elems (list line nil))))))))
 
-(defun jj--indent-string (s column)
+(defun majutsu--indent-string (s column)
   "Insert STRING into the current buffer, indenting each line to COLUMN."
   (let ((indentation (make-string column ?\s))) ; Create a string of spaces for indentation
      (mapconcat (lambda (line)
@@ -468,44 +468,44 @@ The results of this fn are fed into `jj--parse-log-entries'."
                        (split-string s "\n")
                        "\n"))) ; Join lines with newline, prefixed by indentation
 
-(defun jj-log-insert-logs ()
+(defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
-  (magit-insert-section (jj-log-graph-section)
+  (magit-insert-section (majutsu-log-graph-section)
     (magit-insert-heading "Log Graph")
-    (dolist (entry (jj-parse-log-entries))
-      (magit-insert-section section (jj-log-entry-section entry t)
+    (dolist (entry (majutsu-parse-log-entries))
+      (magit-insert-section section (majutsu-log-entry-section entry t)
                             (oset section commit-id (plist-get entry :id))
                             (oset section description (plist-get entry :description))
                             (oset section bookmarks (plist-get entry :bookmarks))
                             (magit-insert-heading
                               (insert (string-join (butlast (plist-get entry :elems)) " ")) "\n")
                             (when-let* ((long-desc (plist-get entry :long-desc))
-                                        (long-desc (jj--indent-string long-desc (+ 10 (length (plist-get entry :prefix))))))
+                                        (long-desc (majutsu--indent-string long-desc (+ 10 (length (plist-get entry :prefix))))))
                               (magit-insert-section-body
                                 (insert long-desc "\n")))))
     (insert "\n")))
 
-(defun jj-log-insert-status ()
+(defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
-  (let ((status-output (jj--run-command-color "status")))
+  (let ((status-output (majutsu--run-command-color "status")))
     (when (and status-output (not (string-empty-p status-output)))
-      (magit-insert-section (jj-status-section)
+      (magit-insert-section (majutsu-status-section)
         (magit-insert-heading "Working Copy Status")
         (insert status-output)
         (insert "\n")
         ;; Analyze status and provide hints in the minibuffer
-        (jj--analyze-status-for-hints status-output)))))
+        (majutsu--analyze-status-for-hints status-output)))))
 
-(defun jj-log-insert-diff ()
+(defun majutsu-log-insert-diff ()
   "Insert jj diff with hunks into current buffer."
-  (let ((diff-output (jj--run-command-color "diff" "--git")))
+  (let ((diff-output (majutsu--run-command-color "diff" "--git")))
     (when (and diff-output (not (string-empty-p diff-output)))
-      (magit-insert-section (jj-diff-section)
+      (magit-insert-section (majutsu-diff-section)
         (magit-insert-heading "Working Copy Changes")
-        (jj--insert-diff-hunks diff-output)
+        (majutsu--insert-diff-hunks diff-output)
         (insert "\n")))))
 
-(defun jj--insert-diff-hunks (diff-output)
+(defun majutsu--insert-diff-hunks (diff-output)
   "Parse and insert diff output as navigable hunk sections."
   (let ((lines (split-string diff-output "\n"))
         current-file
@@ -520,7 +520,7 @@ The results of this fn are fed into `jj--parse-log-entries'."
                      (file-b (match-string 2 clean-line)))
                  ;; Process any pending file section
                  (when (and in-file-section current-file)
-                   (jj--insert-file-section current-file file-section-content))
+                   (majutsu--insert-file-section current-file file-section-content))
                  ;; Start new file section
                  (setq current-file (or file-b file-a)
                        file-section-content (list line)
@@ -535,11 +535,11 @@ The results of this fn are fed into `jj--parse-log-entries'."
          (t nil))))
     ;; Process final file section if any
     (when (and in-file-section current-file)
-      (jj--insert-file-section current-file file-section-content))))
+      (majutsu--insert-file-section current-file file-section-content))))
 
-(defun jj--insert-file-section (file lines)
+(defun majutsu--insert-file-section (file lines)
   "Insert a file section with its hunks."
-  (magit-insert-section file-section (jj-file-section)
+  (magit-insert-section file-section (majutsu-file-section)
                         (oset file-section file file)
                         (insert (propertize (concat "modified   " file "\n")
                                             'face 'magit-filename))
@@ -553,7 +553,7 @@ The results of this fn are fed into `jj--parse-log-entries'."
                              ((string-match "^@@.*@@" line)
                               ;; Insert previous hunk if any
                               (when in-hunk
-                                (jj--insert-hunk-lines file (nreverse hunk-lines)))
+                                (majutsu--insert-hunk-lines file (nreverse hunk-lines)))
                               ;; Start new hunk
                               (setq hunk-lines (list line)
                                     in-hunk t))
@@ -565,16 +565,16 @@ The results of this fn are fed into `jj--parse-log-entries'."
                               (push line hunk-lines))))
                           ;; Insert final hunk if any
                           (when in-hunk
-                            (jj--insert-hunk-lines file (nreverse hunk-lines))))))
+                            (majutsu--insert-hunk-lines file (nreverse hunk-lines))))))
 
-(defun jj--insert-hunk-lines (file lines)
+(defun majutsu--insert-hunk-lines (file lines)
   "Insert a hunk section from LINES."
   (when lines
     (let ((header-line (car lines)))
       (when (string-match "^\\(@@.*@@\\)\\(.*\\)$" header-line)
         (let ((header (match-string 1 header-line))
               (context (match-string 2 header-line)))
-          (magit-insert-section hunk-section (jj-hunk-section)
+          (magit-insert-section hunk-section (majutsu-hunk-section)
                                 (oset hunk-section file file)
                                 (oset hunk-section header header)
                                 ;; Insert the hunk header
@@ -593,83 +593,83 @@ The results of this fn are fed into `jj--parse-log-entries'."
                                     (insert (propertize line 'face 'magit-diff-context) "\n"))))))))))
 
 ;;;###autoload
-(defun jj-log ()
+(defun majutsu-log ()
   "Display jj log in a magit-style buffer."
   (interactive)
-  (let* ((repo-root (jj--root))
-         (buffer-name (format "*jj-log:%s*" (file-name-nondirectory (directory-file-name repo-root))))
+  (let* ((repo-root (majutsu--root))
+         (buffer-name (format "*majutsu-log:%s*" (file-name-nondirectory (directory-file-name repo-root))))
          (buffer (get-buffer-create buffer-name)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t)
             (default-directory repo-root)
             (inhibit-modification-hooks t))
         (erase-buffer)
-        (jj-mode)
-        (funcall jj-log-display-function buffer)
-        (setq-local jj--repo-root repo-root)
+        (majutsu-mode)
+        (funcall majutsu-log-display-function buffer)
+        (setq-local majutsu--repo-root repo-root)
         (magit-insert-section (jjbuf)  ; Root section wrapper
           (magit-insert-section-body
-            (magit-run-section-hook 'jj-log-sections-hook))
+            (magit-run-section-hook 'majutsu-log-sections-hook))
           (insert "\n"))
         (goto-char (point-min))))))
 
-(defun jj-log-refresh (&optional _ignore-auto _noconfirm)
-  "Refresh the jj log buffer."
+(defun majutsu-log-refresh (&optional _ignore-auto _noconfirm)
+  "Refresh the majutsu log buffer."
   (interactive)
-  (when (derived-mode-p 'jj-mode)
-    (jj--with-progress "Refreshing log view"
+  (when (derived-mode-p 'majutsu-mode)
+    (majutsu--with-progress "Refreshing log view"
                        (lambda ()
                          (let ((inhibit-read-only t)
                                (pos (point)))
                            (erase-buffer)
                            (magit-insert-section (jjbuf)  ; Root section wrapper
-                             (magit-run-section-hook 'jj-log-sections-hook))
+                             (magit-run-section-hook 'majutsu-log-sections-hook))
                            (goto-char pos)
-                           (jj--debug "Log refresh completed"))))))
+                           (majutsu--debug "Log refresh completed"))))))
 
-(defun jj-enter-dwim ()
+(defun majutsu-enter-dwim ()
   "Context-sensitive Enter key behavior."
   (interactive)
   (let ((section (magit-current-section)))
     (cond
      ;; On a changeset/commit - edit it with jj edit
      ((and section
-           (memq (oref section type) '(jj-log-entry-section jj-commit-section))
+           (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
            (slot-boundp section 'commit-id))
-      (jj-edit-changeset-at-point))
+      (majutsu-edit-changeset-at-point))
 
      ;; On a diff hunk line - jump to that line in the file
      ((and section
-           (eq (oref section type) 'jj-hunk-section)
+           (eq (oref section type) 'majutsu-hunk-section)
            (slot-boundp section 'file))
-      (jj-goto-diff-line))
+      (majutsu-goto-diff-line))
 
      ;; On a file section - visit the file
      ((and section
-           (eq (oref section type) 'jj-file-section)
+           (eq (oref section type) 'majutsu-file-section)
            (slot-boundp section 'file))
-      (jj-visit-file)))))
+      (majutsu-visit-file)))))
 
-(defun jj-edit-changeset-at-point ()
+(defun majutsu-edit-changeset-at-point ()
   "Edit the commit at point using jj edit."
   (interactive)
-  (when-let ((commit-id (jj-get-changeset-at-point)))
-    (let ((result (jj--run-command "edit" commit-id)))
-      (if (jj--handle-command-result (list "edit" commit-id) result
+  (when-let ((commit-id (majutsu-get-changeset-at-point)))
+    (let ((result (majutsu--run-command "edit" commit-id)))
+      (if (majutsu--handle-command-result (list "edit" commit-id) result
                                      (format "Now editing commit %s" commit-id)
                                      "Failed to edit commit")
           (progn
-            (jj-log-refresh)
+            (majutsu-log-refresh)
             (back-to-indentation))))))
 
-(defun jj-goto-diff-line ()
+(defun majutsu-goto-diff-line ()
   "Jump to the line in the file corresponding to the diff line at point."
   (interactive)
   (when-let* ((section (magit-current-section))
-              (_ (eq (oref section type) 'jj-hunk-section))
+              (_ (eq (oref section type) 'majutsu-hunk-section))
               (file (oref section file))
               (header (oref section header))
-              (repo-root (jj--root)))
+              (repo-root (majutsu--root)))
     ;; Parse the hunk header to get line numbers
     (when (string-match "^@@.*\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)?.*@@" header)
       (let* ((start-line (string-to-number (match-string 1 header)))
@@ -696,38 +696,38 @@ The results of this fn are fed into `jj--parse-log-entries'."
           (forward-line (max 0 target-line))
           (message "Jumped to line %d in %s" (1+ target-line) file))))))
 
-(defun jj-visit-file ()
+(defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
   (when-let* ((section (magit-current-section))
               (file (oref section file))
-              (repo-root (jj--root)))
+              (repo-root (majutsu--root)))
     (let ((full-file-path (expand-file-name file repo-root)))
       (find-file full-file-path))))
 
-(defun jj-diffedit-emacs ()
+(defun majutsu-diffedit-emacs ()
   "Emacs-based diffedit using built-in ediff."
   (interactive)
   (let* ((section (magit-current-section))
          (file (cond
-                ((and section (eq (oref section type) 'jj-file-section))
+                ((and section (eq (oref section type) 'majutsu-file-section))
                  (oref section file))
-                ((and section (eq (oref section type) 'jj-hunk-section))
+                ((and section (eq (oref section type) 'majutsu-hunk-section))
                  (oref section file))
                 (t nil))))
     (if file
-        (jj-diffedit-with-ediff file)
-      (jj-diffedit-all))))
+        (majutsu-diffedit-with-ediff file)
+      (majutsu-diffedit-all))))
 
-(defun jj-diffedit-with-ediff (file)
+(defun majutsu-diffedit-with-ediff (file)
   "Open ediff session for a specific file against parent."
-  (let* ((repo-root (jj--root))
+  (let* ((repo-root (majutsu--root))
          (full-file-path (expand-file-name file repo-root))
          (file-ext (file-name-extension file))
-         (parent-temp-file (make-temp-file (format "jj-parent-%s" (file-name-nondirectory file))
+         (parent-temp-file (make-temp-file (format "majutsu-parent-%s" (file-name-nondirectory file))
                                            nil (when file-ext (concat "." file-ext))))
          (parent-content (let ((default-directory repo-root))
-                           (jj--run-command "file" "show" "-r" "@-" file))))
+                           (majutsu--run-command "file" "show" "-r" "@-" file))))
 
     ;; Write parent content to temp file
     (with-temp-file parent-temp-file
@@ -743,39 +743,39 @@ The results of this fn are fed into `jj--parse-log-entries'."
               `(lambda ()
                  (when (file-exists-p ,parent-temp-file)
                    (delete-file ,parent-temp-file))
-                 (jj-log-refresh))
+                 (majutsu-log-refresh))
               nil t)
 
     ;; Start ediff session
     (ediff-files parent-temp-file full-file-path)
     (message "Ediff: Left=Parent (@-), Right=Current (@). Edit right side, then 'q' to quit and save.")))
 
-(defun jj-diffedit-smerge ()
+(defun majutsu-diffedit-smerge ()
   "Emacs-based diffedit using smerge-mode (merge conflict style)."
   (interactive)
   (let* ((section (magit-current-section))
          (file (cond
-                ((and section (eq (oref section type) 'jj-file-section))
+                ((and section (eq (oref section type) 'majutsu-file-section))
                  (oref section file))
-                ((and section (eq (oref section type) 'jj-hunk-section))
+                ((and section (eq (oref section type) 'majutsu-hunk-section))
                  (oref section file))
                 (t nil))))
     (if file
-        (jj-diffedit-with-smerge file)
-      (jj-diffedit-all))))
+        (majutsu-diffedit-with-smerge file)
+      (majutsu-diffedit-all))))
 
-(defun jj-diffedit-with-smerge (file)
+(defun majutsu-diffedit-with-smerge (file)
   "Open smerge-mode session for a specific file."
-  (let* ((repo-root (jj--root))
+  (let* ((repo-root (majutsu--root))
          (full-file-path (expand-file-name file repo-root))
          (parent-content (let ((default-directory repo-root))
-                           (jj--run-command "file" "show" "-r" "@-" file)))
+                           (majutsu--run-command "file" "show" "-r" "@-" file)))
          (current-content (if (file-exists-p full-file-path)
                               (with-temp-buffer
                                 (insert-file-contents full-file-path)
                                 (buffer-string))
                             ""))
-         (merge-buffer (get-buffer-create (format "*jj-smerge-%s*" (file-name-nondirectory file)))))
+         (merge-buffer (get-buffer-create (format "*majutsu-smerge-%s*" (file-name-nondirectory file)))))
 
     (with-current-buffer merge-buffer
       (erase-buffer)
@@ -793,22 +793,22 @@ The results of this fn are fed into `jj--parse-log-entries'."
 
       ;; Enable smerge-mode
       (smerge-mode 1)
-      (setq-local jj-smerge-file file)
-      (setq-local jj-smerge-repo-root repo-root)
+      (setq-local majutsu-smerge-file file)
+      (setq-local majutsu-smerge-repo-root repo-root)
 
       ;; Add save hook
-      (add-hook 'after-save-hook 'jj-smerge-apply-changes nil t)
+      (add-hook 'after-save-hook 'majutsu-smerge-apply-changes nil t)
 
       (goto-char (point-min)))
 
     (switch-to-buffer-other-window merge-buffer)
     (message "SMerge mode: Use C-c ^ commands to navigate/resolve conflicts, then save to apply.")))
 
-(defun jj-smerge-apply-changes ()
+(defun majutsu-smerge-apply-changes ()
   "Apply smerge changes to the original file."
-  (when (and (boundp 'jj-smerge-file) jj-smerge-file)
-    (let* ((file jj-smerge-file)
-           (repo-root jj-smerge-repo-root)
+  (when (and (boundp 'majutsu-smerge-file) majutsu-smerge-file)
+    (let* ((file majutsu-smerge-file)
+           (repo-root majutsu-smerge-repo-root)
            (full-file-path (expand-file-name file repo-root))
            (content (buffer-string)))
 
@@ -818,142 +818,142 @@ The results of this fn are fed into `jj--parse-log-entries'."
                   (string-match "^>>>>>>>" content))
         (with-temp-file full-file-path
           (insert content))
-        (jj-log-refresh)
+        (majutsu-log-refresh)
         (message "Changes applied to %s" file)))))
 
-(defun jj-diffedit-all ()
+(defun majutsu-diffedit-all ()
   "Open diffedit interface for all changes."
-  (let* ((changed-files (jj--get-changed-files))
+  (let* ((changed-files (majutsu--get-changed-files))
          (choice (if (= (length changed-files) 1)
                      (car changed-files)
                    (completing-read "Edit file: " changed-files))))
     (when choice
-      (jj-diffedit-with-ediff choice))))
+      (majutsu-diffedit-with-ediff choice))))
 
-(defun jj--get-changed-files ()
+(defun majutsu--get-changed-files ()
   "Get list of files with changes in working copy."
-  (let ((diff-output (jj--run-command "diff" "--name-only")))
+  (let ((diff-output (majutsu--run-command "diff" "--name-only")))
     (split-string diff-output "\n" t)))
 
-(defun jj-edit-changeset ()
+(defun majutsu-edit-changeset ()
   "Edit commit at point."
   (interactive)
-  (when-let ((commit-id (jj-get-changeset-at-point)))
-    (let ((result (jj--run-command "edit" commit-id)))
-      (if (jj--handle-command-result (list "edit" commit-id) result
+  (when-let ((commit-id (majutsu-get-changeset-at-point)))
+    (let ((result (majutsu--run-command "edit" commit-id)))
+      (if (majutsu--handle-command-result (list "edit" commit-id) result
                                      (format "Now editing changeset %s" commit-id)
                                      "Failed to edit commit")
-          (jj-log-refresh)))))
+          (majutsu-log-refresh)))))
 
 ;; Squash state management
-(defvar-local jj-squash-from nil
+(defvar-local majutsu-squash-from nil
   "Currently selected 'from' commit for squash.")
 
-(defvar-local jj-squash-into nil
+(defvar-local majutsu-squash-into nil
   "Currently selected 'into' commit for squash.")
 
-(defvar-local jj-squash-from-overlay nil
+(defvar-local majutsu-squash-from-overlay nil
   "Overlay for highlighting the selected 'from' commit.")
 
-(defvar-local jj-squash-into-overlay nil
+(defvar-local majutsu-squash-into-overlay nil
   "Overlay for highlighting the selected 'into' commit.")
 
 ;;;###autoload
-(defun jj-squash-clear-selections ()
+(defun majutsu-squash-clear-selections ()
   "Clear all squash selections and overlays."
   (interactive)
-  (setq jj-squash-from nil
-        jj-squash-into nil)
-  (when jj-squash-from-overlay
-    (delete-overlay jj-squash-from-overlay)
-    (setq jj-squash-from-overlay nil))
-  (when jj-squash-into-overlay
-    (delete-overlay jj-squash-into-overlay)
-    (setq jj-squash-into-overlay nil))
+  (setq majutsu-squash-from nil
+        majutsu-squash-into nil)
+  (when majutsu-squash-from-overlay
+    (delete-overlay majutsu-squash-from-overlay)
+    (setq majutsu-squash-from-overlay nil))
+  (when majutsu-squash-into-overlay
+    (delete-overlay majutsu-squash-into-overlay)
+    (setq majutsu-squash-into-overlay nil))
   (message "Cleared all squash selections"))
 
 ;;;###autoload
-(defun jj-squash-set-from ()
+(defun majutsu-squash-set-from ()
   "Set the commit at point as squash `from' source."
   (interactive)
-  (when-let ((commit-id (jj-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-get-changeset-at-point))
              (section (magit-current-section)))
     ;; Clear previous from overlay
-    (when jj-squash-from-overlay
-      (delete-overlay jj-squash-from-overlay))
+    (when majutsu-squash-from-overlay
+      (delete-overlay majutsu-squash-from-overlay))
     ;; Set new from
-    (setq jj-squash-from commit-id)
+    (setq majutsu-squash-from commit-id)
     ;; Create overlay for visual indication
-    (setq jj-squash-from-overlay
+    (setq majutsu-squash-from-overlay
           (make-overlay (oref section start) (oref section end)))
-    (overlay-put jj-squash-from-overlay 'face '(:background "dark orange" :foreground "white"))
-    (overlay-put jj-squash-from-overlay 'before-string "[FROM] ")
+    (overlay-put majutsu-squash-from-overlay 'face '(:background "dark orange" :foreground "white"))
+    (overlay-put majutsu-squash-from-overlay 'before-string "[FROM] ")
     (message "Set from: %s" commit-id)))
 
 ;;;###autoload
-(defun jj-squash-set-into ()
+(defun majutsu-squash-set-into ()
   "Set the commit at point as squash 'into' destination."
   (interactive)
-  (when-let ((commit-id (jj-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-get-changeset-at-point))
              (section (magit-current-section)))
     ;; Clear previous into overlay
-    (when jj-squash-into-overlay
-      (delete-overlay jj-squash-into-overlay))
+    (when majutsu-squash-into-overlay
+      (delete-overlay majutsu-squash-into-overlay))
     ;; Set new into
-    (setq jj-squash-into commit-id)
+    (setq majutsu-squash-into commit-id)
     ;; Create overlay for visual indication
-    (setq jj-squash-into-overlay
+    (setq majutsu-squash-into-overlay
           (make-overlay (oref section start) (oref section end)))
-    (overlay-put jj-squash-into-overlay 'face '(:background "dark cyan" :foreground "white"))
-    (overlay-put jj-squash-into-overlay 'before-string "[INTO] ")
+    (overlay-put majutsu-squash-into-overlay 'face '(:background "dark cyan" :foreground "white"))
+    (overlay-put majutsu-squash-into-overlay 'before-string "[INTO] ")
     (message "Set into: %s" commit-id)))
 
 ;;;###autoload
-(defun jj-squash-execute (&optional args)
+(defun majutsu-squash-execute (&optional args)
   "Execute squash with selected from and into commits."
-  (interactive (list (transient-args 'jj-squash-transient--internal)))
+  (interactive (list (transient-args 'majutsu-squash-transient--internal)))
   (let ((keep-commit (member "--keep" args)))
     (cond
      ;; Both from and into selected
-     ((and jj-squash-from jj-squash-into)
-      (let* ((into-desc (string-trim (jj--run-command "log" "-r" jj-squash-into "--no-graph" "-T" "description")))
-             (from-desc (string-trim (jj--run-command "log" "-r" jj-squash-from "--no-graph" "-T" "description")))
+     ((and majutsu-squash-from majutsu-squash-into)
+      (let* ((into-desc (string-trim (majutsu--run-command "log" "-r" majutsu-squash-into "--no-graph" "-T" "description")))
+             (from-desc (string-trim (majutsu--run-command "log" "-r" majutsu-squash-from "--no-graph" "-T" "description")))
              (combined-desc (if (string-empty-p into-desc)
                                 from-desc
                               into-desc))) ; Keep into message by default
-        (jj--open-message-buffer "SQUASH_MSG"
-                                 (format "jj squash --from %s --into %s" jj-squash-from jj-squash-into)
-                                 'jj--squash-finish
-                                 (list :from jj-squash-from :into jj-squash-into :keep keep-commit)
+        (majutsu--open-message-buffer "SQUASH_MSG"
+                                 (format "jj squash --from %s --into %s" majutsu-squash-from majutsu-squash-into)
+                                 'majutsu--squash-finish
+                                 (list :from majutsu-squash-from :into majutsu-squash-into :keep keep-commit)
                                  combined-desc)))
      ;; Only from selected - use default behavior (squash into parent)
-     (jj-squash-from
-      (let* ((parent-desc (string-trim (jj--run-command "log" "-r" (format "%s-" jj-squash-from) "--no-graph" "-T" "description")))
-             (from-desc (string-trim (jj--run-command "log" "-r" jj-squash-from "--no-graph" "-T" "description")))
+     (majutsu-squash-from
+      (let* ((parent-desc (string-trim (majutsu--run-command "log" "-r" (format "%s-" majutsu-squash-from) "--no-graph" "-T" "description")))
+             (from-desc (string-trim (majutsu--run-command "log" "-r" majutsu-squash-from "--no-graph" "-T" "description")))
              (combined-desc (if (string-empty-p parent-desc)
                                 from-desc
                               parent-desc))) ; Keep parent message by default
-        (jj--open-message-buffer "SQUASH_MSG"
-                                 (format "jj squash -r %s" jj-squash-from)
-                                 'jj--squash-finish
-                                 (list :from jj-squash-from :into nil :keep keep-commit)
+        (majutsu--open-message-buffer "SQUASH_MSG"
+                                 (format "jj squash -r %s" majutsu-squash-from)
+                                 'majutsu--squash-finish
+                                 (list :from majutsu-squash-from :into nil :keep keep-commit)
                                  combined-desc)))
      ;; No selection - use commit at point
      (t
-      (if-let ((commit-id (jj-get-changeset-at-point)))
-          (let* ((parent-desc (string-trim (jj--run-command "log" "-r" (format "%s-" commit-id) "--no-graph" "-T" "description")))
-                 (commit-desc (string-trim (jj--run-command "log" "-r" commit-id "--no-graph" "-T" "description")))
+      (if-let ((commit-id (majutsu-get-changeset-at-point)))
+          (let* ((parent-desc (string-trim (majutsu--run-command "log" "-r" (format "%s-" commit-id) "--no-graph" "-T" "description")))
+                 (commit-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description")))
                  (combined-desc (if (string-empty-p parent-desc)
                                     commit-desc
                                   parent-desc))) ; Keep parent message by default
-            (jj--open-message-buffer "SQUASH_MSG"
+            (majutsu--open-message-buffer "SQUASH_MSG"
                                      (format "jj squash -r %s" commit-id)
-                                     'jj--squash-finish
+                                     'majutsu--squash-finish
                                      (list :from commit-id :into nil :keep keep-commit)
                                      combined-desc))
-        (jj--message-with-log "No commit selected for squash"))))))
+        (majutsu--message-with-log "No commit selected for squash"))))))
 
-(defun jj--do-squash (from into keep-commit message)
+(defun majutsu--do-squash (from into keep-commit message)
   "Perform the actual squash operation."
   (let* ((cmd-args (cond
                     ;; Both from and into specified
@@ -974,94 +974,94 @@ The results of this fn are fed into `jj--parse-log-entries'."
                           (format "Squashed %s into %s" from into)
                         (format "Squashed %s into its parent" from))))
     (when cmd-args
-      (jj--message-with-log "%s..." progress-msg)
-      (let ((result (apply #'jj--run-command cmd-args)))
-        (if (jj--handle-command-result cmd-args result success-msg "Squash failed")
+      (majutsu--message-with-log "%s..." progress-msg)
+      (let ((result (apply #'majutsu--run-command cmd-args)))
+        (if (majutsu--handle-command-result cmd-args result success-msg "Squash failed")
             (progn
-              (jj-squash-clear-selections)
-              (jj-log-refresh)))))))
+              (majutsu-squash-clear-selections)
+              (majutsu-log-refresh)))))))
 
-(defun jj--squash-finish (message &optional squash-params)
+(defun majutsu--squash-finish (message &optional squash-params)
   "Finish squash with MESSAGE and SQUASH-PARAMS."
   (when squash-params
     (let ((from (plist-get squash-params :from))
           (into (plist-get squash-params :into))
           (keep (plist-get squash-params :keep)))
-      (jj--do-squash from into keep message))))
+      (majutsu--do-squash from into keep message))))
 
-(defun jj-squash-cleanup-on-exit ()
+(defun majutsu-squash-cleanup-on-exit ()
   "Clean up squash selections when transient exits."
-  (unless (eq this-command 'jj-mode-bury-squash)
-    (jj-squash-clear-selections)
-    (remove-hook 'transient-exit-hook 'jj-squash-cleanup-on-exit t)))
+  (unless (eq this-command 'majutsu-mode-bury-squash)
+    (majutsu-squash-clear-selections)
+    (remove-hook 'transient-exit-hook 'majutsu-squash-cleanup-on-exit t)))
 
 ;; Squash transient menu
 ;;;###autoload
-(defun jj-squash-transient ()
+(defun majutsu-squash-transient ()
   "Transient for jj squash operations."
   (interactive)
   ;; Add cleanup hook for when transient exits
-  (add-hook 'transient-exit-hook 'jj-squash-cleanup-on-exit nil t)
-  (jj-squash-transient--internal))
+  (add-hook 'transient-exit-hook 'majutsu-squash-cleanup-on-exit nil t)
+  (majutsu-squash-transient--internal))
 
-(transient-define-prefix jj-squash-transient--internal ()
+(transient-define-prefix majutsu-squash-transient--internal ()
   "Internal transient for jj squash operations."
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description
    (lambda ()
      (concat "JJ Squash"
-             (when jj-squash-from
-               (format " | From: %s" jj-squash-from))
-             (when jj-squash-into
-               (format " | Into: %s" jj-squash-into))))
+             (when majutsu-squash-from
+               (format " | From: %s" majutsu-squash-from))
+             (when majutsu-squash-into
+               (format " | Into: %s" majutsu-squash-into))))
    ["Selection"
-    ("f" "Set from" jj-squash-set-from
+    ("f" "Set from" majutsu-squash-set-from
      :description (lambda ()
-                    (if jj-squash-from
-                        (format "Set from (current: %s)" jj-squash-from)
+                    (if majutsu-squash-from
+                        (format "Set from (current: %s)" majutsu-squash-from)
                       "Set from"))
      :transient t)
-    ("t" "Set into" jj-squash-set-into
+    ("t" "Set into" majutsu-squash-set-into
      :description (lambda ()
-                    (if jj-squash-into
-                        (format "Set into (current: %s)" jj-squash-into)
+                    (if majutsu-squash-into
+                        (format "Set into (current: %s)" majutsu-squash-into)
                       "Set into"))
      :transient t)
-    ("c" "Clear selections" jj-squash-clear-selections
+    ("c" "Clear selections" majutsu-squash-clear-selections
      :transient t)]
    ["Options"
     ("-k" "Keep emptied commit" "--keep")]
    ["Actions"
-    ("s" "Execute squash" jj-squash-execute
+    ("s" "Execute squash" majutsu-squash-execute
      :description (lambda ()
                     (cond
-                     ((and jj-squash-from jj-squash-into)
-                      (format "Squash %s into %s" jj-squash-from jj-squash-into))
-                     (jj-squash-from
-                      (format "Squash %s into parent" jj-squash-from))
+                     ((and majutsu-squash-from majutsu-squash-into)
+                      (format "Squash %s into %s" majutsu-squash-from majutsu-squash-into))
+                     (majutsu-squash-from
+                      (format "Squash %s into parent" majutsu-squash-from))
                      (t "Execute squash (select commits first)")))
      :transient nil)
     ("q" "Quit" transient-quit-one)
-    ("b" "Bury" jj-mode-bury-squash)]])
+    ("b" "Bury" majutsu-mode-bury-squash)]])
 
-(defun jj-mode-bury-squash ()
+(defun majutsu-mode-bury-squash ()
   (interactive)
   (transient-quit-one))
 
-(defun jj-bookmark-create ()
+(defun majutsu-bookmark-create ()
   "Create a new bookmark."
   (interactive)
-  (let* ((commit-id (or (jj-get-changeset-at-point) "@"))
+  (let* ((commit-id (or (majutsu-get-changeset-at-point) "@"))
          (name (read-string "Bookmark name: ")))
     (unless (string-empty-p name)
-      (jj--run-command "bookmark" "create" name "-r" commit-id)
-      (jj-log-refresh))))
+      (majutsu--run-command "bookmark" "create" name "-r" commit-id)
+      (majutsu-log-refresh))))
 
-(defun jj-bookmark-abandon ()
+(defun majutsu-bookmark-abandon ()
   "Abandon a bookmark."
   (interactive)
-  (let* ((bookmarks-output (jj--run-command "bookmark" "list"))
+  (let* ((bookmarks-output (majutsu--run-command "bookmark" "list"))
          (bookmarks (seq-filter
                      (lambda (line) (not (string-empty-p line)))
                      (split-string bookmarks-output "\n")))
@@ -1074,15 +1074,15 @@ The results of this fn are fed into `jj--parse-log-entries'."
     (if bookmark-names
         (let ((choice (completing-read "Abandon bookmark (deletes on remote): " bookmark-names)))
           (when choice
-            (jj--run-command "bookmark" "delete" choice)
-            (jj-log-refresh)
+            (majutsu--run-command "bookmark" "delete" choice)
+            (majutsu-log-refresh)
             (message "Abandoned bookmark '%s'" choice)))
       (message "No bookmarks found"))))
 
-(defun jj-bookmark-forget ()
+(defun majutsu-bookmark-forget ()
   "Forget a bookmark."
   (interactive)
-  (let* ((bookmarks-output (jj--run-command "bookmark" "list"))
+  (let* ((bookmarks-output (majutsu--run-command "bookmark" "list"))
          (bookmarks (seq-filter
                      (lambda (line) (not (string-empty-p line)))
                      (split-string bookmarks-output "\n")))
@@ -1095,15 +1095,15 @@ The results of this fn are fed into `jj--parse-log-entries'."
     (if bookmark-names
         (let ((choice (completing-read "Forget bookmark: " bookmark-names)))
           (when choice
-            (jj--run-command "bookmark" "forget" choice)
-            (jj-log-refresh)
+            (majutsu--run-command "bookmark" "forget" choice)
+            (majutsu-log-refresh)
             (message "Forgot bookmark '%s'" choice)))
       (message "No bookmarks found"))))
 
-(defun jj-bookmark-track ()
+(defun majutsu-bookmark-track ()
   "Track a remote bookmark."
   (interactive)
-  (let* ((remotes-output (jj--run-command "bookmark" "list" "--all"))
+  (let* ((remotes-output (majutsu--run-command "bookmark" "list" "--all"))
          (remote-lines (seq-filter
                         (lambda (line) (string-match "@" line))
                         (split-string remotes-output "\n")))
@@ -1116,80 +1116,80 @@ The results of this fn are fed into `jj--parse-log-entries'."
     (if remote-bookmarks
         (let ((choice (completing-read "Track remote bookmark: " remote-bookmarks)))
           (when choice
-            (jj--run-command "bookmark" "track" choice)
-            (jj-log-refresh)
+            (majutsu--run-command "bookmark" "track" choice)
+            (majutsu-log-refresh)
             (message "Tracking bookmark '%s'" choice)))
       (message "No remote bookmarks found"))))
 
-(defun jj-tug ()
+(defun majutsu-tug ()
   "Run jj tug command."
   (interactive)
-  (let ((result (jj--run-command "tug")))
-    (jj-log-refresh)
+  (let ((result (majutsu--run-command "tug")))
+    (majutsu-log-refresh)
     (message "Tug completed: %s" (string-trim result))))
 
 ;; Bookmark transient menu
 ;;;###autoload
-(defun jj-bookmark-transient ()
+(defun majutsu-bookmark-transient ()
   "Transient for jj bookmark operations."
   (interactive)
-  (jj-bookmark-transient--internal))
+  (majutsu-bookmark-transient--internal))
 
-(transient-define-prefix jj-bookmark-transient--internal ()
+(transient-define-prefix majutsu-bookmark-transient--internal ()
   "Internal transient for jj bookmark operations."
   :transient-non-suffix t
   ["Bookmark Operations"
-   [("t" "Tug" jj-tug
+   [("t" "Tug" majutsu-tug
      :description "Run jj tug command")
-    ("c" "Create bookmark" jj-bookmark-create
+    ("c" "Create bookmark" majutsu-bookmark-create
      :description "Create new bookmark")
-    ("T" "Track remote" jj-bookmark-track
+    ("T" "Track remote" majutsu-bookmark-track
      :description "Track remote bookmark")]
-   [("a" "Abandon bookmark" jj-bookmark-abandon
+   [("a" "Abandon bookmark" majutsu-bookmark-abandon
      :description "Delete local bookmark")
-    ("f" "Forget bookmark" jj-bookmark-forget
+    ("f" "Forget bookmark" majutsu-bookmark-forget
      :description "Forget bookmark")]
    [("q" "Quit" transient-quit-one)]])
 
-(defun jj-undo ()
+(defun majutsu-undo ()
   "Undo the last change."
   (interactive)
-  (let ((commit-id (jj-get-changeset-at-point)))
-    (jj--run-command "undo")
-    (jj-log-refresh)
+  (let ((commit-id (majutsu-get-changeset-at-point)))
+    (majutsu--run-command "undo")
+    (majutsu-log-refresh)
     (when commit-id
-      (jj-goto-commit commit-id))))
+      (majutsu-goto-commit commit-id))))
 
-(defun jj-abandon ()
+(defun majutsu-abandon ()
   "Abandon a changeset."
   (interactive)
-  (if-let ((commit-id (jj-get-changeset-at-point)))
+  (if-let ((commit-id (majutsu-get-changeset-at-point)))
       (progn
-        (jj--run-command "abandon" "-r" commit-id)
-        (jj-log-refresh))
+        (majutsu--run-command "abandon" "-r" commit-id)
+        (majutsu-log-refresh))
     (message "Can only run new on a change")))
 
-(defun jj-new (arg)
+(defun majutsu-new (arg)
   "Create a new changeset.
 With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
   (interactive "P")
   (let* ((base (if arg
                    (let ((s (completing-read "Create new changeset from (id/bookmark): "
-                                             (jj--get-bookmark-names t) nil nil)))
+                                             (majutsu--get-bookmark-names t) nil nil)))
                      (when (not (string-empty-p s)) s))
-                 (jj-get-changeset-at-point))))
+                 (majutsu-get-changeset-at-point))))
     (if (not base)
         (user-error "Can only run new on a change")
-      (let ((result (jj--run-command "new" "-r" base)))
-        (when (jj--handle-command-result
+      (let ((result (majutsu--run-command "new" "-r" base)))
+        (when (majutsu--handle-command-result
                (list "new" "-r" base)
                result
                "Created new changeset"
                "Failed to create new changeset")
-          (jj-log-refresh)
-          (jj-goto-current))))))
+          (majutsu-log-refresh)
+          (majutsu-goto-current))))))
 
-(defun jj-goto-current ()
+(defun majutsu-goto-current ()
   "Jump to the current changeset (@)."
   (interactive)
   (goto-char (point-min))
@@ -1197,7 +1197,7 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
       (goto-char (line-beginning-position))
     (message "Current changeset (@) not found")))
 
-(defun jj-goto-commit (commit-id)
+(defun majutsu-goto-commit (commit-id)
   "Jump to a specific COMMIT-ID in the log."
   (interactive "sCommit ID: ")
   (let ((start-pos (point)))
@@ -1207,9 +1207,9 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
       (goto-char start-pos)
       (message "Commit %s not found" commit-id))))
 
-(defun jj-git-push (args)
+(defun majutsu-git-push (args)
   "Push to git remote with ARGS."
-  (interactive (list (transient-args 'jj-git-transient)))
+  (interactive (list (transient-args 'majutsu-git-transient)))
   (let* ((allow-new? (member "--allow-new" args))
          (all? (member "--all" args))
          (bookmark-arg (seq-find (lambda (arg) (string-prefix-p "--bookmark=" arg)) args))
@@ -1223,30 +1223,30 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
          (success-msg (if bookmark
                           (format "Successfully pushed bookmark %s" bookmark)
                         "Successfully pushed to remote")))
-    (let ((result (apply #'jj--run-command cmd-args)))
-      (if (jj--handle-push-result cmd-args result success-msg)
-          (jj-log-refresh)))))
+    (let ((result (apply #'majutsu--run-command cmd-args)))
+      (if (majutsu--handle-push-result cmd-args result success-msg)
+          (majutsu-log-refresh)))))
 
-(defun jj-commit ()
+(defun majutsu-commit ()
   "Open commit message buffer."
   (interactive)
-  (let ((current-desc (string-trim (jj--run-command "log" "-r" "@" "--no-graph" "-T" "description"))))
-    (jj--open-message-buffer "COMMIT_MSG" "jj commit" 'jj--commit-finish nil current-desc)))
+  (let ((current-desc (string-trim (majutsu--run-command "log" "-r" "@" "--no-graph" "-T" "description"))))
+    (majutsu--open-message-buffer "COMMIT_MSG" "jj commit" 'majutsu--commit-finish nil current-desc)))
 
-(defun jj-describe ()
+(defun majutsu-describe ()
   "Open describe message buffer."
   (interactive)
-  (let ((commit-id (jj-get-changeset-at-point)))
+  (let ((commit-id (majutsu-get-changeset-at-point)))
     (if commit-id
-        (let ((current-desc (string-trim (jj--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
-          (jj--open-message-buffer "DESCRIBE_MSG"
+        (let ((current-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
+          (majutsu--open-message-buffer "DESCRIBE_MSG"
                                    (format "jj describe -r %s" commit-id)
-                                   'jj--describe-finish commit-id current-desc))
+                                   'majutsu--describe-finish commit-id current-desc))
       (message "No changeset at point"))))
 
-(defun jj--open-message-buffer (buffer-name command finish-func &optional commit-id initial-desc)
+(defun majutsu--open-message-buffer (buffer-name command finish-func &optional commit-id initial-desc)
   "Open a message editing buffer."
-  (let* ((repo-root (jj--root))
+  (let* ((repo-root (majutsu--root))
          (log-buffer (current-buffer))
          (window-config (current-window-configuration))
          (buffer (get-buffer-create (format "*%s:%s*" buffer-name (file-name-nondirectory (directory-file-name repo-root))))))
@@ -1254,81 +1254,81 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
       (erase-buffer)
       (text-mode)
       (setq-local default-directory repo-root)
-      (setq-local jj--message-command command)
-      (setq-local jj--message-finish-func finish-func)
-      (setq-local jj--message-commit-id commit-id)
-      (setq-local jj--log-buffer log-buffer)
-      (setq-local jj--window-config window-config)
-      (local-set-key (kbd "C-c C-c") 'jj--message-finish)
-      (local-set-key (kbd "C-c C-k") 'jj--message-abort)
+      (setq-local majutsu--message-command command)
+      (setq-local majutsu--message-finish-func finish-func)
+      (setq-local majutsu--message-commit-id commit-id)
+      (setq-local majutsu--log-buffer log-buffer)
+      (setq-local majutsu--window-config window-config)
+      (local-set-key (kbd "C-c C-c") 'majutsu--message-finish)
+      (local-set-key (kbd "C-c C-k") 'majutsu--message-abort)
       (when initial-desc
         (insert initial-desc))
       (insert "\n\n# Enter your message. C-c C-c to finish, C-c C-k to cancel\n"))
     (pop-to-buffer buffer)
     (goto-char (point-min))))
 
-(defun jj--message-finish ()
+(defun majutsu--message-finish ()
   "Finish editing the message and execute the command."
   (interactive)
   (let* ((message (buffer-substring-no-properties (point-min) (point-max)))
          (lines (split-string message "\n"))
          (filtered-lines (seq-remove (lambda (line) (string-prefix-p "#" line)) lines))
          (final-message (string-trim (string-join filtered-lines "\n")))
-         (command jj--message-command)
-         (finish-func jj--message-finish-func)
-         (commit-id jj--message-commit-id)
-         (log-buffer jj--log-buffer)
-         (window-config jj--window-config))
+         (command majutsu--message-command)
+         (finish-func majutsu--message-finish-func)
+         (commit-id majutsu--message-commit-id)
+         (log-buffer majutsu--log-buffer)
+         (window-config majutsu--window-config))
     (if (string-empty-p final-message)
         (message "Empty message, aborting")
       (kill-buffer)
       (set-window-configuration window-config)
       (funcall finish-func final-message commit-id))))
 
-(defun jj--message-abort ()
+(defun majutsu--message-abort ()
   "Abort message editing."
   (interactive)
   (when (yes-or-no-p "Abort message editing? ")
-    (let ((window-config jj--window-config))
+    (let ((window-config majutsu--window-config))
       (kill-buffer)
       (set-window-configuration window-config)
       (message "Aborted"))))
 
-(defun jj--commit-finish (message &optional _commit-id)
+(defun majutsu--commit-finish (message &optional _commit-id)
   "Finish commit with MESSAGE."
-  (jj--message-with-log "Committing changes...")
-  (let ((result (jj--run-command "commit" "-m" message)))
-    (if (jj--handle-command-result (list "commit" "-m" message) result
+  (majutsu--message-with-log "Committing changes...")
+  (let ((result (majutsu--run-command "commit" "-m" message)))
+    (if (majutsu--handle-command-result (list "commit" "-m" message) result
                                    "Successfully committed changes"
                                    "Failed to commit")
-        (jj-log-refresh))))
+        (majutsu-log-refresh))))
 
-(defun jj--describe-finish (message &optional commit-id)
+(defun majutsu--describe-finish (message &optional commit-id)
   "Finish describe with MESSAGE for COMMIT-ID."
   (if commit-id
       (progn
-        (jj--message-with-log "Updating description for %s..." commit-id)
-        (let ((result (jj--run-command "describe" "-r" commit-id "-m" message)))
-          (if (jj--handle-command-result (list "describe" "-r" commit-id "-m" message) result
+        (majutsu--message-with-log "Updating description for %s..." commit-id)
+        (let ((result (majutsu--run-command "describe" "-r" commit-id "-m" message)))
+          (if (majutsu--handle-command-result (list "describe" "-r" commit-id "-m" message) result
                                          (format "Description updated for %s" commit-id)
                                          "Failed to update description")
-              (jj-log-refresh))))
-    (jj--message-with-log "No commit ID available for description update")))
+              (majutsu-log-refresh))))
+    (majutsu--message-with-log "No commit ID available for description update")))
 
-(defun jj-git-fetch ()
+(defun majutsu-git-fetch ()
   "Fetch from git remote."
   (interactive)
-  (jj--message-with-log "Fetching from remote...")
-  (let ((result (jj--run-command "git" "fetch")))
-    (if (jj--handle-command-result (list "git" "fetch") result
+  (majutsu--message-with-log "Fetching from remote...")
+  (let ((result (majutsu--run-command "git" "fetch")))
+    (if (majutsu--handle-command-result (list "git" "fetch") result
                                    "Fetched from remote" "Fetch failed")
-        (jj-log-refresh))))
+        (majutsu-log-refresh))))
 
-(defun jj-diff ()
+(defun majutsu-diff ()
   "Show diff for current change or commit at point."
   (interactive)
-  (let* ((commit-id (jj-get-changeset-at-point))
-         (buffer (get-buffer-create "*jj-diff*"))
+  (let* ((commit-id (majutsu-get-changeset-at-point))
+         (buffer (get-buffer-create "*majutsu-diff*"))
          (prev-buffer (current-buffer)))
     (if (not commit-id)
         (message "No diff to view at point.  Try again on a changeset.")
@@ -1336,8 +1336,8 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
         (let ((inhibit-read-only t))
           (erase-buffer)
           (if commit-id
-              (insert (jj--run-command-color "show" "-r" commit-id))
-            (insert (jj--run-command-color "show")))
+              (insert (majutsu--run-command-color "show" "-r" commit-id))
+            (insert (majutsu--run-command-color "show")))
           (diff-mode)
           (ansi-color-apply-on-region (point-min) (point-max))
           (goto-char (point-min))
@@ -1354,7 +1354,7 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
     (switch-to-buffer buffer)))
 
 ;;;###autoload
-(defun jj-goto-next-changeset ()
+(defun majutsu-goto-next-changeset ()
   "Navigate to the next changeset in the log."
   (interactive)
   (let ((pos (point))
@@ -1363,7 +1363,7 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
                 (< (point) (point-max)))
       (magit-section-forward)
       (when-let ((section (magit-current-section)))
-        (when (and (memq (oref section type) '(jj-log-entry-section jj-commit-section))
+        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
                    (> (point) pos))
           (setq found t))))
     (unless found
@@ -1371,7 +1371,7 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
       (message "No more changesets"))))
 
 ;;;###autoload
-(defun jj-goto-prev-changeset ()
+(defun majutsu-goto-prev-changeset ()
   "Navigate to the previous changeset in the log."
   (interactive)
   (let ((pos (point))
@@ -1380,186 +1380,186 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
                 (> (point) (point-min)))
       (magit-section-backward)
       (when-let ((section (magit-current-section)))
-        (when (and (memq (oref section type) '(jj-log-entry-section jj-commit-section))
+        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
                    (< (point) pos))
           (setq found t))))
     (unless found
       (goto-char pos)
       (message "No more changesets"))))
 
-(defun jj-get-changeset-at-point ()
+(defun majutsu-get-changeset-at-point ()
   "Get the changeset ID at point."
   (when-let ((section (magit-current-section)))
     (cond
      ((and (slot-exists-p section 'commit-id)
            (slot-boundp section 'commit-id)
-           (memq (oref section type) '(jj-log-entry-section jj-commit-section)))
+           (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section)))
       (oref section commit-id))
      (t nil))))
 
 ;; Rebase state management
-(defvar-local jj-rebase-source nil
+(defvar-local majutsu-rebase-source nil
   "Currently selected source commit for rebase.")
 
-(defvar-local jj-rebase-destinations nil
+(defvar-local majutsu-rebase-destinations nil
   "List of currently selected destination commits for rebase.")
 
-(defvar-local jj-rebase-source-overlay nil
+(defvar-local majutsu-rebase-source-overlay nil
   "Overlay for highlighting the selected source commit.")
 
-(defvar-local jj-rebase-destination-overlays nil
+(defvar-local majutsu-rebase-destination-overlays nil
   "List of overlays for highlighting selected destination commits.")
 
 ;;;###autoload
-(defun jj-rebase-clear-selections ()
+(defun majutsu-rebase-clear-selections ()
   "Clear all rebase selections and overlays."
   (interactive)
-  (setq jj-rebase-source nil
-        jj-rebase-destinations nil)
-  (when jj-rebase-source-overlay
-    (delete-overlay jj-rebase-source-overlay)
-    (setq jj-rebase-source-overlay nil))
-  (dolist (overlay jj-rebase-destination-overlays)
+  (setq majutsu-rebase-source nil
+        majutsu-rebase-destinations nil)
+  (when majutsu-rebase-source-overlay
+    (delete-overlay majutsu-rebase-source-overlay)
+    (setq majutsu-rebase-source-overlay nil))
+  (dolist (overlay majutsu-rebase-destination-overlays)
     (delete-overlay overlay))
-  (setq jj-rebase-destination-overlays nil)
+  (setq majutsu-rebase-destination-overlays nil)
   (message "Cleared all rebase selections"))
 
 ;;;###autoload
-(defun jj-rebase-set-source ()
+(defun majutsu-rebase-set-source ()
   "Set the commit at point as rebase source."
   (interactive)
-  (when-let ((commit-id (jj-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-get-changeset-at-point))
              (section (magit-current-section)))
     ;; Clear previous source overlay
-    (when jj-rebase-source-overlay
-      (delete-overlay jj-rebase-source-overlay))
+    (when majutsu-rebase-source-overlay
+      (delete-overlay majutsu-rebase-source-overlay))
     ;; Set new source
-    (setq jj-rebase-source commit-id)
+    (setq majutsu-rebase-source commit-id)
     ;; Create overlay for visual indication
-    (setq jj-rebase-source-overlay
+    (setq majutsu-rebase-source-overlay
           (make-overlay (oref section start) (oref section end)))
-    (overlay-put jj-rebase-source-overlay 'face '(:background "dark green" :foreground "white"))
-    (overlay-put jj-rebase-source-overlay 'before-string "[SOURCE] ")
+    (overlay-put majutsu-rebase-source-overlay 'face '(:background "dark green" :foreground "white"))
+    (overlay-put majutsu-rebase-source-overlay 'before-string "[SOURCE] ")
     (message "Set source: %s" commit-id)))
 
 ;;;###autoload
-(defun jj-rebase-toggle-destination ()
+(defun majutsu-rebase-toggle-destination ()
   "Toggle the commit at point as a rebase destination."
   (interactive)
-  (when-let ((commit-id (jj-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-get-changeset-at-point))
              (section (magit-current-section)))
-    (if (member commit-id jj-rebase-destinations)
+    (if (member commit-id majutsu-rebase-destinations)
         ;; Remove from destinations
         (progn
-          (setq jj-rebase-destinations (remove commit-id jj-rebase-destinations))
+          (setq majutsu-rebase-destinations (remove commit-id majutsu-rebase-destinations))
           ;; Remove overlay
-          (dolist (overlay jj-rebase-destination-overlays)
+          (dolist (overlay majutsu-rebase-destination-overlays)
             (when (and (>= (overlay-start overlay) (oref section start))
                        (<= (overlay-end overlay) (oref section end)))
               (delete-overlay overlay)
-              (setq jj-rebase-destination-overlays (remove overlay jj-rebase-destination-overlays))))
+              (setq majutsu-rebase-destination-overlays (remove overlay majutsu-rebase-destination-overlays))))
           (message "Removed destination: %s" commit-id))
       ;; Add to destinations
-      (push commit-id jj-rebase-destinations)
+      (push commit-id majutsu-rebase-destinations)
       ;; Create overlay for visual indication
       (let ((overlay (make-overlay (oref section start) (oref section end))))
         (overlay-put overlay 'face '(:background "dark blue" :foreground "white"))
         (overlay-put overlay 'before-string "[DEST] ")
-        (push overlay jj-rebase-destination-overlays)
+        (push overlay majutsu-rebase-destination-overlays)
         (message "Added destination: %s" commit-id)))))
 
 ;;;###autoload
-(defun jj-rebase-execute ()
+(defun majutsu-rebase-execute ()
   "Execute rebase with selected source and destinations."
   (interactive)
-  (if (and jj-rebase-source jj-rebase-destinations)
+  (if (and majutsu-rebase-source majutsu-rebase-destinations)
       (when (yes-or-no-p (format "Rebase %s -> %s? "
-                                 jj-rebase-source
-                                 (string-join jj-rebase-destinations ", ")))
-        (let* ((dest-args (apply 'append (mapcar (lambda (dest) (list "-d" dest)) jj-rebase-destinations)))
-               (all-args (append (list "rebase" "-s" jj-rebase-source) dest-args))
+                                 majutsu-rebase-source
+                                 (string-join majutsu-rebase-destinations ", ")))
+        (let* ((dest-args (apply 'append (mapcar (lambda (dest) (list "-d" dest)) majutsu-rebase-destinations)))
+               (all-args (append (list "rebase" "-s" majutsu-rebase-source) dest-args))
                (progress-msg (format "Rebasing %s onto %s"
-                                     jj-rebase-source
-                                     (string-join jj-rebase-destinations ", ")))
+                                     majutsu-rebase-source
+                                     (string-join majutsu-rebase-destinations ", ")))
                (success-msg (format "Rebase completed: %s -> %s"
-                                    jj-rebase-source
-                                    (string-join jj-rebase-destinations ", "))))
-          (jj--message-with-log "%s..." progress-msg)
-          (let ((result (apply #'jj--run-command all-args)))
-            (if (jj--handle-command-result all-args result success-msg "Rebase failed")
+                                    majutsu-rebase-source
+                                    (string-join majutsu-rebase-destinations ", "))))
+          (majutsu--message-with-log "%s..." progress-msg)
+          (let ((result (apply #'majutsu--run-command all-args)))
+            (if (majutsu--handle-command-result all-args result success-msg "Rebase failed")
                 (progn
-                  (jj-rebase-clear-selections)
-                  (jj-log-refresh))))))
-    (jj--message-with-log "Please select source (s) and at least one destination (d) first")))
+                  (majutsu-rebase-clear-selections)
+                  (majutsu-log-refresh))))))
+    (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
 
 ;; Transient rebase menu
 ;;;###autoload
-(defun jj-rebase-transient ()
+(defun majutsu-rebase-transient ()
   "Transient for jj rebase operations."
   (interactive)
   ;; Add cleanup hook for when transient exits
-  (add-hook 'transient-exit-hook 'jj-rebase-cleanup-on-exit nil t)
-  (jj-rebase-transient--internal))
+  (add-hook 'transient-exit-hook 'majutsu-rebase-cleanup-on-exit nil t)
+  (majutsu-rebase-transient--internal))
 
-(defun jj-rebase-cleanup-on-exit ()
+(defun majutsu-rebase-cleanup-on-exit ()
   "Clean up rebase selections when transient exits."
-  (jj-rebase-clear-selections)
-  (remove-hook 'transient-exit-hook 'jj-rebase-cleanup-on-exit t))
+  (majutsu-rebase-clear-selections)
+  (remove-hook 'transient-exit-hook 'majutsu-rebase-cleanup-on-exit t))
 
-(transient-define-prefix jj-rebase-transient--internal ()
+(transient-define-prefix majutsu-rebase-transient--internal ()
   "Internal transient for jj rebase operations."
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description
    (lambda ()
      (concat "JJ Rebase"
-             (when jj-rebase-source
-               (format " | Source: %s" jj-rebase-source))
-             (when jj-rebase-destinations
+             (when majutsu-rebase-source
+               (format " | Source: %s" majutsu-rebase-source))
+             (when majutsu-rebase-destinations
                (format " | Destinations: %s"
-                       (string-join jj-rebase-destinations ", ")))))
+                       (string-join majutsu-rebase-destinations ", ")))))
    :class transient-columns
    ["Selection"
-    ("s" "Set source" jj-rebase-set-source
+    ("s" "Set source" majutsu-rebase-set-source
      :description (lambda ()
-                    (if jj-rebase-source
-                        (format "Set source (current: %s)" jj-rebase-source)
+                    (if majutsu-rebase-source
+                        (format "Set source (current: %s)" majutsu-rebase-source)
                       "Set source"))
      :transient t)
-    ("d" "Toggle destination" jj-rebase-toggle-destination
+    ("d" "Toggle destination" majutsu-rebase-toggle-destination
      :description (lambda ()
                     (format "Toggle destination (%d selected)"
-                            (length jj-rebase-destinations)))
+                            (length majutsu-rebase-destinations)))
      :transient t)
-    ("c" "Clear selections" jj-rebase-clear-selections
+    ("c" "Clear selections" majutsu-rebase-clear-selections
      :transient t)]
    ["Actions"
-    ("r" "Execute rebase" jj-rebase-execute
+    ("r" "Execute rebase" majutsu-rebase-execute
      :description (lambda ()
-                    (if (and jj-rebase-source jj-rebase-destinations)
+                    (if (and majutsu-rebase-source majutsu-rebase-destinations)
                         (format "Rebase %s -> %s"
-                                jj-rebase-source
-                                (string-join jj-rebase-destinations ", "))
+                                majutsu-rebase-source
+                                (string-join majutsu-rebase-destinations ", "))
                       "Execute rebase (select source & destinations first)"))
      :transient nil)
 
     ("q" "Quit" transient-quit-one)]])
 
-(transient-define-prefix jj-git-transient ()
+(transient-define-prefix majutsu-git-transient ()
   "Transient for jj git operations."
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   ["Arguments"
    ("-n" "Allow new bookmarks" "--allow-new")
    ("-b" "Bookmark" "--bookmark="
-    :choices jj--get-bookmark-names)
+    :choices majutsu--get-bookmark-names)
    ("-a" "All" "--all")]
   [:description "JJ Git Operations"
    :class transient-columns
-   [("p" "Push" jj-git-push
+   [("p" "Push" majutsu-git-push
      :transient nil)
-    ("f" "Fetch" jj-git-fetch
+    ("f" "Fetch" majutsu-git-fetch
      :transient nil)]
    [("q" "Quit" transient-quit-one)]])
 
-(provide 'jj-mode)
+(provide 'majutsu)
