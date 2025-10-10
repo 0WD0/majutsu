@@ -8,7 +8,7 @@ interact with JJ repositories from within Emacs.
 
 - **Magit-style log viewer** with collapsible sections and syntax highlighting
 - **Interactive rebase** with visual source/destination selection via transients
-- **Bookmark management** with create, abandon, forget, track, and tug operations
+- **Bookmark management** with create, abandon, forget, and track operations
 - **Commit and describe** with dedicated message buffers and window management
 - **Diff viewing** with file and hunk-level navigation
 - **Context-sensitive actions** via DWIM (Do What I Mean) Enter key behavior
@@ -82,7 +82,6 @@ buffer (`*majutsu-log:project-name*`).
   - `a` - Abandon bookmark
   - `f` - Forget bookmark
   - `t` - Track remote bookmark
-  - `T` - Tug (jj tug)
 - `G` - Git operations transient
   - `-n` - Toggle --allow-new flag
   - `-b` - Set bookmark to push
