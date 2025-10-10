@@ -79,9 +79,14 @@ buffer (`*majutsu-log:project-name*`).
   - `c` - Clear selections
 - `b` - Bookmark transient menu
   - `c` - Create bookmark
-  - `a` - Abandon bookmark
+  - `d` - Delete bookmark
   - `f` - Forget bookmark
+  - `l` - List bookmarks
+  - `s` - Set bookmark to revision
+  - `m` - Move bookmark(s) to revision
+  - `r` - Rename bookmark
   - `t` - Track remote bookmark
+  - `u` - Untrack remote bookmark
 - `G` - Git operations transient
   - `-n` - Toggle --allow-new flag
   - `-b` - Set bookmark to push
