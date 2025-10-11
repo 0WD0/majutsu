@@ -334,6 +334,13 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
                        (list "-T" template))))
     (split-string (apply #'majutsu--run-command args) "\n" t)))
 
+(defun majutsu--completion-table-with-category (candidates category)
+  "Wrap CANDIDATES with completion METADATA to set CATEGORY.
+This prevents third-party UIs (e.g., icons for `bookmark') from
+misclassifying Majutsu candidates."
+  (completion-table-with-metadata candidates
+                                  `(metadata (category . ,category))))
+
 (defun majutsu--handle-push-result (cmd-args result success-msg)
   "Enhanced push result handler with bookmark analysis."
   (let ((trimmed-result (string-trim result)))
@@ -1078,7 +1085,8 @@ Instead of invoking this alias for `majutsu-log' using
   "Delete a bookmark and propagate on next push."
   (interactive)
   (let* ((names (majutsu--get-bookmark-names))
-         (choice (and names (completing-read "Delete bookmark (propagates on push): " names nil t))))
+         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
+         (choice (and names (completing-read "Delete bookmark (propagates on push): " table nil t))))
     (if (not choice)
         (message "No bookmarks found")
       (majutsu--run-command "bookmark" "delete" choice)
@@ -1089,7 +1097,8 @@ Instead of invoking this alias for `majutsu-log' using
   "Forget a bookmark (local only, no deletion propagation)."
   (interactive)
   (let* ((names (majutsu--get-bookmark-names))
-         (choice (and names (completing-read "Forget bookmark: " names nil t))))
+         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
+         (choice (and names (completing-read "Forget bookmark: " table nil t))))
     (if (not choice)
         (message "No bookmarks found")
       (majutsu--run-command "bookmark" "forget" choice)
@@ -1100,7 +1109,8 @@ Instead of invoking this alias for `majutsu-log' using
   "Track remote bookmark(s)."
   (interactive)
   (let* ((remote-bookmarks (majutsu--get-bookmark-names t))
-         (choice (and remote-bookmarks (completing-read "Track remote bookmark: " remote-bookmarks nil t))))
+         (table (majutsu--completion-table-with-category remote-bookmarks 'majutsu-bookmark))
+         (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
     (if (not choice)
         (message "No remote bookmarks found")
       (majutsu--run-command "bookmark" "track" choice)
@@ -1128,8 +1138,9 @@ With prefix ALL, include remote bookmarks."
   "Move existing bookmark(s) NAMES to COMMIT."
   (interactive
    (let* ((existing (majutsu--get-bookmark-names))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
           (crm-separator (or (bound-and-true-p crm-separator) ", *"))
-          (names (completing-read-multiple "Move bookmark(s): " existing nil t))
+          (names (completing-read-multiple "Move bookmark(s): " table nil t))
           (at (or (majutsu-get-changeset-at-point) "@"))
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list rev names)))
@@ -1143,7 +1154,8 @@ With prefix ALL, include remote bookmarks."
   "Rename bookmark OLD to NEW."
   (interactive
    (let* ((existing (majutsu--get-bookmark-names))
-          (old (completing-read "Rename bookmark: " existing nil t))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+          (old (completing-read "Rename bookmark: " table nil t))
           (new (read-string (format "New name for %s: " old))))
      (list old new)))
   (when (and (not (string-empty-p old)) (not (string-empty-p new)))
@@ -1156,7 +1168,8 @@ With prefix ALL, include remote bookmarks."
   "Create or update bookmark NAME to point to COMMIT."
   (interactive
    (let* ((existing (majutsu--get-bookmark-names))
-          (name (completing-read "Set bookmark: " existing nil nil))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+          (name (completing-read "Set bookmark: " table nil nil))
           (at (or (majutsu-get-changeset-at-point) "@"))
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list name rev)))
@@ -1169,8 +1182,9 @@ With prefix ALL, include remote bookmarks."
   "Stop tracking remote bookmark(s) NAMES (e.g., name@remote)."
   (interactive
    (let* ((remote-names (majutsu--get-bookmark-names t))
+          (table (majutsu--completion-table-with-category remote-names 'majutsu-bookmark))
           (crm-separator (or (bound-and-true-p crm-separator) ", *"))
-          (names (completing-read-multiple "Untrack remote bookmark(s): " remote-names nil t)))
+          (names (completing-read-multiple "Untrack remote bookmark(s): " table nil t)))
      (list names)))
   (when names
     (apply #'majutsu--run-command (append '("bookmark" "untrack") names))
@@ -1246,8 +1260,10 @@ With prefix ALL, include remote bookmarks."
 With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
   (interactive "P")
   (let* ((base (if arg
-                   (let ((s (completing-read "Create new changeset from (id/bookmark): "
-                                             (majutsu--get-bookmark-names t) nil nil)))
+                   (let* ((cands (majutsu--get-bookmark-names t))
+                          (table (majutsu--completion-table-with-category cands 'majutsu-bookmark))
+                          (s (completing-read "Create new changeset from (id/bookmark): "
+                                              table nil nil)))
                      (when (not (string-empty-p s)) s))
                  (majutsu-get-changeset-at-point))))
     (if (not base)
