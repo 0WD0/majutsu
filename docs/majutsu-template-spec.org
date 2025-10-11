@@ -1,0 +1,110 @@
+#+title: Majutsu 模板封装规范（v0）
+
+* 目标
+- 提供一个小而可组合的 Elisp EDSL，将表达式编译为 jj 模板语言字符串。
+- 语义保留在 jj 端；Elisp 仅负责编译与安全转义。
+- 偏好稳定输出：鼓励 JSON 友好与一致的格式化；编译阶段不依赖 jj 运行。
+
+* 使用该 EDSL 的优势
+- 安全性
+  - 统一处理字符串转义与引号，避免手写拼接错误。
+  - 原样注入需显式 ~majutsu-template-raw~ ，减少误注入风险。
+- 可组合与复用
+  - 小片段组合大模板；便于抽取与复用常用片段。
+  - 以“表单”为一等值，便于封装更高层工具（JSON Lines、map/join 模式）。
+- 职责分离
+  - jj 继续作为数据与求值的权威；Elisp 专注编译与测试模板。
+  - 模板改动对 UI/解析影响小，易随 jj 变更调整。
+- 易于测试与评审
+  - 模板代码可做单元/快照测试。
+  - 评审差异集中在结构与语义，而非无意义空白。
+- 面向未来的数据管道
+  - 鼓励 JSON 输出，Emacs 解析更稳定。
+
+* 核心设计
+- 极简 AST 与少量构造器；最终产物均为 jj 模板文本。
+- 允许 raw 作为“逃生口”，默认不自动加引号。
+- 字符串字面量统一为双引号并自动转义。
+
+* 表单构造器（Elisp API）
+- ~majutsu-template-str STRING~: 字符串字面量（双引号 + 转义）
+- ~majutsu-template-raw TEXT~: 原样注入（危险，仅限熟悉者）
+- ~majutsu-template-call NAME &rest ARGS~: ~NAME(arg1, arg2, ...)~
+- ~majutsu-template-concat &rest FORMS~: ~concat(f1, f2, ...)~
+- ~majutsu-template-if COND THEN ELSE~: ~if(COND, THEN, ELSE)~
+- ~majutsu-template-label NAME VALUE~: ~label(NAME, VALUE)~ （NAME 自动加引号）
+- ~majutsu-template-separate SEP &rest FORMS~: ~separate(SEP, ...)~
+- ~majutsu-template-surround PRE POST BODY~: ~surround(PRE, POST, BODY)~
+- ~majutsu-template-json FORM~: ~json(FORM)~
+- ~majutsu-template-join SEP COLL VAR BODY~: ~COLL.map(|VAR| BODY).join(SEP)~
+
+* 字面量与转义
+- 自动转义 ~\"~, ~\\~, ~\n~, ~\t~。
+- 数字/布尔可通过语法糖注入为原生 token。
+
+* 格式化规则
+- 输出紧凑、对空白不敏感（逗号后单空格）。
+- 推荐用 ~concat(...)~ 代替直接输出 ~++~
+
+* 错误处理
+- 编译时归一化参数类型：
+  - 普通字符串 → ~majutsu-template-str~
+  - 原样注入必须用 ~majutsu-template-raw~
+  - 不支持的值抛出 ~user-error~ 提示具体问题
+
+* 版本与兼容
+- v0 覆盖 Majutsu 需要的主要能力：日志/JSON Lines、标签、条件、map/join。
+- 后续可扩展：更多方法与运算语法糖、模板 alias 生成等。
+
+* 安全说明
+- raw 极其强大但危险，优先使用更高层构造器。
+- 包含换行/特殊字符的字段，优先 ~majutsu-template-json~ 并在 Emacs 端解析 JSON。
+
+* 测试建议
+- 为各构造器的编译结果写单测。
+- 为代表性模板（日志 JSON Line、书签列表等）写快照测试。
+- 可选做 jj 集成测试（将产物传给 jj 验证）。
+- 语法糖同样需覆盖，确保产物稳定。
+
+* 便捷 API（语法糖）
+- 因 ~majutsu-template-*~ 冗长，提供 EmacSQL 风格宏：
+  - ~(tpl FORM)~: 仅展开为 AST（不编译）。
+  - ~(tpl-compile FORM)~: 展开并编译为 jj 模板字符串。
+- 语法风格
+  - 仅支持方括号向量（与 EmacSQL 一致，便于区分数字等常量），嵌套处也必须用向量：
+    - ~[:concat [:str "Hello "] [:raw "self.author().name()"]]~
+  - 操作符可用关键字或符号: ~:str~ ~:concat~ ~:if~ ~:label~ ~:separate~ ~:surround~ ~:json~ ~:join~ ~:call~
+  - 可选 ~tpl-*~ 别名: ~tpl-if~ ~tpl-concat~、~tpl-json~ 等。
+  - 数字/布尔字面量: ~123~ → ~123~ （raw）、 ~t~ → ~true~ 、 ~nil~ →  ~false~ 
+  - 向量中的裸字符串自动等效为 ~:str~ ，无需显式写 ~[:str "..."]~
+  - 当向量首元素不是操作符（关键字/符号）时，整体隐式作为 ~[:concat ...]~:
+    - ~["A" "B"]~ 等效 ~[:concat "A" "B"]~
+  - 额外语法糖：
+    - ~:lit~: Elisp 值 → jj 字符串字面量（自动转义），例 ~[:lit (user-full-name)]~
+    - ~:raw-e~: Elisp 表达式求值并原样注入（慎用），例 ~[:raw-e (symbol-name 'self)]~
+    - ~:map~: ~[:map COLL VAR BODY]~ → ~COLL.map(|VAR| BODY)~
+    - ~:filter~ / ~:any~ / ~:all~: 对应 List 的 ~filter/any/all~
+    - ~:method~: ~[:method OBJ name arg1 arg2]~ → ~OBJ.name(arg1, arg2)~
+    - 简单运算符: ~:+~ ~:sub~ ~:*~ ~:/~ ~:%~ ~:>=~ ~:>~ ~:<=~ ~:<~ ~:==~ ~:!=~ ~:and~ ~:or~ ~:not~ ~:neg~ ~:concat-op~ （统一加括号避免优先级歧义）。
+    - ~:if~ 支持可选 ~else~: ~[:if COND THEN]~ 或 ~[:if COND THEN ELSE]~
+    - 引用语法糖: ~'sym~ 等效 ~[:raw "sym"]~; ~'"str"~ 等效 ~[:str "str"]~
+    - ~:call~ 名称支持：符号/字符串、~'quoted~（如 ~[:call 'json ...]~），或 ~(:raw-e EXPR)~ 在宏展开期计算得出。
+- 示例: ~(tpl-compile [:if (:raw "self.root()") (:str "(root)") (:raw "format_short_commit_id(self.commit_id())")])~
+- 注意：这里的 ~if~ 是模板操作符；Lisp 控制流写在宏外，或用反引号/逗号插入节点。
+- 指南
+  - 一次性编译用 ~tpl-compile~; 需要先组合再编译用 ~tpl~
+  - 未知操作符会抛错，避免静默退化为原样字符串。
+
+* 与 Emacs Lisp 的配合
+- 使用函数构造器处理复杂逻辑
+  - 构造器是普通函数，可与 ~if~ / ~when~ / ~pcase~ 自由组合，最后 ~majutsu-template-compile~
+- 使用宏 (~tpl~/~tpl-compile~) + 反引号插入
+  - 回引号 + 逗号插入已计算的节点：
+    - ~(let ((name (majutsu-template-str (user-full-name))))
+        (tpl-compile `[:concat ,name [:str ": "] [:raw "self.commit_id()"]]))~
+  - 批量插入：
+    - ~(let ((items (mapcar #'majutsu-template-str '("A" "B"))))
+        (tpl-compile `[:concat ,@items]))~
+  - 宏也接受预构建的 EDSL 节点（car 为关键字如 ~:str~ 的 plist）。
+- 避免与 Lisp ~if~ 混淆
+  - 向量里的 ~if~ 是模板操作符；Lisp 条件写在宏外，或通过反引号插入。
