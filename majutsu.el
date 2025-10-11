@@ -28,8 +28,8 @@
   :group 'majutsu)
 
 (defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
-                                  majutsu-log-insert-status
-                                  majutsu-log-insert-diff)
+                                       majutsu-log-insert-status
+                                       majutsu-log-insert-diff)
   "Hook run to insert sections in the log buffer."
   :type 'hook
   :group 'majutsu)
@@ -42,7 +42,7 @@ The function must accept one argument: the buffer to display."
           (function-item pop-to-buffer)
           (function-item display-buffer)
           (function :tag "Custom function"))
-:group 'majutsu)
+  :group 'majutsu)
 
 (defvar majutsu-mode-map
   (let ((map (make-sparse-keymap)))
@@ -121,7 +121,7 @@ The function must accept one argument: the buffer to display."
   "Cached repository root for the current buffer.")
 
 (defconst majutsu--log-template
-"'\x1e' ++
+  "'\x1e' ++
 if(self.root(),
   format_root_commit(self),
   label(
@@ -153,7 +153,7 @@ if(self.root(),
   )
 )
 "
-"Template for formatting log entries.")
+  "Template for formatting log entries.")
 
 (defun majutsu--root ()
   "Find root of the current repository."
@@ -184,8 +184,8 @@ if(self.root(),
       (setq exit-code (apply #'process-file majutsu-executable nil t nil safe-args))
       (setq result (buffer-string))
       (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
-                 (float-time (time-subtract (current-time) start-time))
-                 exit-code)
+                      (float-time (time-subtract (current-time) start-time))
+                      exit-code)
       (when (and majutsu-show-command-output (not (string-empty-p result)))
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
@@ -200,8 +200,8 @@ if(self.root(),
         (setq exit-code (apply #'process-file majutsu-executable nil t nil "--color=always" args))
         (setq result (ansi-color-apply (buffer-string)))
         (majutsu--debug "Color command completed in %.3f seconds, exit code: %d"
-                   (float-time (time-subtract (current-time) start-time))
-                   exit-code)
+                        (float-time (time-subtract (current-time) start-time))
+                        exit-code)
         result))))
 
 (defun majutsu--run-command-async (callback &rest args)
@@ -214,8 +214,8 @@ if(self.root(),
      (lambda (process _event)
        (let ((exit-code (process-exit-status process)))
          (majutsu--debug "Async command completed in %.3f seconds, exit code: %d"
-                    (float-time (time-subtract (current-time) start-time))
-                    exit-code)
+                         (float-time (time-subtract (current-time) start-time))
+                         exit-code)
          (when (eq (process-status process) 'exit)
            (with-current-buffer (process-buffer process)
              (funcall callback (buffer-string)))
@@ -253,8 +253,8 @@ if(self.root(),
   (let ((trimmed-result (string-trim result))
         (command-name (car command-args)))
     (majutsu--debug "Command result for '%s': %s"
-               (string-join command-args " ")
-               trimmed-result)
+                    (string-join command-args " ")
+                    trimmed-result)
 
     ;; Always show command output if it exists (like CLI)
     (unless (string-empty-p trimmed-result)
@@ -310,7 +310,7 @@ if(self.root(),
     (majutsu--debug "Starting operation: %s" message)
     (setq result (funcall command-func))
     (majutsu--debug "Operation completed in %.3f seconds"
-               (float-time (time-subtract (current-time) start-time)))
+                    (float-time (time-subtract (current-time) start-time)))
     result))
 
 (defun majutsu--extract-bookmark-names (text)
@@ -456,29 +456,29 @@ The results of this fn are fed into `majutsu--parse-log-entries'."
                    for elems = (mapcar #'string-trim (split-string line "\x1e" ))
                    when (> (length elems) 1) collect
                    (seq-let (prefix change-id author bookmarks git-head conflict signature empty short-desc commit-id timestamp long-desc) elems
-                      (let* ((cid (substring-no-properties change-id))
-                             (full (substring-no-properties commit-id))
-                             (id8 (if (> (length cid) 8) (substring cid 0 8) cid)))
-                        (list :id id8
-                            :prefix prefix
-                            :line line
-                            :elems (seq-remove (lambda (l) (or (not l) (string-blank-p l))) elems)
-                            :author author
-                            :commit_id full
-                            :short-desc short-desc
-                            :long-desc  (if long-desc (json-parse-string long-desc) nil)
-                            :timestamp  timestamp
-                            :bookmarks bookmarks )))
+                     (let* ((cid (substring-no-properties change-id))
+                            (full (substring-no-properties commit-id))
+                            (id8 (if (> (length cid) 8) (substring cid 0 8) cid)))
+                       (list :id id8
+                             :prefix prefix
+                             :line line
+                             :elems (seq-remove (lambda (l) (or (not l) (string-blank-p l))) elems)
+                             :author author
+                             :commit_id full
+                             :short-desc short-desc
+                             :long-desc  (if long-desc (json-parse-string long-desc) nil)
+                             :timestamp  timestamp
+                             :bookmarks bookmarks )))
                    else collect
                    (list :elems (list line nil))))))))
 
 (defun majutsu--indent-string (s column)
   "Insert STRING into the current buffer, indenting each line to COLUMN."
   (let ((indentation (make-string column ?\s))) ; Create a string of spaces for indentation
-     (mapconcat (lambda (line)
-                         (concat indentation line))
-                       (split-string s "\n")
-                       "\n"))) ; Join lines with newline, prefixed by indentation
+    (mapconcat (lambda (line)
+                 (concat indentation line))
+               (split-string s "\n")
+               "\n"))) ; Join lines with newline, prefixed by indentation
 
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
@@ -641,14 +641,14 @@ Instead of invoking this alias for `majutsu-log' using
   (interactive)
   (when (derived-mode-p 'majutsu-mode)
     (majutsu--with-progress "Refreshing log view"
-                       (lambda ()
-                         (let ((inhibit-read-only t)
-                               (pos (point)))
-                           (erase-buffer)
-                           (magit-insert-section (jjbuf)  ; Root section wrapper
-                             (magit-run-section-hook 'majutsu-log-sections-hook))
-                           (goto-char pos)
-                           (majutsu--debug "Log refresh completed"))))))
+                            (lambda ()
+                              (let ((inhibit-read-only t)
+                                    (pos (point)))
+                                (erase-buffer)
+                                (magit-insert-section (jjbuf)  ; Root section wrapper
+                                  (magit-run-section-hook 'majutsu-log-sections-hook))
+                                (goto-char pos)
+                                (majutsu--debug "Log refresh completed"))))))
 
 (defun majutsu-enter-dwim ()
   "Context-sensitive Enter key behavior."
@@ -679,8 +679,8 @@ Instead of invoking this alias for `majutsu-log' using
   (when-let ((commit-id (majutsu-get-changeset-at-point)))
     (let ((result (majutsu--run-command "edit" commit-id)))
       (if (majutsu--handle-command-result (list "edit" commit-id) result
-                                     (format "Now editing commit %s" commit-id)
-                                     "Failed to edit commit")
+                                          (format "Now editing commit %s" commit-id)
+                                          "Failed to edit commit")
           (progn
             (majutsu-log-refresh)
             (back-to-indentation))))))
@@ -864,8 +864,8 @@ Instead of invoking this alias for `majutsu-log' using
   (when-let ((commit-id (majutsu-get-changeset-at-point)))
     (let ((result (majutsu--run-command "edit" commit-id)))
       (if (majutsu--handle-command-result (list "edit" commit-id) result
-                                     (format "Now editing changeset %s" commit-id)
-                                     "Failed to edit commit")
+                                          (format "Now editing changeset %s" commit-id)
+                                          "Failed to edit commit")
           (majutsu-log-refresh)))))
 
 ;; Squash state management
@@ -945,10 +945,10 @@ Instead of invoking this alias for `majutsu-log' using
                                 from-desc
                               into-desc))) ; Keep into message by default
         (majutsu--open-message-buffer "SQUASH_MSG"
-                                 (format "jj squash --from %s --into %s" majutsu-squash-from majutsu-squash-into)
-                                 'majutsu--squash-finish
-                                 (list :from majutsu-squash-from :into majutsu-squash-into :keep keep-commit)
-                                 combined-desc)))
+                                      (format "jj squash --from %s --into %s" majutsu-squash-from majutsu-squash-into)
+                                      'majutsu--squash-finish
+                                      (list :from majutsu-squash-from :into majutsu-squash-into :keep keep-commit)
+                                      combined-desc)))
      ;; Only from selected - use default behavior (squash into parent)
      (majutsu-squash-from
       (let* ((parent-desc (string-trim (majutsu--run-command "log" "-r" (format "%s-" majutsu-squash-from) "--no-graph" "-T" "description")))
@@ -957,10 +957,10 @@ Instead of invoking this alias for `majutsu-log' using
                                 from-desc
                               parent-desc))) ; Keep parent message by default
         (majutsu--open-message-buffer "SQUASH_MSG"
-                                 (format "jj squash -r %s" majutsu-squash-from)
-                                 'majutsu--squash-finish
-                                 (list :from majutsu-squash-from :into nil :keep keep-commit)
-                                 combined-desc)))
+                                      (format "jj squash -r %s" majutsu-squash-from)
+                                      'majutsu--squash-finish
+                                      (list :from majutsu-squash-from :into nil :keep keep-commit)
+                                      combined-desc)))
      ;; No selection - use commit at point
      (t
       (if-let ((commit-id (majutsu-get-changeset-at-point)))
@@ -970,10 +970,10 @@ Instead of invoking this alias for `majutsu-log' using
                                     commit-desc
                                   parent-desc))) ; Keep parent message by default
             (majutsu--open-message-buffer "SQUASH_MSG"
-                                     (format "jj squash -r %s" commit-id)
-                                     'majutsu--squash-finish
-                                     (list :from commit-id :into nil :keep keep-commit)
-                                     combined-desc))
+                                          (format "jj squash -r %s" commit-id)
+                                          'majutsu--squash-finish
+                                          (list :from commit-id :into nil :keep keep-commit)
+                                          combined-desc))
         (majutsu--message-with-log "No commit selected for squash"))))))
 
 (defun majutsu--do-squash (from into keep-commit message)
@@ -1382,8 +1382,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
     (if commit-id
         (let ((current-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
           (majutsu--open-message-buffer "DESCRIBE_MSG"
-                                   (format "jj describe -r %s" commit-id)
-                                   'majutsu--describe-finish commit-id current-desc))
+                                        (format "jj describe -r %s" commit-id)
+                                        'majutsu--describe-finish commit-id current-desc))
       (message "No changeset at point"))))
 
 (defun majutsu--open-message-buffer (buffer-name command finish-func &optional commit-id initial-desc)
@@ -1441,8 +1441,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
   (majutsu--message-with-log "Committing changes...")
   (let ((result (majutsu--run-command "commit" "-m" message)))
     (if (majutsu--handle-command-result (list "commit" "-m" message) result
-                                   "Successfully committed changes"
-                                   "Failed to commit")
+                                        "Successfully committed changes"
+                                        "Failed to commit")
         (majutsu-log-refresh))))
 
 (defun majutsu--describe-finish (message &optional commit-id)
@@ -1452,8 +1452,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
         (majutsu--message-with-log "Updating description for %s..." commit-id)
         (let ((result (majutsu--run-command "describe" "-r" commit-id "-m" message)))
           (if (majutsu--handle-command-result (list "describe" "-r" commit-id "-m" message) result
-                                         (format "Description updated for %s" commit-id)
-                                         "Failed to update description")
+                                              (format "Description updated for %s" commit-id)
+                                              "Failed to update description")
               (majutsu-log-refresh))))
     (majutsu--message-with-log "No commit ID available for description update")))
 
@@ -1478,7 +1478,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                                                    remote-args))))
          (result (apply #'majutsu--run-command cmd-args)))
     (if (majutsu--handle-command-result cmd-args result
-                                   "Fetched from remote" "Fetch failed")
+                                        "Fetched from remote" "Fetch failed")
         (majutsu-log-refresh))))
 
 (defun majutsu-diff ()
@@ -1725,33 +1725,33 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
   [:class transient-columns
-   ["Arguments"
-    ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
-    ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
-    ("-a" "All bookmarks" "--all")
-    ("-t" "Tracked only" "--tracked")
-    ("-D" "Deleted" "--deleted")
-    ("-n" "Allow new" "--allow-new")
-    ("-E" "Allow empty desc" "--allow-empty-description")
-    ("-P" "Allow private" "--allow-private")
-    ("-r" "Revisions" "--revisions=")
-    ("-c" "Change" "--change=")
-    ("-N" "Named X=REV" "--named=")
-    ("-y" "Dry run" "--dry-run")]
-   [("p" "Push" majutsu-git-push :transient nil)
-    ("q" "Quit" transient-quit-one)]])
+          ["Arguments"
+           ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
+           ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
+           ("-a" "All bookmarks" "--all")
+           ("-t" "Tracked only" "--tracked")
+           ("-D" "Deleted" "--deleted")
+           ("-n" "Allow new" "--allow-new")
+           ("-E" "Allow empty desc" "--allow-empty-description")
+           ("-P" "Allow private" "--allow-private")
+           ("-r" "Revisions" "--revisions=")
+           ("-c" "Change" "--change=")
+           ("-N" "Named X=REV" "--named=")
+           ("-y" "Dry run" "--dry-run")]
+          [("p" "Push" majutsu-git-push :transient nil)
+           ("q" "Quit" transient-quit-one)]])
 
 ;; Fetch transient and command
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
   [:class transient-columns
-   ["Arguments"
-    ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
-    ("-B" "Branch" "--branch=")
-    ("-t" "Tracked only" "--tracked")
-    ("-A" "All remotes" "--all-remotes")]
-   [("f" "Fetch" majutsu-git-fetch :transient nil)
-    ("q" "Quit" transient-quit-one)]])
+          ["Arguments"
+           ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
+           ("-B" "Branch" "--branch=")
+           ("-t" "Tracked only" "--tracked")
+           ("-A" "All remotes" "--all-remotes")]
+          [("f" "Fetch" majutsu-git-fetch :transient nil)
+           ("q" "Quit" transient-quit-one)]])
 
 ;; Remote management transients and commands
 (defun majutsu-git-remote-list ()
@@ -1778,8 +1778,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                            (list remote url)))
          (result (apply #'majutsu--run-command cmd-args)))
     (majutsu--handle-command-result cmd-args result
-                               (format "Added remote %s" remote)
-                               "Failed to add remote")))
+                                    (format "Added remote %s" remote)
+                                    "Failed to add remote")))
 
 (defun majutsu-git-remote-remove ()
   "Remove a Git remote and forget its bookmarks."
@@ -1790,8 +1790,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
       (let* ((cmd-args (list "git" "remote" "remove" remote))
              (result (apply #'majutsu--run-command cmd-args)))
         (majutsu--handle-command-result cmd-args result
-                                   (format "Removed remote %s" remote)
-                                   "Failed to remove remote")))))
+                                        (format "Removed remote %s" remote)
+                                        "Failed to remove remote")))))
 
 (defun majutsu-git-remote-rename ()
   "Rename a Git remote."
@@ -1803,8 +1803,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
       (let* ((cmd-args (list "git" "remote" "rename" old new))
              (result (apply #'majutsu--run-command cmd-args)))
         (majutsu--handle-command-result cmd-args result
-                                   (format "Renamed remote %s -> %s" old new)
-                                   "Failed to rename remote")))))
+                                        (format "Renamed remote %s -> %s" old new)
+                                        "Failed to rename remote")))))
 
 (defun majutsu-git-remote-set-url ()
   "Set URL of a Git remote."
@@ -1816,22 +1816,22 @@ Tries `jj git remote list' first, then falls back to `git remote'."
       (let* ((cmd-args (list "git" "remote" "set-url" remote url))
              (result (apply #'majutsu--run-command cmd-args)))
         (majutsu--handle-command-result cmd-args result
-                                   (format "Set URL for %s" remote)
-                                   "Failed to set remote URL")))))
+                                        (format "Set URL for %s" remote)
+                                        "Failed to set remote URL")))))
 
 (transient-define-prefix majutsu-git-remote-transient ()
   "Transient for managing Git remotes."
   [:class transient-columns
-   ["Arguments (add)"
-    ("-T" "Fetch tags" "--fetch-tags="
-     :choices ("all" "included" "none"))]
-   ["Actions"
-    ("l" "List" majutsu-git-remote-list)
-    ("a" "Add" majutsu-git-remote-add)
-    ("d" "Remove" majutsu-git-remote-remove)
-    ("r" "Rename" majutsu-git-remote-rename)
-    ("u" "Set URL" majutsu-git-remote-set-url)
-    ("q" "Quit" transient-quit-one)]])
+          ["Arguments (add)"
+           ("-T" "Fetch tags" "--fetch-tags="
+            :choices ("all" "included" "none"))]
+          ["Actions"
+           ("l" "List" majutsu-git-remote-list)
+           ("a" "Add" majutsu-git-remote-add)
+           ("d" "Remove" majutsu-git-remote-remove)
+           ("r" "Rename" majutsu-git-remote-rename)
+           ("u" "Set URL" majutsu-git-remote-set-url)
+           ("q" "Quit" transient-quit-one)]])
 
 ;; Clone
 (defun majutsu-git-clone (args)
@@ -1860,20 +1860,20 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                            (when dest (list dest))))
          (result (apply #'majutsu--run-command cmd-args)))
     (majutsu--handle-command-result cmd-args result
-                               "Clone completed"
-                               "Clone failed")))
+                                    "Clone completed"
+                                    "Clone failed")))
 
 (transient-define-prefix majutsu-git-clone-transient ()
   "Transient for jj git clone."
   [:class transient-columns
-   ["Arguments"
-    ("-R" "Remote name" "--remote=")
-    ("-C" "Colocate" "--colocate")
-    ("-x" "No colocate" "--no-colocate")
-    ("-d" "Depth" "--depth=")
-    ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
-   [("c" "Clone" majutsu-git-clone :transient nil)
-    ("q" "Quit" transient-quit-one)]])
+          ["Arguments"
+           ("-R" "Remote name" "--remote=")
+           ("-C" "Colocate" "--colocate")
+           ("-x" "No colocate" "--no-colocate")
+           ("-d" "Depth" "--depth=")
+           ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
+          [("c" "Clone" majutsu-git-clone :transient nil)
+           ("q" "Quit" transient-quit-one)]])
 
 ;; Init
 (defun majutsu-git-init (args)
@@ -1892,18 +1892,18 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                            (list dest)))
          (result (apply #'majutsu--run-command cmd-args)))
     (majutsu--handle-command-result cmd-args result
-                               "Init completed"
-                               "Init failed")))
+                                    "Init completed"
+                                    "Init failed")))
 
 (transient-define-prefix majutsu-git-init-transient ()
   "Transient for jj git init."
   [:class transient-columns
-   ["Arguments"
-    ("-C" "Colocate" "--colocate")
-    ("-x" "No colocate" "--no-colocate")
-    ("-g" "Use existing git repo" "--git-repo=")]
-   [("i" "Init" majutsu-git-init :transient nil)
-    ("q" "Quit" transient-quit-one)]])
+          ["Arguments"
+           ("-C" "Colocate" "--colocate")
+           ("-x" "No colocate" "--no-colocate")
+           ("-g" "Use existing git repo" "--git-repo=")]
+          [("i" "Init" majutsu-git-init :transient nil)
+           ("q" "Quit" transient-quit-one)]])
 
 ;; Export / Import / Root
 (defun majutsu-git-export ()
