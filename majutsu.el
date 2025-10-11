@@ -123,7 +123,19 @@ The function must accept one argument: the buffer to display."
 (defconst majutsu--log-template
   "'\x1e' ++
 if(self.root(),
-  format_root_commit(self),
+  separate('\x1e',
+    '',
+    '',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    label('root', '(root)'),
+    'root',
+    'root()',
+    '',
+    json(' ')
+  ),
   label(
     separate('\x1e',
       if(self.current_working_copy(), 'working_copy'),
