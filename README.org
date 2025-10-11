@@ -23,19 +23,19 @@ interact with JJ repositories from within Emacs.
 * Installation
 ** Doom Emacs
 #+begin_src emacs-lisp
-(package! majutsu :recipe (:host github :repo "bolivier/majutsu"))
+(package! majutsu :recipe (:host github :repo "0WD0/majutsu"))
 #+end_src
 
 ** use-package with straight.el
 #+begin_src emacs-lisp
 (use-package majutsu
-  :straight (:host github :repo "bolivier/majutsu"))
+  :straight (:host github :repo "0WD0/majutsu"))
 #+end_src
 
 ** use-package with built-in package-vc integration
 #+begin_src emacs-lisp
 (use-package majutsu
-  :vc (:url "https://github.com/bolivier/majutsu"))
+  :vc (:url "https://github.com/0WD0/majutsu"))
 #+end_src
 
 ** Manual
@@ -51,7 +51,7 @@ buffer (~*majutsu-log:project-name*~).
 
 ** Key Bindings
 *** Navigation
-- ~n~/~p~ - Navigate between sections
+- ~n~ / ~p~ - Navigate between sections
 - ~RET~ - Context-sensitive action (edit changeset, jump to file/line in diffs)
 - ~.~ - Jump to current changeset (@)
 - ~TAB~ - Toggle section folding
@@ -99,7 +99,7 @@ When editing commit/describe messages:
 
 ** Workflow Example
 1. ~M-x majutsu-log~ - Open JJ interface
-2. Navigate to desired changeset with ~j~/~k~
+2. Navigate to desired changeset with ~j~ / ~k~
 3. ~c~ - Commit current changes
 4. Edit message, ~C-c C-c~ to finish
 5. ~r~ - Open rebase menu, select source with ~s~, destinations with ~d~, execute with ~r~
