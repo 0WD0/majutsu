@@ -324,15 +324,15 @@ if(self.root(),
 
 
 (defun majutsu--get-bookmark-names (&optional all-remotes)
-  "Return bookmark names.
+  "Return bookmark names using --quiet to suppress hints.
 When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
   (let* ((template (if all-remotes
                        "if(remote, name ++ '@' ++ remote ++ '\n', '')"
                      "name ++ '\n'"))
-         (args (append '("bookmark" "list")
+         (args (append '("bookmark" "list" "--quiet")
                        (and all-remotes '("--all"))
                        (list "-T" template))))
-    (split-string (apply #'majutsu--run-command args) "\n" t)))
+    (delete-dups (split-string (apply #'majutsu--run-command args) "\n" t))))
 
 (defun majutsu--completion-table-with-category (candidates category)
   "Wrap CANDIDATES with completion METADATA to set CATEGORY.
@@ -1122,7 +1122,7 @@ Instead of invoking this alias for `majutsu-log' using
   "List bookmarks in a temporary buffer.
 With prefix ALL, include remote bookmarks."
   (interactive "P")
-  (let* ((args (append '("bookmark" "list") (and all '("--all"))))
+  (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all"))))
          (output (apply #'majutsu--run-command-color args))
          (buf (get-buffer-create "*Majutsu Bookmarks*")))
     (with-current-buffer buf
