@@ -1145,7 +1145,7 @@ With prefix ALL, include remote bookmarks."
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list rev names)))
   (when names
-    (apply #'majutsu--run-command (append '("bookmark" "move" "-r" ) (list commit) names))
+    (apply #'majutsu--run-command (append '("bookmark" "move" "-t" ) (list commit) names))
     (majutsu-log-refresh)
     (message "Moved bookmark(s) to %s: %s" commit (string-join names ", "))))
 
