@@ -456,10 +456,11 @@ The results of this fn are fed into `majutsu--parse-log-entries'."
                    for elems = (mapcar #'string-trim (split-string line "\x1e" ))
                    when (> (length elems) 1) collect
                    (seq-let (prefix change-id author bookmarks git-head conflict signature empty short-desc commit-id timestamp long-desc) elems
-                     (let* ((cid (substring-no-properties change-id))
-                            (full (substring-no-properties commit-id))
-                            (id8 (if (> (length cid) 8) (substring cid 0 8) cid)))
-                       (list :id id8
+                     (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
+                            (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
+                            (id8  (if (> (length cid) 8) (substring cid 0 8) cid))
+                            (idv  (unless (string-empty-p id8) id8)))
+                       (list :id idv
                              :prefix prefix
                              :line line
                              :elems (seq-remove (lambda (l) (or (not l) (string-blank-p l))) elems)
@@ -1551,7 +1552,9 @@ Tries `jj git remote list' first, then falls back to `git remote'."
      ((and (slot-exists-p section 'commit-id)
            (slot-boundp section 'commit-id)
            (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section)))
-      (substring-no-properties (oref section commit-id)))
+      (let ((cid (oref section commit-id)))
+        (when (stringp cid)
+          (substring-no-properties cid))))
      (t nil))))
 
 ;; Rebase state management
