@@ -771,8 +771,8 @@ ARGS describe parameters after the implicit SELF argument."
    :props props))
 
 (defun majutsu-template--rewrite (form)
-  "Rewrite sugar FORM into the (future) AST representation.
-This is currently a thin wrapper over the legacy transformer."
+  "Rewrite literal FORM into normalized AST nodes.
+Further passes (type-checking, rendering) operate on these nodes."
   (majutsu-template--sugar-transform form))
 
 (majutsu-template-defun concat ((forms Template :rest t))
@@ -802,16 +802,6 @@ This is currently a thin wrapper over the legacy transformer."
   (:returns Template :doc "json(FORM).")
   (majutsu-template-call 'json value))
 ;; Internal node representation: (:tag ...)
-
-(defun majutsu-template--ast-p (x)
-  "Return non-nil if X is a well-formed majutsu template AST node."
-  (or (majutsu-template-node-p x)
-      (when (consp x)
-        (pcase (car x)
-          (:str (and (stringp (cadr x)) (null (cddr x))))
-          (:raw (and (stringp (cadr x)) (null (cddr x))))
-          (:call (and (stringp (cadr x)) (listp (caddr x)) (null (cdddr x))))
-          (_ nil)))))
 
 (defun majutsu-template--str-escape (s)
   "Escape S into a jj double-quoted string literal content.
@@ -871,11 +861,13 @@ All other characters are emitted verbatim (UTF-8 allowed)."
   "Resolve EXPR into a call name (string or symbol)."
   (cond
    ((or (stringp expr) (symbolp expr) (keywordp expr)) expr)
-   ((majutsu-template--ast-p expr)
+   ((majutsu-template-node-p expr)
     (majutsu-template--literal-string-from-node expr))
    ((vectorp expr)
     (let ((node (majutsu-template--sugar-transform expr)))
       (majutsu-template--literal-string-from-node node)))
+   ((and (consp expr) (eq (car expr) 'quote))
+    (majutsu-template--resolve-call-name (cadr expr)))
    ((consp expr)
     (majutsu-template--resolve-call-name (eval expr)))
    (t expr)))
@@ -895,18 +887,6 @@ BODY may reference VAR using raw sub-expressions."
      (format "%s.map(|%s| %s).join(%s)"
              coll-s var body-s sep-s))))
 
-(defun majutsu-template--legacy->node (legacy)
-  "Convert LEGACY plist node into `majutsu-template-node'."
-  (pcase legacy
-    (`(:str ,text) (majutsu-template--literal-node text 'String))
-    (`(:raw ,text) (majutsu-template--raw-node text))
-    (`(:call ,name ,args)
-     (majutsu-template--call-node
-      name
-      (mapcar #'majutsu-template--legacy->node args)))
-    (_
-     (user-error "majutsu-template: unsupported legacy node %S" legacy))))
-
 (defun majutsu-template--normalize (x)
   "Normalize X into an AST node. Strings become literal nodes, numbers raw, etc."
   (cond
@@ -915,7 +895,9 @@ BODY may reference VAR using raw sub-expressions."
    ((and (consp x) (eq (car x) 'quote))
     (majutsu-template--normalize (cadr x)))
    ((and (consp x) (keywordp (car x)))
-    (majutsu-template--legacy->node x))
+    (let* ((op (car x))
+           (name (substring (symbol-name op) 1)))
+      (apply #'majutsu-template-call name (cdr x))))
    ((numberp x)
     (majutsu-template-raw (number-to-string x)))
    ((stringp x)
@@ -958,7 +940,7 @@ BODY may reference VAR using raw sub-expressions."
              xs ", "))
 
 (defun majutsu-template--compile (form)
-  "Compile FORM (node or legacy form) to jj template string."
+  "Compile FORM (node or literal) to jj template string."
   (majutsu-template--render-node (majutsu-template--ensure-node form)))
 
 (defun majutsu-template-ast (form)
@@ -1038,7 +1020,9 @@ Parentheses are added to avoid precedence issues."
   (cond
    ((majutsu-template-node-p form) form)
    ((and (consp form) (keywordp (car form)))
-    (majutsu-template--legacy->node form))
+    (let ((name (substring (symbol-name (car form)) 1)))
+      (apply #'majutsu-template-call name
+             (mapcar #'majutsu-template--sugar-transform (cdr form)))))
    ((numberp form) (majutsu-template-raw (number-to-string form)))
    ((eq form t) (majutsu-template-raw "true"))
    ((eq form nil) (majutsu-template-raw "false"))
