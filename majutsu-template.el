@@ -31,17 +31,33 @@
 (defvar majutsu-template--type-registry (make-hash-table :test #'eq)
   "Registry of known template types keyed by symbol.")
 
+(defun majutsu-template--normalize-converts (value)
+  "Normalize VALUE describing type conversions into a canonical list.
+Accepts nil, a list of symbols, or a list of (TYPE . STATUS) pairs."
+  (cond
+   ((null value) nil)
+   ((and (listp value) (consp (car value)) (symbolp (caar value)))
+    value)
+   ((listp value)
+    (mapcar (lambda (type) (cons type 'yes)) value))
+   ((symbolp value)
+    (list (cons value 'yes)))
+   (t
+    (user-error "majutsu-template: invalid :converts specification %S" value))))
+
 (defun majutsu-template-define-type (name &rest plist)
   "Register template type NAME with optional metadata PLIST.
-Recognised keys: :doc (string) and :converts-to (list of symbols)."
+Recognised keys: :doc (string), :converts or :converts-to (list)."
   (cl-check-type name symbol)
-  (let ((doc (plist-get plist :doc))
-        (converts-to (plist-get plist :converts-to)))
+  (let* ((doc (plist-get plist :doc))
+         (raw-converts (or (plist-get plist :converts)
+                           (plist-get plist :converts-to)))
+         (converts-to (majutsu-template--normalize-converts raw-converts)))
     (puthash name
              (majutsu-template--make-type
               :name name
               :doc doc
-              :converts-to (cl-remove-duplicates converts-to))
+              :converts-to converts-to)
              majutsu-template--type-registry)))
 
 (defun majutsu-template--lookup-type (name)
@@ -386,6 +402,338 @@ ARGS describe parameters after the implicit SELF argument."
   `(majutsu-template-defun ,name ((self ,owner))
      ,(majutsu-template-def--inherit-signature signature :keyword owner)
      ,@body))
+
+(defun majutsu-template--method-stub (&rest _args)
+  "Placeholder for template methods/keywords that are not executable in Elisp."
+  (error "majutsu-template: method stubs are not callable at runtime"))
+
+(defun majutsu-template--parse-type-name (name)
+  "Return canonical symbol corresponding to type NAME (string or symbol)."
+  (cond
+   ((symbolp name) name)
+   ((stringp name)
+    (let ((base (if (string-match "\\`\\([^<]+\\)" name)
+                    (match-string 1 name)
+                  name)))
+      (intern base)))
+   (t
+    (error "majutsu-template: invalid type name %S" name))))
+
+(defun majutsu-template--register-method-spec (owner method-spec)
+  "Register method METADATA described by METHOD-SPEC for OWNER type."
+  (let* ((method-name (car method-spec))
+         (plist (cdr method-spec))
+         (scope (or (plist-get plist :scope)
+                    (if (plist-get plist :keyword) :keyword :method)))
+         (template-name (or (plist-get plist :template-name)
+                            (symbol-name method-name)))
+         (raw-args (plist-get plist :args))
+         (returns (majutsu-template--parse-type-name
+                   (or (plist-get plist :returns) 'Template)))
+         (return-converts (plist-get plist :return-converts))
+         (doc (plist-get plist :doc))
+         (args-specs (cons `(self ,owner) (or raw-args '())))
+         (parsed-args (majutsu-template--parse-args method-name args-specs))
+         (meta (majutsu-template--make-fn
+                :name template-name
+                :symbol 'majutsu-template--method-stub
+                :args parsed-args
+                :returns returns
+                :return-converts return-converts
+                :doc doc
+                :scope scope
+                :owner owner)))
+    (majutsu-template--register-function meta)))
+
+(defun majutsu-template--register-methods (specs)
+  "Register built-in method metadata from SPECS list."
+  (dolist (entry specs)
+    (let ((owner (car entry))
+          (methods (cdr entry)))
+      (dolist (method methods)
+        (majutsu-template--register-method-spec owner method)))))
+
+(defconst majutsu-template--builtin-type-specs
+  '((AnnotationLine
+     :doc "Annotation/annotate line context."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (Boolean
+     :doc "Boolean value."
+     :converts ((Boolean . yes) (Serialize . yes) (Template . yes)))
+    (ChangeId
+     :doc "Change identifier."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (Commit
+     :doc "Commit object."
+     :converts ((Boolean . no) (Serialize . yes) (Template . no)))
+    (CommitEvolutionEntry
+     :doc "Commit evolution information."
+     :converts ((Boolean . no) (Serialize . yes) (Template . no)))
+    (CommitId
+     :doc "Commit identifier."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (CommitRef
+     :doc "Commit reference (bookmark/tag)."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (ConfigValue
+     :doc "Configuration value."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (CryptographicSignature
+     :doc "Cryptographic signature metadata."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (DiffStats
+     :doc "Diff statistics histogram."
+     :converts ((Boolean . no) (Serialize . no) (Template . yes)))
+    (Email
+     :doc "Email address component."
+     :converts ((Boolean . yes) (Serialize . yes) (Template . yes)))
+    (Integer
+     :doc "Integer value."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (Lambda
+     :doc "Template lambda/expression."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (List
+     :doc "Generic list."
+     :converts ((Boolean . yes) (Serialize . maybe) (Template . maybe)))
+    (List-Trailer
+     :doc "List of trailers."
+     :converts ((Boolean . yes) (Serialize . maybe) (Template . maybe)))
+    (ListTemplate
+     :doc "List of template fragments."
+     :converts ((Boolean . no) (Serialize . no) (Template . yes)))
+    (Operation
+     :doc "Operation object."
+     :converts ((Boolean . no) (Serialize . yes) (Template . no)))
+    (OperationId
+     :doc "Operation identifier."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (Option
+     :doc "Optional value."
+     :converts ((Boolean . yes) (Serialize . maybe) (Template . maybe)))
+    (RefSymbol
+     :doc "Reference symbol."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (RepoPath
+     :doc "Repository path."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (Serialize
+     :doc "Serializable expression."
+     :converts ((Serialize . yes)))
+    (ShortestIdPrefix
+     :doc "Shortest id prefix."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (Signature
+     :doc "Commit signature."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (SizeHint
+     :doc "Size hint bounds."
+     :converts ((Boolean . no) (Serialize . yes) (Template . no)))
+    (String
+     :doc "String value."
+     :converts ((Boolean . yes) (Serialize . yes) (Template . yes)))
+    (Stringify
+     :doc "Stringified template value."
+     :converts ((Boolean . no) (Serialize . maybe) (Template . yes)))
+    (StringPattern
+     :doc "String pattern literal."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (Template
+     :doc "Template fragment."
+     :converts ((Boolean . no) (Serialize . no) (Template . yes)))
+    (Timestamp
+     :doc "Timestamp value."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (TimestampRange
+     :doc "Timestamp range."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (Trailer
+     :doc "Commit trailer."
+     :converts ((Boolean . no) (Serialize . no) (Template . yes)))
+    (TreeDiff
+     :doc "Tree diff."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (TreeDiffEntry
+     :doc "Tree diff entry."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (TreeEntry
+     :doc "Tree entry."
+     :converts ((Boolean . no) (Serialize . no) (Template . no)))
+    (WorkspaceRef
+     :doc "Workspace reference."
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes))))
+  "Built-in template types and their conversion metadata.")
+
+(dolist (type-spec majutsu-template--builtin-type-specs)
+  (apply #'majutsu-template-define-type type-spec))
+
+(defconst majutsu-template--builtin-method-specs
+  '((AnnotationLine
+     (commit :returns Commit :keyword t)
+     (content :returns Template :keyword t)
+     (line_number :returns Integer :keyword t)
+     (original_line_number :returns Integer :keyword t)
+     (first_line_in_hunk :returns Boolean :keyword t))
+    (Commit
+     (description :returns String :keyword t)
+     (trailers :returns List-Trailer :keyword t)
+     (change_id :returns ChangeId :keyword t)
+     (commit_id :returns CommitId :keyword t)
+     (parents :returns List :keyword t)
+     (author :returns Signature :keyword t)
+     (committer :returns Signature :keyword t)
+     (signature :returns Option :keyword t)
+     (mine :returns Boolean :keyword t)
+     (working_copies :returns List :keyword t)
+     (current_working_copy :returns Boolean :keyword t)
+     (bookmarks :returns List :keyword t)
+     (local_bookmarks :returns List :keyword t)
+     (remote_bookmarks :returns List :keyword t)
+     (tags :returns List :keyword t)
+     (git_refs :returns List :keyword t)
+     (git_head :returns Boolean :keyword t)
+     (divergent :returns Boolean :keyword t)
+     (hidden :returns Boolean :keyword t)
+     (immutable :returns Boolean :keyword t)
+     (contained_in :args ((revset String)) :returns Boolean)
+     (conflict :returns Boolean :keyword t)
+     (empty :returns Boolean :keyword t)
+     (diff :args ((files String :optional t)) :returns TreeDiff)
+     (files :args ((files String :optional t)) :returns List)
+     (root :returns Boolean :keyword t))
+    (CommitEvolutionEntry
+     (commit :returns Commit :keyword t)
+     (operation :returns Operation :keyword t))
+    (ChangeId
+     (normal_hex :returns String :keyword t)
+     (short :args ((len Integer :optional t)) :returns String)
+     (shortest :args ((min_len Integer :optional t)) :returns ShortestIdPrefix))
+    (CommitId
+     (short :args ((len Integer :optional t)) :returns String)
+     (shortest :args ((min_len Integer :optional t)) :returns ShortestIdPrefix))
+    (CommitRef
+     (name :returns RefSymbol :keyword t)
+     (remote :returns Option :keyword t)
+     (present :returns Boolean :keyword t)
+     (conflict :returns Boolean :keyword t)
+     (normal_target :returns Option :keyword t)
+     (removed_targets :returns List :keyword t)
+     (added_targets :returns List :keyword t)
+     (tracked :returns Boolean :keyword t)
+     (tracking_present :returns Boolean :keyword t)
+     (tracking_ahead_count :returns SizeHint :keyword t)
+     (tracking_behind_count :returns SizeHint :keyword t))
+    (ConfigValue
+     (as_boolean :returns Boolean :keyword t)
+     (as_integer :returns Integer :keyword t)
+     (as_string :returns String :keyword t)
+     (as_string_list :returns List :keyword t))
+    (CryptographicSignature
+     (status :returns String :keyword t)
+     (key :returns String :keyword t)
+     (display :returns String :keyword t))
+    (DiffStats
+     (total_added :returns Integer :keyword t)
+     (total_removed :returns Integer :keyword t))
+    (Email
+     (local :returns String :keyword t)
+     (domain :returns String :keyword t))
+    (List
+     (len :returns Integer :keyword t)
+     (join :args ((separator Template)) :returns Template)
+     (filter :args ((predicate Lambda)) :returns List)
+     (map :args ((mapper Lambda)) :returns ListTemplate)
+     (any :args ((predicate Lambda)) :returns Boolean)
+     (all :args ((predicate Lambda)) :returns Boolean))
+    (List-Trailer
+     (contains_key :args ((key Stringify)) :returns Boolean))
+    (ListTemplate
+     (join :args ((separator Template)) :returns Template))
+    (Operation
+     (current_operation :returns Boolean :keyword t)
+     (description :returns String :keyword t)
+     (id :returns OperationId :keyword t)
+     (tags :returns String :keyword t)
+     (time :returns TimestampRange :keyword t)
+     (user :returns String :keyword t)
+     (snapshot :returns Boolean :keyword t)
+     (root :returns Boolean :keyword t)
+     (parents :returns List :keyword t))
+    (OperationId
+     (short :args ((len Integer :optional t)) :returns String))
+    (RepoPath
+     (display :returns String :keyword t)
+     (parent :returns Option :keyword t))
+    (ShortestIdPrefix
+     (prefix :returns String :keyword t)
+     (rest :returns String :keyword t)
+     (upper :returns ShortestIdPrefix :keyword t)
+     (lower :returns ShortestIdPrefix :keyword t))
+    (Signature
+     (name :returns String :keyword t)
+     (email :returns Email :keyword t)
+     (timestamp :returns Timestamp :keyword t))
+    (SizeHint
+     (lower :returns Integer :keyword t)
+     (upper :returns Option :keyword t)
+     (exact :returns Option :keyword t)
+     (zero :returns Boolean :keyword t))
+    (String
+     (len :returns Integer :keyword t)
+     (contains :args ((needle Stringify)) :returns Boolean)
+     (match :args ((needle StringPattern)) :returns String)
+     (replace :args ((pattern StringPattern)
+                     (replacement Stringify)
+                     (limit Integer :optional t))
+              :returns String)
+     (first_line :returns String :keyword t)
+     (lines :returns List :keyword t)
+     (upper :returns String :keyword t)
+     (lower :returns String :keyword t)
+     (starts_with :args ((needle Stringify)) :returns Boolean)
+     (ends_with :args ((needle Stringify)) :returns Boolean)
+     (remove_prefix :args ((needle Stringify)) :returns String)
+     (remove_suffix :args ((needle Stringify)) :returns String)
+     (trim :returns String :keyword t)
+     (trim_start :returns String :keyword t)
+     (trim_end :returns String :keyword t)
+     (substr :args ((start Integer) (end Integer)) :returns String)
+     (escape_json :returns String :keyword t))
+    (Timestamp
+     (ago :returns String :keyword t)
+     (format :args ((format String)) :returns String)
+     (utc :returns Timestamp :keyword t)
+     (local :returns Timestamp :keyword t)
+     (after :args ((date String)) :returns Boolean))
+    (TimestampRange
+     (start :returns Timestamp :keyword t)
+     (end :returns Timestamp :keyword t)
+     (duration :returns String :keyword t))
+    (Trailer
+     (key :returns String :keyword t)
+     (value :returns String :keyword t))
+    (TreeDiff
+     (files :returns List :keyword t)
+     (color_words :args ((context Integer :optional t)) :returns Template)
+     (git :args ((context Integer :optional t)) :returns Template)
+     (stat :args ((width Integer :optional t)) :returns DiffStats)
+     (summary :returns Template :keyword t))
+    (TreeDiffEntry
+     (path :returns RepoPath :keyword t)
+     (status :returns String :keyword t)
+     (source :returns TreeEntry :keyword t)
+     (target :returns TreeEntry :keyword t))
+    (TreeEntry
+     (path :returns RepoPath :keyword t)
+     (conflict :returns Boolean :keyword t)
+     (file_type :returns String :keyword t)
+     (executable :returns Boolean :keyword t))
+    (WorkspaceRef
+     (name :returns RefSymbol :keyword t)
+     (target :returns Commit :keyword t)))
+  "Built-in template method metadata.")
+
+(majutsu-template--register-methods majutsu-template--builtin-method-specs)
 
 ;;;; AST representation (work in progress) ###################################
 
