@@ -805,12 +805,13 @@ This is currently a thin wrapper over the legacy transformer."
 
 (defun majutsu-template--ast-p (x)
   "Return non-nil if X is a well-formed majutsu template AST node."
-  (when (consp x)
-    (pcase (car x)
-      (:str (and (stringp (cadr x)) (null (cddr x))))
-      (:raw (and (stringp (cadr x)) (null (cddr x))))
-      (:call (and (stringp (cadr x)) (listp (caddr x)) (null (cdddr x))))
-      (_ nil))))
+  (or (majutsu-template-node-p x)
+      (when (consp x)
+        (pcase (car x)
+          (:str (and (stringp (cadr x)) (null (cddr x))))
+          (:raw (and (stringp (cadr x)) (null (cddr x))))
+          (:call (and (stringp (cadr x)) (listp (caddr x)) (null (cdddr x))))
+          (_ nil)))))
 
 (defun majutsu-template--str-escape (s)
   "Escape S into a jj double-quoted string literal content.
@@ -892,20 +893,61 @@ BODY may reference VAR using raw sub-expressions."
    ((stringp x) (majutsu-template-str x))
    (t (user-error "majutsu-template: unsupported form %S" x))))
 
-(defun majutsu-template--compile-list (xs)
-  (mapconcat #'majutsu-template--compile xs ", "))
+(defun majutsu-template--legacy->node (legacy)
+  "Convert LEGACY node (old plist form) into `majutsu-template-node'."
+  (cond
+   ((majutsu-template-node-p legacy)
+    legacy)
+   ((and (consp legacy) (eq (car legacy) :str))
+    (majutsu-template--literal-node (cadr legacy) 'String))
+   ((and (consp legacy) (eq (car legacy) :raw))
+    (majutsu-template--raw-node (cadr legacy)))
+   ((and (consp legacy) (eq (car legacy) :call))
+    (let ((name (cadr legacy))
+          (args (caddr legacy)))
+      (majutsu-template--call-node
+       name
+       (mapcar #'majutsu-template--legacy->node args))))
+   ((and (vectorp legacy))
+    (majutsu-template--legacy->node (majutsu-template--normalize legacy)))
+   ((and (consp legacy))
+    (majutsu-template--legacy->node (majutsu-template--normalize legacy)))
+   (t
+    (majutsu-template--legacy->node (majutsu-template--normalize legacy)))))
 
-(defun majutsu-template--compile (node)
-  "Compile NODE to jj template string."
-  (let* ((n (majutsu-template--normalize node))
-         (tag (car n)))
-    (pcase tag
-      (:str (format "\"%s\"" (majutsu-template--str-escape (plist-get n :str))))
-      (:raw (format "%s" (plist-get n :raw)))
-      (:call (let ((name (cadr n))
-                   (args (caddr n)))
-               (format "%s(%s)" name (majutsu-template--compile-list args))))
-      (_ (user-error "majutsu-template: unknown node %S" tag)))))
+(defun majutsu-template--ensure-node (form)
+  "Return AST node corresponding to FORM."
+  (if (majutsu-template-node-p form)
+      form
+    (majutsu-template--legacy->node (majutsu-template--normalize form))))
+
+(defun majutsu-template--render-node (node)
+  "Render AST NODE to jj template string."
+  (pcase (majutsu-template-node-kind node)
+    (:literal
+     (format "\"%s\"" (majutsu-template--str-escape (majutsu-template-node-value node))))
+    (:raw
+     (majutsu-template-node-value node))
+    (:call
+     (let* ((name (majutsu-template-node-value node))
+            (args (majutsu-template-node-args node))
+            (compiled-args (mapconcat #'majutsu-template--render-node args ", ")))
+       (format "%s(%s)" name compiled-args)))
+    (_
+     (user-error "majutsu-template: unknown AST node kind %S" (majutsu-template-node-kind node)))))
+
+(defun majutsu-template--compile-list (xs)
+  (mapconcat (lambda (x)
+               (majutsu-template--render-node (majutsu-template--ensure-node x)))
+             xs ", "))
+
+(defun majutsu-template--compile (form)
+  "Compile FORM (node or legacy form) to jj template string."
+  (majutsu-template--render-node (majutsu-template--ensure-node form)))
+
+(defun majutsu-template-ast (form)
+  "Return AST node representing FORM without rendering."
+  (majutsu-template--ensure-node form))
 
 (defun majutsu-template--compile-op (op args)
   "Compile a simple operator expression OP with ARGS to a raw node.
