@@ -1,110 +1,107 @@
-#+title: Majutsu 模板封装规范（v0）
+#+title: Majutsu 模板封装规范（v1）
 
-* 目标
+* 范围
+- 本文是 majutsu-template EDSL 的权威规范，约束构造器、语法糖与实现行为。
+- 任何实现细节（编译器、宏、测试）必须与本文件保持一致；参考文档是解释材料，不具约束力。
+
+* 设计目标
 - 提供一个小而可组合的 Elisp EDSL，将表达式编译为 jj 模板语言字符串。
-- 语义保留在 jj 端；Elisp 仅负责编译与安全转义。
-- 偏好稳定输出：鼓励 JSON 友好与一致的格式化；编译阶段不依赖 jj 运行。
+- 保证所有生成内容默认安全：统一字符串转义，显式区分原样注入。
+- 鼓励稳定输出格式，利于 JSON/结构化消费与单元测试。
 
-* 使用该 EDSL 的优势
-- 安全性
-  - 统一处理字符串转义与引号，避免手写拼接错误。
-  - 原样注入需显式 ~majutsu-template-raw~ ，减少误注入风险。
-- 可组合与复用
-  - 小片段组合大模板；便于抽取与复用常用片段。
-  - 以“表单”为一等值，便于封装更高层工具（JSON Lines、map/join 模式）。
-- 职责分离
-  - jj 继续作为数据与求值的权威；Elisp 专注编译与测试模板。
-  - 模板改动对 UI/解析影响小，易随 jj 变更调整。
-- 易于测试与评审
-  - 模板代码可做单元/快照测试。
-  - 评审差异集中在结构与语义，而非无意义空白。
-- 面向未来的数据管道
-  - 鼓励 JSON 输出，Emacs 解析更稳定。
+* 类型系统
+** 对象方法
+- 模板中的对象只能调用在类型签名表中列出的 0 参数或指定参数的方法。
+- 方法调用在宏展开期仅做静态检查（方法名、实参个数、字面量类型），其余语义由 jj 运行期负责。
 
-* 核心设计
-- 极简 AST 与少量构造器；最终产物均为 jj 模板文本。
-- 允许 raw 作为“逃生口”，默认不自动加引号。
-- 字符串字面量统一为双引号并自动转义。
+** Conversion
+- 仅允许隐式转换到三种目标类型：Boolean、Serialize、Template。
+- 每个构造器或方法声明应同时登记“输出可转换类型”集合，用于在宏层面做快速验证。
+- 若某类型既不在转换表内，也未显式标注为 Template，应在编译期抛错以避免生成非法模板。
 
-* 表单构造器（Elisp API）
-- ~majutsu-template-str STRING~: 字符串字面量（双引号 + 转义）
-- ~majutsu-template-raw TEXT~: 原样注入（危险，仅限熟悉者）
-- ~majutsu-template-call NAME &rest ARGS~: ~NAME(arg1, arg2, ...)~
-- ~majutsu-template-concat &rest FORMS~: ~concat(f1, f2, ...)~
-- ~majutsu-template-if COND THEN ELSE~: ~if(COND, THEN, ELSE)~
-- ~majutsu-template-label NAME VALUE~: ~label(NAME, VALUE)~ （NAME 自动加引号）
-- ~majutsu-template-separate SEP &rest FORMS~: ~separate(SEP, ...)~
-- ~majutsu-template-surround PRE POST BODY~: ~surround(PRE, POST, BODY)~
-- ~majutsu-template-json FORM~: ~json(FORM)~
-- ~majutsu-template-join SEP COLL VAR BODY~: ~COLL.map(|VAR| BODY).join(SEP)~
+** 实现细节
+- EDSL 的根节点类型记为 Template；其它类型通过转换表折叠为 Template/Serialize/Boolean。
+- 当函数的返回类型需要在上游作为参数继续推断时，必须将其声明为结构化节点而非立即降级成 raw 字符串。
 
-* 字面量与转义
-- 自动转义 ~\"~, ~\\~, ~\n~, ~\t~。
-- 数字/布尔可通过语法糖注入为原生 token。
+* AST 节点与基础构造器
+- 内部 AST 统一采用 plist：~(:tag ...)~。允许的 tag 集合：~:str~、~:raw~、~:call~、~:method~、~:op~、~:map~、~:filter~、~:any~、~:all~、~:join~。
+- 对外暴露以下构造器（函数均位于 majutsu-template 命名空间）：
+  - ~majutsu-template-str STRING~：创建字符串字面量（自动转义双引号、反斜杠、换行、制表符、回车、NUL、ESC）。
+  - ~majutsu-template-raw TEXT~：原样注入，供熟悉 jj 模板语法的调用者使用。
+  - ~majutsu-template-call NAME &rest ARGS~：一般函数调用。
+  - ~majutsu-template-concat &rest FORMS~：~concat(...)~ 语义。
+  - ~majutsu-template-if COND THEN &optional ELSE~：~if(...)~ 语义（ELSE 省略时不生成第三个实参）。
+  - ~majutsu-template-label NAME VALUE~：~label(NAME, VALUE)~，NAME 自动转成字符串。
+  - ~majutsu-template-separate SEP &rest FORMS~：~separate(...)~。
+  - ~majutsu-template-surround PRE POST BODY~：~surround(...)~。
+  - ~majutsu-template-json FORM~：~json(FORM)~。
+  - ~majutsu-template-join SEP COLL BODY~：等价于 ~COLL.map(|ITEM| BODY') .join(SEP)~，其中宏自动为闭包生成唯一符号 ~ITEM~，BODY 内对当前上下文的引用使用占位符 ~'self~；宏负责将这些占位符替换为相应的符号，同时保留对外层上下文（如 ~'self^1~、~'self^2~）的访问；返回 ~:join~ 节点。
+- 本规范不允许 ~:lit~、~:raw-e~ 或其它在宏展开期求值的快捷节点；任何需要在宏阶段插入的值请使用反引号与 ~,~/~,@~ 组合现有构造器。
 
-* 格式化规则
-- 输出紧凑、对空白不敏感（逗号后单空格）。
-- 推荐用 ~concat(...)~ 代替直接输出 ~++~
+* 宏语法
+** 方括号规则
+- 所有宏输入（~tpl~、~tpl-compile~）必须是向量，且嵌套层级同样只能使用向量。普通列表 ~(...)~ 在语法分析阶段一律报错。
+- 允许传入已构造好的 AST（plist 以 ~:tag~ 开头），宏应将其视为原子。
 
-* 错误处理
-- 编译时归一化参数类型：
-  - 普通字符串 → ~majutsu-template-str~
-  - 原样注入必须用 ~majutsu-template-raw~
-  - 不支持的值抛出 ~user-error~ 提示具体问题
+** 隐式 concat
+- 若向量首元素不是关键字或符号，整体按 ~[:concat ...]~ 处理。
+- 向量中的裸字符串自动视作 ~[:str ...]~，避免重复书写。
 
-* 版本与兼容
-- v0 覆盖 Majutsu 需要的主要能力：日志/JSON Lines、标签、条件、map/join。
-- 后续可扩展：更多方法与运算语法糖、模板 alias 生成等。
+** 字符串与 quote
+- 字符串字面量统一用双引号包裹，转义规则见 ~majutsu-template-str~。
+- ~'symbol~ 语法糖视作 ~[:raw "symbol"]~；~'"string"~ 视作 ~[:str "string"]~。
+- 其它 ~(quote ...)~ 形式一律报错，避免误将列表当作模板片段。
 
-* 安全说明
-- raw 极其强大但危险，优先使用更高层构造器。
-- 包含换行/特殊字符的字段，优先 ~majutsu-template-json~ 并在 Emacs 端解析 JSON。
+** 函数与方法调用
+- ~[:call NAME arg1 arg2 ...]~ 等价于显式调用构造器，NAME 可以是符号或字符串。宏阶段仅转换为 ~:call~ 节点，不执行任何求值。
+- ~[:method OBJ method a b ...]~ 生成 ~:method~ 节点并允许链式展开：~[:method OBJ method1 arg1 :method method2]~ 需被规范化为顺序方法调用。
+- ~:.~ 是 ~:method~ 的别名。
+- 方法名、函数名必须为符号或字符串字面量；禁止在宏语法中通过求值产生。
+
+** 运算符
+- 所有算术、比较、逻辑、模运算使用关键字表示：~:+~、~:-~、~:*~、~:/~、~:%~、~:>=~、~:>~、~:<=~、~:<~、~:==~、~:!=~、~:and~、~:or~、~:not~、~:neg~、~:concat-op~。
+- 运算符会生成 ~:op~ 节点，并在最终编译时统一加括号，避免优先级歧义。
+
+** 集合构造器
+- ~[:map COLL BODY]~、~[:filter COLL BODY]~、~[:any COLL BODY]~、~[:all COLL BODY]~ 必须生成对应的 ~:map~/~:filter~/~:any~/~:all~ 节点。宏需要为每个闭包自动生成唯一变量符号，BODY 内引用当前闭包元素时使用占位符 ~'self~。若 BODY 需要访问外层上下文，可使用 ~'self^N~ 表示距当前 ~N~ 层的上层环境（~N >= 1~）。展开后应形如 ~COLL.map(|VAR| BODY')~，其中 ~BODY'~ 已将占位符替换为具体符号。
+- ~[:join SEP COLL BODY]~ 是 ~:join~ 的语法糖，最终依赖 ~majutsu-template-join~，其 BODY 亦使用 ~'self~/~'self^N~ 占位规则。
+- 所有集合节点的 ~COLL~ 与 ~BODY~ 均按模板表达式处理；宏阶段不得强制将其降级为字符串。
+
+** 禁用特性
+- 语法中禁止出现 ~:lit~、~:raw-e~ 或其它“直接求值再注入”的构造。
+- 除 “直接嵌入” 小节描述的整项表达式处理外，宏不得对用户传入的 Lisp 表达式求值。
+
+* List 与 ListTemplate
+- ~List~ 类型可调用 ~.len()~、~.join()~、~.filter()~、~.map()~、~.any()~、~.all()~；其布尔语义表示“是否为空”。
+- ~List.map()~ 产物是 ~ListTemplate~，只能继续 ~.join()~；规范要求在宏层面显式区分两种节点，避免误用。
+- 处理 ~.map(|item| expression)~ 时，宏维护一个上下文栈：当前闭包对应的占位符为 ~'self~，上层依次为 ~'self^1~、~'self^2~ ...。生成模板字符串时，宏需将这些占位符替换为自动生成的唯一符号，以便在同一表达式内同时引用当前与外层上下文。
+
+* 与 Emacs Lisp 配合
+** 直接嵌入
+- 向量中的字面量 Lisp 表达式会在宏展开期求值，再根据结果自动转换为节点：
+  - 字符串 → ~:str~
+  - 预构建 AST → 原样使用
+  - 其它类型触发编译期错误
+- 示例：~[(if "A" "B") (if t "C" "D")]~ 在宏展开后等价于 ~[:concat "A" "C"]~。
+
+** 反引号插入
+- 推荐使用 ~`[...]~ 配合 ~,~/~,@~ 注入提前构造好的节点或向量片段。
+- 宏接受预构建节点（car 为关键字，如 ~:str~），便于在普通函数中先组合再统一编译。
+
+** 复用与封装
+- 构造器都是普通函数，可与 ~if~/~when~/~pcase~ 等 Lisp 控制流组合后再交给 ~majutsu-template-compile~。
+- 对常见片段（如 JSON 行、书签列表）提倡封装成返回 AST 的 helper 函数，最终由调用者决定何时编译。
+
+* 逆向解析
+- 编译器应保留足够的结构信息，允许调用方在需要时对 AST 进行逆向分析（例如匹配 map/join 模式）。
+- 简单场景下，可通过访问 ~:tag~ 与字段提取参数；无需实现完整的反向编译。
 
 * 测试建议
-- 为各构造器的编译结果写单测。
-- 为代表性模板（日志 JSON Line、书签列表等）写快照测试。
-- 可选做 jj 集成测试（将产物传给 jj 验证）。
-- 语法糖同样需覆盖，确保产物稳定。
+- 为每个构造器、算子与语法糖编写 ERT 单元测试，确保输出稳定。
+- 针对代表性模板（日志行、JSON Lines）编写快照测试。
+- 新增方法或类型签名时，应补充静态检查失败路径的测试用例。
 
-* 便捷 API（语法糖）
-- 因 ~majutsu-template-*~ 冗长，提供 EmacSQL 风格宏：
-  - ~(tpl FORM)~: 仅展开为 AST（不编译）。
-  - ~(tpl-compile FORM)~: 展开并编译为 jj 模板字符串。
-- 语法风格
-  - 仅支持方括号向量（与 EmacSQL 一致，便于区分数字等常量），嵌套处也必须用向量：
-    - ~[:concat [:str "Hello "] [:raw "self.author().name()"]]~
-  - 操作符可用关键字或符号: ~:str~ ~:concat~ ~:if~ ~:label~ ~:separate~ ~:surround~ ~:json~ ~:join~ ~:call~
-  - 可选 ~tpl-*~ 别名: ~tpl-if~ ~tpl-concat~、~tpl-json~ 等。
-  - 数字/布尔字面量: ~123~ → ~123~ （raw）、 ~t~ → ~true~ 、 ~nil~ →  ~false~ 
-  - 向量中的裸字符串自动等效为 ~:str~ ，无需显式写 ~[:str "..."]~
-  - 当向量首元素不是操作符（关键字/符号）时，整体隐式作为 ~[:concat ...]~:
-    - ~["A" "B"]~ 等效 ~[:concat "A" "B"]~
-  - 额外语法糖：
-    - ~:lit~: Elisp 值 → jj 字符串字面量（自动转义），例 ~[:lit (user-full-name)]~
-    - ~:raw-e~: Elisp 表达式求值并原样注入（慎用），例 ~[:raw-e (symbol-name 'self)]~
-    - ~:map~: ~[:map COLL VAR BODY]~ → ~COLL.map(|VAR| BODY)~
-    - ~:filter~ / ~:any~ / ~:all~: 对应 List 的 ~filter/any/all~
-    - ~:method~: ~[:method OBJ name arg1 arg2]~ → ~OBJ.name(arg1, arg2)~
-    - 简单运算符: ~:+~ ~:sub~ ~:*~ ~:/~ ~:%~ ~:>=~ ~:>~ ~:<=~ ~:<~ ~:==~ ~:!=~ ~:and~ ~:or~ ~:not~ ~:neg~ ~:concat-op~ （统一加括号避免优先级歧义）。
-    - ~:if~ 支持可选 ~else~: ~[:if COND THEN]~ 或 ~[:if COND THEN ELSE]~
-    - 引用语法糖: ~'sym~ 等效 ~[:raw "sym"]~; ~'"str"~ 等效 ~[:str "str"]~
-    - ~:call~ 名称支持：符号/字符串、 ~'quoted~ （如 ~[:call 'json ...]~），或 ~(:raw-e EXPR)~ 在宏展开期计算得出。
-- 示例: ~(tpl-compile [:if (:raw "self.root()") (:str "(root)") (:raw "format_short_commit_id(self.commit_id())")])~
-- 注意：这里的 ~if~ 是模板操作符；Lisp 控制流写在宏外，或用反引号/逗号插入节点。
-- 指南
-  - 一次性编译用 ~tpl-compile~; 需要先组合再编译用 ~tpl~
-  - 未知操作符会抛错，避免静默退化为原样字符串。
-
-* 与 Emacs Lisp 的配合
-- 使用函数构造器处理复杂逻辑
-  - 构造器是普通函数，可与 ~if~ / ~when~ / ~pcase~ 自由组合，最后 ~majutsu-template-compile~
-- 使用宏 (~tpl~/~tpl-compile~) + 反引号插入
-  - 回引号 + 逗号插入已计算的节点：
-    - ~(let ((name (majutsu-template-str (user-full-name))))
-        (tpl-compile `[:concat ,name [:str ": "] [:raw "self.commit_id()"]]))~
-  - 批量插入：
-    - ~(let ((items (mapcar #'majutsu-template-str '("A" "B"))))
-        (tpl-compile `[:concat ,@items]))~
-  - 宏也接受预构建的 EDSL 节点（car 为关键字如 ~:str~ 的 plist）。
-- 避免与 Lisp ~if~ 混淆
-  - 向量里的 ~if~ 是模板操作符；Lisp 条件写在宏外，或通过反引号插入。
+* 安全注意事项
+- ~majutsu-template-raw~ 是最后手段，应在评审中明确使用理由。
+- 包含换行或潜在特殊字符的字段，应优先使用 ~json(...)~ 或 ~.escape_json()~，在 Emacs 端解析结构化数据。
+- 模板中出现的外部输入要在进入 EDSL 前完成校验，避免在 raw 注入阶段留下攻击面。
