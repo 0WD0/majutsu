@@ -10,8 +10,8 @@
 
 (majutsu-template-defun test-helper ((label Template)
                                      (value Template :optional t))
-  (:returns Template :doc "Small helper used in tests.")
-  `[:concat ,label [:str ": "] ,(or value [:str ""])])
+                        (:returns Template :doc "Small helper used in tests.")
+                        `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
@@ -84,12 +84,12 @@
 
 (ert-deftest test-majutsu-template-compile-json-line-sample ()
   (mt--is (tpl-compile [:concat
-                         [:str "{"]
-                         [:str "\"root\":"]
-                         [:raw "if(self.root(), true, false)"]
-                         [:str ",\"commit_id\":"]
-                         [:json [:raw "self.commit_id()"]]
-                         [:str "}"]])
+                        [:str "{"]
+                        [:str "\"root\":"]
+                        [:raw "if(self.root(), true, false)"]
+                        [:str ",\"commit_id\":"]
+                        [:json [:raw "self.commit_id()"]]
+                        [:str "}"]])
           "concat(\"{\", \"\\\"root\\\":\", if(self.root(), true, false), \",\\\"commit_id\\\":\", json(self.commit_id()), \"}\")"))
 
 (ert-deftest test-majutsu-template-string-escape ()
