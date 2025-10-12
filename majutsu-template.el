@@ -70,10 +70,7 @@ Recognised keys: :doc (string) and :converts-to (list of symbols)."
   "Lookup table from symbols/keywords to template function names (strings).")
 
 (defvar majutsu-template--method-registry (make-hash-table :test #'equal)
-  "Map (TYPE . NAME) to template method metadata.")
-
-(defvar majutsu-template--keyword-registry (make-hash-table :test #'equal)
-  "Map (TYPE . NAME) to template keyword metadata.")
+  "Map (TYPE . NAME) to template method metadata (keywords included).")
 
 (defun majutsu-template--symbol->template-name (sym)
   "Return the template name string corresponding to SYM.
@@ -112,8 +109,8 @@ NAME may be a symbol, keyword, string, or a quoted symbol form."
   (gethash (cons owner name) majutsu-template--method-registry))
 
 (defun majutsu-template--lookup-keyword (owner name)
-  "Return metadata for keyword NAME on OWNER type."
-  (gethash (cons owner name) majutsu-template--keyword-registry))
+  "Return metadata for keyword NAME on OWNER type (alias of method lookup)."
+  (majutsu-template--lookup-method owner name))
 
 (defun majutsu-template--reserved-name-p (name)
   "Return non-nil if NAME (string) conflicts with built-in helpers."
@@ -148,7 +145,7 @@ NAME may be a symbol, keyword, string, or a quoted symbol form."
       (:keyword
        (unless owner
          (user-error "majutsu-template: keyword %s must declare :owner type" name))
-       (puthash (cons owner name) meta majutsu-template--keyword-registry))
+       (puthash (cons owner name) meta majutsu-template--method-registry))
       (_
        (user-error "majutsu-template: unsupported callable scope %S" scope)))
     fn-symbol))
