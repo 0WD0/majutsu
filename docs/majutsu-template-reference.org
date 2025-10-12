@@ -34,6 +34,8 @@ elisp 中的数字需要能隐式转换为 Integer or String
 
 elisp 中的字符串自动转换为 String type
 
+它非常符合直觉所以之后作为基本的写法
+
 *** raw
 这是 EDSL 特有的类型，用来直接注入
 ~'quote~ 等效于 ~[:raw "quote"]~
@@ -94,7 +96,6 @@ elisp 中的字符串自动转换为 String type
 内置函数就可以转换为
 ~[:FUN args]~
 
-
 ** 对象方法
 使用 ~[:method OBJ :name arg1 arg2]~ 的形式
 
@@ -110,23 +111,10 @@ elisp 中的字符串自动转换为 String type
 那和 concat 的辨别依据应该就是
 得到所有子树的 ast 后判一下 vector 中有没有直接的 keyword ？
 
-
 ** concat
 ~[part1 part2]~
 等效于
 ~[:concat part1 part2]~
-
-** string
-vector 中的 ~"str"~
-会被视为 ~[:str "str"]~
-
-它非常符合直觉所以之后作为基本的写法
-
-** quote
-vector 中的 ~'quote~
-会被视为 ~[:raw "quote"]~
-
-它非常符合直觉所以之后作为基本的写法
 
 ** List Type
 它有独特的语法
