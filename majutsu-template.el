@@ -99,7 +99,7 @@ NAME may be a symbol, keyword, string, or a quoted symbol form."
           (:rest (setq rest (not (null val))))
           (:converts (setq converts val))
           (:doc (setq doc val))
-          (_ (user-error "majutsu-template-defun %s: unknown option %S" name key))))
+          (_ (user-error "majutsu-template-defun %s: unknown option %S" name key)))))
     (list optional rest converts doc)))
 
 (defun majutsu-template--parse-args (fn-name arg-specs)
@@ -445,79 +445,79 @@ Parentheses are added to avoid precedence issues."
      ;; Disallow list-based operators; require vectors like [:concat ...]
      ((and (consp form) (symbolp (car form)) (not was-vector))
       (user-error "majutsu-template: use vector syntax [:op ...], lists are not accepted: %S" form))
-    ((and (consp form) (symbolp (car form)))
-     (let* ((op (car form))
-            (builtin (alist-get op majutsu-template--sugar-ops))
-            (custom (majutsu-template--lookup-function-name op)))
-       (cond
-        (builtin
-         (pcase op
-           ;; Explicit call: [:call 'name arg1 arg2]
-           ((or 'call :call)
+     ((and (consp form) (symbolp (car form)))
+      (let* ((op (car form))
+             (builtin (alist-get op majutsu-template--sugar-ops))
+             (custom (majutsu-template--lookup-function-name op)))
+        (cond
+         (builtin
+          (pcase op
+            ;; Explicit call: [:call 'name arg1 arg2]
+            ((or 'call :call)
             (let* ((raw-name (cadr form))
                    (name-str (majutsu-template--normalize-call-name raw-name))
                    (args (mapcar #'majutsu-template--sugar-transform (cddr form))))
               (apply #'majutsu-template-call name-str args)))
-          ;; Special cases for arity that mix raw values and forms
-          ((or 'label :label)
-          (let ((name (cadr form))
-                (value (caddr form)))
-            (funcall builtin name (majutsu-template--sugar-transform value))))
-          ((or 'join :join)
-           (let ((sep (cadr form)) (coll (caddr form)) (var (cadddr form)) (body (car (cddddr form))))
-             (funcall builtin (majutsu-template--sugar-transform sep)
-                      (majutsu-template--sugar-transform coll)
-                      var
-                      (majutsu-template--sugar-transform body))))
-          ;; Map shorthand: [:map coll var body] -> coll.map(|var| body)
-          ((or 'map :map)
-           (let ((coll (cadr form)) (var (caddr form)) (body (cadddr form)))
-             (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
-                   (body-s (majutsu-template--compile (majutsu-template--sugar-transform body))))
-               (majutsu-template-raw (format "%s.map(|%s| %s)" coll-s var body-s)))))
-          ;; Filter/any/all shorthand
-          ((or 'filter :filter)
-           (let ((coll (cadr form)) (var (caddr form)) (pred (cadddr form)))
-             (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
-                   (pred-s (majutsu-template--compile (majutsu-template--sugar-transform pred))))
-               (majutsu-template-raw (format "%s.filter(|%s| %s)" coll-s var pred-s)))))
-          ((or 'any :any)
-           (let ((coll (cadr form)) (var (caddr form)) (pred (cadddr form)))
-             (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
-                   (pred-s (majutsu-template--compile (majutsu-template--sugar-transform pred))))
-               (majutsu-template-raw (format "%s.any(|%s| %s)" coll-s var pred-s)))))
-          ((or 'all :all)
-           (let ((coll (cadr form)) (var (caddr form)) (pred (cadddr form)))
-             (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
-                   (pred-s (majutsu-template--compile (majutsu-template--sugar-transform pred))))
-               (majutsu-template-raw (format "%s.all(|%s| %s)" coll-s var pred-s)))))
-          ;; Method sugar: [:method OBJ name arg1 arg2]
-          ((or 'method :method)
-           (let* ((obj (cadr form))
-                  (name (caddr form))
-                  (args (cdddr form))
-                  (obj-s (majutsu-template--compile (majutsu-template--sugar-transform obj)))
-                  (arg-s (mapconcat (lambda (a)
-                                      (majutsu-template--compile (majutsu-template--sugar-transform a)))
-                                    args ", ")))
-             (majutsu-template-raw (format "%s.%s(%s)" obj-s name arg-s))))
-          ;; Global function sugar: coalesce/fill/indent/pad/truncate/hash/json/stringify/raw_escape_sequence/config
-          ((or 'coalesce :coalesce 'fill :fill 'indent :indent 'pad_start :pad_start 'pad_end :pad_end
-               'pad_centered :pad_centered 'truncate_start :truncate_start 'truncate_end :truncate_end
-               'hash :hash 'stringify :stringify 'raw_escape_sequence :raw_escape_sequence 'config :config)
-           (let* ((name (symbol-name op))
-                  (args (mapcar #'majutsu-template--sugar-transform (cdr form))))
-             (apply #'majutsu-template-call name args)))
-          ;; Simple operators
-          ((or :+ '+ :sub '- :* '* :/ '/ :% '% :>= '>= :> '> :<= '<= :< '< :== '== :!= '!= :and 'and :or 'or :not 'not :neg 'neg :concat-op 'concat-op)
-           (majutsu-template--compile-op op form))
-          (_
-           (apply builtin (mapcar #'majutsu-template--sugar-transform (cdr form))))))
-        (custom
-         (let ((args (mapcar #'majutsu-template--sugar-transform (cdr form))))
-           (apply #'majutsu-template-call custom args)))
-        (t
-         (user-error "majutsu-template: unknown operator %S" op)))))
+            ;; Special cases for arity that mix raw values and forms
+            ((or 'label :label)
+            (let ((name (cadr form))
+                  (value (caddr form)))
+              (funcall builtin name (majutsu-template--sugar-transform value))))
+            ((or 'join :join)
+            (let ((sep (cadr form)) (coll (caddr form)) (var (cadddr form)) (body (car (cddddr form))))
+              (funcall builtin (majutsu-template--sugar-transform sep)
+                       (majutsu-template--sugar-transform coll)
+                       var
+                       (majutsu-template--sugar-transform body))))
+            ;; Map shorthand: [:map coll var body] -> coll.map(|var| body)
+            ((or 'map :map)
+            (let ((coll (cadr form)) (var (caddr form)) (body (cadddr form)))
+              (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
+                    (body-s (majutsu-template--compile (majutsu-template--sugar-transform body))))
+                (majutsu-template-raw (format "%s.map(|%s| %s)" coll-s var body-s)))))
+            ;; Filter/any/all shorthand
+            ((or 'filter :filter)
+            (let ((coll (cadr form)) (var (caddr form)) (pred (cadddr form)))
+              (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
+                    (pred-s (majutsu-template--compile (majutsu-template--sugar-transform pred))))
+                (majutsu-template-raw (format "%s.filter(|%s| %s)" coll-s var pred-s)))))
+            ((or 'any :any)
+            (let ((coll (cadr form)) (var (caddr form)) (pred (cadddr form)))
+              (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
+                    (pred-s (majutsu-template--compile (majutsu-template--sugar-transform pred))))
+                (majutsu-template-raw (format "%s.any(|%s| %s)" coll-s var pred-s)))))
+            ((or 'all :all)
+            (let ((coll (cadr form)) (var (caddr form)) (pred (cadddr form)))
+              (let ((coll-s (majutsu-template--compile (majutsu-template--sugar-transform coll)))
+                    (pred-s (majutsu-template--compile (majutsu-template--sugar-transform pred))))
+                (majutsu-template-raw (format "%s.all(|%s| %s)" coll-s var pred-s)))))
+            ;; Method sugar: [:method OBJ name arg1 arg2]
+            ((or 'method :method)
+            (let* ((obj (cadr form))
+                   (name (caddr form))
+                   (args (cdddr form))
+                   (obj-s (majutsu-template--compile (majutsu-template--sugar-transform obj)))
+                   (arg-s (mapconcat (lambda (a)
+                                       (majutsu-template--compile (majutsu-template--sugar-transform a)))
+                                     args ", ")))
+              (majutsu-template-raw (format "%s.%s(%s)" obj-s name arg-s))))
+            ;; Global function sugar: coalesce/fill/indent/pad/truncate/hash/json/stringify/raw_escape_sequence/config
+            ((or 'coalesce :coalesce 'fill :fill 'indent :indent 'pad_start :pad_start 'pad_end :pad_end
+                'pad_centered :pad_centered 'truncate_start :truncate_start 'truncate_end :truncate_end
+                'hash :hash 'stringify :stringify 'raw_escape_sequence :raw_escape_sequence 'config :config)
+            (let* ((name (symbol-name op))
+                   (args (mapcar #'majutsu-template--sugar-transform (cdr form))))
+              (apply #'majutsu-template-call name args)))
+            ;; Simple operators
+            ((or :+ '+ :sub '- :* '* :/ '/ :% '% :>= '>= :> '> :<= '<= :< '< :== '== :!= '!= :and 'and :or 'or :not 'not :neg 'neg :concat-op 'concat-op)
+            (majutsu-template--compile-op op form))
+            (_
+            (apply builtin (mapcar #'majutsu-template--sugar-transform (cdr form))))))
+         (custom
+          (let ((args (mapcar #'majutsu-template--sugar-transform (cdr form))))
+            (apply #'majutsu-template-call custom args)))
+         (t
+          (user-error "majutsu-template: unknown operator %S" op)))))
      (t (user-error "majutsu-template: unsupported literal in sugar %S" form)))))
 
 ;;;###autoload
