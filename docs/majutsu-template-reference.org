@@ -78,11 +78,33 @@ elisp 中的字符串自动转换为 String type
 我们默认 self 对象为函数的第一个参数
 可以没有参数
 
-** 函数调用
-~[:call 'FUN args]~
-=> ~[:raw "FUN(arg1, arg2, ...)"]~
+** 模板函数
+一种是全局的函数
+一种是对象的方法
 
+调用分为三层
+1. 内置函数/方法
+2. 自定义的模板函数/方法
+   这正是我们的设计的强大之处
+3. raw (fallback)
+
+需要做到共享语法的同时实现宏展开
+可以看成一个自展开的宏
+递归编译
+
+如何处理参数？
+我觉得直接复制一遍不太对
+因为它真的可能出现很多很多次
+
+应该在作为参数的那些叶子上设置上指向传入值的引用（节点的 hash 值）
+他们应该只需要编译一次，然后之后就直接复制raw
+
+
+** 函数调用
 一般来说可写为 ~[:FUN args]~
+
+~[:call 'builtin args]~
+=> ~[:raw "builtin(arg1, arg2, ...)"]~
 
 ** 方法调用
 ~[:method 'OBJ :FUN args]~
@@ -112,7 +134,6 @@ elisp 中的字符串自动转换为 String type
 我们可以把关键字体现在字面量上
 比如说对于 ~'change_id~ 我们完全可以先尝试让他作为 ~[:change_id]~ 的形式看看能不能匹配成关键字
 （前两步一致，最后一步是用无类型的 raw 为 fallback，当然警告也要警告）
-
 
 ** concat 语法糖
 ~["X" "Y"]~ => ~[:concat "X" "Y"]~
@@ -189,6 +210,7 @@ fn:--all-p
 
 *** 匿名函数
 ~[:lambda [c] BODY]~
+作为参数的时候它可以转成 ~[[:raw "|c| "] BODY]~
 
 或多变量的形式
 ~[:lambda [a b c] BODY]~
@@ -204,10 +226,42 @@ fn:--all-p
 ~[:call [:lambda [c] BODY] arg]~
 
 *** 顶层函数
-- 使用 ~majutsu-template-defun~ 定义模板函数时，宏会同时生成 Elisp 实现与元数据；在 ~majutsu-template.el~ 内置函数也通过常量表注册。
-- 类型签名写为 ~(:returns TYPE ...)~；额外的 [:scope] 和 [:owner] 只在方法/关键字定义时需要，keyword 与 method 共享同一注册表。
-- 方法和关键字使用 ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~，或者在常量 ~majutsu-template--builtin-method-specs~ 里声明；都会展开成带 self 的参数列表并登记类型。
-- 内建类型通过 ~majutsu-template-define-type~ 录入，含 ~:doc~ 与 ~:converts~ 信息；支持 ~((Type . status))~、符号或列表等多种写法，宏会统一成 `(TYPE . (yes|no|maybe))`。
+使用 ~majutsu-template-defun~ 定义模板函数时，宏会同时生成 Elisp 实现与元数据；在 ~majutsu-template.el~ 内置函数也通过常量表注册。
+
+类型签名写为 ~(:returns TYPE ...)~；额外的 [:scope] 和 [:owner] 只在方法/关键字定义时需要，keyword 与 method 共享同一注册表。
+方法和关键字使用 ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~，或者在常量 ~majutsu-template--builtin-method-specs~ 里声明；都会展开成带 self 的参数列表并登记类型。
+内建类型通过 ~majutsu-template-define-type~ 录入，含 ~:doc~ 与 ~:converts~ 信息；支持 ~((Type . status))~、符号或列表等多种写法，宏会统一成 `(TYPE . (yes|no|maybe))`。
+
+**** ~majutsu-template--fn~
+字段含义：
+~name~（模板侧名称）
+~symbol~（Elisp 实现或占位 stub）
+~args~（参数元信息列表）
+~returns~/~return-converts~（返回类型及可选转换）
+~doc~（说明）
+~scope~（~:function~/~:method~/~:keyword~ 区分调用域）
+~owner~（方法/关键字所属类型）
+
+~:keyword~ 仅用于标记“允许关键字语法的零参数方法”，编译时据此把 ~'change_id~ 展开成 ~self.change_id()~.
+
+**** ~majutsu-template--arg~
+字段含义：
+~name~（形参符号）
+~type~（期望的模板类型）
+~optional~（非 nil 表示对应 &optional 参数）
+~rest~（非 nil 表示这是 &rest 参数）
+~converts~（额外允许的隐式转换声明）
+~doc~（参数说明文字）
+
+宏会使用这些信息生成 docstring，并在未来的类型检查阶段判断参数是否符合签名。
+
+**** ~majutsu-template--type~
+字段含义：
+~name~（类型符号）
+~doc~（说明文字）
+~converts-to~（列表，记录到 Boolean/Serialize/Template 等目标类型的可转换状态，取值 ~yes~/~no~/~maybe~）
+
+内建类型由 ~majutsu-template-define-type~ 注册，后续类型推断会参考这张表确定隐式转换是否合法。
 
 * 嵌入 Emacs Lisp
 这是非常重要的功能
@@ -256,3 +310,28 @@ value: ConfigValue: Value to be formatted in TOML syntax.
 overridden: Boolean: True if the value is shadowed by other.
 source: String: Source of the value.
 path: String: Path to the config file.
+
+* AST 解析
+节点信息：
+kind
+type
+
+** 摘除所有嵌入的 elisp
+
+,(...)
+,@(...)
+(...)
+
+** 语法糖展开
+
+关键字/方法判定
+只有这个一个需要一点点类型信息
+
+其他的可以无脑转化
+
+** 模板宏调用
+
+调用的本质其实是
+给对应变量新的绑定
+用当前的 elisp 环境变量
+重新把这个模板编译一遍
