@@ -10,8 +10,8 @@
 
 (majutsu-template-defun test-helper ((label Template)
                                      (value Template :optional t))
-                        (:returns Template :doc "Small helper used in tests.")
-                        `[:concat ,label [:str ": "] ,(or value [:str ""])])
+  (:returns Template :doc "Small helper used in tests.")
+  `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
@@ -68,7 +68,12 @@
   ;; :call with symbol name and bare string arg
   (mt--is (tpl-compile [:call 'json " "]) "json(\" \")")
   ;; :call with raw arg
-  (mt--is (tpl-compile [:call 'json [:raw "test"]]) "json(test)"))
+  (mt--is (tpl-compile [:call 'json [:raw "test"]]) "json(test)")
+  ;; dynamic decision in :call name
+  (mt--is (tpl-compile [:call (if t 'json 'coalesce) [:str "ok"]])
+          "json(\"ok\")")
+  (mt--is (tpl-compile [:call (if nil 'json 'coalesce) [:str ""] [:str "x"]])
+          "coalesce(\"\", \"x\")"))
 
 (ert-deftest test-majutsu-template-compile-operators ()
   (mt--is (tpl-compile [:+ 1 2])
@@ -123,6 +128,13 @@
           "concat(\"ID\", \": \", \"X\")")
   (mt--is (tpl-compile [:call 'test-helper [:str "ID"] [:str "Y"]])
           "concat(\"ID\", \": \", \"Y\")")
+  ;; Dynamic helper selection in :call
+  (mt--is (tpl-compile [:call (if t 'test-helper 'json) [:str "ID"] [:str "Z"]])
+          "concat(\"ID\", \": \", \"Z\")")
+  ;; Non-vector call name resolved at runtime
+  (mt--is (majutsu-template-compile
+           (majutsu-template-test-helper (majutsu-template-str "A")))
+          "concat(\"A\", \": \", \"\")")
   ;; Registry lookup via keyword/symbol
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
