@@ -175,7 +175,17 @@ fn:--all-p
 
 ** 自定义函数
 *** 定义宏
-重点是类型的定义
+宏 ~majutsu-template-defun~ 会在定义阶段完成两件事：
+1. 生成一个 ~majutsu-template-NAME~ 的 Elisp 函数，调用前会先对参数做 normalize（向量 → AST、字符串 → ~:str~），再执行主体，最后再 normalize 返回值。
+2. 同时把函数的元数据写入注册表：
+   读取参数列表 ~(:returns TYPE …)~
+   可选的 ~:scope~/~:owner~/~:template-name~，构造成 ~majutsu-template--fn~ 记录。
+   普通函数注册到全局函数表；
+   ~:scope :method~ 或 ~:keyword~ 会登记到 ~(TYPE . name)~ 的方法表。
+
+参数声明使用 ~(arg TYPE [:optional t] [:rest t] [:converts LIST])~ 形式；宏在宏展开期解析这些信息，自动拼好 ~lambda-list~ 与 docstring。
+
+方法/关键字可以通过 ~majutsu-template-defmethod~、~majutsu-template-defkeyword~ 封装，或在常量表里批量声明。
 
 *** 匿名函数
 ~[:lambda [c] BODY]~
@@ -192,6 +202,12 @@ fn:--all-p
 ~[[:lambda [c] BODY] arg]~
 等效于
 ~[:call [:lambda [c] BODY] arg]~
+
+*** 顶层函数
+- 使用 ~majutsu-template-defun~ 定义模板函数时，宏会同时生成 Elisp 实现与元数据；在 ~majutsu-template.el~ 内置函数也通过常量表注册。
+- 类型签名写为 ~(:returns TYPE ...)~；额外的 [:scope] 和 [:owner] 只在方法/关键字定义时需要，keyword 与 method 共享同一注册表。
+- 方法和关键字使用 ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~，或者在常量 ~majutsu-template--builtin-method-specs~ 里声明；都会展开成带 self 的参数列表并登记类型。
+- 内建类型通过 ~majutsu-template-define-type~ 录入，含 ~:doc~ 与 ~:converts~ 信息；支持 ~((Type . status))~、符号或列表等多种写法，宏会统一成 `(TYPE . (yes|no|maybe))`。
 
 * 嵌入 Emacs Lisp
 这是非常重要的功能
