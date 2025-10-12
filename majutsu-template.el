@@ -357,7 +357,7 @@ All other characters are emitted verbatim (UTF-8 allowed)."
    ((vectorp expr)
     (let ((node (majutsu-template--sugar-transform expr)))
       (majutsu-template--literal-string-from-node node)))
-   ((and majutsu-template--allow-eval (consp expr))
+   ((consp expr)
     (majutsu-template--resolve-call-name (eval expr)))
    (t expr)))
 
@@ -518,7 +518,7 @@ Parentheses are added to avoid precedence issues."
      ((eq head 'raw)
      (unless (= (length args) 1)
        (user-error "majutsu-template: :raw expects 1 argument"))
-      (let* ((value (car args))
+     (let* ((value (car args))
              (string
               (cond
                ((stringp value) value)
@@ -526,7 +526,7 @@ Parentheses are added to avoid precedence issues."
                ((vectorp value)
                 (let ((node (majutsu-template--sugar-transform value)))
                   (majutsu-template--literal-string-from-node node)))
-               ((and majutsu-template--allow-eval (consp value))
+               ((consp value)
                 (let ((result (eval value)))
                   (unless (stringp result)
                     (user-error "majutsu-template: :raw expression must produce a string, got %S" result))
