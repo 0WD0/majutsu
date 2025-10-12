@@ -194,9 +194,9 @@ Parentheses are added to avoid precedence issues."
         (let* ((items (mapcar #'majutsu-template--sugar-transform form)))
           (setq form (apply #'majutsu-template-concat items)
                 was-vector nil))))
-  (cond
-    ;; Allow pre-built AST nodes to pass through (:str/:raw/:call) with proper shape
-    ((majutsu-template--ast-p form) form)
+    (cond
+     ;; Allow pre-built AST nodes to pass through (:str/:raw/:call) with proper shape
+     ((majutsu-template--ast-p form) form)
      ;; Numbers and booleans: inject as raw tokens (true/false, 123)
      ((numberp form) (majutsu-template-raw (number-to-string form)))
      ((eq form t) (majutsu-template-raw "true"))

@@ -94,4 +94,19 @@
                          [:str "}"]])
           "concat(\"{\", \"\\\"root\\\":\", if(self.root(), true, false), \",\\\"commit_id\\\":\", json(self.commit_id()), \"}\")"))
 
+(ert-deftest test-majutsu-template-string-escape ()
+  ;; Quote and backslash
+  (mt--is (tpl-compile [:str "A \"B\" \\"]) "\"A \\\"B\\\" \\\\\"")
+  ;; Newline, tab, carriage return
+  (mt--is (tpl-compile [:str "a\nb\tc\r"]) "\"a\\nb\\tc\\r\"")
+  ;; NUL and ESC
+  (let ((s (concat "x" (string 0) "y" (string 27) "z")))
+    (mt--is (tpl-compile (vector :str s)) "\"x\\0y\\ez\""))
+  ;; Other control: 0x01 -> \\x01, DEL -> \\x7F
+  (let* ((s2 (concat (string 1) "-" (string 127)))
+         (exp "\"\\x01-\\x7F\""))
+    (mt--is (tpl-compile (vector :str s2)) exp))
+  ;; Unicode stays verbatim
+  (mt--is (tpl-compile [:str "雪"]) "\"雪\""))
+
 ;;; majutsu-template-test.el ends here

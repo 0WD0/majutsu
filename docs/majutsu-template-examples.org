@@ -6,7 +6,7 @@
 - 示例中的 ~;; =>~ 注释行展示编译后的 jj 模板字符串。
 - Elisp 中的字符串会在编译阶段被安全转义。
 
-* 1) Basic string and raw
+* Basic string and raw
 - Elisp
 #+begin_src emacs-lisp
 (tpl [:concat [:str "Hello "] [:raw "self.author().name()"]])
@@ -17,13 +17,13 @@
 concat("Hello ", self.author().name())
 #+end_example
 
-* 2) 条件
+* 条件
 - Elisp
 #+begin_src emacs-lisp
 (tpl-compile [:if
-               (:raw "self.root()")
-               (:str "(root)")
-               (:raw "format_short_commit_id(self.commit_id())")])
+               [:raw "self.root()"]
+               [:str "(root)"]
+               [:raw "format_short_commit_id(self.commit_id())"]])
 #+end_src
 
 - Compiled
@@ -31,7 +31,7 @@ concat("Hello ", self.author().name())
 if(self.root(), "(root)", format_short_commit_id(self.commit_id()))
 #+end_example
 
-* 3) 标签与分隔
+* 标签与分隔
 - Elisp
 #+begin_src emacs-lisp
 (tpl-compile [:separate [:str " "]
@@ -44,7 +44,7 @@ if(self.root(), "(root)", format_short_commit_id(self.commit_id()))
 separate(" ", label("immutable", "immutable"), label("conflict", "conflict"))
 #+end_example
 
-* 4) JSON Lines 记录（便于稳健解析）
+* JSON Lines 记录（便于稳健解析）
 - Elisp
 #+begin_src emacs-lisp
 (tpl-compile
@@ -64,7 +64,7 @@ separate(" ", label("immutable", "immutable"), label("conflict", "conflict"))
 concat("{", "\"root\":", if(self.root(), true, false), ",\"change_id\":", json(format_short_change_id(self.change_id())), ",\"commit_id\":", json(self.commit_id()), "}")
 #+end_example
 
-* 5) 书签的 map + join
+* 书签的 map + join
 - Elisp
 #+begin_src emacs-lisp
 (tpl-compile [:join [:str ", "] [:raw "self.bookmarks()"] b [:raw "b.name()"]])
@@ -75,7 +75,7 @@ concat("{", "\"root\":", if(self.root(), true, false), ",\"change_id\":", json(f
 self.bookmarks().map(|b| b.name()).join(", ")
 #+end_example
 
-* 6) 构建紧凑的日志头（混合内置函数）
+* 构建紧凑的日志头（混合内置函数）
 - Elisp
 #+begin_src emacs-lisp
 (tpl-compile
@@ -92,7 +92,7 @@ self.bookmarks().map(|b| b.name()).join(", ")
 concat(format_short_change_id_with_hidden_and_divergent_info(self), " ", format_short_signature_oneline(self.author()), " ", format_timestamp(commit_timestamp(self)))
 #+end_example
 
-* 7) 使用便捷宏（tpl / tpl-compile）
+* 使用便捷宏（tpl / tpl-compile）
 - 仅展开 AST（可继续组合）
 #+begin_src emacs-lisp
 (tpl [:concat [:str "Hello "] [:raw "self.author().name()"]])
@@ -111,13 +111,13 @@ concat(format_short_change_id_with_hidden_and_divergent_info(self), " ", format_
 concat(json(format_short_change_id(self.change_id())), " ", format_timestamp(commit_timestamp(self)))
 #+end_example
 
-* 8) 强制向量语法（仅 [] 支持）
+* 强制向量语法（仅 [] 支持）
 - 所有 ~tpl~/~tpl-compile~ 的顶层 FORM 必须是向量：
 #+begin_src emacs-lisp
 (tpl-compile [:if (:raw "self.root()") (:str "(root)") (:raw "format_short_commit_id(self.commit_id())")])
 #+end_src
 
-* 9) 数字、布尔、:lit 与 :raw-e
+* 数字、布尔、:lit 与 :raw-e
 - 数字与布尔
 #+begin_src emacs-lisp
 (tpl-compile [:call pad_end 8 [:str "abc"]])   ;; => pad_end(8, "abc")
@@ -143,7 +143,7 @@ concat(json(format_short_change_id(self.change_id())), " ", format_timestamp(com
 self.bookmarks().map(|b| b.name())
 #+end_example
 
-* 10) 运算符与方法
+* 运算符与方法
 - 运算符（统一加括号避免优先级歧义）
 #+begin_src emacs-lisp
 (tpl-compile [:+ 1 2])                          ;; => (1 + 2)
@@ -161,7 +161,7 @@ self.commit_id()
 self.diff("src")
 #+end_example
 
-* 11) 引用语法糖与 :call 名称来源
+* 引用语法糖与 :call 名称来源
 - 引用语法糖：~'sym → [:raw "sym"]~；~'"str" → [:str "str"]~
 #+begin_src emacs-lisp
 (tpl-compile [:concat 'self.conflict])    ;; => concat(self.conflict)
