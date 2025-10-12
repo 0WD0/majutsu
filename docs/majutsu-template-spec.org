@@ -35,7 +35,7 @@
   - ~majutsu-template-separate SEP &rest FORMS~：~separate(...)~。
   - ~majutsu-template-surround PRE POST BODY~：~surround(...)~。
   - ~majutsu-template-json FORM~：~json(FORM)~。
-  - ~majutsu-template-join SEP COLL BODY~：等价于 ~COLL.map(|ITEM| BODY') .join(SEP)~，其中宏自动为闭包生成唯一符号 ~ITEM~，BODY 内对当前上下文的引用使用占位符 ~'self~；宏负责将这些占位符替换为相应的符号，同时保留对外层上下文（如 ~'self^1~、~'self^2~）的访问；返回 ~:join~ 节点。
+  - ~majutsu-template-join SEP COLL VAR BODY~：等价于 ~COLL.map(|VAR| BODY') .join(SEP)~，其中 ~VAR~ 必须为符号；宏使用该符号作为闭包参数，并在 ~BODY~ 中允许通过 ~'VAR~（或其它基于 ~VAR~ 的表达式）引用该参数；返回 ~:join~ 节点。
 - 本规范不允许 ~:lit~、~:raw-e~ 或其它在宏展开期求值的快捷节点；任何需要在宏阶段插入的值请使用反引号与 ~,~/~,@~ 组合现有构造器。
 
 * 宏语法
@@ -53,7 +53,7 @@
 - 其它 ~(quote ...)~ 形式一律报错，避免误将列表当作模板片段。
 
 ** 函数与方法调用
-- ~[:call NAME arg1 arg2 ...]~ 等价于显式调用构造器，NAME 可以是符号或字符串。宏阶段仅转换为 ~:call~ 节点，不执行任何求值。
+- ~[:call 'NAME arg1 arg2 ...]~ 与 ~[:NAME arg1 arg2 ...]~ 等价；NAME 必须以引用形式提供（~'symbol~），以避免在宏阶段对其求值。宏统一转换为 ~:call~ 节点。
 - ~[:method OBJ method a b ...]~ 生成 ~:method~ 节点并允许链式展开：~[:method OBJ method1 arg1 :method method2]~ 需被规范化为顺序方法调用。
 - ~:.~ 是 ~:method~ 的别名。
 - 方法名、函数名必须为符号或字符串字面量；禁止在宏语法中通过求值产生。
@@ -63,8 +63,8 @@
 - 运算符会生成 ~:op~ 节点，并在最终编译时统一加括号，避免优先级歧义。
 
 ** 集合构造器
-- ~[:map COLL BODY]~、~[:filter COLL BODY]~、~[:any COLL BODY]~、~[:all COLL BODY]~ 必须生成对应的 ~:map~/~:filter~/~:any~/~:all~ 节点。宏需要为每个闭包自动生成唯一变量符号，BODY 内引用当前闭包元素时使用占位符 ~'self~。若 BODY 需要访问外层上下文，可使用 ~'self^N~ 表示距当前 ~N~ 层的上层环境（~N >= 1~）。展开后应形如 ~COLL.map(|VAR| BODY')~，其中 ~BODY'~ 已将占位符替换为具体符号。
-- ~[:join SEP COLL BODY]~ 是 ~:join~ 的语法糖，最终依赖 ~majutsu-template-join~，其 BODY 亦使用 ~'self~/~'self^N~ 占位规则。
+- ~[:map COLL VAR BODY]~、~[:filter COLL VAR BODY]~、~[:any COLL VAR BODY]~、~[:all COLL VAR BODY]~ 必须生成对应的 ~:map~/~:filter~/~:any~/~:all~ 节点。~VAR~ 必须为符号（不执行求值）；宏将其拼接进闭包 ~|VAR|~，并允许在 ~BODY~ 中通过 ~'VAR~ 或 ~[:raw "VAR"]~ 等形式引用该变量。
+- ~[:join SEP COLL VAR BODY]~ 是 ~:join~ 的语法糖，最终依赖 ~majutsu-template-join~；~VAR~ 与 ~BODY~ 的处理规则与 ~:map~ 保持一致。
 - 所有集合节点的 ~COLL~ 与 ~BODY~ 均按模板表达式处理；宏阶段不得强制将其降级为字符串。
 
 ** 禁用特性
@@ -74,7 +74,7 @@
 * List 与 ListTemplate
 - ~List~ 类型可调用 ~.len()~、~.join()~、~.filter()~、~.map()~、~.any()~、~.all()~；其布尔语义表示“是否为空”。
 - ~List.map()~ 产物是 ~ListTemplate~，只能继续 ~.join()~；规范要求在宏层面显式区分两种节点，避免误用。
-- 处理 ~.map(|item| expression)~ 时，宏维护一个上下文栈：当前闭包对应的占位符为 ~'self~，上层依次为 ~'self^1~、~'self^2~ ...。生成模板字符串时，宏需将这些占位符替换为自动生成的唯一符号，以便在同一表达式内同时引用当前与外层上下文。
+- 处理 ~.map(|item| expression)~ 时，宏直接使用显式的 ~item~ 符号建立闭包。调用者可在 ~expression~ 中通过 ~'item~（或其它依赖该符号的语法糖）引用当前元素，同时仍能在需要时使用自定义函数封装共享逻辑。
 
 * 与 Emacs Lisp 配合
 ** 直接嵌入
@@ -95,6 +95,63 @@
 * 逆向解析
 - 编译器应保留足够的结构信息，允许调用方在需要时对 AST 进行逆向分析（例如匹配 map/join 模式）。
 - 简单场景下，可通过访问 ~:tag~ 与字段提取参数；无需实现完整的反向编译。
+
+* 自定义函数
+** 定义宏 ~majutsu-template-defun~
+语法：
+#+begin_src emacs-lisp
+(majutsu-template-defun NAME ((ARG TYPE &rest OPTIONS) ...)
+                        (:returns RETURN-TYPE [:converts (TYPE ...)] [:doc DOCSTRING])
+                        BODY)
+#+end_src
+  
+- ~NAME~ 必须是未带前缀的符号；宏会生成 `majutsu-template-NAME` 函数并自动注册，使其可在模板 DSL 中通过 ~[:call 'NAME ...]~ 或 ~[:NAME ...]~ 调用。若 ~NAME~ 与内置函数、已有别名或已注册自定义函数冲突，应在定义阶段抛错。
+- 每个参数规格为列表：(符号 类型 [选项])：
+  - ~类型~ 为核心类型名（~Boolean~、~Template~、~Serialize~ 或领域类型如 ~Commit~、~ListTemplate~ 等），表示静态期望的模板值类型。
+  - 支持选项：
+    - ~:optional t~：标记可选参数；签名表会记录最小/最大实参个数。
+    - ~:rest t~：最后一个参数收集剩余实参；签名记录实参类型集合。
+    - ~:converts (TYPE1 TYPE2 ...)~：允许调用时接受其它类型并隐式转换为~类型~。
+    - ~:doc STRING~：针对单个参数的文档，合并到生成的函数文档中。
+- ~:returns~ 指定主返回类型；可选的 ~:converts~ 列表声明返回值还能隐式转换成哪些类型，以支撑后续调用的类型检查。
+- ~:doc~ 为整体函数文档，写入 `majutsu-template-NAME` 的 docstring，并用于开发者文档生成。
+- ~BODY~ 必须产生 AST（推荐使用向量语法）。宏在展开时会调用 ~majutsu-template--sugar-transform~ 将其归一化，并缓存结果。
+
+** 参数绑定与占位符
+- 宏在展开时为每个参数生成局部符号，并通过 `let` 引入；函数实现内使用同名符号表示已归一化的 AST。
+- 若 ~BODY~ 需要把参数插入模板表达式，使用反引号配合逗号，如：
+
+#+begin_src emacs-lisp
+(majutsu-template-defun example ((label Template) (value Template :optional t))
+  (:returns Template)
+  `[:concat ,label [:str ": "] ,(or value [:str ""])])
+#+end_src
+** 注册与类型检查
+- 宏需要更新全局签名表：NAME → 参数列表（包含类型、可选/可变参数信息）。
+- 同时更新返回类型表：NAME → 主返回类型 + 可转换集合。
+- 当 ~[:call 'NAME ...]~ 或 ~[:NAME ...]~ 出现在模板中时，静态检查阶段将参考签名表校验实参：
+  - 实参数量是否符合区间。
+  - 每个实参的类型是否与声明匹配或在 ~:converts~ 列表中。
+- 若检查失败，宏应抛出 ~user-error~，并给出清晰提示（函数名、期望类型、实际类型）。
+- 重新定义同名函数会覆盖旧记录，并通过 ~message~ 提醒开发者（方便调试）。
+
+** 运行时行为
+- 生成的 `majutsu-template-NAME` 函数返回 AST，可在任意 Elisp 代码中组合、再经 ~majutsu-template-compile~ 输出最终模板字符串。
+- 函数实现应调用内部归一化辅助（如 ~majutsu-template--normalize~）确保所有实参统一成 AST，然后再与 ~BODY~ 组合。
+- 可选/可变参数在缺省时需主动抛出错误或提供默认值，避免生成语义不完整的模板。
+- 如需包装外部 jj 模板函数，可在 ~BODY~ 中直接返回 ~[:call 'external ...]~ 节点，或使用 ~[:external ...]~ 语法糖。
+
+** 示例
+定义格式化片段：
+#+begin_src emacs-lisp
+(majutsu-template-defun format-field ((label Template)
+                                      (value Template :optional t))
+  (:returns Template :doc "Label/value on one line.")
+  `[:concat ,label [:str ": "] ,(or value [:str ""])])
+#+end_src
+
+- 在模板中使用：~(tpl-compile [:call 'format-field [:str "ID"] (:raw "commit_id")])~ 或直接 ~[:format-field [:str "ID"] (:raw "commit_id")]~。
+- 类型系统会根据签名自动允许省略第二个参数，并把返回类型视为 Template，从而可以继续传给其他期望 Template 的构造器。
 
 * 测试建议
 - 为每个构造器、算子与语法糖编写 ERT 单元测试，确保输出稳定。
