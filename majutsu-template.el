@@ -839,23 +839,33 @@ All other characters are emitted verbatim (UTF-8 allowed)."
 
 (defun majutsu-template-str (s)
   "Literal string node for jj template language."
-  (list :str s))
+  (majutsu-template--literal-node s 'String))
 
 (defun majutsu-template-raw (text)
   "Raw snippet injected verbatim. Use sparingly."
-  (list :raw text))
+  (majutsu-template--raw-node text))
 
 (defun majutsu-template-call (name &rest args)
   "Call a jj template function NAME with ARGS (already normalized forms)."
   (let ((name-str (majutsu-template--normalize-call-name name)))
-    (list :call name-str args)))
+    (majutsu-template--call-node
+     name-str
+     (mapcar #'majutsu-template--ensure-node args))))
 
 (defun majutsu-template--literal-string-from-node (node)
   "Return literal string content from NODE if it is :str or :raw."
-  (pcase node
-    (`(:str ,text) text)
-    (`(:raw ,text) text)
-    (_ (user-error "majutsu-template: expected literal string node, got %S" node))))
+  (cond
+   ((majutsu-template-node-p node)
+    (pcase (majutsu-template-node-kind node)
+      (:literal (majutsu-template-node-value node))
+      (:raw (majutsu-template-node-value node))
+      (_ (user-error "majutsu-template: expected literal/raw node, got %S" node))))
+   ((and (consp node) (eq (car node) :str))
+    (cadr node))
+   ((and (consp node) (eq (car node) :raw))
+    (cadr node))
+   (t
+    (user-error "majutsu-template: expected literal string node, got %S" node))))
 
 (defun majutsu-template--resolve-call-name (expr)
   "Resolve EXPR into a call name (string or symbol)."
@@ -885,41 +895,47 @@ BODY may reference VAR using raw sub-expressions."
      (format "%s.map(|%s| %s).join(%s)"
              coll-s var body-s sep-s))))
 
-(defun majutsu-template--normalize (x)
-  "Normalize X into a node. Strings become :str; nodes pass-through; raw left as-is."
-  (cond
-   ((majutsu-template--ast-p x) x)
-   ((vectorp x) (majutsu-template--sugar-transform x))
-   ((stringp x) (majutsu-template-str x))
-   (t (user-error "majutsu-template: unsupported form %S" x))))
-
 (defun majutsu-template--legacy->node (legacy)
-  "Convert LEGACY node (old plist form) into `majutsu-template-node'."
+  "Convert LEGACY plist node into `majutsu-template-node'."
+  (pcase legacy
+    (`(:str ,text) (majutsu-template--literal-node text 'String))
+    (`(:raw ,text) (majutsu-template--raw-node text))
+    (`(:call ,name ,args)
+     (majutsu-template--call-node
+      name
+      (mapcar #'majutsu-template--legacy->node args)))
+    (_
+     (user-error "majutsu-template: unsupported legacy node %S" legacy))))
+
+(defun majutsu-template--normalize (x)
+  "Normalize X into an AST node. Strings become literal nodes, numbers raw, etc."
   (cond
-   ((majutsu-template-node-p legacy)
-    legacy)
-   ((and (consp legacy) (eq (car legacy) :str))
-    (majutsu-template--literal-node (cadr legacy) 'String))
-   ((and (consp legacy) (eq (car legacy) :raw))
-    (majutsu-template--raw-node (cadr legacy)))
-   ((and (consp legacy) (eq (car legacy) :call))
-    (let ((name (cadr legacy))
-          (args (caddr legacy)))
-      (majutsu-template--call-node
-       name
-       (mapcar #'majutsu-template--legacy->node args))))
-   ((and (vectorp legacy))
-    (majutsu-template--legacy->node (majutsu-template--normalize legacy)))
-   ((and (consp legacy))
-    (majutsu-template--legacy->node (majutsu-template--normalize legacy)))
+   ((majutsu-template-node-p x) x)
+   ((vectorp x) (majutsu-template--sugar-transform x))
+   ((and (consp x) (eq (car x) 'quote))
+    (majutsu-template--normalize (cadr x)))
+   ((and (consp x) (keywordp (car x)))
+    (majutsu-template--legacy->node x))
+   ((numberp x)
+    (majutsu-template-raw (number-to-string x)))
+   ((stringp x)
+    (majutsu-template-str x))
+   ((eq x t)
+    (majutsu-template-raw "true"))
+   ((eq x nil)
+    (majutsu-template-raw "false"))
+   ((symbolp x)
+    (majutsu-template-raw (symbol-name x)))
+   ((and (consp x) (symbolp (car x)))
+    (majutsu-template--sugar-apply (car x) (cdr x)))
+   ((consp x)
+    (user-error "majutsu-template: unsupported list form %S" x))
    (t
-    (majutsu-template--legacy->node (majutsu-template--normalize legacy)))))
+    (user-error "majutsu-template: unsupported literal %S" x))))
 
 (defun majutsu-template--ensure-node (form)
   "Return AST node corresponding to FORM."
-  (if (majutsu-template-node-p form)
-      form
-    (majutsu-template--legacy->node (majutsu-template--normalize form))))
+  (majutsu-template--normalize form))
 
 (defun majutsu-template--render-node (node)
   "Render AST NODE to jj template string."
@@ -1020,7 +1036,9 @@ Parentheses are added to avoid precedence issues."
 (defun majutsu-template--sugar-transform (form)
   "Transform compact FORM into the template AST."
   (cond
-   ((majutsu-template--ast-p form) form)
+   ((majutsu-template-node-p form) form)
+   ((and (consp form) (keywordp (car form)))
+    (majutsu-template--legacy->node form))
    ((numberp form) (majutsu-template-raw (number-to-string form)))
    ((eq form t) (majutsu-template-raw "true"))
    ((eq form nil) (majutsu-template-raw "false"))
