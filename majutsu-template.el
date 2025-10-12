@@ -14,6 +14,9 @@
   :type 'boolean
   :group 'majutsu-template)
 
+(defvar majutsu-template--allow-eval nil
+  "When non-nil, cons forms encountered during sugar transformation may be eval'd.")
+
 ;;;; Registry and metadata for custom template helpers
 
 (cl-defstruct (majutsu-template--arg
@@ -265,31 +268,31 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
            (majutsu-template--normalize majutsu-template--result))))))
 
 (majutsu-template-defun concat ((forms Template :rest t))
-                        (:returns Template :doc "concat(FORMS...).")
-                        (apply #'majutsu-template-call 'concat forms))
+  (:returns Template :doc "concat(FORMS...).")
+  (apply #'majutsu-template-call 'concat forms))
 
 (majutsu-template-defun if ((condition Template)
                             (then Template)
                             (else Template :optional t))
-                        (:returns Template :doc "if(COND, THEN [, ELSE]).")
-                        (if else
-                            (majutsu-template-call 'if condition then else)
-                          (majutsu-template-call 'if condition then)))
+  (:returns Template :doc "if(COND, THEN [, ELSE]).")
+  (if else
+      (majutsu-template-call 'if condition then else)
+    (majutsu-template-call 'if condition then)))
 
 (majutsu-template-defun separate ((separator Template)
                                   (forms Template :rest t))
-                        (:returns Template :doc "separate(SEP, FORMS...).")
-                        (apply #'majutsu-template-call 'separate separator forms))
+  (:returns Template :doc "separate(SEP, FORMS...).")
+  (apply #'majutsu-template-call 'separate separator forms))
 
 (majutsu-template-defun surround ((pre Template)
                                   (post Template)
                                   (body Template))
-                        (:returns Template :doc "surround(PRE, POST, BODY).")
-                        (majutsu-template-call 'surround pre post body))
+  (:returns Template :doc "surround(PRE, POST, BODY).")
+  (majutsu-template-call 'surround pre post body))
 
 (majutsu-template-defun json ((value Template))
-                        (:returns Template :doc "json(FORM).")
-                        (majutsu-template-call 'json value))
+  (:returns Template :doc "json(FORM).")
+  (majutsu-template-call 'json value))
 ;; Internal node representation: (:tag ...)
 
 (defun majutsu-template--ast-p (x)
@@ -427,22 +430,21 @@ Parentheses are added to avoid precedence issues."
 ;; Operators may be keywords (:if) or symbols (if); tpl-* aliases also work.
 
 (defconst majutsu-template--sugar-ops
-  '((:str . majutsu-template-str) (str . majutsu-template-str)
-    (:raw . majutsu-template-raw) (raw . majutsu-template-raw)
-    (:call . majutsu-template-call) (call . majutsu-template-call)
-    (:concat . majutsu-template-concat) (concat . majutsu-template-concat)
-    (:if . majutsu-template-if) (if . majutsu-template-if)
-    (:label . majutsu-template-label) (label . majutsu-template-label)
-    (:separate . majutsu-template-separate) (separate . majutsu-template-separate)
-    (:surround . majutsu-template-surround) (surround . majutsu-template-surround)
-    (:json . majutsu-template-json) (json . majutsu-template-json)
-    (:join . majutsu-template-join) (join . majutsu-template-join)
-    (:method . majutsu-template-call) (method . majutsu-template-call)
-    (:. . majutsu-template-call)
-    (:map . majutsu-template-join) (map . majutsu-template-join)
-    (:filter . majutsu-template-join) (filter . majutsu-template-join)
-    (:any . majutsu-template-join) (any . majutsu-template-join)
-    (:all . majutsu-template-join) (all . majutsu-template-join))
+  '((:str . majutsu-template-str)
+    (:raw . majutsu-template-raw)
+    (:call . majutsu-template-call)
+    (:concat . majutsu-template-concat)
+    (:if . majutsu-template-if)
+    (:label . majutsu-template-label)
+    (:separate . majutsu-template-separate)
+    (:surround . majutsu-template-surround)
+    (:json . majutsu-template-json)
+    (:join . majutsu-template-join)
+    (:method . majutsu-template-call)
+    (:map . majutsu-template-join)
+    (:filter . majutsu-template-join)
+    (:any . majutsu-template-join)
+    (:all . majutsu-template-join))
   "Operator mapping for the `tpl` macro sugar.")
 
 (defun majutsu-template--sugar-transform (form)
@@ -461,6 +463,8 @@ Parentheses are added to avoid precedence issues."
       (majutsu-template--sugar-transform normalized)))
    ((and (consp form) (symbolp (car form)))
     (majutsu-template--sugar-apply (car form) (cdr form)))
+   ((and majutsu-template--allow-eval (consp form))
+    (majutsu-template--sugar-transform (eval form)))
    ((consp form)
     (user-error "majutsu-template: use vector syntax [:op ...], lists are not accepted: %S" form))
    (t
@@ -472,7 +476,7 @@ Parentheses are added to avoid precedence issues."
          (head (cond
                 ((keywordp op) (intern (substring (symbol-name op) 1)))
                 (t op)))
-         (_ (when (memq head '(.) ) (setq head 'method)))
+         (_ (when (memq head '(method .)) (setq head 'method)))
          (custom-meta (or (majutsu-template--lookup-function-meta original)
                           (majutsu-template--lookup-function-meta head))))
     (when (and (not (keywordp original))
@@ -493,7 +497,7 @@ Parentheses are added to avoid precedence issues."
         (user-error "majutsu-template: :raw expects 1 argument"))
       (majutsu-template-raw (car args)))
      ((eq head 'concat)
-      (apply #'majutsu-template-concat
+      (apply #'majutsu-template-call 'concat
              (mapcar #'majutsu-template--sugar-transform args)))
      ((eq head 'if)
       (let ((cond-form (majutsu-template--sugar-transform (car args)))
@@ -520,14 +524,22 @@ Parentheses are added to avoid precedence issues."
       (majutsu-template-json (majutsu-template--sugar-transform (car args))))
      ((eq head 'call)
       (let* ((name-expr (car args))
-             (meta (or (majutsu-template--lookup-function-meta name-expr)
+             (resolved-name (cond
+                             ((or (stringp name-expr)
+                                  (symbolp name-expr)
+                                  (keywordp name-expr))
+                              name-expr)
+                             (majutsu-template--allow-eval
+                              (eval name-expr))
+                             (t name-expr)))
+             (meta (or (majutsu-template--lookup-function-meta resolved-name)
                        (majutsu-template--lookup-function-meta
-                        (majutsu-template--normalize-call-name name-expr)))))
+                        (majutsu-template--normalize-call-name resolved-name)))))
         (if meta
             (apply (majutsu-template--fn-symbol meta)
                    (mapcar #'majutsu-template--sugar-transform (cdr args)))
           (let ((call-args (mapcar #'majutsu-template--sugar-transform (cdr args))))
-            (apply #'majutsu-template-call name-expr call-args)))))
+            (apply #'majutsu-template-call resolved-name call-args)))))
      ((eq head 'join)
       (let ((sep (majutsu-template--sugar-transform (car args)))
             (coll (majutsu-template--sugar-transform (cadr args)))
@@ -576,8 +588,9 @@ Parentheses are added to avoid precedence issues."
   "Expand a template program FORM (must be a vector literal) into the EDSL AST."
   (unless (vectorp form)
     (user-error "tpl: top-level form must be a vector, e.g., [:concat ...]"))
-  (let ((node (majutsu-template--sugar-transform form)))
-    `(quote ,node)))
+  (let ((majutsu-template--allow-eval t))
+    (let ((node (majutsu-template--sugar-transform form)))
+      `(quote ,node))))
 
 ;;;###autoload
 (defmacro tpl-compile (form)
@@ -585,8 +598,10 @@ Parentheses are added to avoid precedence issues."
 Vector literals are compiled at macro-expansion time. Non-vector forms are
 evaluated at runtime and normalized via `majutsu-template--normalize'."
   (if (vectorp form)
-      (let ((node (majutsu-template--sugar-transform form)))
-        `(majutsu-template-compile ',node))
-    `(majutsu-template-compile (majutsu-template--normalize ,form))))
+      (let ((majutsu-template--allow-eval t))
+        (let ((node (majutsu-template--sugar-transform form)))
+          `(majutsu-template-compile ',node)))
+    `(let ((majutsu-template--allow-eval nil))
+       (majutsu-template-compile (majutsu-template--normalize ,form)))))
 
 (provide 'majutsu-template)
