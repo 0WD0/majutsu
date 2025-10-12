@@ -58,17 +58,143 @@ elisp 中的字符串自动转换为 String type
 删去了 color label 的 [[Template]]
 本质上是一个隐式转换（我们不用管）
 
+*** Trailer
+[[file:template_help.md::`Trailer` type]]
+
+这应该是一个挺重要的类型
+
 * Functions
 除了原生的模板语言的内置函数，我还希望能定义一些用宏实现的自定义函数（或方法）
 
 需要支持返回值作为它作为其他函数参数时的类型
 
-* 逆向解析
+** 原语 raw
+仅有 ~[:raw "string"]~ 为 [[raw]] type
 
-有没有可能直接通过我给的 ast 来得到我想要的数据？
-用来查一些比较简单的 pattern 应该没什么问题
+** 类型声明
+~[:Template "string"]~ => ~[:raw "template" :Template]~
 
-* 与 Emacs Lisp 的配合
+** self 对象
+我们默认 self 对象为函数的第一个参数
+可以没有参数
+
+** 函数调用
+~[:call 'FUN args]~
+=> ~[:raw "FUN(arg1, arg2, ...)"]~
+
+一般来说可写为 ~[:FUN args]~
+
+** 方法调用
+~[:method 'OBJ :FUN args]~
+
+连续调用：
+~[:method 'OBJ :FUN1 arg1 arg2 ... :FUN2 args2]~
+要能支持 &arg 的多参数收集，当然是取到下一个 :FUN 前
+
+~:.~ 应该被认为等同于 ~:method~
+
+可以用 ~[:change_id]~ 的形式来统一表示对象属性，因为它统一了成员和方法的表示
+
+对于 ~[:FUN args]~
+- 如果 :FUN 是全局、内置函数，就给全局函数
+- 如果 :FUN 是 self 的方法，直接扩展为 ~[:method 'self :FUN args]~
+  若匹配上了，我们称它为关键字
+  这里有一个细节，我们默认一个函数的第一个参数是 self 变量
+  我们需要替换成的是 self 变量对应的字面值，不是直接替换成 'self
+- 如果都不是，报错，提示找不到 OBJ
+
+*** 关键字
+关键字是对于 self 对象的 0参数 方法的简化写法，可以省去 self. 和 ()
+
+这个语言本来提供了一个不用方法而用关键字的语法糖，我认为这个语法糖还不够彻底
+（函数定义里没有这个功能，只有命令直接调用的时候有）
+
+我们可以把关键字体现在字面量上
+比如说对于 ~'change_id~ 我们完全可以先尝试让他作为 ~[:change_id]~ 的形式看看能不能匹配成关键字
+（前两步一致，最后一步是用无类型的 raw 为 fallback，当然警告也要警告）
+
+
+** concat 语法糖
+~["X" "Y"]~ => ~[:concat "X" "Y"]~
+这里要求向量中的每一项都能转换为 Template
+一般来说只需要看第一项的类型就行
+
+也支持把 ~:concat~ 写成 ~:++~
+
+** List related
+~.filter(|item| expression) -> List~: Filter list elements by predicate
+ `expression`. Example: `description.lines().filter(|s| s.contains("#"))`
+ 
+~.map(|item| expression) -> ListTemplate~: Apply template `expression`
+ to each element. Example: `parents.map(|c| c.commit_id().short())`
+ 
+~.any(|item| expression) -> Boolean~: Returns true if any element satisfies
+ the predicate `expression`. Example: `parents.any(|c| c.description().contains("fix"))`
+ 
+~.all(|item| expression) -> Boolean~: Returns true if all elements satisfy
+ the predicate `expression`. Example: `parents.all(|c| c.mine())`
+ 
+这个东西如何处理？其实就是嵌了个匿名函数进去
+
+重点是如何做到不强制嵌入匿名函数
+目前 list 相关的函数的功能还是比较少的，但是我们应该考虑一下扩展性
+
+因为最后他的输出会被拍扁，所以显然这是可行的
+
+*** 匿名函数 with binding
+还是需要支持绑定参数的形式，不然不好嵌套
+
+对于正常的 ~:map~
+它和一般的成员函数无异，只是接受的是一个匿名函数
+
+使用 - 开头的函数表示支持形似 ~(-map FN LIST)~ 的语法
+
+这和前面定义的 OBJ 前置有点不一样，
+但是为了和 elisp 的统一，我觉得有必要搞一个反序的形式
+
+一个例子
+~[:-map [:lambda [c] [:method 'c :description]] [:added_targets]]~
+=> ~[:method [:added_targets] :map [:lambda [c] [:method 'c :description]]]~
+
+注意这里不能省略 :method ，因为这里父亲的 self 对象依然存在！
+只有完全单独定义的函数可以应用这个语法糖
+
+*** 匿名函数 without binding
+一些简单的函数就不需要写 binding 了
+可以完美对应上
+fn:--map
+fn:--filter
+fn:--any
+fn:--all-p
+
+例子：
+~[:--map [:method 'it :description] [:added_targets]]~
+
+需要借鉴 dash.el 的处理
+内层 it 会遮蔽外层 it
+
+** 自定义函数
+*** 定义宏
+重点是类型的定义
+
+*** 匿名函数
+~[:lambda [c] BODY]~
+
+或多变量的形式
+~[:lambda [a b c] BODY]~
+我觉得可能不太好处理，可能之后再支持
+
+一般来说单个变量的用的比较多
+设置一个 ~[:+ARG BODY]~ 的语法糖
+相当于 ~[:lambda [ARG] BODY]~
+
+需要一个和 :call 配合的语法糖
+~[[:lambda [c] BODY] arg]~
+等效于
+~[:call [:lambda [c] BODY] arg]~
+
+* 嵌入 Emacs Lisp
+这是非常重要的功能
 
 ** 直接嵌入
 直接嵌入的 consp 形式需要在宏展开时运行
@@ -87,44 +213,30 @@ elisp 中的字符串自动转换为 String type
 - ~(let ((items (mapcar #'majutsu-template-str '("A" "B"))))
     (tpl-compile `[:concat ,@items]))~
     
-宏也接受预构建的 EDSL 节点（car 为关键字如 ~:str~ 的 plist）。
-    
-* 规范
-** 函数调用
-~[:call 'FUN args]~
+* 哪些命令的输出可以使用 template ?
+| command        | self type            |
+|----------------+----------------------|
+| bookmark list  | CommitRef            |
+| diff           | TreeDiffEntry        |
+| evolog         | CommitEvolutionEntry |
+| file annotate  | AnnotationLine       |
+| flie list      | TreeEntry            |
+| flie show      | TreeEntry            |
+| log            | Commit               |
+| op log         | Operation            |
+| op show        | Operation            |
+| show           | Commit               |
+| tag list       | CommitRef            |
+| workspace list | WorkspaceRef         |
+| config list    | [[config list template]] |
 
-内置函数就可以转换为
-~[:FUN args]~
 
-** 对象方法
-使用 ~[:method OBJ :name arg1 arg2]~ 的形式
+** config list template
 
-我还希望支持 
-~[:method [:method OBJ :name1 arg1 arg2] :name2 args]~ 
-等同于
-~[:method OBJ :name1 arg1 arg2 :name2 args]~
-的语法糖
+我们可以因此建一个 Config type
 
-~:.~ 应该被认为等同于 ~:method~
-
-不太确定能不能直接省略 :method
-那和 concat 的辨别依据应该就是
-得到所有子树的 ast 后判一下 vector 中有没有直接的 keyword ？
-
-** concat
-~[part1 part2]~
-等效于
-~[:concat part1 part2]~
-
-** List Type
-它有独特的语法
-应该如何处理？
-当正常的对象处理
-
-~.map(|item| expression)~
-这里的 expression 是 Template 类型的
-我觉得区别就是把 Template 中的 self 改成对应的 item
-是很好实现的
-
-*** ListTemplate
-只有一个 .join 的方法
+name: String: Config name.
+value: ConfigValue: Value to be formatted in TOML syntax.
+overridden: Boolean: True if the value is shadowed by other.
+source: String: Source of the value.
+path: String: Path to the config file.
