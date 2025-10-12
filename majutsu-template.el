@@ -895,9 +895,7 @@ BODY may reference VAR using raw sub-expressions."
    ((and (consp x) (eq (car x) 'quote))
     (majutsu-template--normalize (cadr x)))
    ((and (consp x) (keywordp (car x)))
-    (let* ((op (car x))
-           (name (substring (symbol-name op) 1)))
-      (apply #'majutsu-template-call name (cdr x))))
+    (majutsu-template--sugar-apply (car x) (cdr x)))
    ((numberp x)
     (majutsu-template-raw (number-to-string x)))
    ((stringp x)
@@ -1019,10 +1017,6 @@ Parentheses are added to avoid precedence issues."
   "Transform compact FORM into the template AST."
   (cond
    ((majutsu-template-node-p form) form)
-   ((and (consp form) (keywordp (car form)))
-    (let ((name (substring (symbol-name (car form)) 1)))
-      (apply #'majutsu-template-call name
-             (mapcar #'majutsu-template--sugar-transform (cdr form)))))
    ((numberp form) (majutsu-template-raw (number-to-string form)))
    ((eq form t) (majutsu-template-raw "true"))
    ((eq form nil) (majutsu-template-raw "false"))

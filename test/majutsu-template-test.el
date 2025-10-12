@@ -123,7 +123,7 @@
   ;; Direct call produces AST and compiles
   (let ((node (majutsu-template-test-helper (majutsu-template-str "ID")
                                             (majutsu-template-str "VAL"))))
-    (should (majutsu-template--ast-p node))
+    (should (majutsu-template-node-p node))
     (should (equal (majutsu-template-compile node)
                    "concat(\"ID\", \": \", \"VAL\")")))
   ;; Optional argument omitted
@@ -155,6 +155,23 @@
   ;; Registry lookup via keyword/symbol
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
+
+(ert-deftest test-majutsu-template-ast-basic-nodes ()
+  (let ((literal (majutsu-template-ast '[:str "X"]))
+        (raw (majutsu-template-ast '[:raw "foo()"]))
+        (call (majutsu-template-ast '[:concat [:str "A"] [:raw "bar"]])))
+    (should (majutsu-template-node-p literal))
+    (should (eq (majutsu-template-node-kind literal) :literal))
+    (should (equal (majutsu-template-node-value literal) "X"))
+    (should (majutsu-template-node-p raw))
+    (should (eq (majutsu-template-node-kind raw) :raw))
+    (should (equal (majutsu-template-node-value raw) "foo()"))
+    (should (majutsu-template-node-p call))
+    (should (eq (majutsu-template-node-kind call) :call))
+    (should (equal (majutsu-template-node-value call) "concat"))
+    (should (= (length (majutsu-template-node-args call)) 2))
+    (should (eq (majutsu-template-node-kind (car (majutsu-template-node-args call))) :literal))
+    (should (eq (majutsu-template-node-kind (cadr (majutsu-template-node-args call))) :raw))))
 
 (ert-deftest test-majutsu-template-builtin-type-registry ()
   (let ((commit (majutsu-template--lookup-type 'Commit))
