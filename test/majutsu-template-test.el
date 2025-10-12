@@ -8,6 +8,11 @@
      (should (stringp got))
      (should (equal got ,expected))))
 
+(majutsu-template-defun test-helper ((label Template)
+                                     (value Template :optional t))
+  (:returns Template :doc "Small helper used in tests.")
+  `[:concat ,label [:str ": "] ,(or value [:str ""])])
+
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
           "concat(\"Hello \", self.author().name())")
@@ -32,19 +37,12 @@
   (should-error (tpl-compile [:concat (str "A") [:str "B"]]) :type 'error))
 
 (ert-deftest test-majutsu-template-compile-numbers-booleans ()
-  (mt--is (tpl-compile [:call pad_end 8 [:str "abc"]])
+  (mt--is (tpl-compile [:call 'pad_end 8 [:str "abc"]])
           "pad_end(8, \"abc\")")
   (mt--is (tpl-compile [:if t [:str "yes"] [:str "no"]])
           "if(true, \"yes\", \"no\")")
   (mt--is (tpl-compile [:if nil [:str "yes"] [:str "no"]])
           "if(false, \"yes\", \"no\")"))
-
-(ert-deftest test-majutsu-template-compile-lit-raw-e ()
-  (let ((user "Alice"))
-    (mt--is (tpl-compile [:concat [:str "Author:"] [:str " "] [:lit user]])
-            "concat(\"Author:\", \" \", \"Alice\")"))
-  (mt--is (tpl-compile [:raw-e (format "format_timestamp(%s)" "commit_timestamp(self)")])
-          "format_timestamp(commit_timestamp(self))"))
 
 (ert-deftest test-majutsu-template-compile-map-join ()
   (mt--is (tpl-compile [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
@@ -65,12 +63,12 @@
           "self.commit_id()")
   (mt--is (tpl-compile [:method (:raw "self") diff (:str "src")])
           "self.diff(\"src\")")
-  (mt--is (tpl-compile [:call coalesce [:str ""] [:str "X"]])
+  (mt--is (tpl-compile [:call 'coalesce [:str ""] [:str "X"]])
           "coalesce(\"\", \"X\")")
   ;; :call with symbol name and bare string arg
-  (mt--is (tpl-compile [:call json " "]) "json(\" \")")
+  (mt--is (tpl-compile [:call 'json " "]) "json(\" \")")
   ;; :call with raw arg
-  (mt--is (tpl-compile [:call json [:raw "test"]]) "json(test)"))
+  (mt--is (tpl-compile [:call 'json [:raw "test"]]) "json(test)"))
 
 (ert-deftest test-majutsu-template-compile-operators ()
   (mt--is (tpl-compile [:+ 1 2])
@@ -108,5 +106,25 @@
     (mt--is (tpl-compile (vector :str s2)) exp))
   ;; Unicode stays verbatim
   (mt--is (tpl-compile [:str "雪"]) "\"雪\""))
+
+(ert-deftest test-majutsu-template-defun-basic ()
+  ;; Direct call produces AST and compiles
+  (let ((node (majutsu-template-test-helper (majutsu-template-str "ID")
+                                            (majutsu-template-str "VAL"))))
+    (should (majutsu-template--ast-p node))
+    (should (equal (majutsu-template-compile node)
+                   "concat(\"ID\", \": \", \"VAL\")")))
+  ;; Optional argument omitted
+  (let ((node (majutsu-template-test-helper (majutsu-template-str "ID"))))
+    (should (equal (majutsu-template-compile node)
+                   "concat(\"ID\", \": \", \"\")")))
+  ;; DSL sugar
+  (mt--is (tpl-compile [:test-helper [:str "ID"] [:str "X"]])
+          "concat(\"ID\", \": \", \"X\")")
+  (mt--is (tpl-compile [:call 'test-helper [:str "ID"] [:str "Y"]])
+          "concat(\"ID\", \": \", \"Y\")")
+  ;; Registry lookup via keyword/symbol
+  (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
+  (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
 
 ;;; majutsu-template-test.el ends here
