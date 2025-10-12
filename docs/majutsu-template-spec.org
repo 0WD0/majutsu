@@ -23,8 +23,11 @@
 - EDSL 的根节点类型记为 Template；其它类型通过转换表折叠为 Template/Serialize/Boolean。
 - 当函数的返回类型需要在上游作为参数继续推断时，必须将其声明为结构化节点而非立即降级成 raw 字符串。
 
+** 类型安全
+忽略类型为 raw 的节点
 
-** 内部类型
+只对所有存在的冲突报错
+
 * AST 节点与基础构造器
 - 内部 AST 统一采用 plist：~(:tag ...)~。允许的 tag 集合：~:str~、~:raw~、~:call~、~:method~、~:op~、~:map~、~:filter~、~:any~、~:all~、~:join~。
 - 对外暴露以下构造器（函数均位于 majutsu-template 命名空间）：
@@ -33,17 +36,8 @@
   - ~majutsu-template-call NAME &rest ARGS~：一般函数调用。
   - ~majutsu-template-concat &rest FORMS~：~concat(...)~ 语义。
   - ~majutsu-template-if COND THEN &optional ELSE~：~if(...)~ 语义（ELSE 省略时不生成第三个实参）。
-  - ~majutsu-template-label NAME VALUE~：~label(NAME, VALUE)~，NAME 自动转成字符串。
-  - ~majutsu-template-separate SEP &rest FORMS~：~separate(...)~。
-  - ~majutsu-template-surround PRE POST BODY~：~surround(...)~。
-  - ~majutsu-template-json FORM~：~json(FORM)~。
-  - ~majutsu-template-join SEP COLL VAR BODY~：等价于 ~COLL.map(|VAR| BODY') .join(SEP)~，其中 ~VAR~ 必须为符号；宏使用该符号作为闭包参数，并在 ~BODY~ 中允许通过 ~'VAR~（或其它基于 ~VAR~ 的表达式）引用该参数；返回 ~:join~ 节点。
 
 * 宏语法
-** 方括号规则
-- 所有宏输入（~tpl~、~tpl-compile~）必须是向量，且嵌套层级同样只能使用向量。普通列表 ~(...)~ 在语法分析阶段一律报错。
-- 允许传入已构造好的 AST（plist 以 ~:tag~ 开头），宏应将其视为原子。
-
 ** 隐式 concat
 - 若向量首元素不是关键字或符号，整体按 ~[:concat ...]~ 处理。
 - 向量中的裸字符串自动视作 ~[:str ...]~，避免重复书写。
@@ -52,7 +46,6 @@
 - 字符串字面量统一用双引号包裹，转义规则见 ~majutsu-template-str~。
 - ~'symbol~ 语法糖视作 ~[:raw "symbol"]~；~'"string"~ 视作 ~[:str "string"]~。
 - 其它 ~(quote ...)~ 形式一律报错，避免误将列表当作模板片段。
-- ~[:raw EXP]~ 会在宏期求值 ~EXP~，并要求结果为字符串（或可解析为字符串的字面节点）；否则抛错。
 
 ** 函数与方法调用
 - ~[:call CALL-NAME arg1 arg2 ...]~ 与 ~[:CALL-NAME arg1 arg2 ...]~ 同源：
@@ -105,11 +98,10 @@
 
 * 自定义函数
 ** 定义宏 ~majutsu-template-defun~
-语法：
 #+begin_src emacs-lisp
 (majutsu-template-defun NAME ((ARG TYPE &rest OPTIONS) ...)
-                        (:returns RETURN-TYPE [:converts (TYPE ...)] [:doc DOCSTRING])
-                        BODY)
+  (:returns RETURN-TYPE [:converts (TYPE ...)] [:doc DOCSTRING])
+  BODY)
 #+end_src
   
 - ~NAME~ 必须是未带前缀的符号；宏会生成 `majutsu-template-NAME` 函数并自动注册，使其可在模板 DSL 中通过 ~[:call 'NAME ...]~、~[:call "NAME" ...]~ 或 ~[:NAME ...]~ 调用。若 ~NAME~ 与内置函数、已有别名或已注册自定义函数冲突，应在定义阶段抛错。
@@ -122,8 +114,9 @@
     - ~:doc STRING~：针对单个参数的文档，合并到生成的函数文档中。
 - ~:returns~ 指定主返回类型；可选的 ~:converts~ 列表声明返回值还能隐式转换成哪些类型，以支撑后续调用的类型检查。
 - ~:doc~ 为整体函数文档，写入 `majutsu-template-NAME` 的 docstring，并用于开发者文档生成。
-- ~BODY~ 必须产生 AST（推荐使用向量语法）。宏在展开时会调用 ~majutsu-template--sugar-transform~ 将其归一化，并缓存结果。
+- ~BODY~ 必须产生 AST。宏在展开时会调用 ~majutsu-template--sugar-transform~ 将其归一化，并缓存结果。
 
+** 匿名定义宏
 ** 参数绑定与占位符
 - 宏在展开时为每个参数生成局部符号，并通过 `let` 引入；函数实现内使用同名符号表示已归一化的 AST。
 - 若 ~BODY~ 需要把参数插入模板表达式，使用反引号配合逗号，如：
@@ -133,6 +126,7 @@
   (:returns Template)
   `[:concat ,label [:str ": "] ,(or value [:str ""])])
 #+end_src
+
 ** 注册与类型检查
 - 宏需要更新全局签名表：NAME → 参数列表（包含类型、可选/可变参数信息）。
 - 同时更新返回类型表：NAME → 主返回类型 + 可转换集合。
