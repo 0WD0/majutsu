@@ -1,17 +1,142 @@
 #+title: Majutsu Template Reference
 
-* 函数定义
-除了原生的模板语言的内置函数，我还希望能定义一些用宏实现的自定义函数
-需要支持返回值作为参数时的类型
-
-这个强类型检查我们需要实现
-
 * Types
-我需要实现的其实只有从 Template 到各种类型的转化？
+需要支持强类型检查
 
-* 类型转化
+** 对象方法
+对象只能使用在定义中声明过的对应类型对应的方法
+
+** Conversion
+这是一个简陋的变量隐式转换系统
+只支持 各种类型到 Boolean Serialize Template 三种类型的转化
+
+这里实现上就把到 B S T 三种类型的类型统一放在某个表里
+然后判断的时候查表就好了
+可以在这些函数定义的时候收集这个信息
+
+** 实现细节
+
+我需要实现的其实只有从 Template (对应我写在 elisp 代码里的最基础的形式) 到各种类型的转化？
+
+*** Boolean
+[[file:template_help.md::`Boolean` type]]
+t -> true
+nil -> false
+
+*** Integer
+[[file:template_help.md::`Integer` type]]
+
+elisp 中的数字需要能隐式转换为 Integer or String
+通过参数能接受的类型选择
+
+*** String
+[[file:template_help.md::`String` type]]
+
+elisp 中的字符串自动转换为 String type
+
+*** raw
+这是 EDSL 特有的类型，用来直接注入
+~'quote~ 等效于 ~[:raw "quote"]~
+如果想要包含括号，需要写成 ~(intern "test()")~
+用反斜杠转义也行 ~'test\(\)~
+
+会直接跳过相关的类型检查
+如果需要，希望可以手动设定类型，作为第二个参数
+
+可能被用来表示为暂未实现的函数或对象名
+
+*** Template
+[[file:template_help.md::`Template` type]]
+它表示的是整个模板最后的输出的类型
+
+大多数类型可以隐式转换为 Template
+
+*** Stringify
+[[file:template_help.md::`Stringify` type]]
+删去了 color label 的 [[Template]]
+本质上是一个隐式转换（我们不用管）
+
+* Functions
+除了原生的模板语言的内置函数，我还希望能定义一些用宏实现的自定义函数（或方法）
+
+需要支持返回值作为它作为其他函数参数时的类型
+
+* 逆向解析
+
+有没有可能直接通过我给的 ast 来得到我想要的数据？
+用来查一些比较简单的 pattern 应该没什么问题
+
+* 与 Emacs Lisp 的配合
+
+** 直接嵌入
+直接嵌入的 consp 形式需要在宏展开时运行
+
+比如：
+~[(if "A" "B") (if t "C" "D")]~
+我想要得到的是
+~[:concat "A" "C"]~
+
+** 反引号插入
+回引号 + 逗号插入已计算的节点：
+- ~(let ((name (majutsu-template-str (user-full-name))))
+    (tpl-compile `[:concat ,name [:str ": "] [:raw "self.commit_id()"]]))~
+    
+批量插入：
+- ~(let ((items (mapcar #'majutsu-template-str '("A" "B"))))
+    (tpl-compile `[:concat ,@items]))~
+    
+宏也接受预构建的 EDSL 节点（car 为关键字如 ~:str~ 的 plist）。
+    
+* 规范
+** 函数调用
+~[:call 'FUN args]~
+
+内置函数就可以转换为
+~[:FUN args]~
 
 
+** 对象方法
+使用 ~[:method OBJ :name arg1 arg2]~ 的形式
 
-* 类型检验
+我还希望支持 
+~[:method [:method OBJ :name1 arg1 arg2] :name2 args]~ 
+等同于
+~[:method OBJ :name1 arg1 arg2 :name2 args]~
+的语法糖
 
+~:.~ 应该被认为等同于 ~:method~
+
+不太确定能不能直接省略 :method
+那和 concat 的辨别依据应该就是
+得到所有子树的 ast 后判一下 vector 中有没有直接的 keyword ？
+
+
+** concat
+~[part1 part2]~
+等效于
+~[:concat part1 part2]~
+
+** string
+vector 中的 ~"str"~
+会被视为 ~[:str "str"]~
+
+它非常符合直觉所以之后作为基本的写法
+
+** quote
+vector 中的 ~'quote~
+会被视为 ~[:raw "quote"]~
+
+它非常符合直觉所以之后作为基本的写法
+
+** List Type
+它有独特的语法
+应该如何处理？
+当正常的对象处理
+
+~.map(|item| expression)~
+这里的 expression 是 Template 类型的
+我觉得区别就是把 Template 中的 self 改成对应的 item
+是很好实现的
+
+*** ListTemplate
+只有一个 .join 的方法

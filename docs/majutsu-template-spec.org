@@ -88,7 +88,7 @@
     - 简单运算符: ~:+~ ~:sub~ ~:*~ ~:/~ ~:%~ ~:>=~ ~:>~ ~:<=~ ~:<~ ~:==~ ~:!=~ ~:and~ ~:or~ ~:not~ ~:neg~ ~:concat-op~ （统一加括号避免优先级歧义）。
     - ~:if~ 支持可选 ~else~: ~[:if COND THEN]~ 或 ~[:if COND THEN ELSE]~
     - 引用语法糖: ~'sym~ 等效 ~[:raw "sym"]~; ~'"str"~ 等效 ~[:str "str"]~
-    - ~:call~ 名称支持：符号/字符串、~'quoted~（如 ~[:call 'json ...]~），或 ~(:raw-e EXPR)~ 在宏展开期计算得出。
+    - ~:call~ 名称支持：符号/字符串、 ~'quoted~ （如 ~[:call 'json ...]~），或 ~(:raw-e EXPR)~ 在宏展开期计算得出。
 - 示例: ~(tpl-compile [:if (:raw "self.root()") (:str "(root)") (:raw "format_short_commit_id(self.commit_id())")])~
 - 注意：这里的 ~if~ 是模板操作符；Lisp 控制流写在宏外，或用反引号/逗号插入节点。
 - 指南
