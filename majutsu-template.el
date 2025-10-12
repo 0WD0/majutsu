@@ -341,6 +341,26 @@ All other characters are emitted verbatim (UTF-8 allowed)."
   (let ((name-str (majutsu-template--normalize-call-name name)))
     (list :call name-str args)))
 
+(defun majutsu-template--literal-string-from-node (node)
+  "Return literal string content from NODE if it is :str or :raw."
+  (pcase node
+    (`(:str ,text) text)
+    (`(:raw ,text) text)
+    (_ (user-error "majutsu-template: expected literal string node, got %S" node))))
+
+(defun majutsu-template--resolve-call-name (expr)
+  "Resolve EXPR into a call name (string or symbol)."
+  (cond
+   ((or (stringp expr) (symbolp expr) (keywordp expr)) expr)
+   ((majutsu-template--ast-p expr)
+    (majutsu-template--literal-string-from-node expr))
+   ((vectorp expr)
+    (let ((node (majutsu-template--sugar-transform expr)))
+      (majutsu-template--literal-string-from-node node)))
+   ((and majutsu-template--allow-eval (consp expr))
+    (majutsu-template--resolve-call-name (eval expr)))
+   (t expr)))
+
 (defun majutsu-template-label (name value)
   "label(NAME, VALUE). NAME is auto-quoted."
   (majutsu-template-call 'label (majutsu-template-str (format "%s" name)) value))
@@ -524,14 +544,7 @@ Parentheses are added to avoid precedence issues."
       (majutsu-template-json (majutsu-template--sugar-transform (car args))))
      ((eq head 'call)
       (let* ((name-expr (car args))
-             (resolved-name (cond
-                             ((or (stringp name-expr)
-                                  (symbolp name-expr)
-                                  (keywordp name-expr))
-                              name-expr)
-                             (majutsu-template--allow-eval
-                              (eval name-expr))
-                             (t name-expr)))
+             (resolved-name (majutsu-template--resolve-call-name name-expr))
              (meta (or (majutsu-template--lookup-function-meta resolved-name)
                        (majutsu-template--lookup-function-meta
                         (majutsu-template--normalize-call-name resolved-name)))))

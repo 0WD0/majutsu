@@ -131,6 +131,13 @@
   ;; Dynamic helper selection in :call
   (mt--is (tpl-compile [:call (if t 'test-helper 'json) [:str "ID"] [:str "Z"]])
           "concat(\"ID\", \": \", \"Z\")")
+  ;; Dynamic helper selection in :call
+  (mt--is (tpl-compile [:call (if t 'test-helper [:raw "json"]) [:str "ID"] [:str "Z"]])
+          "concat(\"ID\", \": \", \"Z\")")
+  (mt--is (tpl-compile [:call (if t [:raw "json"] 'a) [:str "ID"]])
+          "json(\"ID\")")
+  (mt--is (tpl-compile [:call (if t [:raw "json"] 'a) 'ID])
+          "json(ID)")
   ;; Non-vector call name resolved at runtime
   (mt--is (majutsu-template-compile
            (majutsu-template-test-helper (majutsu-template-str "A")))
