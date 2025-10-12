@@ -14,6 +14,245 @@
   :type 'boolean
   :group 'majutsu-template)
 
+;;;; Registry and metadata for custom template helpers
+
+(cl-defstruct (majutsu-template--arg
+               (:constructor majutsu-template--make-arg))
+  name type optional rest converts doc)
+
+(cl-defstruct (majutsu-template--fn
+               (:constructor majutsu-template--make-fn))
+  name symbol args returns return-converts doc)
+
+(defvar majutsu-template--function-registry (make-hash-table :test #'equal)
+  "Map template function names to `majutsu-template--fn' metadata.")
+
+(defvar majutsu-template--function-name-map (make-hash-table :test #'eq)
+  "Lookup table from symbols/keywords to template function names (strings).")
+
+(defun majutsu-template--symbol->template-name (sym)
+  "Return the template name string corresponding to SYM.
+Accepts symbols and keywords."
+  (cond
+   ((keywordp sym) (substring (symbol-name sym) 1))
+   ((symbolp sym) (symbol-name sym))
+   (t (user-error "majutsu-template: invalid function name %S" sym))))
+
+(defun majutsu-template--normalize-call-name (name)
+  "Return template function name string derived from NAME.
+NAME may be a symbol, keyword, string, or a quoted symbol form."
+  (cond
+   ((and (consp name) (eq (car name) 'quote))
+    (majutsu-template--symbol->template-name (cadr name)))
+   ((symbolp name) (majutsu-template--symbol->template-name name))
+   ((stringp name) name)
+   (t (user-error "majutsu-template: unsupported call name %S" name))))
+
+(defun majutsu-template--lookup-function-name (sym)
+  "Return registered template name string for SYM, or nil if unknown."
+  (gethash sym majutsu-template--function-name-map))
+
+(defun majutsu-template--reserved-name-p (name)
+  "Return non-nil if NAME (string) conflicts with built-in helpers."
+  (when (boundp 'majutsu-template--sugar-ops)
+    (let ((sym (intern name))
+          (keyword (intern (concat ":" name))))
+      (or (alist-get sym majutsu-template--sugar-ops)
+          (alist-get keyword majutsu-template--sugar-ops)))))
+
+(defun majutsu-template--register-function (meta)
+  "Register custom function described by META (a `majutsu-template--fn')."
+  (let* ((name (majutsu-template--fn-name meta))
+         (fn-symbol (majutsu-template--fn-symbol meta))
+         (sym (intern name))
+         (keyword (intern (concat ":" name)))
+         (pre-existing (gethash name majutsu-template--function-registry)))
+    (when (majutsu-template--reserved-name-p name)
+      (user-error "majutsu-template: %s is reserved" name))
+    (when pre-existing
+      (message "majutsu-template: redefining template helper %s" name))
+    (puthash name meta majutsu-template--function-registry)
+    (puthash sym name majutsu-template--function-name-map)
+    (puthash keyword name majutsu-template--function-name-map)
+    fn-symbol))
+
+(defun majutsu-template--arg->metadata (arg)
+  "Convert ARG struct to a plist suitable for metadata export."
+  (list :name (majutsu-template--arg-name arg)
+        :type (majutsu-template--arg-type arg)
+        :optional (majutsu-template--arg-optional arg)
+        :rest (majutsu-template--arg-rest arg)
+        :converts (majutsu-template--arg-converts arg)
+        :doc (majutsu-template--arg-doc arg)))
+
+(defun majutsu-template--parse-arg-options (name opts)
+  "Internal helper to parse OPTS plist for argument NAME."
+  (let ((optional nil)
+        (rest nil)
+        (converts nil)
+        (doc nil))
+    (while opts
+      (let ((key (pop opts))
+            (val (pop opts)))
+        (pcase key
+          (:optional (setq optional (not (null val))))
+          (:rest (setq rest (not (null val))))
+          (:converts (setq converts val))
+          (:doc (setq doc val))
+          (_ (user-error "majutsu-template-defun %s: unknown option %S" name key))))
+    (list optional rest converts doc)))
+
+(defun majutsu-template--parse-args (fn-name arg-specs)
+  "Parse ARG-SPECS for FN-NAME into `majutsu-template--arg' structs.
+Also validates placement of optional/rest arguments."
+  (let ((parsed '())
+        (rest-seen nil))
+    (dolist (spec arg-specs)
+      (unless (and (consp spec) (symbolp (car spec)) (>= (length spec) 2))
+        (user-error "majutsu-template-defun %s: invalid parameter spec %S" fn-name spec))
+      (let* ((arg-name (car spec))
+             (type (cadr spec))
+             (opts (cddr spec))
+             (_ (unless (symbolp type)
+                  (user-error "majutsu-template-defun %s: argument %s has invalid type %S"
+                              fn-name arg-name type)))
+             (opt-data (majutsu-template--parse-arg-options arg-name opts))
+             (optional (nth 0 opt-data))
+             (rest (nth 1 opt-data))
+             (converts (nth 2 opt-data))
+             (doc (nth 3 opt-data)))
+        (when (and rest (not (null (cdr (memq spec arg-specs)))))
+          (user-error "majutsu-template-defun %s: :rest parameter must be last" fn-name))
+        (when (and rest rest-seen)
+          (user-error "majutsu-template-defun %s: only one :rest parameter allowed" fn-name))
+        (when (and rest optional)
+          (user-error "majutsu-template-defun %s: parameter %s cannot be both optional and :rest"
+                      fn-name arg-name))
+        (when (and optional rest-seen)
+          (user-error "majutsu-template-defun %s: optional parameters must precede :rest" fn-name))
+        (when rest (setq rest-seen t))
+        (push (majutsu-template--make-arg
+               :name arg-name
+               :type type
+               :optional optional
+               :rest rest
+               :converts converts
+               :doc doc)
+              parsed)))
+    (nreverse parsed)))
+
+(defun majutsu-template--build-lambda-list (args)
+  "Return lambda list corresponding to ARGS metadata."
+  (let ((required '())
+        (optional '())
+        (rest nil))
+    (dolist (arg args)
+      (cond
+       ((majutsu-template--arg-rest arg)
+        (setq rest (majutsu-template--arg-name arg)))
+       ((majutsu-template--arg-optional arg)
+        (push (majutsu-template--arg-name arg) optional))
+       (t
+        (push (majutsu-template--arg-name arg) required))))
+    (setq required (nreverse required)
+          optional (nreverse optional))
+    (append required
+            (when optional (cons '&optional optional))
+            (when rest (list '&rest rest)))))
+
+(defun majutsu-template--build-arg-normalizers (args)
+  "Return forms that normalize function parameters described by ARGS."
+  (cl-loop for arg in args
+           collect
+           (let ((name (majutsu-template--arg-name arg)))
+             (cond
+              ((majutsu-template--arg-rest arg)
+               `(setq ,name (mapcar #'majutsu-template--normalize ,name)))
+              ((majutsu-template--arg-optional arg)
+               `(when ,name (setq ,name (majutsu-template--normalize ,name))))
+              (t
+               `(setq ,name (majutsu-template--normalize ,name)))))))
+
+(defun majutsu-template--parse-signature (fn-name signature)
+  "Parse SIGNATURE plist for FN-NAME, returning plist with :returns etc."
+  (unless (and (consp signature) (eq (car signature) :returns) (cadr signature))
+    (user-error "majutsu-template-defun %s: signature must start with (:returns TYPE ...)" fn-name))
+  (let ((returns (cadr signature))
+        (rest (cddr signature))
+        (doc nil)
+        (converts nil))
+    (unless (symbolp returns)
+      (user-error "majutsu-template-defun %s: invalid return type %S" fn-name returns))
+    (while rest
+      (let ((key (pop rest))
+            (value (pop rest)))
+        (pcase key
+          (:converts (setq converts value))
+          (:doc (setq doc value))
+          (_ (user-error "majutsu-template-defun %s: unknown signature key %S" fn-name key)))))
+    (list :returns returns :converts converts :doc doc)))
+
+(defun majutsu-template--compose-docstring (name base-doc args)
+  "Compose docstring for helper NAME using BASE-DOC and ARGS metadata."
+  (let ((header (or base-doc (format "Template helper %s." name)))
+        (param-lines
+         (when args
+           (mapconcat
+            (lambda (arg)
+              (let ((arg-name (majutsu-template--arg-name arg))
+                    (type (majutsu-template--arg-type arg))
+                    (optional (majutsu-template--arg-optional arg))
+                    (rest (majutsu-template--arg-rest arg))
+                    (doc (majutsu-template--arg-doc arg)))
+                (concat "  " (symbol-name arg-name)
+                        " (" (symbol-name type) ")"
+                        (cond
+                         (rest " [rest]")
+                         (optional " [optional]")
+                         (t ""))
+                        (if doc
+                            (format ": %s" doc)
+                          ""))))
+            args
+            "\n"))))
+    (if param-lines
+        (concat header "\n\nParameters:\n" param-lines)
+      header)))
+
+;;;###autoload
+(defmacro majutsu-template-defun (name args signature &rest body)
+  "Define a majutsu template helper NAME with ARGS, SIGNATURE and BODY.
+Generates `majutsu-template-NAME' and registers it for template DSL usage."
+  (declare (indent defun))
+  (unless (and (symbolp name) (not (keywordp name)))
+    (user-error "majutsu-template-defun: NAME must be an unprefixed symbol"))
+  (when (null body)
+    (user-error "majutsu-template-defun %s: body may not be empty" name))
+  (let* ((name-str (symbol-name name))
+         (fn-symbol (intern (format "majutsu-template-%s" name-str)))
+         (parsed-args (majutsu-template--parse-args name args))
+         (lambda-list (majutsu-template--build-lambda-list parsed-args))
+         (normalizers (majutsu-template--build-arg-normalizers parsed-args))
+         (signature-info (majutsu-template--parse-signature name signature))
+         (return-type (plist-get signature-info :returns))
+         (return-converts (plist-get signature-info :converts))
+         (docstring (majutsu-template--compose-docstring
+                     name-str (plist-get signature-info :doc) parsed-args))
+         (arg-metadata (mapcar #'majutsu-template--arg->metadata parsed-args))
+         (meta `(majutsu-template--make-fn
+                 :name ,name-str
+                 :symbol ',fn-symbol
+                 :args ',arg-metadata
+                 :returns ',return-type
+                 :return-converts ',return-converts
+                 :doc ,docstring)))
+    `(progn
+       (majutsu-template--register-function ,meta)
+       (defun ,fn-symbol ,lambda-list
+         ,docstring
+         ,@normalizers
+         (let ((majutsu-template--result (progn ,@body)))
+           (majutsu-template--normalize majutsu-template--result))))))
 ;; Internal node representation: (:tag ...)
 
 (defun majutsu-template--ast-p (x)
@@ -102,6 +341,7 @@ BODY may reference VAR using raw sub-expressions."
   "Normalize X into a node. Strings become :str; nodes pass-through; raw left as-is."
   (cond
    ((majutsu-template--ast-p x) x)
+   ((vectorp x) (majutsu-template--sugar-transform x))
    ((stringp x) (majutsu-template-str x))
    (t (user-error "majutsu-template: unsupported form %S" x))))
 
@@ -205,37 +445,30 @@ Parentheses are added to avoid precedence issues."
      ;; Disallow list-based operators; require vectors like [:concat ...]
      ((and (consp form) (symbolp (car form)) (not was-vector))
       (user-error "majutsu-template: use vector syntax [:op ...], lists are not accepted: %S" form))
-     ((and (consp form) (symbolp (car form)))
-      (let* ((op (car form))
-             (fn (alist-get op majutsu-template--sugar-ops)))
-        (unless fn
-          (user-error "majutsu-template: unknown operator %S" op))
-        (pcase op
-          ;; Explicit call: [:call name arg1 arg2]
-          ((or 'call :call)
-           (let* ((name (cadr form))
-                  (name-str (if (symbolp name) (symbol-name name) name))
-                  (args (mapcar #'majutsu-template--sugar-transform (cddr form))))
-             (apply #'majutsu-template-call name-str args)))
+    ((and (consp form) (symbolp (car form)))
+     (let* ((op (car form))
+            (builtin (alist-get op majutsu-template--sugar-ops))
+            (custom (majutsu-template--lookup-function-name op)))
+       (cond
+        (builtin
+         (pcase op
+           ;; Explicit call: [:call 'name arg1 arg2]
+           ((or 'call :call)
+            (let* ((raw-name (cadr form))
+                   (name-str (majutsu-template--normalize-call-name raw-name))
+                   (args (mapcar #'majutsu-template--sugar-transform (cddr form))))
+              (apply #'majutsu-template-call name-str args)))
           ;; Special cases for arity that mix raw values and forms
           ((or 'label :label)
-           (let ((name (cadr form))
-                 (value (caddr form)))
-             (funcall fn name (majutsu-template--sugar-transform value))))
+          (let ((name (cadr form))
+                (value (caddr form)))
+            (funcall builtin name (majutsu-template--sugar-transform value))))
           ((or 'join :join)
            (let ((sep (cadr form)) (coll (caddr form)) (var (cadddr form)) (body (car (cddddr form))))
-             (funcall fn (majutsu-template--sugar-transform sep)
+             (funcall builtin (majutsu-template--sugar-transform sep)
                       (majutsu-template--sugar-transform coll)
                       var
                       (majutsu-template--sugar-transform body))))
-          ;; Literal elisp value as jj string literal
-          ((or 'lit :lit)
-           (let ((val (cadr form)))
-             (majutsu-template-str (format "%s" val))))
-          ;; Raw elisp expression result injected verbatim
-          ((or 'raw-e :raw-e)
-           (let ((val (eval (cadr form))))
-             (majutsu-template-raw (format "%s" val))))
           ;; Map shorthand: [:map coll var body] -> coll.map(|var| body)
           ((or 'map :map)
            (let ((coll (cadr form)) (var (caddr form)) (body (cadddr form)))
@@ -279,7 +512,12 @@ Parentheses are added to avoid precedence issues."
           ((or :+ '+ :sub '- :* '* :/ '/ :% '% :>= '>= :> '> :<= '<= :< '< :== '== :!= '!= :and 'and :or 'or :not 'not :neg 'neg :concat-op 'concat-op)
            (majutsu-template--compile-op op form))
           (_
-           (apply fn (mapcar #'majutsu-template--sugar-transform (cdr form)))))))
+           (apply builtin (mapcar #'majutsu-template--sugar-transform (cdr form))))))
+        (custom
+         (let ((args (mapcar #'majutsu-template--sugar-transform (cdr form))))
+           (apply #'majutsu-template-call custom args)))
+        (t
+         (user-error "majutsu-template: unknown operator %S" op)))))
      (t (user-error "majutsu-template: unsupported literal in sugar %S" form)))))
 
 ;;;###autoload
