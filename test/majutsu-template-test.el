@@ -69,6 +69,8 @@
   (mt--is (tpl-compile [:call 'json " "]) "json(\" \")")
   ;; :call with raw arg
   (mt--is (tpl-compile [:call 'json [:raw "test"]]) "json(test)")
+  (mt--is (tpl-compile [:call 'a 'b]) "a(b)")
+  (mt--is (tpl-compile [:call (if t 'a [:raw "hh"]) 'h]) "a(h)")
   ;; dynamic decision in :call name
   (mt--is (tpl-compile [:call (if t 'json 'coalesce) [:str "ok"]])
           "json(\"ok\")")
