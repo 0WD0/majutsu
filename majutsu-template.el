@@ -26,14 +26,28 @@
       (_ nil))))
 
 (defun majutsu-template--str-escape (s)
-  "Escape S for a jj double-quoted string literal."
-  (when (not (stringp s))
+  "Escape S into a jj double-quoted string literal content.
+
+Supported escapes (aligned with jj docs):
+  \" \\ \t \r \n \0 \e and generic control bytes as \\xHH.
+All other characters are emitted verbatim (UTF-8 allowed)."
+  (unless (stringp s)
     (user-error "majutsu-template: expected string, got %S" s))
-  (let ((out (replace-regexp-in-string "\\\\" "\\\\\\\\" s))) ; backslash first
-    (setq out (replace-regexp-in-string "\"" "\\\"" out))
-    (setq out (replace-regexp-in-string "\n" "\\n" out))
-    (setq out (replace-regexp-in-string "\t" "\\t" out))
-    out))
+  (apply #'concat
+         (cl-loop for ch across s
+                  collect
+                  (pcase ch
+                    (?\" "\\\"")          ; double quote
+                    (?\\ "\\\\")          ; backslash
+                    (?\t "\\t")            ; tab
+                    (?\r "\\r")            ; carriage return
+                    (?\n "\\n")            ; newline
+                    (0   "\\0")            ; NUL
+                    (27  "\\e")            ; ESC (0x1b)
+                    (_
+                     (if (or (< ch 32) (= ch 127))
+                         (format "\\x%02X" ch) ; other ASCII controls as \xHH
+                       (string ch)))))))
 
 (defun majutsu-template-str (s)
   "Literal string node for jj template language."
