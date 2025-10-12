@@ -28,7 +28,10 @@
   ;; Optional else
   (mt--is (tpl-compile [:if t "A"]) "if(true, \"A\")")
   (mt--is (tpl-compile [:separate [:str " "] [:label "immutable" [:str "immutable"]] [:label "conflict" [:str "conflict"]]])
-          "separate(\" \", label(\"immutable\", \"immutable\"), label(\"conflict\", \"conflict\"))"))
+          "separate(\" \", label(\"immutable\", \"immutable\"), label(\"conflict\", \"conflict\"))")
+  (mt--is (tpl-compile [:raw (if t "ac" "wa")])
+          "ac")
+  )
 
 (ert-deftest test-majutsu-template-compile-vector-required ()
   (should-error (macroexpand-1 '(tpl (concat (str "A") (str "B")))) :type 'error)
@@ -71,6 +74,8 @@
   (mt--is (tpl-compile [:call 'json [:raw "test"]]) "json(test)")
   (mt--is (tpl-compile [:call 'a 'b]) "a(b)")
   (mt--is (tpl-compile [:call (if t 'a [:raw "hh"]) 'h]) "a(h)")
+  (mt--is (tpl-compile [:call (if t [:raw (if t "hh" "wa")] 'bbb) 'x])
+          "hh(x)")
   ;; dynamic decision in :call name
   (mt--is (tpl-compile [:call (if t 'json 'coalesce) [:str "ok"]])
           "json(\"ok\")")
@@ -144,6 +149,9 @@
   (mt--is (majutsu-template-compile
            (majutsu-template-test-helper (majutsu-template-str "A")))
           "concat(\"A\", \": \", \"\")")
+  ;; :raw expression evaluated to string
+  (mt--is (tpl-compile [:concat [:raw (if t "foo" "bar")]])
+          "concat(foo)")
   ;; Registry lookup via keyword/symbol
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))

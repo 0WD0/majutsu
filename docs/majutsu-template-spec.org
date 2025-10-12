@@ -23,11 +23,13 @@
 - EDSL 的根节点类型记为 Template；其它类型通过转换表折叠为 Template/Serialize/Boolean。
 - 当函数的返回类型需要在上游作为参数继续推断时，必须将其声明为结构化节点而非立即降级成 raw 字符串。
 
+
+** 内部类型
 * AST 节点与基础构造器
 - 内部 AST 统一采用 plist：~(:tag ...)~。允许的 tag 集合：~:str~、~:raw~、~:call~、~:method~、~:op~、~:map~、~:filter~、~:any~、~:all~、~:join~。
 - 对外暴露以下构造器（函数均位于 majutsu-template 命名空间）：
   - ~majutsu-template-str STRING~：创建字符串字面量（自动转义双引号、反斜杠、换行、制表符、回车、NUL、ESC）。
-  - ~majutsu-template-raw TEXT~：原样注入，供熟悉 jj 模板语法的调用者使用。
+  - ~majutsu-template-raw STRING~：原样注入，供熟悉 jj 模板语法的调用者使用。
   - ~majutsu-template-call NAME &rest ARGS~：一般函数调用。
   - ~majutsu-template-concat &rest FORMS~：~concat(...)~ 语义。
   - ~majutsu-template-if COND THEN &optional ELSE~：~if(...)~ 语义（ELSE 省略时不生成第三个实参）。
@@ -36,7 +38,6 @@
   - ~majutsu-template-surround PRE POST BODY~：~surround(...)~。
   - ~majutsu-template-json FORM~：~json(FORM)~。
   - ~majutsu-template-join SEP COLL VAR BODY~：等价于 ~COLL.map(|VAR| BODY') .join(SEP)~，其中 ~VAR~ 必须为符号；宏使用该符号作为闭包参数，并在 ~BODY~ 中允许通过 ~'VAR~（或其它基于 ~VAR~ 的表达式）引用该参数；返回 ~:join~ 节点。
-- 本规范不允许 ~:lit~、~:raw-e~ 或其它在宏展开期求值的快捷节点；任何需要在宏阶段插入的值请使用反引号与 ~,~/~,@~ 组合现有构造器。
 
 * 宏语法
 ** 方括号规则
@@ -51,9 +52,14 @@
 - 字符串字面量统一用双引号包裹，转义规则见 ~majutsu-template-str~。
 - ~'symbol~ 语法糖视作 ~[:raw "symbol"]~；~'"string"~ 视作 ~[:str "string"]~。
 - 其它 ~(quote ...)~ 形式一律报错，避免误将列表当作模板片段。
+- ~[:raw EXP]~ 会在宏期求值 ~EXP~，并要求结果为字符串（或可解析为字符串的字面节点）；否则抛错。
 
 ** 函数与方法调用
-- ~[:call 'NAME arg1 arg2 ...]~ 与 ~[:NAME arg1 arg2 ...]~ 等价；NAME 必须以引用形式提供（~'symbol~），以避免在宏阶段对其求值。宏统一转换为 ~:call~ 节点。
+- ~[:call CALL-NAME arg1 arg2 ...]~ 与 ~[:CALL-NAME arg1 arg2 ...]~ 同源：
+  - 若 ~CALL-NAME~ 是字符串、符号或关键字，则直接作为模板函数名。
+  - 若 ~CALL-NAME~ 为 ~[:str ...]~/~[:raw ...]~ 等字面量节点，解析取其字符串值。
+  - 若表达式被 `tpl`/`tpl-compile` 包裹并且在宏阶段可计算（例如 `(if ...)`），则先求值再按上述规则解析。
+  - 若宏期仍无法得知函数名（例如 ~[:raw (if ...)]~），会抛错提醒调用者显式给出字面量。
 - ~[:method OBJ method a b ...]~ 生成 ~:method~ 节点并允许链式展开：~[:method OBJ method1 arg1 :method method2]~ 需被规范化为顺序方法调用。
 - ~:.~ 是 ~:method~ 的别名。
 - 方法名、函数名必须为符号或字符串字面量；禁止在宏语法中通过求值产生。
@@ -82,6 +88,7 @@
   - 字符串 → ~:str~
   - 预构建 AST → 原样使用
   - 其它类型触发编译期错误
+- 若遇到 cons 结构（如 ~(:foo ...)~ 或 ~(if ...)~），会在宏期先求值，再将结果回填至原位置；结果继续按上述规则归一化。
 - 示例：~[(if "A" "B") (if t "C" "D")]~ 在宏展开后等价于 ~[:concat "A" "C"]~。
 
 ** 反引号插入
@@ -105,7 +112,7 @@
                         BODY)
 #+end_src
   
-- ~NAME~ 必须是未带前缀的符号；宏会生成 `majutsu-template-NAME` 函数并自动注册，使其可在模板 DSL 中通过 ~[:call 'NAME ...]~ 或 ~[:NAME ...]~ 调用。若 ~NAME~ 与内置函数、已有别名或已注册自定义函数冲突，应在定义阶段抛错。
+- ~NAME~ 必须是未带前缀的符号；宏会生成 `majutsu-template-NAME` 函数并自动注册，使其可在模板 DSL 中通过 ~[:call 'NAME ...]~、~[:call "NAME" ...]~ 或 ~[:NAME ...]~ 调用。若 ~NAME~ 与内置函数、已有别名或已注册自定义函数冲突，应在定义阶段抛错。
 - 每个参数规格为列表：(符号 类型 [选项])：
   - ~类型~ 为核心类型名（~Boolean~、~Template~、~Serialize~ 或领域类型如 ~Commit~、~ListTemplate~ 等），表示静态期望的模板值类型。
   - 支持选项：
