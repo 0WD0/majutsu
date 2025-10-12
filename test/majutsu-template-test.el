@@ -28,7 +28,10 @@
   ;; Optional else
   (mt--is (tpl-compile [:if t "A"]) "if(true, \"A\")")
   (mt--is (tpl-compile [:separate [:str " "] [:label "immutable" [:str "immutable"]] [:label "conflict" [:str "conflict"]]])
-          "separate(\" \", label(\"immutable\", \"immutable\"), label(\"conflict\", \"conflict\"))"))
+          "separate(\" \", label(\"immutable\", \"immutable\"), label(\"conflict\", \"conflict\"))")
+  (mt--is (tpl-compile [:raw (if t "ac" "wa")])
+          "ac")
+  )
 
 (ert-deftest test-majutsu-template-compile-vector-required ()
   (should-error (macroexpand-1 '(tpl (concat (str "A") (str "B")))) :type 'error)
