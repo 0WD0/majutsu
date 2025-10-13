@@ -185,6 +185,15 @@
   (should (equal (tpl-compile [:concat (if nil [:str "no"] [:str "yes"]) [:str "!"]])
                  "concat(\"yes\", \"!\")")))
 
+(ert-deftest test-majutsu-template-raw-type-annotation ()
+  (let ((node (majutsu-template-ast '[:raw "foo" :Template])))
+    (should (majutsu-template-node-p node))
+    (should (eq (majutsu-template-node-kind node) :raw))
+    (should (equal (majutsu-template-node-value node) "foo"))
+    (should (eq (majutsu-template-node-type node) 'Template))
+    (should (equal (plist-get (majutsu-template-node-props node) :declared) 'Template)))
+  (should (equal (tpl-compile [:raw "foo" :Template]) "foo")))
+
 (ert-deftest test-majutsu-template-builtin-type-registry ()
   (let ((commit (majutsu-template--lookup-type 'Commit))
         (string-type (majutsu-template--lookup-type 'String))

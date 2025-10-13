@@ -106,6 +106,19 @@ NAME may be a symbol, keyword, string, or a quoted symbol form."
    ((stringp name) name)
    (t (user-error "majutsu-template: unsupported call name %S" name))))
 
+(defun majutsu-template--normalize-type-symbol (type)
+  "Normalize TYPE expression to a symbol, validating format.
+TYPE may be a symbol, keyword, or string."
+  (cond
+   ((symbolp type)
+    (if (keywordp type)
+        (intern (substring (symbol-name type) 1))
+      type))
+   ((stringp type)
+    (intern type))
+   (t
+    (user-error "majutsu-template: invalid type specifier %S" type))))
+
 (defun majutsu-template--lookup-function-meta (key)
   "Return metadata struct for function identified by KEY, or nil."
   (let ((name (cond
@@ -747,19 +760,21 @@ ARGS describe parameters after the implicit SELF argument."
   args
   props)
 
-(defun majutsu-template--literal-node (text &optional type)
+(defun majutsu-template--literal-node (text &optional type props)
   "Return literal template node for TEXT with optional TYPE hint."
   (majutsu-template-node-create
    :kind :literal
-   :type type
-   :value text))
+   :type (or type 'String)
+   :value text
+   :props props))
 
-(defun majutsu-template--raw-node (text)
+(defun majutsu-template--raw-node (text &optional type props)
   "Return raw template node for verbatim TEXT."
   (majutsu-template-node-create
    :kind :raw
-   :type 'Template
-   :value text))
+   :type (or type 'Template)
+   :value text
+   :props props))
 
 (defun majutsu-template--call-node (name args &optional type props)
   "Return call node NAME with ARGS and optional TYPE metadata."
@@ -1062,9 +1077,9 @@ Parentheses are added to avoid precedence issues."
         (user-error "majutsu-template: :str expects 1 argument"))
       (majutsu-template-str (car args)))
      ((eq head 'raw)
-      (unless (= (length args) 1)
-        (user-error "majutsu-template: :raw expects 1 argument"))
       (let* ((value (car args))
+             (declared-type (cadr args))
+             (type (and declared-type (majutsu-template--normalize-type-symbol declared-type)))
              (string
               (cond
                ((stringp value) value)
@@ -1079,8 +1094,8 @@ Parentheses are added to avoid precedence issues."
                   result))
                (t
                 (user-error "majutsu-template: :raw expects a string literal, got %S" value)))))
-        (majutsu-template-raw string)))
-     ((eq head 'concat)
+        (majutsu-template--raw-node string type (when type (list :declared type)))))
+    ((eq head 'concat)
       (apply #'majutsu-template-call 'concat
              (mapcar #'majutsu-template--sugar-transform args)))
      ((eq head 'if)
