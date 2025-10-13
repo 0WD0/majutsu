@@ -13,6 +13,7 @@ interact with JJ repositories from within Emacs.
 - *Context-sensitive actions* via DWIM (Do What I Mean) Enter key behavior
 - *Git integration* with push/fetch operations and configurable options
 - *Built-in conflict resolution* using Emacs ediff and smerge-mode
+- *Composable templates* through the bundled ~majutsu-template~ DSL for JJ output
 
 * Requirements
 - Emacs 26.1 or later
@@ -106,6 +107,16 @@ When editing commit/describe messages:
 6. ~b~ - Manage bookmarks as needed
 7. ~G~ ~p~ - Push to remote
 
+* Template DSL
+Majutsu includes ~majutsu-template.el~, an embedded DSL for building JJ
+templates directly from Elisp (used by ~majutsu--log-template~).
+
+- Use ~tpl~ / ~tpl-compile~ to embed literal vectors at compile time.
+- Keyword sugar covers JJ built-ins plus helpers registered with
+  ~majutsu-template-defkeyword~ or methods declared with ~:keyword t~.
+- See =docs/majutsu-template-spec.org= for the evolving spec and TODO list.
+- Usage patterns and safeguards live in =test/majutsu-template-test.el=.
+
 * Configuration
 #+begin_src emacs-lisp
 ;; Customize jj executable path if needed
@@ -116,3 +127,10 @@ When editing commit/describe messages:
 Issues and pull requests welcome! This project aims to provide a solid JJ
 interface while maintaining magit-like usability patterns.
 
+Run the test suite with:
+#+begin_src sh
+emacs -Q --batch -L . -L test \
+      -l majutsu-template.el \
+      -l test/majutsu-template-test.el \
+      -f ert-run-tests-batch-and-exit
+#+end_src
