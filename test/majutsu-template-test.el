@@ -307,7 +307,7 @@
     (should (= (length (majutsu-template--fn-args method)) 2))))
 
 (ert-deftest test-majutsu-template-label-helper ()
-  (let ((node (majutsu-template-label 'status (majutsu-template-str "ok"))))
+  (let ((node (majutsu-template-label "status" (majutsu-template-str "ok"))))
     (should (majutsu-template-node-p node))
     (should (equal (majutsu-template-compile node)
                    "label(\"status\", \"ok\")"))))
