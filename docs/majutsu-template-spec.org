@@ -54,17 +54,18 @@ elisp 中的字符串自动转换为 String type
 [[file:template_help.md::`Template` type]]
 它表示的是整个模板最后的输出的类型
 
-大多数类型可以隐式转换为 Template
+这是隐式转换相关的一个重要类型
 
 *** Stringify
 [[file:template_help.md::`Stringify` type]]
-删去了 color label 的 [[Template]]
-本质上是一个隐式转换（我们不用管）
+专指删去了 color label 的 [[Template]]
+
+本质上是一个隐式转换，在我们的代码逻辑中，应该直接把它看成是 Template 的 alias
 
 *** Trailer
 [[file:template_help.md::`Trailer` type]]
 
-这应该是一个挺重要的类型
+这应该是一个挺重要的类型，表示一种数据结构
 
 * Functions
 除了原生的模板语言的内置函数，我还希望能定义一些用宏实现的自定义函数（或方法）
@@ -89,7 +90,7 @@ elisp 中的字符串自动转换为 String type
 1. 内置函数/方法
 2. 自定义的模板函数/方法
    这正是我们的设计的强大之处
-3. raw (fallback)
+3. fallback (可配置 警告加+raw / 直接报错)
 
 需要做到共享语法的同时实现宏展开
 可以看成一个自展开的宏
@@ -220,7 +221,7 @@ fn:--all-p
 我觉得可能不太好处理，可能之后再支持
 
 一般来说单个变量的用的比较多
-设置一个 ~[:+ARG BODY]~ 的语法糖
+设置一个 ~[:|ARG| BODY]~ 的语法糖，这更加符合原本的语法
 相当于 ~[:lambda [ARG] BODY]~
 
 需要一个和 :call 配合的语法糖

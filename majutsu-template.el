@@ -641,6 +641,7 @@ ARGS describe parameters after the implicit SELF argument."
 (majutsu-template--definfix and "&&")
 (majutsu-template--definfix or "||")
 (majutsu-template--definfix concat-op "++")
+(majutsu-template--definfix ++ "++")
 (majutsu-template--defprefix not "!")
 (majutsu-template--defprefix neg "-")
 
