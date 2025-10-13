@@ -225,26 +225,72 @@ fn:--all-p
 等效于
 ~[:call [:lambda [c] BODY] arg]~
 
+*** 函数元数据
+**** flavor
+~majutsu-template--fn-flavor~
+ 
+我们可以把函数的模式定义和函数定义分开
+或者在一个 flavor 的基础上覆盖
+
+我也希望有 flavor 的定义宏
+
+:builtin
+[:FUN [optional: OBJ] NAME ARGS] => Template
+根据是否有 owner 输出 fun(arg, ...) 或 obj.fun(arg, ...)
+
+:filter-like
+[:FUN OBJ item BODY] => List
+强制有 :owner
+
+:map-like
+[:FUN OBJ item BODY] => ListTemplate
+强制有 :owner
+
+:-map-like
+[:-map LAMBDA OBJ] => ListTemplate
+强制有 :owner
+
+:--map-like
+[:--map -LAMBDA OBJ] => ListTemplate
+强制有 :owner
+这里的 -LAMBDA 表示的是用 it 直接替代传入参数的匿名函数
+
+:fn
+[:FUN [optional: OBJ] NAME ARGS] => Template
+如果有 :owner 字段，自动添加 OBJ 作为第一个参数
+这是我们的函数模板宏
+需要自己写 body
+
+:custom
+完全自己定义，不继承任何 fn-flavor 信息
+这里可以用来做一些语法糖的实现
+
+我们的 :-lambda :lambda :+ARG 就可以定义在这里
+我不知道 :+ARG 应该如何处理。。。
+
+**** ~majutsu-template--fn~ 字段
+
+(name doc flavor owner args returns body)
+
+name: 函数名
+doc: docstring
+flavor: 继承的 fn-flavor
+owner: 用来得到所属类型信息，也可能用来操控参数列表
+args: 参数列表及对应类型
+returns: 返回值
+body: 函数的具体行为，能根据元数据做一些操作
+
 *** 顶层函数
 使用 ~majutsu-template-defun~ 定义模板函数时，宏会同时生成 Elisp 实现与元数据；在 ~majutsu-template.el~ 内置函数也通过常量表注册。
 
-类型签名写为 ~(:returns TYPE ...)~；额外的 [:scope] 和 [:owner] 只在方法/关键字定义时需要，keyword 与 method 共享同一注册表。
-方法和关键字使用 ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~，或者在常量 ~majutsu-template--builtin-method-specs~ 里声明；都会展开成带 self 的参数列表并登记类型。
+类型签名写为 ~(:returns TYPE ...)~；
+额外的 [:owner] 只在方法/关键字定义时需要，keyword 与 method 共享同一注册表。
+方法和关键字使用 ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~，或者在常量 ~majutsu-template--builtin-method-specs~ 里声明；
+都会展开成带 self 的参数列表并登记类型。
 内建类型通过 ~majutsu-template-define-type~ 录入，含 ~:doc~ 与 ~:converts~ 信息；支持 ~((Type . status))~、符号或列表等多种写法，宏会统一成 `(TYPE . (yes|no|maybe))`。
 
-**** ~majutsu-template--fn~
-字段含义：
-~name~（模板侧名称）
-~symbol~（Elisp 实现或占位 stub）
-~args~（参数元信息列表）
-~returns~/~return-converts~（返回类型及可选转换）
-~doc~（说明）
-~scope~（~:function~/~:method~/~:keyword~ 区分调用域）
-~owner~（方法/关键字所属类型）
-
-~:keyword~ 仅用于标记“允许关键字语法的零参数方法”，编译时据此把 ~'change_id~ 展开成 ~self.change_id()~.
-
 **** ~majutsu-template--arg~
+
 字段含义：
 ~name~（形参符号）
 ~type~（期望的模板类型）
