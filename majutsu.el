@@ -124,16 +124,16 @@ The function must accept one argument: the buffer to display."
   "'\x1e' ++
 if(self.root(),
   separate('\x1e',
-    '',
-    '',
+    format_short_change_id(change_id),
+    ' ',
+    concat(' ', bookmarks, tags, working_copies),
     ' ',
     ' ',
     ' ',
-    ' ',
-    label('root', '(root)'),
+    label('root', 'root()'),
     'root',
-    'root()',
-    '',
+    format_short_commit_id(commit_id),
+    ' ',
     json(' ')
   ),
   label(
