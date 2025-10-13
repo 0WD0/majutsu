@@ -152,6 +152,9 @@
   ;; :raw expression evaluated to string
   (mt--is (tpl-compile [:concat [:raw (if t "foo" "bar")]])
           "concat(foo)")
+  ;; Embedded condition evaluated prior to rewrite
+  (mt--is (tpl-compile [:concat (if (> 2 1) [:str "T"] [:str "F"]) [:str "!"]])
+          "concat(\"T\", \"!\")")
   ;; Registry lookup via keyword/symbol
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
@@ -168,10 +171,19 @@
     (should (equal (majutsu-template-node-value raw) "foo()"))
     (should (majutsu-template-node-p call))
     (should (eq (majutsu-template-node-kind call) :call))
-    (should (equal (majutsu-template-node-value call) "concat"))
-    (should (= (length (majutsu-template-node-args call)) 2))
-    (should (eq (majutsu-template-node-kind (car (majutsu-template-node-args call))) :literal))
-    (should (eq (majutsu-template-node-kind (cadr (majutsu-template-node-args call))) :raw))))
+  (should (equal (majutsu-template-node-value call) "concat"))
+  (should (= (length (majutsu-template-node-args call)) 2))
+  (should (eq (majutsu-template-node-kind (car (majutsu-template-node-args call))) :literal))
+  (should (eq (majutsu-template-node-kind (cadr (majutsu-template-node-args call))) :raw))))
+
+(ert-deftest test-majutsu-template-ast-evaluates-elisp ()
+  (let* ((majutsu-template--allow-eval t)
+         (node (majutsu-template-ast `[:concat ,(majutsu-template-str "X") [:str "Y"]])))
+    (should (majutsu-template-node-p node))
+    (should (equal (majutsu-template-compile node)
+                   "concat(\"X\", \"Y\")")))
+  (should (equal (tpl-compile [:concat (if nil [:str "no"] [:str "yes"]) [:str "!"]])
+                 "concat(\"yes\", \"!\")")))
 
 (ert-deftest test-majutsu-template-builtin-type-registry ()
   (let ((commit (majutsu-template--lookup-type 'Commit))
