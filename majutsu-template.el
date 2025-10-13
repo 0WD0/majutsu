@@ -1398,20 +1398,8 @@ RESULT-TYPE, when non-nil, is used as declared type."
      (meta
       (apply (majutsu-template--fn-symbol meta)
              (mapcar #'majutsu-template--sugar-transform args)))
-     ((memq normalized '(method))
-      (apply #'majutsu-template--sugar-method args))
      (t
       (user-error "majutsu-template: unknown operator %S" op)))))
-
-(defun majutsu-template--sugar-method (obj name &rest args)
-  "Helper for method chaining sugar."
-  (let* ((obj-s (majutsu-template--compile (majutsu-template--sugar-transform obj)))
-         (method (majutsu-template--normalize-call-name name))
-         (arg-str (mapconcat (lambda (a)
-                               (majutsu-template--compile (majutsu-template--sugar-transform a)))
-                             args ", ")))
-    (majutsu-template-raw
-     (format "%s.%s(%s)" obj-s method arg-str))))
 
 ;;;###autoload
 (defmacro tpl (form)
