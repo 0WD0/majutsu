@@ -73,12 +73,11 @@ Recognised keys: :doc (string), :converts or :converts-to (list)."
                  (:constructor majutsu-template--make-fn))
     name
     symbol
+    doc
+    flavor
     args
     returns
-    return-converts
-    doc
     owner
-    flavor
     keyword))
 
 (eval-and-compile
@@ -529,7 +528,6 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
          (lambda-list (majutsu-template--build-lambda-list parsed-args))
          (normalizers (majutsu-template--build-arg-normalizers parsed-args))
          (return-type (plist-get signature-info :returns))
-         (return-converts (plist-get signature-info :converts))
          (docstring (majutsu-template--compose-docstring
                      template-name (plist-get signature-info :doc) parsed-args))
          (arg-metadata (mapcar #'majutsu-template--arg->metadata parsed-args))
@@ -546,7 +544,6 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
                  :symbol ',fn-symbol
                  :args ',arg-metadata
                  :returns ',return-type
-                 :return-converts ',return-converts
                  :doc ,docstring
                  :owner ',owner
                  :flavor ',flavor
@@ -659,7 +656,6 @@ ARGS describe parameters after the implicit SELF argument."
          (raw-args (plist-get plist :args))
          (returns (majutsu-template--parse-type-name
                    (or (plist-get plist :returns) 'Template)))
-         (return-converts (plist-get plist :return-converts))
          (doc (plist-get plist :doc))
          (args-specs (cons `(self ,owner) (or raw-args '())))
          (parsed-args (majutsu-template--parse-args method-name args-specs))
@@ -669,7 +665,6 @@ ARGS describe parameters after the implicit SELF argument."
                 :symbol 'majutsu-template--method-stub
                 :args parsed-args
                 :returns returns
-                :return-converts return-converts
                 :doc doc
                 :owner owner
                 :flavor flavor
@@ -1133,8 +1128,15 @@ Further passes (type-checking, rendering) operate on these nodes."
               (> (length value) 0)
               (eq (aref value 0) ?:)))))
 
+(defun majutsu-template--method-name-from-node (node)
+  "Return normalized method name string from NODE."
+  (let ((raw (majutsu-template--node->identifier node "method name")))
+    (if (and (> (length raw) 0) (eq (aref raw 0) ?:))
+        (substring raw 1)
+      raw)))
+
 (defun majutsu-template--method-split-segments (initial-name nodes)
-  "Split method chain into segments starting with INITIAL-NAME.
+  "Split method chain into segments starting with INITIAL-NAME (string).
 NODES are the remaining argument nodes. Returns list of (NAME . ARGS)."
   (let ((segments '())
         (current-name initial-name)
@@ -1143,31 +1145,31 @@ NODES are the remaining argument nodes. Returns list of (NAME . ARGS)."
       (if (majutsu-template--method-name-node-p node)
           (progn
             (push (cons current-name (nreverse current-args)) segments)
-            (setq current-name node
+            (setq current-name (majutsu-template--method-name-from-node node)
                   current-args '()))
         (push node current-args)))
     (push (cons current-name (nreverse current-args)) segments)
     (nreverse segments)))
-
-(defun majutsu-template--method-fold-calls (object-node segments)
-  "Build nested call nodes applying SEGMENTS to OBJECT-NODE."
-  (let ((result object-node))
-    (dolist (segment segments result)
-      (let* ((name-node (car segment))
-             (args (cdr segment))
-             (method-name (majutsu-template--method-node-name name-node))
-             (call-args (cons result args)))
-        (setq result (majutsu-template--call-node method-name call-args))))))
 
 (majutsu-template-defun method ((object Template)
                                 (name Template)
                                 (args Template :rest t))
   (:returns Template :doc "Method chaining helper." :flavor :custom)
   (let* ((object-node (majutsu-template--ensure-node object))
+         (object-str (majutsu-template--render-node object-node))
          (name-node (majutsu-template--ensure-node name))
+         (start-name (majutsu-template--method-name-from-node name-node))
          (arg-nodes (mapcar #'majutsu-template--ensure-node args))
-         (segments (majutsu-template--method-split-segments name-node arg-nodes)))
-    (majutsu-template--method-fold-calls object-node segments)))
+         (segments (majutsu-template--method-split-segments start-name arg-nodes))
+         (result object-str))
+    (dolist (segment segments)
+      (let* ((seg-name (car segment))
+             (seg-args (cdr segment))
+             (arg-str (mapconcat #'majutsu-template--render-node seg-args ", ")))
+        (setq result (if (= (length arg-str) 0)
+                         (format "%s.%s()" result seg-name)
+                       (format "%s.%s(%s)" result seg-name arg-str)))))
+    (majutsu-template--raw-node result)))
 
 (majutsu-template--defpassthrough coalesce "coalesce helper.")
 (majutsu-template--defpassthrough fill "fill helper.")
