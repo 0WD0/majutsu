@@ -227,12 +227,19 @@ fn:--all-p
 
 *** 函数元数据
 **** flavor
-~majutsu-template--fn-flavor~
+[[file:~/.config/emacs/.local/straight/repos/majutsu/majutsu-template.el::(cl-defstruct (majutsu-template--fn-flavor][fn-flavor]]
  
 我们可以把函数的模式定义和函数定义分开
-或者在一个 flavor 的基础上覆盖
 
-我也希望有 flavor 的定义宏
+一个 flavor 包含哪些元数据？
+然后推荐是正常情况下手动把 orgs returns owner 写满，body 继承来是意料之中的
+
+一个函数的元数据可选地可以在一个 flavor 的基础上覆盖（未指定就是 :custom）
+也就是继承！
+应该继承那些信息？应该是所有信息
+owner args returns builder
+
+有 flavor 的定义函数 [[file:~/.config/emacs/.local/straight/repos/majutsu/majutsu-template.el::defun majutsu-template-define-flavor (name &rest plist][define-flavor]]
 
 :builtin
 [:FUN [optional: OBJ] NAME ARGS] => Template
@@ -358,9 +365,17 @@ source: String: Source of the value.
 path: String: Path to the config file.
 
 * AST 解析
+** 节点定义
+语法树节点定义在这里 [[file:~/.config/emacs/.local/straight/repos/majutsu/majutsu-template.el::(cl-defstruct (majutsu-template-node][node]]
+
 节点信息：
-kind
-type
+kind: 在 elisp 视角下的类型
+type: template 视角下的类型
+value:
+args
+props
+
+
 
 ** 摘除所有嵌入的 elisp
 
