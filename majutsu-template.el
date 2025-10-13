@@ -770,10 +770,32 @@ ARGS describe parameters after the implicit SELF argument."
    :args args
    :props props))
 
+(defun majutsu-template--expand-elisp (form)
+  "Expand embedded Elisp expressions inside FORM when allowed."
+  (cond
+   ((majutsu-template-node-p form) form)
+   ((and (consp form) (keywordp (car form)))
+    (majutsu-template--sugar-apply (car form) (cdr form)))
+   ((vectorp form)
+    (let ((items (mapcar #'majutsu-template--expand-elisp (append form nil))))
+      (apply #'vector items)))
+   ((and (consp form) (eq (car form) 'quote)) form)
+   ((and (consp form) (keywordp (car form)))
+    (cons (car form) (mapcar #'majutsu-template--expand-elisp (cdr form))))
+   ((and (consp form) majutsu-template--allow-eval)
+    (majutsu-template--expand-elisp (eval form)))
+   ((consp form)
+    (cons (majutsu-template--expand-elisp (car form))
+          (mapcar #'majutsu-template--expand-elisp (cdr form))))
+   (t form)))
+
 (defun majutsu-template--rewrite (form)
   "Rewrite literal FORM into normalized AST nodes.
 Further passes (type-checking, rendering) operate on these nodes."
-  (majutsu-template--sugar-transform form))
+  (let ((expanded (if majutsu-template--allow-eval
+                      (majutsu-template--expand-elisp form)
+                    form)))
+    (majutsu-template--sugar-transform expanded)))
 
 (majutsu-template-defun concat ((forms Template :rest t))
   (:returns Template :doc "concat(FORMS...).")
@@ -888,30 +910,8 @@ BODY may reference VAR using raw sub-expressions."
              coll-s var body-s sep-s))))
 
 (defun majutsu-template--normalize (x)
-  "Normalize X into an AST node. Strings become literal nodes, numbers raw, etc."
-  (cond
-   ((majutsu-template-node-p x) x)
-   ((vectorp x) (majutsu-template--sugar-transform x))
-   ((and (consp x) (eq (car x) 'quote))
-    (majutsu-template--normalize (cadr x)))
-   ((and (consp x) (keywordp (car x)))
-    (majutsu-template--sugar-apply (car x) (cdr x)))
-   ((numberp x)
-    (majutsu-template-raw (number-to-string x)))
-   ((stringp x)
-    (majutsu-template-str x))
-   ((eq x t)
-    (majutsu-template-raw "true"))
-   ((eq x nil)
-    (majutsu-template-raw "false"))
-   ((symbolp x)
-    (majutsu-template-raw (symbol-name x)))
-   ((and (consp x) (symbolp (car x)))
-    (majutsu-template--sugar-apply (car x) (cdr x)))
-   ((consp x)
-    (user-error "majutsu-template: unsupported list form %S" x))
-   (t
-    (user-error "majutsu-template: unsupported literal %S" x))))
+  "Normalize X into an AST node."
+  (majutsu-template--rewrite x))
 
 (defun majutsu-template--ensure-node (form)
   "Return AST node corresponding to FORM."
@@ -1166,7 +1166,7 @@ Parentheses are added to avoid precedence issues."
   (unless (vectorp form)
     (user-error "tpl: top-level form must be a vector, e.g., [:concat ...]"))
   (let ((majutsu-template--allow-eval t))
-    (let ((node (majutsu-template--sugar-transform form)))
+    (let ((node (majutsu-template--rewrite form)))
       `(quote ,node))))
 
 ;;;###autoload
@@ -1176,7 +1176,7 @@ Vector literals are compiled at macro-expansion time. Non-vector forms are
 evaluated at runtime and normalized via `majutsu-template--normalize'."
   (if (vectorp form)
       (let ((majutsu-template--allow-eval t))
-        (let ((node (majutsu-template--sugar-transform form)))
+        (let ((node (majutsu-template--rewrite form)))
           `(majutsu-template-compile ',node)))
     `(let ((majutsu-template--allow-eval nil))
        (majutsu-template-compile (majutsu-template--normalize ,form)))))
