@@ -5,6 +5,7 @@
 
 * Types
 需要支持强类型检查
+TODO: 当前实现尚未在运行时执行类型校验
 
 ** 对象方法
 对象只能使用在定义中声明过的对应类型对应的方法
@@ -16,28 +17,11 @@
 这里实现上就把到 B S T 三种类型的类型统一放在某个表里
 然后判断的时候查表就好了
 可以在这些函数定义的时候收集这个信息
+TODO: 目前仅登记转换关系，尚未在调用处强制检查
 
 ** 实现细节
 
 我需要实现的其实只有从 Template (对应我写在 elisp 代码里的最基础的形式) 到各种类型的转化？
-
-*** Boolean
-[[file:template_help.md::`Boolean` type]]
-t -> true
-nil -> false
-
-*** Integer
-[[file:template_help.md::`Integer` type]]
-
-elisp 中的数字需要能隐式转换为 Integer or String
-通过参数能接受的类型选择
-
-*** String
-[[file:template_help.md::`String` type]]
-
-elisp 中的字符串自动转换为 String type
-
-它非常符合直觉所以之后作为基本的写法
 
 *** raw
 这是 EDSL 特有的类型，用来直接注入
@@ -49,6 +33,24 @@ elisp 中的字符串自动转换为 String type
 如果需要，希望可以手动设定类型，作为第二个参数
 
 可能被用来表示为暂未实现的函数或对象名
+
+*** String
+[[file:template_help.md::`String` type]]
+
+elisp 中的字符串自动转换为 String type
+
+它非常符合直觉所以之后作为基本的写法
+
+*** Boolean
+[[file:template_help.md::`Boolean` type]]
+t -> true
+nil -> false
+
+*** Integer
+[[file:template_help.md::`Integer` type]]
+
+elisp 中的数字需要能隐式转换为 Integer or String
+通过参数能接受的类型选择
 
 *** Template
 [[file:template_help.md::`Template` type]]
@@ -77,6 +79,9 @@ elisp 中的字符串自动转换为 String type
 
 ** 类型声明
 ~[:Template "string"]~ => ~[:raw "template" :Template]~
+TODO
+
+现在仅支持 ~[:raw "string" :Template]~
 
 ** self 对象
 我们默认 self 对象为函数的第一个参数
@@ -91,6 +96,7 @@ elisp 中的字符串自动转换为 String type
 2. 自定义的模板函数/方法
    这正是我们的设计的强大之处
 3. fallback (可配置 警告加+raw / 直接报错)
+TODO: 目前实现直接抛错，缺少其他 fallback 模式
 
 需要做到共享语法的同时实现宏展开
 可以看成一个自展开的宏
@@ -102,7 +108,6 @@ elisp 中的字符串自动转换为 String type
 
 应该在作为参数的那些叶子上设置上指向传入值的引用（节点的 hash 值）
 他们应该只需要编译一次，然后之后就直接复制raw
-
 
 ** 函数调用
 一般来说可写为 ~[:FUN args]~
@@ -138,6 +143,7 @@ elisp 中的字符串自动转换为 String type
 我们可以把关键字体现在字面量上
 比如说对于 ~'change_id~ 我们完全可以先尝试让他作为 ~[:change_id]~ 的形式看看能不能匹配成关键字
 （前两步一致，最后一步是用无类型的 raw 为 fallback，当然警告也要警告）
+TODO: 目前只能匹配显式标记为 keyword 的方法，普通 0 参数方法需使用 :method
 
 ** concat 语法糖
 ~["X" "Y"]~ => ~[:concat "X" "Y"]~
@@ -168,6 +174,7 @@ elisp 中的字符串自动转换为 String type
 
 *** 匿名函数 with binding
 还是需要支持绑定参数的形式，不然不好嵌套
+TODO: 此部分语法尚未在实现中提供
 
 对于正常的 ~:map~
 它和一般的成员函数无异，只是接受的是一个匿名函数
@@ -176,6 +183,7 @@ elisp 中的字符串自动转换为 String type
 
 这和前面定义的 OBJ 前置有点不一样，
 但是为了和 elisp 的统一，我觉得有必要搞一个反序的形式
+TODO: :-map 等语法糖尚未实现
 
 一个例子
 ~[:-map [:lambda [c] [:method 'c :description]] [:added_targets]]~
@@ -191,6 +199,7 @@ fn:--map
 fn:--filter
 fn:--any
 fn:--all-p
+TODO: Dash 风格 :--map/:--filter 等尚未实现
 
 例子：
 ~[:--map [:method 'it :description] [:added_targets]]~
@@ -212,6 +221,7 @@ fn:--all-p
 *** 匿名函数
 ~[:lambda [c] BODY]~
 作为参数的时候它可以转成 ~[[:raw "|c| "] BODY]~
+TODO: Lambda 语法目前未提供
 
 或多变量的形式
 ~[:lambda [a b c] BODY]~
@@ -323,6 +333,7 @@ body: 函数的具体行为，能根据元数据做一些操作
 
 * 嵌入 Emacs Lisp
 这是非常重要的功能
+TODO: 目前仅支持基本的宏期 eval，复杂场景仍需实现
 
 ** 直接嵌入
 直接嵌入的 consp 形式需要在宏展开时运行
