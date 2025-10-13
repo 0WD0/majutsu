@@ -27,9 +27,21 @@
   (:returns Template :doc "Synthetic CommitRef keyword for tests.")
   `[:raw "commitref_keyword"])
 
+(majutsu-template-defkeyword test-commit-keyword Commit
+  (:returns Template :doc "Synthetic Commit keyword for tests.")
+  `[:raw "commit_keyword"])
+
 (majutsu-template-defmethod test-list-method List ((suffix Template))
   (:returns Template :doc "Synthetic List method for tests.")
   `[:raw "list_method_stub"])
+
+(majutsu-template-defmethod test-commit-flag Commit ()
+  (:returns Template :doc "Non-keyword Commit method for tests.")
+  `[:raw "commit_flag"])
+
+(majutsu-template-defmethod test-commit-optflag Commit ()
+  (:returns Template :keyword t :doc "Opt-in keyword Commit method for tests.")
+  `[:raw "commit_optflag"])
 
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
@@ -321,6 +333,18 @@
     (mt--is (tpl-compile [:parents :len])
             "self.parents().len()")))
 
+(ert-deftest test-majutsu-template-self-keyword-custom-defkeyword ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (tpl-compile [:test-commit-keyword])
+            "self.test-commit-keyword()")))
+
+(ert-deftest test-majutsu-template-self-keyword-custom-defmethod-opt-in ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (tpl-compile [:test-commit-optflag])
+            "self.test-commit-optflag()")))
+
 (ert-deftest test-majutsu-template-with-self-binding ()
   (let ((majutsu-template-default-self-type nil)
         (majutsu-template--self-stack
@@ -351,7 +375,13 @@
 (ert-deftest test-majutsu-template-self-nonkeyword-not-dispatched ()
   (let ((majutsu-template-default-self-type 'Commit)
         (majutsu-template--self-stack nil))
-    (should-error (majutsu-template-compile '[:diff "files"])
+    (should-error (majutsu-template-compile '[:test-commit-flag])
                   :type 'error)))
+
+(ert-deftest test-majutsu-template-self-nonkeyword-explicit-call ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (tpl-compile [:method [:raw "self" :Commit] :test-commit-flag])
+            "self.test-commit-flag()")))
 
 ;;; majutsu-template-test.el ends here

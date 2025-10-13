@@ -296,6 +296,9 @@ body: 函数的具体行为，能根据元数据做一些操作
 额外的 [:owner] 只在方法/关键字定义时需要，keyword 与 method 共享同一注册表。
 方法和关键字使用 ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~，或者在常量 ~majutsu-template--builtin-method-specs~ 里声明；
 都会展开成带 self 的参数列表并登记类型。
+默认情况下，以 ~majutsu-template-defmethod~ 定义的 0 参数方法不会被视为 keyword，
+不会触发 ~[:name]~ 语法糖；若要参与 keyword 重写，需要在签名中显式添加 ~:keyword t~，
+或直接使用 ~majutsu-template-defkeyword~ 宏。
 内建类型通过 ~majutsu-template-define-type~ 录入，含 ~:doc~ 与 ~:converts~ 信息；支持 ~((Type . status))~、符号或列表等多种写法，宏会统一成 `(TYPE . (yes|no|maybe))`。
 
 **** ~majutsu-template--arg~

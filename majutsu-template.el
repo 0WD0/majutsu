@@ -604,7 +604,12 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
 
 (defmacro majutsu-template-defmethod (name owner args signature &rest body)
   "Define template method NAME applicable to OWNER type.
-ARGS describe parameters after the implicit SELF argument."
+ARGS describe parameters after the implicit SELF argument.
+
+Methods defined with this macro are *not* treated as implicit keywords
+unless the SIGNATURE explicitly provides :keyword t. Use
+`majutsu-template-defkeyword' for zero-argument helpers intended to
+participate in keyword sugar."
   (declare (indent defun))
   (let ((extended-args (cons `(self ,owner) args)))
     `(majutsu-template-defun ,name ,extended-args
