@@ -218,10 +218,10 @@
     (should (equal (majutsu-template-node-value raw) "foo()"))
     (should (majutsu-template-node-p call))
     (should (eq (majutsu-template-node-kind call) :call))
-  (should (equal (majutsu-template-node-value call) "concat"))
-  (should (= (length (majutsu-template-node-args call)) 2))
-  (should (eq (majutsu-template-node-kind (car (majutsu-template-node-args call))) :literal))
-  (should (eq (majutsu-template-node-kind (cadr (majutsu-template-node-args call))) :raw))))
+    (should (equal (majutsu-template-node-value call) "concat"))
+    (should (= (length (majutsu-template-node-args call)) 2))
+    (should (eq (majutsu-template-node-kind (car (majutsu-template-node-args call))) :literal))
+    (should (eq (majutsu-template-node-kind (cadr (majutsu-template-node-args call))) :raw))))
 
 (ert-deftest test-majutsu-template-ast-evaluates-elisp ()
   (let* ((majutsu-template--allow-eval t)
@@ -308,5 +308,50 @@
     (should (majutsu-template-node-p node))
     (should (equal (majutsu-template-compile node)
                    "self.parents().map(|p| p.commit_id()).join(\", \")"))))
+
+(ert-deftest test-majutsu-template-self-keyword-basic ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (tpl-compile [:description])
+            "self.description()")))
+
+(ert-deftest test-majutsu-template-self-keyword-chain ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (tpl-compile [:parents :len])
+            "self.parents().len()")))
+
+(ert-deftest test-majutsu-template-with-self-binding ()
+  (let ((majutsu-template-default-self-type nil)
+        (majutsu-template--self-stack
+         (list (majutsu-template--make-self-binding
+                :node (majutsu-template-raw "op" 'Operation)
+                :type 'Operation))))
+    (mt--is (majutsu-template-compile '[:id])
+            "op.id()")))
+
+(ert-deftest test-majutsu-template-self-keyword-missing-context ()
+  (let ((majutsu-template-default-self-type nil)
+        (majutsu-template--self-stack nil))
+    (should-error (majutsu-template-compile '[:description])
+                  :type 'error)))
+
+(ert-deftest test-majutsu-template-self-keyword-unknown-method ()
+  (let ((majutsu-template-default-self-type 'Operation)
+        (majutsu-template--self-stack nil))
+    (should-error (majutsu-template-compile '[:change_id])
+                  :type 'error)))
+
+(ert-deftest test-majutsu-template-self-keyword-arguments-rejected ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (should-error (majutsu-template-compile '[:description "X"])
+                  :type 'error)))
+
+(ert-deftest test-majutsu-template-self-nonkeyword-not-dispatched ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (should-error (majutsu-template-compile '[:diff "files"])
+                  :type 'error)))
 
 ;;; majutsu-template-test.el ends here

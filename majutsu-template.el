@@ -19,6 +19,34 @@
 (defvar majutsu-template--allow-eval nil
   "When non-nil, cons forms encountered during sugar transformation may be eval'd.")
 
+;;; Self binding context ######################################################
+
+(cl-defstruct (majutsu-template--self-binding
+               (:constructor majutsu-template--make-self-binding))
+  "Binding describing the current implicit `self' object."
+  node
+  type)
+
+(defcustom majutsu-template-default-self-type 'Commit
+  "Default template type assumed for implicit `self' keywords.
+Set to nil to disable keyword rewriting unless explicitly bound."
+  :type '(choice (const :tag "None" nil) symbol)
+  :group 'majutsu-template)
+
+(defvar majutsu-template--self-stack nil
+  "Dynamic stack describing the current implicit `self' binding.")
+
+(defun majutsu-template--default-self-binding ()
+  "Return default `self' binding."
+  (majutsu-template--make-self-binding
+   :node (majutsu-template--raw-node "self" majutsu-template-default-self-type)
+   :type majutsu-template-default-self-type))
+
+(defun majutsu-template--current-self ()
+  "Return the current implicit `self' binding."
+  (or (car majutsu-template--self-stack)
+      (majutsu-template--default-self-binding)))
+
 ;;;; Type and callable metadata ################################################
 
 (cl-defstruct (majutsu-template--type
@@ -1405,15 +1433,41 @@ RESULT-TYPE, when non-nil, is used as declared type."
    (t
     (user-error "majutsu-template: unsupported literal in sugar %S" form))))
 
+(defun majutsu-template--maybe-self-dispatch (op args)
+  "Return method node if OP is a self keyword applicable in current context."
+  (let* ((self-binding (majutsu-template--current-self))
+         (owner (majutsu-template--self-binding-type self-binding)))
+    (when (and owner (or (symbolp op) (stringp op)))
+      (let* ((name (if (symbolp op)
+                       (majutsu-template--symbol->template-name op)
+                     op))
+             (meta (majutsu-template--lookup-method owner name))
+             (normalized-args (mapcar #'majutsu-template--normalize args)))
+        (cond
+         ((and meta (not (majutsu-template--fn-keyword meta)))
+          nil)
+         ((and meta
+               (cl-some (lambda (node)
+                          (not (majutsu-template--method-name-node-p node)))
+                        normalized-args))
+          (user-error "majutsu-template: keyword %s on %S does not accept arguments"
+                      name owner))
+         (meta
+          (let ((object (majutsu-template--self-binding-node self-binding))
+                (name-node (majutsu-template--normalize op)))
+            (apply #'majutsu-template-method object name-node normalized-args))))))))
+
 (defun majutsu-template--sugar-apply (op args)
   "Dispatch helper applying OP to ARGS within sugar transformation."
   (let* ((normalized (majutsu-template--operator-symbol op))
          (meta (or (majutsu-template--lookup-function-meta op)
-                   (majutsu-template--lookup-function-meta normalized))))
+                   (majutsu-template--lookup-function-meta normalized)))
+         (self-node (majutsu-template--maybe-self-dispatch op args)))
     (cond
      (meta
       (apply (majutsu-template--fn-symbol meta)
              (mapcar #'majutsu-template--sugar-transform args)))
+     (self-node self-node)
      (t
       (user-error "majutsu-template: unknown operator %S" op)))))
 
