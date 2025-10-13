@@ -30,6 +30,9 @@ coverage/
 .eglot/
 .flycheck_*
 
+# 参考文件
+references/
+
 # 标签索引
 TAGS
 tags

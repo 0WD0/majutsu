@@ -1090,6 +1090,10 @@ Further passes (type-checking, rendering) operate on these nodes."
                                   (body Template))
   (:returns Template :doc "surround(PRE, POST, BODY)." :flavor :builtin))
 
+(majutsu-template-defun label ((label Template)
+                               (content Template))
+  (:returns Template :doc "label helper." :flavor :builtin))
+
 (majutsu-template-defun json ((value Template))
   (:returns Template :doc "json(FORM)." :flavor :builtin))
 
@@ -1134,15 +1138,6 @@ Further passes (type-checking, rendering) operate on these nodes."
                              (var Template)
                              (body Template))
   (:returns Boolean :doc "all(|var| ...) operator." :flavor :all-like))
-
-(majutsu-template-defun label ((label Template)
-                               (content Template))
-  (:returns Template :doc "label helper.")
-  (let ((label-node (majutsu-template--literal-node
-                     (majutsu-template--node->identifier label "label")
-                     'String))
-        (content-node (majutsu-template--ensure-node content)))
-    (majutsu-template--call-node "label" (list label-node content-node))))
 
 (majutsu-template-defun call ((name Template)
                               (args Template :rest t))
@@ -1329,16 +1324,6 @@ CONTEXT is used in error messages."
    ((consp expr)
     (majutsu-template--resolve-call-name (eval expr)))
    (t expr)))
-
-(defun majutsu-template-label (name value)
-  "label(NAME, VALUE). NAME is auto-quoted."
-  (let* ((name-node (majutsu-template--normalize name))
-         (label-text (majutsu-template--node->identifier name-node "label"))
-         (content-node (majutsu-template--ensure-node value)))
-    (majutsu-template--call-node
-     "label"
-     (list (majutsu-template--literal-node label-text 'String)
-           content-node))))
 
 (defun majutsu-template-join (sep coll var body)
   "Return node for COLL.map(|VAR| BODY).join(SEP)."

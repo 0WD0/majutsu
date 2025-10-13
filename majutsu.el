@@ -7,6 +7,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
+(require 'majutsu-template)
 
 (defgroup majutsu nil
   "Interface to jj version control system."
@@ -121,50 +122,56 @@ The function must accept one argument: the buffer to display."
   "Cached repository root for the current buffer.")
 
 (defconst majutsu--log-template
-  "'\x1e' ++
-if(self.root(),
-  separate('\x1e',
-    format_short_change_id(change_id),
-    ' ',
-    concat(' ', bookmarks, tags, working_copies),
-    ' ',
-    ' ',
-    ' ',
-    label('root', 'root()'),
-    'root',
-    format_short_commit_id(commit_id),
-    ' ',
-    json(' ')
-  ),
-  label(
-    separate('\x1e',
-      if(self.current_working_copy(), 'working_copy'),
-      if(self.immutable(), 'immutable', 'mutable'),
-      if(self.conflict(), 'conflicted'),
-    ),
-    concat(
-      separate('\x1e',
-        format_short_change_id_with_hidden_and_divergent_info(self),
-        format_short_signature_oneline(self.author()),
-        concat(' ', self.bookmarks(), self.tags(), self.working_copies()),
-        if(self.git_head(), label('git_head', 'git_head()'), ' '),
-        if(self.conflict(), label('conflict', 'conflict'), ' '),
-        if(config('ui.show-cryptographic-signatures').as_boolean(),
-          format_short_cryptographic_signature(self.signature()),
-          ' '),
-        if(self.empty(), label('empty', '(empty)'), ' '),
-        if(self.description(),
-          self.description().first_line(),
-          label(if(self.empty(), 'empty'), description_placeholder),
-        ),
-        format_short_commit_id(self.commit_id()),
-        format_timestamp(commit_timestamp(self)),
-        if(self.description(), json(self.description()), json(' ')),
-      ),
-    ),
-  )
-)
-"
+  (tpl-compile
+   [:concat
+    "\x1e"
+    [:if [:root]
+        [:separate "\x1e"
+                   [:call 'format_short_change_id [:change_id]]
+                   " "
+                   [" " [:bookmarks] [:tags] [:working_copies]]
+                   " "
+                   " "
+                   " "
+                   [:label "root" "root()"]
+                   "root"
+                   [:call 'format_short_commit_id [:commit_id]]
+                   " "
+                   [:json " "]]
+      [:label
+       [:separate "\x1e"
+                  [:if [:current_working_copy] "working_copy"]
+                  [:if [:immutable] "immutable" "mutable"]
+                  [:if [:conflict] "conflicted"]]
+       [:concat
+        [:separate "\x1e"
+                   [:call 'format_short_change_id_with_hidden_and_divergent_info
+                          [:raw "self" :Commit]]
+                   [:call 'format_short_signature_oneline [:author]]
+                   [:call 'concat " " [:bookmarks] [:tags] [:working_copies]]
+                   [:if [:git_head]
+                       [:label "git_head" "git_head()"]
+                     " "]
+                   [:if [:conflict]
+                       [:label "conflict" "conflict"]
+                     " "]
+                   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
+                       [:call 'format_short_cryptographic_signature [:signature]]
+                     " "]
+                   [:if [:empty]
+                       [:label "empty" "(empty)"]
+                     " "]
+                   [:if [:description]
+                       [:method [:description] :first_line]
+                     [:label
+                      [:if [:empty] "empty"]
+                      [:raw "description_placeholder" :Template]]]
+                   [:call 'format_short_commit_id [:commit_id]]
+                   [:call 'format_timestamp
+                          [:call 'commit_timestamp [:raw "self" :Commit]]]
+                   [:if [:description]
+                       [:json [:description]]
+                     [:json " "]]]]]]])
   "Template for formatting log entries.")
 
 (defun majutsu--root ()
