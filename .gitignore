@@ -1,0 +1,42 @@
+# Emacs 备份与自动保存
+*~
+\#*\#
+.#*
+
+# 编译产物
+*.elc
+*.eln
+
+# 打包自动生成文件
+*-autoloads.el
+*-pkg.el
+*.tar
+packages/
+dist/
+archive/
+
+# 依赖与构建工具目录
+.cask/
+.eask/
+.eldev/
+elpa/
+
+# 测试/临时文件
+.ert-runner/
+test/**/*.elc
+coverage/
+.cache/
+.tmp/
+.eglot/
+.flycheck_*
+
+# 标签索引
+TAGS
+tags
+GTAGS
+GRTAGS
+GPATH
+
+# 操作系统杂项
+.DS_Store
+Thumbs.db
