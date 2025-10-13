@@ -13,6 +13,24 @@
   (:returns Template :doc "Small helper used in tests.")
   `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
+(majutsu-template-defun test-builtin-wrapper ((primary Template)
+                                              (secondary Template :optional t)
+                                              (rest Template :rest t))
+  (:returns Template :doc "Auto-generated builtin wrapper for tests." :flavor :builtin))
+
+(majutsu-template-defun test-map-wrapper ((collection Template)
+                                          (var Template)
+                                          (body Template))
+  (:returns Template :doc "Auto-generated map-like wrapper for tests." :flavor :map-like))
+
+(majutsu-template-defkeyword test-commitref-keyword CommitRef
+  (:returns Template :doc "Synthetic CommitRef keyword for tests.")
+  `[:raw "commitref_keyword"])
+
+(majutsu-template-defmethod test-list-method List ((suffix Template))
+  (:returns Template :doc "Synthetic List method for tests.")
+  `[:raw "list_method_stub"])
+
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
           "concat(\"Hello \", self.author().name())")
@@ -22,7 +40,7 @@
   (mt--is (tpl-compile ["A" "B"]) "concat(\"A\", \"B\")")
   (mt--is (tpl-compile ["A" [:raw "self.commit_id()"]])
           "concat(\"A\", self.commit_id())")
-  (mt--is (tpl-compile [:if (:raw "self.root()") (:str "(root)") (:raw "format_short_commit_id(self.commit_id())")])
+  (mt--is (tpl-compile [:if [:raw "self.root()"] [:str "(root)"] [:raw "format_short_commit_id(self.commit_id())"]])
           "if(self.root(), \"(root)\", format_short_commit_id(self.commit_id()))")
   (mt--is (tpl-compile [:if t "A" "B"]) "if(true, \"A\", \"B\")")
   ;; Optional else
@@ -62,10 +80,12 @@
           "parents.all(|c| c.mine())"))
 
 (ert-deftest test-majutsu-template-compile-method-and-call ()
-  (mt--is (tpl-compile [:method (:raw "self") commit_id])
+  (mt--is (tpl-compile [:method [:raw "self" :Commit] :commit_id])
           "self.commit_id()")
-  (mt--is (tpl-compile [:method (:raw "self") diff (:str "src")])
+  (mt--is (tpl-compile [:method [:raw "self" :Commit] :diff "src"])
           "self.diff(\"src\")")
+  (mt--is (tpl-compile [:method [:raw "self" :Commit] :parents :len])
+          "self.parents().len()")
   (mt--is (tpl-compile [:call 'coalesce [:str ""] [:str "X"]])
           "coalesce(\"\", \"X\")")
   ;; :call with symbol name and bare string arg
@@ -85,9 +105,9 @@
 (ert-deftest test-majutsu-template-compile-operators ()
   (mt--is (tpl-compile [:+ 1 2])
           "(1 + 2)")
-  (mt--is (tpl-compile [:and (:> 3 1) (:<= 2 2)])
+  (mt--is (tpl-compile [:and [:> 3 1] [:<= 2 2]])
           "((3 > 1) && (2 <= 2))")
-  (mt--is (tpl-compile [:concat-op (:str "a") (:str "b")])
+  (mt--is (tpl-compile [:concat-op [:str "a"] [:str "b"]])
           "(\"a\" ++ \"b\")")
   (mt--is (tpl-compile [:not t])
           "(!true)")
@@ -158,6 +178,31 @@
   ;; Registry lookup via keyword/symbol
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
+
+(ert-deftest test-majutsu-template-builtin-flavor-auto-body ()
+  (mt--is (tpl-compile [:call 'test-builtin-wrapper [:str "L"]])
+          "test-builtin-wrapper(\"L\")")
+  ;; Optional argument present and multiple rest args.
+  (mt--is (tpl-compile [:call 'test-builtin-wrapper [:str "L"] [:str "R"] [:str "X"] [:str "Y"]])
+          "test-builtin-wrapper(\"L\", \"R\", \"X\", \"Y\")"))
+
+(ert-deftest test-majutsu-template-map-like-flavor-auto-body ()
+  (mt--is (tpl-compile [:test-map-wrapper [:raw "xs"] 'item [:raw "item.value()"]])
+          "xs.test-map-wrapper(|item| item.value())"))
+
+(ert-deftest test-majutsu-template-call-dispatch ()
+  ;; Built-in flavor should emit direct jj call.
+  (mt--is (tpl-compile [:call 'concat [:str "L"] [:str "R"]])
+          "concat(\"L\", \"R\")")
+  ;; Custom helper keeps macro-generated body.
+  (mt--is (tpl-compile [:call 'test-helper [:str "ID"] [:str "V"]])
+          "concat(\"ID\", \": \", \"V\")")
+  ;; Falling back to raw name works for unknown helper.
+  (mt--is (tpl-compile [:call 'unknown [:str "X"]])
+          "unknown(\"X\")")
+  ;; Lookup by string literal reuses existing metadata.
+  (mt--is (tpl-compile [:call "concat" [:str "P"] [:str "Q"]])
+          "concat(\"P\", \"Q\")"))
 
 (ert-deftest test-majutsu-template-ast-basic-nodes ()
   (let ((literal (majutsu-template-ast '[:str "X"]))
@@ -234,5 +279,17 @@
     (should (eq (majutsu-template--arg-name (car args)) 'self))
     (should (eq (majutsu-template--arg-type (car args)) 'List))
     (should (eq (majutsu-template--arg-type (cadr args)) 'Lambda))))
+
+(ert-deftest test-majutsu-template-custom-callable-metadata ()
+  (let ((kw (majutsu-template--lookup-keyword 'CommitRef "test-commitref-keyword")))
+    (should kw)
+    (should (majutsu-template--fn-keyword kw))
+    (should (eq (majutsu-template--fn-owner kw) 'CommitRef))
+    (should (= (length (majutsu-template--fn-args kw)) 1)))
+  (let ((method (majutsu-template--lookup-method 'List "test-list-method")))
+    (should method)
+    (should (not (majutsu-template--fn-keyword method)))
+    (should (eq (majutsu-template--fn-owner method) 'List))
+    (should (= (length (majutsu-template--fn-args method)) 2))))
 
 ;;; majutsu-template-test.el ends here
