@@ -109,6 +109,8 @@
           "((3 > 1) && (2 <= 2))")
   (mt--is (tpl-compile [:concat-op [:str "a"] [:str "b"]])
           "(\"a\" ++ \"b\")")
+  (mt--is (tpl-compile [:++ "L" "R"])
+          "(\"L\" ++ \"R\")")
   (mt--is (tpl-compile [:not t])
           "(!true)")
   (mt--is (tpl-compile [:neg 5])
@@ -291,5 +293,20 @@
     (should (not (majutsu-template--fn-keyword method)))
     (should (eq (majutsu-template--fn-owner method) 'List))
     (should (= (length (majutsu-template--fn-args method)) 2))))
+
+(ert-deftest test-majutsu-template-label-helper ()
+  (let ((node (majutsu-template-label 'status (majutsu-template-str "ok"))))
+    (should (majutsu-template-node-p node))
+    (should (equal (majutsu-template-compile node)
+                   "label(\"status\", \"ok\")"))))
+
+(ert-deftest test-majutsu-template-join-helper ()
+  (let ((node (majutsu-template-join [:str ", "]
+                                     [:raw "self.parents()"]
+                                     'p
+                                     [:raw "p.commit_id()"])))
+    (should (majutsu-template-node-p node))
+    (should (equal (majutsu-template-compile node)
+                   "self.parents().map(|p| p.commit_id()).join(\", \")"))))
 
 ;;; majutsu-template-test.el ends here
