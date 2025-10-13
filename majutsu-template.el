@@ -416,22 +416,26 @@ ARGS describe parameters after the implicit SELF argument."
      ,(majutsu-template-def--inherit-signature signature :keyword owner)
      ,@body))
 
+;;; Operator macro helpers ---------------------------------------------------
+
 (defmacro majutsu-template--definfix (name token)
   "Define NAME as infix operator rendering TOKEN between two operands."
   `(majutsu-template-defun ,name ((lhs Template) (rhs Template))
-     (:returns Template)
-     (let ((lhs-str (majutsu-template--render-node lhs))
-           (rhs-str (majutsu-template--render-node rhs)))
-       (majutsu-template--raw-node
-        (format "(%s %s %s)" lhs-str ,token rhs-str)))))
+     (:returns Template :doc ,(format "Infix %s operator." name))
+     (majutsu-template--raw-node
+      (format "(%s %s %s)"
+              (majutsu-template--render-node lhs)
+              ,token
+              (majutsu-template--render-node rhs)))))
 
 (defmacro majutsu-template--defprefix (name token)
   "Define NAME as prefix/unary operator rendering TOKEN before operand."
   `(majutsu-template-defun ,name ((value Template))
-     (:returns Template)
-     (let ((value-str (majutsu-template--render-node value)))
-       (majutsu-template--raw-node
-        (format "(%s%s)" ,token value-str)))))
+     (:returns Template :doc ,(format "Prefix %s operator." name))
+     (majutsu-template--raw-node
+      (format "(%s%s)"
+              ,token
+              (majutsu-template--render-node value)))))
 
 (defconst majutsu-template--operator-aliases
   '((sub . -))
@@ -443,6 +447,92 @@ ARGS describe parameters after the implicit SELF argument."
                ((keywordp op) (intern (substring (symbol-name op) 1)))
                (t op))))
     (or (alist-get sym majutsu-template--operator-aliases) sym)))
+
+(defun majutsu-template--sugar-raw (value &optional declared-type)
+  (let* ((type (when declared-type (majutsu-template--normalize-type-symbol declared-type)))
+         (string
+          (cond
+           ((stringp value) value)
+           ((symbolp value) (symbol-name value))
+           ((majutsu-template-node-p value)
+            (majutsu-template--literal-string-from-node value))
+           ((vectorp value)
+            (let ((node (majutsu-template--sugar-transform value)))
+              (majutsu-template--literal-string-from-node node)))
+           (t (format "%s" value)))))
+    (majutsu-template--raw-node string type (when type (list :declared type)))))
+
+(defun majutsu-template--sugar-str (value)
+  (majutsu-template--literal-node
+   (cond
+    ((stringp value) value)
+    ((majutsu-template-node-p value) (majutsu-template--literal-string-from-node value))
+    ((vectorp value)
+     (let ((node (majutsu-template--sugar-transform value)))
+       (majutsu-template--literal-string-from-node node)))
+    (t (format "%s" value)))
+   'String))
+
+(defun majutsu-template--sugar-concat (&rest forms)
+  (apply #'majutsu-template-call 'concat
+         (mapcar #'majutsu-template--sugar-transform forms)))
+
+(defun majutsu-template--sugar-if (condition then &optional else)
+  (let ((cond-node (majutsu-template--sugar-transform condition))
+        (then-node (majutsu-template--sugar-transform then))
+        (else-node (when else (majutsu-template--sugar-transform else))))
+    (if else-node
+        (majutsu-template-if cond-node then-node else-node)
+      (majutsu-template-if cond-node then-node))))
+
+(defun majutsu-template--sugar-label (label value)
+  (majutsu-template-label label (majutsu-template--sugar-transform value)))
+
+(defun majutsu-template--sugar-separate (separator &rest forms)
+  (apply #'majutsu-template-separate
+         (majutsu-template--sugar-transform separator)
+         (mapcar #'majutsu-template--sugar-transform forms)))
+
+(defun majutsu-template--sugar-surround (pre post body)
+  (majutsu-template-surround
+   (majutsu-template--sugar-transform pre)
+   (majutsu-template--sugar-transform post)
+   (majutsu-template--sugar-transform body)))
+
+(defun majutsu-template--sugar-json (value)
+  (majutsu-template-json (majutsu-template--sugar-transform value)))
+
+(defun majutsu-template--sugar-join (separator coll var body)
+  (majutsu-template-join
+   (majutsu-template--sugar-transform separator)
+   (majutsu-template--sugar-transform coll)
+   var
+   (majutsu-template--sugar-transform body)))
+
+(defun majutsu-template--sugar-map (&rest args)
+  (apply #'majutsu-template--sugar-map-like 'map args))
+
+(defun majutsu-template--sugar-filter (&rest args)
+  (apply #'majutsu-template--sugar-map-like 'filter args))
+
+(defun majutsu-template--sugar-any (&rest args)
+  (apply #'majutsu-template--sugar-map-like 'any args))
+
+(defun majutsu-template--sugar-all (&rest args)
+  (apply #'majutsu-template--sugar-map-like 'all args))
+
+(defun majutsu-template--sugar-call (name &rest args)
+  (let* ((resolved-name (majutsu-template--resolve-call-name name))
+         (meta (or (majutsu-template--lookup-function-meta resolved-name)
+                   (majutsu-template--lookup-function-meta
+                    (majutsu-template--normalize-call-name resolved-name)))))
+    (if meta
+        (apply (majutsu-template--fn-symbol meta)
+               (mapcar #'majutsu-template--sugar-transform args))
+      (let ((call-args (mapcar #'majutsu-template--sugar-transform args)))
+        (apply #'majutsu-template-call
+               (majutsu-template--normalize-call-name resolved-name)
+               call-args)))))
 
 (majutsu-template--definfix + "+")
 (majutsu-template--definfix - "-")
@@ -1015,27 +1105,29 @@ BODY may reference VAR using raw sub-expressions."
 ;; Operators may be keywords (:if) or symbols (if); tpl-* aliases also work.
 
 (defconst majutsu-template--sugar-ops
-  '((:str . majutsu-template-str)
-    (:raw . majutsu-template-raw)
-    (:call . majutsu-template-call)
-    (:concat . majutsu-template-concat)
-    (:if . majutsu-template-if)
-    (:label . majutsu-template-label)
-    (:separate . majutsu-template-separate)
-    (:surround . majutsu-template-surround)
-    (:json . majutsu-template-json)
-    (:join . majutsu-template-join)
-    (:method . majutsu-template-call)
-    (:map . majutsu-template-join)
-    (:filter . majutsu-template-join)
-    (:any . majutsu-template-join)
-    (:all . majutsu-template-join))
+  '((:str . majutsu-template--sugar-str)
+    (:raw . majutsu-template--sugar-raw)
+    (:call . majutsu-template--sugar-call)
+    (:concat . majutsu-template--sugar-concat)
+    (:if . majutsu-template--sugar-if)
+    (:label . majutsu-template--sugar-label)
+    (:separate . majutsu-template--sugar-separate)
+    (:surround . majutsu-template--sugar-surround)
+    (:json . majutsu-template--sugar-json)
+    (:join . majutsu-template--sugar-join)
+    (:map . majutsu-template--sugar-map)
+    (:filter . majutsu-template--sugar-filter)
+    (:any . majutsu-template--sugar-any)
+    (:all . majutsu-template--sugar-all)
+    (:method . majutsu-template--sugar-method))
   "Operator mapping for the `tpl` macro sugar.")
 
 (defun majutsu-template--sugar-transform (form)
   "Transform compact FORM into the template AST."
   (cond
    ((majutsu-template-node-p form) form)
+   ((and (consp form) (keywordp (car form)))
+    (majutsu-template--sugar-apply (car form) (cdr form)))
    ((numberp form) (majutsu-template-raw (number-to-string form)))
    ((eq form t) (majutsu-template-raw "true"))
    ((eq form nil) (majutsu-template-raw "false"))
@@ -1067,93 +1159,14 @@ BODY may reference VAR using raw sub-expressions."
          (_ (when (memq head '(method .)) (setq head 'method)))
          (custom-meta (or (majutsu-template--lookup-function-meta original)
                           (majutsu-template--lookup-function-meta head))))
-    (when (and (not (keywordp original))
-               (not custom-meta)
-               (not (memq head '(method)))
-               (not (memq original '(vector))))
-      (user-error "majutsu-template: unknown operator %S" original))
     (cond
      (custom-meta
       (apply (majutsu-template--fn-symbol custom-meta)
              (mapcar #'majutsu-template--sugar-transform args)))
-     ((eq head 'str)
-      (unless (= (length args) 1)
-        (user-error "majutsu-template: :str expects 1 argument"))
-      (majutsu-template-str (car args)))
-     ((eq head 'raw)
-      (let* ((value (car args))
-             (declared-type (cadr args))
-             (type (and declared-type (majutsu-template--normalize-type-symbol declared-type)))
-             (string
-              (cond
-               ((stringp value) value)
-               ((symbolp value) (symbol-name value))
-               ((vectorp value)
-                (let ((node (majutsu-template--sugar-transform value)))
-                  (majutsu-template--literal-string-from-node node)))
-               ((consp value)
-                (let ((result (eval value)))
-                  (unless (stringp result)
-                    (user-error "majutsu-template: :raw expression must produce a string, got %S" result))
-                  result))
-               (t
-                (user-error "majutsu-template: :raw expects a string literal, got %S" value)))))
-        (majutsu-template--raw-node string type (when type (list :declared type)))))
-    ((eq head 'concat)
-      (apply #'majutsu-template-call 'concat
-             (mapcar #'majutsu-template--sugar-transform args)))
-     ((eq head 'if)
-      (let ((cond-form (majutsu-template--sugar-transform (car args)))
-            (then-form (majutsu-template--sugar-transform (cadr args)))
-            (else-form (when (cddr args)
-                         (majutsu-template--sugar-transform (caddr args)))))
-        (if else-form
-            (majutsu-template-if cond-form then-form else-form)
-          (majutsu-template-if cond-form then-form))))
-     ((eq head 'label)
-      (let ((name (car args))
-            (value (majutsu-template--sugar-transform (cadr args))))
-        (majutsu-template-label name value)))
-     ((eq head 'separate)
-      (apply #'majutsu-template-separate
-             (majutsu-template--sugar-transform (car args))
-             (mapcar #'majutsu-template--sugar-transform (cdr args))))
-     ((eq head 'surround)
-      (let ((pre (majutsu-template--sugar-transform (car args)))
-            (post (majutsu-template--sugar-transform (cadr args)))
-            (body (majutsu-template--sugar-transform (caddr args))))
-        (majutsu-template-surround pre post body)))
-     ((eq head 'json)
-      (majutsu-template-json (majutsu-template--sugar-transform (car args))))
-     ((eq head 'call)
-      (let* ((name-expr (car args))
-             (resolved-name (majutsu-template--resolve-call-name name-expr))
-             (meta (or (majutsu-template--lookup-function-meta resolved-name)
-                       (majutsu-template--lookup-function-meta
-                        (majutsu-template--normalize-call-name resolved-name)))))
-        (if meta
-            (apply (majutsu-template--fn-symbol meta)
-                   (mapcar #'majutsu-template--sugar-transform (cdr args)))
-          (let ((call-args (mapcar #'majutsu-template--sugar-transform (cdr args))))
-            (apply #'majutsu-template-call resolved-name call-args)))))
-     ((eq head 'join)
-      (let ((sep (majutsu-template--sugar-transform (car args)))
-            (coll (majutsu-template--sugar-transform (cadr args)))
-            (var (nth 2 args))
-            (body (majutsu-template--sugar-transform (nth 3 args))))
-        (majutsu-template-join sep coll var body)))
-     ((memq head '(map filter any all))
-      (apply #'majutsu-template--sugar-map-like head args))
-     ((eq head 'method)
-      (apply #'majutsu-template--sugar-method args))
-     ((memq head '(+ :+ - :sub * :* / :/ % :% >= :>= > :> <= :<= < :< == :== != :!= and :and or :or not :not neg :neg concat-op :concat-op))
-      (let* ((op-sym (majutsu-template--operator-symbol original))
-             (call-args (mapcar #'majutsu-template--sugar-transform args)))
-        (apply #'majutsu-template-call op-sym call-args)))
-     ((memq head '(coalesce fill indent pad_start pad_end pad_centered
-                   truncate_start truncate_end hash stringify raw_escape_sequence config))
-      (apply #'majutsu-template-call head
-             (mapcar #'majutsu-template--sugar-transform args)))
+     ((let ((fn (or (alist-get original majutsu-template--sugar-ops)
+                    (alist-get head majutsu-template--sugar-ops))))
+        (when fn
+          (apply fn args))))
      (t
       (user-error "majutsu-template: unknown operator %S" original)))))
 
@@ -1180,6 +1193,7 @@ BODY may reference VAR using raw sub-expressions."
                              args ", ")))
     (majutsu-template-raw
      (format "%s.%s(%s)" obj-s method arg-str))))
+
 ;;;###autoload
 (defmacro tpl (form)
   "Expand a template program FORM (must be a vector literal) into the EDSL AST."
