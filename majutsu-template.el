@@ -288,7 +288,8 @@ TYPE may be a symbol, keyword, or string."
 
 (defun majutsu-template--reserved-name-p (name)
   "Return non-nil if NAME (string) conflicts with reserved helpers."
-  (member name '("method")))
+  (ignore name)
+  nil)
 
 (defun majutsu-template--register-function (meta)
   "Register custom function described by META (a `majutsu-template--fn')."
@@ -1115,6 +1116,58 @@ Further passes (type-checking, rendering) operate on these nodes."
       (majutsu-template--call-node
        (majutsu-template--normalize-call-name identifier)
        arg-nodes)))))
+
+(defun majutsu-template--method-node-name (node)
+  "Return normalized method name string from NODE."
+  (let* ((raw (majutsu-template--node->identifier node "method name")))
+    (if (and (> (length raw) 0) (eq (aref raw 0) ?:))
+        (substring raw 1)
+      raw)))
+
+(defun majutsu-template--method-name-node-p (node)
+  "Return non-nil if NODE denotes a chained method name marker."
+  (and (majutsu-template-node-p node)
+       (memq (majutsu-template-node-kind node) '(:raw :literal))
+       (let ((value (majutsu-template-node-value node)))
+         (and (stringp value)
+              (> (length value) 0)
+              (eq (aref value 0) ?:)))))
+
+(defun majutsu-template--method-split-segments (initial-name nodes)
+  "Split method chain into segments starting with INITIAL-NAME.
+NODES are the remaining argument nodes. Returns list of (NAME . ARGS)."
+  (let ((segments '())
+        (current-name initial-name)
+        (current-args '()))
+    (dolist (node nodes)
+      (if (majutsu-template--method-name-node-p node)
+          (progn
+            (push (cons current-name (nreverse current-args)) segments)
+            (setq current-name node
+                  current-args '()))
+        (push node current-args)))
+    (push (cons current-name (nreverse current-args)) segments)
+    (nreverse segments)))
+
+(defun majutsu-template--method-fold-calls (object-node segments)
+  "Build nested call nodes applying SEGMENTS to OBJECT-NODE."
+  (let ((result object-node))
+    (dolist (segment segments result)
+      (let* ((name-node (car segment))
+             (args (cdr segment))
+             (method-name (majutsu-template--method-node-name name-node))
+             (call-args (cons result args)))
+        (setq result (majutsu-template--call-node method-name call-args))))))
+
+(majutsu-template-defun method ((object Template)
+                                (name Template)
+                                (args Template :rest t))
+  (:returns Template :doc "Method chaining helper." :flavor :custom)
+  (let* ((object-node (majutsu-template--ensure-node object))
+         (name-node (majutsu-template--ensure-node name))
+         (arg-nodes (mapcar #'majutsu-template--ensure-node args))
+         (segments (majutsu-template--method-split-segments name-node arg-nodes)))
+    (majutsu-template--method-fold-calls object-node segments)))
 
 (majutsu-template--defpassthrough coalesce "coalesce helper.")
 (majutsu-template--defpassthrough fill "fill helper.")
