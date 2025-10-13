@@ -1,4 +1,7 @@
-#+title: Majutsu Template Reference
+#+title: Majutsu Template Specifications
+
+在查看全文之前应该先对 jujutsu template language 有一定了解
+在这里放上经常更新的官方文档 [[file:template_help.md][file]]
 
 * Types
 需要支持强类型检查
@@ -262,18 +265,19 @@ owner args returns builder
 强制有 :owner
 这里的 -LAMBDA 表示的是用 it 直接替代传入参数的匿名函数
 
-:fn
-[:FUN [optional: OBJ] NAME ARGS] => Template
-如果有 :owner 字段，自动添加 OBJ 作为第一个参数
-这是我们的函数模板宏
-需要自己写 body
-
 :custom
 完全自己定义，不继承任何 fn-flavor 信息
 这里可以用来做一些语法糖的实现
-
 我们的 :-lambda :lambda :+ARG 就可以定义在这里
-我不知道 :+ARG 应该如何处理。。。
+我暂时不知道 :+ARG 应该如何处理。。。
+
+:fn
+[:FUN [optional: OBJ] NAME ARGS] => Template
+这是我们的默认的函数模板宏，需要自己写 body
+和 :custom 的区别在于加了一个advice
+如果有 :owner 字段，自动添加 OBJ 作为第一个参数
+
+继承自 :custom （这个继承需要把对应的参数传下来，包括 builder, 我们以此实现 advice）
 
 **** ~majutsu-template--fn~ 字段
 
@@ -329,12 +333,16 @@ body: 函数的具体行为，能根据元数据做一些操作
 
 ** 反引号插入
 回引号 + 逗号插入已计算的节点：
-- ~(let ((name (majutsu-template-str (user-full-name))))
-    (tpl-compile `[:concat ,name [:str ": "] [:raw "self.commit_id()"]]))~
+#+begin_src emacs-lisp
+(let ((name (majutsu-template-str (user-full-name))))
+  (tpl-compile `[:concat ,name [:str ": "] [:raw "self.commit_id()"]]))
+#+end_src
     
 批量插入：
-- ~(let ((items (mapcar #'majutsu-template-str '("A" "B"))))
-    (tpl-compile `[:concat ,@items]))~
+#+begin_src emacs-lisp
+(let ((items (mapcar #'majutsu-template-str '("A" "B"))))
+  (tpl-compile `[:concat ,@items]))
+#+end_src
     
 * 哪些命令的输出可以使用 template ?
 | command        | self type            |
@@ -353,9 +361,7 @@ body: 函数的具体行为，能根据元数据做一些操作
 | workspace list | WorkspaceRef         |
 | config list    | [[config list template]] |
 
-
 ** config list template
-
 我们可以因此建一个 Config type
 
 name: String: Config name.
@@ -364,49 +370,53 @@ overridden: Boolean: True if the value is shadowed by other.
 source: String: Source of the value.
 path: String: Path to the config file.
 
-* AST 解析
+* AST
 ** 节点定义
 语法树节点定义在这里 [[file:~/.config/emacs/.local/straight/repos/majutsu/majutsu-template.el::(cl-defstruct (majutsu-template-node][node]]
 
 节点信息：
 kind: 在 elisp 视角下的类型
 type: template 视角下的类型
-value:
-args
-props
+value: 值
+args: 各个参数的 ast node
+props: 其余属性
 
+*** :kind
+有 :literal :raw :call 三种类型
 
+:literal 对应的是需要被转换为字符串的信息
+这里不和 raw 合并是因为在 str-escape 会修改 :value
+而我们一般是希望它们在 ast 阶段保持统一的
 
-** 摘除所有嵌入的 elisp
+:raw 就是直接插入的 :value
+
+:call 比较特殊，它是延迟求值的语法树
+在得到它之后还需要继续运行 majutsu-template-call
+
+*** :props
+重要的信息有：
+当前命名空间中的变量及其类型
+self 对象
+
+** 解析步骤
+
+*** 摘除所有嵌入的 elisp
 
 ,(...)
 ,@(...)
 (...)
 
-** 语法糖展开
+elisp 嵌入显然是可以在一开始消除的
 
-关键字/方法判定
-只有这个一个需要一点点类型信息
+*** 语法糖展开
+我们大部分的语法糖是通过 custom flavor 的函数实现的
+但是对于一些结构层次语法糖就需要特殊处理一下
+比如 t -> true
+比如裸 vector 对应的 concat
 
-其他的可以无脑转化
-
-** 模板宏调用
-
+*** 模板宏调用
 调用的本质其实是
 给对应变量新的绑定
 用当前的 elisp 环境变量
-重新把这个模板编译一遍
 
-*** 参数如何传递？
-
-› 我想象中的参数传递的方式是直接让它们共用一个节点，
-
-• 没错，参数共享同一个节点就是我想做的方式：
-
-  - 在宏展开/语法糖阶段都保持结构化节点，不去 copy-tree，而是直接把 majutsu-template-node 结构放进父节点的 args 里。这样多个调用引用
-    同一个参数时，本质上就是同一个 cons。
-  - 类型推断 pass 也只会对这个节点跑一次，把 type/props 写回结构体；其它引用读到的都是同一块数据。
-  - 渲染阶段准备一个 hash（用 eq 或节点里的唯一 id 作 key），第一次编译节点时落地成字符串并缓存，后续只要再次遇到同一个节点，就直接拿
-    cached raw。这样既保证“只编译一次”，也避免重复逃逸。
-
-  也就是说，参数的“传递”其实就是共享节点引用，整个管线都会以这一份 AST 为准。
+我把这个步骤放在了延迟求值的 :call node 上
