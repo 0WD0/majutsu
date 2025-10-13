@@ -77,9 +77,9 @@ Recognised keys: :doc (string), :converts or :converts-to (list)."
     returns
     return-converts
     doc
-    scope
     owner
-    flavor))
+    flavor
+    keyword))
 
 (eval-and-compile
   (cl-defstruct (majutsu-template--fn-flavor
@@ -131,39 +131,38 @@ Recognised keys: :doc (string), :parent (keyword), :builder (function)."
 
   (defun majutsu-template--flavor-builtin-body (context)
     "Generate default body for :builtin flavor using CONTEXT plist."
-    (pcase (plist-get context :scope)
-      (:function
-       (let* ((template-name (plist-get context :template-name))
-              (args (plist-get context :args))
-              (required (cl-remove-if
-                         (lambda (arg)
-                           (or (majutsu-template--arg-optional arg)
-                               (majutsu-template--arg-rest arg)))
-                         args))
-              (optional (cl-remove-if-not #'majutsu-template--arg-optional args))
-              (rest-arg (cl-find-if #'majutsu-template--arg-rest args))
-              (call-args-sym (gensym "majutsu-call-args")))
-         (let ((base (if required
-                         `(list ,@(mapcar #'majutsu-template--arg-name required))
-                       nil))
-               (optional-forms
-                (mapcar
-                 (lambda (arg)
-                   (let ((name (majutsu-template--arg-name arg)))
-                     `(when ,name
-                        (setq ,call-args-sym (append ,call-args-sym (list ,name))))))
-                 optional))
-               (rest-form
-                (when rest-arg
-                  (let ((name (majutsu-template--arg-name rest-arg)))
+    (if (plist-get context :owner)
+        nil
+      (let* ((template-name (plist-get context :template-name))
+             (args (plist-get context :args))
+             (required (cl-remove-if
+                        (lambda (arg)
+                          (or (majutsu-template--arg-optional arg)
+                              (majutsu-template--arg-rest arg)))
+                        args))
+             (optional (cl-remove-if-not #'majutsu-template--arg-optional args))
+             (rest-arg (cl-find-if #'majutsu-template--arg-rest args))
+             (call-args-sym (gensym "majutsu-call-args")))
+        (let ((base (if required
+                        `(list ,@(mapcar #'majutsu-template--arg-name required))
+                      nil))
+              (optional-forms
+               (mapcar
+                (lambda (arg)
+                  (let ((name (majutsu-template--arg-name arg)))
                     `(when ,name
-                       (setq ,call-args-sym (append ,call-args-sym ,name)))))))
-           (list
-            `(let ((,call-args-sym ,base))
-               ,@optional-forms
-               ,@(when rest-form (list rest-form))
-               (apply #'majutsu-template-call ,template-name ,call-args-sym))))))
-      (_ nil)))
+                       (setq ,call-args-sym (append ,call-args-sym (list ,name))))))
+                optional))
+              (rest-form
+               (when rest-arg
+                 (let ((name (majutsu-template--arg-name rest-arg)))
+                   `(when ,name
+                      (setq ,call-args-sym (append ,call-args-sym ,name)))))))
+          (list
+           `(let ((,call-args-sym ,base))
+              ,@optional-forms
+              ,@(when rest-form (list rest-form))
+              (apply #'majutsu-template-call ,template-name ,call-args-sym)))))))
 
   (defun majutsu-template--flavor-map-like-body (context)
     "Generate default body for map-like flavors using CONTEXT plist."
@@ -251,17 +250,25 @@ TYPE may be a symbol, keyword, or string."
         (intern (substring (symbol-name type) 1))
       type))
    ((stringp type)
-    (intern type))
+    (if (and (> (length type) 0) (eq (aref type 0) ?:))
+        (intern (substring type 1))
+      (intern type)))
    (t
     (user-error "majutsu-template: invalid type specifier %S" type))))
 
 (defun majutsu-template--lookup-function-meta (key)
   "Return metadata struct for function identified by KEY, or nil."
-  (let ((name (cond
-               ((stringp key) key)
-               (t (gethash key majutsu-template--function-name-map)))))
-    (when name
-      (gethash name majutsu-template--function-registry))))
+  (let* ((name (cond
+                ((stringp key) key)
+                (t (gethash key majutsu-template--function-name-map)))))
+    (or (and name (gethash name majutsu-template--function-registry))
+        (when (stringp key)
+          (let* ((sym (intern-soft key))
+                 (keyword (intern-soft (concat ":" key)))
+                 (canonical (or (and sym (gethash sym majutsu-template--function-name-map))
+                                (and keyword (gethash keyword majutsu-template--function-name-map)))))
+            (when canonical
+              (gethash canonical majutsu-template--function-registry)))))))
 
 (defun majutsu-template--lookup-function-name (key)
   "Return registered template name string for KEY, or nil if unknown."
@@ -275,7 +282,9 @@ TYPE may be a symbol, keyword, or string."
 
 (defun majutsu-template--lookup-keyword (owner name)
   "Return metadata for keyword NAME on OWNER type (alias of method lookup)."
-  (majutsu-template--lookup-method owner name))
+  (let ((meta (majutsu-template--lookup-method owner name)))
+    (when (and meta (majutsu-template--fn-keyword meta))
+      meta)))
 
 (defun majutsu-template--reserved-name-p (name)
   "Return non-nil if NAME (string) conflicts with reserved helpers."
@@ -285,30 +294,30 @@ TYPE may be a symbol, keyword, or string."
   "Register custom function described by META (a `majutsu-template--fn')."
   (let* ((name (majutsu-template--fn-name meta))
          (fn-symbol (majutsu-template--fn-symbol meta))
-         (scope (or (majutsu-template--fn-scope meta) :function))
          (owner (majutsu-template--fn-owner meta))
+         (keyword-flag (majutsu-template--fn-keyword meta))
          (sym (intern name))
          (keyword (intern (concat ":" name)))
          (pre-existing (gethash name majutsu-template--function-registry)))
-    (pcase scope
-      (:function
-       (when (majutsu-template--reserved-name-p name)
-         (user-error "majutsu-template: %s is reserved" name))
-       (when pre-existing
-         (message "majutsu-template: redefining template helper %s" name))
-       (puthash name meta majutsu-template--function-registry)
-       (puthash sym name majutsu-template--function-name-map)
-       (puthash keyword name majutsu-template--function-name-map))
-      (:method
-       (unless owner
-         (user-error "majutsu-template: method %s must declare :owner type" name))
-       (puthash (cons owner name) meta majutsu-template--method-registry))
-      (:keyword
-       (unless owner
-         (user-error "majutsu-template: keyword %s must declare :owner type" name))
-       (puthash (cons owner name) meta majutsu-template--method-registry))
-      (_
-       (user-error "majutsu-template: unsupported callable scope %S" scope)))
+    (if owner
+        (progn
+          (unless (majutsu-template--lookup-type owner)
+            (message "majutsu-template: warning – declaring %s for unknown type %S"
+                     name owner))
+          (when keyword-flag
+            ;; keywords are 0-argument methods; ensure signature reflects it
+            (let ((args (majutsu-template--fn-args meta)))
+              (when (> (length args) 1)
+                (message "majutsu-template: keyword %s on %S declares more than self argument"
+                         name owner))))
+          (puthash (cons owner name) meta majutsu-template--method-registry))
+      (when (majutsu-template--reserved-name-p name)
+        (user-error "majutsu-template: %s is reserved" name))
+      (when pre-existing
+        (message "majutsu-template: redefining template helper %s" name))
+      (puthash name meta majutsu-template--function-registry)
+      (puthash sym name majutsu-template--function-name-map)
+      (puthash keyword name majutsu-template--function-name-map))
     fn-symbol))
 
 (eval-and-compile
@@ -420,10 +429,10 @@ Also validates placement of optional/rest arguments."
           (rest (cddr signature))
           (doc nil)
           (converts nil)
-          (scope nil)
           (owner nil)
           (template-name nil)
-          (flavor :fn))
+          (flavor :fn)
+          (keyword nil))
       (unless (symbolp returns)
         (user-error "majutsu-template-defun %s: invalid return type %S" fn-name returns))
       (while rest
@@ -432,13 +441,11 @@ Also validates placement of optional/rest arguments."
           (pcase key
             (:converts (setq converts value))
             (:doc (setq doc value))
-            (:scope (setq scope value))
             (:owner (setq owner value))
             (:template-name (setq template-name value))
             (:flavor (setq flavor value))
+            (:keyword (setq keyword value))
             (_ (user-error "majutsu-template-defun %s: unknown signature key %S" fn-name key)))))
-      (when (and scope (not (memq scope '(:function :method :keyword))))
-        (user-error "majutsu-template-defun %s: unsupported scope %S" fn-name scope))
       (when (and owner (not (symbolp owner)))
         (user-error "majutsu-template-defun %s: :owner expects a symbol, got %S" fn-name owner))
       (when (and template-name (not (stringp template-name)))
@@ -448,15 +455,18 @@ Also validates placement of optional/rest arguments."
       (unless (keywordp flavor)
         (user-error "majutsu-template-defun %s: :flavor expects a keyword, got %S"
                     fn-name flavor))
+      (setq keyword (and keyword (not (null keyword))))
+      (when (and keyword (not owner))
+        (user-error "majutsu-template-defun %s: :keyword requires :owner to be specified" fn-name))
       ;; Validate flavor early to surface typos during macro expansion.
       (majutsu-template--lookup-flavor flavor)
       (list :returns returns
             :converts converts
             :doc doc
-            :scope scope
             :owner owner
             :template-name template-name
-            :flavor flavor)))
+            :flavor flavor
+            :keyword keyword)))
 
   (defun majutsu-template--compose-docstring (name base-doc args)
     "Compose docstring for helper NAME using BASE-DOC and ARGS metadata."
@@ -485,19 +495,18 @@ Also validates placement of optional/rest arguments."
           (concat header "\n\nParameters:\n" param-lines)
         header)))
 
-  (defun majutsu-template--ensure-owner-type (scope owner fn-name)
-    "Ensure OWNER is provided (and roughly valid) for scoped callable FN-NAME."
-    (when (memq scope '(:method :keyword))
-      (unless owner
-        (user-error "majutsu-template-defun %s: :owner is required for %s"
-                    fn-name scope))
+  (defun majutsu-template--ensure-owner-type (owner fn-name)
+    "Validate declared OWNER type for callable FN-NAME when provided."
+    (when owner
       (unless (majutsu-template--lookup-type owner)
         (message "majutsu-template: warning – declaring %s for unknown type %S"
                  fn-name owner)))
     owner)
 
-  (defun majutsu-template-def--inherit-signature (signature scope owner)
-    (append signature (list :scope scope :owner owner))))
+  (defun majutsu-template-def--inherit-signature (signature owner &optional keyword)
+    (append signature
+            (list :owner owner)
+            (when keyword '(:keyword t)))))
 
 ;;;###autoload
 (defmacro majutsu-template-defun (name args signature &rest body)
@@ -508,12 +517,12 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
     (user-error "majutsu-template-defun: NAME must be an unprefixed symbol"))
   (let* ((name-str (symbol-name name))
          (signature-info (majutsu-template--parse-signature name signature))
-         (scope (or (plist-get signature-info :scope) :function))
-         (owner (majutsu-template--ensure-owner-type scope
-                                                     (plist-get signature-info :owner)
-                                                     name))
+         (owner (majutsu-template--ensure-owner-type
+                 (plist-get signature-info :owner)
+                 name))
          (template-name (or (plist-get signature-info :template-name) name-str))
          (flavor (plist-get signature-info :flavor))
+         (keyword-flag (plist-get signature-info :keyword))
          (fn-symbol (intern (format "majutsu-template-%s" name-str)))
          (parsed-args (majutsu-template--parse-args name args))
          (lambda-list (majutsu-template--build-lambda-list parsed-args))
@@ -525,8 +534,8 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
          (arg-metadata (mapcar #'majutsu-template--arg->metadata parsed-args))
          (flavor-context (list :name name
                                :template-name template-name
-                               :scope scope
                                :owner owner
+                               :keyword keyword-flag
                                :args parsed-args
                                :returns return-type))
          (auto-body (majutsu-template--flavor-body flavor flavor-context))
@@ -538,9 +547,9 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
                  :returns ',return-type
                  :return-converts ',return-converts
                  :doc ,docstring
-                 :scope ',scope
                  :owner ',owner
-                 :flavor ',flavor)))
+                 :flavor ',flavor
+                 :keyword ',keyword-flag)))
     (unless body-forms
       (user-error "majutsu-template-defun %s: flavor %S does not provide a default body"
                   name flavor))
@@ -558,14 +567,14 @@ ARGS describe parameters after the implicit SELF argument."
   (declare (indent defun))
   (let ((extended-args (cons `(self ,owner) args)))
     `(majutsu-template-defun ,name ,extended-args
-       ,(majutsu-template-def--inherit-signature signature :method owner)
+       ,(majutsu-template-def--inherit-signature signature owner)
        ,@body)))
 
 (defmacro majutsu-template-defkeyword (name owner signature &rest body)
   "Define keyword NAME (a 0-argument method) on OWNER type."
   (declare (indent defun))
   `(majutsu-template-defun ,name ((self ,owner))
-     ,(majutsu-template-def--inherit-signature signature :keyword owner)
+     ,(majutsu-template-def--inherit-signature signature owner t)
      ,@body))
 
 ;;; Operator macro helpers ---------------------------------------------------
@@ -642,10 +651,9 @@ ARGS describe parameters after the implicit SELF argument."
   "Register method METADATA described by METHOD-SPEC for OWNER type."
   (let* ((method-name (car method-spec))
          (plist (cdr method-spec))
-         (scope (or (plist-get plist :scope)
-                    (if (plist-get plist :keyword) :keyword :method)))
          (template-name (or (plist-get plist :template-name)
                             (symbol-name method-name)))
+         (keyword-flag (and (plist-get plist :keyword) t))
          (flavor (or (plist-get plist :flavor) :builtin))
          (raw-args (plist-get plist :args))
          (returns (majutsu-template--parse-type-name
@@ -654,6 +662,7 @@ ARGS describe parameters after the implicit SELF argument."
          (doc (plist-get plist :doc))
          (args-specs (cons `(self ,owner) (or raw-args '())))
          (parsed-args (majutsu-template--parse-args method-name args-specs))
+         (owner (majutsu-template--ensure-owner-type owner method-name))
          (meta (majutsu-template--make-fn
                 :name template-name
                 :symbol 'majutsu-template--method-stub
@@ -661,9 +670,9 @@ ARGS describe parameters after the implicit SELF argument."
                 :returns returns
                 :return-converts return-converts
                 :doc doc
-                :scope scope
                 :owner owner
-                :flavor flavor)))
+                :flavor flavor
+                :keyword keyword-flag)))
     (majutsu-template--lookup-flavor flavor)
     (majutsu-template--register-function meta)))
 
@@ -1095,13 +1104,17 @@ Further passes (type-checking, rendering) operate on these nodes."
   (:returns Template :doc "call(NAME, ARGS...) helper.")
   (let* ((name-node (majutsu-template--ensure-node name))
          (identifier (majutsu-template--node->identifier name-node "call name"))
-         (meta (majutsu-template--lookup-function-meta identifier)))
-    (if meta
-        (apply (majutsu-template--fn-symbol meta)
-               (mapcar #'majutsu-template--ensure-node args))
+         (meta (majutsu-template--lookup-function-meta identifier))
+         (arg-nodes (mapcar #'majutsu-template--ensure-node args)))
+    (cond
+     ((and meta (eq (majutsu-template--fn-flavor meta) :builtin))
+      (majutsu-template--call-node (majutsu-template--fn-name meta) arg-nodes))
+     (meta
+      (apply (majutsu-template--fn-symbol meta) arg-nodes))
+     (t
       (majutsu-template--call-node
        (majutsu-template--normalize-call-name identifier)
-       (mapcar #'majutsu-template--ensure-node args)))))
+       arg-nodes)))))
 
 (majutsu-template--defpassthrough coalesce "coalesce helper.")
 (majutsu-template--defpassthrough fill "fill helper.")
@@ -1158,8 +1171,8 @@ VALUE may be a string or template node. TYPE optional annotation (symbol/keyword
          (props (when declared (list :declared declared))))
     (majutsu-template--raw-node string declared props)))
 
-(defun majutsu-template-call (name &rest args)
-  "Call a jj template function NAME with ARGS.
+(defun majutsu-template--emit-call (name &rest args)
+  "Low-level helper: build call node NAME with normalized ARGS.
 NAME may be symbol, keyword, string, or template node."
   (let* ((identifier (majutsu-template--node->identifier name "call name"))
          (resolved (majutsu-template--normalize-call-name identifier))
@@ -1215,7 +1228,13 @@ CONTEXT is used in error messages."
 
 (defun majutsu-template-label (name value)
   "label(NAME, VALUE). NAME is auto-quoted."
-  (majutsu-template-call 'label (majutsu-template-str (format "%s" name)) value))
+  (let* ((name-node (majutsu-template--normalize name))
+         (label-text (majutsu-template--node->identifier name-node "label"))
+         (content-node (majutsu-template--ensure-node value)))
+    (majutsu-template--call-node
+     "label"
+     (list (majutsu-template--literal-node label-text 'String)
+           content-node))))
 
 (defun majutsu-template-join (sep coll var body)
   "Return node for COLL.map(|VAR| BODY).join(SEP)."
