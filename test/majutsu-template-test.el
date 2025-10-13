@@ -13,13 +13,6 @@
   (:returns Template :doc "Small helper used in tests.")
   `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
-(majutsu-template-defun + ((lhs Template) (rhs Template))
-  (:returns Template :doc "Simple + operator macro returning raw infix expression.")
-  (majutsu-template--raw-node
-   (format "(%s + %s)"
-           (majutsu-template--render-node lhs)
-           (majutsu-template--render-node rhs))))
-
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
           "concat(\"Hello \", self.author().name())")

@@ -416,6 +416,51 @@ ARGS describe parameters after the implicit SELF argument."
      ,(majutsu-template-def--inherit-signature signature :keyword owner)
      ,@body))
 
+(defmacro majutsu-template--definfix (name token)
+  "Define NAME as infix operator rendering TOKEN between two operands."
+  `(majutsu-template-defun ,name ((lhs Template) (rhs Template))
+     (:returns Template)
+     (let ((lhs-str (majutsu-template--render-node lhs))
+           (rhs-str (majutsu-template--render-node rhs)))
+       (majutsu-template--raw-node
+        (format "(%s %s %s)" lhs-str ,token rhs-str)))))
+
+(defmacro majutsu-template--defprefix (name token)
+  "Define NAME as prefix/unary operator rendering TOKEN before operand."
+  `(majutsu-template-defun ,name ((value Template))
+     (:returns Template)
+     (let ((value-str (majutsu-template--render-node value)))
+       (majutsu-template--raw-node
+        (format "(%s%s)" ,token value-str)))))
+
+(defconst majutsu-template--operator-aliases
+  '((sub . -))
+  "Alias map from DSL operator names to actual function symbols.")
+
+(defun majutsu-template--operator-symbol (op)
+  "Return canonical operator symbol for OP (keyword or symbol)."
+  (let* ((sym (cond
+               ((keywordp op) (intern (substring (symbol-name op) 1)))
+               (t op))))
+    (or (alist-get sym majutsu-template--operator-aliases) sym)))
+
+(majutsu-template--definfix + "+")
+(majutsu-template--definfix - "-")
+(majutsu-template--definfix * "*")
+(majutsu-template--definfix / "/")
+(majutsu-template--definfix % "%")
+(majutsu-template--definfix > ">")
+(majutsu-template--definfix >= ">=")
+(majutsu-template--definfix < "<")
+(majutsu-template--definfix <= "<=")
+(majutsu-template--definfix == "==")
+(majutsu-template--definfix != "!=")
+(majutsu-template--definfix and "&&")
+(majutsu-template--definfix or "||")
+(majutsu-template--definfix concat-op "++")
+(majutsu-template--defprefix not "!")
+(majutsu-template--defprefix neg "-")
+
 (defun majutsu-template--method-stub (&rest _args)
   "Placeholder for template methods/keywords that are not executable in Elisp."
   (error "majutsu-template: method stubs are not callable at runtime"))
@@ -960,47 +1005,6 @@ BODY may reference VAR using raw sub-expressions."
   "Return AST node representing FORM without rendering."
   (majutsu-template--ensure-node form))
 
-(defun majutsu-template--compile-op (op args)
-  "Compile a simple operator expression OP with ARGS to a raw node.
-Parentheses are added to avoid precedence issues."
-  (let ((to-s (lambda (x) (majutsu-template--compile (majutsu-template--sugar-transform x)))))
-    (pcase op
-      ((or :not 'not)
-       (let ((a (funcall to-s (cadr args))))
-         (majutsu-template-raw (format "(!%s)" a))))
-      ((or :neg 'neg)
-       (let ((a (funcall to-s (cadr args))))
-         (majutsu-template-raw (format "(-%s)" a))))
-      ((or :+ '+ :sub '- :* '* :/ '/ :% '% :>= '>= :> '> :<= '<= :< '< :== '== :!= '!=)
-       (let* ((a (funcall to-s (cadr args)))
-              (b (funcall to-s (caddr args)))
-              (tok (pcase op
-                     ((or :+ '+) "+")
-                     ((or :sub '-) "-")
-                     ((or :* '*) "*")
-                     ((or :/ '/) "/")
-                     ((or :% '%) "%")
-                     ((or :>= '>=) ">=")
-                     ((or :> '>) ">")
-                     ((or :<= '<=) "<=")
-                     ((or :< '<) "<")
-                     ((or :== '==) "==")
-                     ((or :!= '!=) "!="))))
-         (majutsu-template-raw (format "(%s %s %s)" a tok b))))
-      ((or :and 'and)
-       (let ((a (funcall to-s (cadr args)))
-             (b (funcall to-s (caddr args))))
-         (majutsu-template-raw (format "(%s && %s)" a b))))
-      ((or :or 'or)
-       (let ((a (funcall to-s (cadr args)))
-             (b (funcall to-s (caddr args))))
-         (majutsu-template-raw (format "(%s || %s)" a b))))
-      ((or :concat-op 'concat-op)
-       (let ((a (funcall to-s (cadr args)))
-             (b (funcall to-s (caddr args))))
-         (majutsu-template-raw (format "(%s ++ %s)" a b))))
-      (_ (user-error "majutsu-template: unknown operator %S" op)))))
-
 ;;;###autoload
 (defun majutsu-template-compile (form)
   "Public entry point: compile FORM into a jj template string."
@@ -1142,9 +1146,10 @@ Parentheses are added to avoid precedence issues."
       (apply #'majutsu-template--sugar-map-like head args))
      ((eq head 'method)
       (apply #'majutsu-template--sugar-method args))
-     ((memq head '(:+ + :sub - :* * :/ / :% % :>= >= :> > :<= <= :< <
-                   :== == :!= != :and and :or or :not not :neg neg :concat-op concat-op))
-      (majutsu-template--compile-op head (cons head args)))
+     ((memq head '(+ :+ - :sub * :* / :/ % :% >= :>= > :> <= :<= < :< == :== != :!= and :and or :or not :not neg :neg concat-op :concat-op))
+      (let* ((op-sym (majutsu-template--operator-symbol original))
+             (call-args (mapcar #'majutsu-template--sugar-transform args)))
+        (apply #'majutsu-template-call op-sym call-args)))
      ((memq head '(coalesce fill indent pad_start pad_end pad_centered
                    truncate_start truncate_end hash stringify raw_escape_sequence config))
       (apply #'majutsu-template-call head
