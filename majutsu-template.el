@@ -128,6 +128,21 @@ Recognised keys: :doc (string), :parent (keyword), :builder (function)."
               (when parent
                 (majutsu-template--resolve-flavor-builder parent)))))))
 
+  ;; TODO majutsu-template--flavor-fn-body
+  (defun majutsu-template--flavor-fn-body (context)
+    "Generate default body for :fn flavor using CONTEXT plist."
+    (let* ((template-name (plist-get context :template-name))
+           (owner (plist-get context :owner))
+           (args (plist-get context :args))
+           (call-args (mapcar #'majutsu-template--arg-name args)))
+      (if owner
+          (let ((self-arg (car call-args)))
+            (unless (and self-arg (symbolp self-arg))
+              (user-error "majutsu-template: method on %S must have self argument" owner))
+            (setq call-args (cdr call-args))
+            (list `(majutsu-template-call ,template-name ,self-arg ,@call-args)))
+        (list `(majutsu-template-call ,template-name ,@call-args)))))
+
   (defun majutsu-template--flavor-builtin-body (context)
     "Generate default body for :builtin flavor using CONTEXT plist."
     (if (plist-get context :owner)
@@ -191,16 +206,16 @@ Recognised keys: :doc (string), :parent (keyword), :builder (function)."
       (when builder
         (funcall builder context))))
 
-  (majutsu-template-define-flavor :fn
-                                  :doc "Default flavor for custom helpers.")
-
-  (majutsu-template-define-flavor :custom
-                                  :doc "Alias for :fn flavor with manual body.")
-
   (majutsu-template-define-flavor :builtin
                                   :doc "Helpers that proxy jj built-in functions."
-                                  :parent :fn
                                   :builder #'majutsu-template--flavor-builtin-body)
+
+  (majutsu-template-define-flavor :fn
+                                  :doc "Default flavor for custom helpers."
+                                  :builder #'majutsu-template--flavor-fn-body)
+
+  (majutsu-template-define-flavor :custom
+                                  :doc "Blank flavor for custom helpers with no default body.")
 
   (majutsu-template-define-flavor :map-like
                                   :doc "Helpers producing collection.method(|var| body) nodes."
@@ -1097,7 +1112,7 @@ Further passes (type-checking, rendering) operate on these nodes."
 
 (majutsu-template-defun call ((name Template)
                               (args Template :rest t))
-  (:returns Template :doc "call(NAME, ARGS...) helper.")
+  (:returns Template :doc "funcall helper, with builtin function support.")
   (let* ((name-node (majutsu-template--ensure-node name))
          (identifier (majutsu-template--node->identifier name-node "call name"))
          (meta (majutsu-template--lookup-function-meta identifier))
