@@ -27,6 +27,10 @@ interact with JJ repositories from within Emacs.
 (package! majutsu :recipe (:host github :repo "0WD0/majutsu"))
 #+end_src
 
+If you prefer a pre-built Doom module, you can drop in
+[[https://github.com/0WD0/doom/tree/main/modules/tools/majutsu][0WD0/doom/modules/tools/majutsu]]
+and enable it in your Doom config.
+
 ** use-package with straight.el
 #+begin_src emacs-lisp
 (use-package majutsu
