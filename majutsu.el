@@ -123,8 +123,7 @@ The function must accept one argument: the buffer to display."
 
 (defconst majutsu--log-template
   (tpl-compile
-   [:concat
-    "\x1e"
+   ["\x1e"
     [:if [:root]
         [:separate "\x1e"
                    [:call 'format_short_change_id [:change_id]]
@@ -143,35 +142,33 @@ The function must accept one argument: the buffer to display."
                   [:if [:current_working_copy] "working_copy"]
                   [:if [:immutable] "immutable" "mutable"]
                   [:if [:conflict] "conflicted"]]
-       [:concat
-        [:separate "\x1e"
-                   [:call 'format_short_change_id_with_hidden_and_divergent_info
-                          [:raw "self" :Commit]]
-                   [:call 'format_short_signature_oneline [:author]]
-                   [:call 'concat " " [:bookmarks] [:tags] [:working_copies]]
-                   [:if [:git_head]
-                       [:label "git_head" "git_head()"]
-                     " "]
-                   [:if [:conflict]
-                       [:label "conflict" "conflict"]
-                     " "]
-                   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
-                       [:call 'format_short_cryptographic_signature [:signature]]
-                     " "]
-                   [:if [:empty]
-                       [:label "empty" "(empty)"]
-                     " "]
-                   [:if [:description]
-                       [:method [:description] :first_line]
-                     [:label
-                      [:if [:empty] "empty"]
-                      [:raw "description_placeholder" :Template]]]
-                   [:call 'format_short_commit_id [:commit_id]]
-                   [:call 'format_timestamp
-                          [:call 'commit_timestamp [:raw "self" :Commit]]]
-                   [:if [:description]
-                       [:json [:description]]
-                     [:json " "]]]]]]])
+       [:separate "\x1e"
+                  [:call 'format_short_change_id_with_hidden_and_divergent_info 'self]
+                  [:call 'format_short_signature_oneline [:author]]
+                  [" " [:bookmarks] [:tags] [:working_copies]]
+                  [:if [:git_head]
+                      [:label "git_head" "git_head()"]
+                    " "]
+                  [:if [:conflict]
+                      [:label "conflict" "conflict"]
+                    " "]
+                  [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
+                      [:call 'format_short_cryptographic_signature [:signature]]
+                    " "]
+                  [:if [:empty]
+                      [:label "empty" "(empty)"]
+                    " "]
+                  [:if [:description]
+                      [:method [:description] :first_line]
+                    [:label
+                     [:if [:empty] "empty"]
+                     'description_placeholder]]
+                  [:call 'format_short_commit_id [:commit_id]]
+                  [:call 'format_timestamp
+                         [:call 'commit_timestamp 'self]]
+                  [:if [:description]
+                      [:json [:description]]
+                    [:json " "]]]]]])
   "Template for formatting log entries.")
 
 (defun majutsu--root ()
