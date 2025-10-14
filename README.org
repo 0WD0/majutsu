@@ -12,6 +12,7 @@ interact with JJ repositories from within Emacs.
 - *Diff viewing* with file and hunk-level navigation
 - *Context-sensitive actions* via DWIM (Do What I Mean) Enter key behavior
 - *Git integration* with push/fetch operations and configurable options
+- *Log transient* to tweak revsets, limits, and path filters on the fly
 - *Built-in conflict resolution* using Emacs ediff and smerge-mode
 - *Composable templates* through the bundled ~majutsu-template~ DSL for JJ output
 
@@ -67,6 +68,7 @@ buffer (~*majutsu-log:project-name*~).
 - ~d~ - Describe changeset at point (opens message buffer)
 - ~e~ - Edit changeset (jj edit)
 - ~u~ - Undo last operation
+- ~l~ - Log options transient
 - ~R~ - Redo last operation
 - ~s~ - Squash
 - ~N~ - New changeset here
