@@ -1409,13 +1409,11 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-describe ()
   "Open describe message buffer."
   (interactive)
-  (let ((commit-id (majutsu-get-changeset-at-point)))
-    (if commit-id
-        (let ((current-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
-          (majutsu--open-message-buffer "DESCRIBE_MSG"
-                                        (format "jj describe -r %s" commit-id)
-                                        'majutsu--describe-finish commit-id current-desc))
-      (message "No changeset at point"))))
+  (let* ((commit-id (or (majutsu-get-changeset-at-point) "@"))
+         (current-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
+    (majutsu--open-message-buffer "DESCRIBE_MSG"
+                                  (format "jj describe -r %s" commit-id)
+                                  'majutsu--describe-finish commit-id current-desc)))
 
 (defun majutsu--open-message-buffer (buffer-name command finish-func &optional commit-id initial-desc)
   "Open a message editing buffer."
