@@ -1,0 +1,22 @@
+#+title: Majutsu Specifications
+
+拉到本地到 org-mode 中阅读能获得更好的阅读体验
+
+* Majutsu Buffers
+** log buffer
+** message buffer
+
+* Transient Views
+** mode view
+** log view
+** squash view
+** bookmark view
+** rebase view
+** git view
+
+* Operations
+** new
+它的实现方式是比较显然的
+参数只有一个 revsets
+
+** duplicate

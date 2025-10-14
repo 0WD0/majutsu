@@ -1,0 +1,33 @@
+#+title: Majutsu Editable Specifications
+
+* 目标
+目标有两个：
+- 不受 majutsu-mode-map 限制的更加自由的光标跳转（兼容 evil）
+- 嵌入在 log buffer 中的 description 和 bookmark 编辑
+
+* 已知限制
+受到 wdired 启发，所以借鉴了 evil-collection 里 dired wdired 相关的代码
+
+但是 jujutsu 的数据是 dag 形态的
+在这种形态下，多光标可能应该能正确工作，但是矩形框选就基本上无意义了
+
+我们可以用这个 editable mode 批量操作 commit 数据
+
+TODO: 我们需要一个让 commit 信息对齐的视图
+（不是 --no-graph，是 only graph 和 no graph 的拼接）
+
+* 操作
+** description
+如何同时兼容多种显示模式？
+如何兼容可自定义的显示模式？
+
+*** short form
+直接编辑 message 的第一行，其余保持不动
+
+*** long form
+在 description 展开的状态下直接编辑完整的 message
+
+** bookmark
+add 
+delete
+move
