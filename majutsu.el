@@ -50,6 +50,84 @@ The function must accept one argument: the buffer to display."
           (function :tag "Custom function"))
   :group 'majutsu)
 
+(defconst majutsu-log--state-template
+  '(:revisions nil
+    :limit nil
+    :reversed nil
+    :no-graph nil
+    :filesets nil)
+  "Default plist template describing log view options.")
+
+(defvar majutsu-log-state (copy-sequence majutsu-log--state-template)
+  "Plist capturing the current jj log view options.")
+
+(defun majutsu-log--reset-state ()
+  "Reset log view options to defaults."
+  (setq majutsu-log-state (copy-sequence majutsu-log--state-template)))
+
+(defun majutsu-log--state-get (key)
+  "Return value for KEY in `majutsu-log-state'."
+  (plist-get majutsu-log-state key))
+
+(defun majutsu-log--state-set (key value)
+  "Set KEY in `majutsu-log-state' to VALUE."
+  (setq majutsu-log-state (plist-put majutsu-log-state key value)))
+
+(defun majutsu-log--summary-parts ()
+  "Return a list of human-readable fragments describing current log state."
+  (let ((parts '()))
+    (when-let ((rev (majutsu-log--state-get :revisions)))
+      (push (format "rev=%s" rev) parts))
+    (when-let ((limit (majutsu-log--state-get :limit)))
+      (push (format "limit=%s" limit) parts))
+    (when (majutsu-log--state-get :reversed)
+      (push "reversed" parts))
+    (when (majutsu-log--state-get :no-graph)
+      (push "no-graph" parts))
+    (let ((paths (majutsu-log--state-get :filesets)))
+      (when paths
+        (push (if (= (length paths) 1)
+                  (format "path=%s" (car paths))
+                (format "paths=%d" (length paths)))
+              parts)))
+    (nreverse parts)))
+
+(defun majutsu-log--format-summary (prefix)
+  "Return PREFIX annotated with active log state summary."
+  (let ((parts (majutsu-log--summary-parts)))
+    (if parts
+        (format "%s (%s)" prefix (string-join parts ", "))
+      prefix)))
+
+(defun majutsu-log--heading-string ()
+  "Return heading string for the log section."
+  (majutsu-log--format-summary "Log Graph"))
+
+(defun majutsu-log--transient-description ()
+  "Return description string for the log transient."
+  (majutsu-log--format-summary "JJ Log"))
+
+(defun majutsu-log--build-args ()
+  "Build argument list for `jj log' using current state."
+  (let ((args '("log")))
+    (when-let ((rev (majutsu-log--state-get :revisions)))
+      (setq args (append args (list "-r" rev))))
+    (when-let ((limit (majutsu-log--state-get :limit)))
+      (setq args (append args (list "-n" limit))))
+    (when (majutsu-log--state-get :reversed)
+      (setq args (append args '("--reversed"))))
+    (when (majutsu-log--state-get :no-graph)
+      (setq args (append args '("--no-graph"))))
+    (setq args (append args (list "-T" majutsu--log-template)))
+    (setq args (append args (majutsu-log--state-get :filesets)))
+    args))
+
+(defun majutsu-log--refresh-view ()
+  "Refresh current log buffer or open a new one."
+  (if (derived-mode-p 'majutsu-mode)
+      (majutsu-log-refresh)
+    (majutsu-log)))
+
 (defvar majutsu-mode-map
   (let ((map (make-sparse-keymap)))
     ;; Navigation
@@ -66,6 +144,7 @@ The function must accept one argument: the buffer to display."
     (define-key map (kbd "c") 'majutsu-commit)
     (define-key map (kbd "e") 'majutsu-edit-changeset)
     (define-key map (kbd "u") 'majutsu-undo)
+    (define-key map (kbd "l") 'majutsu-log-transient)
     (define-key map (kbd "R") 'majutsu-redo)
     (define-key map (kbd "N") 'majutsu-new)
     (define-key map (kbd "s") 'majutsu-squash-transient)
@@ -96,6 +175,7 @@ The function must accept one argument: the buffer to display."
                  ("c" "Commit" majutsu-commit)
                  ("e" "Edit changeset" majutsu-edit-changeset)
                  ("u" "Undo last change" majutsu-undo)
+                 ("l" "Log options" majutsu-log-transient)
                  ("R" "Redo last change" majutsu-redo)
                  ("N" "New changeset" majutsu-new)
                  ("a" "Abandon changeset" majutsu-abandon)
@@ -148,7 +228,7 @@ The function must accept one argument: the buffer to display."
                   [:if [:immutable] "immutable" "mutable"]
                   [:if [:conflict] "conflicted"]]
        [:separate "\x1e"
-                  [:call 'format_short_change_id_with_hidden_and_divergent_info 'self]
+                  [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
                   [:call 'format_short_signature_oneline [:author]]
                   [" " [:bookmarks] [:tags] [:working_copies]]
                   [:if [:git_head]
@@ -170,7 +250,7 @@ The function must accept one argument: the buffer to display."
                      'description_placeholder]]
                   [:call 'format_short_commit_id [:commit_id]]
                   [:call 'format_timestamp
-                         [:call 'commit_timestamp 'self]]
+                         [:call 'commit_timestamp [:raw "self" :Commit]]]
                   [:if [:description]
                       [:json [:description]]
                     [:json " "]]]]]])
@@ -470,7 +550,8 @@ Each pair SHOULD be (line-with-changeset-id-and-email description-line).
 
 The results of this fn are fed into `majutsu--parse-log-entries'."
   (with-current-buffer (or buf (current-buffer))
-    (let ((log-output (majutsu--run-command-color "log" "-T" majutsu--log-template)))
+    (let* ((args (majutsu-log--build-args))
+           (log-output (apply #'majutsu--run-command-color args)))
       (when (and log-output (not (string-empty-p log-output)))
         (let ((lines (split-string log-output "\n" t)))
           (cl-loop for line in lines
@@ -505,7 +586,7 @@ The results of this fn are fed into `majutsu--parse-log-entries'."
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
   (magit-insert-section (majutsu-log-graph-section)
-    (magit-insert-heading "Log Graph")
+    (magit-insert-heading (majutsu-log--heading-string))
     (dolist (entry (majutsu-parse-log-entries))
       (magit-insert-section section (majutsu-log-entry-section entry t)
                             (oset section commit-id (plist-get entry :id))
@@ -671,6 +752,150 @@ Instead of invoking this alias for `majutsu-log' using
                                   (magit-run-section-hook 'majutsu-log-sections-hook))
                                 (goto-char pos)
                                 (majutsu--debug "Log refresh completed"))))))
+
+(defun majutsu-log--toggle-desc (label key)
+  "Return LABEL annotated with ON/OFF state for KEY."
+  (if (majutsu-log--state-get key)
+      (format "%s [on]" label)
+    (format "%s [off]" label)))
+
+(defun majutsu-log--value-desc (label key)
+  "Return LABEL annotated with the string value stored at KEY."
+  (if-let ((value (majutsu-log--state-get key)))
+      (format "%s (%s)" label value)
+    label))
+
+(defun majutsu-log--paths-desc ()
+  "Return description for path filters."
+  (let ((paths (majutsu-log--state-get :filesets)))
+    (cond
+     ((null paths) "Add path filter")
+     ((= (length paths) 1) (format "Add path filter (%s)" (car paths)))
+     (t (format "Add path filter (%d paths)" (length paths))))))
+
+(defun majutsu-log-transient--redisplay ()
+  "Redisplay the log transient, compatible with older transient versions."
+  (if (fboundp 'transient-redisplay)
+      (transient-redisplay)
+    (when (fboundp 'transient--redisplay)
+      (transient--redisplay))))
+
+(defun majutsu-log-transient-set-revisions ()
+  "Prompt for a revset and store it in log state."
+  (interactive)
+  (let* ((current (majutsu-log--state-get :revisions))
+         (input (string-trim (read-from-minibuffer "Revset (empty to clear): " current))))
+    (majutsu-log--state-set :revisions (unless (string-empty-p input) input))
+    (majutsu-log-transient--redisplay)))
+
+(defun majutsu-log-transient-clear-revisions ()
+  "Clear the stored revset."
+  (interactive)
+  (majutsu-log--state-set :revisions nil)
+  (majutsu-log-transient--redisplay))
+
+(defun majutsu-log-transient-set-limit ()
+  "Prompt for a numeric limit and store it in log state."
+  (interactive)
+  (let* ((current (majutsu-log--state-get :limit))
+         (input (string-trim (read-from-minibuffer "Limit (empty to clear): " current))))
+    (cond
+     ((string-empty-p input)
+      (majutsu-log--state-set :limit nil))
+     ((string-match-p "\\`[0-9]+\\'" input)
+      (majutsu-log--state-set :limit input))
+     (t
+      (user-error "Limit must be a positive integer"))))
+  (majutsu-log-transient--redisplay))
+
+(defun majutsu-log-transient-clear-limit ()
+  "Clear the stored limit."
+  (interactive)
+  (majutsu-log--state-set :limit nil)
+  (majutsu-log-transient--redisplay))
+
+(defun majutsu-log-transient--toggle (key)
+  "Toggle boolean KEY in log state."
+  (majutsu-log--state-set key (not (majutsu-log--state-get key)))
+  (majutsu-log-transient--redisplay))
+
+(defun majutsu-log-transient-toggle-reversed ()
+  "Toggle reversed log ordering."
+  (interactive)
+  (majutsu-log-transient--toggle :reversed))
+
+(defun majutsu-log-transient-toggle-no-graph ()
+  "Toggle whether jj log should hide the ASCII graph."
+  (interactive)
+  (majutsu-log-transient--toggle :no-graph))
+
+(defun majutsu-log-transient-add-path ()
+  "Add a fileset/path filter to the log view."
+  (interactive)
+  (let* ((input (string-trim (read-from-minibuffer "Add path/pattern: ")))
+         (paths (majutsu-log--state-get :filesets)))
+    (when (and (not (string-empty-p input))
+               (not (member input paths)))
+      (majutsu-log--state-set :filesets (append paths (list input)))
+      (majutsu-log-transient--redisplay))))
+
+(defun majutsu-log-transient-clear-paths ()
+  "Clear all path filters."
+  (interactive)
+  (majutsu-log--state-set :filesets nil)
+  (majutsu-log-transient--redisplay))
+
+(defun majutsu-log-transient-reset ()
+  "Reset log state to defaults."
+  (interactive)
+  (majutsu-log--reset-state)
+  (majutsu-log-transient--redisplay))
+
+(defun majutsu-log-transient-apply ()
+  "Apply the current log state by refreshing or opening the log view."
+  (interactive)
+  (majutsu-log--refresh-view))
+
+(transient-define-prefix majutsu-log-transient ()
+  "Transient interface for adjusting jj log options."
+  :transient-suffix 'transient--do-exit
+  :transient-non-suffix t
+  [:description majutsu-log--transient-description
+   :class transient-columns
+   ["Revisions"
+    ("r" "Revset" majutsu-log-transient-set-revisions
+     :description (lambda ()
+                    (majutsu-log--value-desc "Revset" :revisions))
+     :transient t)
+    ("R" "Clear revset" majutsu-log-transient-clear-revisions
+     :if (lambda () (majutsu-log--state-get :revisions))
+     :transient t)
+    ("n" "Limit" majutsu-log-transient-set-limit
+     :description (lambda ()
+                    (majutsu-log--value-desc "Limit" :limit))
+     :transient t)
+    ("N" "Clear limit" majutsu-log-transient-clear-limit
+     :if (lambda () (majutsu-log--state-get :limit))
+     :transient t)
+    ("v" "Reverse order" majutsu-log-transient-toggle-reversed
+     :description (lambda ()
+                    (majutsu-log--toggle-desc "Reverse order" :reversed))
+     :transient t)
+    ("t" "Hide graph" majutsu-log-transient-toggle-no-graph
+     :description (lambda ()
+                    (majutsu-log--toggle-desc "Hide graph" :no-graph))
+     :transient t)]
+   ["Paths"
+    ("a" "Add path filter" majutsu-log-transient-add-path
+     :description #'majutsu-log--paths-desc
+     :transient t)
+    ("A" "Clear path filters" majutsu-log-transient-clear-paths
+     :if (lambda () (majutsu-log--state-get :filesets))
+     :transient t)]
+   ["Actions"
+    ("g" "Apply & refresh" majutsu-log-transient-apply :transient nil)
+    ("0" "Reset options" majutsu-log-transient-reset :transient t)
+    ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu-enter-dwim ()
   "Context-sensitive Enter key behavior."
