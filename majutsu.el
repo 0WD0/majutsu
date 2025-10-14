@@ -28,6 +28,11 @@
   :type 'boolean
   :group 'majutsu)
 
+(defcustom majutsu-confirm-critical-actions t
+  "If non-nil, prompt for confirmation before undo/redo/abandon operations."
+  :type 'boolean
+  :group 'majutsu)
+
 (defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
                                        majutsu-log-insert-status
                                        majutsu-log-insert-diff)
@@ -1248,29 +1253,38 @@ With prefix ALL, include remote bookmarks."
 (defun majutsu-undo ()
   "Undo the last change."
   (interactive)
-  (let ((commit-id (majutsu-get-changeset-at-point)))
-    (majutsu--run-command "undo")
-    (majutsu-log-refresh)
-    (when commit-id
-      (majutsu-goto-commit commit-id))))
+  (if (and majutsu-confirm-critical-actions
+           (not (yes-or-no-p "Undo the most recent change? ")))
+      (message "Undo canceled")
+    (let ((commit-id (majutsu-get-changeset-at-point)))
+      (majutsu--run-command "undo")
+      (majutsu-log-refresh)
+      (when commit-id
+        (majutsu-goto-commit commit-id)))))
 
 (defun majutsu-redo ()
   "Redo the last undone change."
   (interactive)
-  (let ((commit-id (majutsu-get-changeset-at-point)))
-    (majutsu--run-command "redo")
-    (majutsu-log-refresh)
-    (when commit-id
-      (majutsu-goto-commit commit-id))))
+  (if (and majutsu-confirm-critical-actions
+           (not (yes-or-no-p "Redo the previously undone change? ")))
+      (message "Redo canceled")
+    (let ((commit-id (majutsu-get-changeset-at-point)))
+      (majutsu--run-command "redo")
+      (majutsu-log-refresh)
+      (when commit-id
+        (majutsu-goto-commit commit-id)))))
 
 (defun majutsu-abandon ()
-  "Abandon a changeset."
+  "Abandon the changeset at point."
   (interactive)
   (if-let ((commit-id (majutsu-get-changeset-at-point)))
-      (progn
-        (majutsu--run-command "abandon" "-r" commit-id)
-        (majutsu-log-refresh))
-    (message "Can only run new on a change")))
+      (if (and majutsu-confirm-critical-actions
+               (not (yes-or-no-p (format "Abandon changeset %s? " commit-id))))
+          (message "Abandon canceled")
+        (progn
+          (majutsu--run-command "abandon" "-r" commit-id)
+          (majutsu-log-refresh)))
+    (message "No changeset at point to abandon")))
 
 (defun majutsu-new (arg)
   "Create a new changeset.
