@@ -1,9 +1,18 @@
 #+title: Majutsu Template Specifications
 
-拉到本地到 org-mode 中阅读能获得更好的阅读体验，有一些链接 github 解析不了
-
 在查看全文之前应该先对 jujutsu template language 有一定了解。
 在这里放上经常更新的官方文档 [[file:template_help.md][file]]。
+
+* 目标
+实现一个 jujutsu template 的 elisp DSL
+
+实现一个简单的编译器，编译成果是一个字符串
+用来传入 flag -T 的template参数
+
+不需要修改用户配置的可配置模板
+DSL
+
+在 Transient View 中
 
 * Types
 需要支持强类型检查
