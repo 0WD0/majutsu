@@ -1459,11 +1459,10 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu--message-abort ()
   "Abort message editing."
   (interactive)
-  (when (yes-or-no-p "Abort message editing? ")
-    (let ((window-config majutsu--window-config))
-      (kill-buffer)
-      (set-window-configuration window-config)
-      (message "Aborted"))))
+  (let ((window-config majutsu--window-config))
+    (kill-buffer)
+    (set-window-configuration window-config)
+    (message "Canceled message editing")))
 
 (defun majutsu--commit-finish (message &optional _commit-id)
   "Finish commit with MESSAGE."
