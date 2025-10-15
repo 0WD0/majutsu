@@ -1734,33 +1734,32 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                                         "Fetched from remote" "Fetch failed")
         (majutsu-log-refresh))))
 
-(defun majutsu-diff ()
-  "Show diff for current change or commit at point."
-  (interactive)
-  (let* ((commit-id (majutsu-get-changeset-at-point))
+(defun majutsu-diff (&optional revision)
+  "Show diff for REVISION or commit at point, defaulting to `@'."
+  (interactive
+   (list (or (majutsu-get-changeset-at-point) "@")))
+  (let* ((rev (or revision (majutsu-get-changeset-at-point) "@"))
          (buffer (get-buffer-create "*majutsu-diff*"))
-         (prev-buffer (current-buffer)))
-    (if (not commit-id)
-        (message "No diff to view at point.  Try again on a changeset.")
-      (with-current-buffer buffer
-        (let ((inhibit-read-only t))
-          (erase-buffer)
-          (if commit-id
-              (insert (majutsu--run-command-color "show" "-r" commit-id))
-            (insert (majutsu--run-command-color "show")))
-          (diff-mode)
-          (ansi-color-apply-on-region (point-min) (point-max))
-          (goto-char (point-min))
-          ;; Make buffer read-only
-          (setq buffer-read-only t)
-          ;; Set up local keymap
-          (use-local-map (copy-keymap diff-mode-map))
-          (local-set-key (kbd "q")
-                         (lambda ()
-                           (interactive)
-                           (kill-buffer)
-                           (when (buffer-live-p prev-buffer)
-                             (switch-to-buffer prev-buffer)))))))
+         (prev-buffer (current-buffer))
+         (repo-root (majutsu--root)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t)
+            (default-directory repo-root))
+        (erase-buffer)
+        (insert (majutsu--run-command-color "show" "-r" rev))
+        (diff-mode)
+        (ansi-color-apply-on-region (point-min) (point-max))
+        (goto-char (point-min))
+        ;; Make buffer read-only
+        (setq buffer-read-only t)
+        ;; Set up local keymap
+        (use-local-map (copy-keymap diff-mode-map))
+        (local-set-key (kbd "q")
+                       (lambda ()
+                         (interactive)
+                         (kill-buffer)
+                         (when (buffer-live-p prev-buffer)
+                           (switch-to-buffer prev-buffer))))))
     (switch-to-buffer buffer)))
 
 ;;;###autoload
