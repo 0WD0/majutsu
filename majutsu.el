@@ -541,39 +541,55 @@ misclassifying Majutsu candidates."
 
 
 (defun majutsu-parse-log-entries (&optional buf)
-  "Get log line pairs from BUF (defaults to `current-buffer').
+  "Parse jj log output from BUF (defaults to `current-buffer').
 
-This somewhat naively runs log, splits on newlines, and partitions the
-lines into pairs.
-
-Each pair SHOULD be (line-with-changeset-id-and-email description-line).
-
-The results of this fn are fed into `majutsu--parse-log-entries'."
+The parser keeps graph spacer lines (blank or connector rows) with the
+preceding revision so `magit-section-forward' can jump between commits
+instead of stopping on visual padding."
   (with-current-buffer (or buf (current-buffer))
     (let* ((args (majutsu-log--build-args))
            (log-output (apply #'majutsu--run-command-color args)))
       (when (and log-output (not (string-empty-p log-output)))
-        (let ((lines (split-string log-output "\n" t)))
-          (cl-loop for line in lines
-                   for elems = (mapcar #'string-trim (split-string line "\x1e" ))
-                   when (> (length elems) 1) collect
-                   (seq-let (prefix change-id author bookmarks git-head conflict signature empty short-desc commit-id timestamp long-desc) elems
-                     (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
-                            (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
-                            (id8  (if (> (length cid) 8) (substring cid 0 8) cid))
-                            (idv  (unless (string-empty-p id8) id8)))
-                       (list :id idv
-                             :prefix prefix
-                             :line line
-                             :elems (seq-remove (lambda (l) (or (not l) (string-blank-p l))) elems)
-                             :author author
-                             :commit_id full
-                             :short-desc short-desc
-                             :long-desc  (if long-desc (json-parse-string long-desc) nil)
-                             :timestamp  timestamp
-                             :bookmarks bookmarks )))
-                   else collect
-                   (list :elems (list line nil))))))))
+        (let ((lines (split-string log-output "\n"))
+              (entries '())
+              (current nil)
+              (pending nil))
+          (dolist (line lines)
+            (let* ((raw-elems (split-string line "\x1e"))
+                   (trimmed-elems (mapcar #'string-trim raw-elems))
+                   (clean-elems (seq-remove (lambda (l) (or (not l) (string-blank-p l)))
+                                            trimmed-elems)))
+              (if (> (length clean-elems) 1)
+                  (progn
+                    (when current
+                      (when pending
+                        (setq current (plist-put current :suffix-lines (nreverse pending)))
+                        (setq pending nil))
+                      (push current entries))
+                    (setq current
+                          (seq-let (prefix change-id author bookmarks git-head conflict signature empty short-desc commit-id timestamp long-desc)
+                              trimmed-elems
+                            (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
+                                   (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
+                                   (id8  (if (> (length cid) 8) (substring cid 0 8) cid))
+                                   (idv  (unless (string-empty-p id8) id8)))
+                              (list :id idv
+                                    :prefix prefix
+                                    :line line
+                                    :elems clean-elems
+                                    :author author
+                                    :commit_id full
+                                    :short-desc short-desc
+                                    :long-desc (when long-desc (json-parse-string long-desc))
+                                    :timestamp timestamp
+                                    :bookmarks bookmarks))))
+                    (setq pending nil))
+                (push line pending))))
+          (when current
+            (when pending
+              (setq current (plist-put current :suffix-lines (nreverse pending))))
+            (push current entries))
+          (nreverse entries))))))
 
 (defun majutsu--indent-string (s column)
   "Insert STRING into the current buffer, indenting each line to COLUMN."
@@ -589,15 +605,22 @@ The results of this fn are fed into `majutsu--parse-log-entries'."
     (magit-insert-heading (majutsu-log--heading-string))
     (dolist (entry (majutsu-parse-log-entries))
       (magit-insert-section section (majutsu-log-entry-section entry t)
-                            (oset section commit-id (plist-get entry :id))
-                            (oset section description (plist-get entry :description))
+                            (oset section commit-id (or (plist-get entry :commit_id)
+                                                        (plist-get entry :id)))
+                            (oset section description (plist-get entry :short-desc))
                             (oset section bookmarks (plist-get entry :bookmarks))
                             (magit-insert-heading
-                              (insert (string-join (butlast (plist-get entry :elems)) " ")) "\n")
+                              (insert (string-join (butlast (plist-get entry :elems)) " ")))
                             (when-let* ((long-desc (plist-get entry :long-desc))
-                                        (long-desc (majutsu--indent-string long-desc (+ 10 (length (plist-get entry :prefix))))))
+                                        (indented (majutsu--indent-string long-desc
+                                                                          (+ 10 (length (plist-get entry :prefix))))))
                               (magit-insert-section-body
-                                (insert long-desc "\n")))))
+                                (insert indented)
+                                (insert "\n")))
+                            (when-let ((suffix-lines (plist-get entry :suffix-lines)))
+                              (dolist (suffix-line suffix-lines)
+                                (insert suffix-line)
+                                (insert "\n")))))
     (insert "\n")))
 
 (defun majutsu-log-insert-status ()
