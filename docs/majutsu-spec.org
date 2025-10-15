@@ -3,14 +3,50 @@
 拉到本地到 org-mode 中阅读能获得更好的阅读体验
 
 * Majutsu Buffers
-** log buffer
+** majutsu-log
+这是我们主要工作在的buffer
+因为不像 git 最常用的是 status，在 jj 中 log 反而是更加常用的命令
+
+*** TODO 刷新之后重新定位当前 revision
+这应该是非常重要的功能
+需要有禁用选项
+
+*** TODO builtin avy support
+由于 change-id 的设计本来就在高亮唯一前缀
+我们完全可以用 avy 的模式来进行跳转！
+
 ** message buffer
+目前的实现是只有一个输入框，我觉得这样不太行，应该模仿 magit 在下面放上提交具体的diff信息
+*** TODO 附加 diff 信息
+
+** diff buffer
+目前的实现是直接调用的 diff-mode，需要优化
+
+*** TODO visit
+实际上应该使用放在 log buffer 下的
+Working Copy Changes section 实现，
+这样才能用 fn:magit-visit-thing
+
+然后和 magit 的设计不同，我们在查看一个 rev 的时候如果想要 visit
+很有可能是有 edit 到对应 rev 的需求的
+可以绑定到 [[kbd:e]]
+
+所以目标设计是有两种 visit
+一种是附加 edit 的（并且需要确认）
+一种是类似 magit 实现的访问 tmpfile
 
 * Transient Views
-** mode view
+** command view
 ** log view
 ** squash view
 ** bookmark view
+*** list
+**** TODO 高亮显示
+**** TODO 支持到跳转焦点到对应的 log view entry
+*** move
+**** TODO 支持 -B
+要把 bookmark 往前移需要设置 --allow-backwards
+打算设置到 M 上
 ** rebase view
 ** git view
 
@@ -20,3 +56,30 @@
 参数只有一个 revsets
 
 ** duplicate
+我觉得也挺重要的，需要支持
+
+** split
+这是 jj-mode.el 还没有实现的功能，我想要把它实现了
+
+=--tool :builtin=
+[[https://github.com/arxanas/scm-record?tab=readme-ov-file#scm-diff-editor][scm-record]] 中的 scm-diff-editor
+是jj内置的默认编辑工具
+
+可以参考 [[https://github.com/ilyagr/diffedit3][diffedit3]] 的实现
+
+我觉得我可以解决一次只能 split 一个 rev 的限制！
+
+每个changeset是基于前一个 rev 的
+
+如果设成 =--tool emacs= 在默认下的行为：
+他创建了两个临时目录，只包含当前 changeset 涉及到的文件
+把当前 changeset 应用前放在了 left 目录里
+把当前 changeset 应用后的文件放在了 right 目录里
+然后对right修改得到的 changeset，是你想插入的中间的 rev
+然后当前 changeset 就是原先 changset 和这个你编辑得到的 changeset 取反
+
+如何设计进行连续的多个 split？
+split 产生的 rev 是否必须是一条链？我觉得应该是？
+我如何处理树状视图？
+
+
