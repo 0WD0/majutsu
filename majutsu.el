@@ -282,7 +282,9 @@ The function must accept one argument: the buffer to display."
         result exit-code)
     (majutsu--debug "Running command: %s %s" majutsu-executable (string-join safe-args " "))
     (with-temp-buffer
-      (setq exit-code (apply #'process-file majutsu-executable nil t nil safe-args))
+      (let ((coding-system-for-read 'utf-8-unix)
+            (coding-system-for-write 'utf-8-unix))
+        (setq exit-code (apply #'process-file majutsu-executable nil t nil safe-args)))
       (setq result (buffer-string))
       (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                       (float-time (time-subtract (current-time) start-time))
@@ -291,6 +293,34 @@ The function must accept one argument: the buffer to display."
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
+(defun majutsu--run-command-with-stdin (input &rest args)
+  "Run jj command with ARGS, piping INPUT to stdin.
+INPUT should be a string and is encoded as UTF-8 before sending."
+  (let ((start-time (current-time))
+        (safe-args (seq-remove #'null args))
+        (input (or input ""))
+        result exit-code)
+    (majutsu--debug "Running command with stdin: %s %s"
+                    majutsu-executable (string-join safe-args " "))
+    (with-temp-buffer
+      (let ((output-buffer (current-buffer)))
+        (with-temp-buffer
+          (insert input)
+          (let ((coding-system-for-read 'utf-8-unix)
+                (coding-system-for-write 'utf-8-unix))
+            (setq exit-code (apply #'call-process-region
+                                   (point-min) (point-max)
+                                   majutsu-executable
+                                   nil output-buffer nil
+                                   safe-args)))))
+      (setq result (buffer-string)))
+    (majutsu--debug "Command with stdin completed in %.3f seconds, exit code: %d"
+                    (float-time (time-subtract (current-time) start-time))
+                    exit-code)
+    (when (and majutsu-show-command-output (not (string-empty-p result)))
+      (majutsu--debug "Command output: %s" (string-trim result)))
+    result))
+
 (defun majutsu--run-command-color (&rest args)
   "Run jj command with ARGS and return colorized output."
   (majutsu--debug "Running color command: %s --color=always %s" majutsu-executable (string-join args " "))
@@ -298,7 +328,9 @@ The function must accept one argument: the buffer to display."
         result exit-code)
     (with-temp-buffer
       (let ((process-environment (cons "FORCE_COLOR=1" (cons "CLICOLOR_FORCE=1" process-environment))))
-        (setq exit-code (apply #'process-file majutsu-executable nil t nil "--color=always" args))
+        (let ((coding-system-for-read 'utf-8-unix)
+              (coding-system-for-write 'utf-8-unix))
+          (setq exit-code (apply #'process-file majutsu-executable nil t nil "--color=always" args)))
         (setq result (ansi-color-apply (buffer-string)))
         (majutsu--debug "Color command completed in %.3f seconds, exit code: %d"
                         (float-time (time-subtract (current-time) start-time))
@@ -1716,6 +1748,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
   "Finish editing the message and execute the command."
   (interactive)
   (let* ((message (buffer-substring-no-properties (point-min) (point-max)))
+         (message (replace-regexp-in-string "\r\n?" "\n" message))
          (lines (split-string message "\n"))
          (filtered-lines (seq-remove (lambda (line) (string-prefix-p "#" line)) lines))
          (final-message (string-trim (string-join filtered-lines "\n")))
@@ -1741,19 +1774,24 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu--commit-finish (message &optional _commit-id)
   "Finish commit with MESSAGE."
   (majutsu--message-with-log "Committing changes...")
-  (let ((result (majutsu--run-command "commit" "-m" message)))
-    (if (majutsu--handle-command-result (list "commit" "-m" message) result
-                                        "Successfully committed changes"
-                                        "Failed to commit")
-        (majutsu-log-refresh))))
+  (let* ((describe-args '("describe" "--stdin" "@"))
+         (describe-result (apply #'majutsu--run-command-with-stdin message describe-args)))
+    (if (majutsu--handle-command-result describe-args describe-result nil
+                                        "Failed to update description")
+        (let* ((commit-args '("new"))
+               (commit-result (apply #'majutsu--run-command commit-args)))
+          (when (majutsu--handle-command-result commit-args commit-result nil "Failed to commit")
+            (majutsu--message-with-log "Successfully committed changes")
+            (majutsu-log-refresh))))))
 
 (defun majutsu--describe-finish (message &optional commit-id)
   "Finish describe with MESSAGE for COMMIT-ID."
   (if commit-id
       (progn
         (majutsu--message-with-log "Updating description for %s..." commit-id)
-        (let ((result (majutsu--run-command "describe" "-r" commit-id "-m" message)))
-          (if (majutsu--handle-command-result (list "describe" "-r" commit-id "-m" message) result
+        (let* ((args (list "describe" "--stdin" "-r" commit-id))
+               (result (apply #'majutsu--run-command-with-stdin message args)))
+          (if (majutsu--handle-command-result args result
                                               (format "Description updated for %s" commit-id)
                                               "Failed to update description")
               (majutsu-log-refresh))))
