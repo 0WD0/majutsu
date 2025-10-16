@@ -44,7 +44,7 @@ Working Copy Changes section 实现，
 **** TODO 高亮显示
 **** TODO 支持到跳转焦点到对应的 log view entry
 *** move
-**** TODO 支持 -B
+**** DONE 支持 -B
 要把 bookmark 往前移需要设置 --allow-backwards
 打算设置到 M 上
 ** rebase view
