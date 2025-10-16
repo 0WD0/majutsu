@@ -86,6 +86,7 @@ buffer (~*majutsu-log:project-name*~).
   - ~l~ - List bookmarks
   - ~s~ - Set bookmark to revision
   - ~m~ - Move bookmark(s) to revision
+  - ~M~ - Move bookmark(s) to revision --allow-backwards
   - ~r~ - Rename bookmark
   - ~t~ - Track remote bookmark
   - ~u~ - Untrack remote bookmark
