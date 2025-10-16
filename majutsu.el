@@ -631,8 +631,34 @@ misclassifying Majutsu candidates."
 (defclass majutsu-log-graph-section (magit-section) ())
 (defclass majutsu-log-entry-section (magit-section)
   ((commit-id :initarg :commit-id)
+   (change-id :initarg :change-id)
    (description :initarg :description)
    (bookmarks :initarg :bookmarks)))
+
+(defun majutsu--section-change-id (section)
+  "Return the change id recorded in SECTION, if available."
+  (when (and section (object-of-class-p section 'majutsu-log-entry-section))
+    (cond
+     ((and (slot-exists-p section 'change-id)
+           (slot-boundp section 'change-id))
+      (oref section change-id))
+     (t
+      (let ((entry (oref section value)))
+        (when (listp entry)
+          (or (plist-get entry :change-id)
+              (plist-get entry :id))))))))
+
+(cl-defmethod magit-section-ident-value ((section majutsu-log-entry-section))
+  "Identify log entry sections by their change id."
+  (or (majutsu--section-change-id section)
+      (and (slot-exists-p section 'commit-id)
+           (slot-boundp section 'commit-id)
+           (oref section commit-id))
+      (let ((entry (oref section value)))
+        (when (listp entry)
+          (or (plist-get entry :change-id)
+              (plist-get entry :commit_id)
+              (plist-get entry :id))))))
 (defclass majutsu-diff-section (magit-section) ())
 (defclass majutsu-file-section (magit-section)
   ((file :initarg :file)))
@@ -681,6 +707,7 @@ instead of stopping on visual padding."
                                     :line line
                                     :elems clean-elems
                                     :author author
+                                    :change-id cid
                                     :commit_id full
                                     :short-desc short-desc
                                     :long-desc (when long-desc (json-parse-string long-desc))
@@ -710,6 +737,8 @@ instead of stopping on visual padding."
       (magit-insert-section section (majutsu-log-entry-section entry t)
                             (oset section commit-id (or (plist-get entry :commit_id)
                                                         (plist-get entry :id)))
+                            (oset section change-id (or (plist-get entry :change-id)
+                                                        (plist-get entry :id)))
                             (oset section description (plist-get entry :short-desc))
                             (oset section bookmarks (plist-get entry :bookmarks))
                             (magit-insert-heading
@@ -725,6 +754,40 @@ instead of stopping on visual padding."
                                 (insert suffix-line)
                                 (insert "\n")))))
     (insert "\n")))
+
+(defun majutsu--find-log-entry-section (change-id commit-id)
+  "Return the log entry section matching CHANGE-ID or COMMIT-ID, or nil."
+  (when magit-root-section
+    (let (found)
+      (cl-labels ((walk (section)
+                    (when section
+                      (when (and (object-of-class-p section 'majutsu-log-entry-section)
+                                 (or (and change-id
+                                          (let ((section-change (majutsu--section-change-id section)))
+                                            (and section-change
+                                                 (equal section-change change-id))))
+                                     (and commit-id
+                                          (slot-boundp section 'commit-id)
+                                          (equal (oref section commit-id) commit-id))))
+                        (setq found section))
+                      (dolist (child (oref section children))
+                        (unless found
+                          (walk child))))))
+        (walk magit-root-section))
+      found)))
+
+(defun majutsu--goto-log-entry (change-id &optional commit-id)
+  "Move point to the log entry section matching CHANGE-ID.
+When CHANGE-ID is nil, fall back to COMMIT-ID.
+Return non-nil when the section could be located."
+  (when-let ((section (majutsu--find-log-entry-section change-id commit-id)))
+    (magit-section-goto section)
+    (goto-char (oref section start))
+    t))
+
+(defun majutsu-log--change-id-at-point ()
+  "Return change id for the log entry at point, or nil otherwise."
+  (majutsu--section-change-id (magit-current-section)))
 
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
@@ -869,14 +932,20 @@ Instead of invoking this alias for `majutsu-log' using
   "Refresh the majutsu log buffer."
   (interactive)
   (when (derived-mode-p 'majutsu-mode)
-    (majutsu--with-progress "Refreshing log view"
-                            (lambda ()
-                              (let ((inhibit-read-only t)
-                                    (pos (point)))
-                                (erase-buffer)
-                                (magit-insert-section (jjbuf)  ; Root section wrapper
-                                  (magit-run-section-hook 'majutsu-log-sections-hook))
-                                (goto-char pos)
+    (let ((target-commit (majutsu-log--commit-id-at-point))
+          (target-change (majutsu-log--change-id-at-point)))
+      (majutsu--with-progress "Refreshing log view"
+                              (lambda ()
+                                (let ((inhibit-read-only t))
+                                  (erase-buffer)
+                                  (magit-insert-section (jjbuf)  ; Root section wrapper
+                                    (magit-insert-section-body
+                                      (magit-run-section-hook 'majutsu-log-sections-hook))
+                                    (insert "\n")))
+                                (unless (majutsu--goto-log-entry target-change target-commit)
+                                  (majutsu-goto-current))
+                                (when (fboundp 'magit-section-update-highlight)
+                                  (magit-section-update-highlight))
                                 (majutsu--debug "Log refresh completed"))))))
 
 (defun majutsu-log--toggle-desc (label key)
@@ -1049,7 +1118,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-edit-changeset-at-point ()
   "Edit the commit at point using jj edit."
   (interactive)
-  (when-let ((commit-id (majutsu-get-changeset-at-point)))
+  (when-let ((commit-id (majutsu-log--commit-id-at-point)))
     (let ((result (majutsu--run-command "edit" commit-id)))
       (if (majutsu--handle-command-result (list "edit" commit-id) result
                                           (format "Now editing commit %s" commit-id)
@@ -1234,10 +1303,10 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-edit-changeset ()
   "Edit commit at point."
   (interactive)
-  (when-let ((commit-id (majutsu-get-changeset-at-point)))
+  (when-let ((commit-id (majutsu-log--commit-id-at-point)))
     (let ((result (majutsu--run-command "edit" commit-id)))
       (if (majutsu--handle-command-result (list "edit" commit-id) result
-                                          (format "Now editing changeset %s" commit-id)
+                                          (format "Now editing commit %s" commit-id)
                                           "Failed to edit commit")
           (majutsu-log-refresh)))))
 
@@ -1272,7 +1341,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-squash-set-from ()
   "Set the commit at point as squash `from' source."
   (interactive)
-  (when-let ((commit-id (majutsu-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-log--commit-id-at-point))
              (section (magit-current-section)))
     ;; Clear previous from overlay
     (when majutsu-squash-from-overlay
@@ -1290,7 +1359,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-squash-set-into ()
   "Set the commit at point as squash 'into' destination."
   (interactive)
-  (when-let ((commit-id (majutsu-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-log--commit-id-at-point))
              (section (magit-current-section)))
     ;; Clear previous into overlay
     (when majutsu-squash-into-overlay
@@ -1336,7 +1405,7 @@ Instead of invoking this alias for `majutsu-log' using
                                       combined-desc)))
      ;; No selection - use commit at point
      (t
-      (if-let ((commit-id (majutsu-get-changeset-at-point)))
+      (if-let ((commit-id (majutsu-log--commit-id-at-point)))
           (let* ((parent-desc (string-trim (majutsu--run-command "log" "-r" (format "%s-" commit-id) "--no-graph" "-T" "description")))
                  (commit-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description")))
                  (combined-desc (if (string-empty-p parent-desc)
@@ -1448,7 +1517,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-bookmark-create ()
   "Create a new bookmark."
   (interactive)
-  (let* ((commit-id (or (majutsu-get-changeset-at-point) "@"))
+  (let* ((commit-id (or (majutsu-log--commit-id-at-point) "@"))
          (name (read-string "Bookmark name: ")))
     (unless (string-empty-p name)
       (majutsu--run-command "bookmark" "create" name "-r" commit-id)
@@ -1513,7 +1582,7 @@ With prefix ALL, include remote bookmarks."
          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
          (crm-separator (or (bound-and-true-p crm-separator) ", *"))
          (names (completing-read-multiple "Move bookmark(s): " table nil t))
-         (at (or (majutsu-get-changeset-at-point) "@"))
+         (at (or (majutsu-log--commit-id-at-point) "@"))
          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
     (ignore crm-separator)
     (list rev names)))
@@ -1567,7 +1636,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
    (let* ((existing (majutsu--get-bookmark-names))
           (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
           (name (completing-read "Set bookmark: " table nil nil))
-          (at (or (majutsu-get-changeset-at-point) "@"))
+          (at (or (majutsu-log--commit-id-at-point) "@"))
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list name rev)))
   (majutsu--run-command "bookmark" "set" name "-r" commit)
@@ -1633,7 +1702,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   (if (and majutsu-confirm-critical-actions
            (not (yes-or-no-p "Undo the most recent change? ")))
       (message "Undo canceled")
-    (let ((commit-id (majutsu-get-changeset-at-point)))
+    (let ((commit-id (majutsu-log--commit-id-at-point)))
       (majutsu--run-command "undo")
       (majutsu-log-refresh)
       (when commit-id
@@ -1645,7 +1714,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   (if (and majutsu-confirm-critical-actions
            (not (yes-or-no-p "Redo the previously undone change? ")))
       (message "Redo canceled")
-    (let ((commit-id (majutsu-get-changeset-at-point)))
+    (let ((commit-id (majutsu-log--commit-id-at-point)))
       (majutsu--run-command "redo")
       (majutsu-log-refresh)
       (when commit-id
@@ -1654,7 +1723,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
 (defun majutsu-abandon ()
   "Abandon the changeset at point."
   (interactive)
-  (if-let ((commit-id (majutsu-get-changeset-at-point)))
+  (if-let ((commit-id (majutsu-log--commit-id-at-point)))
       (if (and majutsu-confirm-critical-actions
                (not (yes-or-no-p (format "Abandon changeset %s? " commit-id))))
           (message "Abandon canceled")
@@ -1673,7 +1742,7 @@ With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
                           (s (completing-read "Create new changeset from (id/bookmark): "
                                               table nil nil)))
                      (when (not (string-empty-p s)) s))
-                 (majutsu-get-changeset-at-point))))
+                 (majutsu-log--commit-id-at-point))))
     (if (not base)
         (user-error "Can only run new on a change")
       (let ((result (majutsu--run-command "new" "-r" base)))
@@ -1786,7 +1855,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-describe ()
   "Open describe message buffer."
   (interactive)
-  (let* ((commit-id (or (majutsu-get-changeset-at-point) "@"))
+  (let* ((commit-id (or (majutsu-log--commit-id-at-point) "@"))
          (current-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
     (majutsu--open-message-buffer "DESCRIBE_MSG"
                                   (format "jj describe -r %s" commit-id)
@@ -1932,8 +2001,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-diff (&optional revision)
   "Show diff for REVISION or commit at point, defaulting to `@'."
   (interactive
-   (list (or (majutsu-get-changeset-at-point) "@")))
-  (let* ((rev (or revision (majutsu-get-changeset-at-point) "@"))
+   (list (or (majutsu-log--commit-id-at-point) "@")))
+  (let* ((rev (or revision (majutsu-log--commit-id-at-point) "@"))
          (buffer (get-buffer-create "*majutsu-diff*"))
          (prev-buffer (current-buffer))
          (repo-root (majutsu--root)))
@@ -1991,16 +2060,20 @@ Tries `jj git remote list' first, then falls back to `git remote'."
       (goto-char pos)
       (message "No more changesets"))))
 
-(defun majutsu-get-changeset-at-point ()
+(defun majutsu-log--commit-id-at-point ()
   "Get the changeset ID at point as a plain string (no text properties)."
   (when-let ((section (magit-current-section)))
     (cond
      ((and (slot-exists-p section 'commit-id)
            (slot-boundp section 'commit-id)
            (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section)))
-      (let ((cid (oref section commit-id)))
-        (when (stringp cid)
-          (substring-no-properties cid))))
+      (let* ((cid (oref section commit-id))
+             (change (majutsu--section-change-id section)))
+        (cond
+         ((and (stringp cid) (not (string-empty-p cid)))
+          (substring-no-properties cid))
+         ((and (stringp change) (not (string-empty-p change)))
+          (substring-no-properties change)))))
      (t nil))))
 
 ;; Rebase state management
@@ -2034,7 +2107,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-rebase-set-source ()
   "Set the commit at point as rebase source."
   (interactive)
-  (when-let ((commit-id (majutsu-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-log--commit-id-at-point))
              (section (magit-current-section)))
     ;; Clear previous source overlay
     (when majutsu-rebase-source-overlay
@@ -2052,7 +2125,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-rebase-toggle-destination ()
   "Toggle the commit at point as a rebase destination."
   (interactive)
-  (when-let ((commit-id (majutsu-get-changeset-at-point))
+  (when-let ((commit-id (majutsu-log--commit-id-at-point))
              (section (magit-current-section)))
     (if (member commit-id majutsu-rebase-destinations)
         ;; Remove from destinations

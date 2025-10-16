@@ -7,9 +7,18 @@
 这是我们主要工作在的buffer
 因为不像 git 最常用的是 status，在 jj 中 log 反而是更加常用的命令
 
-*** TODO 刷新之后重新定位当前 revision
-这应该是非常重要的功能
-需要有禁用选项
+*** DONE track current revision
+magit log section 需要同时存在 change_id 和 commit_id
+这样才能在 squash rebase 等会修改 commit_id 的操作之后才能track到正确的section
+
+这应该是非常重要的功能，
+相比之下，默认的跳到 @ 可以直接按 [[kbd:.]] 来实现
+
+当前实现：
+fn:majutsu-parse-log-entries 解析 =change_id= 并把它存到 section value 以及 =majutsu-log-entry-section= 的 =change-id= slot 里。
+fn:magit-section-ident-value 对 majutsu log entry 以 =change_id= 为主键，fallback 到 =commit_id=。
+fn:majutsu-log-refresh 刷新前记录当前 section 的 =change_id=，刷新后优先用 =change_id= 定位，否则退回 =commit_id=，都失败时跳转到 =@=。
+fn:majutsu-log--commit-id-at-point 在 =commit_id= 缺失时返回 =change_id=，保证下游命令用的是稳定标识。
 
 *** TODO builtin avy support
 由于 change-id 的设计本来就在高亮唯一前缀
@@ -81,5 +90,4 @@ Working Copy Changes section 实现，
 如何设计进行连续的多个 split？
 split 产生的 rev 是否必须是一条链？我觉得应该是？
 我如何处理树状视图？
-
 
