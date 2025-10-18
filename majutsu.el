@@ -542,8 +542,20 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
   "Wrap CANDIDATES with completion METADATA to set CATEGORY.
 This prevents third-party UIs (e.g., icons for `bookmark') from
 misclassifying Majutsu candidates."
-  (completion-table-with-metadata candidates
-                                  `(metadata (category . ,category))))
+  (let ((metadata `(metadata (category . ,category))))
+    (cond
+     ((fboundp 'completion-table-with-metadata)
+      (completion-table-with-metadata candidates metadata))
+     ((functionp candidates)
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            metadata
+          (funcall candidates string pred action))))
+     (t
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            metadata
+          (complete-with-action action candidates string pred)))))))
 
 (defun majutsu--handle-push-result (cmd-args result success-msg)
   "Enhanced push result handler with bookmark analysis."
