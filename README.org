@@ -105,6 +105,30 @@ When editing commit/describe messages:
 - ~C-c C-c~ - Finish and execute
 - ~C-c C-k~ - Cancel
 
+By default Majutsu sends commit/describe messages to ~jj~ via ~-m~ command-line
+arguments. If you're on Windows without UTF-8 locale support this can mangle
+non-ASCII text. Switch the delivery strategy through the
+~majutsu-message-input-method~ option:
+
+- ~argument~ (default) - keep using ~jj ... -m MESSAGE~.
+  - Fast path, mirrors the raw CLI.
+  - On Windows with legacy codepages, non-ASCII text will be mis-encoded.
+- ~script~ - Majutsu launches ~jj~ with a temporary UTF-8 editor script.
+  - Keeps the single-command `jj commit`/`jj describe` flow.
+  - Works out of the box; no manual ~JJ_EDITOR~ setup. Temporary files are cleaned up automatically.
+- ~stdin~ - Feed the buffer to ~jj describe --stdin~; Majutsu then calls ~jj new~.
+  - Always sends UTF-8, so it sidesteps Windows codepage issues.
+  - Uses two command, not one, can't undo at once.
+
+Example:
+#+begin_src emacs-lisp
+(setq majutsu-message-input-method 'stdin)   ; or 'script
+#+end_src
+
+Tip for Windows users: if you see garbled UTF-8 descriptions, switch to `'script`.
+This keeps the familiar `jj commit` flow while forcing Unicode-safe writes via
+Majutsu’s helper script.
+
 ** Workflow Example
 1. ~M-x majutsu-log~ - Open JJ interface
 2. Navigate to desired changeset with ~j~ / ~k~
@@ -128,6 +152,9 @@ templates directly from Elisp (used by ~majutsu--log-template~).
 #+begin_src emacs-lisp
 ;; Customize jj executable path if needed
 (setq majutsu-executable "/path/to/jj")
+
+;; Prefer alternative message delivery on Windows
+;; (setq majutsu-message-input-method 'script)
 #+end_src
 
 * Contributing
