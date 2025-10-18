@@ -28,6 +28,17 @@
   :type 'boolean
   :group 'majutsu)
 
+(defcustom majutsu-message-input-method 'argument
+  "How Majutsu passes commit/describe messages to jj.
+Possible values are:
+- `argument`: use `-m` command-line arguments (fast, but broken on some Windows setups).
+- `stdin`: pipe the message via standard input.
+- `script`: hand the message to jj through a temporary editor script."
+  :type '(choice (const :tag "Command argument (-m)" argument)
+                 (const :tag "Standard input (--stdin)" stdin)
+                 (const :tag "External script" script))
+  :group 'majutsu)
+
 (defcustom majutsu-confirm-critical-actions t
   "If non-nil, prompt for confirmation before undo/redo/abandon operations."
   :type 'boolean
@@ -319,6 +330,66 @@ INPUT should be a string and is encoded as UTF-8 before sending."
                     exit-code)
     (when (and majutsu-show-command-output (not (string-empty-p result)))
       (majutsu--debug "Command output: %s" (string-trim result)))
+    result))
+
+(defun majutsu--make-script ()
+  "Return path to a temporary script that fills jj's editor buffer from `MAJUTSU_MESSAGE_FILE'."
+  (let* ((windows? (eq system-type 'windows-nt))
+         (ext (if windows? ".cmd" ".sh"))
+         (script (make-temp-file "majutsu-script" nil ext))
+         (coding-system-for-write (if windows? 'utf-8-dos 'utf-8-unix))
+         (windows-lines '("@echo off"
+                          "setlocal"
+                          "if \"%~1\"==\"\" exit /b 0"
+                          "set \"msgfile=%MAJUTSU_MESSAGE_FILE%\""
+                          "if not defined msgfile (type nul > \"%~1\" & exit /b 0)"
+                          "for %%I in (\"%msgfile%\") do set \"msgfile=%%~fI\""
+                          "if exist \"%msgfile%\" ( type \"%msgfile%\" > \"%~1\" ) else ( type nul > \"%~1\" )"
+                          "exit /b 0"))
+         (posix-lines '("#!/bin/sh"
+                        "set -eu"
+                        "outfile=\"$1\""
+                        "msgfile=\"${MAJUTSU_MESSAGE_FILE:-}\""
+                        "if [ -z \"${outfile:-}\" ]; then"
+                        "  exit 0"
+                        "fi"
+                        "if [ -n \"$msgfile\" ] && [ -f \"$msgfile\" ]; then"
+                        "  cat \"$msgfile\" >\"$outfile\""
+                        "else"
+                        "  : >\"$outfile\""
+                        "fi"
+                        "exit 0"))
+         (content (if windows?
+                      (concat (mapconcat #'identity windows-lines "\r\n") "\r\n")
+                    (concat (mapconcat #'identity posix-lines "\n") "\n"))))
+    (with-temp-file script
+      (let ((coding-system-for-write coding-system-for-write))
+        (insert content)))
+    (unless windows?
+      (set-file-modes script #o700))
+    script))
+
+(defun majutsu--with-message-script (message thunk)
+  "Run THUNK with temporary script that writes MESSAGE for jj.
+Returns the result produced by THUNK."
+  (let* ((message (or message ""))
+         (content (if (string-suffix-p "\n" message) message (concat message "\n")))
+         (msg-file (make-temp-file "majutsu-message" nil ".txt"))
+         (script (majutsu--make-script))
+         result)
+    (unwind-protect
+        (let ((process-environment (copy-sequence process-environment)))
+          (setenv "MAJUTSU_MESSAGE_FILE" msg-file)
+          (setenv "JJ_EDITOR" script)
+          (setenv "EDITOR" script)
+          (with-temp-file msg-file
+            (let ((coding-system-for-write 'utf-8-unix))
+              (insert content)))
+          (setq result (funcall thunk)))
+      (when (file-exists-p script)
+        (ignore-errors (delete-file script)))
+      (when (file-exists-p msg-file)
+        (ignore-errors (delete-file msg-file))))
     result))
 
 (defun majutsu--run-command-color (&rest args)
@@ -1774,27 +1845,64 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu--commit-finish (message &optional _commit-id)
   "Finish commit with MESSAGE."
   (majutsu--message-with-log "Committing changes...")
-  (let* ((describe-args '("describe" "--stdin" "@"))
-         (describe-result (apply #'majutsu--run-command-with-stdin message describe-args)))
-    (if (majutsu--handle-command-result describe-args describe-result nil
-                                        "Failed to update description")
-        (let* ((commit-args '("new"))
-               (commit-result (apply #'majutsu--run-command commit-args)))
-          (when (majutsu--handle-command-result commit-args commit-result nil "Failed to commit")
-            (majutsu--message-with-log "Successfully committed changes")
-            (majutsu-log-refresh))))))
+  (pcase majutsu-message-input-method
+    ('argument
+     (let* ((args (list "commit" "-m" message))
+            (result (apply #'majutsu--run-command args)))
+       (when (majutsu--handle-command-result args result
+                                             "Successfully committed changes"
+                                             "Failed to commit")
+         (majutsu-log-refresh))))
+    ('stdin
+     (let* ((describe-args '("describe" "--stdin" "@"))
+            (describe-result (apply #'majutsu--run-command-with-stdin message describe-args)))
+       (if (majutsu--handle-command-result describe-args describe-result nil
+                                           "Failed to update description")
+           (let* ((commit-args '("new"))
+                  (commit-result (apply #'majutsu--run-command commit-args)))
+             (when (majutsu--handle-command-result commit-args commit-result
+                                                   "Successfully committed changes"
+                                                   "Failed to commit")
+               (majutsu-log-refresh))))))
+    ('script
+     (let ((result (majutsu--with-message-script
+                    message
+                    (lambda () (majutsu--run-command "commit")))))
+       (when (majutsu--handle-command-result '("commit") result
+                                             "Successfully committed changes"
+                                             "Failed to commit")
+         (majutsu-log-refresh))))
+    (_ (user-error "Unknown message input method: %s" majutsu-message-input-method))))
 
 (defun majutsu--describe-finish (message &optional commit-id)
   "Finish describe with MESSAGE for COMMIT-ID."
   (if commit-id
       (progn
         (majutsu--message-with-log "Updating description for %s..." commit-id)
-        (let* ((args (list "describe" "--stdin" "-r" commit-id))
-               (result (apply #'majutsu--run-command-with-stdin message args)))
-          (if (majutsu--handle-command-result args result
-                                              (format "Description updated for %s" commit-id)
-                                              "Failed to update description")
-              (majutsu-log-refresh))))
+        (pcase majutsu-message-input-method
+          ('argument
+           (let* ((args (list "describe" "-r" commit-id "-m" message))
+                  (result (apply #'majutsu--run-command args)))
+             (if (majutsu--handle-command-result args result
+                                                 (format "Description updated for %s" commit-id)
+                                                 "Failed to update description")
+                 (majutsu-log-refresh))))
+          ('stdin
+           (let* ((args (list "describe" "--stdin" "-r" commit-id))
+                  (result (apply #'majutsu--run-command-with-stdin message args)))
+             (if (majutsu--handle-command-result args result
+                                                 (format "Description updated for %s" commit-id)
+                                                 "Failed to update description")
+                 (majutsu-log-refresh))))
+          ('script
+           (let ((result (majutsu--with-message-script
+                          message
+                          (lambda () (majutsu--run-command "describe" "-r" commit-id)))))
+             (if (majutsu--handle-command-result (list "describe" "-r" commit-id) result
+                                                  (format "Description updated for %s" commit-id)
+                                                 "Failed to update description")
+                 (majutsu-log-refresh))))
+          (_ (user-error "Unknown message input method: %s" majutsu-message-input-method))))
     (majutsu--message-with-log "No commit ID available for description update")))
 
 (defun majutsu-git-fetch (args)
