@@ -8,40 +8,42 @@
      (should (stringp got))
      (should (equal got ,expected))))
 
-(majutsu-template-defun test-helper ((label Template)
-                                     (value Template :optional t))
-  (:returns Template :doc "Small helper used in tests.")
-  `[:concat ,label [:str ": "] ,(or value [:str ""])])
+(eval-and-compile
+  (majutsu-template-defun test-helper ((label Template)
+                                       (value Template :optional t))
+    (:returns Template :doc "Small helper used in tests.")
+    `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
-(majutsu-template-defun test-builtin-wrapper ((primary Template)
-                                              (secondary Template :optional t)
-                                              (rest Template :rest t))
-  (:returns Template :doc "Auto-generated builtin wrapper for tests." :flavor :builtin))
+  (majutsu-template-defun test-builtin-wrapper ((primary Template)
+                                                (secondary Template :optional t)
+                                                (rest Template :rest t))
+    (:returns Template :doc "Auto-generated builtin wrapper for tests." :flavor :builtin))
 
-(majutsu-template-defun test-map-wrapper ((collection Template)
-                                          (var Template)
-                                          (body Template))
-  (:returns Template :doc "Auto-generated map-like wrapper for tests." :flavor :map-like))
+  (majutsu-template-defun test-map-wrapper ((collection Template)
+                                            (var Template)
+                                            (body Template))
+    (:returns Template :doc "Auto-generated map-like wrapper for tests." :flavor :map-like))
 
-(majutsu-template-defkeyword test-commitref-keyword CommitRef
-  (:returns Template :doc "Synthetic CommitRef keyword for tests.")
-  `[:raw "commitref_keyword"])
+  (majutsu-template-defkeyword test-commitref-keyword CommitRef
+    (:returns Template :doc "Synthetic CommitRef keyword for tests.")
+    `[:raw "commitref_keyword"])
 
-(majutsu-template-defkeyword test-commit-keyword Commit
-  (:returns Template :doc "Synthetic Commit keyword for tests.")
-  `[:raw "commit_keyword"])
+  (majutsu-template-defkeyword test-commit-keyword Commit
+    (:returns Template :doc "Synthetic Commit keyword for tests.")
+    `[:raw "commit_keyword"])
 
-(majutsu-template-defmethod test-list-method List ((suffix Template))
-  (:returns Template :doc "Synthetic List method for tests.")
-  `[:raw "list_method_stub"])
+  (majutsu-template-defmethod test-list-method List ((suffix Template))
+    (:returns Template :doc "Synthetic List method for tests.")
+    `[:raw "list_method_stub"])
 
-(majutsu-template-defmethod test-commit-flag Commit ()
-  (:returns Template :doc "Non-keyword Commit method for tests.")
-  `[:raw "commit_flag"])
+  (majutsu-template-defmethod test-commit-flag Commit ()
+    (:returns Template :doc "Non-keyword Commit method for tests.")
+    `[:raw "commit_flag"])
 
-(majutsu-template-defmethod test-commit-optflag Commit ()
-  (:returns Template :keyword t :doc "Opt-in keyword Commit method for tests.")
-  `[:raw "commit_optflag"])
+  (majutsu-template-defmethod test-commit-optflag Commit ()
+    (:returns Template :keyword t :doc "Opt-in keyword Commit method for tests.")
+    `[:raw "commit_optflag"])
+  )
 
 (ert-deftest test-majutsu-template-compile-basic ()
   (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
