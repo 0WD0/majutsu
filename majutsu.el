@@ -14,11 +14,66 @@
 (defvar with-editor-emacsclient-executable)
 (defvar with-editor-filter-visit-hook)
 (defvar with-editor--envvar)
+(defvar with-editor-envvars)
+(defvar with-editor-server-window-alist)
 
 (defcustom majutsu-with-editor-envvar "JJ_EDITOR"
   "Environment variable used to tell jj which editor to invoke."
   :type 'string
   :group 'majutsu)
+
+(defconst majutsu--with-editor-description-regexp
+  (rx "/tmp/editor-" (+ (in "0-9A-Za-z")) ".jjdescription" string-end)
+  "Regexp matching temporary jj description files created for editing.")
+
+(defvar majutsu--with-editor--server-window-entry nil
+  "Cached entry added to `with-editor-server-window-alist'.")
+
+(defun majutsu--log-window ()
+  "Return an existing window showing a Majutsu log buffer, if any."
+  (seq-find (lambda (window)
+              (with-current-buffer (window-buffer window)
+                (derived-mode-p 'majutsu-mode)))
+            (window-list nil 'nomini (selected-frame))))
+
+(defun majutsu--display-buffer-for-editor (buffer)
+  "Display BUFFER respecting `majutsu-log-display-function'.
+Return the window used to show BUFFER."
+  (let* ((display-fn (or majutsu-log-display-function #'pop-to-buffer))
+         (result (funcall display-fn buffer)))
+    (cond
+     ((windowp result) result)
+     ((bufferp result) (or (get-buffer-window result t)
+                           (selected-window)))
+     ((get-buffer-window buffer t))
+     (t (selected-window)))))
+
+(defun majutsu--with-editor-server-window (buffer)
+  "Select window to display BUFFER for `with-editor'."
+  (if-let ((log-window (majutsu--log-window)))
+      (progn
+        (select-window log-window)
+        (unless (eq (window-buffer log-window) buffer)
+          (switch-to-buffer buffer))
+        log-window)
+    (majutsu--display-buffer-for-editor buffer)))
+
+(defun majutsu--with-editor-ensure-setup ()
+  "Ensure with-editor integration specific to Majutsu is configured."
+  (when (majutsu--with-editor-available-p)
+    (when (boundp 'with-editor-envvars)
+      (add-to-list 'with-editor-envvars majutsu-with-editor-envvar))
+    (let ((present (and (boundp 'with-editor-server-window-alist)
+                        (cl-find-if (lambda (entry)
+                                      (and (= (length entry) 2)
+                                           (string= (car entry)
+                                                    majutsu--with-editor-description-regexp)))
+                                    with-editor-server-window-alist))))
+      (unless present
+        (let ((entry (cons majutsu--with-editor-description-regexp
+                           #'majutsu--with-editor-server-window)))
+          (add-to-list 'with-editor-server-window-alist entry)
+          (setq majutsu--with-editor--server-window-entry entry))))))
 
 (defun majutsu--with-editor-shell ()
   "Return the shell to use when exporting the editor on Windows."
@@ -339,7 +394,8 @@ The function must accept one argument: the buffer to display."
     (lambda ()
       (unless done
         (setq done t)
-        (funcall majutsu-log-display-function (current-buffer))
+        (when (fboundp 'with-editor-mode)
+          (with-editor-mode 1))
         (erase-buffer)
         (when content
           (insert content))
@@ -371,6 +427,7 @@ SUCCESS-CALLBACK, when non-nil, is invoked after a successful command."
 On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
   (unless (majutsu--with-editor-available-p)
     (user-error "with-editor is not available in this Emacs"))
+  (majutsu--with-editor-ensure-setup)
   (let* ((default-directory (majutsu--root))
          (process-environment (copy-sequence process-environment))
          (visit-hook (majutsu--with-editor--visit-hook initial-message))
@@ -379,10 +436,10 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
       (let ((with-editor-filter-visit-hook
              (cons visit-hook with-editor-filter-visit-hook)))
         (setq buffer (generate-new-buffer " *majutsu-jj*"))
+        (when-let ((editor (getenv majutsu-with-editor-envvar)))
+          (setenv "EDITOR" editor))
         (setq process (apply #'start-file-process "majutsu-jj"
                              buffer majutsu-executable args))))
-    (when-let ((editor (getenv majutsu-with-editor-envvar)))
-      (setenv "EDITOR" editor))
     (set-process-query-on-exit-flag process nil)
     (set-process-sentinel process
                           (majutsu--with-editor--sentinel args success-msg error-msg success-callback))
