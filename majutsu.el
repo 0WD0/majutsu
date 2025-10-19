@@ -15,6 +15,26 @@
 (defvar with-editor-filter-visit-hook)
 (defvar with-editor--envvar)
 
+(defcustom majutsu-with-editor-envvar "JJ_EDITOR"
+  "Environment variable used to tell jj which editor to invoke."
+  :type 'string
+  :group 'majutsu)
+
+(defun majutsu--with-editor-shell ()
+  "Return the shell to use when exporting the editor on Windows."
+  (if (and (eq system-type 'windows-nt)
+           (not (string-match-p "cygwin\\|msys"
+                                (downcase (or (getenv "SHELL") "")))))
+      "cmdproxy"
+    shell-file-name))
+
+(defmacro majutsu-with-editor (&rest body)
+  "Ensure BODY runs with the correct editor environment for jj."
+  (declare (indent 0) (debug (body)))
+  `(let ((shell-file-name (or (majutsu--with-editor-shell) shell-file-name)))
+     (with-editor* majutsu-with-editor-envvar
+       ,@body)))
+
 (defgroup majutsu nil
   "Interface to jj version control system."
   :group 'tools)
@@ -32,19 +52,6 @@
 (defcustom majutsu-show-command-output t
   "Show jj command output in messages."
   :type 'boolean
-  :group 'majutsu)
-
-(defcustom majutsu-message-input-method 'argument
-  "How Majutsu passes commit/describe messages to jj.
-Possible values are:
-- `argument`: use `-m` command-line arguments (fast, but broken on some Windows setups).
-- `stdin`: pipe the message via standard input.
-- `with-editor`: let jj open the buffer in Emacs (requires with-editor; finish with C-c C-c).
-- `script`: write the message to a temporary UTF-8 file and let jj read it."
-  :type '(choice (const :tag "Command argument (-m)" argument)
-          (const :tag "Standard input (--stdin)" stdin)
-          (const :tag "With-Editor" with-editor)
-          (const :tag "Temporary script" script))
   :group 'majutsu)
 
 (defcustom majutsu-confirm-critical-actions t
@@ -312,100 +319,12 @@ The function must accept one argument: the buffer to display."
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun majutsu--run-command-with-stdin (input &rest args)
-  "Run jj command with ARGS, piping INPUT to stdin.
-INPUT should be a string and is encoded as UTF-8 before sending."
-  (let ((start-time (current-time))
-        (safe-args (seq-remove #'null args))
-        (input (or input ""))
-        result exit-code)
-    (majutsu--debug "Running command with stdin: %s %s"
-                    majutsu-executable (string-join safe-args " "))
-    (with-temp-buffer
-      (let ((output-buffer (current-buffer)))
-        (with-temp-buffer
-          (insert input)
-          (let ((coding-system-for-read 'utf-8-unix)
-                (coding-system-for-write 'utf-8-unix))
-            (setq exit-code (apply #'call-process-region
-                                   (point-min) (point-max)
-                                   majutsu-executable
-                                   nil output-buffer nil
-                                   safe-args)))))
-      (setq result (buffer-string)))
-    (majutsu--debug "Command with stdin completed in %.3f seconds, exit code: %d"
-                    (float-time (time-subtract (current-time) start-time))
-                    exit-code)
-    (when (and majutsu-show-command-output (not (string-empty-p result)))
-      (majutsu--debug "Command output: %s" (string-trim result)))
-    result))
-
-(defun majutsu--make-script ()
-  "Return path to a temporary script that fills jj's editor buffer from `MAJUTSU_MESSAGE_FILE'."
-  (let* ((windows? (eq system-type 'windows-nt))
-         (ext (if windows? ".cmd" ".sh"))
-         (script (make-temp-file "majutsu-script" nil ext))
-         (coding-system-for-write (if windows? 'utf-8-dos 'utf-8-unix))
-         (windows-lines '("@echo off"
-                          "setlocal"
-                          "if \"%~1\"==\"\" exit /b 0"
-                          "set \"msgfile=%MAJUTSU_MESSAGE_FILE%\""
-                          "if not defined msgfile (type nul > \"%~1\" & exit /b 0)"
-                          "for %%I in (\"%msgfile%\") do set \"msgfile=%%~fI\""
-                          "if exist \"%msgfile%\" ( type \"%msgfile%\" > \"%~1\" ) else ( type nul > \"%~1\" )"
-                          "exit /b 0"))
-         (posix-lines '("#!/bin/sh"
-                        "set -eu"
-                        "outfile=\"$1\""
-                        "msgfile=\"${MAJUTSU_MESSAGE_FILE:-}\""
-                        "if [ -z \"${outfile:-}\" ]; then"
-                        "  exit 0"
-                        "fi"
-                        "if [ -n \"$msgfile\" ] && [ -f \"$msgfile\" ]; then"
-                        "  cat \"$msgfile\" >\"$outfile\""
-                        "else"
-                        "  : >\"$outfile\""
-                        "fi"
-                        "exit 0"))
-         (content (if windows?
-                      (concat (mapconcat #'identity windows-lines "\r\n") "\r\n")
-                    (concat (mapconcat #'identity posix-lines "\n") "\n"))))
-    (with-temp-file script
-      (let ((coding-system-for-write coding-system-for-write))
-        (insert content)))
-    (unless windows?
-      (set-file-modes script #o700))
-    script))
-
 (defun majutsu--ensure-message-newline (message)
   "Ensure commit MESSAGE ends with a newline."
   (let ((message (or message "")))
     (if (string-suffix-p "\n" message)
         message
       (concat message "\n"))))
-
-(defun majutsu--with-message-script (message thunk)
-  "Run THUNK with temporary script that writes MESSAGE for jj.
-Returns the result produced by THUNK."
-  (let* ((message (or message ""))
-         (content (if (string-suffix-p "\n" message) message (concat message "\n")))
-         (msg-file (make-temp-file "majutsu-message" nil ".txt"))
-         (script (majutsu--make-script))
-         result)
-    (unwind-protect
-        (let ((process-environment (copy-sequence process-environment)))
-          (setenv "MAJUTSU_MESSAGE_FILE" msg-file)
-          (setenv "JJ_EDITOR" script)
-          (setenv "EDITOR" script)
-          (with-temp-file msg-file
-            (let ((coding-system-for-write 'utf-8-unix))
-              (insert content)))
-          (setq result (funcall thunk)))
-      (when (file-exists-p script)
-        (ignore-errors (delete-file script)))
-      (when (file-exists-p msg-file)
-        (ignore-errors (delete-file msg-file))))
-    result))
 
 (defun majutsu--with-editor-available-p ()
   "Return non-nil when `with-editor' can be used for JJ commands."
@@ -420,28 +339,34 @@ Returns the result produced by THUNK."
     (lambda ()
       (unless done
         (setq done t)
+        (funcall majutsu-log-display-function (current-buffer))
         (erase-buffer)
         (when content
           (insert content))
         (goto-char (point-min))))))
 
-(defun majutsu--with-editor--sentinel (args success-msg error-msg)
+(defun majutsu--with-editor--sentinel (args success-msg error-msg success-callback)
   "Return sentinel handling JJ command completion.
-ARGS, SUCCESS-MSG and ERROR-MSG mirror `majutsu--handle-command-result'."
+ARGS, SUCCESS-MSG, ERROR-MSG mirror `majutsu--handle-command-result'.
+SUCCESS-CALLBACK, when non-nil, is invoked after a successful command."
   (lambda (process _event)
-    (when (memq (process-status process) '(exit signal))
-      (let ((output (with-current-buffer (process-buffer process)
-                      (ansi-color-filter-apply (buffer-string))))
-            (exit-code (process-exit-status process)))
-        (kill-buffer (process-buffer process))
-        (if (and (eq (process-status process) 'exit)
-                 (zerop exit-code))
-            (when (majutsu--handle-command-result args output success-msg nil)
-              (majutsu-log-refresh))
-          (majutsu--handle-command-result args output nil
-                                          (or error-msg "Command failed")))))))
+    (let ((status (process-status process))
+          (buffer (process-buffer process)))
+      (when (and buffer (memq status '(exit signal)))
+        (let ((output (with-current-buffer buffer
+                        (ansi-color-filter-apply (buffer-string))))
+              (exit-code (process-exit-status process)))
+          (when (buffer-live-p buffer)
+            (kill-buffer buffer))
+          (if (and (eq status 'exit) (zerop exit-code))
+              (when (majutsu--handle-command-result args output success-msg nil)
+                (majutsu-log-refresh)
+                (when success-callback
+                  (funcall success-callback)))
+            (majutsu--handle-command-result args output nil
+                                            (or error-msg "Command failed"))))))))
 
-(defun majutsu--with-editor-run (args initial-message success-msg error-msg)
+(defun majutsu--with-editor-run (args initial-message success-msg error-msg &optional success-callback)
   "Run JJ ARGS using with-editor, pre-populating INITIAL-MESSAGE.
 On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
   (unless (majutsu--with-editor-available-p)
@@ -450,18 +375,17 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
          (process-environment (copy-sequence process-environment))
          (visit-hook (majutsu--with-editor--visit-hook initial-message))
          process buffer)
-    (let ((with-editor--envvar "JJ_EDITOR"))
-      (with-editor--setup)
-      (when-let ((jj-editor (getenv "JJ_EDITOR")))
-        (setenv "EDITOR" jj-editor))
+    (majutsu-with-editor
       (let ((with-editor-filter-visit-hook
              (cons visit-hook with-editor-filter-visit-hook)))
         (setq buffer (generate-new-buffer " *majutsu-jj*"))
         (setq process (apply #'start-file-process "majutsu-jj"
                              buffer majutsu-executable args))))
+    (when-let ((editor (getenv majutsu-with-editor-envvar)))
+      (setenv "EDITOR" editor))
     (set-process-query-on-exit-flag process nil)
     (set-process-sentinel process
-                          (majutsu--with-editor--sentinel args success-msg error-msg))
+                          (majutsu--with-editor--sentinel args success-msg error-msg success-callback))
     (majutsu--message-with-log "Launching jj %s (edit in current Emacs)..."
                                (string-join args " "))
     process))
@@ -481,50 +405,6 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
                         (float-time (time-subtract (current-time) start-time))
                         exit-code)
         result))))
-
-(defun majutsu--run-command-async (callback &rest args)
-  "Run jj command with ARGS asynchronously and call CALLBACK with output."
-  (majutsu--debug "Starting async command: %s %s" majutsu-executable (string-join args " "))
-  (let ((buffer (generate-new-buffer " *majutsu-async*"))
-        (start-time (current-time)))
-    (set-process-sentinel
-     (apply #'start-file-process "jj" buffer majutsu-executable args)
-     (lambda (process _event)
-       (let ((exit-code (process-exit-status process)))
-         (majutsu--debug "Async command completed in %.3f seconds, exit code: %d"
-                         (float-time (time-subtract (current-time) start-time))
-                         exit-code)
-         (when (eq (process-status process) 'exit)
-           (with-current-buffer (process-buffer process)
-             (funcall callback (buffer-string)))
-           (kill-buffer (process-buffer process))))))))
-
-(defun majutsu--suggest-help (command-name error-msg)
-  "Provide helpful suggestions when COMMAND-NAME fails with ERROR-MSG."
-  (let ((suggestions
-         (cond
-          ((string-match-p "No such revision" error-msg)
-           "Try refreshing the log (g) or check if the commit still exists.")
-          ((string-match-p "Working copy is stale" error-msg)
-           "Run 'jj workspace update-stale' to fix stale working copy.")
-          ((string-match-p "Merge conflict" error-msg)
-           "Resolve conflicts manually or use jj diffedit (E or M).")
-          ((string-match-p "nothing to squash" error-msg)
-           "Select a different commit that has changes to squash.")
-          ((string-match-p "would create a loop" error-msg)
-           "Check your rebase selections - source and destinations create a cycle.")
-          ((string-match-p "No changes" error-msg)
-           "No changes to commit. Make some changes first.")
-          ((and (string= command-name "git")
-                (or (string-match-p "Refusing to push" error-msg)
-                    (string-match-p "would create new heads" error-msg)
-                    (string-match-p "new bookmark" error-msg)))
-           "Use --allow-new flag to push new bookmarks.")
-          ((and (string= command-name "git") (string-match-p "authentication" error-msg))
-           "Check your git credentials and remote repository access.")
-          (t "Check 'jj help' or enable debug mode (M-x customize-variable majutsu-debug) for more info."))))
-    (when suggestions
-      (majutsu--message-with-log "💡 %s" suggestions))))
 
 (defun majutsu--handle-command-result (command-args result &optional success-msg error-msg)
   "Handle command result with proper error checking and messaging."
@@ -1461,84 +1341,50 @@ Instead of invoking this alias for `majutsu-log' using
 
 ;;;###autoload
 (defun majutsu-squash-execute (&optional args)
-  "Execute squash with selected from and into commits."
+  "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash-transient--internal)))
-  (let ((keep-commit (member "--keep" args)))
+  (let* ((keep (member "--keep" args))
+         (from majutsu-squash-from)
+         (into majutsu-squash-into))
     (cond
-     ;; Both from and into selected
-     ((and majutsu-squash-from majutsu-squash-into)
-      (let* ((into-desc (string-trim (majutsu--run-command "log" "-r" majutsu-squash-into "--no-graph" "-T" "description")))
-             (from-desc (string-trim (majutsu--run-command "log" "-r" majutsu-squash-from "--no-graph" "-T" "description")))
-             (combined-desc (if (string-empty-p into-desc)
-                                from-desc
-                              into-desc))) ; Keep into message by default
-        (majutsu--open-message-buffer "SQUASH_MSG"
-                                      (format "jj squash --from %s --into %s" majutsu-squash-from majutsu-squash-into)
-                                      'majutsu--squash-finish
-                                      (list :from majutsu-squash-from :into majutsu-squash-into :keep keep-commit)
-                                      combined-desc)))
-     ;; Only from selected - use default behavior (squash into parent)
-     (majutsu-squash-from
-      (let* ((parent-desc (string-trim (majutsu--run-command "log" "-r" (format "%s-" majutsu-squash-from) "--no-graph" "-T" "description")))
-             (from-desc (string-trim (majutsu--run-command "log" "-r" majutsu-squash-from "--no-graph" "-T" "description")))
-             (combined-desc (if (string-empty-p parent-desc)
-                                from-desc
-                              parent-desc))) ; Keep parent message by default
-        (majutsu--open-message-buffer "SQUASH_MSG"
-                                      (format "jj squash -r %s" majutsu-squash-from)
-                                      'majutsu--squash-finish
-                                      (list :from majutsu-squash-from :into nil :keep keep-commit)
-                                      combined-desc)))
-     ;; No selection - use commit at point
+     ((and from into)
+      (majutsu--squash-run from into keep))
+     (from
+      (majutsu--squash-run from nil keep))
+     ((majutsu-log--commit-id-at-point)
+      (majutsu--squash-run (majutsu-log--commit-id-at-point) nil keep))
      (t
-      (if-let ((commit-id (majutsu-log--commit-id-at-point)))
-          (let* ((parent-desc (string-trim (majutsu--run-command "log" "-r" (format "%s-" commit-id) "--no-graph" "-T" "description")))
-                 (commit-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description")))
-                 (combined-desc (if (string-empty-p parent-desc)
-                                    commit-desc
-                                  parent-desc))) ; Keep parent message by default
-            (majutsu--open-message-buffer "SQUASH_MSG"
-                                          (format "jj squash -r %s" commit-id)
-                                          'majutsu--squash-finish
-                                          (list :from commit-id :into nil :keep keep-commit)
-                                          combined-desc))
-        (majutsu--message-with-log "No commit selected for squash"))))))
+      (majutsu--message-with-log "No commit selected for squash")))))
 
-(defun majutsu--do-squash (from into keep-commit message)
-  "Perform the actual squash operation."
-  (let* ((cmd-args (cond
-                    ;; Both from and into specified
-                    ((and from into)
-                     (append (list "squash" "--from" from "--into" into)
-                             (when keep-commit (list "--keep-emptied"))
-                             (when message (list "-m" message))))
-                    ;; Only from specified (squash into parent)
-                    (from
-                     (append (list "squash" "-r" from)
-                             (when keep-commit (list "--keep-emptied"))
-                             (when message (list "-m" message))))
-                    (t nil)))
-         (progress-msg (if into
-                           (format "Squashing %s into %s" from into)
-                         (format "Squashing %s into its parent" from)))
+(defun majutsu--squash-initial-message (from into)
+  "Return the initial commit message to seed the with-editor buffer."
+  (let ((from-desc (string-trim
+                    (majutsu--run-command "log" "-r" from "--no-graph" "-T" "description"))))
+    (if into
+        (let ((into-desc (string-trim
+                          (majutsu--run-command "log" "-r" into "--no-graph" "-T" "description"))))
+          (if (string-empty-p into-desc)
+              from-desc
+            into-desc))
+      (let ((parent-desc (string-trim
+                          (majutsu--run-command "log" "-r" (format "%s-" from)
+                                                "--no-graph" "-T" "description"))))
+        (if (string-empty-p parent-desc)
+            from-desc
+          parent-desc)))))
+
+(defun majutsu--squash-run (from into keep)
+  "Run jj squash using with-editor."
+  (let* ((args (append (if into
+                           (list "squash" "--from" from "--into" into)
+                         (list "squash" "-r" from))
+                       (when keep '("--keep-emptied"))))
+         (initial (majutsu--squash-initial-message from into))
          (success-msg (if into
                           (format "Squashed %s into %s" from into)
                         (format "Squashed %s into its parent" from))))
-    (when cmd-args
-      (majutsu--message-with-log "%s..." progress-msg)
-      (let ((result (apply #'majutsu--run-command cmd-args)))
-        (if (majutsu--handle-command-result cmd-args result success-msg "Squash failed")
-            (progn
-              (majutsu-squash-clear-selections)
-              (majutsu-log-refresh)))))))
-
-(defun majutsu--squash-finish (message &optional squash-params)
-  "Finish squash with MESSAGE and SQUASH-PARAMS."
-  (when squash-params
-    (let ((from (plist-get squash-params :from))
-          (into (plist-get squash-params :into))
-          (keep (plist-get squash-params :keep)))
-      (majutsu--do-squash from into keep message))))
+    (majutsu--with-editor-run args initial success-msg "Squash failed"
+                              #'majutsu-squash-clear-selections)))
 
 (defun majutsu-squash-cleanup-on-exit ()
   "Clean up squash selections when transient exits."
@@ -1933,158 +1779,28 @@ Tries `jj git remote list' first, then falls back to `git remote'."
     names))
 
 (defun majutsu-commit ()
-  "Open commit message buffer."
+  "Create a commit using Emacs as the editor."
   (interactive)
-  (let ((current-desc (string-trim (majutsu--run-command "log" "-r" "@" "--no-graph" "-T" "description"))))
-    (pcase majutsu-message-input-method
-      ('with-editor
-        (if (majutsu--with-editor-available-p)
-            (majutsu--with-editor-run '("commit") current-desc
-                                      "Successfully committed changes"
-                                      "Failed to commit")
-          (progn
-            (majutsu--message-with-log "with-editor unavailable; using Majutsu message buffer")
-            (majutsu--open-message-buffer "COMMIT_MSG" "jj commit"
-                                          'majutsu--commit-finish nil current-desc))))
-      (_ (majutsu--open-message-buffer "COMMIT_MSG" "jj commit"
-                                       'majutsu--commit-finish nil current-desc)))))
+  (let ((current-desc (string-trim
+                       (majutsu--run-command "log" "-r" "@"
+                                             "--no-graph" "-T" "description"))))
+    (majutsu--with-editor-run '("commit")
+                              current-desc
+                              "Successfully committed changes"
+                              "Failed to commit")))
 
 (defun majutsu-describe ()
-  "Open describe message buffer."
+  "Update the description for the commit at point."
   (interactive)
   (let* ((commit-id (or (majutsu-log--commit-id-at-point) "@"))
-         (current-desc
-          (string-trim
-           (majutsu--run-command "log" "-r" commit-id
-                                 "--no-graph" "-T" "description"))))
-    (pcase majutsu-message-input-method
-      ('with-editor
-        (if (majutsu--with-editor-available-p)
-            (majutsu--with-editor-run (list "describe" "-r" commit-id)
-                                      current-desc
-                                      (format "Description updated for %s" commit-id)
-                                      "Failed to update description")
-          (progn
-            (majutsu--message-with-log "with-editor unavailable; using Majutsu message buffer")
-            (majutsu--open-message-buffer "DESCRIBE_MSG"
-                                          (format "jj describe -r %s" commit-id)
-                                          'majutsu--describe-finish commit-id current-desc))))
-      (_ (majutsu--open-message-buffer "DESCRIBE_MSG"
-                                       (format "jj describe -r %s" commit-id)
-                                       'majutsu--describe-finish commit-id current-desc)))))
+         (current-desc (string-trim
+                        (majutsu--run-command "log" "-r" commit-id
+                                              "--no-graph" "-T" "description"))))
+    (majutsu--with-editor-run (list "describe" "-r" commit-id)
+                              current-desc
+                              (format "Description updated for %s" commit-id)
+                              "Failed to update description")))
 
-(defun majutsu--open-message-buffer (buffer-name command finish-func &optional commit-id initial-desc)
-  "Open a message editing buffer."
-  (let* ((repo-root (majutsu--root))
-         (log-buffer (current-buffer))
-         (window-config (current-window-configuration))
-         (buffer (get-buffer-create (format "*%s:%s*" buffer-name (file-name-nondirectory (directory-file-name repo-root))))))
-    (with-current-buffer buffer
-      (erase-buffer)
-      (text-mode)
-      (setq-local default-directory repo-root)
-      (setq-local majutsu--message-command command)
-      (setq-local majutsu--message-finish-func finish-func)
-      (setq-local majutsu--message-commit-id commit-id)
-      (setq-local majutsu--log-buffer log-buffer)
-      (setq-local majutsu--window-config window-config)
-      (local-set-key (kbd "C-c C-c") 'majutsu--message-finish)
-      (local-set-key (kbd "C-c C-k") 'majutsu--message-abort)
-      (when initial-desc
-        (insert initial-desc))
-      (insert "\n\n# Enter your message. C-c C-c to finish, C-c C-k to cancel\n"))
-    (pop-to-buffer buffer)
-    (goto-char (point-min))))
-
-(defun majutsu--message-finish ()
-  "Finish editing the message and execute the command."
-  (interactive)
-  (let* ((message (buffer-substring-no-properties (point-min) (point-max)))
-         (message (replace-regexp-in-string "\r\n?" "\n" message))
-         (lines (split-string message "\n"))
-         (filtered-lines (seq-remove (lambda (line) (string-prefix-p "#" line)) lines))
-         (final-message (string-trim (string-join filtered-lines "\n")))
-         (command majutsu--message-command)
-         (finish-func majutsu--message-finish-func)
-         (commit-id majutsu--message-commit-id)
-         (log-buffer majutsu--log-buffer)
-         (window-config majutsu--window-config))
-    (if (string-empty-p final-message)
-        (message "Empty message, aborting")
-      (kill-buffer)
-      (set-window-configuration window-config)
-      (funcall finish-func final-message commit-id))))
-
-(defun majutsu--message-abort ()
-  "Abort message editing."
-  (interactive)
-  (let ((window-config majutsu--window-config))
-    (kill-buffer)
-    (set-window-configuration window-config)
-    (message "Canceled message editing")))
-
-(defun majutsu--commit-finish (message &optional _commit-id)
-  "Finish commit with MESSAGE."
-  (majutsu--message-with-log "Committing changes...")
-  (pcase majutsu-message-input-method
-    ('argument
-     (let* ((args (list "commit" "-m" message))
-            (result (apply #'majutsu--run-command args)))
-       (when (majutsu--handle-command-result args result
-                                             "Successfully committed changes"
-                                             "Failed to commit")
-         (majutsu-log-refresh))))
-    ('stdin
-     (let* ((describe-args '("describe" "--stdin" "@"))
-            (describe-result (apply #'majutsu--run-command-with-stdin message describe-args)))
-       (if (majutsu--handle-command-result describe-args describe-result nil
-                                           "Failed to update description")
-           (let* ((commit-args '("new"))
-                  (commit-result (apply #'majutsu--run-command commit-args)))
-             (when (majutsu--handle-command-result commit-args commit-result
-                                                   "Successfully committed changes"
-                                                   "Failed to commit")
-               (majutsu-log-refresh))))))
-    ('script
-     (let ((result (majutsu--with-message-script
-                    message
-                    (lambda () (majutsu--run-command "commit")))))
-       (when (majutsu--handle-command-result '("commit") result
-                                             "Successfully committed changes"
-                                             "Failed to commit")
-         (majutsu-log-refresh))))
-    (_ (user-error "Unknown message input method: %s" majutsu-message-input-method))))
-
-(defun majutsu--describe-finish (message &optional commit-id)
-  "Finish describe with MESSAGE for COMMIT-ID."
-  (if commit-id
-      (progn
-        (majutsu--message-with-log "Updating description for %s..." commit-id)
-        (pcase majutsu-message-input-method
-          ('argument
-           (let* ((args (list "describe" "-r" commit-id "-m" message))
-                  (result (apply #'majutsu--run-command args)))
-             (if (majutsu--handle-command-result args result
-                                                 (format "Description updated for %s" commit-id)
-                                                 "Failed to update description")
-                 (majutsu-log-refresh))))
-          ('stdin
-           (let* ((args (list "describe" "--stdin" "-r" commit-id))
-                  (result (apply #'majutsu--run-command-with-stdin message args)))
-             (if (majutsu--handle-command-result args result
-                                                 (format "Description updated for %s" commit-id)
-                                                 "Failed to update description")
-                 (majutsu-log-refresh))))
-          ('script
-           (let ((result (majutsu--with-message-script
-                          message
-                          (lambda () (majutsu--run-command "describe" "-r" commit-id)))))
-             (if (majutsu--handle-command-result (list "describe" "-r" commit-id) result
-                                                 (format "Description updated for %s" commit-id)
-                                                 "Failed to update description")
-                 (majutsu-log-refresh))))
-          (_ (user-error "Unknown message input method: %s" majutsu-message-input-method))))
-    (majutsu--message-with-log "No commit ID available for description update")))
 
 (defun majutsu-git-fetch (args)
   "Fetch from git remote with ARGS from transient."
