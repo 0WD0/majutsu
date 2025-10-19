@@ -24,8 +24,42 @@ fn:majutsu-log--commit-id-at-point 在 =commit_id= 缺失时返回 =change_id=�
 由于 change-id 的设计本来就在高亮唯一前缀
 我们完全可以用 avy 的模式来进行跳转！
 
+*** 窗口管理
+magit 的buffer都是直接占满全屏，我不想要这样的设计。
+
+我认为让一个 jujutsu log buffer 长时间占在一个窗口里是十分常用的状态
+（连续多次的 checkout 是正常的操作），
+所以我们默认分屏使用
+
+如果当前只有一个窗口，就分一个窗口，退出时恢复为一个窗口；
+如果当时有多个窗口，占据除了当前窗口之外的某一个窗口，退出时恢复那个被占据 buffer。
+
 ** message buffer
-目前的实现是只有一个输入框，我觉得这样不太行，应该模仿 magit 在下面放上提交具体的diff信息
+
+*** TODO 完全使用 with-editor 方案
+
+这是一种完全没有兼容性问题的方案，之后考虑在适当的时候完全转到这个方案上
+
+**** with-editor 文件定位
+
+jj 在需要编辑描述信息的时候，会把待编辑的描述文件放在临时目录 =/tmp/= 下，
+命名格式为 =editor-XXXXXX.jjdescription=，其中 =X= 可能是数字、大小写字母混合。
+需要以这个模式为依据（正则大致是 =/tmp/editor-[0-9A-Za-z]+\.jjdescription=）
+去匹配 =with-editor-server-window-alist=，确保描述文件落回 majutsu 的 log 窗口，
+而不是打断用户原本的窗口布局。
+
+*** 窗口管理
+
+在打开 message buffer 的时候有两种状态：
+1. 在 log buffer 内
+2. 不在 log buffer 内
+
+如果当前只有一个窗口，我们希望分屏
+
+如果有两个，如果另一个不是 log buffer 就用另一个
+如果另一个是 log buffer 就用这一个
+
+
 *** TODO 附加 diff 信息
 
 ** diff buffer
@@ -90,4 +124,3 @@ Working Copy Changes section 实现，
 如何设计进行连续的多个 split？
 split 产生的 rev 是否必须是一条链？我觉得应该是？
 我如何处理树状视图？
-
