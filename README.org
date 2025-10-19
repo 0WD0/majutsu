@@ -27,6 +27,7 @@ the original package’s scope.
 - [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] installed and in PATH
 - [[https://magit.vc/][magit]] (for section management and UI components)
 - [[https://github.com/magit/transient][transient]] (usually bundled with magit)
+- [[https://github.com/magit/with-editor][with-editor]] (usually bundled with magit)
 
 * Installation
 ** Doom Emacs
@@ -119,21 +120,26 @@ non-ASCII text. Switch the delivery strategy through the
 - ~argument~ (default) - keep using ~jj ... -m MESSAGE~.
   - Fast path, mirrors the raw CLI.
   - On Windows with legacy codepages, non-ASCII text will be mis-encoded.
-- ~script~ - Majutsu launches ~jj~ with a temporary UTF-8 editor script.
-  - Keeps the single-command `jj commit`/`jj describe` flow.
-  - Works out of the box; no manual ~JJ_EDITOR~ setup. Temporary files are cleaned up automatically.
+- ~with-editor~ - Let jj open the buffer inside Emacs (requires [[https://github.com/magit/with-editor][with-editor]]).
+  - Matches Magit's UX (C-c C-c / C-c C-k, git-commit-mode hooks, etc.).
+  - Falls back to Majutsu's message buffer if with-editor isn't available.
+- ~script~ - Write the buffer through a temporary UTF-8 helper script.
+  - Keeps the single-command `jj commit`/`jj describe` flow without extra deps.
+  - Sets both ~JJ_EDITOR~ and ~EDITOR~ so jj never falls back to a non-Unicode editor.
 - ~stdin~ - Feed the buffer to ~jj describe --stdin~; Majutsu then calls ~jj new~.
   - Always sends UTF-8, so it sidesteps Windows codepage issues.
-  - Uses two command, not one, can't undo at once.
+  - Uses two jj invocations, but the end result matches `jj commit`.
+
+If ~with-editor~ isn't available when you pick `'with-editor`, Majutsu falls back to
+its built-in message buffer so you can still edit before committing.
 
 Example:
 #+begin_src emacs-lisp
-(setq majutsu-message-input-method 'stdin)   ; or 'script
+(setq majutsu-message-input-method 'with-editor)   ; requires with-editor; or 'stdin / 'script
 #+end_src
 
-Tip for Windows users: if you see garbled UTF-8 descriptions, switch to `'script`.
-This keeps the familiar `jj commit` flow while forcing Unicode-safe writes via
-Majutsu’s helper script.
+Tip for Windows users: if you see garbled UTF-8 descriptions, switch to `'with-editor`
+or `'script`. Both paths avoid forcing the message through Windows code pages.
 
 ** Workflow Example
 1. ~M-x majutsu-log~ - Open JJ interface

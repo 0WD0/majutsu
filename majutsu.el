@@ -8,6 +8,12 @@
 (require 'seq)
 (require 'subr-x)
 (require 'majutsu-template)
+(eval-when-compile
+  (require 'with-editor nil 'noerror)
+  (declare-function with-editor--setup "with-editor" ()))
+(defvar with-editor-emacsclient-executable)
+(defvar with-editor-filter-visit-hook)
+(defvar with-editor--envvar)
 
 (defgroup majutsu nil
   "Interface to jj version control system."
@@ -33,10 +39,12 @@
 Possible values are:
 - `argument`: use `-m` command-line arguments (fast, but broken on some Windows setups).
 - `stdin`: pipe the message via standard input.
-- `script`: hand the message to jj through a temporary editor script."
+- `with-editor`: let jj open the buffer in Emacs (requires with-editor; finish with C-c C-c).
+- `script`: write the message to a temporary UTF-8 file and let jj read it."
   :type '(choice (const :tag "Command argument (-m)" argument)
-                 (const :tag "Standard input (--stdin)" stdin)
-                 (const :tag "External script" script))
+          (const :tag "Standard input (--stdin)" stdin)
+          (const :tag "With-Editor" with-editor)
+          (const :tag "Temporary script" script))
   :group 'majutsu)
 
 (defcustom majutsu-confirm-critical-actions t
@@ -369,6 +377,13 @@ INPUT should be a string and is encoded as UTF-8 before sending."
       (set-file-modes script #o700))
     script))
 
+(defun majutsu--ensure-message-newline (message)
+  "Ensure commit MESSAGE ends with a newline."
+  (let ((message (or message "")))
+    (if (string-suffix-p "\n" message)
+        message
+      (concat message "\n"))))
+
 (defun majutsu--with-message-script (message thunk)
   "Run THUNK with temporary script that writes MESSAGE for jj.
 Returns the result produced by THUNK."
@@ -391,6 +406,65 @@ Returns the result produced by THUNK."
       (when (file-exists-p msg-file)
         (ignore-errors (delete-file msg-file))))
     result))
+
+(defun majutsu--with-editor-available-p ()
+  "Return non-nil when `with-editor' can be used for JJ commands."
+  (and (require 'with-editor nil 'noerror)
+       with-editor-emacsclient-executable))
+
+(defun majutsu--with-editor--visit-hook (initial-message)
+  "Return a hook that injects INITIAL-MESSAGE into the edit buffer."
+  (let ((done nil)
+        (content (when (and initial-message (not (string-empty-p initial-message)))
+                   (majutsu--ensure-message-newline initial-message))))
+    (lambda ()
+      (unless done
+        (setq done t)
+        (erase-buffer)
+        (when content
+          (insert content))
+        (goto-char (point-min))))))
+
+(defun majutsu--with-editor--sentinel (args success-msg error-msg)
+  "Return sentinel handling JJ command completion.
+ARGS, SUCCESS-MSG and ERROR-MSG mirror `majutsu--handle-command-result'."
+  (lambda (process _event)
+    (when (memq (process-status process) '(exit signal))
+      (let ((output (with-current-buffer (process-buffer process)
+                      (ansi-color-filter-apply (buffer-string))))
+            (exit-code (process-exit-status process)))
+        (kill-buffer (process-buffer process))
+        (if (and (eq (process-status process) 'exit)
+                 (zerop exit-code))
+            (when (majutsu--handle-command-result args output success-msg nil)
+              (majutsu-log-refresh))
+          (majutsu--handle-command-result args output nil
+                                          (or error-msg "Command failed")))))))
+
+(defun majutsu--with-editor-run (args initial-message success-msg error-msg)
+  "Run JJ ARGS using with-editor, pre-populating INITIAL-MESSAGE.
+On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
+  (unless (majutsu--with-editor-available-p)
+    (user-error "with-editor is not available in this Emacs"))
+  (let* ((default-directory (majutsu--root))
+         (process-environment (copy-sequence process-environment))
+         (visit-hook (majutsu--with-editor--visit-hook initial-message))
+         process buffer)
+    (let ((with-editor--envvar "JJ_EDITOR"))
+      (with-editor--setup)
+      (when-let ((jj-editor (getenv "JJ_EDITOR")))
+        (setenv "EDITOR" jj-editor))
+      (let ((with-editor-filter-visit-hook
+             (cons visit-hook with-editor-filter-visit-hook)))
+        (setq buffer (generate-new-buffer " *majutsu-jj*"))
+        (setq process (apply #'start-file-process "majutsu-jj"
+                             buffer majutsu-executable args))))
+    (set-process-query-on-exit-flag process nil)
+    (set-process-sentinel process
+                          (majutsu--with-editor--sentinel args success-msg error-msg))
+    (majutsu--message-with-log "Launching jj %s (edit in current Emacs)..."
+                               (string-join args " "))
+    process))
 
 (defun majutsu--run-command-color (&rest args)
   "Run jj command with ARGS and return colorized output."
@@ -1862,16 +1936,42 @@ Tries `jj git remote list' first, then falls back to `git remote'."
   "Open commit message buffer."
   (interactive)
   (let ((current-desc (string-trim (majutsu--run-command "log" "-r" "@" "--no-graph" "-T" "description"))))
-    (majutsu--open-message-buffer "COMMIT_MSG" "jj commit" 'majutsu--commit-finish nil current-desc)))
+    (pcase majutsu-message-input-method
+      ('with-editor
+        (if (majutsu--with-editor-available-p)
+            (majutsu--with-editor-run '("commit") current-desc
+                                      "Successfully committed changes"
+                                      "Failed to commit")
+          (progn
+            (majutsu--message-with-log "with-editor unavailable; using Majutsu message buffer")
+            (majutsu--open-message-buffer "COMMIT_MSG" "jj commit"
+                                          'majutsu--commit-finish nil current-desc))))
+      (_ (majutsu--open-message-buffer "COMMIT_MSG" "jj commit"
+                                       'majutsu--commit-finish nil current-desc)))))
 
 (defun majutsu-describe ()
   "Open describe message buffer."
   (interactive)
   (let* ((commit-id (or (majutsu-log--commit-id-at-point) "@"))
-         (current-desc (string-trim (majutsu--run-command "log" "-r" commit-id "--no-graph" "-T" "description"))))
-    (majutsu--open-message-buffer "DESCRIBE_MSG"
-                                  (format "jj describe -r %s" commit-id)
-                                  'majutsu--describe-finish commit-id current-desc)))
+         (current-desc
+          (string-trim
+           (majutsu--run-command "log" "-r" commit-id
+                                 "--no-graph" "-T" "description"))))
+    (pcase majutsu-message-input-method
+      ('with-editor
+        (if (majutsu--with-editor-available-p)
+            (majutsu--with-editor-run (list "describe" "-r" commit-id)
+                                      current-desc
+                                      (format "Description updated for %s" commit-id)
+                                      "Failed to update description")
+          (progn
+            (majutsu--message-with-log "with-editor unavailable; using Majutsu message buffer")
+            (majutsu--open-message-buffer "DESCRIBE_MSG"
+                                          (format "jj describe -r %s" commit-id)
+                                          'majutsu--describe-finish commit-id current-desc))))
+      (_ (majutsu--open-message-buffer "DESCRIBE_MSG"
+                                       (format "jj describe -r %s" commit-id)
+                                       'majutsu--describe-finish commit-id current-desc)))))
 
 (defun majutsu--open-message-buffer (buffer-name command finish-func &optional commit-id initial-desc)
   "Open a message editing buffer."
@@ -1980,7 +2080,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                           message
                           (lambda () (majutsu--run-command "describe" "-r" commit-id)))))
              (if (majutsu--handle-command-result (list "describe" "-r" commit-id) result
-                                                  (format "Description updated for %s" commit-id)
+                                                 (format "Description updated for %s" commit-id)
                                                  "Failed to update description")
                  (majutsu-log-refresh))))
           (_ (user-error "Unknown message input method: %s" majutsu-message-input-method))))
