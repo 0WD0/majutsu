@@ -108,38 +108,10 @@ buffer (~*majutsu-log:project-name*~).
 - ~M~ - Edit conflicts with smerge-mode
 
 *** Message Buffers
-When editing commit/describe messages:
+Majutsu relies on [[https://github.com/magit/with-editor][with-editor]] to populate commit/describe messages.
+When the edit buffer opens:
 - ~C-c C-c~ - Finish and execute
 - ~C-c C-k~ - Cancel
-
-By default Majutsu sends commit/describe messages to ~jj~ via ~-m~ command-line
-arguments. If you're on Windows without UTF-8 locale support this can mangle
-non-ASCII text. Switch the delivery strategy through the
-~majutsu-message-input-method~ option:
-
-- ~argument~ (default) - keep using ~jj ... -m MESSAGE~.
-  - Fast path, mirrors the raw CLI.
-  - On Windows with legacy codepages, non-ASCII text will be mis-encoded.
-- ~with-editor~ - Let jj open the buffer inside Emacs (requires [[https://github.com/magit/with-editor][with-editor]]).
-  - Matches Magit's UX (C-c C-c / C-c C-k, git-commit-mode hooks, etc.).
-  - Falls back to Majutsu's message buffer if with-editor isn't available.
-- ~script~ - Write the buffer through a temporary UTF-8 helper script.
-  - Keeps the single-command `jj commit`/`jj describe` flow without extra deps.
-  - Sets both ~JJ_EDITOR~ and ~EDITOR~ so jj never falls back to a non-Unicode editor.
-- ~stdin~ - Feed the buffer to ~jj describe --stdin~; Majutsu then calls ~jj new~.
-  - Always sends UTF-8, so it sidesteps Windows codepage issues.
-  - Uses two jj invocations, but the end result matches `jj commit`.
-
-If ~with-editor~ isn't available when you pick `'with-editor`, Majutsu falls back to
-its built-in message buffer so you can still edit before committing.
-
-Example:
-#+begin_src emacs-lisp
-(setq majutsu-message-input-method 'with-editor)   ; requires with-editor; or 'stdin / 'script
-#+end_src
-
-Tip for Windows users: if you see garbled UTF-8 descriptions, switch to `'with-editor`
-or `'script`. Both paths avoid forcing the message through Windows code pages.
 
 ** Workflow Example
 1. ~M-x majutsu-log~ - Open JJ interface
@@ -165,8 +137,6 @@ templates directly from Elisp (used by ~majutsu--log-template~).
 ;; Customize jj executable path if needed
 (setq majutsu-executable "/path/to/jj")
 
-;; Prefer alternative message delivery on Windows
-;; (setq majutsu-message-input-method 'script)
 #+end_src
 
 * Contributing
