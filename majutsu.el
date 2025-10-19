@@ -26,9 +26,6 @@
   (rx "/tmp/editor-" (+ (in "0-9A-Za-z")) ".jjdescription" string-end)
   "Regexp matching temporary jj description files created for editing.")
 
-(defvar majutsu--with-editor--server-window-entry nil
-  "Cached entry added to `with-editor-server-window-alist'.")
-
 (defun majutsu--log-window ()
   "Return an existing window showing a Majutsu log buffer, if any."
   (seq-find (lambda (window)
@@ -62,18 +59,12 @@ Return the window used to show BUFFER."
   "Ensure with-editor integration specific to Majutsu is configured."
   (when (majutsu--with-editor-available-p)
     (when (boundp 'with-editor-envvars)
-      (add-to-list 'with-editor-envvars majutsu-with-editor-envvar))
-    (let ((present (and (boundp 'with-editor-server-window-alist)
-                        (cl-find-if (lambda (entry)
-                                      (and (= (length entry) 2)
-                                           (string= (car entry)
-                                                    majutsu--with-editor-description-regexp)))
-                                    with-editor-server-window-alist))))
-      (unless present
-        (let ((entry (cons majutsu--with-editor-description-regexp
-                           #'majutsu--with-editor-server-window)))
-          (add-to-list 'with-editor-server-window-alist entry)
-          (setq majutsu--with-editor--server-window-entry entry))))))
+      (cl-pushnew majutsu-with-editor-envvar with-editor-envvars :test #'equal))
+    (when (boundp 'with-editor-server-window-alist)
+      (let ((entry (cons majutsu--with-editor-description-regexp
+                         #'majutsu--with-editor-server-window)))
+        (unless (member entry with-editor-server-window-alist)
+          (push entry with-editor-server-window-alist))))))
 
 (defun majutsu--with-editor-shell ()
   "Return the shell to use when exporting the editor on Windows."
