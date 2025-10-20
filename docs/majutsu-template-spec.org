@@ -46,37 +46,38 @@ TODO: 目前仅登记转换关系，尚未在调用处强制检查
 可能被用来表示为暂未实现的函数或对象名
 
 *** String
-[[file:template_help.md::`String` type]]
+https://github.com/jj-vcs/jj/blob/main/docs/templates.md#string-type
 
 elisp 中的字符串自动转换为 String type
 
 它非常符合直觉所以之后作为基本的写法
 
 *** Boolean
-[[file:template_help.md::`Boolean` type]]
+https://github.com/jj-vcs/jj/blob/main/docs/templates.md#boolean-type
+
 t -> true
 nil -> false
 
 *** Integer
-[[file:template_help.md::`Integer` type]]
+https://github.com/jj-vcs/jj/blob/main/docs/templates.md#integer-type
 
 elisp 中的数字需要能隐式转换为 Integer or String
 通过参数能接受的类型选择
 
 *** Template
-[[file:template_help.md::`Template` type]]
+https://github.com/jj-vcs/jj/blob/main/docs/templates.md#template-type
 它表示的是整个模板最后的输出的类型
 
 这是隐式转换相关的一个重要类型
 
 *** Stringify
-[[file:template_help.md::`Stringify` type]]
+https://github.com/jj-vcs/jj/blob/main/docs/templates.md#stringify-type
 专指删去了 color label 的 [[Template]]
 
 本质上是一个隐式转换，在我们的代码逻辑中，应该直接把它看成是 Template 的 alias
 
 *** Trailer
-[[file:template_help.md::`Trailer` type]]
+https://github.com/jj-vcs/jj/blob/main/docs/templates.md#trailer-type
 
 这应该是一个挺重要的类型，表示一种数据结构
 
