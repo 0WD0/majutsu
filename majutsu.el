@@ -31,19 +31,15 @@
   (seq-find (lambda (window)
               (with-current-buffer (window-buffer window)
                 (derived-mode-p 'majutsu-mode)))
-            (window-list nil 'nomini (selected-frame))))
+            (window-list nil 'nomini)))
 
 (defun majutsu--display-buffer-for-editor (buffer)
   "Display BUFFER respecting `majutsu-log-display-function'.
 Return the window used to show BUFFER."
-  (let* ((display-fn (or majutsu-log-display-function #'pop-to-buffer))
-         (result (funcall display-fn buffer)))
-    (cond
-     ((windowp result) result)
-     ((bufferp result) (or (get-buffer-window result t)
-                           (selected-window)))
-     ((get-buffer-window buffer t))
-     (t (selected-window)))))
+  (let ((display-fn (or majutsu-log-display-function #'pop-to-buffer)))
+    (funcall display-fn buffer)
+    (or (get-buffer-window buffer t)
+        (selected-window))))
 
 (defun majutsu--with-editor-server-window (buffer)
   "Select window to display BUFFER for `with-editor'."
@@ -61,10 +57,12 @@ Return the window used to show BUFFER."
     (when (boundp 'with-editor-envvars)
       (cl-pushnew majutsu-with-editor-envvar with-editor-envvars :test #'equal))
     (when (boundp 'with-editor-server-window-alist)
-      (let ((entry (cons majutsu--with-editor-description-regexp
-                         #'majutsu--with-editor-server-window)))
-        (unless (member entry with-editor-server-window-alist)
-          (push entry with-editor-server-window-alist))))))
+      (unless (cl-assoc majutsu--with-editor-description-regexp
+                        with-editor-server-window-alist
+                        :test #'string=)
+        (push (cons majutsu--with-editor-description-regexp
+                    #'majutsu--with-editor-server-window)
+              with-editor-server-window-alist)))))
 
 (defun majutsu--with-editor-shell ()
   "Return the shell to use when exporting the editor on Windows."
