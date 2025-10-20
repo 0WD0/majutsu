@@ -26,30 +26,17 @@
   (rx "/tmp/editor-" (+ (in "0-9A-Za-z")) ".jjdescription" string-end)
   "Regexp matching temporary jj description files created for editing.")
 
-(defun majutsu--log-window ()
-  "Return an existing window showing a Majutsu log buffer, if any."
-  (seq-find (lambda (window)
-              (with-current-buffer (window-buffer window)
-                (derived-mode-p 'majutsu-mode)))
-            (window-list nil 'nomini)))
-
-(defun majutsu--display-buffer-for-editor (buffer)
-  "Display BUFFER respecting `majutsu-log-display-function'.
-Return the window used to show BUFFER."
+(defun majutsu--display-buffer-for-editor (buffer &optional window)
+  "Display BUFFER using `majutsu-log-display-function'.
+When WINDOW is a live window, run the display function in that window.
+Return the window showing BUFFER."
   (let ((display-fn (or majutsu-log-display-function #'pop-to-buffer)))
-    (funcall display-fn buffer)
+    (if (window-live-p window)
+        (with-selected-window window
+          (funcall display-fn buffer))
+      (funcall display-fn buffer))
     (or (get-buffer-window buffer t)
         (selected-window))))
-
-(defun majutsu--with-editor-server-window (buffer)
-  "Select window to display BUFFER for `with-editor'."
-  (if-let ((log-window (majutsu--log-window)))
-      (progn
-        (select-window log-window)
-        (unless (eq (window-buffer log-window) buffer)
-          (switch-to-buffer buffer))
-        log-window)
-    (majutsu--display-buffer-for-editor buffer)))
 
 (defun majutsu--with-editor-ensure-setup ()
   "Ensure with-editor integration specific to Majutsu is configured."
@@ -61,7 +48,7 @@ Return the window used to show BUFFER."
                         with-editor-server-window-alist
                         :test #'string=)
         (push (cons majutsu--with-editor-description-regexp
-                    #'majutsu--with-editor-server-window)
+                    #'switch-to-buffer)
               with-editor-server-window-alist)))))
 
 (defun majutsu--with-editor-shell ()
@@ -921,7 +908,7 @@ Return non-nil when the section could be located."
             (inhibit-modification-hooks t))
         (erase-buffer)
         (majutsu-mode)
-        (funcall majutsu-log-display-function buffer)
+        (majutsu--display-buffer-for-editor buffer)
         (setq-local majutsu--repo-root repo-root)
         (magit-insert-section (jjbuf)  ; Root section wrapper
           (magit-insert-section-body
