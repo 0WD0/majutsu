@@ -4,6 +4,12 @@ Majutsu provides a magit-inspired interface for
 [[https://github.com/martinvonz/jj][Jujutsu]], offering an efficient way to
 interact with JJ repositories from within Emacs.
 
+This project started life as a fork of [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]].
+I dropped the fork relationship after deciding to pursue breaking changes
+—most notably a reworked Magit-style log UI, a new template DSL,
+and different window/message handling—that fundamentally diverge from
+the original package’s scope.
+
 * Features
 - *Magit-style log viewer* with collapsible sections and syntax highlighting
 - *Interactive rebase* with visual source/destination selection via transients
