@@ -26,6 +26,64 @@
   (rx "/tmp/editor-" (+ (in "0-9A-Za-z")) ".jjdescription" string-end)
   "Regexp matching temporary jj description files created for editing.")
 
+(defvar majutsu--with-editor-visit-queue nil
+  "Queue of pending initializer functions for Majutsu with-editor buffers.")
+
+(defun majutsu--with-editor--queue-visit (fn)
+  "Enqueue FN so it runs when the next Majutsu editor buffer opens."
+  (push fn majutsu--with-editor-visit-queue)
+  fn)
+
+(defun majutsu--with-editor--cancel-visit (fn)
+  "Remove FN from the pending with-editor queue."
+  (setq majutsu--with-editor-visit-queue
+        (delq fn majutsu--with-editor-visit-queue)))
+
+(defun majutsu--with-editor--apply-visit ()
+  "Run the next pending Majutsu with-editor initializer if applicable."
+  (let ((next '())
+        handled)
+    (dolist (fn majutsu--with-editor-visit-queue)
+      (if (and (not handled)
+               (with-demoted-errors "Majutsu with-editor init failed: %S"
+                 (funcall fn)))
+          (setq handled t)
+        (push fn next)))
+    (setq majutsu--with-editor-visit-queue (nreverse next))
+    handled))
+
+(defun majutsu--with-editor--target-buffer-p ()
+  "Return non-nil when current buffer is a jj temporary editor file."
+  (and buffer-file-name
+       (string-match-p majutsu--with-editor-description-regexp buffer-file-name)))
+
+(defvar-local majutsu--with-editor-return-window nil
+  "Window to restore after finishing a Majutsu with-editor session.")
+
+(defvar-local majutsu--with-editor-return-buffer nil
+  "Buffer to restore after finishing a Majutsu with-editor session.")
+
+(defun majutsu--with-editor--restore-context ()
+  "Restore window focus and buffer after a Majutsu with-editor session."
+  (let ((window majutsu--with-editor-return-window)
+        (buffer majutsu--with-editor-return-buffer))
+    (cond
+     ((and (window-live-p window)
+           (buffer-live-p buffer))
+      (with-selected-window window
+        (switch-to-buffer buffer)))
+     ((buffer-live-p buffer)
+      (majutsu--display-buffer-for-editor buffer))))
+  (remove-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context t)
+  (remove-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context t))
+
+(defun majutsu--with-editor--setup-return (window buffer)
+  "Remember WINDOW and BUFFER for restoring after the editor closes."
+  (setq-local majutsu--with-editor-return-window window)
+  (setq-local majutsu--with-editor-return-buffer buffer)
+  (add-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context nil t)
+  (add-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context nil t))
+
 (defun majutsu--display-buffer-for-editor (buffer &optional window)
   "Display BUFFER using `majutsu-log-display-function'.
 When WINDOW is a live window, run the display function in that window.
@@ -50,9 +108,14 @@ Return the window showing BUFFER."
         (push (cons majutsu--with-editor-description-regexp
                     #'switch-to-buffer)
               with-editor-server-window-alist)))
+    (when (boundp 'with-editor-filter-visit-hook)
+      (unless (memq #'majutsu--with-editor--apply-visit with-editor-filter-visit-hook)
+        (add-hook 'with-editor-filter-visit-hook #'majutsu--with-editor--apply-visit)))
     (when (require 'server nil 'noerror)
-      (unless (memq #'majutsu--with-editor--ensure-mode server-switch-hook)
-        (add-hook 'server-switch-hook #'majutsu--with-editor--ensure-mode)))))
+      (unless (memq #'majutsu--with-editor--apply-visit server-visit-hook)
+        (add-hook 'server-visit-hook #'majutsu--with-editor--apply-visit))
+      (unless (memq #'majutsu--with-editor--apply-visit server-switch-hook)
+        (add-hook 'server-switch-hook #'majutsu--with-editor--apply-visit)))))
 
 (defun majutsu--with-editor-shell ()
   "Return the shell to use when exporting the editor on Windows."
@@ -61,14 +124,6 @@ Return the window showing BUFFER."
                                 (downcase (or (getenv "SHELL") "")))))
       "cmdproxy"
     shell-file-name))
-
-(defun majutsu--with-editor--ensure-mode ()
-  "Enable `with-editor-mode' when visiting JJ temporary editor files."
-  (when (and (fboundp 'with-editor-mode)
-             (not (bound-and-true-p with-editor-mode))
-             buffer-file-name
-             (string-match-p majutsu--with-editor-description-regexp buffer-file-name))
-    (with-editor-mode 1)))
 
 (defmacro majutsu-with-editor (&rest body)
   "Ensure BODY runs with the correct editor environment for jj."
@@ -373,20 +428,23 @@ The function must accept one argument: the buffer to display."
   (and (require 'with-editor nil 'noerror)
        with-editor-emacsclient-executable))
 
-(defun majutsu--with-editor--visit-hook (initial-message)
-  "Return a hook that injects INITIAL-MESSAGE into the edit buffer."
+(defun majutsu--with-editor--visit-hook (initial-message window buffer)
+  "Return initializer inserting INITIAL-MESSAGE and tracking WINDOW/BUFFER."
   (let ((done nil)
         (content (when (and initial-message (not (string-empty-p initial-message)))
                    (majutsu--ensure-message-newline initial-message))))
     (lambda ()
-      (unless done
+      (when (and (not done)
+                 (majutsu--with-editor--target-buffer-p))
         (setq done t)
         (when (fboundp 'with-editor-mode)
           (with-editor-mode 1))
         (erase-buffer)
         (when content
           (insert content))
-        (goto-char (point-min))))))
+        (goto-char (point-min))
+        (majutsu--with-editor--setup-return window buffer)
+        t))))
 
 (defun majutsu--with-editor--sentinel (args success-msg error-msg success-callback)
   "Return sentinel handling JJ command completion.
@@ -417,16 +475,21 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
   (majutsu--with-editor-ensure-setup)
   (let* ((default-directory (majutsu--root))
          (process-environment (copy-sequence process-environment))
-         (visit-hook (majutsu--with-editor--visit-hook initial-message))
+         (origin-window (selected-window))
+         (origin-buffer (current-buffer))
+         (visit-hook (majutsu--with-editor--visit-hook initial-message origin-window origin-buffer))
          process buffer)
-    (majutsu-with-editor
-      (let ((with-editor-filter-visit-hook
-             (cons visit-hook with-editor-filter-visit-hook)))
-        (setq buffer (generate-new-buffer " *majutsu-jj*"))
-        (when-let ((editor (getenv majutsu-with-editor-envvar)))
-          (setenv "EDITOR" editor))
-        (setq process (apply #'start-file-process "majutsu-jj"
-                             buffer majutsu-executable args))))
+    (majutsu--with-editor--queue-visit visit-hook)
+    (condition-case err
+        (majutsu-with-editor
+          (setq buffer (generate-new-buffer " *majutsu-jj*"))
+          (when-let ((editor (getenv majutsu-with-editor-envvar)))
+            (setenv "EDITOR" editor))
+          (setq process (apply #'start-file-process "majutsu-jj"
+                               buffer majutsu-executable args)))
+      (error
+       (majutsu--with-editor--cancel-visit visit-hook)
+       (signal (car err) (cdr err))))
     (set-process-query-on-exit-flag process nil)
     (set-process-sentinel process
                           (majutsu--with-editor--sentinel args success-msg error-msg success-callback))
