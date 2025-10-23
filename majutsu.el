@@ -49,7 +49,10 @@ Return the window showing BUFFER."
                         :test #'string=)
         (push (cons majutsu--with-editor-description-regexp
                     #'switch-to-buffer)
-              with-editor-server-window-alist)))))
+              with-editor-server-window-alist)))
+    (when (require 'server nil 'noerror)
+      (unless (memq #'majutsu--with-editor--ensure-mode server-switch-hook)
+        (add-hook 'server-switch-hook #'majutsu--with-editor--ensure-mode)))))
 
 (defun majutsu--with-editor-shell ()
   "Return the shell to use when exporting the editor on Windows."
@@ -58,6 +61,14 @@ Return the window showing BUFFER."
                                 (downcase (or (getenv "SHELL") "")))))
       "cmdproxy"
     shell-file-name))
+
+(defun majutsu--with-editor--ensure-mode ()
+  "Enable `with-editor-mode' when visiting JJ temporary editor files."
+  (when (and (fboundp 'with-editor-mode)
+             (not (bound-and-true-p with-editor-mode))
+             buffer-file-name
+             (string-match-p majutsu--with-editor-description-regexp buffer-file-name))
+    (with-editor-mode 1)))
 
 (defmacro majutsu-with-editor (&rest body)
   "Ensure BODY runs with the correct editor environment for jj."
