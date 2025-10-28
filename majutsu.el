@@ -106,7 +106,7 @@ Return the window showing BUFFER."
                         with-editor-server-window-alist
                         :test #'string=)
         (push (cons majutsu--with-editor-description-regexp
-                    #'switch-to-buffer)
+                    #'pop-to-buffer)
               with-editor-server-window-alist)))
     (when (boundp 'with-editor-filter-visit-hook)
       (unless (memq #'majutsu--with-editor--apply-visit with-editor-filter-visit-hook)
