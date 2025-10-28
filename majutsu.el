@@ -106,7 +106,7 @@ Return the window showing BUFFER."
                         with-editor-server-window-alist
                         :test #'string=)
         (push (cons majutsu--with-editor-description-regexp
-                    #'pop-to-buffer)
+                    (or majutsu-message-display-function #'pop-to-buffer))
               with-editor-server-window-alist)))
     (when (boundp 'with-editor-filter-visit-hook)
       (unless (memq #'majutsu--with-editor--apply-visit with-editor-filter-visit-hook)
@@ -165,6 +165,16 @@ Return the window showing BUFFER."
 
 (defcustom majutsu-log-display-function #'pop-to-buffer
   "Function called to display the majutsu log buffer.
+The function must accept one argument: the buffer to display."
+  :type '(choice
+          (function-item switch-to-buffer)
+          (function-item pop-to-buffer)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
+(defcustom majutsu-message-display-function #'pop-to-buffer
+  "Function called to display the majutsu with-editor message buffer
 The function must accept one argument: the buffer to display."
   :type '(choice
           (function-item switch-to-buffer)
