@@ -433,32 +433,20 @@ The function must accept one argument: the buffer to display."
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun majutsu--ensure-message-newline (message)
-  "Ensure commit MESSAGE ends with a newline."
-  (let ((message (or message "")))
-    (if (string-suffix-p "\n" message)
-        message
-      (concat message "\n"))))
-
 (defun majutsu--with-editor-available-p ()
   "Return non-nil when `with-editor' can be used for JJ commands."
   (and (require 'with-editor nil 'noerror)
        with-editor-emacsclient-executable))
 
-(defun majutsu--with-editor--visit-hook (initial-message window buffer)
-  "Return initializer inserting INITIAL-MESSAGE and tracking WINDOW/BUFFER."
-  (let ((done nil)
-        (content (when (and initial-message (not (string-empty-p initial-message)))
-                   (majutsu--ensure-message-newline initial-message))))
+(defun majutsu--with-editor--visit-hook (window buffer)
+  "Return initializer enabling `with-editor-mode' and tracking WINDOW/BUFFER."
+  (let ((done nil))
     (lambda ()
       (when (and (not done)
                  (majutsu--with-editor--target-buffer-p))
         (setq done t)
         (when (fboundp 'with-editor-mode)
           (with-editor-mode 1))
-        (erase-buffer)
-        (when content
-          (insert content))
         (goto-char (point-min))
         (majutsu--with-editor--setup-return window buffer)
         t))))
@@ -484,8 +472,8 @@ SUCCESS-CALLBACK, when non-nil, is invoked after a successful command."
             (majutsu--handle-command-result args output nil
                                             (or error-msg "Command failed"))))))))
 
-(defun majutsu--with-editor-run (args initial-message success-msg error-msg &optional success-callback)
-  "Run JJ ARGS using with-editor, pre-populating INITIAL-MESSAGE.
+(defun majutsu--with-editor-run (args success-msg error-msg &optional success-callback)
+  "Run JJ ARGS using with-editor.
 On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
   (unless (majutsu--with-editor-available-p)
     (user-error "with-editor is not available in this Emacs"))
@@ -494,7 +482,7 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
          (process-environment (copy-sequence process-environment))
          (origin-window (selected-window))
          (origin-buffer (current-buffer))
-         (visit-hook (majutsu--with-editor--visit-hook initial-message origin-window origin-buffer))
+         (visit-hook (majutsu--with-editor--visit-hook origin-window origin-buffer))
          process buffer)
     (majutsu--with-editor--queue-visit visit-hook)
     (condition-case err
@@ -1482,34 +1470,16 @@ Instead of invoking this alias for `majutsu-log' using
      (t
       (majutsu--message-with-log "No commit selected for squash")))))
 
-(defun majutsu--squash-initial-message (from into)
-  "Return the initial commit message to seed the with-editor buffer."
-  (let ((from-desc (string-trim
-                    (majutsu--run-command "log" "-r" from "--no-graph" "-T" "description"))))
-    (if into
-        (let ((into-desc (string-trim
-                          (majutsu--run-command "log" "-r" into "--no-graph" "-T" "description"))))
-          (if (string-empty-p into-desc)
-              from-desc
-            into-desc))
-      (let ((parent-desc (string-trim
-                          (majutsu--run-command "log" "-r" (format "%s-" from)
-                                                "--no-graph" "-T" "description"))))
-        (if (string-empty-p parent-desc)
-            from-desc
-          parent-desc)))))
-
 (defun majutsu--squash-run (from into keep)
   "Run jj squash using with-editor."
   (let* ((args (append (if into
                            (list "squash" "--from" from "--into" into)
                          (list "squash" "-r" from))
                        (when keep '("--keep-emptied"))))
-         (initial (majutsu--squash-initial-message from into))
          (success-msg (if into
                           (format "Squashed %s into %s" from into)
                         (format "Squashed %s into its parent" from))))
-    (majutsu--with-editor-run args initial success-msg "Squash failed"
+    (majutsu--with-editor-run args success-msg "Squash failed"
                               #'majutsu-squash-clear-selections)))
 
 (defun majutsu-squash-cleanup-on-exit ()
@@ -1907,23 +1877,15 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-commit ()
   "Create a commit using Emacs as the editor."
   (interactive)
-  (let ((current-desc (string-trim
-                       (majutsu--run-command "log" "-r" "@"
-                                             "--no-graph" "-T" "description"))))
-    (majutsu--with-editor-run '("commit")
-                              current-desc
-                              "Successfully committed changes"
-                              "Failed to commit")))
+  (majutsu--with-editor-run '("commit")
+                            "Successfully committed changes"
+                            "Failed to commit"))
 
 (defun majutsu-describe ()
   "Update the description for the commit at point."
   (interactive)
-  (let* ((commit-id (or (majutsu-log--commit-id-at-point) "@"))
-         (current-desc (string-trim
-                        (majutsu--run-command "log" "-r" commit-id
-                                              "--no-graph" "-T" "description"))))
+  (let ((commit-id (or (majutsu-log--commit-id-at-point) "@")))
     (majutsu--with-editor-run (list "describe" "-r" commit-id)
-                              current-desc
                               (format "Description updated for %s" commit-id)
                               "Failed to update description")))
 
