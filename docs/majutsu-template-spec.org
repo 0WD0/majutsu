@@ -1,7 +1,6 @@
 #+title: Majutsu Template Specifications
 
 在查看全文之前应该先对 jujutsu template language 有一定了解。
-在这里放上经常更新的官方文档 [[file:template_help.md][file]]。
 
 * 目标
 实现一个 jujutsu template 的 elisp DSL

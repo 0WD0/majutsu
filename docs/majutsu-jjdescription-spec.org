@@ -1,0 +1,44 @@
+#+title: Majutsu jjdescription Spec
+
+* 设计目标
+为 jjdescription 文件提供专属高亮
+
+* 模式行为
+** 摘要行
+借助 ~log-edit-mode~ 的摘要检测机制，通过 face remap 使用 ~majutsu-jjdescription-summary-face~。
+超出 ~majutsu-jjdescription-summary-max-length~ 的部分使用 ~majutsu-jjdescription-summary-warning-face~ 提醒。
+
+但是实际上可能会被
+face:log-edit-unknown-header
+face:log-edit-header
+覆盖
+
+为什么会这么设计？
+
+** 注释
+~majutsu-jjdescription-comment-prefixes~（默认 ~JJ:~）开头的行视为提示信息，使用 ~majutsu-jjdescription-comment-face~。
+
+** file changes
+当注释行中包含 ~A ...~、~D ...~、~M ...~（参考 Neovim ~jjdescription~ 语法定义）时，分别套用 ~majutsu-jjdescription-diff-added-face~、~majutsu-jjdescription-diff-removed-face~、~majutsu-jjdescription-diff-changed-face~，帮助快速识别变更。
+
+** 尾注（Trailers）
+正则 ~^[[:alnum:]][-[:alnum:]]*:~ 匹配的键使用 ~majutsu-jjdescription-trailer-token-face~。
+同一行的值使用 ~majutsu-jjdescription-trailer-value-face~，便于区分键值。
+
+** 引用
+~#123~ 或 ~FOO-456~ 形式的引用使用 ~majutsu-jjdescription-reference-face~。
+继承 ~link~ face，方便主题定义更醒目的颜色。
+
+有没有可能搞 forge 集成？
+
+* 集成方式
+直接检测 .jjdescription 后缀
+
+* 配置接口
+~majutsu-jjdescription-summary-max-length~：推荐摘要字数（默认 50）。
+~majutsu-jjdescription-fill-column~：模式内的 ~fill-column~ 默认值（推荐 72）。
+~majutsu-jjdescription-comment-prefixes~：识别为提示/注释的行前缀列表。
+
+* 后续可能的增强
+根据仓库配置（例如 ~.jj/repo/config~) 自动扩充注释或尾注模板。
+为 ~Co-authored-by~ 等常见 trailer 提供补全或提示。
