@@ -117,20 +117,23 @@ Return the window showing BUFFER."
       (unless (memq #'majutsu--with-editor--apply-visit server-switch-hook)
         (add-hook 'server-switch-hook #'majutsu--with-editor--apply-visit)))))
 
-(defun majutsu--with-editor-shell ()
-  "Return the shell to use when exporting the editor on Windows."
-  (if (and (eq system-type 'windows-nt)
-           (not (string-match-p "cygwin\\|msys"
-                                (downcase (or (getenv "SHELL") "")))))
-      "cmdproxy"
-    shell-file-name))
-
 (defmacro majutsu-with-editor (&rest body)
   "Ensure BODY runs with the correct editor environment for jj."
   (declare (indent 0) (debug (body)))
-  `(let ((shell-file-name (or (majutsu--with-editor-shell) shell-file-name)))
-     (with-editor* majutsu-with-editor-envvar
+  `(let ((magit-with-editor-envvar majutsu-with-editor-envvar))
+     (magit-with-editor
        ,@body)))
+
+(defun majutsu--with-editor--normalize-editor (command)
+  "Normalize editor COMMAND before exporting it to jj.
+On Windows the jj launcher expects a bare executable path, so strip the
+outer shell quoting that `with-editor' adds, matching Magit's workaround."
+  (let ((trimmed (string-trim (or command ""))))
+    (if (and (eq system-type 'windows-nt)
+             (string-match "\\`\"\\([^\"]+\\)\"\\(.*\\)\\'" trimmed))
+        (concat (match-string 1 trimmed)
+                (match-string 2 trimmed))
+      trimmed)))
 
 (defgroup majutsu nil
   "Interface to jj version control system."
@@ -494,6 +497,8 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
         (majutsu-with-editor
           (setq buffer (generate-new-buffer " *majutsu-jj*"))
           (when-let ((editor (getenv majutsu-with-editor-envvar)))
+            (setq editor (majutsu--with-editor--normalize-editor editor))
+            (setenv majutsu-with-editor-envvar editor)
             (setenv "EDITOR" editor))
           (setq process (apply #'start-file-process "majutsu-jj"
                                buffer majutsu-executable args)))
