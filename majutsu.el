@@ -23,7 +23,11 @@
   :group 'majutsu)
 
 (defconst majutsu--with-editor-description-regexp
-  (rx "/tmp/editor-" (+ (in "0-9A-Za-z")) ".jjdescription" string-end)
+  (rx (seq (or string-start
+               (seq (* (not (any ?\n)))
+                    (any ?/ ?\\)))
+           "editor-" (+ (in "0-9A-Za-z"))
+           ".jjdescription" string-end))
   "Regexp matching temporary jj description files created for editing.")
 
 (defvar majutsu--with-editor-visit-queue nil
