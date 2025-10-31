@@ -362,39 +362,43 @@ The function must accept one argument: the buffer to display."
                    [:call 'format_short_commit_id [:commit_id]]
                    " "
                    [:json " "]]
-      [:label
-       [:separate "\x1e"
-                  [:if [:current_working_copy] "working_copy"]
-                  [:if [:immutable] "immutable" "mutable"]
-                  [:if [:conflict] "conflicted"]]
-       [:separate "\x1e"
-                  [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
-                  [:call 'format_short_signature_oneline [:author]]
-                  [" " [:bookmarks] [:tags] [:working_copies]]
-                  [:if [:git_head]
-                      [:label "git_head" "git_head()"]
-                    " "]
-                  [:if [:conflict]
-                      [:label "conflict" "conflict"]
-                    " "]
-                  [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
-                      [:call 'format_short_cryptographic_signature [:signature]]
-                    " "]
-                  [:if [:empty]
-                      [:label "empty" "(empty)"]
-                    " "]
-                  [:if [:description]
-                      [:method [:description] :first_line]
-                    [:label
-                     [:if [:empty] "empty"]
-                     'description_placeholder]]
-                  [:call 'format_short_commit_id [:commit_id]]
-                  [:call 'format_timestamp
-                         [:call 'commit_timestamp [:raw "self" :Commit]]]
-                  [:if [:description]
-                      [:json [:description]]
-                    [:json " "]]]]]])
-  "Template for formatting log entries.")
+      [[:label
+        [:separate "\x1e"
+                   [:if [:current_working_copy] "working_copy"]
+                   [:if [:immutable] "immutable" "mutable"]
+                   [:if [:conflict] "conflicted"]]
+        [:separate "\x1e"
+                   [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
+                   [:call 'format_short_signature_oneline [:author]]
+                   [" " [:bookmarks] [:tags] [:working_copies]]
+                   [:if [:git_head]
+                       [:label "git_head" "git_head()"]
+                     " "]
+                   [:if [:conflict]
+                       [:label "conflict" "conflict"]
+                     " "]
+                   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
+                       [:call 'format_short_cryptographic_signature [:signature]]
+                     " "]
+                   [:if [:empty]
+                       [:label "empty" "(empty)"]
+                     " "]
+                   [:if [:description]
+                       [:method [:description] :first_line]
+                     [:label
+                      [:if [:empty] "empty"]
+                      'description_placeholder]]
+                   [:call 'format_short_commit_id [:commit_id]]
+                   [:call 'format_timestamp
+                          [:call 'commit_timestamp [:raw "self" :Commit]]]
+                   [:if [:description]
+                       [:json [:description]]
+                     [:json " "]]]]
+       "\n"]]])
+  "Template for formatting log entries.
+
+The trailing newline keeps each entry on its own line even when
+`jj log' is invoked with `--no-graph'.")
 
 (defun majutsu--root ()
   "Find root of the current repository."
