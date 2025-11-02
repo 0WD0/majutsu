@@ -2307,7 +2307,7 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
       (setq args (append args (list "--message" message))))
     (when no-edit
       (setq args (append args '("--no-edit"))))
-    (setq args (append args (or parents '("@"))))
+    (setq args (append args parents))
     args))
 
 (defun majutsu-new--run-command (args)
