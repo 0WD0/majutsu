@@ -1410,14 +1410,10 @@ Instead of invoking this alias for `majutsu-log' using
 
 ;; Squash state management
 (defvar-local majutsu-squash-from nil
-  "List containing at most one entry struct for squash source.")
+  "List of entry structs selected as squash sources (for --from).")
 
 (defvar-local majutsu-squash-into nil
   "List containing at most one entry struct for squash destination.")
-
-(defun majutsu-squash--from-entry ()
-  "Return the entry selected as squash source, if any."
-  (car majutsu-squash-from))
 
 (defun majutsu-squash--into-entry ()
   "Return the entry selected as squash destination, if any."
@@ -1425,8 +1421,8 @@ Instead of invoking this alias for `majutsu-log' using
 
 (defun majutsu-squash--from-display ()
   "Return a display string for the squash source."
-  (when-let ((entry (majutsu-squash--from-entry)))
-    (majutsu--transient-entry-display entry)))
+  (when majutsu-squash-from
+    (string-join (mapcar #'majutsu--transient-entry-display majutsu-squash-from) ", ")))
 
 (defun majutsu-squash--into-display ()
   "Return a display string for the squash destination."
@@ -1447,7 +1443,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-squash-set-from ()
   "Set the commit at point as squash `from' source."
   (interactive)
-  (majutsu--transient-select-refset
+  (majutsu--transient-toggle-refsets
    :kind "from"
    :label "[FROM]"
    :face '(:background "dark orange" :foreground "white")
@@ -1468,29 +1464,32 @@ Instead of invoking this alias for `majutsu-log' using
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash-transient--internal)))
   (let* ((keep (member "--keep" args))
-         (from-entry (majutsu-squash--from-entry))
+         (from-entries majutsu-squash-from)
          (into-entry (majutsu-squash--into-entry))
-         (from (when from-entry (majutsu--transient-entry-revset from-entry)))
+         (from-revsets (majutsu--transient-normalize-revsets from-entries))
          (into (when into-entry (majutsu--transient-entry-revset into-entry))))
     (cond
-     ((and from into)
-      (majutsu--squash-run from into keep))
-     (from
-      (majutsu--squash-run from nil keep))
+     ((and from-revsets into)
+      (majutsu--squash-run from-revsets into keep))
+     (from-revsets
+      (majutsu--squash-run from-revsets nil keep))
      ((majutsu-log--revset-at-point)
-      (majutsu--squash-run (majutsu-log--revset-at-point) nil keep))
+      (majutsu--squash-run (list (majutsu-log--revset-at-point)) nil keep))
      (t
       (majutsu--message-with-log "No commit selected for squash")))))
 
-(defun majutsu--squash-run (from into keep)
+(defun majutsu--squash-run (from-list into keep)
   "Run jj squash using with-editor."
-  (let* ((args (append (if into
-                           (list "squash" "--from" from "--into" into)
-                         (list "squash" "-r" from))
+  (let* ((normalized (majutsu--transient-normalize-revsets from-list))
+         (froms (or normalized '("@")))
+         (args (append '("squash")
+                       (apply #'append (mapcar (lambda (rev) (list "--from" rev)) froms))
+                       (when into (list "--into" into))
                        (when keep '("--keep-emptied"))))
+         (from-display (string-join froms ", "))
          (success-msg (if into
-                          (format "Squashed %s into %s" from into)
-                        (format "Squashed %s into its parent" from))))
+                          (format "Squashed %s into %s" from-display into)
+                        (format "Squashed %s into parent" from-display))))
     (majutsu--with-editor-run args success-msg "Squash failed"
                               #'majutsu-squash-clear-selections)))
 
@@ -1523,7 +1522,7 @@ Instead of invoking this alias for `majutsu-log' using
    ["Selection"
     ("f" "Set from" majutsu-squash-set-from
      :description (lambda ()
-                    (if (majutsu-squash--from-entry)
+                    (if majutsu-squash-from
                         (format "Set from (current: %s)" (majutsu-squash--from-display))
                       "Set from"))
      :transient t)
@@ -1541,11 +1540,11 @@ Instead of invoking this alias for `majutsu-log' using
     ("s" "Execute squash" majutsu-squash-execute
      :description (lambda ()
                     (cond
-                     ((and (majutsu-squash--from-entry) (majutsu-squash--into-entry))
+                     ((and majutsu-squash-from (majutsu-squash--into-entry))
                       (format "Squash %s into %s"
                               (majutsu-squash--from-display)
                               (majutsu-squash--into-display)))
-                     ((majutsu-squash--from-entry)
+                     (majutsu-squash-from
                       (format "Squash %s into parent" (majutsu-squash--from-display)))
                      (t "Execute squash (select commits first)")))
      :transient nil)
