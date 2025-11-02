@@ -95,8 +95,43 @@ Working Copy Changes section 实现，
 
 * Operations
 ** new
-它的实现方式是比较显然的
-参数只有一个 revsets
+需要两种模式
+一种是直接在当前 revset 新建
+一种是进入一个多选模式，可以 toggle 不同的参数对应的 revset 集
+这里可以借鉴 rebase transient 的设计
+
+*** 快捷模式（direct new）
+继续复用 ~N~ 键；无前缀时直接在当前光标所在的 changeset 上执行 ~jj new~，选中节点成为默认的唯一父节点。
+如果当前无法识别 changeset（例如 log buffer 为空），则 fallback 到 ~@~（working copy）。
+~C-u N~ 保留手动选择父节点的行为，提供 bookmark + changeset id 的 completion。
+执行成功后刷新 log，并在可能情况下跳回新的 ~@~。
+
+*** Transient 模式（majutsu-new-transient）
+- 新增命令 ~majutsu-new-transient~，默认提供在 ~majutsu-mode-transient~ 菜单中；不强绑按键，避免覆盖 ~magit-section~ 的导航键。
+- 进入 transient 后沿用 rebase transient 的 overlay 模式，三种状态分别高亮：
+  - <REVSETS>：父节点集合，按 ~p~ 在光标处 toggle；使用 ~[PARENT]~ label 及 ~(:background "dark orange" :foreground "black")~。
+  - ~-A/--after~：插入位置的父节点，按 ~a~ toggle；使用 ~[AFTER]~ label 及 ~(:background "dark blue" :foreground "white")~。
+  - ~-B/--before~：插入位置的子节点（多选），按 ~b~ toggle；使用 ~[BEFORE]~ label 及 ~(:background "dark magenta" :foreground "white")~。
+- ~m~ 用于一次性输入提交信息，映射到 ~--message~；~e~ toggle ~--no-edit~。
+- ~RET~ 和 ~n~ 触发执行；命令行参数按以下顺序拼装：
+  1. <REVSETS> 列表（为空时默认 ~@~）。
+  2. 每个 ~-A~ / ~--after~ 目标按选择顺序展开。
+  3. 每个 ~-B~ / ~--before~ 目标按选择顺序展开。
+  4. 可选的 ~--message~ 与 ~--no-edit~。
+- ~c~ 清除所有选择；~q~ 退出时自动清理 overlay 与内部 state。
+
+*** 状态建模
+- 维护 ~majutsu-new-parents~、~majutsu-new-after~、~majutsu-new-before~ 三个列表，以及对应 overlay 列表。
+- 退出 transient（含执行成功）时统一清理 state。
+- 复用 ~majutsu-log--commit-id-at-point~ 判断当前 changeset id，尽量与 rebase transient 的 helper 对齐，必要时抽象通用 overlay 操作。
+- 抽取一个 ~majutsu-new--build-args~ 辅助函数，集中拼装命令参数，便于 ERT 覆盖。
+
+*** TODO
+- 与 rebase transient 共享 overlay/util helper，减少重复逻辑。
+- 覆盖以下测试：
+  - overlay 状态切换（父/after/before）。
+  - ~majutsu-new--build-args~ 参数拼装。
+  - ~--no-edit~ 与 ~--message~ 交互路径。
 
 ** duplicate
 我觉得也挺重要的，需要支持
