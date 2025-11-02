@@ -78,7 +78,7 @@ buffer (~*majutsu-log:project-name*~).
 - ~l~ - Log options transient
 - ~R~ - Redo last operation
 - ~s~ - Squash
-- ~N~ - New changeset here
+- ~N~ - New changeset at point (~C-u N~ opens the transient)
 
 *** Advanced Operations
 - ~r~ - Rebase transient menu
