@@ -1410,81 +1410,75 @@ Instead of invoking this alias for `majutsu-log' using
 
 ;; Squash state management
 (defvar-local majutsu-squash-from nil
-  "Currently selected 'from' commit for squash.")
+  "List containing at most one entry struct for squash source.")
 
 (defvar-local majutsu-squash-into nil
-  "Currently selected 'into' commit for squash.")
+  "List containing at most one entry struct for squash destination.")
 
-(defvar-local majutsu-squash-from-overlay nil
-  "Overlay for highlighting the selected 'from' commit.")
+(defun majutsu-squash--from-entry ()
+  "Return the entry selected as squash source, if any."
+  (car majutsu-squash-from))
 
-(defvar-local majutsu-squash-into-overlay nil
-  "Overlay for highlighting the selected 'into' commit.")
+(defun majutsu-squash--into-entry ()
+  "Return the entry selected as squash destination, if any."
+  (car majutsu-squash-into))
+
+(defun majutsu-squash--from-display ()
+  "Return a display string for the squash source."
+  (when-let ((entry (majutsu-squash--from-entry)))
+    (majutsu--transient-entry-display entry)))
+
+(defun majutsu-squash--into-display ()
+  "Return a display string for the squash destination."
+  (when-let ((entry (majutsu-squash--into-entry)))
+    (majutsu--transient-entry-display entry)))
 
 ;;;###autoload
 (defun majutsu-squash-clear-selections ()
   "Clear all squash selections and overlays."
   (interactive)
+  (majutsu--transient-clear-overlays majutsu-squash-from)
+  (majutsu--transient-clear-overlays majutsu-squash-into)
   (setq majutsu-squash-from nil
         majutsu-squash-into nil)
-  (when majutsu-squash-from-overlay
-    (delete-overlay majutsu-squash-from-overlay)
-    (setq majutsu-squash-from-overlay nil))
-  (when majutsu-squash-into-overlay
-    (delete-overlay majutsu-squash-into-overlay)
-    (setq majutsu-squash-into-overlay nil))
   (message "Cleared all squash selections"))
 
 ;;;###autoload
 (defun majutsu-squash-set-from ()
   "Set the commit at point as squash `from' source."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point))
-             (section (magit-current-section)))
-    ;; Clear previous from overlay
-    (when majutsu-squash-from-overlay
-      (delete-overlay majutsu-squash-from-overlay))
-    ;; Set new from
-    (setq majutsu-squash-from revset)
-    ;; Create overlay for visual indication
-    (setq majutsu-squash-from-overlay
-          (make-overlay (oref section start) (oref section end)))
-    (overlay-put majutsu-squash-from-overlay 'face '(:background "dark orange" :foreground "white"))
-    (overlay-put majutsu-squash-from-overlay 'before-string "[FROM] ")
-    (message "Set from: %s" revset)))
+  (majutsu--transient-select-refset
+   :kind "from"
+   :label "[FROM]"
+   :face '(:background "dark orange" :foreground "white")
+   :collection-var 'majutsu-squash-from))
 
 ;;;###autoload
 (defun majutsu-squash-set-into ()
   "Set the commit at point as squash 'into' destination."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point))
-             (section (magit-current-section)))
-    ;; Clear previous into overlay
-    (when majutsu-squash-into-overlay
-      (delete-overlay majutsu-squash-into-overlay))
-    ;; Set new into
-    (setq majutsu-squash-into revset)
-    ;; Create overlay for visual indication
-    (setq majutsu-squash-into-overlay
-          (make-overlay (oref section start) (oref section end)))
-    (overlay-put majutsu-squash-into-overlay 'face '(:background "dark cyan" :foreground "white"))
-    (overlay-put majutsu-squash-into-overlay 'before-string "[INTO] ")
-    (message "Set into: %s" revset)))
+  (majutsu--transient-select-refset
+   :kind "into"
+   :label "[INTO]"
+   :face '(:background "dark cyan" :foreground "white")
+   :collection-var 'majutsu-squash-into))
 
 ;;;###autoload
 (defun majutsu-squash-execute (&optional args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash-transient--internal)))
   (let* ((keep (member "--keep" args))
-         (from majutsu-squash-from)
-         (into majutsu-squash-into))
+         (from-entry (majutsu-squash--from-entry))
+         (into-entry (majutsu-squash--into-entry))
+         (from (when from-entry (majutsu--transient-entry-revset from-entry)))
+         (into (when into-entry (majutsu--transient-entry-revset into-entry))))
     (cond
      ((and from into)
       (majutsu--squash-run from into keep))
      (from
       (majutsu--squash-run from nil keep))
-     ((majutsu-log--commit-id-at-point)
-      (majutsu--squash-run (majutsu-log--commit-id-at-point) nil keep))
+     ((majutsu-log--revset-at-point)
+      (majutsu--squash-run (majutsu-log--revset-at-point) nil keep))
      (t
       (majutsu--message-with-log "No commit selected for squash")))))
 
@@ -1522,21 +1516,21 @@ Instead of invoking this alias for `majutsu-log' using
   [:description
    (lambda ()
      (concat "JJ Squash"
-             (when majutsu-squash-from
-               (format " | From: %s" majutsu-squash-from))
-             (when majutsu-squash-into
-               (format " | Into: %s" majutsu-squash-into))))
+             (when-let ((from (majutsu-squash--from-display)))
+               (format " | From: %s" from))
+             (when-let ((into (majutsu-squash--into-display)))
+               (format " | Into: %s" into))))
    ["Selection"
     ("f" "Set from" majutsu-squash-set-from
      :description (lambda ()
-                    (if majutsu-squash-from
-                        (format "Set from (current: %s)" majutsu-squash-from)
+                    (if (majutsu-squash--from-entry)
+                        (format "Set from (current: %s)" (majutsu-squash--from-display))
                       "Set from"))
      :transient t)
     ("t" "Set into" majutsu-squash-set-into
      :description (lambda ()
-                    (if majutsu-squash-into
-                        (format "Set into (current: %s)" majutsu-squash-into)
+                    (if (majutsu-squash--into-entry)
+                        (format "Set into (current: %s)" (majutsu-squash--into-display))
                       "Set into"))
      :transient t)
     ("c" "Clear selections" majutsu-squash-clear-selections
@@ -1547,10 +1541,12 @@ Instead of invoking this alias for `majutsu-log' using
     ("s" "Execute squash" majutsu-squash-execute
      :description (lambda ()
                     (cond
-                     ((and majutsu-squash-from majutsu-squash-into)
-                      (format "Squash %s into %s" majutsu-squash-from majutsu-squash-into))
-                     (majutsu-squash-from
-                      (format "Squash %s into parent" majutsu-squash-from))
+                     ((and (majutsu-squash--from-entry) (majutsu-squash--into-entry))
+                      (format "Squash %s into %s"
+                              (majutsu-squash--from-display)
+                              (majutsu-squash--into-display)))
+                     ((majutsu-squash--from-entry)
+                      (format "Squash %s into parent" (majutsu-squash--from-display)))
                      (t "Execute squash (select commits first)")))
      :transient nil)
     ("q" "Quit" transient-quit-one)
