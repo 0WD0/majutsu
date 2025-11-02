@@ -494,13 +494,13 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
     (majutsu--with-editor--queue-visit visit-hook)
     (condition-case err
         (majutsu-with-editor
-         (setq buffer (generate-new-buffer " *majutsu-jj*"))
-         (when-let ((editor (getenv majutsu-with-editor-envvar)))
-           (setq editor (majutsu--with-editor--normalize-editor editor))
-           (setenv majutsu-with-editor-envvar editor)
-           (setenv "EDITOR" editor))
-         (setq process (apply #'start-file-process "majutsu-jj"
-                              buffer majutsu-executable args)))
+          (setq buffer (generate-new-buffer " *majutsu-jj*"))
+          (when-let ((editor (getenv majutsu-with-editor-envvar)))
+            (setq editor (majutsu--with-editor--normalize-editor editor))
+            (setenv majutsu-with-editor-envvar editor)
+            (setenv "EDITOR" editor))
+          (setq process (apply #'start-file-process "majutsu-jj"
+                               buffer majutsu-executable args)))
       (error
        (majutsu--with-editor--cancel-visit visit-hook)
        (signal (car err) (cdr err))))
@@ -722,33 +722,36 @@ misclassifying Majutsu candidates."
    (description :initarg :description)
    (bookmarks :initarg :bookmarks)))
 
+(defun majutsu--normalize-id-value (value)
+  "Normalize VALUE (string/symbol/number) into a plain string without text properties."
+  (cond
+   ((stringp value) (substring-no-properties value))
+   ((and value (not (stringp value))) (format "%s" value))
+   (t nil)))
+
 (defun majutsu--section-change-id (section)
   "Return the change id recorded in SECTION, if available."
   (when (and section (object-of-class-p section 'majutsu-log-entry-section))
-    (cond
-     ((and (slot-exists-p section 'change-id)
-           (slot-boundp section 'change-id))
-      (let ((value (oref section change-id)))
-        (cond
-         ((stringp value) (substring-no-properties value))
-         ((and value (not (stringp value))) (format "%s" value))
-         (t nil))))
-     (t
-      (let ((entry (oref section value)))
-        (when (listp entry)
-          (let ((value (or (plist-get entry :change-id)
-                           (plist-get entry :id))))
-            (cond
-             ((stringp value) (substring-no-properties value))
-             (value (format "%s" value))
-             (t nil)))))))))
+    (or (when (and (slot-exists-p section 'change-id)
+                   (slot-boundp section 'change-id))
+          (majutsu--normalize-id-value (oref section change-id)))
+        (let ((entry (oref section value)))
+          (when (listp entry)
+            (majutsu--normalize-id-value
+             (or (plist-get entry :change-id)
+                 (plist-get entry :id))))))))
+
+(defun majutsu--section-commit-id (section)
+  "Return the commit id recorded in SECTION, if available."
+  (when section
+    (when (and (slot-exists-p section 'commit-id)
+               (slot-boundp section 'commit-id))
+      (majutsu--normalize-id-value (oref section commit-id)))))
 
 (cl-defmethod magit-section-ident-value ((section majutsu-log-entry-section))
   "Identify log entry sections by their change id."
   (or (majutsu--section-change-id section)
-      (and (slot-exists-p section 'commit-id)
-           (slot-boundp section 'commit-id)
-           (oref section commit-id))
+      (majutsu--section-commit-id section)
       (let ((entry (oref section value)))
         (when (listp entry)
           (or (plist-get entry :change-id)
@@ -1992,123 +1995,189 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 
 (defun majutsu-log--commit-id-at-point ()
   "Get the changeset ID at point as a plain string (no text properties)."
+  (or (majutsu-log--commit-only-at-point)
+      (majutsu-log--change-id-at-point)))
+
+;; New state management
+(cl-defstruct (majutsu--transient-entry
+               (:constructor majutsu--transient-entry-create))
+  "Bookkeeping for transient selections bound to log entries."
+  change-id
+  commit-id
+  overlay)
+
+(defun majutsu--transient-entry-revset (entry)
+  "Return the revset string to use for ENTRY, preferring change-id."
+  (or (majutsu--transient-entry-change-id entry)
+      (majutsu--transient-entry-commit-id entry)))
+
+(defun majutsu--transient-entry-display (entry)
+  "Return a human-readable identifier for ENTRY."
+  (or (majutsu--transient-entry-change-id entry)
+      (majutsu--transient-entry-commit-id entry)
+      "?"))
+
+(defun majutsu--transient-entry-delete-overlay (entry)
+  "Delete the overlay associated with ENTRY, if present."
+  (let ((overlay (majutsu--transient-entry-overlay entry)))
+    (when (overlayp overlay)
+      (delete-overlay overlay)
+      (setf (majutsu--transient-entry-overlay entry) nil)))
+  nil)
+
+(defun majutsu--transient-clear-overlays (entries)
+  "Delete overlays for all ENTRIES and return nil."
+  (dolist (entry entries)
+    (majutsu--transient-entry-delete-overlay entry))
+  nil)
+
+(defun majutsu--transient-make-overlay (section face label ref)
+  "Create an overlay for SECTION with FACE, LABEL, and REF identifier."
+  (let ((overlay (make-overlay (oref section start) (oref section end))))
+    (overlay-put overlay 'face face)
+    (overlay-put overlay 'before-string (concat label " "))
+    (overlay-put overlay 'evaporate t)
+    (overlay-put overlay 'majutsu-ref (or ref ""))
+    overlay))
+
+(defun majutsu--transient-entry-apply-overlay (entry section face label)
+  "Attach a fresh overlay for ENTRY using SECTION, FACE, and LABEL."
+  (majutsu--transient-entry-delete-overlay entry)
+  (when section
+    (let ((ref (majutsu--transient-entry-revset entry)))
+      (when ref
+        (let ((overlay (majutsu--transient-make-overlay section face label ref)))
+          (setf (majutsu--transient-entry-overlay entry) overlay)
+          overlay)))))
+
+(defun majutsu--transient-entry-reapply (entry face label)
+  "Reapply overlay for ENTRY after a log refresh."
+  (when-let ((section (majutsu--find-log-entry-section
+                       (majutsu--transient-entry-change-id entry)
+                       (majutsu--transient-entry-commit-id entry))))
+    (majutsu--transient-entry-apply-overlay entry section face label)))
+
+(defun majutsu--transient-selection-find (entries change-id commit-id)
+  "Find ENTRY in ENTRIES matching CHANGE-ID (preferred) or COMMIT-ID."
+  (seq-find (lambda (entry)
+              (let ((entry-change (majutsu--transient-entry-change-id entry))
+                    (entry-commit (majutsu--transient-entry-commit-id entry)))
+                (cond
+                 ((and change-id entry-change)
+                  (string= entry-change change-id))
+                 ((and (not change-id) commit-id entry-commit)
+                  (string= entry-commit commit-id)))))
+            entries))
+
+(defun majutsu--transient-selection-remove (entries entry)
+  "Return ENTRIES without ENTRY, cleaning up overlay side effects."
+  (majutsu--transient-entry-delete-overlay entry)
+  (delq entry entries))
+
+(defun majutsu--transient-refresh-if-rewritten (entry new-commit face label)
+  "Refresh log buffer when ENTRY's commit id changed to NEW-COMMIT.
+FACE and LABEL are used to reapply the overlay post-refresh.
+Return the section corresponding to the rewritten change when refresh occurs."
+  (let ((old-commit (majutsu--transient-entry-commit-id entry)))
+    (when (and entry old-commit new-commit (not (string= old-commit new-commit)))
+      (let ((change (majutsu--transient-entry-change-id entry)))
+        (majutsu--message-with-log "Change %s rewritten (%s -> %s); refreshing log"
+                                   (or change "?")
+                                   old-commit
+                                   new-commit)
+        (setf (majutsu--transient-entry-commit-id entry) new-commit)
+        (majutsu--transient-entry-delete-overlay entry)
+        (majutsu-log-refresh)
+        (let ((section (majutsu--find-log-entry-section change new-commit)))
+          (majutsu--transient-entry-apply-overlay entry section face label)
+          section)))))
+
+(defun majutsu-log--commit-only-at-point ()
+  "Return the raw commit id at point, or nil if unavailable."
   (when-let ((section (magit-current-section)))
-    (cond
-     ((and (slot-exists-p section 'commit-id)
-           (slot-boundp section 'commit-id)
-           (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section)))
-      (let* ((cid (oref section commit-id))
-             (change (majutsu--section-change-id section)))
-        (cond
-         ((and (stringp cid) (not (string-empty-p cid)))
-          (substring-no-properties cid))
-         ((and (stringp change) (not (string-empty-p change)))
-          (substring-no-properties change)))))
-     (t nil))))
+    (majutsu--section-commit-id section)))
+
+(defun majutsu-log--ids-at-point ()
+  "Return a plist (:change .. :commit .. :section ..) describing ids at point."
+  (when-let ((section (magit-current-section)))
+    (let ((change (majutsu--section-change-id section))
+          (commit (majutsu--section-commit-id section)))
+      (when (or change commit)
+        (list :change change :commit commit :section section)))))
 
 (defun majutsu-log--revset-at-point ()
   "Return the preferred revset (change id if possible) at point."
-  (or (majutsu-log--change-id-at-point)
-      (majutsu-log--commit-id-at-point)))
+  (when-let ((ids (majutsu-log--ids-at-point)))
+    (or (plist-get ids :change)
+        (plist-get ids :commit))))
 
-;; New state management
+(cl-defun majutsu--transient--toggle-selection (&key kind label face collection-var (type 'multi))
+  "Internal helper to mutate refset selections for the current log entry.
+KIND/LABEL/FACE describe the UI; COLLECTION-VAR is the symbol storing entries.
+TYPE is either `single' or `multi'."
+  (let* ((ids (majutsu-log--ids-at-point)))
+    (if (not ids)
+        (message "No changeset at point to toggle")
+      (let* ((change (plist-get ids :change))
+             (commit (plist-get ids :commit))
+             (section (plist-get ids :section))
+             (entries (symbol-value collection-var))
+             (existing (majutsu--transient-selection-find entries change commit)))
+        (when existing
+          (when-let ((new-section (majutsu--transient-refresh-if-rewritten existing commit face label)))
+            (setq section new-section)))
+        (pcase type
+          ('single
+           (if existing
+               (progn
+                 (majutsu--transient-clear-overlays entries)
+                 (set collection-var nil)
+                 (message "Cleared %s" kind))
+             (let ((entry (majutsu--transient-entry-create
+                           :change-id change :commit-id commit)))
+               (majutsu--transient-clear-overlays entries)
+               (let ((overlay-section (or section (majutsu--find-log-entry-section change commit))))
+                 (majutsu--transient-entry-apply-overlay entry overlay-section face label))
+               (set collection-var (list entry))
+               (message "Set %s: %s" kind (majutsu--transient-entry-display entry)))))
+          (_
+           (if existing
+               (progn
+                 (set collection-var (majutsu--transient-selection-remove entries existing))
+                 (message "Removed %s: %s" kind (majutsu--transient-entry-display existing)))
+             (let ((entry (majutsu--transient-entry-create
+                           :change-id change :commit-id commit)))
+               (let ((overlay-section (or section (majutsu--find-log-entry-section change commit))))
+                 (majutsu--transient-entry-apply-overlay entry overlay-section face label))
+               (set collection-var (append entries (list entry)))
+               (message "Added %s: %s" kind (majutsu--transient-entry-display entry))))))))))
+
+(cl-defun majutsu--transient-select-refset (&key kind label face collection-var)
+  "Shared helper for `<REFSET>' style single selections."
+  (majutsu--transient--toggle-selection
+   :kind kind :label label :face face
+   :collection-var collection-var :type 'single))
+
+(cl-defun majutsu--transient-toggle-refsets (&key kind label face collection-var)
+  "Shared helper for `<REFSETS>' style multi selections."
+  (majutsu--transient--toggle-selection
+   :kind kind :label label :face face
+   :collection-var collection-var :type 'multi))
+
 (defvar-local majutsu-new-parents nil
-  "List of selected parent revsets for jj new.")
+  "List of selected parent entries for jj new.")
 
 (defvar-local majutsu-new-after nil
-  "List of selected --after targets for jj new.")
+  "List of selected --after entries for jj new.")
 
 (defvar-local majutsu-new-before nil
-  "List of selected --before targets for jj new.")
-
-(defvar-local majutsu-new-parent-overlays nil
-  "Overlays highlighting jj new parent selections.")
-
-(defvar-local majutsu-new-after-overlays nil
-  "Overlays highlighting jj new --after selections.")
-
-(defvar-local majutsu-new-before-overlays nil
-  "Overlays highlighting jj new --before selections.")
+  "List of selected --before entries for jj new.")
 
 (defvar-local majutsu-new-message nil
   "Cached commit message for jj new transient.")
 
 (defvar-local majutsu-new-no-edit nil
   "Non-nil when jj new should pass --no-edit.")
-
-(defun majutsu--transient-clear-overlays (overlays)
-  "Delete all OVERLAYS and return nil."
-  (dolist (overlay overlays)
-    (when (overlayp overlay)
-      (delete-overlay overlay)))
-  nil)
-
-(defun majutsu--transient-remove-overlays-by-ref (overlays commit-id)
-  "Remove OVERLAYS tagged with COMMIT-ID and return the remaining list."
-  (let (kept)
-    (dolist (overlay overlays)
-      (if (and (overlayp overlay)
-               (string= (or (overlay-get overlay 'majutsu-ref) "") (or commit-id "")))
-          (delete-overlay overlay)
-        (push overlay kept)))
-    (nreverse kept)))
-
-(defun majutsu--transient-make-overlay (section face label commit-id)
-  "Create an overlay for SECTION with FACE, LABEL, and COMMIT-ID."
-  (let ((overlay (make-overlay (oref section start) (oref section end))))
-    (overlay-put overlay 'face face)
-    (overlay-put overlay 'before-string (concat label " "))
-    (overlay-put overlay 'evaporate t)
-    (overlay-put overlay 'majutsu-ref commit-id)
-    overlay))
-
-(cl-defun majutsu--transient--toggle-selection (&key kind label face collection-var overlays-var (type 'multi))
-  "Internal helper to mutate refset selections.
-KIND, LABEL, FACE describe the UI; COLLECTION-VAR/OVERLAYS-VAR track state.
-TYPE is either `single' or `multi'."
-  (let ((revset (majutsu-log--revset-at-point)))
-    (if (not revset)
-        (message "No changeset at point to toggle")
-      (if-let ((section (magit-current-section)))
-          (let* ((current (symbol-value collection-var))
-                 (overlays (symbol-value overlays-var)))
-            (pcase type
-              ('single
-               (if (and (= (length current) 1)
-                        (string= (car current) revset))
-                   (progn
-                     (majutsu--transient-clear-overlays overlays)
-                     (set overlays-var nil)
-                     (set collection-var nil)
-                     (message "Cleared %s" kind))
-                 (majutsu--transient-clear-overlays overlays)
-                 (let ((overlay (majutsu--transient-make-overlay section face label revset)))
-                   (set overlays-var (list overlay))
-                   (set collection-var (list revset))
-                   (message "Set %s: %s" kind revset))))
-              (_
-               (if (member revset current)
-                   (progn
-                     (set overlays-var (majutsu--transient-remove-overlays-by-ref overlays revset))
-                     (set collection-var (cl-remove revset current :test #'string=))
-                     (message "Removed %s: %s" kind revset))
-                 (let ((overlay (majutsu--transient-make-overlay section face label revset)))
-                   (set overlays-var (cons overlay overlays))
-                   (set collection-var (append current (list revset)))
-                   (message "Added %s: %s" kind revset))))))
-        (message "No changeset section at point")))))
-
-(cl-defun majutsu--transient-select-refset (&key kind label face collection-var overlays-var)
-  "Shared helper for `<REFSET>' style single selections."
-  (majutsu--transient--toggle-selection
-   :kind kind :label label :face face
-   :collection-var collection-var :overlays-var overlays-var :type 'single))
-
-(cl-defun majutsu--transient-toggle-refsets (&key kind label face collection-var overlays-var)
-  "Shared helper for `<REFSETS>' style multi selections."
-  (majutsu--transient--toggle-selection
-   :kind kind :label label :face face
-   :collection-var collection-var :overlays-var overlays-var :type 'multi))
 
 (defun majutsu-new--message-preview ()
   "Return a truncated preview of `majutsu-new-message'."
@@ -2119,11 +2188,20 @@ TYPE is either `single' or `multi'."
   "Return a list summarizing the current jj new selections."
   (let (parts)
     (when majutsu-new-parents
-      (push (format "Parents: %s" (string-join majutsu-new-parents ", ")) parts))
+      (push (format "Parents: %s"
+                    (string-join (mapcar #'majutsu--transient-entry-display majutsu-new-parents)
+                                 ", "))
+            parts))
     (when majutsu-new-after
-      (push (format "After: %s" (string-join majutsu-new-after ", ")) parts))
+      (push (format "After: %s"
+                    (string-join (mapcar #'majutsu--transient-entry-display majutsu-new-after)
+                                 ", "))
+            parts))
     (when majutsu-new-before
-      (push (format "Before: %s" (string-join majutsu-new-before ", ")) parts))
+      (push (format "Before: %s"
+                    (string-join (mapcar #'majutsu--transient-entry-display majutsu-new-before)
+                                 ", "))
+            parts))
     (when majutsu-new-message
       (push (format "Message: %s" (majutsu-new--message-preview)) parts))
     (when majutsu-new-no-edit
@@ -2148,14 +2226,14 @@ TYPE is either `single' or `multi'."
 (defun majutsu-new-clear-selections ()
   "Clear all jj new selections and overlays."
   (interactive)
+  (majutsu--transient-clear-overlays majutsu-new-parents)
+  (majutsu--transient-clear-overlays majutsu-new-after)
+  (majutsu--transient-clear-overlays majutsu-new-before)
   (setq majutsu-new-parents nil
         majutsu-new-after nil
         majutsu-new-before nil
         majutsu-new-message nil
-        majutsu-new-no-edit nil
-        majutsu-new-parent-overlays (majutsu--transient-clear-overlays majutsu-new-parent-overlays)
-        majutsu-new-after-overlays (majutsu--transient-clear-overlays majutsu-new-after-overlays)
-        majutsu-new-before-overlays (majutsu--transient-clear-overlays majutsu-new-before-overlays))
+        majutsu-new-no-edit nil)
   (when (called-interactively-p 'interactive)
     (message "Cleared all jj new selections")))
 
@@ -2167,8 +2245,7 @@ TYPE is either `single' or `multi'."
    :kind "parent"
    :label "[PARENT]"
    :face '(:background "dark orange" :foreground "black")
-   :collection-var 'majutsu-new-parents
-   :overlays-var 'majutsu-new-parent-overlays))
+   :collection-var 'majutsu-new-parents))
 
 ;;;###autoload
 (defun majutsu-new-toggle-after ()
@@ -2178,8 +2255,7 @@ TYPE is either `single' or `multi'."
    :kind "--after"
    :label "[AFTER]"
    :face '(:background "dark blue" :foreground "white")
-   :collection-var 'majutsu-new-after
-   :overlays-var 'majutsu-new-after-overlays))
+   :collection-var 'majutsu-new-after))
 
 ;;;###autoload
 (defun majutsu-new-toggle-before ()
@@ -2189,8 +2265,7 @@ TYPE is either `single' or `multi'."
    :kind "--before"
    :label "[BEFORE]"
    :face '(:background "dark magenta" :foreground "white")
-   :collection-var 'majutsu-new-before
-   :overlays-var 'majutsu-new-before-overlays))
+   :collection-var 'majutsu-new-before))
 
 ;;;###autoload
 (defun majutsu-new-edit-message ()
@@ -2212,24 +2287,35 @@ TYPE is either `single' or `multi'."
   (message "jj new --no-edit %s"
            (if majutsu-new-no-edit "enabled" "disabled")))
 
+(defun majutsu--transient-normalize-revsets (items)
+  "Convert ITEMS (entries or strings) into a list of clean revset strings."
+  (seq-filter (lambda (rev) (and rev (not (string-empty-p rev))))
+              (mapcar (lambda (item)
+                        (cond
+                         ((majutsu--transient-entry-p item)
+                          (majutsu--transient-entry-revset item))
+                         ((stringp item)
+                          (substring-no-properties item))
+                         (t nil)))
+                      items)))
+
 (cl-defun majutsu-new--build-args (&key parents after before message (no-edit majutsu-new-no-edit))
   "Build the argument list for jj new.
 PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
-  (let* ((parents (or parents majutsu-new-parents))
-         (after (or after majutsu-new-after))
-         (before (or before majutsu-new-before))
+  (let* ((parents (majutsu--transient-normalize-revsets (or parents majutsu-new-parents)))
+         (after (majutsu--transient-normalize-revsets (or after majutsu-new-after)))
+         (before (majutsu--transient-normalize-revsets (or before majutsu-new-before)))
          (message (or message majutsu-new-message))
          (args '("new")))
-    (dolist (rev (seq-filter (lambda (rev) (and rev (not (string-empty-p rev)))) after))
+    (dolist (rev after)
       (setq args (append args (list "--after" rev))))
-    (dolist (rev (seq-filter (lambda (rev) (and rev (not (string-empty-p rev)))) before))
+    (dolist (rev before)
       (setq args (append args (list "--before" rev))))
     (when (and message (not (string-empty-p message)))
       (setq args (append args (list "--message" message))))
     (when no-edit
       (setq args (append args '("--no-edit"))))
-    (let ((clean-parents (seq-filter (lambda (rev) (and rev (not (string-empty-p rev)))) parents)))
-      (setq args (append args (or clean-parents '("@")))))
+    (setq args (append args (or parents '("@"))))
     args))
 
 (defun majutsu-new--run-command (args)

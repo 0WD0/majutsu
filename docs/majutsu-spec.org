@@ -126,6 +126,7 @@ Working Copy Changes section 实现，
 - 复用 ~majutsu-log--revset-at-point~ 判断当前 changeset id（优先 ~change_id~），保持与其他 transient helper 的一致。
 - 抽取一个 ~majutsu-new--build-args~ 辅助函数，集中拼装命令参数，便于 ERT 覆盖。
 - 引入统一的 ~<REVSET>~（单选）与 ~<REVSETS>~（多选） selection helper，命令只需提供 label/face 与 state 变量即可复用，内部统一记录 ~change_id~ 以保持 rewrite 后的稳定性，必要时再回退到 ~commit_id~。
+- 选项状态同时缓存 ~commit_id~，检测到 change rewrite (~change_id~ 相同但 ~commit_id~ 不同) 时自动刷新 log buffer 并重新附着 overlay。
 
 *** TODO
 - 与 rebase transient 共享 overlay/util helper，减少重复逻辑。
