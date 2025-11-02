@@ -318,6 +318,7 @@ The function must accept one argument: the buffer to display."
                  ("l" "Log options" majutsu-log-transient)
                  ("R" "Redo last change" majutsu-redo)
                  ("N" "New changeset" majutsu-new)
+                 ("n" "New (transient)" majutsu-new-transient)
                  ("a" "Abandon changeset" majutsu-abandon)
                  ("d" "Describe changeset" majutsu-describe)
                  ("s" "Squash changeset" majutsu-squash-transient)]
@@ -340,6 +341,8 @@ The function must accept one argument: the buffer to display."
   (setq-local revert-buffer-function 'majutsu-log-refresh)
   ;; Clear rebase selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-rebase-clear-selections nil t)
+  ;; Clear new selections when buffer is killed
+  (add-hook 'kill-buffer-hook 'majutsu-new-clear-selections nil t)
   ;; Clear squash selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-squash-clear-selections nil t))
 
@@ -1766,25 +1769,24 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
 
 (defun majutsu-new (arg)
   "Create a new changeset.
-With prefix ARG, prompt for the name/ID of the base changeset from all remotes."
+Without prefix ARG, use the changeset at point (or `@` when unavailable).
+With prefix ARG, prompt for the parent revset via completion."
   (interactive "P")
-  (let* ((base (if arg
-                   (let* ((cands (majutsu--get-bookmark-names t))
-                          (table (majutsu--completion-table-with-category cands 'majutsu-bookmark))
-                          (s (completing-read "Create new changeset from (id/bookmark): "
-                                              table nil nil)))
-                     (when (not (string-empty-p s)) s))
-                 (majutsu-log--commit-id-at-point))))
-    (if (not base)
-        (user-error "Can only run new on a change")
-      (let ((result (majutsu--run-command "new" "-r" base)))
-        (when (majutsu--handle-command-result
-               (list "new" "-r" base)
-               result
-               "Created new changeset"
-               "Failed to create new changeset")
-          (majutsu-log-refresh)
-          (majutsu-goto-current))))))
+  (let* ((parent (if arg
+                     (let* ((cands (majutsu--get-bookmark-names t))
+                            (table (majutsu--completion-table-with-category cands 'majutsu-bookmark))
+                            (input (completing-read "Create new changeset from (id/bookmark): "
+                                                    table nil nil)))
+                       (unless (string-empty-p input) input))
+                   (majutsu-log--commit-id-at-point)))
+         (parents (when parent (list parent)))
+         (args (majutsu-new--build-args
+                :parents parents
+                :after '()
+                :before '()
+                :message nil
+                :no-edit nil)))
+    (majutsu-new--run-command args)))
 
 (defun majutsu-goto-current ()
   "Jump to the current changeset (@)."
@@ -1995,6 +1997,309 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          ((and (stringp change) (not (string-empty-p change)))
           (substring-no-properties change)))))
      (t nil))))
+
+;; New state management
+(defvar-local majutsu-new-parents nil
+  "List of selected parent revsets for jj new.")
+
+(defvar-local majutsu-new-after nil
+  "List of selected --after targets for jj new.")
+
+(defvar-local majutsu-new-before nil
+  "List of selected --before targets for jj new.")
+
+(defvar-local majutsu-new-parent-overlays nil
+  "Overlays highlighting jj new parent selections.")
+
+(defvar-local majutsu-new-after-overlays nil
+  "Overlays highlighting jj new --after selections.")
+
+(defvar-local majutsu-new-before-overlays nil
+  "Overlays highlighting jj new --before selections.")
+
+(defvar-local majutsu-new-message nil
+  "Cached commit message for jj new transient.")
+
+(defvar-local majutsu-new-no-edit nil
+  "Non-nil when jj new should pass --no-edit.")
+
+(defun majutsu--transient-clear-overlays (overlays)
+  "Delete all OVERLAYS and return nil."
+  (dolist (overlay overlays)
+    (when (overlayp overlay)
+      (delete-overlay overlay)))
+  nil)
+
+(defun majutsu--transient-remove-overlays-by-ref (overlays commit-id)
+  "Remove OVERLAYS tagged with COMMIT-ID and return the remaining list."
+  (let (kept)
+    (dolist (overlay overlays)
+      (if (and (overlayp overlay)
+               (string= (or (overlay-get overlay 'majutsu-ref) "") (or commit-id "")))
+          (delete-overlay overlay)
+        (push overlay kept)))
+    (nreverse kept)))
+
+(defun majutsu--transient-make-overlay (section face label commit-id)
+  "Create an overlay for SECTION with FACE, LABEL, and COMMIT-ID."
+  (let ((overlay (make-overlay (oref section start) (oref section end))))
+    (overlay-put overlay 'face face)
+    (overlay-put overlay 'before-string (concat label " "))
+    (overlay-put overlay 'evaporate t)
+    (overlay-put overlay 'majutsu-ref commit-id)
+    overlay))
+
+(cl-defun majutsu--transient--toggle-selection (&key kind label face collection-var overlays-var (type 'multi))
+  "Internal helper to mutate refset selections.
+KIND, LABEL, FACE describe the UI; COLLECTION-VAR/OVERLAYS-VAR track state.
+TYPE is either `single' or `multi'."
+  (let ((commit-id (majutsu-log--commit-id-at-point)))
+    (if (not commit-id)
+        (message "No changeset at point to toggle")
+      (if-let ((section (magit-current-section)))
+          (let* ((current (symbol-value collection-var))
+                 (overlays (symbol-value overlays-var)))
+            (pcase type
+              ('single
+               (if (and (= (length current) 1)
+                        (string= (car current) commit-id))
+                   (progn
+                     (majutsu--transient-clear-overlays overlays)
+                     (set overlays-var nil)
+                     (set collection-var nil)
+                     (message "Cleared %s" kind))
+                 (majutsu--transient-clear-overlays overlays)
+                 (let ((overlay (majutsu--transient-make-overlay section face label commit-id)))
+                   (set overlays-var (list overlay))
+                   (set collection-var (list commit-id))
+                   (message "Set %s: %s" kind commit-id))))
+              (_
+               (if (member commit-id current)
+                   (progn
+                     (set overlays-var (majutsu--transient-remove-overlays-by-ref overlays commit-id))
+                     (set collection-var (cl-remove commit-id current :test #'string=))
+                     (message "Removed %s: %s" kind commit-id))
+                 (let ((overlay (majutsu--transient-make-overlay section face label commit-id)))
+                   (set overlays-var (cons overlay overlays))
+                   (set collection-var (append current (list commit-id)))
+                   (message "Added %s: %s" kind commit-id))))))
+        (message "No changeset section at point")))))
+
+(cl-defun majutsu--transient-select-refset (&key kind label face collection-var overlays-var)
+  "Shared helper for `<REFSET>' style single selections."
+  (majutsu--transient--toggle-selection
+   :kind kind :label label :face face
+   :collection-var collection-var :overlays-var overlays-var :type 'single))
+
+(cl-defun majutsu--transient-toggle-refsets (&key kind label face collection-var overlays-var)
+  "Shared helper for `<REFSETS>' style multi selections."
+  (majutsu--transient--toggle-selection
+   :kind kind :label label :face face
+   :collection-var collection-var :overlays-var overlays-var :type 'multi))
+
+(defun majutsu-new--message-preview ()
+  "Return a truncated preview of `majutsu-new-message'."
+  (when majutsu-new-message
+    (truncate-string-to-width majutsu-new-message 30 nil nil "...")))
+
+(defun majutsu-new--selection-summary ()
+  "Return a list summarizing the current jj new selections."
+  (let (parts)
+    (when majutsu-new-parents
+      (push (format "Parents: %s" (string-join majutsu-new-parents ", ")) parts))
+    (when majutsu-new-after
+      (push (format "After: %s" (string-join majutsu-new-after ", ")) parts))
+    (when majutsu-new-before
+      (push (format "Before: %s" (string-join majutsu-new-before ", ")) parts))
+    (when majutsu-new-message
+      (push (format "Message: %s" (majutsu-new--message-preview)) parts))
+    (when majutsu-new-no-edit
+      (push "--no-edit" parts))
+    (nreverse parts)))
+
+(defun majutsu-new--description ()
+  "Compose the transient description for jj new selections."
+  (let ((parts (majutsu-new--selection-summary)))
+    (if parts
+        (concat "JJ New | " (string-join parts " | "))
+      "JJ New")))
+
+(defun majutsu-new--action-summary ()
+  "Return a short summary string for the jj new execute action."
+  (let ((parts (majutsu-new--selection-summary)))
+    (if parts
+        (string-join parts " | ")
+      "Parents: @")))
+
+;;;###autoload
+(defun majutsu-new-clear-selections ()
+  "Clear all jj new selections and overlays."
+  (interactive)
+  (setq majutsu-new-parents nil
+        majutsu-new-after nil
+        majutsu-new-before nil
+        majutsu-new-message nil
+        majutsu-new-no-edit nil
+        majutsu-new-parent-overlays (majutsu--transient-clear-overlays majutsu-new-parent-overlays)
+        majutsu-new-after-overlays (majutsu--transient-clear-overlays majutsu-new-after-overlays)
+        majutsu-new-before-overlays (majutsu--transient-clear-overlays majutsu-new-before-overlays))
+  (when (called-interactively-p 'interactive)
+    (message "Cleared all jj new selections")))
+
+;;;###autoload
+(defun majutsu-new-toggle-parent ()
+  "Toggle the commit at point as a jj new parent."
+  (interactive)
+  (majutsu--transient-toggle-refsets
+   :kind "parent"
+   :label "[PARENT]"
+   :face '(:background "dark orange" :foreground "black")
+   :collection-var 'majutsu-new-parents
+   :overlays-var 'majutsu-new-parent-overlays))
+
+;;;###autoload
+(defun majutsu-new-toggle-after ()
+  "Toggle the commit at point as a jj new --after target."
+  (interactive)
+  (majutsu--transient-toggle-refsets
+   :kind "--after"
+   :label "[AFTER]"
+   :face '(:background "dark blue" :foreground "white")
+   :collection-var 'majutsu-new-after
+   :overlays-var 'majutsu-new-after-overlays))
+
+;;;###autoload
+(defun majutsu-new-toggle-before ()
+  "Toggle the commit at point as a jj new --before target."
+  (interactive)
+  (majutsu--transient-toggle-refsets
+   :kind "--before"
+   :label "[BEFORE]"
+   :face '(:background "dark magenta" :foreground "white")
+   :collection-var 'majutsu-new-before
+   :overlays-var 'majutsu-new-before-overlays))
+
+;;;###autoload
+(defun majutsu-new-edit-message ()
+  "Prompt for a jj new commit message."
+  (interactive)
+  (let ((input (read-string "New change message (empty to clear): " majutsu-new-message)))
+    (if (string-empty-p input)
+        (setq majutsu-new-message nil)
+      (setq majutsu-new-message input))
+    (message (if majutsu-new-message
+                 "Set message for jj new"
+               "Cleared message for jj new"))))
+
+;;;###autoload
+(defun majutsu-new-toggle-no-edit ()
+  "Toggle passing --no-edit to jj new."
+  (interactive)
+  (setq majutsu-new-no-edit (not majutsu-new-no-edit))
+  (message "jj new --no-edit %s"
+           (if majutsu-new-no-edit "enabled" "disabled")))
+
+(cl-defun majutsu-new--build-args (&key parents after before message (no-edit majutsu-new-no-edit))
+  "Build the argument list for jj new.
+PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
+  (let* ((parents (or parents majutsu-new-parents))
+         (after (or after majutsu-new-after))
+         (before (or before majutsu-new-before))
+         (message (or message majutsu-new-message))
+         (args '("new")))
+    (dolist (rev (seq-filter (lambda (rev) (and rev (not (string-empty-p rev)))) after))
+      (setq args (append args (list "--after" rev))))
+    (dolist (rev (seq-filter (lambda (rev) (and rev (not (string-empty-p rev)))) before))
+      (setq args (append args (list "--before" rev))))
+    (when (and message (not (string-empty-p message)))
+      (setq args (append args (list "--message" message))))
+    (when no-edit
+      (setq args (append args '("--no-edit"))))
+    (let ((clean-parents (seq-filter (lambda (rev) (and rev (not (string-empty-p rev)))) parents)))
+      (setq args (append args (or clean-parents '("@")))))
+    args))
+
+(defun majutsu-new--run-command (args)
+  "Execute jj new with ARGS and refresh the log on success."
+  (let ((result (apply #'majutsu--run-command args)))
+    (when (majutsu--handle-command-result
+           args result
+           "Created new changeset"
+           "Failed to create new changeset")
+      (majutsu-log-refresh)
+      (majutsu-goto-current)
+      t)))
+
+;;;###autoload
+(defun majutsu-new-execute ()
+  "Execute jj new using the current transient selections."
+  (interactive)
+  (let ((args (majutsu-new--build-args)))
+    (when (majutsu-new--run-command args)
+      (majutsu-new-clear-selections))))
+
+;;;###autoload
+(defun majutsu-new-transient ()
+  "Open the jj new transient."
+  (interactive)
+  (add-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit nil t)
+  (majutsu-new-transient--internal))
+
+(defun majutsu-new-cleanup-on-exit ()
+  "Clean up jj new selections when the transient exits."
+  (majutsu-new-clear-selections)
+  (remove-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit t))
+
+(transient-define-prefix majutsu-new-transient--internal ()
+  "Internal transient for jj new operations."
+  :transient-suffix 'transient--do-exit
+  :transient-non-suffix t
+  [:description majutsu-new--description
+   :class transient-columns
+   ["Selections"
+    ("p" "Toggle parent" majutsu-new-toggle-parent
+     :description (lambda ()
+                    (format "Toggle parent (%d selected)"
+                            (length majutsu-new-parents)))
+     :transient t)
+    ("a" "Toggle --after" majutsu-new-toggle-after
+     :description (lambda ()
+                    (format "Toggle --after (%d selected)"
+                            (length majutsu-new-after)))
+     :transient t)
+    ("b" "Toggle --before" majutsu-new-toggle-before
+     :description (lambda ()
+                    (format "Toggle --before (%d selected)"
+                            (length majutsu-new-before)))
+     :transient t)
+    ("c" "Clear selections" majutsu-new-clear-selections
+     :transient t)]
+   ["Options"
+    ("m" "Set message" majutsu-new-edit-message
+     :description (lambda ()
+                    (if majutsu-new-message
+                        (format "Set message (%s)"
+                                (majutsu-new--message-preview))
+                      "Set message"))
+     :transient t)
+    ("e" "Toggle --no-edit" majutsu-new-toggle-no-edit
+     :description (lambda ()
+                    (if majutsu-new-no-edit
+                        "--no-edit (enabled)"
+                      "--no-edit (disabled)"))
+     :transient t)]
+   ["Actions"
+    ("n" "Create new change" majutsu-new-execute
+     :description (lambda ()
+                    (format "Create new change (%s)"
+                            (majutsu-new--action-summary)))
+     :transient nil)
+    ("RET" "Create new change" majutsu-new-execute
+     :description (lambda ()
+                    (format "Create new change (%s)"
+                            (majutsu-new--action-summary)))
+     :transient nil)
+    ("q" "Quit" transient-quit-one)]])
 
 ;; Rebase state management
 (defvar-local majutsu-rebase-source nil
