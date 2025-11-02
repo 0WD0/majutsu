@@ -2402,97 +2402,81 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
 
 ;; Rebase state management
 (defvar-local majutsu-rebase-source nil
-  "Currently selected source commit for rebase.")
+  "List containing at most one entry struct for the rebase source.")
 
 (defvar-local majutsu-rebase-destinations nil
-  "List of currently selected destination commits for rebase.")
-
-(defvar-local majutsu-rebase-source-overlay nil
-  "Overlay for highlighting the selected source commit.")
-
-(defvar-local majutsu-rebase-destination-overlays nil
-  "List of overlays for highlighting selected destination commits.")
+  "List of entry structs selected as rebase destinations.")
 
 ;;;###autoload
 (defun majutsu-rebase-clear-selections ()
   "Clear all rebase selections and overlays."
   (interactive)
+  (majutsu--transient-clear-overlays majutsu-rebase-source)
+  (majutsu--transient-clear-overlays majutsu-rebase-destinations)
   (setq majutsu-rebase-source nil
         majutsu-rebase-destinations nil)
-  (when majutsu-rebase-source-overlay
-    (delete-overlay majutsu-rebase-source-overlay)
-    (setq majutsu-rebase-source-overlay nil))
-  (dolist (overlay majutsu-rebase-destination-overlays)
-    (delete-overlay overlay))
-  (setq majutsu-rebase-destination-overlays nil)
   (message "Cleared all rebase selections"))
+
+(defun majutsu-rebase--source-entry ()
+  "Return the entry selected as rebase source, if any."
+  (car majutsu-rebase-source))
+
+(defun majutsu-rebase--destination-revsets ()
+  "Return the list of destination revsets."
+  (mapcar #'majutsu--transient-entry-revset majutsu-rebase-destinations))
+
+(defun majutsu-rebase--destination-display ()
+  "Return a comma-separated string for destination display."
+  (string-join (mapcar #'majutsu--transient-entry-display majutsu-rebase-destinations) ", "))
+
+(defun majutsu-rebase--source-display ()
+  "Return a display string for the current source."
+  (when-let ((entry (majutsu-rebase--source-entry)))
+    (majutsu--transient-entry-display entry)))
 
 ;;;###autoload
 (defun majutsu-rebase-set-source ()
   "Set the commit at point as rebase source."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point))
-             (section (magit-current-section)))
-    ;; Clear previous source overlay
-    (when majutsu-rebase-source-overlay
-      (delete-overlay majutsu-rebase-source-overlay))
-    ;; Set new source
-    (setq majutsu-rebase-source revset)
-    ;; Create overlay for visual indication
-    (setq majutsu-rebase-source-overlay
-          (make-overlay (oref section start) (oref section end)))
-    (overlay-put majutsu-rebase-source-overlay 'face '(:background "dark green" :foreground "white"))
-    (overlay-put majutsu-rebase-source-overlay 'before-string "[SOURCE] ")
-    (message "Set source: %s" revset)))
+  (majutsu--transient-select-refset
+   :kind "source"
+   :label "[SOURCE]"
+   :face '(:background "dark green" :foreground "white")
+   :collection-var 'majutsu-rebase-source))
 
 ;;;###autoload
 (defun majutsu-rebase-toggle-destination ()
   "Toggle the commit at point as a rebase destination."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point))
-             (section (magit-current-section)))
-    (if (member revset majutsu-rebase-destinations)
-        ;; Remove from destinations
-        (progn
-          (setq majutsu-rebase-destinations (remove revset majutsu-rebase-destinations))
-          ;; Remove overlay
-          (dolist (overlay majutsu-rebase-destination-overlays)
-            (when (and (>= (overlay-start overlay) (oref section start))
-                       (<= (overlay-end overlay) (oref section end)))
-              (delete-overlay overlay)
-              (setq majutsu-rebase-destination-overlays (remove overlay majutsu-rebase-destination-overlays))))
-          (message "Removed destination: %s" revset))
-      ;; Add to destinations
-      (push revset majutsu-rebase-destinations)
-      ;; Create overlay for visual indication
-      (let ((overlay (make-overlay (oref section start) (oref section end))))
-        (overlay-put overlay 'face '(:background "dark blue" :foreground "white"))
-        (overlay-put overlay 'before-string "[DEST] ")
-        (push overlay majutsu-rebase-destination-overlays)
-        (message "Added destination: %s" revset)))))
+  (majutsu--transient-toggle-refsets
+   :kind "destination"
+   :label "[DEST]"
+   :face '(:background "dark blue" :foreground "white")
+   :collection-var 'majutsu-rebase-destinations))
 
 ;;;###autoload
 (defun majutsu-rebase-execute ()
   "Execute rebase with selected source and destinations."
   (interactive)
-  (if (and majutsu-rebase-source majutsu-rebase-destinations)
-      (when (yes-or-no-p (format "Rebase %s -> %s? "
-                                 majutsu-rebase-source
-                                 (string-join majutsu-rebase-destinations ", ")))
-        (let* ((dest-args (apply 'append (mapcar (lambda (dest) (list "-d" dest)) majutsu-rebase-destinations)))
-               (all-args (append (list "rebase" "-s" majutsu-rebase-source) dest-args))
-               (progress-msg (format "Rebasing %s onto %s"
-                                     majutsu-rebase-source
-                                     (string-join majutsu-rebase-destinations ", ")))
-               (success-msg (format "Rebase completed: %s -> %s"
-                                    majutsu-rebase-source
-                                    (string-join majutsu-rebase-destinations ", "))))
-          (majutsu--message-with-log "%s..." progress-msg)
-          (let ((result (apply #'majutsu--run-command all-args)))
-            (if (majutsu--handle-command-result all-args result success-msg "Rebase failed")
-                (progn
-                  (majutsu-rebase-clear-selections)
-                  (majutsu-log-refresh))))))
+  (if (and (majutsu-rebase--source-entry) majutsu-rebase-destinations)
+      (let* ((source-entry (majutsu-rebase--source-entry))
+             (source-rev (majutsu--transient-entry-revset source-entry))
+             (source-display (majutsu--transient-entry-display source-entry))
+             (dest-revs (seq-filter (lambda (rev) (and rev (not (string-empty-p rev))))
+                                    (majutsu-rebase--destination-revsets)))
+             (dest-display (majutsu-rebase--destination-display)))
+        (when (and source-rev dest-revs
+                   (yes-or-no-p (format "Rebase %s -> %s? " source-display dest-display)))
+          (let* ((dest-args (apply #'append (mapcar (lambda (dest) (list "-d" dest)) dest-revs)))
+                 (all-args (append (list "rebase" "-s" source-rev) dest-args))
+                 (progress-msg (format "Rebasing %s onto %s" source-display dest-display))
+                 (success-msg (format "Rebase completed: %s -> %s" source-display dest-display)))
+            (majutsu--message-with-log "%s..." progress-msg)
+            (let ((result (apply #'majutsu--run-command all-args)))
+              (if (majutsu--handle-command-result all-args result success-msg "Rebase failed")
+                  (progn
+                    (majutsu-rebase-clear-selections)
+                    (majutsu-log-refresh)))))))
     (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
 
 ;; Transient rebase menu
@@ -2516,17 +2500,16 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
   [:description
    (lambda ()
      (concat "JJ Rebase"
-             (when majutsu-rebase-source
-               (format " | Source: %s" majutsu-rebase-source))
+             (when-let ((source (majutsu-rebase--source-display)))
+               (format " | Source: %s" source))
              (when majutsu-rebase-destinations
-               (format " | Destinations: %s"
-                       (string-join majutsu-rebase-destinations ", ")))))
+               (format " | Destinations: %s" (majutsu-rebase--destination-display)))))
    :class transient-columns
    ["Selection"
     ("s" "Set source" majutsu-rebase-set-source
      :description (lambda ()
-                    (if majutsu-rebase-source
-                        (format "Set source (current: %s)" majutsu-rebase-source)
+                    (if (majutsu-rebase--source-entry)
+                        (format "Set source (current: %s)" (majutsu-rebase--source-display))
                       "Set source"))
      :transient t)
     ("d" "Toggle destination" majutsu-rebase-toggle-destination
@@ -2539,10 +2522,10 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
    ["Actions"
     ("r" "Execute rebase" majutsu-rebase-execute
      :description (lambda ()
-                    (if (and majutsu-rebase-source majutsu-rebase-destinations)
+                    (if (and (majutsu-rebase--source-entry) majutsu-rebase-destinations)
                         (format "Rebase %s -> %s"
-                                majutsu-rebase-source
-                                (string-join majutsu-rebase-destinations ", "))
+                                (majutsu-rebase--source-display)
+                                (majutsu-rebase--destination-display))
                       "Execute rebase (select source & destinations first)"))
      :transient nil)
 
