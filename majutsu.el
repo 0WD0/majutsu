@@ -1777,23 +1777,19 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
 (defun majutsu-new (arg)
   "Create a new changeset.
 Without prefix ARG, use the changeset at point (or `@` when unavailable).
-With prefix ARG, prompt for the parent revset via completion."
+With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
-  (let* ((parent (if arg
-                     (let* ((cands (majutsu--get-bookmark-names t))
-                            (table (majutsu--completion-table-with-category cands 'majutsu-bookmark))
-                            (input (completing-read "Create new changeset from (id/bookmark): "
-                                                    table nil nil)))
-                       (unless (string-empty-p input) input))
-                   (majutsu-log--revset-at-point)))
-         (parents (when parent (list parent)))
-         (args (majutsu-new--build-args
-                :parents parents
-                :after '()
-                :before '()
-                :message nil
-                :no-edit nil)))
-    (majutsu-new--run-command args)))
+  (if arg
+      (majutsu-new-transient)
+    (let* ((parent (majutsu-log--revset-at-point))
+           (parents (when parent (list parent)))
+           (args (majutsu-new--build-args
+                  :parents parents
+                  :after '()
+                  :before '()
+                  :message nil
+                  :no-edit nil)))
+      (majutsu-new--run-command args))))
 
 (defun majutsu-goto-current ()
   "Jump to the current changeset (@)."
