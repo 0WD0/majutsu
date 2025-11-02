@@ -123,9 +123,9 @@ Working Copy Changes section 实现，
 *** 状态建模
 - 维护 ~majutsu-new-parents~、~majutsu-new-after~、~majutsu-new-before~ 三个列表，以及对应 overlay 列表。
 - 退出 transient（含执行成功）时统一清理 state。
-- 复用 ~majutsu-log--commit-id-at-point~ 判断当前 changeset id，尽量与 rebase transient 的 helper 对齐，必要时抽象通用 overlay 操作。
+- 复用 ~majutsu-log--revset-at-point~ 判断当前 changeset id（优先 ~change_id~），保持与其他 transient helper 的一致。
 - 抽取一个 ~majutsu-new--build-args~ 辅助函数，集中拼装命令参数，便于 ERT 覆盖。
-- 引入统一的 ~<REFSET>~（单选）与 ~<REFSETS>~（多选） selection helper，命令只需提供 label/face 与 state 变量即可复用。
+- 引入统一的 ~<REVSET>~（单选）与 ~<REVSETS>~（多选） selection helper，命令只需提供 label/face 与 state 变量即可复用，内部统一记录 ~change_id~ 以保持 rewrite 后的稳定性，必要时再回退到 ~commit_id~。
 
 *** TODO
 - 与 rebase transient 共享 overlay/util helper，减少重复逻辑。

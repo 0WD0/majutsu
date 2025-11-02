@@ -494,13 +494,13 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
     (majutsu--with-editor--queue-visit visit-hook)
     (condition-case err
         (majutsu-with-editor
-          (setq buffer (generate-new-buffer " *majutsu-jj*"))
-          (when-let ((editor (getenv majutsu-with-editor-envvar)))
-            (setq editor (majutsu--with-editor--normalize-editor editor))
-            (setenv majutsu-with-editor-envvar editor)
-            (setenv "EDITOR" editor))
-          (setq process (apply #'start-file-process "majutsu-jj"
-                               buffer majutsu-executable args)))
+         (setq buffer (generate-new-buffer " *majutsu-jj*"))
+         (when-let ((editor (getenv majutsu-with-editor-envvar)))
+           (setq editor (majutsu--with-editor--normalize-editor editor))
+           (setenv majutsu-with-editor-envvar editor)
+           (setenv "EDITOR" editor))
+         (setq process (apply #'start-file-process "majutsu-jj"
+                              buffer majutsu-executable args)))
       (error
        (majutsu--with-editor--cancel-visit visit-hook)
        (signal (car err) (cdr err))))
@@ -728,12 +728,20 @@ misclassifying Majutsu candidates."
     (cond
      ((and (slot-exists-p section 'change-id)
            (slot-boundp section 'change-id))
-      (oref section change-id))
+      (let ((value (oref section change-id)))
+        (cond
+         ((stringp value) (substring-no-properties value))
+         ((and value (not (stringp value))) (format "%s" value))
+         (t nil))))
      (t
       (let ((entry (oref section value)))
         (when (listp entry)
-          (or (plist-get entry :change-id)
-              (plist-get entry :id))))))))
+          (let ((value (or (plist-get entry :change-id)
+                           (plist-get entry :id))))
+            (cond
+             ((stringp value) (substring-no-properties value))
+             (value (format "%s" value))
+             (t nil)))))))))
 
 (cl-defmethod magit-section-ident-value ((section majutsu-log-entry-section))
   "Identify log entry sections by their change id."
@@ -1205,10 +1213,10 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-edit-changeset-at-point ()
   "Edit the commit at point using jj edit."
   (interactive)
-  (when-let ((commit-id (majutsu-log--commit-id-at-point)))
-    (let ((result (majutsu--run-command "edit" commit-id)))
-      (if (majutsu--handle-command-result (list "edit" commit-id) result
-                                          (format "Now editing commit %s" commit-id)
+  (when-let ((revset (majutsu-log--revset-at-point)))
+    (let ((result (majutsu--run-command "edit" revset)))
+      (if (majutsu--handle-command-result (list "edit" revset) result
+                                          (format "Now editing revset %s" revset)
                                           "Failed to edit commit")
           (progn
             (majutsu-log-refresh)
@@ -1390,10 +1398,10 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-edit-changeset ()
   "Edit commit at point."
   (interactive)
-  (when-let ((commit-id (majutsu-log--commit-id-at-point)))
-    (let ((result (majutsu--run-command "edit" commit-id)))
-      (if (majutsu--handle-command-result (list "edit" commit-id) result
-                                          (format "Now editing commit %s" commit-id)
+  (when-let ((revset (majutsu-log--revset-at-point)))
+    (let ((result (majutsu--run-command "edit" revset)))
+      (if (majutsu--handle-command-result (list "edit" revset) result
+                                          (format "Now editing commit %s" revset)
                                           "Failed to edit commit")
           (majutsu-log-refresh)))))
 
@@ -1428,37 +1436,37 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-squash-set-from ()
   "Set the commit at point as squash `from' source."
   (interactive)
-  (when-let ((commit-id (majutsu-log--commit-id-at-point))
+  (when-let ((revset (majutsu-log--revset-at-point))
              (section (magit-current-section)))
     ;; Clear previous from overlay
     (when majutsu-squash-from-overlay
       (delete-overlay majutsu-squash-from-overlay))
     ;; Set new from
-    (setq majutsu-squash-from commit-id)
+    (setq majutsu-squash-from revset)
     ;; Create overlay for visual indication
     (setq majutsu-squash-from-overlay
           (make-overlay (oref section start) (oref section end)))
     (overlay-put majutsu-squash-from-overlay 'face '(:background "dark orange" :foreground "white"))
     (overlay-put majutsu-squash-from-overlay 'before-string "[FROM] ")
-    (message "Set from: %s" commit-id)))
+    (message "Set from: %s" revset)))
 
 ;;;###autoload
 (defun majutsu-squash-set-into ()
   "Set the commit at point as squash 'into' destination."
   (interactive)
-  (when-let ((commit-id (majutsu-log--commit-id-at-point))
+  (when-let ((revset (majutsu-log--revset-at-point))
              (section (magit-current-section)))
     ;; Clear previous into overlay
     (when majutsu-squash-into-overlay
       (delete-overlay majutsu-squash-into-overlay))
     ;; Set new into
-    (setq majutsu-squash-into commit-id)
+    (setq majutsu-squash-into revset)
     ;; Create overlay for visual indication
     (setq majutsu-squash-into-overlay
           (make-overlay (oref section start) (oref section end)))
     (overlay-put majutsu-squash-into-overlay 'face '(:background "dark cyan" :foreground "white"))
     (overlay-put majutsu-squash-into-overlay 'before-string "[INTO] ")
-    (message "Set into: %s" commit-id)))
+    (message "Set into: %s" revset)))
 
 ;;;###autoload
 (defun majutsu-squash-execute (&optional args)
@@ -1552,10 +1560,10 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-bookmark-create ()
   "Create a new bookmark."
   (interactive)
-  (let* ((commit-id (or (majutsu-log--commit-id-at-point) "@"))
+  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
          (name (read-string "Bookmark name: ")))
     (unless (string-empty-p name)
-      (majutsu--run-command "bookmark" "create" name "-r" commit-id)
+      (majutsu--run-command "bookmark" "create" name "-r" revset)
       (majutsu-log-refresh))))
 
 (defun majutsu-bookmark-delete ()
@@ -1737,11 +1745,11 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   (if (and majutsu-confirm-critical-actions
            (not (yes-or-no-p "Undo the most recent change? ")))
       (message "Undo canceled")
-    (let ((commit-id (majutsu-log--commit-id-at-point)))
+    (let ((revset (majutsu-log--revset-at-point)))
       (majutsu--run-command "undo")
       (majutsu-log-refresh)
-      (when commit-id
-        (majutsu-goto-commit commit-id)))))
+      (when revset
+        (majutsu-goto-commit revset)))))
 
 (defun majutsu-redo ()
   "Redo the last undone change."
@@ -1749,21 +1757,21 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   (if (and majutsu-confirm-critical-actions
            (not (yes-or-no-p "Redo the previously undone change? ")))
       (message "Redo canceled")
-    (let ((commit-id (majutsu-log--commit-id-at-point)))
+    (let ((revset (majutsu-log--revset-at-point)))
       (majutsu--run-command "redo")
       (majutsu-log-refresh)
-      (when commit-id
-        (majutsu-goto-commit commit-id)))))
+      (when revset
+        (majutsu-goto-commit revset)))))
 
 (defun majutsu-abandon ()
   "Abandon the changeset at point."
   (interactive)
-  (if-let ((commit-id (majutsu-log--commit-id-at-point)))
+  (if-let ((revset (majutsu-log--revset-at-point)))
       (if (and majutsu-confirm-critical-actions
-               (not (yes-or-no-p (format "Abandon changeset %s? " commit-id))))
+               (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
           (message "Abandon canceled")
         (progn
-          (majutsu--run-command "abandon" "-r" commit-id)
+          (majutsu--run-command "abandon" "-r" revset)
           (majutsu-log-refresh)))
     (message "No changeset at point to abandon")))
 
@@ -1778,7 +1786,7 @@ With prefix ARG, prompt for the parent revset via completion."
                             (input (completing-read "Create new changeset from (id/bookmark): "
                                                     table nil nil)))
                        (unless (string-empty-p input) input))
-                   (majutsu-log--commit-id-at-point)))
+                   (majutsu-log--revset-at-point)))
          (parents (when parent (list parent)))
          (args (majutsu-new--build-args
                 :parents parents
@@ -1890,9 +1898,9 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-describe ()
   "Update the description for the commit at point."
   (interactive)
-  (let ((commit-id (or (majutsu-log--commit-id-at-point) "@")))
-    (majutsu--with-editor-run (list "describe" "-r" commit-id)
-                              (format "Description updated for %s" commit-id)
+  (let ((revset (or (majutsu-log--revset-at-point) "@")))
+    (majutsu--with-editor-run (list "describe" "-r" revset)
+                              (format "Description updated for %s" revset)
                               "Failed to update description")))
 
 
@@ -1998,6 +2006,11 @@ Tries `jj git remote list' first, then falls back to `git remote'."
           (substring-no-properties change)))))
      (t nil))))
 
+(defun majutsu-log--revset-at-point ()
+  "Return the preferred revset (change id if possible) at point."
+  (or (majutsu-log--change-id-at-point)
+      (majutsu-log--commit-id-at-point)))
+
 ;; New state management
 (defvar-local majutsu-new-parents nil
   "List of selected parent revsets for jj new.")
@@ -2053,8 +2066,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
   "Internal helper to mutate refset selections.
 KIND, LABEL, FACE describe the UI; COLLECTION-VAR/OVERLAYS-VAR track state.
 TYPE is either `single' or `multi'."
-  (let ((commit-id (majutsu-log--commit-id-at-point)))
-    (if (not commit-id)
+  (let ((revset (majutsu-log--revset-at-point)))
+    (if (not revset)
         (message "No changeset at point to toggle")
       (if-let ((section (magit-current-section)))
           (let* ((current (symbol-value collection-var))
@@ -2062,27 +2075,27 @@ TYPE is either `single' or `multi'."
             (pcase type
               ('single
                (if (and (= (length current) 1)
-                        (string= (car current) commit-id))
+                        (string= (car current) revset))
                    (progn
                      (majutsu--transient-clear-overlays overlays)
                      (set overlays-var nil)
                      (set collection-var nil)
                      (message "Cleared %s" kind))
                  (majutsu--transient-clear-overlays overlays)
-                 (let ((overlay (majutsu--transient-make-overlay section face label commit-id)))
+                 (let ((overlay (majutsu--transient-make-overlay section face label revset)))
                    (set overlays-var (list overlay))
-                   (set collection-var (list commit-id))
-                   (message "Set %s: %s" kind commit-id))))
+                   (set collection-var (list revset))
+                   (message "Set %s: %s" kind revset))))
               (_
-               (if (member commit-id current)
+               (if (member revset current)
                    (progn
-                     (set overlays-var (majutsu--transient-remove-overlays-by-ref overlays commit-id))
-                     (set collection-var (cl-remove commit-id current :test #'string=))
-                     (message "Removed %s: %s" kind commit-id))
-                 (let ((overlay (majutsu--transient-make-overlay section face label commit-id)))
+                     (set overlays-var (majutsu--transient-remove-overlays-by-ref overlays revset))
+                     (set collection-var (cl-remove revset current :test #'string=))
+                     (message "Removed %s: %s" kind revset))
+                 (let ((overlay (majutsu--transient-make-overlay section face label revset)))
                    (set overlays-var (cons overlay overlays))
-                   (set collection-var (append current (list commit-id)))
-                   (message "Added %s: %s" kind commit-id))))))
+                   (set collection-var (append current (list revset)))
+                   (message "Added %s: %s" kind revset))))))
         (message "No changeset section at point")))))
 
 (cl-defun majutsu--transient-select-refset (&key kind label face collection-var overlays-var)
@@ -2332,45 +2345,45 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
 (defun majutsu-rebase-set-source ()
   "Set the commit at point as rebase source."
   (interactive)
-  (when-let ((commit-id (majutsu-log--commit-id-at-point))
+  (when-let ((revset (majutsu-log--revset-at-point))
              (section (magit-current-section)))
     ;; Clear previous source overlay
     (when majutsu-rebase-source-overlay
       (delete-overlay majutsu-rebase-source-overlay))
     ;; Set new source
-    (setq majutsu-rebase-source commit-id)
+    (setq majutsu-rebase-source revset)
     ;; Create overlay for visual indication
     (setq majutsu-rebase-source-overlay
           (make-overlay (oref section start) (oref section end)))
     (overlay-put majutsu-rebase-source-overlay 'face '(:background "dark green" :foreground "white"))
     (overlay-put majutsu-rebase-source-overlay 'before-string "[SOURCE] ")
-    (message "Set source: %s" commit-id)))
+    (message "Set source: %s" revset)))
 
 ;;;###autoload
 (defun majutsu-rebase-toggle-destination ()
   "Toggle the commit at point as a rebase destination."
   (interactive)
-  (when-let ((commit-id (majutsu-log--commit-id-at-point))
+  (when-let ((revset (majutsu-log--revset-at-point))
              (section (magit-current-section)))
-    (if (member commit-id majutsu-rebase-destinations)
+    (if (member revset majutsu-rebase-destinations)
         ;; Remove from destinations
         (progn
-          (setq majutsu-rebase-destinations (remove commit-id majutsu-rebase-destinations))
+          (setq majutsu-rebase-destinations (remove revset majutsu-rebase-destinations))
           ;; Remove overlay
           (dolist (overlay majutsu-rebase-destination-overlays)
             (when (and (>= (overlay-start overlay) (oref section start))
                        (<= (overlay-end overlay) (oref section end)))
               (delete-overlay overlay)
               (setq majutsu-rebase-destination-overlays (remove overlay majutsu-rebase-destination-overlays))))
-          (message "Removed destination: %s" commit-id))
+          (message "Removed destination: %s" revset))
       ;; Add to destinations
-      (push commit-id majutsu-rebase-destinations)
+      (push revset majutsu-rebase-destinations)
       ;; Create overlay for visual indication
       (let ((overlay (make-overlay (oref section start) (oref section end))))
         (overlay-put overlay 'face '(:background "dark blue" :foreground "white"))
         (overlay-put overlay 'before-string "[DEST] ")
         (push overlay majutsu-rebase-destination-overlays)
-        (message "Added destination: %s" commit-id)))))
+        (message "Added destination: %s" revset)))))
 
 ;;;###autoload
 (defun majutsu-rebase-execute ()
