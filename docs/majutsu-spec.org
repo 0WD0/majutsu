@@ -103,7 +103,7 @@ Working Copy Changes section 实现，
 *** 快捷模式（direct new）
 继续复用 ~N~ 键；无前缀时直接在当前光标所在的 changeset 上执行 ~jj new~，选中节点成为默认的唯一父节点。
 如果当前无法识别 changeset（例如 log buffer 为空），则 fallback 到 ~@~（working copy）。
-~C-u N~ 保留手动选择父节点的行为，提供 bookmark + changeset id 的 completion。
+~C-u N~ 直接进入 transient，进行父节点/参数的精细选择。
 执行成功后刷新 log，并在可能情况下跳回新的 ~@~。
 
 *** Transient 模式（majutsu-new-transient）
