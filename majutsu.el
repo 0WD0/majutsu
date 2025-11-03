@@ -2107,8 +2107,11 @@ Return the section corresponding to the rewritten change when refresh occurs."
 (defun majutsu-log--revset-at-point ()
   "Return the preferred revset (change id if possible) at point."
   (when-let ((ids (majutsu-log--ids-at-point)))
-    (or (plist-get ids :change)
-        (plist-get ids :commit))))
+    (let ((change (plist-get ids :change))
+          (commit (plist-get ids :commit)))
+      (if (and change (string-suffix-p "?" change))
+          (or commit change)
+        (or change commit)))))
 
 (cl-defun majutsu--transient--toggle-selection (&key kind label face collection-var (type 'multi))
   "Internal helper to mutate refset selections for the current log entry.
