@@ -1180,7 +1180,7 @@ Instead of invoking this alias for `majutsu-log' using
      :transient t)]
    ["Paths"
     ("a" "Add path filter" majutsu-log-transient-add-path
-     :description #'majutsu-log--paths-desc
+     :description majutsu-log--paths-desc
      :transient t)
     ("A" "Clear path filters" majutsu-log-transient-clear-paths
      :if (lambda () (majutsu-log--state-get :filesets))
