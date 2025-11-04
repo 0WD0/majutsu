@@ -791,7 +791,7 @@ instead of stopping on visual padding."
               (pending nil))
           (dolist (line lines)
             (let* ((raw-elems (split-string line "\x1e"))
-                   (trimmed-elems (mapcar #'string-trim raw-elems))
+                   (trimmed-elems (mapcar #'string-trim-right raw-elems))
                    (clean-elems (seq-remove (lambda (l) (or (not l) (string-blank-p l)))
                                             trimmed-elems)))
               (if (> (length clean-elems) 1)
