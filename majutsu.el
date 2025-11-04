@@ -8,140 +8,12 @@
 (require 'seq)
 (require 'subr-x)
 (require 'majutsu-template)
-(eval-when-compile
-  (require 'with-editor nil 'noerror)
-  (declare-function with-editor--setup "with-editor" ()))
-(defvar with-editor-emacsclient-executable)
-(defvar with-editor-filter-visit-hook)
-(defvar with-editor--envvar)
-(defvar with-editor-envvars)
-(defvar with-editor-server-window-alist)
-
-(defcustom majutsu-with-editor-envvar "JJ_EDITOR"
-  "Environment variable used to tell jj which editor to invoke."
-  :type 'string
-  :group 'majutsu)
-
-(defconst majutsu--with-editor-description-regexp
-  (rx (seq (or string-start
-               (seq (* (not (any ?\n)))
-                    (any ?/ ?\\)))
-           "editor-" (+ (in "0-9A-Za-z"))
-           ".jjdescription" string-end))
-  "Regexp matching temporary jj description files created for editing.")
-
-(defvar majutsu--with-editor-visit-queue nil
-  "Queue of pending initializer functions for Majutsu with-editor buffers.")
-
-(defun majutsu--with-editor--queue-visit (fn)
-  "Enqueue FN so it runs when the next Majutsu editor buffer opens."
-  (push fn majutsu--with-editor-visit-queue)
-  fn)
-
-(defun majutsu--with-editor--cancel-visit (fn)
-  "Remove FN from the pending with-editor queue."
-  (setq majutsu--with-editor-visit-queue
-        (delq fn majutsu--with-editor-visit-queue)))
-
-(defun majutsu--with-editor--apply-visit ()
-  "Run the next pending Majutsu with-editor initializer if applicable."
-  (let ((next '())
-        handled)
-    (dolist (fn majutsu--with-editor-visit-queue)
-      (if (and (not handled)
-               (with-demoted-errors "Majutsu with-editor init failed: %S"
-                 (funcall fn)))
-          (setq handled t)
-        (push fn next)))
-    (setq majutsu--with-editor-visit-queue (nreverse next))
-    handled))
-
-(defun majutsu--with-editor--target-buffer-p ()
-  "Return non-nil when current buffer is a jj temporary editor file."
-  (and buffer-file-name
-       (string-match-p majutsu--with-editor-description-regexp buffer-file-name)))
-
-(defvar-local majutsu--with-editor-return-window nil
-  "Window to restore after finishing a Majutsu with-editor session.")
-
-(defvar-local majutsu--with-editor-return-buffer nil
-  "Buffer to restore after finishing a Majutsu with-editor session.")
-
-(defun majutsu--with-editor--restore-context ()
-  "Restore window focus and buffer after a Majutsu with-editor session."
-  (let ((window majutsu--with-editor-return-window)
-        (buffer majutsu--with-editor-return-buffer))
-    (cond
-     ((and (window-live-p window)
-           (buffer-live-p buffer))
-      (with-selected-window window
-        (switch-to-buffer buffer)))
-     ((buffer-live-p buffer)
-      (majutsu--display-buffer-for-editor buffer))))
-  (remove-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context t)
-  (remove-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context t))
-
-(defun majutsu--with-editor--setup-return (window buffer)
-  "Remember WINDOW and BUFFER for restoring after the editor closes."
-  (setq-local majutsu--with-editor-return-window window)
-  (setq-local majutsu--with-editor-return-buffer buffer)
-  (add-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context nil t)
-  (add-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context nil t))
-
-(defun majutsu--display-buffer-for-editor (buffer &optional window)
-  "Display BUFFER using `majutsu-log-display-function'.
-When WINDOW is a live window, run the display function in that window.
-Return the window showing BUFFER."
-  (let ((display-fn (or majutsu-log-display-function #'pop-to-buffer)))
-    (if (window-live-p window)
-        (with-selected-window window
-          (funcall display-fn buffer))
-      (funcall display-fn buffer))
-    (or (get-buffer-window buffer t)
-        (selected-window))))
-
-(defun majutsu--with-editor-ensure-setup ()
-  "Ensure with-editor integration specific to Majutsu is configured."
-  (when (majutsu--with-editor-available-p)
-    (when (boundp 'with-editor-envvars)
-      (cl-pushnew majutsu-with-editor-envvar with-editor-envvars :test #'equal))
-    (when (boundp 'with-editor-server-window-alist)
-      (unless (cl-assoc majutsu--with-editor-description-regexp
-                        with-editor-server-window-alist
-                        :test #'string=)
-        (push (cons majutsu--with-editor-description-regexp
-                    (or majutsu-message-display-function #'pop-to-buffer))
-              with-editor-server-window-alist)))
-    (when (boundp 'with-editor-filter-visit-hook)
-      (unless (memq #'majutsu--with-editor--apply-visit with-editor-filter-visit-hook)
-        (add-hook 'with-editor-filter-visit-hook #'majutsu--with-editor--apply-visit)))
-    (when (require 'server nil 'noerror)
-      (unless (memq #'majutsu--with-editor--apply-visit server-visit-hook)
-        (add-hook 'server-visit-hook #'majutsu--with-editor--apply-visit))
-      (unless (memq #'majutsu--with-editor--apply-visit server-switch-hook)
-        (add-hook 'server-switch-hook #'majutsu--with-editor--apply-visit)))))
-
-(defmacro majutsu-with-editor (&rest body)
-  "Ensure BODY runs with the correct editor environment for jj."
-  (declare (indent 0) (debug (body)))
-  `(let ((magit-with-editor-envvar majutsu-with-editor-envvar))
-     (magit-with-editor
-       ,@body)))
-
-(defun majutsu--with-editor--normalize-editor (command)
-  "Normalize editor COMMAND before exporting it to jj.
-On Windows the jj launcher expects a bare executable path, so strip the
-outer shell quoting that `with-editor' adds, matching Magit's workaround."
-  (let ((trimmed (string-trim (or command ""))))
-    (if (and (eq system-type 'windows-nt)
-             (string-match "\\`\"\\([^\"]+\\)\"\\(.*\\)\\'" trimmed))
-        (concat (match-string 1 trimmed)
-                (match-string 2 trimmed))
-      trimmed)))
 
 (defgroup majutsu nil
   "Interface to jj version control system."
   :group 'tools)
+
+;;; Customization
 
 (defcustom majutsu-executable "jj"
   "Path to jj executable."
@@ -163,110 +35,12 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
   :type 'boolean
   :group 'majutsu)
 
-(defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
-                                       majutsu-log-insert-status
-                                       majutsu-log-insert-diff)
-  "Hook run to insert sections in the log buffer."
-  :type 'hook
+(defcustom majutsu-with-editor-envvar "JJ_EDITOR"
+  "Environment variable used to tell jj which editor to invoke."
+  :type 'string
   :group 'majutsu)
 
-(defcustom majutsu-log-display-function #'pop-to-buffer
-  "Function called to display the majutsu log buffer.
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
-
-(defcustom majutsu-message-display-function #'pop-to-buffer
-  "Function called to display the majutsu with-editor message buffer
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
-
-(defconst majutsu-log--state-template
-  '(:revisions nil
-    :limit nil
-    :reversed nil
-    :no-graph nil
-    :filesets nil)
-  "Default plist template describing log view options.")
-
-(defvar majutsu-log-state (copy-sequence majutsu-log--state-template)
-  "Plist capturing the current jj log view options.")
-
-(defun majutsu-log--reset-state ()
-  "Reset log view options to defaults."
-  (setq majutsu-log-state (copy-sequence majutsu-log--state-template)))
-
-(defun majutsu-log--state-get (key)
-  "Return value for KEY in `majutsu-log-state'."
-  (plist-get majutsu-log-state key))
-
-(defun majutsu-log--state-set (key value)
-  "Set KEY in `majutsu-log-state' to VALUE."
-  (setq majutsu-log-state (plist-put majutsu-log-state key value)))
-
-(defun majutsu-log--summary-parts ()
-  "Return a list of human-readable fragments describing current log state."
-  (let ((parts '()))
-    (when-let ((rev (majutsu-log--state-get :revisions)))
-      (push (format "rev=%s" rev) parts))
-    (when-let ((limit (majutsu-log--state-get :limit)))
-      (push (format "limit=%s" limit) parts))
-    (when (majutsu-log--state-get :reversed)
-      (push "reversed" parts))
-    (when (majutsu-log--state-get :no-graph)
-      (push "no-graph" parts))
-    (let ((paths (majutsu-log--state-get :filesets)))
-      (when paths
-        (push (if (= (length paths) 1)
-                  (format "path=%s" (car paths))
-                (format "paths=%d" (length paths)))
-              parts)))
-    (nreverse parts)))
-
-(defun majutsu-log--format-summary (prefix)
-  "Return PREFIX annotated with active log state summary."
-  (let ((parts (majutsu-log--summary-parts)))
-    (if parts
-        (format "%s (%s)" prefix (string-join parts ", "))
-      prefix)))
-
-(defun majutsu-log--heading-string ()
-  "Return heading string for the log section."
-  (majutsu-log--format-summary "Log Graph"))
-
-(defun majutsu-log--transient-description ()
-  "Return description string for the log transient."
-  (majutsu-log--format-summary "JJ Log"))
-
-(defun majutsu-log--build-args ()
-  "Build argument list for `jj log' using current state."
-  (let ((args '("log")))
-    (when-let ((rev (majutsu-log--state-get :revisions)))
-      (setq args (append args (list "-r" rev))))
-    (when-let ((limit (majutsu-log--state-get :limit)))
-      (setq args (append args (list "-n" limit))))
-    (when (majutsu-log--state-get :reversed)
-      (setq args (append args '("--reversed"))))
-    (when (majutsu-log--state-get :no-graph)
-      (setq args (append args '("--no-graph"))))
-    (setq args (append args (list "-T" majutsu--log-template)))
-    (setq args (append args (majutsu-log--state-get :filesets)))
-    args))
-
-(defun majutsu-log--refresh-view ()
-  "Refresh current log buffer or open a new one."
-  (if (derived-mode-p 'majutsu-mode)
-      (majutsu-log-refresh)
-    (majutsu-log)))
+;;; majutsu-mode
 
 (defvar majutsu-mode-map
   (let ((map (make-sparse-keymap)))
@@ -281,7 +55,6 @@ The function must accept one argument: the buffer to display."
 
     ;; Basic operations
     (define-key map (kbd "g") 'majutsu-log-refresh)
-    (define-key map (kbd "c") 'majutsu-commit)
     (define-key map (kbd "e") 'majutsu-edit-changeset)
     (define-key map (kbd "u") 'majutsu-undo)
     (define-key map (kbd "l") 'majutsu-log-transient)
@@ -354,62 +127,10 @@ The function must accept one argument: the buffer to display."
   ;; Clear split selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-split-clear-selections nil t))
 
+;;; utils
+
 (defvar-local majutsu--repo-root nil
   "Cached repository root for the current buffer.")
-
-(defconst majutsu--log-template
-  (tpl-compile
-   ["\x1e"
-    [:if [:root]
-        [:separate "\x1e"
-                   [:call 'format_short_change_id [:change_id]]
-                   " "
-                   [" " [:bookmarks] [:tags] [:working_copies]]
-                   " "
-                   " "
-                   " "
-                   [:label "root" "root()"]
-                   "root"
-                   [:call 'format_short_commit_id [:commit_id]]
-                   " "
-                   [:json " "]]
-      [[:label
-        [:separate "\x1e"
-                   [:if [:current_working_copy] "working_copy"]
-                   [:if [:immutable] "immutable" "mutable"]
-                   [:if [:conflict] "conflicted"]]
-        [:separate "\x1e"
-                   [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
-                   [:call 'format_short_signature_oneline [:author]]
-                   [" " [:bookmarks] [:tags] [:working_copies]]
-                   [:if [:git_head]
-                       [:label "git_head" "git_head()"]
-                     " "]
-                   [:if [:conflict]
-                       [:label "conflict" "conflict"]
-                     " "]
-                   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
-                       [:call 'format_short_cryptographic_signature [:signature]]
-                     " "]
-                   [:if [:empty]
-                       [:label "empty" "(empty)"]
-                     " "]
-                   [:if [:description]
-                       [:method [:description] :first_line]
-                     [:label
-                      [:if [:empty] "empty"]
-                      'description_placeholder]]
-                   [:call 'format_short_commit_id [:commit_id]]
-                   [:call 'format_timestamp
-                          [:call 'commit_timestamp [:raw "self" :Commit]]]
-                   [:if [:description]
-                       [:json [:description]]
-                     [:json " "]]]]
-       "\n"]]])
-  "Template for formatting log entries.
-
-The trailing newline keeps each entry on its own line even when
-`jj log' is invoked with `--no-graph'.")
 
 (defun majutsu--root ()
   "Find root of the current repository."
@@ -430,6 +151,20 @@ The trailing newline keeps each entry on its own line even when
     (majutsu--debug "User message: %s" msg)
     (message "%s" msg)))
 
+(defun majutsu--display-buffer-for-editor (buffer &optional window)
+  "Display BUFFER using `majutsu-log-display-function'.
+When WINDOW is a live window, run the display function in that window.
+Return the window showing BUFFER."
+  (let ((display-fn (or majutsu-log-display-function #'pop-to-buffer)))
+    (if (window-live-p window)
+        (with-selected-window window
+          (funcall display-fn buffer))
+      (funcall display-fn buffer))
+    (or (get-buffer-window buffer t)
+        (selected-window))))
+
+;;; process helpers
+
 (defun majutsu--run-command (&rest args)
   "Run jj command with ARGS and return output."
   (let ((start-time (current-time))
@@ -448,77 +183,6 @@ The trailing newline keeps each entry on its own line even when
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun majutsu--with-editor-available-p ()
-  "Return non-nil when `with-editor' can be used for JJ commands."
-  (and (require 'with-editor nil 'noerror)
-       with-editor-emacsclient-executable))
-
-(defun majutsu--with-editor--visit-hook (window buffer)
-  "Return initializer enabling `with-editor-mode' and tracking WINDOW/BUFFER."
-  (let ((done nil))
-    (lambda ()
-      (when (and (not done)
-                 (majutsu--with-editor--target-buffer-p))
-        (setq done t)
-        (when (fboundp 'with-editor-mode)
-          (with-editor-mode 1))
-        (goto-char (point-min))
-        (majutsu--with-editor--setup-return window buffer)
-        t))))
-
-(defun majutsu--with-editor--sentinel (args success-msg error-msg success-callback)
-  "Return sentinel handling JJ command completion.
-ARGS, SUCCESS-MSG, ERROR-MSG mirror `majutsu--handle-command-result'.
-SUCCESS-CALLBACK, when non-nil, is invoked after a successful command."
-  (lambda (process _event)
-    (let ((status (process-status process))
-          (buffer (process-buffer process)))
-      (when (and buffer (memq status '(exit signal)))
-        (let ((output (with-current-buffer buffer
-                        (ansi-color-filter-apply (buffer-string))))
-              (exit-code (process-exit-status process)))
-          (when (buffer-live-p buffer)
-            (kill-buffer buffer))
-          (if (and (eq status 'exit) (zerop exit-code))
-              (when (majutsu--handle-command-result args output success-msg nil)
-                (majutsu-log-refresh)
-                (when success-callback
-                  (funcall success-callback)))
-            (majutsu--handle-command-result args output nil
-                                            (or error-msg "Command failed"))))))))
-
-(defun majutsu--with-editor-run (args success-msg error-msg &optional success-callback)
-  "Run JJ ARGS using with-editor.
-On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
-  (unless (majutsu--with-editor-available-p)
-    (user-error "with-editor is not available in this Emacs"))
-  (majutsu--with-editor-ensure-setup)
-  (let* ((default-directory (majutsu--root))
-         (process-environment (copy-sequence process-environment))
-         (origin-window (selected-window))
-         (origin-buffer (current-buffer))
-         (visit-hook (majutsu--with-editor--visit-hook origin-window origin-buffer))
-         process buffer)
-    (majutsu--with-editor--queue-visit visit-hook)
-    (condition-case err
-        (majutsu-with-editor
-          (setq buffer (generate-new-buffer " *majutsu-jj*"))
-          (when-let ((editor (getenv majutsu-with-editor-envvar)))
-            (setq editor (majutsu--with-editor--normalize-editor editor))
-            (setenv majutsu-with-editor-envvar editor)
-            (setenv "EDITOR" editor))
-          (setq process (apply #'start-file-process "majutsu-jj"
-                               buffer majutsu-executable args)))
-      (error
-       (majutsu--with-editor--cancel-visit visit-hook)
-       (signal (car err) (cdr err))))
-    (set-process-query-on-exit-flag process nil)
-    (set-process-sentinel process
-                          (majutsu--with-editor--sentinel args success-msg error-msg success-callback))
-    (majutsu--message-with-log "Launching jj %s (edit in current Emacs)..."
-                               (string-join args " "))
-    process))
-
 (defun majutsu--run-command-color (&rest args)
   "Run jj command with ARGS and return colorized output."
   (majutsu--debug "Running color command: %s --color=always %s" majutsu-executable (string-join args " "))
@@ -534,6 +198,16 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
                         (float-time (time-subtract (current-time) start-time))
                         exit-code)
         result))))
+
+(defun majutsu--with-progress (message command-func)
+  "Execute COMMAND-FUNC with minimal progress indication."
+  (let ((start-time (current-time))
+        result)
+    (majutsu--debug "Starting operation: %s" message)
+    (setq result (funcall command-func))
+    (majutsu--debug "Operation completed in %.3f seconds"
+                    (float-time (time-subtract (current-time) start-time)))
+    result))
 
 (defun majutsu--handle-command-result (command-args result &optional success-msg error-msg)
   "Handle command result with proper error checking and messaging."
@@ -590,128 +264,378 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
         (message "%s" success-msg))
       t))))
 
-(defun majutsu--with-progress (message command-func)
-  "Execute COMMAND-FUNC with minimal progress indication."
-  (let ((start-time (current-time))
-        result)
-    (majutsu--debug "Starting operation: %s" message)
-    (setq result (funcall command-func))
-    (majutsu--debug "Operation completed in %.3f seconds"
-                    (float-time (time-subtract (current-time) start-time)))
-    result))
+;;; with-editor integration
+ 
+(eval-when-compile
+  (require 'with-editor nil 'noerror)
+  (declare-function with-editor--setup "with-editor" ()))
+(defvar with-editor-emacsclient-executable)
+(defvar with-editor-filter-visit-hook)
+(defvar with-editor--envvar)
+(defvar with-editor-envvars)
+(defvar with-editor-server-window-alist)
 
-(defun majutsu--extract-bookmark-names (text)
-  "Extract bookmark names from jj command output TEXT."
-  (let ((names '())
-        (start 0))
-    (while (string-match "bookmark[: ]+\\([^ \n,]+\\)" text start)
-      (push (match-string 1 text) names)
-      (setq start (match-end 0)))
-    (nreverse names)))
+;;; with-editor environment setup
 
+(defun majutsu--with-editor--normalize-editor (command)
+  "Normalize editor COMMAND before exporting it to jj.
+On Windows the jj launcher expects a bare executable path, so strip the
+outer shell quoting that `with-editor' adds, matching Magit's workaround."
+  (let ((trimmed (string-trim (or command ""))))
+    (if (and (eq system-type 'windows-nt)
+             (string-match "\\`\"\\([^\"]+\\)\"\\(.*\\)\\'" trimmed))
+        (concat (match-string 1 trimmed)
+                (match-string 2 trimmed))
+      trimmed)))
 
-(defun majutsu--get-bookmark-names (&optional all-remotes)
-  "Return bookmark names using --quiet to suppress hints.
-When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
-  (let* ((template (if all-remotes
-                       "if(remote, name ++ '@' ++ remote ++ '\n', '')"
-                     "name ++ '\n'"))
-         (args (append '("bookmark" "list" "--quiet")
-                       (and all-remotes '("--all"))
-                       (list "-T" template))))
-    (delete-dups (split-string (apply #'majutsu--run-command args) "\n" t))))
+(defun majutsu--with-editor-available-p ()
+  "Return non-nil when `with-editor' can be used for JJ commands."
+  (and (require 'with-editor nil 'noerror)
+       with-editor-emacsclient-executable))
 
-(defun majutsu--completion-table-with-category (candidates category)
-  "Wrap CANDIDATES with completion METADATA to set CATEGORY.
-This prevents third-party UIs (e.g., icons for `bookmark') from
-misclassifying Majutsu candidates."
-  (let ((metadata `(metadata (category . ,category))))
+(defun majutsu--with-editor-ensure-setup ()
+  "Ensure with-editor integration specific to Majutsu is configured."
+  (when (majutsu--with-editor-available-p)
+    (when (boundp 'with-editor-envvars)
+      (cl-pushnew majutsu-with-editor-envvar with-editor-envvars :test #'equal))
+    (when (boundp 'with-editor-server-window-alist)
+      (unless (cl-assoc majutsu--with-editor-description-regexp
+                        with-editor-server-window-alist
+                        :test #'string=)
+        (push (cons majutsu--with-editor-description-regexp
+                    (or majutsu-message-display-function #'pop-to-buffer))
+              with-editor-server-window-alist)))
+    (when (boundp 'with-editor-filter-visit-hook)
+      (unless (memq #'majutsu--with-editor--apply-visit with-editor-filter-visit-hook)
+        (add-hook 'with-editor-filter-visit-hook #'majutsu--with-editor--apply-visit)))
+    (when (require 'server nil 'noerror)
+      (unless (memq #'majutsu--with-editor--apply-visit server-visit-hook)
+        (add-hook 'server-visit-hook #'majutsu--with-editor--apply-visit))
+      (unless (memq #'majutsu--with-editor--apply-visit server-switch-hook)
+        (add-hook 'server-switch-hook #'majutsu--with-editor--apply-visit)))))
+
+;;; with-editor visit lifecycle
+
+(defconst majutsu--with-editor-description-regexp
+  (rx (seq (or string-start
+               (seq (* (not (any ?\n)))
+                    (any ?/ ?\\)))
+           "editor-" (+ (in "0-9A-Za-z"))
+           ".jjdescription" string-end))
+  "Regexp matching temporary jj description files created for editing.")
+ 
+(defvar majutsu--with-editor-visit-queue nil
+  "Queue of pending initializer functions for Majutsu with-editor buffers.")
+
+(defun majutsu--with-editor--queue-visit (fn)
+  "Enqueue FN so it runs when the next Majutsu editor buffer opens."
+  (push fn majutsu--with-editor-visit-queue)
+  fn)
+
+(defun majutsu--with-editor--cancel-visit (fn)
+  "Remove FN from the pending with-editor queue."
+  (setq majutsu--with-editor-visit-queue
+        (delq fn majutsu--with-editor-visit-queue)))
+
+(defun majutsu--with-editor--apply-visit ()
+  "Run the next pending Majutsu with-editor initializer if applicable."
+  (let ((next '())
+        handled)
+    (dolist (fn majutsu--with-editor-visit-queue)
+      (if (and (not handled)
+               (with-demoted-errors "Majutsu with-editor init failed: %S"
+                 (funcall fn)))
+          (setq handled t)
+        (push fn next)))
+    (setq majutsu--with-editor-visit-queue (nreverse next))
+    handled))
+
+(defun majutsu--with-editor--target-buffer-p ()
+  "Return non-nil when current buffer is a jj temporary editor file."
+  (and buffer-file-name
+       (string-match-p majutsu--with-editor-description-regexp buffer-file-name)))
+
+(defvar-local majutsu--with-editor-return-window nil
+  "Window to restore after finishing a Majutsu with-editor session.")
+
+(defvar-local majutsu--with-editor-return-buffer nil
+  "Buffer to restore after finishing a Majutsu with-editor session.")
+
+(defun majutsu--with-editor--restore-context ()
+  "Restore window focus and buffer after a Majutsu with-editor session."
+  (let ((window majutsu--with-editor-return-window)
+        (buffer majutsu--with-editor-return-buffer))
     (cond
-     ((fboundp 'completion-table-with-metadata)
-      (completion-table-with-metadata candidates metadata))
-     ((functionp candidates)
-      (lambda (string pred action)
-        (if (eq action 'metadata)
-            metadata
-          (funcall candidates string pred action))))
-     (t
-      (lambda (string pred action)
-        (if (eq action 'metadata)
-            metadata
-          (complete-with-action action candidates string pred)))))))
+     ((and (window-live-p window)
+           (buffer-live-p buffer))
+      (with-selected-window window
+        (switch-to-buffer buffer)))
+     ((buffer-live-p buffer)
+      (majutsu--display-buffer-for-editor buffer))))
+  (remove-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context t)
+  (remove-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context t))
 
-(defun majutsu--handle-push-result (cmd-args result success-msg)
-  "Enhanced push result handler with bookmark analysis."
-  (let ((trimmed-result (string-trim result)))
-    (majutsu--debug "Push result: %s" trimmed-result)
+(defun majutsu--with-editor--visit-hook (window buffer)
+  "Return initializer enabling `with-editor-mode' and tracking WINDOW/BUFFER."
+  (let ((done nil))
+    (lambda ()
+      (when (and (not done)
+                 (majutsu--with-editor--target-buffer-p))
+        (setq done t)
+        (when (fboundp 'with-editor-mode)
+          (with-editor-mode 1))
+        (goto-char (point-min))
+        (majutsu--with-editor--setup-return window buffer)
+        t))))
 
-    ;; Always show the raw command output first (like CLI)
-    (unless (string-empty-p trimmed-result)
-      (message "%s" trimmed-result))
+(defun majutsu--with-editor--setup-return (window buffer)
+  "Remember WINDOW and BUFFER for restoring after the editor closes."
+  (setq-local majutsu--with-editor-return-window window)
+  (setq-local majutsu--with-editor-return-buffer buffer)
+  (add-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context nil t)
+  (add-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context nil t))
 
-    (cond
-     ;; Check for bookmark push restrictions
-     ((or (string-match-p "Refusing to push" trimmed-result)
-          (string-match-p "Refusing to create new remote bookmark" trimmed-result)
-          (string-match-p "would create new heads" trimmed-result))
-      ;; Extract bookmark names that couldn't be pushed
-      (let ((bookmark-names (majutsu--extract-bookmark-names trimmed-result)))
-        (if bookmark-names
-            (message "💡 Use 'jj git push --allow-new' to push new bookmarks: %s"
-                     (string-join bookmark-names ", "))
-          (message "💡 Use 'jj git push --allow-new' to push new bookmarks")))
-      nil)
+;;; with-editor process plumbing
+;;; majutsu-commit
 
-     ;; Check for authentication issues
-     ((string-match-p "Permission denied\\|authentication failed\\|403" trimmed-result)
-      (message "💡 Check your git credentials and repository permissions")
-      nil)
+(defun majutsu-commit ()
+  "Create a commit using Emacs as the editor."
+  (interactive)
+  (majutsu--with-editor-run '("commit")
+                            "Successfully committed changes"
+                            "Failed to commit"))
 
-     ;; Check for network issues
-     ((string-match-p "Could not resolve hostname\\|Connection refused\\|timeout" trimmed-result)
-      (message "💡 Check your network connection and remote URL")
-      nil)
+;;; majutsu-describe
 
-     ;; Check for non-fast-forward issues
-     ((string-match-p "non-fast-forward\\|rejected.*fetch first" trimmed-result)
-      (message "💡 Run 'jj git fetch' first to update remote tracking")
-      nil)
+(defun majutsu-describe ()
+  "Update the description for the commit at point."
+  (interactive)
+  (let ((revset (or (majutsu-log--revset-at-point) "@")))
+    (majutsu--with-editor-run (list "describe" "-r" revset)
+                              (format "Description updated for %s" revset)
+                              "Failed to update description")))
 
-     ;; Analyze majutsu-specific push patterns and provide contextual help
-     ((string-match-p "Nothing changed" trimmed-result)
-      (message "💡 Nothing to push - all bookmarks are up to date")
-      t)
+ 
+(defmacro majutsu-with-editor (&rest body)
+  "Ensure BODY runs with the correct editor environment for jj."
+  (declare (indent 0) (debug (body)))
+  `(let ((magit-with-editor-envvar majutsu-with-editor-envvar))
+     (magit-with-editor
+       ,@body)))
 
-     ;; General error check
-     ((or (string-match-p "^error:" trimmed-result)
-          (string-match-p "^fatal:" trimmed-result))
-      nil)                              ; Error already shown above
+(defun majutsu--with-editor--sentinel (args success-msg error-msg success-callback)
+  "Return sentinel handling JJ command completion.
+ARGS, SUCCESS-MSG, ERROR-MSG mirror `majutsu--handle-command-result'.
+SUCCESS-CALLBACK, when non-nil, is invoked after a successful command."
+  (lambda (process _event)
+    (let ((status (process-status process))
+          (buffer (process-buffer process)))
+      (when (and buffer (memq status '(exit signal)))
+        (let ((output (with-current-buffer buffer
+                        (ansi-color-filter-apply (buffer-string))))
+              (exit-code (process-exit-status process)))
+          (when (buffer-live-p buffer)
+            (kill-buffer buffer))
+          (if (and (eq status 'exit) (zerop exit-code))
+              (when (majutsu--handle-command-result args output success-msg nil)
+                (majutsu-log-refresh)
+                (when success-callback
+                  (funcall success-callback)))
+            (majutsu--handle-command-result args output nil
+                                            (or error-msg "Command failed"))))))))
 
-     ;; Success case
-     (t
-      (when (string-empty-p trimmed-result)
-        (message "%s" success-msg))
-      t))))
+(defun majutsu--with-editor-run (args success-msg error-msg &optional success-callback)
+  "Run JJ ARGS using with-editor.
+On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
+  (unless (majutsu--with-editor-available-p)
+    (user-error "with-editor is not available in this Emacs"))
+  (majutsu--with-editor-ensure-setup)
+  (let* ((default-directory (majutsu--root))
+         (process-environment (copy-sequence process-environment))
+         (origin-window (selected-window))
+         (origin-buffer (current-buffer))
+         (visit-hook (majutsu--with-editor--visit-hook origin-window origin-buffer))
+         process buffer)
+    (majutsu--with-editor--queue-visit visit-hook)
+    (condition-case err
+        (majutsu-with-editor
+          (setq buffer (generate-new-buffer " *majutsu-jj*"))
+          (when-let ((editor (getenv majutsu-with-editor-envvar)))
+            (setq editor (majutsu--with-editor--normalize-editor editor))
+            (setenv majutsu-with-editor-envvar editor)
+            (setenv "EDITOR" editor))
+          (setq process (apply #'start-file-process "majutsu-jj"
+                               buffer majutsu-executable args)))
+      (error
+       (majutsu--with-editor--cancel-visit visit-hook)
+       (signal (car err) (cdr err))))
+    (set-process-query-on-exit-flag process nil)
+    (set-process-sentinel process
+                          (majutsu--with-editor--sentinel args success-msg error-msg success-callback))
+    (majutsu--message-with-log "Launching jj %s (edit in current Emacs)..."
+                               (string-join args " "))
+    process))
 
-(defun majutsu--analyze-status-for-hints (status-output)
-  "Analyze jj status output and provide helpful hints."
-  (when (and status-output (not (string-empty-p status-output)))
-    (cond
-     ;; No changes
-     ((string-match-p "The working copy is clean" status-output)
-      (message "Working copy is clean - no changes to commit"))
+;;; majutsu-log
 
-     ;; Conflicts present
-     ((string-match-p "There are unresolved conflicts" status-output)
-      (message "💡 Resolve conflicts with 'jj resolve' or use diffedit (E/M)"))
+(defconst majutsu-log--state-template
+  '(:revisions nil
+    :limit nil
+    :reversed nil
+    :no-graph nil
+    :filesets nil)
+  "Default plist template describing log view options.")
 
-     ;; Untracked files
-     ((string-match-p "Untracked paths:" status-output)
-      (message "💡 Add files with 'jj file track' or create .gitignore"))
+(defvar majutsu-log-state (copy-sequence majutsu-log--state-template)
+  "Plist capturing the current jj log view options.")
 
-     ;; Working copy changes
-     ((string-match-p "Working copy changes:" status-output)
-      (message "💡 Commit changes with 'jj commit' or describe with 'jj describe'")))))
+(defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
+                                       majutsu-log-insert-status
+                                       majutsu-log-insert-diff)
+  "Hook run to insert sections in the log buffer."
+  :type 'hook
+  :group 'majutsu)
+
+(defcustom majutsu-log-display-function #'pop-to-buffer
+  "Function called to display the majutsu log buffer.
+The function must accept one argument: the buffer to display."
+  :type '(choice
+          (function-item switch-to-buffer)
+          (function-item pop-to-buffer)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
+(defcustom majutsu-message-display-function #'pop-to-buffer
+  "Function called to display the majutsu with-editor message buffer
+The function must accept one argument: the buffer to display."
+  :type '(choice
+          (function-item switch-to-buffer)
+          (function-item pop-to-buffer)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
+(defun majutsu-log--reset-state ()
+  "Reset log view options to defaults."
+  (setq majutsu-log-state (copy-sequence majutsu-log--state-template)))
+
+(defun majutsu-log--state-get (key)
+  "Return value for KEY in `majutsu-log-state'."
+  (plist-get majutsu-log-state key))
+
+(defun majutsu-log--state-set (key value)
+  "Set KEY in `majutsu-log-state' to VALUE."
+  (setq majutsu-log-state (plist-put majutsu-log-state key value)))
+
+(defun majutsu-log--summary-parts ()
+  "Return a list of human-readable fragments describing current log state."
+  (let ((parts '()))
+    (when-let ((rev (majutsu-log--state-get :revisions)))
+      (push (format "rev=%s" rev) parts))
+    (when-let ((limit (majutsu-log--state-get :limit)))
+      (push (format "limit=%s" limit) parts))
+    (when (majutsu-log--state-get :reversed)
+      (push "reversed" parts))
+    (when (majutsu-log--state-get :no-graph)
+      (push "no-graph" parts))
+    (let ((paths (majutsu-log--state-get :filesets)))
+      (when paths
+        (push (if (= (length paths) 1)
+                  (format "path=%s" (car paths))
+                (format "paths=%d" (length paths)))
+              parts)))
+    (nreverse parts)))
+
+(defun majutsu-log--format-summary (prefix)
+  "Return PREFIX annotated with active log state summary."
+  (let ((parts (majutsu-log--summary-parts)))
+    (if parts
+        (format "%s (%s)" prefix (string-join parts ", "))
+      prefix)))
+
+(defun majutsu-log--heading-string ()
+  "Return heading string for the log section."
+  (majutsu-log--format-summary "Log Graph"))
+
+(defun majutsu-log--transient-description ()
+  "Return description string for the log transient."
+  (majutsu-log--format-summary "JJ Log"))
+
+(defun majutsu-log--build-args ()
+  "Build argument list for `jj log' using current state."
+  (let ((args '("log")))
+    (when-let ((rev (majutsu-log--state-get :revisions)))
+      (setq args (append args (list "-r" rev))))
+    (when-let ((limit (majutsu-log--state-get :limit)))
+      (setq args (append args (list "-n" limit))))
+    (when (majutsu-log--state-get :reversed)
+      (setq args (append args '("--reversed"))))
+    (when (majutsu-log--state-get :no-graph)
+      (setq args (append args '("--no-graph"))))
+    (setq args (append args (list "-T" majutsu--log-template)))
+    (setq args (append args (majutsu-log--state-get :filesets)))
+    args))
+
+(defun majutsu-log--refresh-view ()
+  "Refresh current log buffer or open a new one."
+  (if (derived-mode-p 'majutsu-mode)
+      (majutsu-log-refresh)
+    (majutsu-log)))
+
+(defconst majutsu--log-template
+  (tpl-compile
+   ["\x1e"
+    [:if [:root]
+        [:separate "\x1e"
+                   [:call 'format_short_change_id [:change_id]]
+                   " "
+                   [" " [:bookmarks] [:tags] [:working_copies]]
+                   " "
+                   " "
+                   " "
+                   [:label "root" "root()"]
+                   "root"
+                   [:call 'format_short_commit_id [:commit_id]]
+                   " "
+                   [:json " "]]
+      [[:label
+        [:separate "\x1e"
+                   [:if [:current_working_copy] "working_copy"]
+                   [:if [:immutable] "immutable" "mutable"]
+                   [:if [:conflict] "conflicted"]]
+        [:separate "\x1e"
+                   [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
+                   [:call 'format_short_signature_oneline [:author]]
+                   [" " [:bookmarks] [:tags] [:working_copies]]
+                   [:if [:git_head]
+                       [:label "git_head" "git_head()"]
+                     " "]
+                   [:if [:conflict]
+                       [:label "conflict" "conflict"]
+                     " "]
+                   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
+                       [:call 'format_short_cryptographic_signature [:signature]]
+                     " "]
+                   [:if [:empty]
+                       [:label "empty" "(empty)"]
+                     " "]
+                   [:if [:description]
+                       [:method [:description] :first_line]
+                     [:label
+                      [:if [:empty] "empty"]
+                      'description_placeholder]]
+                   [:call 'format_short_commit_id [:commit_id]]
+                   [:call 'format_timestamp
+                          [:call 'commit_timestamp [:raw "self" :Commit]]]
+                   [:if [:description]
+                       [:json [:description]]
+                     [:json " "]]]]
+       "\n"]]])
+  "Template for formatting log entries.
+
+The trailing newline keeps each entry on its own line even when
+`jj log' is invoked with `--no-graph'.")
 
 (defclass majutsu-commit-section (magit-section)
   ((commit-id :initarg :commit-id)
@@ -772,8 +696,6 @@ misclassifying Majutsu candidates."
   ((file :initarg :file)
    (start :initarg :hunk-start)
    (header :initarg :header)))
-
-
 
 (defun majutsu-parse-log-entries (&optional buf)
   "Parse jj log output from BUF (defaults to `current-buffer').
@@ -882,18 +804,36 @@ instead of stopping on visual padding."
         (walk magit-root-section))
       found)))
 
-(defun majutsu--goto-log-entry (change-id &optional commit-id)
-  "Move point to the log entry section matching CHANGE-ID.
-When CHANGE-ID is nil, fall back to COMMIT-ID.
-Return non-nil when the section could be located."
-  (when-let ((section (majutsu--find-log-entry-section change-id commit-id)))
-    (magit-section-goto section)
-    (goto-char (oref section start))
-    t))
+(defun majutsu-log--commit-only-at-point ()
+  "Return the raw commit id at point, or nil if unavailable."
+  (when-let ((section (magit-current-section)))
+    (majutsu--section-commit-id section)))
+
+(defun majutsu-log--ids-at-point ()
+  "Return a plist (:change .. :commit .. :section ..) describing ids at point."
+  (when-let ((section (magit-current-section)))
+    (let ((change (majutsu--section-change-id section))
+          (commit (majutsu--section-commit-id section)))
+      (when (or change commit)
+        (list :change change :commit commit :section section)))))
+
+(defun majutsu-log--revset-at-point ()
+  "Return the preferred revset (change id if possible) at point."
+  (when-let ((ids (majutsu-log--ids-at-point)))
+    (let ((change (plist-get ids :change))
+          (commit (plist-get ids :commit)))
+      (if (and change (string-suffix-p "?" change))
+          (or commit change)
+        (or change commit)))))
 
 (defun majutsu-log--change-id-at-point ()
   "Return change id for the log entry at point, or nil otherwise."
   (majutsu--section-change-id (magit-current-section)))
+
+(defun majutsu-log--commit-id-at-point ()
+  "Get the changeset ID at point as a plain string (no text properties)."
+  (or (majutsu-log--commit-only-at-point)
+      (majutsu-log--change-id-at-point)))
 
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
@@ -905,6 +845,26 @@ Return non-nil when the section could be located."
         (insert "\n")
         ;; Analyze status and provide hints in the minibuffer
         (majutsu--analyze-status-for-hints status-output)))))
+
+(defun majutsu--analyze-status-for-hints (status-output)
+  "Analyze jj status output and provide helpful hints."
+  (when (and status-output (not (string-empty-p status-output)))
+    (cond
+     ;; No changes
+     ((string-match-p "The working copy is clean" status-output)
+      (message "Working copy is clean - no changes to commit"))
+
+     ;; Conflicts present
+     ((string-match-p "There are unresolved conflicts" status-output)
+      (message "💡 Resolve conflicts with 'jj resolve' or use diffedit (E/M)"))
+
+     ;; Untracked files
+     ((string-match-p "Untracked paths:" status-output)
+      (message "💡 Add files with 'jj file track' or create .gitignore"))
+
+     ;; Working copy changes
+     ((string-match-p "Working copy changes:" status-output)
+      (message "💡 Commit changes with 'jj commit' or describe with 'jj describe'")))))
 
 (defun majutsu-log-insert-diff ()
   "Insert jj diff with hunks into current buffer."
@@ -1032,7 +992,6 @@ This alias for `majutsu-log' exists for better discoverability.
 
 Instead of invoking this alias for `majutsu-log' using
 \"M-x majutsu RET\", you should bind a key to `majutsu-log'.")
-
 
 (defun majutsu-log-refresh (&optional _ignore-auto _noconfirm)
   "Refresh the majutsu log buffer."
@@ -1198,6 +1157,8 @@ Instead of invoking this alias for `majutsu-log' using
     ("0" "Reset options" majutsu-log-transient-reset :transient t)
     ("q" "Quit" transient-quit-one)]])
 
+;;; majutsu-edit
+
 (defun majutsu-enter-dwim ()
   "Context-sensitive Enter key behavior."
   (interactive)
@@ -1220,6 +1181,16 @@ Instead of invoking this alias for `majutsu-log' using
            (eq (oref section type) 'majutsu-file-section)
            (slot-boundp section 'file))
       (majutsu-visit-file)))))
+
+(defun majutsu-edit-changeset ()
+  "Edit commit at point."
+  (interactive)
+  (when-let ((revset (majutsu-log--revset-at-point)))
+    (let ((result (majutsu--run-command "edit" revset)))
+      (if (majutsu--handle-command-result (list "edit" revset) result
+                                          (format "Now editing commit %s" revset)
+                                          "Failed to edit commit")
+          (majutsu-log-refresh)))))
 
 (defun majutsu-edit-changeset-at-point ()
   "Edit the commit at point using jj edit."
@@ -1275,6 +1246,8 @@ Instead of invoking this alias for `majutsu-log' using
               (repo-root (majutsu--root)))
     (let ((full-file-path (expand-file-name file repo-root)))
       (find-file full-file-path))))
+
+;;; majutsu-diffedit
 
 (defun majutsu-diffedit-emacs ()
   "Emacs-based diffedit using built-in ediff."
@@ -1406,15 +1379,197 @@ Instead of invoking this alias for `majutsu-log' using
   (let ((diff-output (majutsu--run-command "diff" "--name-only")))
     (split-string diff-output "\n" t)))
 
-(defun majutsu-edit-changeset ()
-  "Edit commit at point."
+;;; majutsu-undo
+
+(defun majutsu-undo ()
+  "Undo the last change."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point)))
-    (let ((result (majutsu--run-command "edit" revset)))
-      (if (majutsu--handle-command-result (list "edit" revset) result
-                                          (format "Now editing commit %s" revset)
-                                          "Failed to edit commit")
-          (majutsu-log-refresh)))))
+  (if (and majutsu-confirm-critical-actions
+           (not (yes-or-no-p "Undo the most recent change? ")))
+      (message "Undo canceled")
+    (let ((revset (majutsu-log--revset-at-point)))
+      (majutsu--run-command "undo")
+      (majutsu-log-refresh)
+      (when revset
+        (majutsu-goto-commit revset)))))
+
+;;; majutsu-redo
+
+(defun majutsu-redo ()
+  "Redo the last undone change."
+  (interactive)
+  (if (and majutsu-confirm-critical-actions
+           (not (yes-or-no-p "Redo the previously undone change? ")))
+      (message "Redo canceled")
+    (let ((revset (majutsu-log--revset-at-point)))
+      (majutsu--run-command "redo")
+      (majutsu-log-refresh)
+      (when revset
+        (majutsu-goto-commit revset)))))
+
+;;; majutsu-abandon
+ 
+(defun majutsu-abandon ()
+  "Abandon the changeset at point."
+  (interactive)
+  (if-let ((revset (majutsu-log--revset-at-point)))
+      (if (and majutsu-confirm-critical-actions
+               (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
+          (message "Abandon canceled")
+        (progn
+          (majutsu--run-command "abandon" "-r" revset)
+          (majutsu-log-refresh)))
+    (message "No changeset at point to abandon")))
+
+;;; majutsu transient helpers
+
+(cl-defstruct (majutsu--transient-entry
+               (:constructor majutsu--transient-entry-create))
+  "Bookkeeping for transient selections bound to log entries."
+  change-id
+  commit-id
+  overlay)
+
+(defun majutsu--transient-entry-revset (entry)
+  "Return the revset string to use for ENTRY, preferring change-id."
+  (or (majutsu--transient-entry-change-id entry)
+      (majutsu--transient-entry-commit-id entry)))
+
+(defun majutsu--transient-entry-display (entry)
+  "Return a human-readable identifier for ENTRY."
+  (or (majutsu--transient-entry-change-id entry)
+      (majutsu--transient-entry-commit-id entry)
+      "?"))
+
+(defun majutsu--transient-entry-delete-overlay (entry)
+  "Delete the overlay associated with ENTRY, if present."
+  (let ((overlay (majutsu--transient-entry-overlay entry)))
+    (when (overlayp overlay)
+      (delete-overlay overlay)
+      (setf (majutsu--transient-entry-overlay entry) nil)))
+  nil)
+
+(defun majutsu--transient-clear-overlays (entries)
+  "Delete overlays for all ENTRIES and return nil."
+  (dolist (entry entries)
+    (majutsu--transient-entry-delete-overlay entry))
+  nil)
+
+(defun majutsu--transient-make-overlay (section face label ref)
+  "Create an overlay for SECTION with FACE, LABEL, and REF identifier."
+  (let ((overlay (make-overlay (oref section start) (oref section end))))
+    (overlay-put overlay 'face face)
+    (overlay-put overlay 'before-string (concat label " "))
+    (overlay-put overlay 'evaporate t)
+    (overlay-put overlay 'majutsu-ref (or ref ""))
+    overlay))
+
+(defun majutsu--transient-entry-apply-overlay (entry section face label)
+  "Attach a fresh overlay for ENTRY using SECTION, FACE, and LABEL."
+  (majutsu--transient-entry-delete-overlay entry)
+  (when section
+    (let ((ref (majutsu--transient-entry-revset entry)))
+      (when ref
+        (let ((overlay (majutsu--transient-make-overlay section face label ref)))
+          (setf (majutsu--transient-entry-overlay entry) overlay)
+          overlay)))))
+
+(defun majutsu--transient-entry-reapply (entry face label)
+  "Reapply overlay for ENTRY after a log refresh."
+  (when-let ((section (majutsu--find-log-entry-section
+                       (majutsu--transient-entry-change-id entry)
+                       (majutsu--transient-entry-commit-id entry))))
+    (majutsu--transient-entry-apply-overlay entry section face label)))
+
+(defun majutsu--transient-selection-find (entries change-id commit-id)
+  "Find ENTRY in ENTRIES matching CHANGE-ID (preferred) or COMMIT-ID."
+  (seq-find (lambda (entry)
+              (let ((entry-change (majutsu--transient-entry-change-id entry))
+                    (entry-commit (majutsu--transient-entry-commit-id entry)))
+                (cond
+                 ((and change-id entry-change)
+                  (string= entry-change change-id))
+                 ((and (not change-id) commit-id entry-commit)
+                  (string= entry-commit commit-id)))))
+            entries))
+
+(defun majutsu--transient-selection-remove (entries entry)
+  "Return ENTRIES without ENTRY, cleaning up overlay side effects."
+  (majutsu--transient-entry-delete-overlay entry)
+  (delq entry entries))
+
+(defun majutsu--transient-refresh-if-rewritten (entry new-commit face label)
+  "Refresh log buffer when ENTRY's commit id changed to NEW-COMMIT.
+FACE and LABEL are used to reapply the overlay post-refresh.
+Return the section corresponding to the rewritten change when refresh occurs."
+  (let ((old-commit (majutsu--transient-entry-commit-id entry)))
+    (when (and entry old-commit new-commit (not (string= old-commit new-commit)))
+      (let ((change (majutsu--transient-entry-change-id entry)))
+        (majutsu--message-with-log "Change %s rewritten (%s -> %s); refreshing log"
+                                   (or change "?")
+                                   old-commit
+                                   new-commit)
+        (setf (majutsu--transient-entry-commit-id entry) new-commit)
+        (majutsu--transient-entry-delete-overlay entry)
+        (majutsu-log-refresh)
+        (let ((section (majutsu--find-log-entry-section change new-commit)))
+          (majutsu--transient-entry-apply-overlay entry section face label)
+          section)))))
+
+(cl-defun majutsu--transient--toggle-selection (&key kind label face collection-var (type 'multi))
+  "Internal helper to mutate refset selections for the current log entry.
+KIND/LABEL/FACE describe the UI; COLLECTION-VAR is the symbol storing entries.
+TYPE is either `single' or `multi'."
+  (let* ((ids (majutsu-log--ids-at-point)))
+    (if (not ids)
+        (message "No changeset at point to toggle")
+      (let* ((change (plist-get ids :change))
+             (commit (plist-get ids :commit))
+             (section (plist-get ids :section))
+             (entries (symbol-value collection-var))
+             (existing (majutsu--transient-selection-find entries change commit)))
+        (when existing
+          (when-let ((new-section (majutsu--transient-refresh-if-rewritten existing commit face label)))
+            (setq section new-section)))
+        (pcase type
+          ('single
+           (if existing
+               (progn
+                 (majutsu--transient-clear-overlays entries)
+                 (set collection-var nil)
+                 (message "Cleared %s" kind))
+             (let ((entry (majutsu--transient-entry-create
+                           :change-id change :commit-id commit)))
+               (majutsu--transient-clear-overlays entries)
+               (let ((overlay-section (or section (majutsu--find-log-entry-section change commit))))
+                 (majutsu--transient-entry-apply-overlay entry overlay-section face label))
+               (set collection-var (list entry))
+               (message "Set %s: %s" kind (majutsu--transient-entry-display entry)))))
+          (_
+           (if existing
+               (progn
+                 (set collection-var (majutsu--transient-selection-remove entries existing))
+                 (message "Removed %s: %s" kind (majutsu--transient-entry-display existing)))
+             (let ((entry (majutsu--transient-entry-create
+                           :change-id change :commit-id commit)))
+               (let ((overlay-section (or section (majutsu--find-log-entry-section change commit))))
+                 (majutsu--transient-entry-apply-overlay entry overlay-section face label))
+               (set collection-var (append entries (list entry)))
+               (message "Added %s: %s" kind (majutsu--transient-entry-display entry))))))))))
+
+(cl-defun majutsu--transient-select-refset (&key kind label face collection-var)
+  "Shared helper for `<REFSET>' style single selections."
+  (majutsu--transient--toggle-selection
+   :kind kind :label label :face face
+   :collection-var collection-var :type 'single))
+
+(cl-defun majutsu--transient-toggle-refsets (&key kind label face collection-var)
+  "Shared helper for `<REFSETS>' style multi selections."
+  (majutsu--transient--toggle-selection
+   :kind kind :label label :face face
+   :collection-var collection-var :type 'multi))
+
+;;; majutsu-squash
 
 ;; Squash state management
 (defvar-local majutsu-squash-from nil
@@ -1563,224 +1718,8 @@ Instead of invoking this alias for `majutsu-log' using
   (interactive)
   (transient-quit-one))
 
-(defun majutsu-bookmark-create ()
-  "Create a new bookmark."
-  (interactive)
-  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
-         (name (read-string "Bookmark name: ")))
-    (unless (string-empty-p name)
-      (majutsu--run-command "bookmark" "create" name "-r" revset)
-      (majutsu-log-refresh))))
-
-(defun majutsu-bookmark-delete ()
-  "Delete a bookmark and propagate on next push."
-  (interactive)
-  (let* ((names (majutsu--get-bookmark-names))
-         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
-         (choice (and names (completing-read "Delete bookmark (propagates on push): " table nil t))))
-    (if (not choice)
-        (message "No bookmarks found")
-      (majutsu--run-command "bookmark" "delete" choice)
-      (majutsu-log-refresh)
-      (message "Deleted bookmark '%s'" choice))))
-
-(defun majutsu-bookmark-forget ()
-  "Forget a bookmark (local only, no deletion propagation)."
-  (interactive)
-  (let* ((names (majutsu--get-bookmark-names))
-         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
-         (choice (and names (completing-read "Forget bookmark: " table nil t))))
-    (if (not choice)
-        (message "No bookmarks found")
-      (majutsu--run-command "bookmark" "forget" choice)
-      (majutsu-log-refresh)
-      (message "Forgot bookmark '%s'" choice))))
-
-(defun majutsu-bookmark-track ()
-  "Track remote bookmark(s)."
-  (interactive)
-  (let* ((remote-bookmarks (majutsu--get-bookmark-names t))
-         (table (majutsu--completion-table-with-category remote-bookmarks 'majutsu-bookmark))
-         (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
-    (if (not choice)
-        (message "No remote bookmarks found")
-      (majutsu--run-command "bookmark" "track" choice)
-      (majutsu-log-refresh)
-      (message "Tracking bookmark '%s'" choice))))
-
-;;;###autoload
-(defun majutsu-bookmark-list (&optional all)
-  "List bookmarks in a temporary buffer.
-With prefix ALL, include remote bookmarks."
-  (interactive "P")
-  (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all"))))
-         (output (apply #'majutsu--run-command-color args))
-         (buf (get-buffer-create "*Majutsu Bookmarks*")))
-    (with-current-buffer buf
-      (setq buffer-read-only nil)
-      (erase-buffer)
-      (insert output)
-      (goto-char (point-min))
-      (view-mode 1))
-    (funcall majutsu-log-display-function buf)))
-
-;;;###autoload
-(defun majutsu--bookmark-read-move-args ()
-  "Return interactive arguments for bookmark move commands."
-  (let* ((existing (majutsu--get-bookmark-names))
-         (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
-         (crm-separator (or (bound-and-true-p crm-separator) ", *"))
-         (names (completing-read-multiple "Move bookmark(s): " table nil t))
-         (at (or (majutsu-log--revset-at-point) "@"))
-         (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
-    (ignore crm-separator)
-    (list rev names)))
-
-(defun majutsu--bookmark-move (commit names &optional allow-backwards)
-  "Internal helper to move bookmark(s) NAMES to COMMIT.
-When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
-  (when names
-    (let ((args (append '("bookmark" "move")
-                        (and allow-backwards '("--allow-backwards"))
-                        (list "-t" commit)
-                        names)))
-      (apply #'majutsu--run-command args)
-      (majutsu-log-refresh)
-      (message (if allow-backwards
-                   "Moved bookmark(s) (allow backwards) to %s: %s"
-                 "Moved bookmark(s) to %s: %s")
-               commit (string-join names ", ")))))
-
-;;;###autoload
-(defun majutsu-bookmark-move (commit names &optional allow-backwards)
-  "Move existing bookmark(s) NAMES to COMMIT.
-With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
-  (interactive (majutsu--bookmark-read-move-args))
-  (majutsu--bookmark-move commit names allow-backwards))
-
-;;;###autoload
-(defun majutsu-bookmark-move-allow-backwards (commit names)
-  "Move bookmark(s) NAMES to COMMIT allowing backwards moves."
-  (interactive (majutsu--bookmark-read-move-args))
-  (majutsu--bookmark-move commit names t))
-
-;;;###autoload
-(defun majutsu-bookmark-rename (old new)
-  "Rename bookmark OLD to NEW."
-  (interactive
-   (let* ((existing (majutsu--get-bookmark-names))
-          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
-          (old (completing-read "Rename bookmark: " table nil t))
-          (new (read-string (format "New name for %s: " old))))
-     (list old new)))
-  (when (and (not (string-empty-p old)) (not (string-empty-p new)))
-    (majutsu--run-command "bookmark" "rename" old new)
-    (majutsu-log-refresh)
-    (message "Renamed bookmark '%s' -> '%s'" old new)))
-
-;;;###autoload
-(defun majutsu-bookmark-set (name commit)
-  "Create or update bookmark NAME to point to COMMIT."
-  (interactive
-   (let* ((existing (majutsu--get-bookmark-names))
-          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
-          (name (completing-read "Set bookmark: " table nil nil))
-          (at (or (majutsu-log--revset-at-point) "@"))
-          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
-     (list name rev)))
-  (majutsu--run-command "bookmark" "set" name "-r" commit)
-  (majutsu-log-refresh)
-  (message "Set bookmark '%s' to %s" name commit))
-
-;;;###autoload
-(defun majutsu-bookmark-untrack (names)
-  "Stop tracking remote bookmark(s) NAMES (e.g., name@remote)."
-  (interactive
-   (let* ((remote-names (majutsu--get-bookmark-names t))
-          (table (majutsu--completion-table-with-category remote-names 'majutsu-bookmark))
-          (crm-separator (or (bound-and-true-p crm-separator) ", *"))
-          (names (completing-read-multiple "Untrack remote bookmark(s): " table nil t)))
-     (list names)))
-  (when names
-    (apply #'majutsu--run-command (append '("bookmark" "untrack") names))
-    (majutsu-log-refresh)
-    (message "Untracked: %s" (string-join names ", "))))
-
-
-;; Bookmark transient menu
-;;;###autoload
-(defun majutsu-bookmark-transient ()
-  "Transient for jj bookmark operations."
-  (interactive)
-  (majutsu-bookmark-transient--internal))
-
-(transient-define-prefix majutsu-bookmark-transient--internal ()
-  "Internal transient for jj bookmark operations."
-  :transient-suffix 'transient--do-exit
-  :transient-non-suffix t
-  ["Bookmark Operations"
-   [
-    ("l" "List bookmarks" majutsu-bookmark-list
-     :description "Show bookmark list" :transient nil)
-    ("c" "Create bookmark" majutsu-bookmark-create
-     :description "Create new bookmark" :transient nil)]
-   [
-    ("s" "Set bookmark" majutsu-bookmark-set
-     :description "Create/update to commit" :transient nil)
-    ("m" "Move bookmark(s)" majutsu-bookmark-move
-     :description "Move existing to commit" :transient nil)
-    ("M" "Move bookmark(s) --allow-backwards" majutsu-bookmark-move-allow-backwards
-     :description "Move allowing backwards" :transient nil)
-    ("r" "Rename bookmark" majutsu-bookmark-rename
-     :description "Rename existing bookmark" :transient nil)]
-   [
-    ("t" "Track remote" majutsu-bookmark-track
-     :description "Track remote bookmark" :transient nil)
-    ("u" "Untrack remote" majutsu-bookmark-untrack
-     :description "Stop tracking remote" :transient nil)]
-   [
-    ("d" "Delete bookmark" majutsu-bookmark-delete
-     :description "Delete (propagate)" :transient nil)
-    ("f" "Forget bookmark" majutsu-bookmark-forget
-     :description "Forget (local)" :transient nil)]
-   [("q" "Quit" transient-quit-one)]] )
-
-(defun majutsu-undo ()
-  "Undo the last change."
-  (interactive)
-  (if (and majutsu-confirm-critical-actions
-           (not (yes-or-no-p "Undo the most recent change? ")))
-      (message "Undo canceled")
-    (let ((revset (majutsu-log--revset-at-point)))
-      (majutsu--run-command "undo")
-      (majutsu-log-refresh)
-      (when revset
-        (majutsu-goto-commit revset)))))
-
-(defun majutsu-redo ()
-  "Redo the last undone change."
-  (interactive)
-  (if (and majutsu-confirm-critical-actions
-           (not (yes-or-no-p "Redo the previously undone change? ")))
-      (message "Redo canceled")
-    (let ((revset (majutsu-log--revset-at-point)))
-      (majutsu--run-command "redo")
-      (majutsu-log-refresh)
-      (when revset
-        (majutsu-goto-commit revset)))))
-
-(defun majutsu-abandon ()
-  "Abandon the changeset at point."
-  (interactive)
-  (if-let ((revset (majutsu-log--revset-at-point)))
-      (if (and majutsu-confirm-critical-actions
-               (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
-          (message "Abandon canceled")
-        (progn
-          (majutsu--run-command "abandon" "-r" revset)
-          (majutsu-log-refresh)))
-    (message "No changeset at point to abandon")))
-
+;;; majutsu-new
+ 
 (defun majutsu-new (arg)
   "Create a new changeset.
 Without prefix ARG, use the changeset at point (or `@` when unavailable).
@@ -1798,374 +1737,6 @@ With prefix ARG, open the new transient for interactive selection."
                   :no-edit nil)))
       (majutsu-new--run-command args))))
 
-(defun majutsu-goto-current ()
-  "Jump to the current changeset (@)."
-  (interactive)
-  (goto-char (point-min))
-  (if (re-search-forward "^.*@.*$" nil t)
-      (goto-char (line-beginning-position))
-    (message "Current changeset (@) not found")))
-
-(defun majutsu-goto-commit (commit-id)
-  "Jump to a specific COMMIT-ID in the log."
-  (interactive "sCommit ID: ")
-  (let ((start-pos (point)))
-    (goto-char (point-min))
-    (if (re-search-forward (regexp-quote commit-id) nil t)
-        (goto-char (line-beginning-position))
-      (goto-char start-pos)
-      (message "Commit %s not found" commit-id))))
-
-(defun majutsu-git-push (args)
-  "Push to git remote with ARGS."
-  (interactive (list (transient-args 'majutsu-git-push-transient)))
-  (let* ((allow-new? (member "--allow-new" args))
-         (all? (member "--all" args))
-         (tracked? (member "--tracked" args))
-         (deleted? (member "--deleted" args))
-         (allow-empty? (member "--allow-empty-description" args))
-         (allow-private? (member "--allow-private" args))
-         (dry-run? (member "--dry-run" args))
-
-         (remote-arg (seq-find (lambda (arg) (string-prefix-p "--remote=" arg)) args))
-         (remote (when remote-arg (substring remote-arg (length "--remote="))))
-
-         ;; Collect potential multi-value options supplied via --opt=value
-         (bookmark-args (seq-filter (lambda (arg) (string-prefix-p "--bookmark=" arg)) args))
-         (revision-args (seq-filter (lambda (arg) (string-prefix-p "--revisions=" arg)) args))
-         (change-args   (seq-filter (lambda (arg) (string-prefix-p "--change=" arg)) args))
-         (named-args    (seq-filter (lambda (arg) (string-prefix-p "--named=" arg)) args))
-
-         (cmd-args (append '("git" "push")
-                           (when remote (list "--remote" remote))
-                           (when allow-new? '("--allow-new"))
-                           (when all? '("--all"))
-                           (when tracked? '("--tracked"))
-                           (when deleted? '("--deleted"))
-                           (when allow-empty? '("--allow-empty-description"))
-                           (when allow-private? '("--allow-private"))
-                           (when dry-run? '("--dry-run"))
-
-                           ;; Expand = style into separate args as jj accepts space-separated
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--bookmark" (substring s (length "--bookmark="))))
-                                                   bookmark-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--revisions" (substring s (length "--revisions="))))
-                                                   revision-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--change" (substring s (length "--change="))))
-                                                   change-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--named" (substring s (length "--named="))))
-                                                   named-args))))
-
-         (success-msg (cond
-                       ((and bookmark-args (= (length bookmark-args) 1))
-                        (format "Successfully pushed bookmark %s"
-                                (substring (car bookmark-args) (length "--bookmark="))))
-                       (bookmark-args "Successfully pushed selected bookmarks")
-                       (t "Successfully pushed to remote"))))
-    (let ((result (apply #'majutsu--run-command cmd-args)))
-      (when (majutsu--handle-push-result cmd-args result success-msg)
-        (majutsu-log-refresh)))))
-
-(defun majutsu--get-git-remotes ()
-  "Return a list of Git remote names for the current repository.
-Tries `jj git remote list' first, then falls back to `git remote'."
-  (let* ((out (condition-case _
-                  (majutsu--run-command "git" "remote" "list")
-                (error "")))
-         (names (if (and out (not (string-empty-p out)))
-                    (let* ((lines (split-string out "\n" t))
-                           (names (mapcar (lambda (l)
-                                            (car (split-string l "[ :\t]" t)))
-                                          lines)))
-                      (delete-dups (copy-sequence names)))
-                  ;; Fallback to plain `git remote`
-                  (with-temp-buffer
-                    (let* ((default-directory (majutsu--root))
-                           (exit (process-file "git" nil t nil "remote")))
-                      (when (eq exit 0)
-                        (split-string (buffer-string) "\n" t)))))))
-    names))
-
-(defun majutsu-commit ()
-  "Create a commit using Emacs as the editor."
-  (interactive)
-  (majutsu--with-editor-run '("commit")
-                            "Successfully committed changes"
-                            "Failed to commit"))
-
-(defun majutsu-describe ()
-  "Update the description for the commit at point."
-  (interactive)
-  (let ((revset (or (majutsu-log--revset-at-point) "@")))
-    (majutsu--with-editor-run (list "describe" "-r" revset)
-                              (format "Description updated for %s" revset)
-                              "Failed to update description")))
-
-
-(defun majutsu-git-fetch (args)
-  "Fetch from git remote with ARGS from transient."
-  (interactive (list (transient-args 'majutsu-git-fetch-transient)))
-  (majutsu--message-with-log "Fetching from remote...")
-  (let* ((tracked? (member "--tracked" args))
-         (all-remotes? (member "--all-remotes" args))
-
-         (branch-args (seq-filter (lambda (arg) (string-prefix-p "--branch=" arg)) args))
-         (remote-args (seq-filter (lambda (arg) (string-prefix-p "--remote=" arg)) args))
-
-         (cmd-args (append '("git" "fetch")
-                           (when tracked? '("--tracked"))
-                           (when all-remotes? '("--all-remotes"))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--branch" (substring s (length "--branch="))))
-                                                   branch-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--remote" (substring s (length "--remote="))))
-                                                   remote-args))))
-         (result (apply #'majutsu--run-command cmd-args)))
-    (if (majutsu--handle-command-result cmd-args result
-                                        "Fetched from remote" "Fetch failed")
-        (majutsu-log-refresh))))
-
-(defun majutsu-diff (&optional revision)
-  "Show diff for REVISION or commit at point, defaulting to `@'."
-  (interactive
-   (list (or (majutsu-log--commit-id-at-point) "@")))
-  (let* ((rev (or revision (majutsu-log--commit-id-at-point) "@"))
-         (buffer (get-buffer-create "*majutsu-diff*"))
-         (prev-buffer (current-buffer))
-         (repo-root (majutsu--root)))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t)
-            (default-directory repo-root))
-        (erase-buffer)
-        (insert (majutsu--run-command-color "show" "-r" rev))
-        (diff-mode)
-        (ansi-color-apply-on-region (point-min) (point-max))
-        (goto-char (point-min))
-        ;; Make buffer read-only
-        (setq buffer-read-only t)
-        ;; Set up local keymap
-        (use-local-map (copy-keymap diff-mode-map))
-        (local-set-key (kbd "q")
-                       (lambda ()
-                         (interactive)
-                         (kill-buffer)
-                         (when (buffer-live-p prev-buffer)
-                           (switch-to-buffer prev-buffer))))))
-    (switch-to-buffer buffer)))
-
-;;;###autoload
-(defun majutsu-goto-next-changeset ()
-  "Navigate to the next changeset in the log."
-  (interactive)
-  (let ((pos (point))
-        found)
-    (while (and (not found)
-                (< (point) (point-max)))
-      (magit-section-forward)
-      (when-let ((section (magit-current-section)))
-        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
-                   (> (point) pos))
-          (setq found t))))
-    (unless found
-      (goto-char pos)
-      (message "No more changesets"))))
-
-;;;###autoload
-(defun majutsu-goto-prev-changeset ()
-  "Navigate to the previous changeset in the log."
-  (interactive)
-  (let ((pos (point))
-        found)
-    (while (and (not found)
-                (> (point) (point-min)))
-      (magit-section-backward)
-      (when-let ((section (magit-current-section)))
-        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
-                   (< (point) pos))
-          (setq found t))))
-    (unless found
-      (goto-char pos)
-      (message "No more changesets"))))
-
-(defun majutsu-log--commit-id-at-point ()
-  "Get the changeset ID at point as a plain string (no text properties)."
-  (or (majutsu-log--commit-only-at-point)
-      (majutsu-log--change-id-at-point)))
-
-;; New state management
-(cl-defstruct (majutsu--transient-entry
-               (:constructor majutsu--transient-entry-create))
-  "Bookkeeping for transient selections bound to log entries."
-  change-id
-  commit-id
-  overlay)
-
-(defun majutsu--transient-entry-revset (entry)
-  "Return the revset string to use for ENTRY, preferring change-id."
-  (or (majutsu--transient-entry-change-id entry)
-      (majutsu--transient-entry-commit-id entry)))
-
-(defun majutsu--transient-entry-display (entry)
-  "Return a human-readable identifier for ENTRY."
-  (or (majutsu--transient-entry-change-id entry)
-      (majutsu--transient-entry-commit-id entry)
-      "?"))
-
-(defun majutsu--transient-entry-delete-overlay (entry)
-  "Delete the overlay associated with ENTRY, if present."
-  (let ((overlay (majutsu--transient-entry-overlay entry)))
-    (when (overlayp overlay)
-      (delete-overlay overlay)
-      (setf (majutsu--transient-entry-overlay entry) nil)))
-  nil)
-
-(defun majutsu--transient-clear-overlays (entries)
-  "Delete overlays for all ENTRIES and return nil."
-  (dolist (entry entries)
-    (majutsu--transient-entry-delete-overlay entry))
-  nil)
-
-(defun majutsu--transient-make-overlay (section face label ref)
-  "Create an overlay for SECTION with FACE, LABEL, and REF identifier."
-  (let ((overlay (make-overlay (oref section start) (oref section end))))
-    (overlay-put overlay 'face face)
-    (overlay-put overlay 'before-string (concat label " "))
-    (overlay-put overlay 'evaporate t)
-    (overlay-put overlay 'majutsu-ref (or ref ""))
-    overlay))
-
-(defun majutsu--transient-entry-apply-overlay (entry section face label)
-  "Attach a fresh overlay for ENTRY using SECTION, FACE, and LABEL."
-  (majutsu--transient-entry-delete-overlay entry)
-  (when section
-    (let ((ref (majutsu--transient-entry-revset entry)))
-      (when ref
-        (let ((overlay (majutsu--transient-make-overlay section face label ref)))
-          (setf (majutsu--transient-entry-overlay entry) overlay)
-          overlay)))))
-
-(defun majutsu--transient-entry-reapply (entry face label)
-  "Reapply overlay for ENTRY after a log refresh."
-  (when-let ((section (majutsu--find-log-entry-section
-                       (majutsu--transient-entry-change-id entry)
-                       (majutsu--transient-entry-commit-id entry))))
-    (majutsu--transient-entry-apply-overlay entry section face label)))
-
-(defun majutsu--transient-selection-find (entries change-id commit-id)
-  "Find ENTRY in ENTRIES matching CHANGE-ID (preferred) or COMMIT-ID."
-  (seq-find (lambda (entry)
-              (let ((entry-change (majutsu--transient-entry-change-id entry))
-                    (entry-commit (majutsu--transient-entry-commit-id entry)))
-                (cond
-                 ((and change-id entry-change)
-                  (string= entry-change change-id))
-                 ((and (not change-id) commit-id entry-commit)
-                  (string= entry-commit commit-id)))))
-            entries))
-
-(defun majutsu--transient-selection-remove (entries entry)
-  "Return ENTRIES without ENTRY, cleaning up overlay side effects."
-  (majutsu--transient-entry-delete-overlay entry)
-  (delq entry entries))
-
-(defun majutsu--transient-refresh-if-rewritten (entry new-commit face label)
-  "Refresh log buffer when ENTRY's commit id changed to NEW-COMMIT.
-FACE and LABEL are used to reapply the overlay post-refresh.
-Return the section corresponding to the rewritten change when refresh occurs."
-  (let ((old-commit (majutsu--transient-entry-commit-id entry)))
-    (when (and entry old-commit new-commit (not (string= old-commit new-commit)))
-      (let ((change (majutsu--transient-entry-change-id entry)))
-        (majutsu--message-with-log "Change %s rewritten (%s -> %s); refreshing log"
-                                   (or change "?")
-                                   old-commit
-                                   new-commit)
-        (setf (majutsu--transient-entry-commit-id entry) new-commit)
-        (majutsu--transient-entry-delete-overlay entry)
-        (majutsu-log-refresh)
-        (let ((section (majutsu--find-log-entry-section change new-commit)))
-          (majutsu--transient-entry-apply-overlay entry section face label)
-          section)))))
-
-(defun majutsu-log--commit-only-at-point ()
-  "Return the raw commit id at point, or nil if unavailable."
-  (when-let ((section (magit-current-section)))
-    (majutsu--section-commit-id section)))
-
-(defun majutsu-log--ids-at-point ()
-  "Return a plist (:change .. :commit .. :section ..) describing ids at point."
-  (when-let ((section (magit-current-section)))
-    (let ((change (majutsu--section-change-id section))
-          (commit (majutsu--section-commit-id section)))
-      (when (or change commit)
-        (list :change change :commit commit :section section)))))
-
-(defun majutsu-log--revset-at-point ()
-  "Return the preferred revset (change id if possible) at point."
-  (when-let ((ids (majutsu-log--ids-at-point)))
-    (let ((change (plist-get ids :change))
-          (commit (plist-get ids :commit)))
-      (if (and change (string-suffix-p "?" change))
-          (or commit change)
-        (or change commit)))))
-
-(cl-defun majutsu--transient--toggle-selection (&key kind label face collection-var (type 'multi))
-  "Internal helper to mutate refset selections for the current log entry.
-KIND/LABEL/FACE describe the UI; COLLECTION-VAR is the symbol storing entries.
-TYPE is either `single' or `multi'."
-  (let* ((ids (majutsu-log--ids-at-point)))
-    (if (not ids)
-        (message "No changeset at point to toggle")
-      (let* ((change (plist-get ids :change))
-             (commit (plist-get ids :commit))
-             (section (plist-get ids :section))
-             (entries (symbol-value collection-var))
-             (existing (majutsu--transient-selection-find entries change commit)))
-        (when existing
-          (when-let ((new-section (majutsu--transient-refresh-if-rewritten existing commit face label)))
-            (setq section new-section)))
-        (pcase type
-          ('single
-           (if existing
-               (progn
-                 (majutsu--transient-clear-overlays entries)
-                 (set collection-var nil)
-                 (message "Cleared %s" kind))
-             (let ((entry (majutsu--transient-entry-create
-                           :change-id change :commit-id commit)))
-               (majutsu--transient-clear-overlays entries)
-               (let ((overlay-section (or section (majutsu--find-log-entry-section change commit))))
-                 (majutsu--transient-entry-apply-overlay entry overlay-section face label))
-               (set collection-var (list entry))
-               (message "Set %s: %s" kind (majutsu--transient-entry-display entry)))))
-          (_
-           (if existing
-               (progn
-                 (set collection-var (majutsu--transient-selection-remove entries existing))
-                 (message "Removed %s: %s" kind (majutsu--transient-entry-display existing)))
-             (let ((entry (majutsu--transient-entry-create
-                           :change-id change :commit-id commit)))
-               (let ((overlay-section (or section (majutsu--find-log-entry-section change commit))))
-                 (majutsu--transient-entry-apply-overlay entry overlay-section face label))
-               (set collection-var (append entries (list entry)))
-               (message "Added %s: %s" kind (majutsu--transient-entry-display entry))))))))))
-
-(cl-defun majutsu--transient-select-refset (&key kind label face collection-var)
-  "Shared helper for `<REFSET>' style single selections."
-  (majutsu--transient--toggle-selection
-   :kind kind :label label :face face
-   :collection-var collection-var :type 'single))
-
-(cl-defun majutsu--transient-toggle-refsets (&key kind label face collection-var)
-  "Shared helper for `<REFSETS>' style multi selections."
-  (majutsu--transient--toggle-selection
-   :kind kind :label label :face face
-   :collection-var collection-var :type 'multi))
-
 (defvar-local majutsu-new-parents nil
   "List of selected parent entries for jj new.")
 
@@ -2180,20 +1751,6 @@ TYPE is either `single' or `multi'."
 
 (defvar-local majutsu-new-no-edit nil
   "Non-nil when jj new should pass --no-edit.")
-
-;;; Duplicate transient state
-
-(defvar-local majutsu-duplicate-sources nil
-  "Entry structs representing revisions to duplicate.")
-
-(defvar-local majutsu-duplicate-destinations nil
-  "Entry structs representing `--destination' parents.")
-
-(defvar-local majutsu-duplicate-after nil
-  "Entry structs representing `--after' parents.")
-
-(defvar-local majutsu-duplicate-before nil
-  "Entry structs representing `--before' parents.")
 
 (defun majutsu-new--message-preview ()
   "Return a truncated preview of `majutsu-new-message'."
@@ -2416,7 +1973,112 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
      :transient nil)
     ("q" "Quit" transient-quit-one)]])
 
-;;;; Duplicate helpers
+;;; majutsu-diff
+
+(defun majutsu-diff (&optional revision)
+  "Show diff for REVISION or commit at point, defaulting to `@'."
+  (interactive
+   (list (or (majutsu-log--commit-id-at-point) "@")))
+  (let* ((rev (or revision (majutsu-log--commit-id-at-point) "@"))
+         (buffer (get-buffer-create "*majutsu-diff*"))
+         (prev-buffer (current-buffer))
+         (repo-root (majutsu--root)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t)
+            (default-directory repo-root))
+        (erase-buffer)
+        (insert (majutsu--run-command-color "show" "-r" rev))
+        (diff-mode)
+        (ansi-color-apply-on-region (point-min) (point-max))
+        (goto-char (point-min))
+        ;; Make buffer read-only
+        (setq buffer-read-only t)
+        ;; Set up local keymap
+        (use-local-map (copy-keymap diff-mode-map))
+        (local-set-key (kbd "q")
+                       (lambda ()
+                         (interactive)
+                         (kill-buffer)
+                         (when (buffer-live-p prev-buffer)
+                           (switch-to-buffer prev-buffer))))))
+    (switch-to-buffer buffer)))
+
+;; majutsu-navigation
+
+(defun majutsu-goto-current ()
+  "Jump to the current changeset (@)."
+  (interactive)
+  (goto-char (point-min))
+  (if (re-search-forward "^.*@.*$" nil t)
+      (goto-char (line-beginning-position))
+    (message "Current changeset (@) not found")))
+
+(defun majutsu-goto-commit (commit-id)
+  "Jump to a specific COMMIT-ID in the log."
+  (interactive "sCommit ID: ")
+  (let ((start-pos (point)))
+    (goto-char (point-min))
+    (if (re-search-forward (regexp-quote commit-id) nil t)
+        (goto-char (line-beginning-position))
+      (goto-char start-pos)
+      (message "Commit %s not found" commit-id))))
+
+(defun majutsu--goto-log-entry (change-id &optional commit-id)
+  "Move point to the log entry section matching CHANGE-ID.
+When CHANGE-ID is nil, fall back to COMMIT-ID.
+Return non-nil when the section could be located."
+  (when-let ((section (majutsu--find-log-entry-section change-id commit-id)))
+    (magit-section-goto section)
+    (goto-char (oref section start))
+    t))
+
+;;;###autoload
+(defun majutsu-goto-next-changeset ()
+  "Navigate to the next changeset in the log."
+  (interactive)
+  (let ((pos (point))
+        found)
+    (while (and (not found)
+                (< (point) (point-max)))
+      (magit-section-forward)
+      (when-let ((section (magit-current-section)))
+        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
+                   (> (point) pos))
+          (setq found t))))
+    (unless found
+      (goto-char pos)
+      (message "No more changesets"))))
+
+;;;###autoload
+(defun majutsu-goto-prev-changeset ()
+  "Navigate to the previous changeset in the log."
+  (interactive)
+  (let ((pos (point))
+        found)
+    (while (and (not found)
+                (> (point) (point-min)))
+      (magit-section-backward)
+      (when-let ((section (magit-current-section)))
+        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
+                   (< (point) pos))
+          (setq found t))))
+    (unless found
+      (goto-char pos)
+      (message "No more changesets"))))
+
+;;; majutsu-duplicate
+
+(defvar-local majutsu-duplicate-sources nil
+  "Entry structs representing revisions to duplicate.")
+
+(defvar-local majutsu-duplicate-destinations nil
+  "Entry structs representing `--destination' parents.")
+
+(defvar-local majutsu-duplicate-after nil
+  "Entry structs representing `--after' parents.")
+
+(defvar-local majutsu-duplicate-before nil
+  "Entry structs representing `--before' parents.")
 
 (defun majutsu-duplicate-clear-selections ()
   "Clear duplicate selections and overlays."
@@ -2598,6 +2260,8 @@ With prefix ARG, open the duplicate transient."
                   :sources (list (or rev "@")))))
       (majutsu-duplicate--run-command args))))
 
+;;; majutsu-rebase
+
 ;; Rebase state management
 (defvar-local majutsu-rebase-source nil
   "List containing at most one entry struct for the rebase source.")
@@ -2729,6 +2393,229 @@ With prefix ARG, open the duplicate transient."
 
     ("q" "Quit" transient-quit-one)]])
 
+;;; majutsu-bookmark
+ 
+;;;###autoload
+(defun majutsu-bookmark-transient ()
+  "Transient for jj bookmark operations."
+  (interactive)
+  (majutsu-bookmark-transient--internal))
+
+(transient-define-prefix majutsu-bookmark-transient--internal ()
+  "Internal transient for jj bookmark operations."
+  :transient-suffix 'transient--do-exit
+  :transient-non-suffix t
+  ["Bookmark Operations"
+   [
+    ("l" "List bookmarks" majutsu-bookmark-list
+     :description "Show bookmark list" :transient nil)
+    ("c" "Create bookmark" majutsu-bookmark-create
+     :description "Create new bookmark" :transient nil)]
+   [
+    ("s" "Set bookmark" majutsu-bookmark-set
+     :description "Create/update to commit" :transient nil)
+    ("m" "Move bookmark(s)" majutsu-bookmark-move
+     :description "Move existing to commit" :transient nil)
+    ("M" "Move bookmark(s) --allow-backwards" majutsu-bookmark-move-allow-backwards
+     :description "Move allowing backwards" :transient nil)
+    ("r" "Rename bookmark" majutsu-bookmark-rename
+     :description "Rename existing bookmark" :transient nil)]
+   [
+    ("t" "Track remote" majutsu-bookmark-track
+     :description "Track remote bookmark" :transient nil)
+    ("u" "Untrack remote" majutsu-bookmark-untrack
+     :description "Stop tracking remote" :transient nil)]
+   [
+    ("d" "Delete bookmark" majutsu-bookmark-delete
+     :description "Delete (propagate)" :transient nil)
+    ("f" "Forget bookmark" majutsu-bookmark-forget
+     :description "Forget (local)" :transient nil)]
+   [("q" "Quit" transient-quit-one)]] )
+
+(defun majutsu--extract-bookmark-names (text)
+  "Extract bookmark names from jj command output TEXT."
+  (let ((names '())
+        (start 0))
+    (while (string-match "bookmark[: ]+\\([^ \n,]+\\)" text start)
+      (push (match-string 1 text) names)
+      (setq start (match-end 0)))
+    (nreverse names)))
+
+(defun majutsu--get-bookmark-names (&optional all-remotes)
+  "Return bookmark names using --quiet to suppress hints.
+When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
+  (let* ((template (if all-remotes
+                       "if(remote, name ++ '@' ++ remote ++ '\n', '')"
+                     "name ++ '\n'"))
+         (args (append '("bookmark" "list" "--quiet")
+                       (and all-remotes '("--all"))
+                       (list "-T" template))))
+    (delete-dups (split-string (apply #'majutsu--run-command args) "\n" t))))
+
+(defun majutsu-bookmark-create ()
+  "Create a new bookmark."
+  (interactive)
+  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
+         (name (read-string "Bookmark name: ")))
+    (unless (string-empty-p name)
+      (majutsu--run-command "bookmark" "create" name "-r" revset)
+      (majutsu-log-refresh))))
+
+(defun majutsu-bookmark-delete ()
+  "Delete a bookmark and propagate on next push."
+  (interactive)
+  (let* ((names (majutsu--get-bookmark-names))
+         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
+         (choice (and names (completing-read "Delete bookmark (propagates on push): " table nil t))))
+    (if (not choice)
+        (message "No bookmarks found")
+      (majutsu--run-command "bookmark" "delete" choice)
+      (majutsu-log-refresh)
+      (message "Deleted bookmark '%s'" choice))))
+
+(defun majutsu-bookmark-forget ()
+  "Forget a bookmark (local only, no deletion propagation)."
+  (interactive)
+  (let* ((names (majutsu--get-bookmark-names))
+         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
+         (choice (and names (completing-read "Forget bookmark: " table nil t))))
+    (if (not choice)
+        (message "No bookmarks found")
+      (majutsu--run-command "bookmark" "forget" choice)
+      (majutsu-log-refresh)
+      (message "Forgot bookmark '%s'" choice))))
+
+(defun majutsu-bookmark-track ()
+  "Track remote bookmark(s)."
+  (interactive)
+  (let* ((remote-bookmarks (majutsu--get-bookmark-names t))
+         (table (majutsu--completion-table-with-category remote-bookmarks 'majutsu-bookmark))
+         (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
+    (if (not choice)
+        (message "No remote bookmarks found")
+      (majutsu--run-command "bookmark" "track" choice)
+      (majutsu-log-refresh)
+      (message "Tracking bookmark '%s'" choice))))
+
+;;;###autoload
+(defun majutsu-bookmark-list (&optional all)
+  "List bookmarks in a temporary buffer.
+With prefix ALL, include remote bookmarks."
+  (interactive "P")
+  (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all"))))
+         (output (apply #'majutsu--run-command-color args))
+         (buf (get-buffer-create "*Majutsu Bookmarks*")))
+    (with-current-buffer buf
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      (insert output)
+      (goto-char (point-min))
+      (view-mode 1))
+    (funcall majutsu-log-display-function buf)))
+
+;;;###autoload
+(defun majutsu--bookmark-read-move-args ()
+  "Return interactive arguments for bookmark move commands."
+  (let* ((existing (majutsu--get-bookmark-names))
+         (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+         (crm-separator (or (bound-and-true-p crm-separator) ", *"))
+         (names (completing-read-multiple "Move bookmark(s): " table nil t))
+         (at (or (majutsu-log--revset-at-point) "@"))
+         (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
+    (ignore crm-separator)
+    (list rev names)))
+
+(defun majutsu--bookmark-move (commit names &optional allow-backwards)
+  "Internal helper to move bookmark(s) NAMES to COMMIT.
+When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
+  (when names
+    (let ((args (append '("bookmark" "move")
+                        (and allow-backwards '("--allow-backwards"))
+                        (list "-t" commit)
+                        names)))
+      (apply #'majutsu--run-command args)
+      (majutsu-log-refresh)
+      (message (if allow-backwards
+                   "Moved bookmark(s) (allow backwards) to %s: %s"
+                 "Moved bookmark(s) to %s: %s")
+               commit (string-join names ", ")))))
+
+;;;###autoload
+(defun majutsu-bookmark-move (commit names &optional allow-backwards)
+  "Move existing bookmark(s) NAMES to COMMIT.
+With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
+  (interactive (majutsu--bookmark-read-move-args))
+  (majutsu--bookmark-move commit names allow-backwards))
+
+;;;###autoload
+(defun majutsu-bookmark-move-allow-backwards (commit names)
+  "Move bookmark(s) NAMES to COMMIT allowing backwards moves."
+  (interactive (majutsu--bookmark-read-move-args))
+  (majutsu--bookmark-move commit names t))
+
+;;;###autoload
+(defun majutsu-bookmark-rename (old new)
+  "Rename bookmark OLD to NEW."
+  (interactive
+   (let* ((existing (majutsu--get-bookmark-names))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+          (old (completing-read "Rename bookmark: " table nil t))
+          (new (read-string (format "New name for %s: " old))))
+     (list old new)))
+  (when (and (not (string-empty-p old)) (not (string-empty-p new)))
+    (majutsu--run-command "bookmark" "rename" old new)
+    (majutsu-log-refresh)
+    (message "Renamed bookmark '%s' -> '%s'" old new)))
+
+;;;###autoload
+(defun majutsu-bookmark-set (name commit)
+  "Create or update bookmark NAME to point to COMMIT."
+  (interactive
+   (let* ((existing (majutsu--get-bookmark-names))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+          (name (completing-read "Set bookmark: " table nil nil))
+          (at (or (majutsu-log--revset-at-point) "@"))
+          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
+     (list name rev)))
+  (majutsu--run-command "bookmark" "set" name "-r" commit)
+  (majutsu-log-refresh)
+  (message "Set bookmark '%s' to %s" name commit))
+
+;;;###autoload
+(defun majutsu-bookmark-untrack (names)
+  "Stop tracking remote bookmark(s) NAMES (e.g., name@remote)."
+  (interactive
+   (let* ((remote-names (majutsu--get-bookmark-names t))
+          (table (majutsu--completion-table-with-category remote-names 'majutsu-bookmark))
+          (crm-separator (or (bound-and-true-p crm-separator) ", *"))
+          (names (completing-read-multiple "Untrack remote bookmark(s): " table nil t)))
+     (list names)))
+  (when names
+    (apply #'majutsu--run-command (append '("bookmark" "untrack") names))
+    (majutsu-log-refresh)
+    (message "Untracked: %s" (string-join names ", "))))
+
+(defun majutsu--completion-table-with-category (candidates category)
+  "Wrap CANDIDATES with completion METADATA to set CATEGORY.
+This prevents third-party UIs (e.g., icons for `bookmark') from
+misclassifying Majutsu candidates."
+  (let ((metadata `(metadata (category . ,category))))
+    (cond
+     ((fboundp 'completion-table-with-metadata)
+      (completion-table-with-metadata candidates metadata))
+     ((functionp candidates)
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            metadata
+          (funcall candidates string pred action))))
+     (t
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            metadata
+          (complete-with-action action candidates string pred)))))))
+
+;;; majutsu-git
+
 (transient-define-prefix majutsu-git-transient ()
   "Top-level transient for jj git operations."
   :transient-suffix 'transient--do-exit
@@ -2768,6 +2655,113 @@ With prefix ARG, open the duplicate transient."
           [("p" "Push" majutsu-git-push :transient nil)
            ("q" "Quit" transient-quit-one)]])
 
+(defun majutsu-git-push (args)
+  "Push to git remote with ARGS."
+  (interactive (list (transient-args 'majutsu-git-push-transient)))
+  (let* ((allow-new? (member "--allow-new" args))
+         (all? (member "--all" args))
+         (tracked? (member "--tracked" args))
+         (deleted? (member "--deleted" args))
+         (allow-empty? (member "--allow-empty-description" args))
+         (allow-private? (member "--allow-private" args))
+         (dry-run? (member "--dry-run" args))
+
+         (remote-arg (seq-find (lambda (arg) (string-prefix-p "--remote=" arg)) args))
+         (remote (when remote-arg (substring remote-arg (length "--remote="))))
+
+         ;; Collect potential multi-value options supplied via --opt=value
+         (bookmark-args (seq-filter (lambda (arg) (string-prefix-p "--bookmark=" arg)) args))
+         (revision-args (seq-filter (lambda (arg) (string-prefix-p "--revisions=" arg)) args))
+         (change-args   (seq-filter (lambda (arg) (string-prefix-p "--change=" arg)) args))
+         (named-args    (seq-filter (lambda (arg) (string-prefix-p "--named=" arg)) args))
+
+         (cmd-args (append '("git" "push")
+                           (when remote (list "--remote" remote))
+                           (when allow-new? '("--allow-new"))
+                           (when all? '("--all"))
+                           (when tracked? '("--tracked"))
+                           (when deleted? '("--deleted"))
+                           (when allow-empty? '("--allow-empty-description"))
+                           (when allow-private? '("--allow-private"))
+                           (when dry-run? '("--dry-run"))
+
+                           ;; Expand = style into separate args as jj accepts space-separated
+                           (apply #'append (mapcar (lambda (s)
+                                                     (list "--bookmark" (substring s (length "--bookmark="))))
+                                                   bookmark-args))
+                           (apply #'append (mapcar (lambda (s)
+                                                     (list "--revisions" (substring s (length "--revisions="))))
+                                                   revision-args))
+                           (apply #'append (mapcar (lambda (s)
+                                                     (list "--change" (substring s (length "--change="))))
+                                                   change-args))
+                           (apply #'append (mapcar (lambda (s)
+                                                     (list "--named" (substring s (length "--named="))))
+                                                   named-args))))
+
+         (success-msg (cond
+                       ((and bookmark-args (= (length bookmark-args) 1))
+                        (format "Successfully pushed bookmark %s"
+                                (substring (car bookmark-args) (length "--bookmark="))))
+                       (bookmark-args "Successfully pushed selected bookmarks")
+                       (t "Successfully pushed to remote"))))
+    (let ((result (apply #'majutsu--run-command cmd-args)))
+      (when (majutsu--handle-push-result cmd-args result success-msg)
+        (majutsu-log-refresh)))))
+
+(defun majutsu--handle-push-result (cmd-args result success-msg)
+  "Enhanced push result handler with bookmark analysis."
+  (let ((trimmed-result (string-trim result)))
+    (majutsu--debug "Push result: %s" trimmed-result)
+
+    ;; Always show the raw command output first (like CLI)
+    (unless (string-empty-p trimmed-result)
+      (message "%s" trimmed-result))
+
+    (cond
+     ;; Check for bookmark push restrictions
+     ((or (string-match-p "Refusing to push" trimmed-result)
+          (string-match-p "Refusing to create new remote bookmark" trimmed-result)
+          (string-match-p "would create new heads" trimmed-result))
+      ;; Extract bookmark names that couldn't be pushed
+      (let ((bookmark-names (majutsu--extract-bookmark-names trimmed-result)))
+        (if bookmark-names
+            (message "💡 Use 'jj git push --allow-new' to push new bookmarks: %s"
+                     (string-join bookmark-names ", "))
+          (message "💡 Use 'jj git push --allow-new' to push new bookmarks")))
+      nil)
+
+     ;; Check for authentication issues
+     ((string-match-p "Permission denied\\|authentication failed\\|403" trimmed-result)
+      (message "💡 Check your git credentials and repository permissions")
+      nil)
+
+     ;; Check for network issues
+     ((string-match-p "Could not resolve hostname\\|Connection refused\\|timeout" trimmed-result)
+      (message "💡 Check your network connection and remote URL")
+      nil)
+
+     ;; Check for non-fast-forward issues
+     ((string-match-p "non-fast-forward\\|rejected.*fetch first" trimmed-result)
+      (message "💡 Run 'jj git fetch' first to update remote tracking")
+      nil)
+
+     ;; Analyze majutsu-specific push patterns and provide contextual help
+     ((string-match-p "Nothing changed" trimmed-result)
+      (message "💡 Nothing to push - all bookmarks are up to date")
+      t)
+
+     ;; General error check
+     ((or (string-match-p "^error:" trimmed-result)
+          (string-match-p "^fatal:" trimmed-result))
+      nil)                              ; Error already shown above
+
+     ;; Success case
+     (t
+      (when (string-empty-p trimmed-result)
+        (message "%s" success-msg))
+      t))))
+
 ;; Fetch transient and command
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
@@ -2780,7 +2774,65 @@ With prefix ARG, open the duplicate transient."
           [("f" "Fetch" majutsu-git-fetch :transient nil)
            ("q" "Quit" transient-quit-one)]])
 
+(defun majutsu-git-fetch (args)
+  "Fetch from git remote with ARGS from transient."
+  (interactive (list (transient-args 'majutsu-git-fetch-transient)))
+  (majutsu--message-with-log "Fetching from remote...")
+  (let* ((tracked? (member "--tracked" args))
+         (all-remotes? (member "--all-remotes" args))
+
+         (branch-args (seq-filter (lambda (arg) (string-prefix-p "--branch=" arg)) args))
+         (remote-args (seq-filter (lambda (arg) (string-prefix-p "--remote=" arg)) args))
+
+         (cmd-args (append '("git" "fetch")
+                           (when tracked? '("--tracked"))
+                           (when all-remotes? '("--all-remotes"))
+                           (apply #'append (mapcar (lambda (s)
+                                                     (list "--branch" (substring s (length "--branch="))))
+                                                   branch-args))
+                           (apply #'append (mapcar (lambda (s)
+                                                     (list "--remote" (substring s (length "--remote="))))
+                                                   remote-args))))
+         (result (apply #'majutsu--run-command cmd-args)))
+    (if (majutsu--handle-command-result cmd-args result
+                                        "Fetched from remote" "Fetch failed")
+        (majutsu-log-refresh))))
+
 ;; Remote management transients and commands
+(transient-define-prefix majutsu-git-remote-transient ()
+  "Transient for managing Git remotes."
+  [:class transient-columns
+          ["Arguments (add)"
+           ("-T" "Fetch tags" "--fetch-tags="
+            :choices ("all" "included" "none"))]
+          ["Actions"
+           ("l" "List" majutsu-git-remote-list)
+           ("a" "Add" majutsu-git-remote-add)
+           ("d" "Remove" majutsu-git-remote-remove)
+           ("r" "Rename" majutsu-git-remote-rename)
+           ("u" "Set URL" majutsu-git-remote-set-url)
+           ("q" "Quit" transient-quit-one)]])
+
+(defun majutsu--get-git-remotes ()
+  "Return a list of Git remote names for the current repository.
+Tries `jj git remote list' first, then falls back to `git remote'."
+  (let* ((out (condition-case _
+                  (majutsu--run-command "git" "remote" "list")
+                (error "")))
+         (names (if (and out (not (string-empty-p out)))
+                    (let* ((lines (split-string out "\n" t))
+                           (names (mapcar (lambda (l)
+                                            (car (split-string l "[ :\t]" t)))
+                                          lines)))
+                      (delete-dups (copy-sequence names)))
+                  ;; Fallback to plain `git remote`
+                  (with-temp-buffer
+                    (let* ((default-directory (majutsu--root))
+                           (exit (process-file "git" nil t nil "remote")))
+                      (when (eq exit 0)
+                        (split-string (buffer-string) "\n" t)))))))
+    names))
+
 (defun majutsu-git-remote-list ()
   "List Git remotes in a temporary buffer."
   (interactive)
@@ -2846,21 +2898,19 @@ With prefix ARG, open the duplicate transient."
                                         (format "Set URL for %s" remote)
                                         "Failed to set remote URL")))))
 
-(transient-define-prefix majutsu-git-remote-transient ()
-  "Transient for managing Git remotes."
+;; Clone
+(transient-define-prefix majutsu-git-clone-transient ()
+  "Transient for jj git clone."
   [:class transient-columns
-          ["Arguments (add)"
-           ("-T" "Fetch tags" "--fetch-tags="
-            :choices ("all" "included" "none"))]
-          ["Actions"
-           ("l" "List" majutsu-git-remote-list)
-           ("a" "Add" majutsu-git-remote-add)
-           ("d" "Remove" majutsu-git-remote-remove)
-           ("r" "Rename" majutsu-git-remote-rename)
-           ("u" "Set URL" majutsu-git-remote-set-url)
+          ["Arguments"
+           ("-R" "Remote name" "--remote=")
+           ("-C" "Colocate" "--colocate")
+           ("-x" "No colocate" "--no-colocate")
+           ("-d" "Depth" "--depth=")
+           ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
+          [("c" "Clone" majutsu-git-clone :transient nil)
            ("q" "Quit" transient-quit-one)]])
 
-;; Clone
 (defun majutsu-git-clone (args)
   "Clone a Git repo into a new jj repo. Prompts for SOURCE and optional DEST; uses ARGS."
   (interactive (list (transient-args 'majutsu-git-clone-transient)))
@@ -2890,19 +2940,17 @@ With prefix ARG, open the duplicate transient."
                                     "Clone completed"
                                     "Clone failed")))
 
-(transient-define-prefix majutsu-git-clone-transient ()
-  "Transient for jj git clone."
+;; Init
+(transient-define-prefix majutsu-git-init-transient ()
+  "Transient for jj git init."
   [:class transient-columns
           ["Arguments"
-           ("-R" "Remote name" "--remote=")
            ("-C" "Colocate" "--colocate")
            ("-x" "No colocate" "--no-colocate")
-           ("-d" "Depth" "--depth=")
-           ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
-          [("c" "Clone" majutsu-git-clone :transient nil)
+           ("-g" "Use existing git repo" "--git-repo=")]
+          [("i" "Init" majutsu-git-init :transient nil)
            ("q" "Quit" transient-quit-one)]])
 
-;; Init
 (defun majutsu-git-init (args)
   "Initialize a new Git-backed jj repo. Prompts for DEST; uses ARGS."
   (interactive (list (transient-args 'majutsu-git-init-transient)))
@@ -2921,16 +2969,6 @@ With prefix ARG, open the duplicate transient."
     (majutsu--handle-command-result cmd-args result
                                     "Init completed"
                                     "Init failed")))
-
-(transient-define-prefix majutsu-git-init-transient ()
-  "Transient for jj git init."
-  [:class transient-columns
-          ["Arguments"
-           ("-C" "Colocate" "--colocate")
-           ("-x" "No colocate" "--no-colocate")
-           ("-g" "Use existing git repo" "--git-repo=")]
-          [("i" "Init" majutsu-git-init :transient nil)
-           ("q" "Quit" transient-quit-one)]])
 
 ;; Export / Import / Root
 (defun majutsu-git-export ()
@@ -2955,5 +2993,7 @@ With prefix ARG, open the duplicate transient."
         (message "No underlying Git directory found")
       (kill-new dir)
       (message "Git root: %s (copied)" dir))))
+
+;;; _
 
 (provide 'majutsu)
