@@ -62,21 +62,34 @@ jj 在需要编辑描述信息的时候，会把待编辑的描述文件放在�
 
 *** TODO 附加 diff 信息
 
-** diff buffer
-目前的实现是直接调用的 diff-mode，需要优化
+** diff view
+采用了基于 =magit-section= 的专用 =majutsu-diff-mode=，提供结构化的差异展示。
 
-*** TODO visit
-实际上应该使用放在 log buffer 下的
-Working Copy Changes section 实现，
-这样才能用 fn:magit-visit-thing
+*** 交互式 Diff (Transient)
+~D~ 绑定到 fn:majutsu-diff-transient，提供了类似 Magit 的交互体验：
+- *动态选区*：在日志视图中，使用 ~f~ (From) 和 ~t~ (To) 动态选择并高亮修订版范围。
+- *智能执行*：~d~ (Execute) 会自动识别选区；若无选区，则智能回退到对比当前提交或工作副本。
+- *常用选项*：菜单中直接提供 ~--stat~, ~--summary~, ~--git~ 等常用开关。
 
-然后和 magit 的设计不同，我们在查看一个 rev 的时候如果想要 visit
-很有可能是有 edit 到对应 rev 的需求的
-可以绑定到 [[kbd:e]]
+*** Diff 缓冲区特性
+- *结构化展示*：完整复用了 log buffer 中 "Working Copy Changes" 的解析逻辑，支持文件和 Hunk 级别的折叠/展开。
+- *源码跳转*：支持使用 ~RET~ 直接从 Hunk 跳转到对应源文件的具体行号。
+- *上下文恢复*：使用标准的 =quit-window= (~q~) 和 =pop-to-buffer= 管理窗口，确保顺滑的工作流体验。
+- *稳定刷新*：~g~ 键能记住最初生成此 Diff 的完整参数并重新执行，确保视图稳定。
 
-所以目标设计是有两种 visit
-一种是附加 edit 的（并且需要确认）
-一种是类似 magit 实现的访问 tmpfile
+*** diffedit 现状
+
+~E~ 触发 fn:majutsu-diffedit-emacs ：若光标在文件/补丁 section 内直接针对该文件调用 ediff；
+否则走 fn:majutsu-diffedit-all ，通过 ~jj diff --name-only~ + ~completing-read~ 选择目标文件。
+
+ediff 模式通过 fn:majutsu-diffedit-with-ediff 创建父修订临时文件（~jj file show -r @- <file>~），
+quit 时清理临时文件并自动 ~majutsu-log-refresh~，提示左右 buffer 的角色，鼓励用户在右侧编辑。
+
+~M~ 触发 fn:majutsu-diffedit-smerge ，构造伪冲突格式的 buffer（Parent vs Current），
+启用 ~smerge-mode~ 并把保存回写交给 fn:majutsu-smerge-apply-changes ，要求冲突标记全部解决后才覆盖工作区。
+
+所有 diffedit 入口都集中调用 ~majutsu--get-changed-files~ 与 ~majutsu-diffedit-all~，避免需要 jj 的 ~diffedit~ 外部工具；
+后续如要支持多文件批量编辑，可在此基础上扩展。
 
 * Transient Views
 ** command view
