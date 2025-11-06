@@ -265,7 +265,7 @@ Return the window showing BUFFER."
       t))))
 
 ;;; with-editor integration
- 
+
 (eval-when-compile
   (require 'with-editor nil 'noerror)
   (declare-function with-editor--setup "with-editor" ()))
@@ -323,7 +323,7 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
            "editor-" (+ (in "0-9A-Za-z"))
            ".jjdescription" string-end))
   "Regexp matching temporary jj description files created for editing.")
- 
+
 (defvar majutsu--with-editor-visit-queue nil
   "Queue of pending initializer functions for Majutsu with-editor buffers.")
 
@@ -415,7 +415,7 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
                               (format "Description updated for %s" revset)
                               "Failed to update description")))
 
- 
+
 (defmacro majutsu-with-editor (&rest body)
   "Ensure BODY runs with the correct editor environment for jj."
   (declare (indent 0) (debug (body)))
@@ -1408,7 +1408,7 @@ Instead of invoking this alias for `majutsu-log' using
         (majutsu-goto-commit revset)))))
 
 ;;; majutsu-abandon
- 
+
 (defun majutsu-abandon ()
   "Abandon the changeset at point."
   (interactive)
@@ -1719,7 +1719,7 @@ TYPE is either `single' or `multi'."
   (transient-quit-one))
 
 ;;; majutsu-new
- 
+
 (defun majutsu-new (arg)
   "Create a new changeset.
 Without prefix ARG, use the changeset at point (or `@` when unavailable).
@@ -1975,33 +1975,177 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
 
 ;;; majutsu-diff
 
-(defun majutsu-diff (&optional revision)
-  "Show diff for REVISION or commit at point, defaulting to `@'."
+(defvar-local majutsu-diff-from nil
+  "List containing at most one entry struct for diff --from.")
+
+(defvar-local majutsu-diff-to nil
+  "List containing at most one entry struct for diff --to.")
+
+(defun majutsu-diff-clear-selections ()
+  "Clear all diff selections."
+  (interactive)
+  (majutsu--transient-clear-overlays majutsu-diff-from)
+  (majutsu--transient-clear-overlays majutsu-diff-to)
+  (setq majutsu-diff-from nil
+        majutsu-diff-to nil)
+  (when (called-interactively-p 'interactive)
+    (message "Cleared diff selections")))
+
+(defun majutsu-diff--from-entry () (car majutsu-diff-from))
+(defun majutsu-diff--to-entry () (car majutsu-diff-to))
+
+(defun majutsu-diff-set-from ()
+  "Set the commit at point as diff --from."
+  (interactive)
+  (majutsu--transient-select-refset
+   :kind "from"
+   :label "[FROM]"
+   :face '(:background "dark orange" :foreground "black")
+   :collection-var 'majutsu-diff-from))
+
+(defun majutsu-diff-set-to ()
+  "Set the commit at point as diff --to."
+  (interactive)
+  (majutsu--transient-select-refset
+   :kind "to"
+   :label "[TO]"
+   :face '(:background "dark cyan" :foreground "white")
+   :collection-var 'majutsu-diff-to))
+
+(defvar majutsu-diff-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map magit-section-mode-map)
+    (define-key map (kbd "q") 'quit-window)
+    (define-key map (kbd "g") 'revert-buffer)
+    (define-key map (kbd "RET") 'majutsu-enter-dwim)
+    map)
+  "Keymap for `majutsu-diff-mode'.")
+
+(define-derived-mode majutsu-diff-mode magit-section-mode "JJ Diff"
+  "Major mode for viewing jj diffs."
+  :group 'majutsu
+  (setq-local line-number-mode nil))
+
+(defvar-local majutsu-diff--last-args nil
+  "Arguments used for the last jj diff command in this buffer.")
+
+(defun majutsu-diff-refresh (&optional _ignore-auto _noconfirm)
+  "Refresh the current diff buffer."
+  (interactive)
+  (when majutsu-diff--last-args
+    (let ((inhibit-read-only t)
+          (repo-root (majutsu--root)))
+      (erase-buffer)
+      (setq-local majutsu--repo-root repo-root)
+      (let ((default-directory repo-root)
+            (output (apply #'majutsu--run-command-color majutsu-diff--last-args)))
+        (magit-insert-section (diff-root)
+          (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
+          (insert "\n")
+          (if (string-empty-p output)
+              (insert (propertize "(No diff)" 'face 'shadow))
+            (majutsu--insert-diff-hunks output))))
+      (goto-char (point-min)))))
+
+;;;###autoload
+(defun majutsu-diff (&optional args)
+  "Show diff with ARGS.
+If called interactively, defaults to diffing the commit at point (if in
+log view) or the working copy (if elsewhere)."
   (interactive
-   (list (or (majutsu-log--commit-id-at-point) "@")))
-  (let* ((rev (or revision (majutsu-log--commit-id-at-point) "@"))
-         (buffer (get-buffer-create "*majutsu-diff*"))
-         (prev-buffer (current-buffer))
-         (repo-root (majutsu--root)))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t)
-            (default-directory repo-root))
-        (erase-buffer)
-        (insert (majutsu--run-command-color "show" "-r" rev))
-        (diff-mode)
-        (ansi-color-apply-on-region (point-min) (point-max))
-        (goto-char (point-min))
-        ;; Make buffer read-only
-        (setq buffer-read-only t)
-        ;; Set up local keymap
-        (use-local-map (copy-keymap diff-mode-map))
-        (local-set-key (kbd "q")
-                       (lambda ()
-                         (interactive)
-                         (kill-buffer)
-                         (when (buffer-live-p prev-buffer)
-                           (switch-to-buffer prev-buffer))))))
-    (switch-to-buffer buffer)))
+   (list (if-let ((rev (majutsu-log--revset-at-point)))
+             (list "-r" rev)
+           nil)))
+  (let* ((repo-root (majutsu--root))
+         (buf (get-buffer-create "*majutsu-diff*"))
+         ;; Ensure we use --git format for our parser to work correctly
+         (final-args (append '("diff")
+                             (unless (member "--git" args) '("--git"))
+                             args)))
+    (with-current-buffer buf
+      (setq default-directory repo-root)
+      (majutsu-diff-mode)
+      (setq-local majutsu--repo-root repo-root)
+      (setq-local majutsu-diff--last-args final-args)
+      (setq-local revert-buffer-function #'majutsu-diff-refresh)
+      (majutsu-diff-refresh)
+      (majutsu--display-buffer-for-editor buf))))
+
+(defun majutsu-diff-execute (&optional args)
+  "Execute diff using transient selections or ARGS."
+  (interactive (list (transient-args 'majutsu-diff-transient--internal)))
+  (let* ((from-entry (car majutsu-diff-from))
+         (to-entry (car majutsu-diff-to))
+         (from (when from-entry (majutsu--transient-entry-revset from-entry)))
+         (to (when to-entry (majutsu--transient-entry-revset to-entry)))
+         (final-args (copy-sequence args)))
+    ;; If we have selections, they override or supplement standard args
+    (when from
+      (setq final-args (append final-args (list "--from" from))))
+    (when to
+      (setq final-args (append final-args (list "--to" to))))
+
+    ;; If no selections and no specific revision args, fallback to DWIM
+    (when (and (not from) (not to)
+               (not (member "-r" final-args))
+               (not (member "--from" final-args)))
+      ;; DWIM logic: if in log view, diff commit at point. Else working copy.
+      (if-let ((rev (majutsu-log--revset-at-point)))
+          (setq final-args (append final-args (list "-r" rev)))
+        (setq final-args (append final-args (list "-r" "@")))))
+
+    (majutsu-diff final-args)
+    ;; Clear selections after successful execution
+    (majutsu-diff-clear-selections)))
+
+(defun majutsu-diff-cleanup-on-exit ()
+  "Clean up diff selections when transient exits."
+  (majutsu-diff-clear-selections)
+  (remove-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit t))
+
+;;;###autoload
+(defun majutsu-diff-transient ()
+  "Transient for jj diff operations."
+  (interactive)
+  (add-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit nil t)
+  (majutsu-diff-transient--internal))
+
+(transient-define-prefix majutsu-diff-transient--internal ()
+  "Internal transient for jj diff."
+  :transient-suffix 'transient--do-exit
+  :transient-non-suffix t
+  [:description
+   (lambda ()
+     (concat "JJ Diff"
+             (when-let ((from (majutsu-diff--from-entry)))
+               (format " | From: %s" (majutsu--transient-entry-display from)))
+             (when-let ((to (majutsu-diff--to-entry)))
+               (format " | To: %s" (majutsu--transient-entry-display to)))))
+   :class transient-columns
+   ["Selection"
+    ("f" "Set 'from'" majutsu-diff-set-from
+     :description (lambda ()
+                    (if (majutsu-diff--from-entry)
+                        (format "Set 'from' (current: %s)"
+                                (majutsu--transient-entry-display (majutsu-diff--from-entry)))
+                      "Set 'from'"))
+     :transient t)
+    ("t" "Set 'to'" majutsu-diff-set-to
+     :description (lambda ()
+                    (if (majutsu-diff--to-entry)
+                        (format "Set 'to' (current: %s)"
+                                (majutsu--transient-entry-display (majutsu-diff--to-entry)))
+                      "Set 'to'"))
+     :transient t)
+    ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
+   ["Options"
+    ("-s" "Stat" "--stat")
+    ("-S" "Summary" "--summary")
+    ("-g" "Git format" "--git")
+    ("--color-words" "Color words" "--color-words")]
+   ["Actions"
+    ("d" "Execute" majutsu-diff-execute)
+    ("q" "Quit" transient-quit-one)]])
 
 ;; majutsu-navigation
 
@@ -2394,7 +2538,7 @@ With prefix ARG, open the duplicate transient."
     ("q" "Quit" transient-quit-one)]])
 
 ;;; majutsu-bookmark
- 
+
 ;;;###autoload
 (defun majutsu-bookmark-transient ()
   "Transient for jj bookmark operations."
