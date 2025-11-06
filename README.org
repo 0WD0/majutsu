@@ -15,7 +15,7 @@ the original package’s scope.
 - *Interactive rebase* with visual source/destination selection via transients
 - *Bookmark management* with create, abandon, forget, and track operations
 - *Commit and describe* with dedicated message buffers and window management
-- *Diff viewing* with file and hunk-level navigation
+- *Interactive diff viewing* with visual range selection and dedicated buffers
 - *Context-sensitive actions* via DWIM (Do What I Mean) Enter key behavior
 - *Git integration* with push/fetch operations and configurable options
 - *Log transient* to tweak revsets, limits, and path filters on the fly
@@ -99,6 +99,11 @@ buffer (~*majutsu-log:project-name*~).
   - ~r~ - Rename bookmark
   - ~t~ - Track remote bookmark
   - ~u~ - Untrack remote bookmark
+- ~D~ - Diff transient menu
+  - ~f~ - Set 'from' revision
+  - ~t~ - Set 'to' revision
+  - ~d~ - Execute diff (uses selections or DWIM)
+  - ~p~ - Diff parent
 - ~G~ - Git operations transient
   - ~-n~ - Toggle --allow-new flag
   - ~-b~ - Set bookmark to push
