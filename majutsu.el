@@ -123,9 +123,7 @@
   ;; Clear squash selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-squash-clear-selections nil t)
   ;; Clear duplicate selections when buffer is killed
-  (add-hook 'kill-buffer-hook 'majutsu-duplicate-clear-selections nil t)
-  ;; Clear split selections when buffer is killed
-  (add-hook 'kill-buffer-hook 'majutsu-split-clear-selections nil t))
+  (add-hook 'kill-buffer-hook 'majutsu-duplicate-clear-selections nil t))
 
 ;;; utils
 
