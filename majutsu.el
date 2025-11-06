@@ -74,7 +74,7 @@
     (define-key map (kbd "G") 'majutsu-git-transient)
 
     ;; Experimental
-    (define-key map (kbd "D") 'majutsu-diff)
+    (define-key map (kbd "D") 'majutsu-diff-transient)
     (define-key map (kbd "E") 'majutsu-diffedit-emacs)
     (define-key map (kbd "M") 'majutsu-diffedit-smerge)
     (define-key map (kbd "?") 'majutsu-mode-transient)
@@ -104,7 +104,7 @@
                  ("b" "Bookmark operations" majutsu-bookmark-transient)
                  ("G" "Git operations" majutsu-git-transient)]
                 ["Experimental"
-                 ("D" "Show diff" majutsu-diff)
+                 ("D" "Diff menu" majutsu-diff-transient)
                  ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
                  ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
                 ["Exit"
