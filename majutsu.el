@@ -902,35 +902,54 @@ instead of stopping on visual padding."
     (when (and in-file-section current-file)
       (majutsu--insert-file-section current-file file-section-content))))
 
+(defun majutsu--diff-line-matching-p (regexp lines)
+  "Return non-nil if any string in LINES matches REGEXP."
+  (seq-some (lambda (line) (and line (string-match-p regexp line))) lines))
+
+(defun majutsu--diff-file-status (lines)
+  "Infer the jj diff status for a file based on LINES."
+  (cond
+   ((majutsu--diff-line-matching-p "^new file" lines) "new file")
+   ((majutsu--diff-line-matching-p "^deleted file" lines) "deleted")
+   ((majutsu--diff-line-matching-p "^rename \\(from\\|to\\)" lines) "renamed")
+   ((majutsu--diff-line-matching-p "^copy \\(from\\|to\\)" lines) "copied")
+   (t "modified")))
+
+(defun majutsu--diff-file-heading (file lines)
+  "Return a formatted heading string for FILE using parsed LINES."
+  (format "%-11s %s" (majutsu--diff-file-status lines) file))
+
 (defun majutsu--insert-file-section (file lines)
   "Insert a file section with its hunks."
-  (magit-insert-section file-section (majutsu-file-section)
-                        (oset file-section file file)
-                        (insert (propertize (concat "modified   " file "\n")
-                                            'face 'magit-filename))
-                        ;; Process the lines to find and insert hunks
-                        (let ((remaining-lines (nreverse lines))
-                              hunk-lines
-                              in-hunk)
-                          (dolist (line remaining-lines)
-                            (cond
-                             ;; Start of a hunk
-                             ((string-match "^@@.*@@" line)
-                              ;; Insert previous hunk if any
-                              (when in-hunk
-                                (majutsu--insert-hunk-lines file (nreverse hunk-lines)))
-                              ;; Start new hunk
-                              (setq hunk-lines (list line)
-                                    in-hunk t))
-                             ;; Skip header lines
-                             ((string-match "^\\(diff --git\\|index\\|---\\|\\+\\+\\+\\|new file\\|deleted file\\)" line)
-                              nil)
-                             ;; Accumulate hunk lines
-                             (in-hunk
-                              (push line hunk-lines))))
-                          ;; Insert final hunk if any
-                          (when in-hunk
-                            (majutsu--insert-hunk-lines file (nreverse hunk-lines))))))
+  ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
+  ;; Magit's section toggling behavior for large revisions.
+  (let ((ordered-lines (nreverse lines)))
+    (magit-insert-section file-section (majutsu-file-section file nil :file file)
+                          (magit-insert-heading
+                            (propertize (majutsu--diff-file-heading file ordered-lines)
+                                        'font-lock-face 'magit-diff-file-heading))
+                          ;; Process the lines to find and insert hunks
+                          (let ((hunk-lines nil)
+                                (in-hunk nil))
+                            (dolist (line ordered-lines)
+                              (cond
+                               ;; Start of a hunk
+                               ((string-match "^@@.*@@" line)
+                                ;; Insert previous hunk if any
+                                (when in-hunk
+                                  (majutsu--insert-hunk-lines file (nreverse hunk-lines)))
+                                ;; Start new hunk
+                                (setq hunk-lines (list line)
+                                      in-hunk t))
+                               ;; Skip header lines
+                               ((string-match "^\\(diff --git\\|index\\|---\\|\\+\\+\\+\\|new file\\|deleted file\\|rename \\|copy \\)" line)
+                                nil)
+                               ;; Accumulate hunk lines
+                               (in-hunk
+                                (push line hunk-lines))))
+                            ;; Insert final hunk if any
+                            (when in-hunk
+                              (majutsu--insert-hunk-lines file (nreverse hunk-lines)))))))
 
 (defun majutsu--insert-hunk-lines (file lines)
   "Insert a hunk section from LINES."
@@ -939,14 +958,20 @@ instead of stopping on visual padding."
       (when (string-match "^\\(@@.*@@\\)\\(.*\\)$" header-line)
         (let ((header (match-string 1 header-line))
               (context (match-string 2 header-line)))
-          (magit-insert-section hunk-section (majutsu-hunk-section)
-                                (oset hunk-section file file)
-                                (oset hunk-section header header)
+          (magit-insert-section hunk-section
+                                (majutsu-hunk-section (list file header) nil
+                                                      :file file :header header)
                                 ;; Insert the hunk header
-                                (insert (propertize header 'face 'magit-diff-hunk-heading))
-                                (when (and context (not (string-empty-p context)))
-                                  (insert (propertize context 'face 'magit-diff-hunk-heading)))
-                                (insert "\n")
+                                (let* ((context-text
+                                        (when (and context (not (string-empty-p context)))
+                                          (propertize context 'font-lock-face
+                                                      'magit-diff-hunk-heading)))
+                                       (heading-args
+                                        (delq nil
+                                              (list (propertize header 'font-lock-face
+                                                                'magit-diff-hunk-heading)
+                                                    context-text))))
+                                  (apply #'magit-insert-heading heading-args))
                                 ;; Insert the hunk content
                                 (dolist (line (cdr lines))
                                   (cond
@@ -1875,6 +1900,8 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
          (before (majutsu--transient-normalize-revsets (or before majutsu-new-before)))
          (message (or message majutsu-new-message))
          (args '("new")))
+    (when (null parents)
+      (setq parents '("@")))
     (dolist (rev after)
       (setq args (append args (list "--after" rev))))
     (dolist (rev before)
