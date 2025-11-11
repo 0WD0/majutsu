@@ -84,32 +84,33 @@
 ;;;###autoload
 (transient-define-prefix majutsu-mode-transient ()
   "JJ commands transient menu."
-  [:description "JJ Commands" :class transient-columns
-                ["Basic Operations"
-                 ("g" "Refresh log" majutsu-log-refresh)
-                 ("c" "Commit" majutsu-commit)
-                 ("e" "Edit changeset" majutsu-edit-changeset)
-                 ("u" "Undo last change" majutsu-undo)
-                 ("l" "Log options" majutsu-log-transient)
-                 ("R" "Redo last change" majutsu-redo)
-                 ("N" "New changeset" majutsu-new)
-                 ("n" "New (transient)" majutsu-new-transient)
-                 ("y" "Duplicate changeset" majutsu-duplicate)
-                 ("Y" "Duplicate (transient)" majutsu-duplicate-transient)
-                 ("a" "Abandon changeset" majutsu-abandon)
-                 ("d" "Describe changeset" majutsu-describe)
-                 ("s" "Squash changeset" majutsu-squash-transient)]
-                ["Advanced Operations"
-                 ("r" "Rebase changeset" majutsu-rebase-transient)
-                 ("b" "Bookmark operations" majutsu-bookmark-transient)
-                 ("G" "Git operations" majutsu-git-transient)]
-                ["Experimental"
-                 ("D" "Diff menu" majutsu-diff-transient)
-                 ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
-                 ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
-                ["Exit"
-                 ("?" "Show cool help" transient-help)
-                 ("q" "Quit transient" transient-quit-one)]])
+  [:description "JJ Commands"
+   :class transient-columns
+   ["Basic Operations"
+    ("g" "Refresh log" majutsu-log-refresh)
+    ("c" "Commit" majutsu-commit)
+    ("e" "Edit changeset" majutsu-edit-changeset)
+    ("u" "Undo last change" majutsu-undo)
+    ("l" "Log options" majutsu-log-transient)
+    ("R" "Redo last change" majutsu-redo)
+    ("N" "New changeset" majutsu-new)
+    ("n" "New (transient)" majutsu-new-transient)
+    ("y" "Duplicate changeset" majutsu-duplicate)
+    ("Y" "Duplicate (transient)" majutsu-duplicate-transient)
+    ("a" "Abandon changeset" majutsu-abandon)
+    ("d" "Describe changeset" majutsu-describe)
+    ("s" "Squash changeset" majutsu-squash-transient)]
+   ["Advanced Operations"
+    ("r" "Rebase changeset" majutsu-rebase-transient)
+    ("b" "Bookmark operations" majutsu-bookmark-transient)
+    ("G" "Git operations" majutsu-git-transient)]
+   ["Experimental"
+    ("D" "Diff menu" majutsu-diff-transient)
+    ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
+    ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
+   ["Exit"
+    ("?" "Show cool help" transient-help)
+    ("q" "Quit transient" transient-quit-one)]])
 
 (define-derived-mode majutsu-mode magit-section-mode "Majutsu"
   "Major mode for interacting with jj version control system."
@@ -394,25 +395,6 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
   (add-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context nil t))
 
 ;;; with-editor process plumbing
-;;; majutsu-commit
-
-(defun majutsu-commit ()
-  "Create a commit using Emacs as the editor."
-  (interactive)
-  (majutsu--with-editor-run '("commit")
-                            "Successfully committed changes"
-                            "Failed to commit"))
-
-;;; majutsu-describe
-
-(defun majutsu-describe ()
-  "Update the description for the commit at point."
-  (interactive)
-  (let ((revset (or (majutsu-log--revset-at-point) "@")))
-    (majutsu--with-editor-run (list "describe" "-r" revset)
-                              (format "Description updated for %s" revset)
-                              "Failed to update description")))
-
 
 (defmacro majutsu-with-editor (&rest body)
   "Ensure BODY runs with the correct editor environment for jj."
@@ -473,6 +455,80 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
     (majutsu--message-with-log "Launching jj %s (edit in current Emacs)..."
                                (string-join args " "))
     process))
+
+;;; majutsu-section
+
+(defclass majutsu-commits-section (magit-section) ())
+(defclass majutsu-status-section (magit-section) ())
+(defclass majutsu-diff-stat-section (magit-section) ())
+(defclass majutsu-log-graph-section (magit-section) ())
+(defclass majutsu-log-entry-section (magit-section)
+  ((commit-id :initarg :commit-id)
+   (change-id :initarg :change-id)
+   (description :initarg :description)
+   (bookmarks :initarg :bookmarks)))
+(defclass majutsu-diff-section (magit-section) ())
+(defclass majutsu-file-section (magit-section)
+  ((file :initarg :file)))
+(defclass majutsu-hunk-section (magit-section)
+  ((file :initarg :file)
+   (start :initarg :hunk-start)
+   (header :initarg :header)))
+
+(defun majutsu--normalize-id-value (value)
+  "Normalize VALUE (string/symbol/number) into a plain string without text properties."
+  (cond
+   ((stringp value) (substring-no-properties value))
+   ((and value (not (stringp value))) (format "%s" value))
+   (t nil)))
+
+(defun majutsu--section-change-id (section)
+  "Return the change id recorded in SECTION, if available."
+  (when (and section (object-of-class-p section 'majutsu-log-entry-section))
+    (or (when (and (slot-exists-p section 'change-id)
+                   (slot-boundp section 'change-id))
+          (majutsu--normalize-id-value (oref section change-id)))
+        (let ((entry (oref section value)))
+          (when (listp entry)
+            (majutsu--normalize-id-value
+             (or (plist-get entry :change-id)
+                 (plist-get entry :id))))))))
+
+(defun majutsu--section-commit-id (section)
+  "Return the commit id recorded in SECTION, if available."
+  (when section
+    (when (and (slot-exists-p section 'commit-id)
+               (slot-boundp section 'commit-id))
+      (majutsu--normalize-id-value (oref section commit-id)))))
+
+(cl-defmethod magit-section-ident-value ((section majutsu-log-entry-section))
+  "Identify log entry sections by their change id."
+  (or (majutsu--section-change-id section)
+      (majutsu--section-commit-id section)
+      (let ((entry (oref section value)))
+        (when (listp entry)
+          (or (plist-get entry :change-id)
+              (plist-get entry :commit_id)
+              (plist-get entry :id))))))
+
+;;; majutsu-commit
+
+(defun majutsu-commit ()
+  "Create a commit using Emacs as the editor."
+  (interactive)
+  (majutsu--with-editor-run '("commit")
+                            "Successfully committed changes"
+                            "Failed to commit"))
+
+;;; majutsu-describe
+
+(defun majutsu-describe ()
+  "Update the description for the commit at point."
+  (interactive)
+  (let ((revset (or (majutsu-log--revset-at-point) "@")))
+    (majutsu--with-editor-run (list "describe" "-r" revset)
+                              (format "Description updated for %s" revset)
+                              "Failed to update description")))
 
 ;;; majutsu-log
 
@@ -635,65 +691,6 @@ The function must accept one argument: the buffer to display."
 The trailing newline keeps each entry on its own line even when
 `jj log' is invoked with `--no-graph'.")
 
-(defclass majutsu-commit-section (magit-section)
-  ((commit-id :initarg :commit-id)
-   (author :initarg :author)
-   (date :initarg :date)
-   (description :initarg :description)
-   (bookmarks :initarg :bookmarks)))
-
-(defclass majutsu-commits-section (magit-section) ())
-(defclass majutsu-status-section (magit-section) ())
-(defclass majutsu-diff-stat-section (magit-section) ())
-(defclass majutsu-log-graph-section (magit-section) ())
-(defclass majutsu-log-entry-section (magit-section)
-  ((commit-id :initarg :commit-id)
-   (change-id :initarg :change-id)
-   (description :initarg :description)
-   (bookmarks :initarg :bookmarks)))
-
-(defun majutsu--normalize-id-value (value)
-  "Normalize VALUE (string/symbol/number) into a plain string without text properties."
-  (cond
-   ((stringp value) (substring-no-properties value))
-   ((and value (not (stringp value))) (format "%s" value))
-   (t nil)))
-
-(defun majutsu--section-change-id (section)
-  "Return the change id recorded in SECTION, if available."
-  (when (and section (object-of-class-p section 'majutsu-log-entry-section))
-    (or (when (and (slot-exists-p section 'change-id)
-                   (slot-boundp section 'change-id))
-          (majutsu--normalize-id-value (oref section change-id)))
-        (let ((entry (oref section value)))
-          (when (listp entry)
-            (majutsu--normalize-id-value
-             (or (plist-get entry :change-id)
-                 (plist-get entry :id))))))))
-
-(defun majutsu--section-commit-id (section)
-  "Return the commit id recorded in SECTION, if available."
-  (when section
-    (when (and (slot-exists-p section 'commit-id)
-               (slot-boundp section 'commit-id))
-      (majutsu--normalize-id-value (oref section commit-id)))))
-
-(cl-defmethod magit-section-ident-value ((section majutsu-log-entry-section))
-  "Identify log entry sections by their change id."
-  (or (majutsu--section-change-id section)
-      (majutsu--section-commit-id section)
-      (let ((entry (oref section value)))
-        (when (listp entry)
-          (or (plist-get entry :change-id)
-              (plist-get entry :commit_id)
-              (plist-get entry :id))))))
-(defclass majutsu-diff-section (magit-section) ())
-(defclass majutsu-file-section (magit-section)
-  ((file :initarg :file)))
-(defclass majutsu-hunk-section (magit-section)
-  ((file :initarg :file)
-   (start :initarg :hunk-start)
-   (header :initarg :header)))
 
 (defun majutsu-parse-log-entries (&optional buf)
   "Parse jj log output from BUF (defaults to `current-buffer').
@@ -1164,7 +1161,7 @@ Instead of invoking this alias for `majutsu-log' using
     (cond
      ;; On a changeset/commit - edit it with jj edit
      ((and section
-           (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
+           (eq (oref section type) majutsu-log-entry-section)
            (slot-boundp section 'commit-id))
       (majutsu-edit-changeset-at-point))
 
@@ -2184,7 +2181,7 @@ Return non-nil when the section could be located."
                 (< (point) (point-max)))
       (magit-section-forward)
       (when-let ((section (magit-current-section)))
-        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
+        (when (and (eq (oref section type) majutsu-log-entry-section)
                    (> (point) pos))
           (setq found t))))
     (unless found
@@ -2201,7 +2198,7 @@ Return non-nil when the section could be located."
                 (> (point) (point-min)))
       (magit-section-backward)
       (when-let ((section (magit-current-section)))
-        (when (and (memq (oref section type) '(majutsu-log-entry-section majutsu-commit-section))
+        (when (and (eq (oref section type) majutsu-log-entry-section)
                    (< (point) pos))
           (setq found t))))
     (unless found
@@ -2780,22 +2777,23 @@ misclassifying Majutsu candidates."
 ;; Push transient and command
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
-  [:class transient-columns
-          ["Arguments"
-           ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
-           ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
-           ("-a" "All bookmarks" "--all")
-           ("-t" "Tracked only" "--tracked")
-           ("-D" "Deleted" "--deleted")
-           ("-n" "Allow new" "--allow-new")
-           ("-E" "Allow empty desc" "--allow-empty-description")
-           ("-P" "Allow private" "--allow-private")
-           ("-r" "Revisions" "--revisions=")
-           ("-c" "Change" "--change=")
-           ("-N" "Named X=REV" "--named=")
-           ("-y" "Dry run" "--dry-run")]
-          [("p" "Push" majutsu-git-push :transient nil)
-           ("q" "Quit" transient-quit-one)]])
+  [:description "JJ Git Push"
+   :class transient-columns
+   ["Arguments"
+    ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
+    ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
+    ("-a" "All bookmarks" "--all")
+    ("-t" "Tracked only" "--tracked")
+    ("-D" "Deleted" "--deleted")
+    ("-n" "Allow new" "--allow-new")
+    ("-E" "Allow empty desc" "--allow-empty-description")
+    ("-P" "Allow private" "--allow-private")
+    ("-r" "Revisions" "--revisions=")
+    ("-c" "Change" "--change=")
+    ("-N" "Named X=REV" "--named=")
+    ("-y" "Dry run" "--dry-run")]
+   [("p" "Push" majutsu-git-push :transient nil)
+    ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu-git-push (args)
   "Push to git remote with ARGS."
@@ -2907,14 +2905,15 @@ misclassifying Majutsu candidates."
 ;; Fetch transient and command
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
-  [:class transient-columns
-          ["Arguments"
-           ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
-           ("-B" "Branch" "--branch=")
-           ("-t" "Tracked only" "--tracked")
-           ("-A" "All remotes" "--all-remotes")]
-          [("f" "Fetch" majutsu-git-fetch :transient nil)
-           ("q" "Quit" transient-quit-one)]])
+  [:description "JJ Git Fetch"
+   :class transient-columns
+   ["Arguments"
+    ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
+    ("-B" "Branch" "--branch=")
+    ("-t" "Tracked only" "--tracked")
+    ("-A" "All remotes" "--all-remotes")]
+   [("f" "Fetch" majutsu-git-fetch :transient nil)
+    ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu-git-fetch (args)
   "Fetch from git remote with ARGS from transient."
@@ -2943,17 +2942,18 @@ misclassifying Majutsu candidates."
 ;; Remote management transients and commands
 (transient-define-prefix majutsu-git-remote-transient ()
   "Transient for managing Git remotes."
-  [:class transient-columns
-          ["Arguments (add)"
-           ("-T" "Fetch tags" "--fetch-tags="
-            :choices ("all" "included" "none"))]
-          ["Actions"
-           ("l" "List" majutsu-git-remote-list)
-           ("a" "Add" majutsu-git-remote-add)
-           ("d" "Remove" majutsu-git-remote-remove)
-           ("r" "Rename" majutsu-git-remote-rename)
-           ("u" "Set URL" majutsu-git-remote-set-url)
-           ("q" "Quit" transient-quit-one)]])
+  [:description "JJ Git Remote"
+   :class transient-columns
+   ["Arguments (add)"
+    ("-T" "Fetch tags" "--fetch-tags="
+     :choices ("all" "included" "none"))]
+   ["Actions"
+    ("l" "List" majutsu-git-remote-list)
+    ("a" "Add" majutsu-git-remote-add)
+    ("d" "Remove" majutsu-git-remote-remove)
+    ("r" "Rename" majutsu-git-remote-rename)
+    ("u" "Set URL" majutsu-git-remote-set-url)
+    ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu--get-git-remotes ()
   "Return a list of Git remote names for the current repository.
@@ -3043,15 +3043,16 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 ;; Clone
 (transient-define-prefix majutsu-git-clone-transient ()
   "Transient for jj git clone."
-  [:class transient-columns
-          ["Arguments"
-           ("-R" "Remote name" "--remote=")
-           ("-C" "Colocate" "--colocate")
-           ("-x" "No colocate" "--no-colocate")
-           ("-d" "Depth" "--depth=")
-           ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
-          [("c" "Clone" majutsu-git-clone :transient nil)
-           ("q" "Quit" transient-quit-one)]])
+  [:description "JJ Git Clone"
+   :class transient-columns
+   ["Arguments"
+    ("-R" "Remote name" "--remote=")
+    ("-C" "Colocate" "--colocate")
+    ("-x" "No colocate" "--no-colocate")
+    ("-d" "Depth" "--depth=")
+    ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
+   [("c" "Clone" majutsu-git-clone :transient nil)
+    ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu-git-clone (args)
   "Clone a Git repo into a new jj repo. Prompts for SOURCE and optional DEST; uses ARGS."
@@ -3085,13 +3086,14 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 ;; Init
 (transient-define-prefix majutsu-git-init-transient ()
   "Transient for jj git init."
-  [:class transient-columns
-          ["Arguments"
-           ("-C" "Colocate" "--colocate")
-           ("-x" "No colocate" "--no-colocate")
-           ("-g" "Use existing git repo" "--git-repo=")]
-          [("i" "Init" majutsu-git-init :transient nil)
-           ("q" "Quit" transient-quit-one)]])
+  [:description "JJ Git Init"
+   :class transient-columns
+   ["Arguments"
+    ("-C" "Colocate" "--colocate")
+    ("-x" "No colocate" "--no-colocate")
+    ("-g" "Use existing git repo" "--git-repo=")]
+   [("i" "Init" majutsu-git-init :transient nil)
+    ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu-git-init (args)
   "Initialize a new Git-backed jj repo. Prompts for DEST; uses ARGS."
