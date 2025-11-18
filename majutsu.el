@@ -1,4 +1,21 @@
-;;; majutsu.el -*- lexical-binding: t; -*-
+;;; majutsu.el --- Interface to jj version control system  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2025 Brandon Olivier
+;; Copyright (C) 2025 0WD0
+
+;; Author: Brandon Olivier
+;;         0WD0 <1105848296@qq.com>
+;; Maintainer: 0WD0 <1105848296@qq.com>
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "26.1") (magit "3.0.0") (transient "0.3.0"))
+;; Keywords: tools, vc
+;; URL: https://github.com/0WD0/majutsu
+
+;;; Commentary:
+
+;; Majutsu provides a magit-inspired interface for Jujutsu (jj).
+
+;;; Code:
 
 (require 'magit)
 (require 'magit-section)

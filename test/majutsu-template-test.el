@@ -1,4 +1,18 @@
-;;; majutsu-template-test.el -*- lexical-binding: t; -*-
+;;; majutsu-template-test.el --- Tests for majutsu-template DSL  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2025 0WD0
+
+;; Author: 0WD0 <1105848296@qq.com>
+;; Maintainer: 0WD0 <1105848296@qq.com>
+;; Version: 1.0.0
+;; Keywords: tools, vc
+;; URL: https://github.com/0WD0/majutsu
+
+;;; Commentary:
+
+;; Tests for majutsu-template DSL.
+
+;;; Code:
 
 (require 'ert)
 (require 'majutsu-template)
