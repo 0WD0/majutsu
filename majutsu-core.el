@@ -94,10 +94,19 @@ The function must accept one argument: the buffer to display."
   "U"   'majutsu-redo
   "X"   'majutsu-abandon)
 
+(defun majutsu-hack-dir-local-variables ()
+  "Like `hack-dir-local-variables-non-file-buffer' but ignore some variables.
+This prevents visual glitches (like red trailing whitespace) in Majutsu buffers
+when the user has strict .dir-locals.el settings."
+  (let ((ignored-local-variables
+         (cons 'show-trailing-whitespace ignored-local-variables)))
+    (hack-dir-local-variables-non-file-buffer)))
+
 (define-derived-mode majutsu-mode magit-section-mode "Majutsu"
   "Parent major mode from which Majutsu major modes inherit."
   :interactive nil
-  :group 'majutsu)
+  :group 'majutsu
+  (majutsu-hack-dir-local-variables))
 
 ;;; Utils
 
