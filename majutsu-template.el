@@ -1,11 +1,9 @@
 ;;; majutsu-template.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 Brandon Olivier
 ;; Copyright (C) 2025 0WD0
 
-;; Author: Brandon Olivier
-;;         0WD0 <1105848296@qq.com>
-;; Maintainer: 0WD0 <1105848296@qq.com>
+;; Author: 0WD0 <wd.1105848296@gmail.com>
+;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
 ;; Version: 0.0.1
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
@@ -13,8 +11,6 @@
 ;;; Commentary:
 
 ;; A small Elisp EDSL to build jj template language strings.
-;; v0 focused on safe string construction and a few core combinators.
-;; v3 grows type metadata and richer sugar so we can mirror jj's semantics.
 
 ;;; Code:
 
