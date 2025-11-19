@@ -1111,27 +1111,28 @@ Further passes (type-checking, rendering) operate on these nodes."
 (majutsu-template-defun json ((value Template))
   (:returns Template :doc "json(FORM)." :flavor :builtin))
 
-(majutsu-template-defun str ((value Template))
-  (:returns Template :doc "String literal helper.")
-  (majutsu-template--literal-node
-   (majutsu-template--literal-string-from-node value)
-   'String))
+;; str/raw/join are defined manually to avoid recursion or for custom logic.
+;; We register their metadata here.
 
-(majutsu-template-defun raw ((value Template) (type Template :optional t))
-  (:returns Template :doc "Raw literal helper with optional type declaration.")
-  (let* ((declared (when type (majutsu-template--node->type-symbol type)))
-         (props (when declared (list :declared declared))))
-    (majutsu-template--raw-node
-     (majutsu-template--literal-string-from-node value)
-     declared
-     props)))
+(majutsu-template--register-function
+ (majutsu-template--make-fn
+  :name "str" :symbol 'majutsu-template-str
+  :args (list (majutsu-template--make-arg :name 'value :type 'Template))
+  :returns 'Template :doc "String literal helper." :flavor :custom))
+
+(majutsu-template--register-function
+ (majutsu-template--make-fn
+  :name "raw" :symbol 'majutsu-template-raw
+  :args (list (majutsu-template--make-arg :name 'value :type 'Template)
+              (majutsu-template--make-arg :name 'type :type 'Template :optional t))
+  :returns 'Template :doc "Raw literal helper." :flavor :custom))
 
 (majutsu-template-defun join ((separator Template)
                               (collection Template)
                               (var Template)
                               (body Template))
   (:returns Template :doc "map-then-join helper.")
-  (majutsu-template-join separator collection var body))
+  (majutsu-template--join-impl separator collection var body))
 
 (majutsu-template-defun map ((collection Template)
                              (var Template)
@@ -1247,7 +1248,7 @@ NODES are the remaining argument nodes. Returns list of (NAME . ARGS)."
   "Escape S into a jj double-quoted string literal content.
 
 Supported escapes (aligned with jj docs):
-  \" \\ \t \r \n \0 \e and generic control bytes as \\xHH.
+  \\\" \\\\ \\t \\r \\n \\0 \\e and generic control bytes as \\xHH.
 All other characters are emitted verbatim (UTF-8 allowed)."
   (unless (stringp s)
     (user-error "majutsu-template: expected string, got %S" s))
@@ -1276,7 +1277,7 @@ All other characters are emitted verbatim (UTF-8 allowed)."
 
 (defun majutsu-template-raw (value &optional type)
   "Raw snippet injected verbatim. Use sparingly.
-VALUE may be a string or template node. TYPE optional annotation (symbol/keyword/string/node)."
+VALUE may be a string or template node. TYPE optional annotation."
   (let* ((string (if (majutsu-template-node-p value)
                      (majutsu-template--literal-string-from-node value)
                    (format "%s" value)))
@@ -1339,7 +1340,7 @@ CONTEXT is used in error messages."
     (majutsu-template--resolve-call-name (eval expr)))
    (t expr)))
 
-(defun majutsu-template-join (sep coll var body)
+(defun majutsu-template--join-impl (sep coll var body)
   "Return node for COLL.map(|VAR| BODY).join(SEP)."
   (let* ((sep-node (majutsu-template--normalize sep))
          (coll-node (majutsu-template--normalize coll))

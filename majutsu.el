@@ -143,6 +143,26 @@
   ;; Clear duplicate selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-duplicate-clear-selections nil t))
 
+(defcustom majutsu-log-display-function #'pop-to-buffer
+  "Function called to display the majutsu log buffer.
+The function must accept one argument: the buffer to display."
+  :type '(choice
+          (function-item switch-to-buffer)
+          (function-item pop-to-buffer)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
+(defcustom majutsu-message-display-function #'pop-to-buffer
+  "Function called to display the majutsu with-editor message buffer
+The function must accept one argument: the buffer to display."
+  :type '(choice
+          (function-item switch-to-buffer)
+          (function-item pop-to-buffer)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
 ;;; utils
 
 (defvar-local majutsu--repo-root nil
@@ -225,7 +245,7 @@ Return the window showing BUFFER."
                     (float-time (time-subtract (current-time) start-time)))
     result))
 
-(defun majutsu--handle-command-result (command-args result &optional success-msg error-msg)
+(defun majutsu--handle-command-result (command-args result &optional success-msg _error-msg)
   "Handle command result with proper error checking and messaging."
   (let ((trimmed-result (string-trim result))
         (command-name (car command-args)))
@@ -309,6 +329,14 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
   (and (require 'with-editor nil 'noerror)
        with-editor-emacsclient-executable))
 
+(defconst majutsu--with-editor-description-regexp
+  (rx (seq (or string-start
+               (seq (* (not (any ?\n)))
+                    (any ?/ ?\\)))
+           "editor-" (+ (in "0-9A-Za-z"))
+           ".jjdescription" string-end))
+  "Regexp matching temporary jj description files created for editing.")
+
 (defun majutsu--with-editor-ensure-setup ()
   "Ensure with-editor integration specific to Majutsu is configured."
   (when (majutsu--with-editor-available-p)
@@ -331,14 +359,6 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
         (add-hook 'server-switch-hook #'majutsu--with-editor--apply-visit)))))
 
 ;;; with-editor visit lifecycle
-
-(defconst majutsu--with-editor-description-regexp
-  (rx (seq (or string-start
-               (seq (* (not (any ?\n)))
-                    (any ?/ ?\\)))
-           "editor-" (+ (in "0-9A-Za-z"))
-           ".jjdescription" string-end))
-  "Regexp matching temporary jj description files created for editing.")
 
 (defvar majutsu--with-editor-visit-queue nil
   "Queue of pending initializer functions for Majutsu with-editor buffers.")
@@ -457,7 +477,7 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
     (condition-case err
         (majutsu-with-editor
           (setq buffer (generate-new-buffer " *majutsu-jj*"))
-          (when-let ((editor (getenv majutsu-with-editor-envvar)))
+          (when-let* ((editor (getenv majutsu-with-editor-envvar)))
             (setq editor (majutsu--with-editor--normalize-editor editor))
             (setenv majutsu-with-editor-envvar editor)
             (setenv "EDITOR" editor))
@@ -493,7 +513,8 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
    (header :initarg :header)))
 
 (defun majutsu--normalize-id-value (value)
-  "Normalize VALUE (string/symbol/number) into a plain string without text properties."
+  "Normalize VALUE (string/symbol/number) into a plain string without
+text properties."
   (cond
    ((stringp value) (substring-no-properties value))
    ((and value (not (stringp value))) (format "%s" value))
@@ -567,26 +588,6 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
   :type 'hook
   :group 'majutsu)
 
-(defcustom majutsu-log-display-function #'pop-to-buffer
-  "Function called to display the majutsu log buffer.
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
-
-(defcustom majutsu-message-display-function #'pop-to-buffer
-  "Function called to display the majutsu with-editor message buffer
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
-
 (defun majutsu-log--reset-state ()
   "Reset log view options to defaults."
   (setq majutsu-log-state (copy-sequence majutsu-log--state-template)))
@@ -602,9 +603,9 @@ The function must accept one argument: the buffer to display."
 (defun majutsu-log--summary-parts ()
   "Return a list of human-readable fragments describing current log state."
   (let ((parts '()))
-    (when-let ((rev (majutsu-log--state-get :revisions)))
+    (when-let* ((rev (majutsu-log--state-get :revisions)))
       (push (format "rev=%s" rev) parts))
-    (when-let ((limit (majutsu-log--state-get :limit)))
+    (when-let* ((limit (majutsu-log--state-get :limit)))
       (push (format "limit=%s" limit) parts))
     (when (majutsu-log--state-get :reversed)
       (push "reversed" parts))
@@ -632,27 +633,6 @@ The function must accept one argument: the buffer to display."
 (defun majutsu-log--transient-description ()
   "Return description string for the log transient."
   (majutsu-log--format-summary "JJ Log"))
-
-(defun majutsu-log--build-args ()
-  "Build argument list for `jj log' using current state."
-  (let ((args '("log")))
-    (when-let ((rev (majutsu-log--state-get :revisions)))
-      (setq args (append args (list "-r" rev))))
-    (when-let ((limit (majutsu-log--state-get :limit)))
-      (setq args (append args (list "-n" limit))))
-    (when (majutsu-log--state-get :reversed)
-      (setq args (append args '("--reversed"))))
-    (when (majutsu-log--state-get :no-graph)
-      (setq args (append args '("--no-graph"))))
-    (setq args (append args (list "-T" majutsu--log-template)))
-    (setq args (append args (majutsu-log--state-get :filesets)))
-    args))
-
-(defun majutsu-log--refresh-view ()
-  "Refresh current log buffer or open a new one."
-  (if (derived-mode-p 'majutsu-mode)
-      (majutsu-log-refresh)
-    (majutsu-log)))
 
 (defconst majutsu--log-template
   (tpl-compile
@@ -708,6 +688,26 @@ The function must accept one argument: the buffer to display."
 The trailing newline keeps each entry on its own line even when
 `jj log' is invoked with `--no-graph'.")
 
+(defun majutsu-log--build-args ()
+  "Build argument list for `jj log' using current state."
+  (let ((args '("log")))
+    (when-let* ((rev (majutsu-log--state-get :revisions)))
+      (setq args (append args (list "-r" rev))))
+    (when-let* ((limit (majutsu-log--state-get :limit)))
+      (setq args (append args (list "-n" limit))))
+    (when (majutsu-log--state-get :reversed)
+      (setq args (append args '("--reversed"))))
+    (when (majutsu-log--state-get :no-graph)
+      (setq args (append args '("--no-graph"))))
+    (setq args (append args (list "-T" majutsu--log-template)))
+    (setq args (append args (majutsu-log--state-get :filesets)))
+    args))
+
+(defun majutsu-log--refresh-view ()
+  "Refresh current log buffer or open a new one."
+  (if (derived-mode-p 'majutsu-mode)
+      (majutsu-log-refresh)
+    (majutsu-log)))
 
 (defun majutsu-parse-log-entries (&optional buf)
   "Parse jj log output from BUF (defaults to `current-buffer').
@@ -736,7 +736,7 @@ instead of stopping on visual padding."
                         (setq pending nil))
                       (push current entries))
                     (setq current
-                          (seq-let (prefix change-id author bookmarks git-head conflict signature empty short-desc commit-id timestamp long-desc)
+                          (seq-let (prefix change-id author bookmarks _git-head _conflict _signature _empty short-desc commit-id timestamp long-desc)
                               trimmed-elems
                             (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
                                    (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
@@ -789,7 +789,7 @@ instead of stopping on visual padding."
                               (magit-insert-section-body
                                 (insert indented)
                                 (insert "\n")))
-                            (when-let ((suffix-lines (plist-get entry :suffix-lines)))
+                            (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
                               (dolist (suffix-line suffix-lines)
                                 (insert suffix-line)
                                 (insert "\n")))))
@@ -818,12 +818,12 @@ instead of stopping on visual padding."
 
 (defun majutsu-log--commit-only-at-point ()
   "Return the raw commit id at point, or nil if unavailable."
-  (when-let ((section (magit-current-section)))
+  (when-let* ((section (magit-current-section)))
     (majutsu--section-commit-id section)))
 
 (defun majutsu-log--ids-at-point ()
   "Return a plist (:change .. :commit .. :section ..) describing ids at point."
-  (when-let ((section (magit-current-section)))
+  (when-let* ((section (magit-current-section)))
     (let ((change (majutsu--section-change-id section))
           (commit (majutsu--section-commit-id section)))
       (when (or change commit)
@@ -831,7 +831,7 @@ instead of stopping on visual padding."
 
 (defun majutsu-log--revset-at-point ()
   "Return the preferred revset (change id if possible) at point."
-  (when-let ((ids (majutsu-log--ids-at-point)))
+  (when-let* ((ids (majutsu-log--ids-at-point)))
     (let ((change (plist-get ids :change))
           (commit (plist-get ids :commit)))
       (if (and change (string-suffix-p "?" change))
@@ -941,7 +941,7 @@ instead of stopping on visual padding."
   ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
   ;; Magit's section toggling behavior for large revisions.
   (let ((ordered-lines (nreverse lines)))
-    (magit-insert-section file-section (majutsu-file-section file nil :file file)
+    (magit-insert-section _file-section (majutsu-file-section file nil :file file)
                           (magit-insert-heading
                             (propertize (majutsu--diff-file-heading file ordered-lines)
                                         'font-lock-face 'magit-diff-file-heading))
@@ -975,29 +975,29 @@ instead of stopping on visual padding."
       (when (string-match "^\\(@@.*@@\\)\\(.*\\)$" header-line)
         (let ((header (match-string 1 header-line))
               (context (match-string 2 header-line)))
-          (magit-insert-section hunk-section
-                                (majutsu-hunk-section (list file header) nil
-                                                      :file file :header header)
-                                ;; Insert the hunk header
-                                (let* ((context-text
-                                        (when (and context (not (string-empty-p context)))
-                                          (propertize context 'font-lock-face
-                                                      'magit-diff-hunk-heading)))
-                                       (heading-args
-                                        (delq nil
-                                              (list (propertize header 'font-lock-face
-                                                                'magit-diff-hunk-heading)
-                                                    context-text))))
-                                  (apply #'magit-insert-heading heading-args))
-                                ;; Insert the hunk content
-                                (dolist (line (cdr lines))
-                                  (cond
-                                   ((string-prefix-p "+" line)
-                                    (insert (propertize line 'face 'magit-diff-added) "\n"))
-                                   ((string-prefix-p "-" line)
-                                    (insert (propertize line 'face 'magit-diff-removed) "\n"))
-                                   (t
-                                    (insert (propertize line 'face 'magit-diff-context) "\n"))))))))))
+          (magit-insert-section _hunk-section
+            (majutsu-hunk-section (list file header) nil
+                                  :file file :header header)
+            ;; Insert the hunk header
+            (let* ((context-text
+                    (when (and context (not (string-empty-p context)))
+                      (propertize context 'font-lock-face
+                                  'magit-diff-hunk-heading)))
+                   (heading-args
+                    (delq nil
+                          (list (propertize header 'font-lock-face
+                                            'magit-diff-hunk-heading)
+                                context-text))))
+              (apply #'magit-insert-heading heading-args))
+            ;; Insert the hunk content
+            (dolist (line (cdr lines))
+              (cond
+               ((string-prefix-p "+" line)
+                (insert (propertize line 'face 'magit-diff-added) "\n"))
+               ((string-prefix-p "-" line)
+                (insert (propertize line 'face 'magit-diff-removed) "\n"))
+               (t
+                (insert (propertize line 'face 'magit-diff-context) "\n"))))))))))
 
 ;;;###autoload
 (defun majutsu-log ()
@@ -1050,6 +1050,8 @@ Instead of invoking this alias for `majutsu-log' using
                                   (magit-section-update-highlight))
                                 (majutsu--debug "Log refresh completed"))))))
 
+(defvar majutsu-log-sections-hook)
+
 (defun majutsu-log--toggle-desc (label key)
   "Return LABEL annotated with ON/OFF state for KEY."
   (if (majutsu-log--state-get key)
@@ -1058,7 +1060,7 @@ Instead of invoking this alias for `majutsu-log' using
 
 (defun majutsu-log--value-desc (label key)
   "Return LABEL annotated with the string value stored at KEY."
-  (if-let ((value (majutsu-log--state-get key)))
+  (if-let* ((value (majutsu-log--state-get key)))
       (format "%s (%s)" label value)
     label))
 
@@ -1203,7 +1205,7 @@ Instead of invoking this alias for `majutsu-log' using
     (cond
      ;; On a changeset/commit - edit it with jj edit
      ((and section
-           (eq (oref section type) majutsu-log-entry-section)
+           (eq (oref section type) 'majutsu-log-entry-section)
            (slot-boundp section 'commit-id))
       (majutsu-edit-changeset-at-point))
 
@@ -1222,7 +1224,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-edit-changeset ()
   "Edit commit at point."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point)))
+  (when-let* ((revset (majutsu-log--revset-at-point)))
     (let ((result (majutsu--run-command "edit" revset)))
       (if (majutsu--handle-command-result (list "edit" revset) result
                                           (format "Now editing commit %s" revset)
@@ -1232,7 +1234,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-edit-changeset-at-point ()
   "Edit the commit at point using jj edit."
   (interactive)
-  (when-let ((revset (majutsu-log--revset-at-point)))
+  (when-let* ((revset (majutsu-log--revset-at-point)))
     (let ((result (majutsu--run-command "edit" revset)))
       (if (majutsu--handle-command-result (list "edit" revset) result
                                           (format "Now editing revset %s" revset)
@@ -1321,15 +1323,21 @@ Instead of invoking this alias for `majutsu-log' using
 
     ;; Set up cleanup
     (add-hook 'ediff-quit-hook
-              `(lambda ()
-                 (when (file-exists-p ,parent-temp-file)
-                   (delete-file ,parent-temp-file))
-                 (majutsu-log-refresh))
+              (lambda ()
+                (when (file-exists-p parent-temp-file)
+                  (delete-file parent-temp-file))
+                (majutsu-log-refresh))
               nil t)
 
     ;; Start ediff session
     (ediff-files parent-temp-file full-file-path)
     (message "Ediff: Left=Parent (@-), Right=Current (@). Edit right side, then 'q' to quit and save.")))
+
+(defvar-local majutsu-smerge-file nil
+  "File being merged in smerge session.")
+
+(defvar-local majutsu-smerge-repo-root nil
+  "Repository root for smerge session.")
 
 (defun majutsu-diffedit-smerge ()
   "Emacs-based diffedit using smerge-mode (merge conflict style)."
@@ -1449,7 +1457,7 @@ Instead of invoking this alias for `majutsu-log' using
 (defun majutsu-abandon ()
   "Abandon the changeset at point."
   (interactive)
-  (if-let ((revset (majutsu-log--revset-at-point)))
+  (if-let* ((revset (majutsu-log--revset-at-point)))
       (if (and majutsu-confirm-critical-actions
                (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
           (message "Abandon canceled")
@@ -1513,9 +1521,9 @@ Instead of invoking this alias for `majutsu-log' using
 
 (defun majutsu--transient-entry-reapply (entry face label)
   "Reapply overlay for ENTRY after a log refresh."
-  (when-let ((section (majutsu--find-log-entry-section
-                       (majutsu--transient-entry-change-id entry)
-                       (majutsu--transient-entry-commit-id entry))))
+  (when-let* ((section (majutsu--find-log-entry-section
+                        (majutsu--transient-entry-change-id entry)
+                        (majutsu--transient-entry-commit-id entry))))
     (majutsu--transient-entry-apply-overlay entry section face label)))
 
 (defun majutsu--transient-selection-find (entries change-id commit-id)
@@ -1566,7 +1574,7 @@ TYPE is either `single' or `multi'."
              (entries (symbol-value collection-var))
              (existing (majutsu--transient-selection-find entries change commit)))
         (when existing
-          (when-let ((new-section (majutsu--transient-refresh-if-rewritten existing commit face label)))
+          (when-let* ((new-section (majutsu--transient-refresh-if-rewritten existing commit face label)))
             (setq section new-section)))
         (pcase type
           ('single
@@ -1626,7 +1634,7 @@ TYPE is either `single' or `multi'."
 
 (defun majutsu-squash--into-display ()
   "Return a display string for the squash destination."
-  (when-let ((entry (majutsu-squash--into-entry)))
+  (when-let* ((entry (majutsu-squash--into-entry)))
     (majutsu--transient-entry-display entry)))
 
 ;;;###autoload
@@ -1651,7 +1659,7 @@ TYPE is either `single' or `multi'."
 
 ;;;###autoload
 (defun majutsu-squash-set-into ()
-  "Set the commit at point as squash 'into' destination."
+  "Set the commit at point as squash `into' destination."
   (interactive)
   (majutsu--transient-select-refset
    :kind "into"
@@ -1701,13 +1709,6 @@ TYPE is either `single' or `multi'."
 
 ;; Squash transient menu
 ;;;###autoload
-(defun majutsu-squash-transient ()
-  "Transient for jj squash operations."
-  (interactive)
-  ;; Add cleanup hook for when transient exits
-  (add-hook 'transient-exit-hook 'majutsu-squash-cleanup-on-exit nil t)
-  (majutsu-squash-transient--internal))
-
 (transient-define-prefix majutsu-squash-transient--internal ()
   "Internal transient for jj squash operations."
   :transient-suffix 'transient--do-exit
@@ -1715,9 +1716,9 @@ TYPE is either `single' or `multi'."
   [:description
    (lambda ()
      (concat "JJ Squash"
-             (when-let ((from (majutsu-squash--from-display)))
+             (when-let* ((from (majutsu-squash--from-display)))
                (format " | From: %s" from))
-             (when-let ((into (majutsu-squash--into-display)))
+             (when-let* ((into (majutsu-squash--into-display)))
                (format " | Into: %s" into))))
    ["Selection"
     ("f" "Set from" majutsu-squash-set-from
@@ -1750,6 +1751,14 @@ TYPE is either `single' or `multi'."
      :transient nil)
     ("q" "Quit" transient-quit-one)
     ("b" "Bury" majutsu-mode-bury-squash)]])
+
+;;;###autoload
+(defun majutsu-squash-transient ()
+  "Transient for jj squash operations."
+  (interactive)
+  ;; Add cleanup hook for when transient exits
+  (add-hook 'transient-exit-hook 'majutsu-squash-cleanup-on-exit nil t)
+  (majutsu-squash-transient--internal))
 
 (defun majutsu-mode-bury-squash ()
   (interactive)
@@ -1950,12 +1959,6 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
       (majutsu-new-clear-selections))))
 
 ;;;###autoload
-(defun majutsu-new-transient ()
-  "Open the jj new transient."
-  (interactive)
-  (add-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit nil t)
-  (majutsu-new-transient--internal))
-
 (defun majutsu-new-cleanup-on-exit ()
   "Clean up jj new selections when the transient exits."
   (majutsu-new-clear-selections)
@@ -2011,6 +2014,13 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
                             (majutsu-new--action-summary)))
      :transient nil)
     ("q" "Quit" transient-quit-one)]])
+
+;;;###autoload
+(defun majutsu-new-transient ()
+  "Open the jj new transient."
+  (interactive)
+  (add-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit nil t)
+  (majutsu-new-transient--internal))
 
 ;;; majutsu-diff
 
@@ -2092,7 +2102,7 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
 If called interactively, defaults to diffing the commit at point (if in
 log view) or the working copy (if elsewhere)."
   (interactive
-   (list (if-let ((rev (majutsu-log--revset-at-point)))
+   (list (if-let* ((rev (majutsu-log--revset-at-point)))
              (list "-r" rev)
            nil)))
   (let* ((repo-root (majutsu--root))
@@ -2129,7 +2139,7 @@ log view) or the working copy (if elsewhere)."
                (not (member "-r" final-args))
                (not (member "--from" final-args)))
       ;; DWIM logic: if in log view, diff commit at point. Else working copy.
-      (if-let ((rev (majutsu-log--revset-at-point)))
+      (if-let* ((rev (majutsu-log--revset-at-point)))
           (setq final-args (append final-args (list "-r" rev)))
         (setq final-args (append final-args (list "-r" "@")))))
 
@@ -2143,12 +2153,6 @@ log view) or the working copy (if elsewhere)."
   (remove-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit t))
 
 ;;;###autoload
-(defun majutsu-diff-transient ()
-  "Transient for jj diff operations."
-  (interactive)
-  (add-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit nil t)
-  (majutsu-diff-transient--internal))
-
 (transient-define-prefix majutsu-diff-transient--internal ()
   "Internal transient for jj diff."
   :transient-suffix 'transient--do-exit
@@ -2156,9 +2160,9 @@ log view) or the working copy (if elsewhere)."
   [:description
    (lambda ()
      (concat "JJ Diff"
-             (when-let ((from (majutsu-diff--from-entry)))
+             (when-let* ((from (majutsu-diff--from-entry)))
                (format " | From: %s" (majutsu--transient-entry-display from)))
-             (when-let ((to (majutsu-diff--to-entry)))
+             (when-let* ((to (majutsu-diff--to-entry)))
                (format " | To: %s" (majutsu--transient-entry-display to)))))
    :class transient-columns
    ["Selection"
@@ -2186,6 +2190,13 @@ log view) or the working copy (if elsewhere)."
     ("d" "Execute" majutsu-diff-execute)
     ("q" "Quit" transient-quit-one)]])
 
+;;;###autoload
+(defun majutsu-diff-transient ()
+  "Transient for jj diff operations."
+  (interactive)
+  (add-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit nil t)
+  (majutsu-diff-transient--internal))
+
 ;; majutsu-navigation
 
 (defun majutsu-goto-current ()
@@ -2210,7 +2221,7 @@ log view) or the working copy (if elsewhere)."
   "Move point to the log entry section matching CHANGE-ID.
 When CHANGE-ID is nil, fall back to COMMIT-ID.
 Return non-nil when the section could be located."
-  (when-let ((section (majutsu--find-log-entry-section change-id commit-id)))
+  (when-let* ((section (majutsu--find-log-entry-section change-id commit-id)))
     (magit-section-goto section)
     (goto-char (oref section start))
     t))
@@ -2224,8 +2235,8 @@ Return non-nil when the section could be located."
     (while (and (not found)
                 (< (point) (point-max)))
       (magit-section-forward)
-      (when-let ((section (magit-current-section)))
-        (when (and (eq (oref section type) majutsu-log-entry-section)
+      (when-let* ((section (magit-current-section)))
+        (when (and (eq (oref section type) 'majutsu-log-entry-section)
                    (> (point) pos))
           (setq found t))))
     (unless found
@@ -2241,8 +2252,8 @@ Return non-nil when the section could be located."
     (while (and (not found)
                 (> (point) (point-min)))
       (magit-section-backward)
-      (when-let ((section (magit-current-section)))
-        (when (and (eq (oref section type) majutsu-log-entry-section)
+      (when-let* ((section (magit-current-section)))
+        (when (and (eq (oref section type) 'majutsu-log-entry-section)
                    (< (point) pos))
           (setq found t))))
     (unless found
@@ -2476,7 +2487,7 @@ With prefix ARG, open the duplicate transient."
 
 (defun majutsu-rebase--source-display ()
   "Return a display string for the current source."
-  (when-let ((entry (majutsu-rebase--source-entry)))
+  (when-let* ((entry (majutsu-rebase--source-entry)))
     (majutsu--transient-entry-display entry)))
 
 ;;;###autoload
@@ -2525,14 +2536,6 @@ With prefix ARG, open the duplicate transient."
     (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
 
 ;; Transient rebase menu
-;;;###autoload
-(defun majutsu-rebase-transient ()
-  "Transient for jj rebase operations."
-  (interactive)
-  ;; Add cleanup hook for when transient exits
-  (add-hook 'transient-exit-hook 'majutsu-rebase-cleanup-on-exit nil t)
-  (majutsu-rebase-transient--internal))
-
 (defun majutsu-rebase-cleanup-on-exit ()
   "Clean up rebase selections when transient exits."
   (majutsu-rebase-clear-selections)
@@ -2545,7 +2548,7 @@ With prefix ARG, open the duplicate transient."
   [:description
    (lambda ()
      (concat "JJ Rebase"
-             (when-let ((source (majutsu-rebase--source-display)))
+             (when-let* ((source (majutsu-rebase--source-display)))
                (format " | Source: %s" source))
              (when majutsu-rebase-destinations
                (format " | Destinations: %s" (majutsu-rebase--destination-display)))))
@@ -2576,13 +2579,15 @@ With prefix ARG, open the duplicate transient."
 
     ("q" "Quit" transient-quit-one)]])
 
-;;; majutsu-bookmark
-
 ;;;###autoload
-(defun majutsu-bookmark-transient ()
-  "Transient for jj bookmark operations."
+(defun majutsu-rebase-transient ()
+  "Transient for jj rebase operations."
   (interactive)
-  (majutsu-bookmark-transient--internal))
+  ;; Add cleanup hook for when transient exits
+  (add-hook 'transient-exit-hook 'majutsu-rebase-cleanup-on-exit nil t)
+  (majutsu-rebase-transient--internal))
+
+;;; majutsu-bookmark
 
 (transient-define-prefix majutsu-bookmark-transient--internal ()
   "Internal transient for jj bookmark operations."
@@ -2614,6 +2619,12 @@ With prefix ARG, open the duplicate transient."
     ("f" "Forget bookmark" majutsu-bookmark-forget
      :description "Forget (local)" :transient nil)]
    [("q" "Quit" transient-quit-one)]] )
+
+;;;###autoload
+(defun majutsu-bookmark-transient ()
+  "Transient for jj bookmark operations."
+  (interactive)
+  (majutsu-bookmark-transient--internal))
 
 (defun majutsu--extract-bookmark-names (text)
   "Extract bookmark names from jj command output TEXT."
@@ -2773,6 +2784,8 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
           (crm-separator (or (bound-and-true-p crm-separator) ", *"))
           (names (completing-read-multiple "Untrack remote bookmark(s): " table nil t)))
      (list names)))
+
+  (defvar crm-separator)
   (when names
     (apply #'majutsu--run-command (append '("bookmark" "untrack") names))
     (majutsu-log-refresh)
@@ -2893,7 +2906,7 @@ misclassifying Majutsu candidates."
       (when (majutsu--handle-push-result cmd-args result success-msg)
         (majutsu-log-refresh)))))
 
-(defun majutsu--handle-push-result (cmd-args result success-msg)
+(defun majutsu--handle-push-result (_cmd-args result success-msg)
   "Enhanced push result handler with bookmark analysis."
   (let ((trimmed-result (string-trim result)))
     (majutsu--debug "Push result: %s" trimmed-result)
@@ -3099,7 +3112,8 @@ Tries `jj git remote list' first, then falls back to `git remote'."
     ("q" "Quit" transient-quit-one)]])
 
 (defun majutsu-git-clone (args)
-  "Clone a Git repo into a new jj repo. Prompts for SOURCE and optional DEST; uses ARGS."
+  "Clone a Git repo into a new jj repo.
+Prompts for SOURCE and optional DEST; uses ARGS."
   (interactive (list (transient-args 'majutsu-git-clone-transient)))
   (let* ((source (read-string "Source (URL or path): "))
          (dest   (let ((d (read-directory-name "Destination (optional): " nil nil t)))
