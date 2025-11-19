@@ -427,10 +427,11 @@ instead of stopping on visual padding."
   (tpl-compile
    [:separate "\x1e"
               [:call 'id.short]
-              [:call 'user]
+              [:user]
               [:method [:call 'time.end] :format "%Y-%m-%d %H:%M"]
-              [:call 'description]
-              "\n"]))
+              [:description]
+              "\n"]
+   'Operation))
 
 (defvar-local majutsu-op-log--cached-entries nil
   "Cached operation log entries.")
