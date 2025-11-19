@@ -18,6 +18,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
+(require 'magit-section)
 
 (defgroup majutsu nil
   "Interface to jj version control system."
@@ -68,6 +69,34 @@ The function must accept one argument: the buffer to display."
           (function-item pop-to-buffer)
           (function-item display-buffer)
           (function :tag "Custom function"))
+  :group 'majutsu)
+
+;;; Mode
+
+(defvar-keymap majutsu-mode-map
+  :doc "Parent keymap for modes derived from `majutsu-mode'."
+  :parent magit-section-mode-map
+  "RET" 'majutsu-enter-dwim
+  "g"   'majutsu-log-refresh
+  "q"   'quit-window
+  "l"   'majutsu-log-transient
+  "?"   'majutsu-dispatch
+  "c"   'majutsu-commit
+  "d"   'majutsu-describe
+  "N"   'majutsu-new
+  "S"   'majutsu-squash-transient
+  "D"   'majutsu-diff-transient
+  "R"   'majutsu-rebase-transient
+  "B"   'majutsu-bookmark-transient
+  "Y"   'majutsu-duplicate-transient
+  "G"   'majutsu-git-transient
+  "u"   'majutsu-undo
+  "U"   'majutsu-redo
+  "X"   'majutsu-abandon)
+
+(define-derived-mode majutsu-mode magit-section-mode "Majutsu"
+  "Parent major mode from which Majutsu major modes inherit."
+  :interactive nil
   :group 'majutsu)
 
 ;;; Utils

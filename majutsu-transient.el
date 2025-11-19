@@ -17,6 +17,23 @@
 (require 'transient)
 (require 'cl-lib)
 
+(declare-function majutsu-abandon "majutsu-commands" ())
+(declare-function majutsu-commit "majutsu-commands" ())
+(declare-function majutsu-describe "majutsu-commands" ())
+(declare-function majutsu-diff-transient "majutsu-commands" ())
+(declare-function majutsu-diffedit-emacs "majutsu-commands" ())
+(declare-function majutsu-diffedit-smerge "majutsu-commands" ())
+(declare-function majutsu-duplicate "majutsu-commands" (&optional arg))
+(declare-function majutsu-duplicate-transient "majutsu-commands" ())
+(declare-function majutsu-new "majutsu-commands" (&optional arg))
+(declare-function majutsu-new-transient "majutsu-commands" ())
+(declare-function majutsu-redo "majutsu-commands" ())
+(declare-function majutsu-rebase-transient "majutsu-commands" ())
+(declare-function majutsu-bookmark-transient "majutsu-commands" ())
+(declare-function majutsu-squash-transient "majutsu-commands" ())
+(declare-function majutsu-undo "majutsu-commands" ())
+(declare-function majutsu-edit-changeset "majutsu-commands" ())
+
 ;;; Shared Helpers
 
 (cl-defstruct (majutsu--transient-entry
@@ -176,6 +193,39 @@ TYPE is either `single' or `multi'."
                           (substring-no-properties item))
                          (t nil)))
                       items)))
+
+;;; Dispatch
+
+;;;###autoload
+(transient-define-prefix majutsu-dispatch ()
+  "Top-level Majutsu command dispatcher."
+  [:description "Majutsu Commands"
+   :class transient-columns
+   ["Basic Operations"
+    ("g" "Refresh log" majutsu-log-refresh)
+    ("c" "Commit" majutsu-commit)
+    ("e" "Edit change" majutsu-edit-changeset)
+    ("u" "Undo" majutsu-undo)
+    ("R" "Redo" majutsu-redo)
+    ("l" "Log options" majutsu-log-transient)
+    ("N" "New" majutsu-new)
+    ("n" "New (transient)" majutsu-new-transient)
+    ("y" "Duplicate" majutsu-duplicate)
+    ("Y" "Duplicate (transient)" majutsu-duplicate-transient)
+    ("a" "Abandon" majutsu-abandon)
+    ("d" "Describe" majutsu-describe)
+    ("s" "Squash" majutsu-squash-transient)]
+   ["Advanced"
+    ("r" "Rebase" majutsu-rebase-transient)
+    ("b" "Bookmarks" majutsu-bookmark-transient)
+    ("G" "Git" majutsu-git-transient)]
+   ["Diff & Fix"
+    ("D" "Diff menu" majutsu-diff-transient)
+    ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
+    ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
+   ["Exit"
+    ("?" "Help" transient-help)
+    ("q" "Quit" transient-quit-one)]])
 
 ;;; Log Transient
 

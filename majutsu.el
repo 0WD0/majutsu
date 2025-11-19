@@ -23,42 +23,7 @@
 (require 'majutsu-transient)
 (require 'majutsu-commands)
 
-;;; Keymap
-
-(defvar majutsu-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map magit-section-mode-map)
-    (define-key map (kbd "n") 'majutsu-goto-next-changeset)
-    (define-key map (kbd "p") 'majutsu-goto-prev-changeset)
-    (define-key map (kbd "RET") 'majutsu-enter-dwim)
-    (define-key map (kbd "g") 'majutsu-log-refresh)
-    (define-key map (kbd "l") 'majutsu-log-transient)
-    (define-key map (kbd "?") 'majutsu-log-transient)
-    (define-key map (kbd "c") 'majutsu-commit)
-    (define-key map (kbd "d") 'majutsu-describe)
-    (define-key map (kbd "N") 'majutsu-new)
-    (define-key map (kbd "S") 'majutsu-squash-transient)
-    (define-key map (kbd "D") 'majutsu-diff-transient)
-    (define-key map (kbd "R") 'majutsu-rebase-transient)
-    (define-key map (kbd "B") 'majutsu-bookmark-transient)
-    (define-key map (kbd "Y") 'majutsu-duplicate-transient)
-    (define-key map (kbd "G") 'majutsu-git-transient)
-    (define-key map (kbd "u") 'majutsu-undo)
-    (define-key map (kbd "U") 'majutsu-redo)
-    (define-key map (kbd "X") 'majutsu-abandon)
-    map)
-  "Keymap for `majutsu-mode'.")
-
-;;; Mode Configuration
-
-;; Configure majutsu-log-mode to use our keymap
-(with-eval-after-load 'majutsu-log
-  (set-keymap-parent majutsu-log-mode-map majutsu-mode-map))
-
 ;;; Aliases
-
-(defalias 'majutsu-mode 'majutsu-log-mode
-  "Alias for `majutsu-log-mode'.")
 
 (defalias 'majutsu 'majutsu-log
   "Begin using Majutsu.

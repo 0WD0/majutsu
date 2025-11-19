@@ -350,7 +350,13 @@ instead of stopping on visual padding."
 
 ;;; Log Mode
 
-(define-derived-mode majutsu-log-mode magit-section-mode "Majutsu Log"
+(defvar-keymap majutsu-log-mode-map
+  :doc "Keymap for `majutsu-log-mode'."
+  :parent majutsu-mode-map
+  "n" 'majutsu-goto-next-changeset
+  "p" 'majutsu-goto-prev-changeset)
+
+(define-derived-mode majutsu-log-mode majutsu-mode "Majutsu Log"
   "Major mode for interacting with jj version control system."
   :group 'majutsu
   (setq-local line-number-mode nil)
@@ -499,7 +505,11 @@ instead of stopping on visual padding."
              (insert "Error: " err)))))
      t)))
 
-(define-derived-mode majutsu-op-log-mode magit-section-mode "Majutsu Op Log"
+(defvar-keymap majutsu-op-log-mode-map
+  :doc "Keymap for `majutsu-op-log-mode'."
+  :parent majutsu-mode-map)
+
+(define-derived-mode majutsu-op-log-mode majutsu-mode "Majutsu Op Log"
   "Major mode for viewing jj operation log."
   :group 'majutsu
   (setq-local line-number-mode nil)

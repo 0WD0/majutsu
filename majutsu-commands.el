@@ -616,16 +616,11 @@ With prefix ARG, open the new transient for interactive selection."
    :face '(:background "dark cyan" :foreground "white")
    :collection-var 'majutsu-diff-to))
 
-(defvar majutsu-diff-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map magit-section-mode-map)
-    (define-key map (kbd "q") 'quit-window)
-    (define-key map (kbd "g") 'revert-buffer)
-    (define-key map (kbd "RET") 'majutsu-enter-dwim)
-    map)
-  "Keymap for `majutsu-diff-mode'.")
+(defvar-keymap majutsu-diff-mode-map
+  :doc "Keymap for `majutsu-diff-mode'."
+  :parent majutsu-mode-map)
 
-(define-derived-mode majutsu-diff-mode magit-section-mode "JJ Diff"
+(define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
   "Major mode for viewing jj diffs."
   :group 'majutsu
   (setq-local line-number-mode nil))
@@ -665,6 +660,7 @@ log view) or the working copy (if elsewhere)."
          ;; Ensure we use --git format for our parser to work correctly
          (final-args (append '("diff")
                              (unless (member "--git" args) '("--git"))
+                             '("--color=never")
                              args)))
     (with-current-buffer buf
       (setq default-directory repo-root)
