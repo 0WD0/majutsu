@@ -200,18 +200,26 @@ The trailing newline keeps each entry on its own line even when
 
 ;;; Log Parsing
 
-(defun majutsu-parse-log-entries (&optional buf)
+(defvar-local majutsu-log--cached-entries nil
+  "Cached log entries for the current buffer.")
+
+(defun majutsu-parse-log-entries (&optional buf log-output)
   "Parse jj log output from BUF (defaults to `current-buffer').
+If LOG-OUTPUT is provided, parse it.
+If `majutsu-log--cached-entries' is set, return it.
+Otherwise, run the command in BUF (or current buffer) to get output.
 
 The parser keeps graph spacer lines (blank or connector rows) with the
 preceding revision so `magit-section-forward' can jump between commits
 instead of stopping on visual padding."
-  (with-current-buffer (or buf (current-buffer))
-    (let* ((args (majutsu-log--build-args))
-           (log-output (apply #'majutsu--run-command-color args)))
-      (when (and log-output (not (string-empty-p log-output)))
-        (let ((lines (split-string log-output "\n"))
-              (entries '())
+  (if (and majutsu-log--cached-entries (not log-output))
+      majutsu-log--cached-entries
+    (with-current-buffer (or buf (current-buffer))
+      (let* ((args (majutsu-log--build-args))
+             (output (or log-output (apply #'majutsu--run-command-color args))))
+        (when (and output (not (string-empty-p output)))
+          (let ((lines (split-string output "\n"))
+                (entries '())
               (current nil)
               (pending nil))
           (dolist (line lines)
@@ -250,7 +258,7 @@ instead of stopping on visual padding."
             (when pending
               (setq current (plist-put current :suffix-lines (nreverse pending))))
             (push current entries))
-          (nreverse entries))))))
+          (nreverse entries)))))))
 
 (defun majutsu--indent-string (s column)
   "Insert STRING into the current buffer, indenting each line to COLUMN."
@@ -356,14 +364,38 @@ instead of stopping on visual padding."
   ;; Clear duplicate selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-duplicate-clear-selections nil t))
 
-(defun majutsu-log-refresh ()
-  "Refresh the current majutsu log buffer."
-  (interactive)
-  (let ((root (majutsu--root)))
-    (setq-local majutsu--repo-root root)
-    (setq default-directory root)
+(defun majutsu-log-render ()
+  "Render the log buffer using cached data."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
     (magit-insert-section (magit-root-section)
       (run-hooks 'majutsu-log-sections-hook))))
+
+(defun majutsu-log-refresh ()
+  "Refresh the current majutsu log buffer asynchronously."
+  (interactive)
+  (let ((root (majutsu--root))
+        (buf (current-buffer)))
+    (setq-local majutsu--repo-root root)
+    (setq default-directory root)
+    (setq majutsu-log--cached-entries nil)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "Loading..."))
+    (majutsu--run-command-async
+     (majutsu-log--build-args)
+     (lambda (output)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
+           (majutsu-log-render))))
+     (lambda (err)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (let ((inhibit-read-only t))
+             (erase-buffer)
+             (insert "Error: " err)))))
+     t)))
 
 (defun majutsu-log ()
   "Open the majutsu log buffer."
