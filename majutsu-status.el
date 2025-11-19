@@ -51,7 +51,7 @@
 
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
-  (let ((status-output (majutsu--run-command-color "status")))
+  (let ((status-output (majutsu--run-command "status")))
     (when (and status-output (not (string-empty-p status-output)))
       (magit-insert-section (majutsu-status-section)
         (magit-insert-heading "Working Copy Status")
