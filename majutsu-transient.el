@@ -567,9 +567,7 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
     ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
    ["Options"
     ("-s" "Stat" "--stat")
-    ("-S" "Summary" "--summary")
-    ("-g" "Git format" "--git")
-    ("--color-words" "Color words" "--color-words")]
+    ("-S" "Summary" "--summary")]
    ["Actions"
     ("d" "Execute" majutsu-diff-execute)
     ("q" "Quit" transient-quit-one)]])
