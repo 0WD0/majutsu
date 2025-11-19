@@ -55,6 +55,34 @@
                         exit-code)
         result))))
 
+(defun majutsu--run-command-async (args callback &optional error-callback color)
+  "Run jj command with ARGS asynchronously.
+CALLBACK is called with the output string on success.
+ERROR-CALLBACK is called with the error output on failure.
+If COLOR is non-nil, force color output."
+  (let* ((default-directory (majutsu--root))
+         (buffer (generate-new-buffer " *majutsu-async*"))
+         (process-environment (if color
+                                  (cons "FORCE_COLOR=1" (cons "CLICOLOR_FORCE=1" process-environment))
+                                process-environment))
+         (process (apply #'start-file-process "majutsu-async" buffer majutsu-executable args)))
+    (set-process-sentinel process
+                          (lambda (proc _event)
+                            (let ((status (process-status proc)))
+                              (when (memq status '(exit signal))
+                                (let ((output (with-current-buffer buffer (buffer-string)))
+                                      (exit-code (process-exit-status proc)))
+                                  (kill-buffer buffer)
+                                  (if (zerop exit-code)
+                                      (progn
+                                        (when color
+                                          (setq output (ansi-color-apply output)))
+                                        (funcall callback output))
+                                    (if error-callback
+                                        (funcall error-callback output)
+                                      (message "Majutsu async error: %s" output))))))))
+    process))
+
 (defun majutsu--with-progress (message command-func)
   "Execute COMMAND-FUNC with minimal progress indication."
   (let ((start-time (current-time))
