@@ -22,6 +22,9 @@
 ;;; Classes
 
 (defclass majutsu-status-section (magit-section) ())
+(defclass majutsu-conflict-section (magit-section) ())
+(defclass majutsu-conflict-file-section (magit-section)
+  ((file :initarg :file)))
 (defclass majutsu-diff-stat-section (magit-section) ())
 (defclass majutsu-diff-section (magit-section) ())
 (defclass majutsu-file-section (magit-section)
@@ -32,6 +35,19 @@
    (header :initarg :header)))
 
 ;;; Status
+
+(defun majutsu-log-insert-conflicts ()
+  "Insert conflicted files section."
+  (let ((output (majutsu--run-command "resolve" "--list")))
+    (when (and output (not (string-empty-p output)))
+      (magit-insert-section (majutsu-conflict-section)
+        (magit-insert-heading "Unresolved Conflicts")
+        (dolist (line (split-string output "\n" t))
+          (let ((file (string-trim line)))
+            (magit-insert-section (majutsu-conflict-file-section file nil :file file)
+              (magit-insert-heading (propertize file 'face 'error))
+              (insert "\n"))))
+        (insert "\n")))))
 
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
