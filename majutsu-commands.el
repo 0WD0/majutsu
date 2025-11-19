@@ -1183,9 +1183,15 @@ misclassifying Majutsu candidates."
                                 (substring (car bookmark-args) (length "--bookmark="))))
                        (bookmark-args "Successfully pushed selected bookmarks")
                        (t "Successfully pushed to remote"))))
-    (let ((result (apply #'majutsu--run-command cmd-args)))
-      (when (majutsu--handle-push-result cmd-args result success-msg)
-        (majutsu-log-refresh)))))
+    (majutsu--message-with-log "Pushing to remote...")
+    (majutsu--run-command-async
+     cmd-args
+     (lambda (result)
+       (when (majutsu--handle-push-result cmd-args result success-msg)
+         (majutsu-log-refresh)))
+     (lambda (err)
+       (message "Push failed: %s" err))
+     t)))
 
 (defun majutsu--handle-push-result (_cmd-args result success-msg)
   "Enhanced push result handler with bookmark analysis."
@@ -1258,11 +1264,16 @@ misclassifying Majutsu candidates."
                                                    branch-args))
                            (apply #'append (mapcar (lambda (s)
                                                      (list "--remote" (substring s (length "--remote="))))
-                                                   remote-args))))
-         (result (apply #'majutsu--run-command cmd-args)))
-    (if (majutsu--handle-command-result cmd-args result
-                                        "Fetched from remote" "Fetch failed")
-        (majutsu-log-refresh))))
+                                                   remote-args)))))
+    (majutsu--run-command-async
+     cmd-args
+     (lambda (result)
+       (when (majutsu--handle-command-result cmd-args result
+                                             "Fetched from remote" "Fetch failed")
+         (majutsu-log-refresh)))
+     (lambda (err)
+       (message "Fetch failed: %s" err))
+     t)))
 
 (defun majutsu--get-git-remotes ()
   "Return a list of Git remote names for the current repository.
