@@ -1402,9 +1402,11 @@ RESULT-TYPE, when non-nil, is used as declared type."
   (majutsu-template--ensure-node form))
 
 ;;;###autoload
-(defun majutsu-template-compile (form)
-  "Public entry point: compile FORM into a jj template string."
-  (majutsu-template--compile form))
+(defun majutsu-template-compile (form &optional self-type)
+  "Public entry point: compile FORM into a jj template string.
+Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
+  (let ((majutsu-template-default-self-type (or self-type majutsu-template-default-self-type)))
+    (majutsu-template--compile form)))
 
 (defun majutsu-template--sugar-transform (form)
   "Transform compact FORM into the template AST."
@@ -1482,15 +1484,24 @@ RESULT-TYPE, when non-nil, is used as declared type."
       `(quote ,node))))
 
 ;;;###autoload
-(defmacro tpl-compile (form)
+(defmacro tpl-compile (form &optional self-type)
   "Expand and compile FORM to a jj template string.
-Vector literals are compiled at macro-expansion time. Non-vector forms are
-evaluated at runtime and normalized via `majutsu-template--normalize'."
-  (if (vectorp form)
-      (let ((majutsu-template--allow-eval t))
-        (let ((node (majutsu-template--rewrite form)))
-          `(majutsu-template-compile ',node)))
+Vector literals are compiled at macro-expansion time IF SELF-TYPE is provided
+as a constant.
+
+If SELF-TYPE is not provided, compilation is deferred to runtime to respect
+dynamic bindings of `majutsu-template-default-self-type'."
+  (cond
+   ((and (vectorp form) (or (keywordp self-type) (and (consp self-type) (eq (car self-type) 'quote))))
+    (let ((majutsu-template-default-self-type (majutsu-template--normalize-type-symbol (eval self-type)))
+          (majutsu-template--allow-eval t))
+      (let ((node (majutsu-template--rewrite form)))
+        `(majutsu-template-compile ',node))))
+   ((vectorp form)
+    `(let ((majutsu-template--allow-eval t))
+       (majutsu-template-compile ,form ,self-type)))
+   (t
     `(let ((majutsu-template--allow-eval nil))
-       (majutsu-template-compile (majutsu-template--normalize ,form)))))
+       (majutsu-template-compile (majutsu-template--normalize ,form) ,self-type)))))
 
 (provide 'majutsu-template)
