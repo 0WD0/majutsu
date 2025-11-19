@@ -177,6 +177,85 @@ TYPE is either `single' or `multi'."
                          (t nil)))
                       items)))
 
+;;; Revset Builder
+
+(defvar-local majutsu-revset-builder-current ""
+  "Current revset string being built.")
+
+(defun majutsu-revset-builder-update (str)
+  "Append STR to current revset."
+  (setq majutsu-revset-builder-current (concat majutsu-revset-builder-current str)))
+
+(defun majutsu-revset-add-author ()
+  (interactive)
+  (let ((pattern (read-string "Author pattern: ")))
+    (majutsu-revset-builder-update (format "author(\"%s\")" pattern))))
+
+(defun majutsu-revset-add-description ()
+  (interactive)
+  (let ((pattern (read-string "Description pattern: ")))
+    (majutsu-revset-builder-update (format "description(\"%s\")" pattern))))
+
+(defun majutsu-revset-add-bookmarks ()
+  (interactive)
+  (let ((pattern (read-string "Bookmark pattern: ")))
+    (majutsu-revset-builder-update (format "bookmarks(\"%s\")" pattern))))
+
+(defun majutsu-revset-add-range ()
+  (interactive)
+  (majutsu-revset-builder-update "::"))
+
+(defun majutsu-revset-add-and ()
+  (interactive)
+  (majutsu-revset-builder-update " & "))
+
+(defun majutsu-revset-add-or ()
+  (interactive)
+  (majutsu-revset-builder-update " | "))
+
+(defun majutsu-revset-add-not ()
+  (interactive)
+  (majutsu-revset-builder-update " ~"))
+
+(defun majutsu-revset-add-parents ()
+  (interactive)
+  (majutsu-revset-builder-update "-"))
+
+(defun majutsu-revset-add-children ()
+  (interactive)
+  (majutsu-revset-builder-update "+"))
+
+(defun majutsu-revset-clear ()
+  (interactive)
+  (setq majutsu-revset-builder-current ""))
+
+(defun majutsu-revset-done ()
+  (interactive)
+  (majutsu-log--state-set :revisions majutsu-revset-builder-current)
+  (majutsu-log-refresh)
+  (setq majutsu-revset-builder-current "")
+  (transient-quit-one))
+
+(transient-define-prefix majutsu-revset-builder ()
+  "Build a revset expression."
+  :transient-suffix 'transient--do-stay
+  [:description (lambda () (format "Revset: %s" majutsu-revset-builder-current))
+   ["Add"
+    ("a" "Author" majutsu-revset-add-author)
+    ("d" "Description" majutsu-revset-add-description)
+    ("b" "Bookmarks" majutsu-revset-add-bookmarks)
+    ("r" "Range (::)" majutsu-revset-add-range)
+    ("c" "Children (+)" majutsu-revset-add-children)
+    ("p" "Parents (-)" majutsu-revset-add-parents)]
+   ["Operators"
+    ("&" "And" majutsu-revset-add-and)
+    ("|" "Or" majutsu-revset-add-or)
+    ("!" "Not" majutsu-revset-add-not)
+    ("C" "Clear" majutsu-revset-clear)]
+   ["Actions"
+    ("RET" "Apply" majutsu-revset-done :transient nil)
+    ("q" "Quit" transient-quit-one)]])
+
 ;;; Log Transient
 
 (defun majutsu-log--toggle-desc (label key)
@@ -222,6 +301,7 @@ TYPE is either `single' or `multi'."
     ("R" "Clear revset" majutsu-log-transient-clear-revisions
      :if (lambda () (majutsu-log--state-get :revisions))
      :transient t)
+    ("B" "Builder" majutsu-revset-builder :transient t)
     ("n" "Limit" majutsu-log-transient-set-limit
      :description (lambda ()
                     (majutsu-log--value-desc "Limit" :limit))
