@@ -1,22 +1,28 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `majutsu.el` – Primary Emacs Lisp source (major mode + commands).
+- `majutsu.el` – Entry point and keymaps.
+- `majutsu-core.el` – Core utilities and configuration.
+- `majutsu-process.el` – Asynchronous process handling.
+- `majutsu-log.el` – Log view and parsing.
+- `majutsu-status.el` – Status and diff views.
+- `majutsu-transient.el` – Transient menus and state.
+- `majutsu-commands.el` – Interactive commands.
 - `majutsu-template.el` – Embedded DSL for composing Jujutsu templates.
+- `Eask` – Dependency and build configuration.
 - `README.org` – Usage and installation notes.
 - `docs/` – Living design notes/specifications (primarily Chinese).
 - `LICENSE` – Project license.
-- `test/` – ERT tests (add as needed, e.g., `test/majutsu-test.el`).
+- `test/` – ERT tests.
 
-Keep modules small and cohesive. Prefer adding helpers as private functions inside `majutsu.el`. Split into new files only when a logical boundary is obvious.
+Keep modules small and cohesive.
 
 ## Build, Test, and Development Commands
-- Byte-compile: `emacs -Q --batch -L . -f batch-byte-compile majutsu.el`
-- Load check: `emacs -Q --batch -L . --eval '(progn (require (quote majutsu)) (message "loaded"))'`
-- Interactive dev: `emacs -Q -L . -l majutsu.el` then `M-x majutsu-log`
-- checkdoc: `emacs -Q --batch -L . majutsu.el -f checkdoc`
-- package-lint (if installed): `emacs -Q --batch -L . -l package-lint.el majutsu.el -f package-lint-batch-and-exit`
-- Run tests: `emacs -Q --batch -L . -L test -l majutsu.el -l test/majutsu-test.el -f ert-run-tests-batch-and-exit`
+This project uses [Eask](https://github.com/emacs-eask/eask) for development.
+
+- Install dependencies: `eask install-deps`
+- Byte-compile: `eask compile`
+- Run tests: `eask test ert test/*.el`
 
 ## Coding Style & Naming Conventions
 - Emacs Lisp, 2-space indentation; no tabs.

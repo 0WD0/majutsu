@@ -13,9 +13,9 @@
 
 (source "gnu")
 
-(depends-on "emacs" "26.1")
-(depends-on "magit")
-(depends-on "transient")
+(depends-on "emacs" "29.1")
+(depends-on "magit" "3.3.0")
+(depends-on "transient" "0.5.0")
 
 (source 'melpa)
 (source 'jcs-elpa)

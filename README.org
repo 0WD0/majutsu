@@ -19,7 +19,9 @@ the original package’s scope.
 - *Context-sensitive actions* via DWIM (Do What I Mean) Enter key behavior
 - *Git integration* with push/fetch operations and configurable options
 - *Log transient* to tweak revsets, limits, and path filters on the fly
-- *Built-in conflict resolution* using Emacs ediff and smerge-mode
+- *Revset Builder* for interactively constructing complex revset expressions
+- *Operation Log* viewer (~majutsu-op-log~) to inspect repo history
+- *Built-in conflict resolution* listing conflicted files and opening them in smerge-mode
 - *Composable templates* through the bundled ~majutsu-template~ DSL for JJ output
 
 * Requirements
@@ -143,17 +145,8 @@ templates directly from Elisp (used by ~majutsu--log-template~).
 #+begin_src emacs-lisp
 ;; Customize jj executable path if needed
 (setq majutsu-executable "/path/to/jj")
-
 #+end_src
 
 * Contributing
 Issues and pull requests welcome! This project aims to provide a solid JJ
 interface while maintaining magit-like usability patterns.
-
-Run the test suite with:
-#+begin_src sh
-emacs -Q --batch -L . -L test \
-      -l majutsu-template.el \
-      -l test/majutsu-template-test.el \
-      -f ert-run-tests-batch-and-exit
-#+end_src
