@@ -120,7 +120,7 @@ quit 时清理临时文件并自动 ~majutsu-log-refresh~，提示左右 buffer 
 执行成功后刷新 log，并在可能情况下跳回新的 ~@~。
 
 *** Transient 模式（majutsu-new-transient）
-- 新增命令 ~majutsu-new-transient~，默认提供在 ~majutsu-mode-transient~ 菜单中；不强绑按键，避免覆盖 ~magit-section~ 的导航键。
+- 新增命令 ~majutsu-new-transient~，默认提供在 ~majutsu-dispatch~ 菜单中；不强绑按键，避免覆盖 ~magit-section~ 的导航键。
 - 进入 transient 后沿用 rebase transient 的 overlay 模式，三种状态分别高亮：
   - <REVSETS>：父节点集合，按 ~p~ 在光标处 toggle；使用 ~[PARENT]~ label 及 ~(:background "dark orange" :foreground "black")~。
   - ~-A/--after~：插入位置的父节点，按 ~a~ toggle；使用 ~[AFTER]~ label 及 ~(:background "dark blue" :foreground "white")~。
