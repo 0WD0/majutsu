@@ -1,7 +1,7 @@
 ;; -*- mode: eask; lexical-binding: t -*-
 
 (package "majutsu"
-         "0.2.0"
+         "0.3.0"
          "Interface to jj version control system")
 
 (website-url "https://github.com/0WD0/majutsu")

@@ -1,0 +1,58 @@
+* Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [[https://keepachangelog.com/en/1.1.0/][Keep a Changelog 1.1.0]] and this project adheres to [[https://semver.org/spec/v2.0.0.html][Semantic Versioning 2.0.0]].
+
+** [Unreleased]
+
+** [0.3.0] - 2025-11-25
+
+*** Added
+- Native evil support.
+- Add asynchronous support for ~majutsu-log~, ~majutsu-diff~, ~majutsu-git-fetch~ and ~majutsu-git-push~.
+- Basic ~majutsu-op-log~ implementation.
+- Added ~majutsu-hack-dir-local-variables~, ignore trailing whitespace in majutsu buffers.
+- ~majutsu-rebase-transient~ now can toggle source and destination argument type (~-b~ ~-r~ ~-s~ / ~-d~ ~-A~ ~-B~).
+- ~tpl-compile~ (main entry of ~majutsu-template~) add a optional ~self-type~ argument.
+- Bound ~majutsu-diff~ to [[kbd:d]].
+
+*** Changed
+- Keybinding of ~majutsu-describe~ changed from [[kbd:d]] to [[kbd:c]].
+- Keybinding of ~majutsu-commit~ changed from [[kbd:c]] to [[kbd:C]].
+- Keybinding of ~majutsu-undo~ changed from [[kbd:u]] to [[kbd:C-/]].
+- Keybinding of ~majutsu-redo~ changed from [[kbd:R]] to [[kbd:C-?]].
+- Keybinding of ~majutsu-abandon~ changed from [[kbd:a]] to [[kbd:k]].
+- Renamed ~majutsu-mode-transient~ to ~majutsu-dispatch~.
+- Renamed ~majutsu-goto-current~ to ~majutsu-log-goto-@~.
+
+*** Fixed
+- ~majutsu-log-got-@~ works based on output of =jj log= command.
+- Keyword parsing in ~majutsu-template~ respects zero argument method chains.
+
+** [0.2.0] - 2025-11-20
+*** Added
+- Added a confirm action customization for abandon/redo/undo.
+- Added ~majutsu-diff-transient~.
+- Added ~majutsu-new-transient~.
+- Added ~majutsu-duplicate-transient~.
+- Added revset, line limit and path filter argument for ~majutsu-log-transient~.
+- Added support for =jj bookmark move --allow-backwards=.
+  Use [[kbd:m]] in ~majutsu-bookmark-transient~ to denote commands without flags,
+  and use [[kbd:M]] for commands that include =--allow-backwards=.
+
+*** Changed
+- Depend on with-editor.
+- ~majutsu-diff~ and ~majutsu-describe~ now can run outside of majutsu-log buffer.
+- ~majutsu-log-refresh~ tracks the section from before the refresh to keep the visuals consistent.
+
+*** Fixed
+- Fixed an issue where diff sections couldn’t be toggled/collapsed.
+- Don’t strip leading spaces when parsing log graphs.
+- Prefer change ID, and for divergent commits (with "??" as suffix) fallback to commit ID.
+
+** [0.1.0] - 2025-10-15
+
+- forked form [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]]
+
+*** Added
+- ~majutsu-template~
