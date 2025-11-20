@@ -23,6 +23,7 @@ the original package’s scope.
 - *Operation Log* viewer (~majutsu-op-log~) to inspect repo history
 - *Built-in conflict resolution* listing conflicted files and opening them in smerge-mode
 - *Composable templates* through the bundled ~majutsu-template~ DSL for JJ output
+- *Native Evil integration* with sensible defaults and keybindings
 
 * Requirements
 - Emacs 26.1 or later
@@ -146,6 +147,48 @@ templates directly from Elisp (used by ~majutsu--log-template~).
 ;; Customize jj executable path if needed
 (setq majutsu-executable "/path/to/jj")
 #+end_src
+
+* Evil integration
+Majutsu ships with ~majutsu-evil.el~, so Evil users no longer need an external
+module.  Once Evil is loaded, the integration installs motion-friendly defaults
+and reuses the Doom module keybindings (e.g., ~.~ for ~majutsu-goto-current~,
+~gr~ / ~R~ for refresh, ~E~ / ~M~ for diffedit, etc.).
+
+- Toggle the integration entirely via ~M-x customize-group RET majutsu-evil RET~
+  or by setting ~majutsu-evil-enable-integration~ to ~nil~.
+- Change the default state (normal/motion/emacs/…) by customizing
+  ~majutsu-evil-initial-state~.
+
+** Evil keybinding cheat-sheet
+All bindings below live in ~majutsu-mode-map~ unless noted otherwise and apply
+to Evil's normal/visual/motion states (matching the defaults set by
+~majutsu-evil-initial-state~):
+
+- ~.~ → ~majutsu-goto-current~
+- ~R~ / ~g r~ → ~majutsu-log-refresh~
+- ~c~ → ~majutsu-commit~
+- ~e~ → ~majutsu-edit-changeset~
+- ~u~ → ~majutsu-undo~
+- ~C-r~ → ~majutsu-redo~
+- ~s~ → ~majutsu-squash-transient~
+- ~l~ → ~majutsu-log-transient~
+- ~d~ → ~majutsu-describe~
+- ~x~ → ~majutsu-abandon~
+- ~b~ → ~majutsu-bookmark-transient~
+- ~r~ → ~majutsu-rebase-transient~
+- ~D~ → ~majutsu-diff~
+- ~E~ → ~majutsu-diffedit-emacs~
+- ~M~ → ~majutsu-diffedit-smerge~
+- ~?~ → ~majutsu-dispatch~
+- ~RET~ (normal/motion) → ~majutsu-enter-dwim~
+- ~RET~ (visual) → ~majutsu-enter-dwim~ on the active region
+
+In ~majutsu-diff-mode-map~, ~RET~ is also bound (normal/visual/motion) to
+~majutsu-enter-dwim~ so diff hunk selections behave consistently.
+
+When [[https://github.com/hlissner/evil-snipe][evil-snipe]] is present, Majutsu automatically calls
+~turn-off-evil-snipe-mode~ and ~turn-off-evil-snipe-override-mode~ on
+~majutsu-mode-hook~ to avoid conflicting motions inside Majutsu buffers.
 
 * Contributing
 Issues and pull requests welcome! This project aims to provide a solid JJ

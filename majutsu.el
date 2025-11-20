@@ -23,6 +23,9 @@
 (require 'majutsu-transient)
 (require 'majutsu-commands)
 
+(with-eval-after-load 'evil
+  (require 'majutsu-evil nil t))
+
 ;;; Aliases
 
 (defalias 'majutsu 'majutsu-log
