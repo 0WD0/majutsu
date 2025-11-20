@@ -897,21 +897,52 @@ With prefix ARG, open the duplicate transient."
    :face '(:background "dark blue" :foreground "white")
    :collection-var 'majutsu-rebase-destinations))
 
+(defun majutsu-rebase-cleanup-on-exit ()
+  "Clean up rebase selections when transient exits."
+  (majutsu-rebase-clear-selections)
+  (remove-hook 'transient-exit-hook 'majutsu-rebase-cleanup-on-exit t))
+
 ;;;###autoload
-(defun majutsu-rebase-execute ()
-  "Execute rebase with selected source and destinations."
+(defun majutsu-rebase-toggle-source-type ()
+  "Toggle rebase source type between -s, -b, and -r."
   (interactive)
+  (setq majutsu-rebase-source-type
+        (cond
+         ((string= majutsu-rebase-source-type "-s") "-b")
+         ((string= majutsu-rebase-source-type "-b") "-r")
+         (t "-s"))))
+
+;;;###autoload
+(defun majutsu-rebase-toggle-dest-type ()
+  "Toggle rebase destination type between -o, -A, and -B."
+  (interactive)
+  (setq majutsu-rebase-dest-type
+        (cond
+         ((string= majutsu-rebase-dest-type "-d") "-A")
+         ((string= majutsu-rebase-dest-type "-A") "-B")
+         (t "-d"))))
+
+;;;###autoload
+(defun majutsu-rebase-execute (args)
+  "Execute rebase with selected source and destinations.
+ARGS are passed from the transient."
+  (interactive (list (transient-args 'majutsu-rebase-transient--internal)))
   (if (and (majutsu-rebase--source-entry) majutsu-rebase-destinations)
       (let* ((source-entry (majutsu-rebase--source-entry))
              (source-rev (majutsu--transient-entry-revset source-entry))
              (source-display (majutsu--transient-entry-display source-entry))
              (dest-revs (seq-filter (lambda (rev) (and rev (not (string-empty-p rev))))
                                     (majutsu-rebase--destination-revsets)))
-             (dest-display (majutsu-rebase--destination-display)))
+             (dest-display (majutsu-rebase--destination-display))
+             (skip-emptied? (member "--skip-emptied" args))
+             (keep-divergent? (member "--keep-divergent" args)))
         (when (and source-rev dest-revs
                    (yes-or-no-p (format "Rebase %s -> %s? " source-display dest-display)))
-          (let* ((dest-args (apply #'append (mapcar (lambda (dest) (list "-d" dest)) dest-revs)))
-                 (all-args (append (list "rebase" "-s" source-rev) dest-args))
+          (let* ((dest-args (apply #'append (mapcar (lambda (dest) (list majutsu-rebase-dest-type dest)) dest-revs)))
+                 (all-args (append (list "rebase" majutsu-rebase-source-type source-rev)
+                                   dest-args
+                                   (when skip-emptied? '("--skip-emptied"))
+                                   (when keep-divergent? '("--keep-divergent"))))
                  (progress-msg (format "Rebasing %s onto %s" source-display dest-display))
                  (success-msg (format "Rebase completed: %s -> %s" source-display dest-display)))
             (majutsu--message-with-log "%s..." progress-msg)
@@ -921,11 +952,6 @@ With prefix ARG, open the duplicate transient."
                     (majutsu-rebase-clear-selections)
                     (majutsu-log-refresh)))))))
     (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
-
-(defun majutsu-rebase-cleanup-on-exit ()
-  "Clean up rebase selections when transient exits."
-  (majutsu-rebase-clear-selections)
-  (remove-hook 'transient-exit-hook 'majutsu-rebase-cleanup-on-exit t))
 
 ;;;###autoload
 (defun majutsu-rebase-transient ()

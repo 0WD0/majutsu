@@ -654,6 +654,12 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
 (defvar-local majutsu-rebase-destinations nil
   "List of entry structs selected as rebase destinations.")
 
+(defvar-local majutsu-rebase-source-type "-s"
+  "Flag to use for rebase source (-s, -b, or -r).")
+
+(defvar-local majutsu-rebase-dest-type "-d"
+  "Flag to use for rebase destination (-d, -A, or -B).")
+
 (defun majutsu-rebase--source-entry ()
   "Return the entry selected as rebase source, if any."
   (car majutsu-rebase-source))
@@ -671,6 +677,8 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
   (when-let* ((entry (majutsu-rebase--source-entry)))
     (majutsu--transient-entry-display entry)))
 
+
+
 (transient-define-prefix majutsu-rebase-transient--internal ()
   "Internal transient for jj rebase operations."
   :transient-suffix 'transient--do-exit
@@ -679,9 +687,11 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
    (lambda ()
      (concat "JJ Rebase"
              (when-let* ((source (majutsu-rebase--source-display)))
-               (format " | Source: %s" source))
+               (format " | Source (%s): %s" majutsu-rebase-source-type source))
              (when majutsu-rebase-destinations
-               (format " | Destinations: %s" (majutsu-rebase--destination-display)))))
+               (format " | Destinations (%s): %s"
+                       majutsu-rebase-dest-type
+                       (majutsu-rebase--destination-display)))))
    :class transient-columns
    ["Selection"
     ("s" "Set source" majutsu-rebase-set-source
@@ -690,13 +700,22 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
                         (format "Set source (current: %s)" (majutsu-rebase--source-display))
                       "Set source"))
      :transient t)
+    ("S" "Toggle source type" majutsu-rebase-toggle-source-type
+     :description (lambda () (format "Source type (%s)" majutsu-rebase-source-type))
+     :transient t)
     ("d" "Toggle destination" majutsu-rebase-toggle-destination
      :description (lambda ()
                     (format "Toggle destination (%d selected)"
                             (length majutsu-rebase-destinations)))
      :transient t)
+    ("D" "Toggle dest type" majutsu-rebase-toggle-dest-type
+     :description (lambda () (format "Dest type (%s)" majutsu-rebase-dest-type))
+     :transient t)
     ("c" "Clear selections" majutsu-rebase-clear-selections
      :transient t)]
+   ["Options"
+    ("-se" "Skip emptied" "--skip-emptied")
+    ("-kd" "Keep divergent" "--keep-divergent")]
    ["Actions"
     ("r" "Execute rebase" majutsu-rebase-execute
      :description (lambda ()
