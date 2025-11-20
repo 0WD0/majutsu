@@ -220,45 +220,45 @@ instead of stopping on visual padding."
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n"))
                 (entries '())
-              (current nil)
-              (pending nil))
-          (dolist (line lines)
-            (let* ((raw-elems (split-string line "\x1e"))
-                   (trimmed-elems (mapcar #'string-trim-right raw-elems))
-                   (clean-elems (seq-remove (lambda (l) (or (not l) (string-blank-p l)))
-                                            trimmed-elems)))
-              (if (> (length clean-elems) 1)
-                  (progn
-                    (when current
-                      (when pending
-                        (setq current (plist-put current :suffix-lines (nreverse pending)))
-                        (setq pending nil))
-                      (push current entries))
-                    (setq current
-                          (seq-let (prefix change-id author bookmarks _git-head _conflict _signature _empty short-desc commit-id timestamp long-desc)
-                              trimmed-elems
-                            (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
-                                   (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
-                                   (id8  (if (> (length cid) 8) (substring cid 0 8) cid))
-                                   (idv  (unless (string-empty-p id8) id8)))
-                              (list :id idv
-                                    :prefix prefix
-                                    :line line
-                                    :elems clean-elems
-                                    :author author
-                                    :change-id cid
-                                    :commit_id full
-                                    :short-desc short-desc
-                                    :long-desc (when long-desc (json-parse-string long-desc))
-                                    :timestamp timestamp
-                                    :bookmarks bookmarks))))
-                    (setq pending nil))
-                (push line pending))))
-          (when current
-            (when pending
-              (setq current (plist-put current :suffix-lines (nreverse pending))))
-            (push current entries))
-          (nreverse entries)))))))
+                (current nil)
+                (pending nil))
+            (dolist (line lines)
+              (let* ((raw-elems (split-string line "\x1e"))
+                     (trimmed-elems (mapcar #'string-trim-right raw-elems))
+                     (clean-elems (seq-remove (lambda (l) (or (not l) (string-blank-p l)))
+                                              trimmed-elems)))
+                (if (> (length clean-elems) 1)
+                    (progn
+                      (when current
+                        (when pending
+                          (setq current (plist-put current :suffix-lines (nreverse pending)))
+                          (setq pending nil))
+                        (push current entries))
+                      (setq current
+                            (seq-let (prefix change-id author bookmarks _git-head _conflict _signature _empty short-desc commit-id timestamp long-desc)
+                                trimmed-elems
+                              (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
+                                     (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
+                                     (id8  (if (> (length cid) 8) (substring cid 0 8) cid))
+                                     (idv  (unless (string-empty-p id8) id8)))
+                                (list :id idv
+                                      :prefix prefix
+                                      :line line
+                                      :elems clean-elems
+                                      :author author
+                                      :change-id cid
+                                      :commit_id full
+                                      :short-desc short-desc
+                                      :long-desc (when long-desc (json-parse-string long-desc))
+                                      :timestamp timestamp
+                                      :bookmarks bookmarks))))
+                      (setq pending nil))
+                  (push line pending))))
+            (when current
+              (when pending
+                (setq current (plist-put current :suffix-lines (nreverse pending))))
+              (push current entries))
+            (nreverse entries)))))))
 
 (defun majutsu--indent-string (s column)
   "Insert STRING into the current buffer, indenting each line to COLUMN."
