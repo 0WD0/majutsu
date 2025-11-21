@@ -159,22 +159,39 @@
                           ;; Process the lines to find and insert hunks
                           (let ((hunk-lines nil)
                                 (in-hunk nil)
-                                (hunk-header nil))
+                                (hunk-header nil)
+                                (headers nil))
                             (dolist (line ordered-lines)
                               (cond
                                ;; Hunk header
                                ((string-match "^@@ .* @@" line)
-                                (when (and in-hunk hunk-header)
-                                  (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))
+                                (if in-hunk
+                                    ;; Finish previous hunk
+                                    (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines))
+                                  ;; First hunk found. Insert headers collected so far.
+                                  (dolist (header (nreverse headers))
+                                    (insert (propertize header 'font-lock-face 'magit-diff-context))
+                                    (insert "\n")))
+                                ;; Start new hunk
                                 (setq hunk-header line
                                       hunk-lines nil
-                                      in-hunk t))
+                                      in-hunk t
+                                      headers nil))
                                ;; Hunk content
                                (in-hunk
-                                (push line hunk-lines))))
-                            ;; Insert final hunk
+                                (push line hunk-lines))
+                               ;; Header line
+                               (t
+                                (push line headers))))
+                            ;; After loop:
+                            ;; If we were in a hunk, finish it.
                             (when (and in-hunk hunk-header)
-                              (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))))))
+                              (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))
+                            ;; If we were NOT in a hunk (no hunks found), insert headers.
+                            (when (and (not in-hunk) headers)
+                              (dolist (header (nreverse headers))
+                                (insert (propertize header 'font-lock-face 'magit-diff-context))
+                                (insert "\n")))))))
 
 (defun majutsu--insert-hunk-section (file header lines)
   "Insert a hunk section."
