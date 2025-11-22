@@ -6,7 +6,7 @@
 ;; Author: Brandon Olivier
 ;;         0WD0 <1105848296@qq.com>
 ;; Maintainer: 0WD0 <1105848296@qq.com>
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "26.1") (magit "3.0.0") (transient "0.3.0"))
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
