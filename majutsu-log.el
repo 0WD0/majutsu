@@ -385,13 +385,23 @@ instead of stopping on visual padding."
 
 ;;; Log Navigation
 
-(defun majutsu-goto-current ()
+(defconst majutsu--show-change-id-template
+  (tpl-compile [:change_id :shortest 8]))
+
+(defconst majutsu--show-commit-id-template
+  (tpl-compile [:commit_id :shortest 8]))
+
+(defun majutsu-current-change-id ()
+  (majutsu--run-command "log" "--no-graph" "-r" "@" "-T" majutsu--show-change-id-template))
+
+(defun majutsu-current-commit-id ()
+  (majutsu--run-command "log" "--no-graph" "-r" "@" "-T" majutsu--show-commit-id-template))
+
+(defun majutsu-log-goto-@ ()
   "Jump to the current changeset (@)."
   (interactive)
-  (goto-char (point-min))
-  (if (re-search-forward "^.*@.*$" nil t)
-      (goto-char (line-beginning-position))
-    (message "Current changeset (@) not found")))
+  (majutsu--goto-log-entry (majutsu-current-change-id)
+                           (majutsu-current-commit-id)))
 
 (defun majutsu-goto-commit (commit-id)
   "Jump to a specific COMMIT-ID in the log."
@@ -402,6 +412,16 @@ instead of stopping on visual padding."
         (goto-char (line-beginning-position))
       (goto-char start-pos)
       (message "Commit %s not found" commit-id))))
+
+(defun majutsu-goto-change (change-id)
+  "Jump to a specific CHANGE-ID in the log."
+  (interactive "sChange ID: ")
+  (let ((start-pos (point)))
+    (goto-char (point-min))
+    (if (re-search-forward (regexp-quote change-id) nil t)
+        (goto-char (line-beginning-position))
+      (goto-char start-pos)
+      (message "Change %s not found" change-id))))
 
 (defun majutsu--goto-log-entry (change-id &optional commit-id)
   "Move point to the log entry section matching CHANGE-ID.
@@ -531,7 +551,9 @@ Return non-nil when the section could be located."
   "Refresh the current majutsu log buffer asynchronously."
   (interactive)
   (let ((root (majutsu--root))
-        (buf (current-buffer)))
+        (buf (current-buffer))
+        (target-change (majutsu-log--change-id-at-point))
+        (target-commit (majutsu-log--commit-id-at-point)))
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-log--cached-entries nil)
@@ -544,7 +566,9 @@ Return non-nil when the section could be located."
        (when (buffer-live-p buf)
          (with-current-buffer buf
            (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
-           (majutsu-log-render))))
+           (majutsu-log-render)
+           (unless (when target-change (majutsu--goto-log-entry target-change target-commit))
+             (majutsu-log-goto-@)))))
      (lambda (err)
        (when (buffer-live-p buf)
          (with-current-buffer buf

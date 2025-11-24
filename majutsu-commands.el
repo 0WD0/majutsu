@@ -381,7 +381,7 @@ With prefix ARG, open the new transient for interactive selection."
            "Created new changeset"
            "Failed to create new changeset")
       (majutsu-log-refresh)
-      (majutsu-goto-current)
+      (majutsu-log-goto-@)
       t)))
 
 ;;;###autoload

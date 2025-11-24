@@ -70,7 +70,7 @@ the usual `evil-define-key' format."
   "Install Evil keybindings for Majutsu maps."
   ;; Normal/visual/motion share the same bindings for navigation commands.
   (majutsu-evil--define-keys (normal visual motion) majutsu-mode-map
-    (kbd ".") #'majutsu-goto-current
+    (kbd ".") #'majutsu-log-goto-@
     (kbd "R") #'majutsu-log-refresh
     (kbd "g r") #'majutsu-log-refresh
     (kbd "c") #'majutsu-commit

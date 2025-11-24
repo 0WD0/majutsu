@@ -150,9 +150,9 @@ templates directly from Elisp (used by ~majutsu--log-template~).
 
 * Evil integration
 Majutsu ships with ~majutsu-evil.el~, so Evil users no longer need an external
-module.  Once Evil is loaded, the integration installs motion-friendly defaults
-and reuses the Doom module keybindings (e.g., ~.~ for ~majutsu-goto-current~,
-~gr~ / ~R~ for refresh, ~E~ / ~M~ for diffedit, etc.).
+module. Once Evil is loaded, the integration installs motion-friendly defaults
+and reuses the Doom module keybindings (e.g., ~.~ for ~majutsu-log-goto-@~, ~gr~ / ~R~
+for refresh, ~E~ / ~M~ for diffedit, etc.).
 
 - Toggle the integration entirely via ~M-x customize-group RET majutsu-evil RET~
   or by setting ~majutsu-evil-enable-integration~ to ~nil~.
@@ -164,7 +164,7 @@ All bindings below live in ~majutsu-mode-map~ unless noted otherwise and apply
 to Evil's normal/visual/motion states (matching the defaults set by
 ~majutsu-evil-initial-state~):
 
-- ~.~ → ~majutsu-goto-current~
+- ~.~ → ~majutsu-log-goto-@~
 - ~R~ / ~g r~ → ~majutsu-log-refresh~
 - ~c~ → ~majutsu-commit~
 - ~e~ → ~majutsu-edit-changeset~
