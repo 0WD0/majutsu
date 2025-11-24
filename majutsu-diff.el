@@ -379,7 +379,6 @@ log view) or the working copy (if elsewhere)."
          ;; Ensure we use --git format for our parser to work correctly
          (final-args (append '("diff")
                              (unless (member "--git" args) '("--git"))
-                             '("--color=never")
                              args)))
     (with-current-buffer buf
       (setq default-directory repo-root)

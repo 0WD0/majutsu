@@ -21,15 +21,10 @@
   "Elisp wrapper for composing jj templates."
   :group 'majutsu)
 
-(defcustom majutsu-template-compact-output t
-  "If non-nil, compile without extra whitespace beyond commas and spaces."
-  :type 'boolean
-  :group 'majutsu-template)
-
 (defvar majutsu-template--allow-eval nil
   "When non-nil, cons forms encountered during sugar transformation may be eval'd.")
 
-;;; Self binding context ######################################################
+;;; Self binding context
 
 (cl-defstruct (majutsu-template--self-binding
                (:constructor majutsu-template--make-self-binding))
@@ -57,7 +52,7 @@ Set to nil to disable keyword rewriting unless explicitly bound."
   (or (car majutsu-template--self-stack)
       (majutsu-template--default-self-binding)))
 
-;;;; Type and callable metadata ################################################
+;;;; Type and callable metadata
 
 (cl-defstruct (majutsu-template--type
                (:constructor majutsu-template--make-type))
@@ -633,7 +628,7 @@ participate in keyword sugar."
      ,(majutsu-template-def--inherit-signature signature owner t)
      ,@body))
 
-;;; Operator macro helpers ---------------------------------------------------
+;;; Operator macro helpers
 
 (defmacro majutsu-template--definfix (name token)
   "Define NAME as infix operator rendering TOKEN between two operands."
@@ -1021,7 +1016,7 @@ participate in keyword sugar."
 
 (majutsu-template--register-methods majutsu-template--builtin-method-specs)
 
-;;;; AST representation (work in progress) ###################################
+;;;; AST representation
 
 (cl-defstruct (majutsu-template-node
                (:constructor majutsu-template-node-create
