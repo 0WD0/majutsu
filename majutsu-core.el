@@ -81,18 +81,20 @@ The function must accept one argument: the buffer to display."
   "q"   'quit-window
   "l"   'majutsu-log-transient
   "?"   'majutsu-dispatch
-  "c"   'majutsu-commit
-  "d"   'majutsu-describe
+  "c"   'majutsu-describe
+  "C"   'majutsu-commit
   "N"   'majutsu-new
-  "S"   'majutsu-squash-transient
-  "D"   'majutsu-diff-transient
-  "R"   'majutsu-rebase-transient
-  "B"   'majutsu-bookmark-transient
-  "Y"   'majutsu-duplicate-transient
+  "s"   'majutsu-squash-transient
+  "d"   'majutsu-diff-transient
+  "D"   'majutsu-diff
+  "r"   'majutsu-rebase-transient
+  "b"   'majutsu-bookmark-transient
+  "y"   'majutsu-duplicate-transient
+  "Y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
-  "u"   'majutsu-undo
-  "U"   'majutsu-redo
-  "X"   'majutsu-abandon)
+  "k"   'majutsu-abandon
+  "C-/" 'majutsu-undo
+  "C-?" 'majutsu-redo)
 
 (defun majutsu-hack-dir-local-variables ()
   "Like `hack-dir-local-variables-non-file-buffer' but ignore some variables.

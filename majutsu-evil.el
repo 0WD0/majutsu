@@ -37,13 +37,13 @@
   "Initial Evil state used for Majutsu buffers.
 When nil, Majutsu leaves Evil's state untouched."
   :type '(choice (const :tag "Don't override" nil)
-                 (const :tag "Normal" normal)
-                 (const :tag "Motion" motion)
-                 (const :tag "Visual" visual)
-                 (const :tag "Insert" insert)
-                 (const :tag "Emacs" emacs)
-                 (const :tag "Replace" replace)
-                 (symbol :tag "Custom state"))
+          (const :tag "Normal" normal)
+          (const :tag "Motion" motion)
+          (const :tag "Visual" visual)
+          (const :tag "Insert" insert)
+          (const :tag "Emacs" emacs)
+          (const :tag "Replace" replace)
+          (symbol :tag "Custom state"))
   :group 'majutsu-evil)
 
 (defmacro majutsu-evil--define-keys (states keymap &rest bindings)
@@ -73,28 +73,28 @@ the usual `evil-define-key' format."
     (kbd ".") #'majutsu-log-goto-@
     (kbd "R") #'majutsu-log-refresh
     (kbd "g r") #'majutsu-log-refresh
-    (kbd "c") #'majutsu-commit
+    (kbd "c") #'majutsu-describe
+    (kbd "C") #'majutsu-commit
+    (kbd "o") #'majutsu-new-transient
+    (kbd "O") #'majutsu-new
     (kbd "e") #'majutsu-edit-changeset
     (kbd "u") #'majutsu-undo
     (kbd "C-r") #'majutsu-redo
-    (kbd "s") #'majutsu-squash-transient
-    (kbd "l") #'majutsu-log-transient
-    (kbd "d") #'majutsu-describe
     (kbd "x") #'majutsu-abandon
+    (kbd "s") #'majutsu-squash-transient
+    (kbd "L") #'majutsu-log-transient
     (kbd "b") #'majutsu-bookmark-transient
     (kbd "r") #'majutsu-rebase-transient
+    (kbd "d") #'majutsu-diff-transient
     (kbd "D") #'majutsu-diff
     (kbd "E") #'majutsu-diffedit-emacs
     (kbd "M") #'majutsu-diffedit-smerge
-    (kbd "?") #'majutsu-dispatch)
-  ;; Keep enter consistent even if users remap `RET' in their Evil config.
-  (majutsu-evil--define-keys (normal motion) majutsu-mode-map
+    (kbd "?") #'majutsu-dispatch
     (kbd "RET") #'majutsu-enter-dwim)
-  (majutsu-evil--define-keys (visual) majutsu-mode-map
-    (kbd "RET") #'majutsu-enter-dwim)
-  ;; per-buffer helpers
-  (majutsu-evil--define-keys (normal visual motion) majutsu-diff-mode-map
-    (kbd "RET") #'majutsu-enter-dwim))
+
+  (majutsu-evil--define-keys (normal) majutsu-mode-map
+    (kbd "y") #'majutsu-duplicate-transient
+    (kbd "Y") #'majutsu-duplicate))
 
 ;;;###autoload
 (defun majutsu-evil-setup ()

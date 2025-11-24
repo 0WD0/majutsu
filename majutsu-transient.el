@@ -210,8 +210,8 @@ TYPE is either `single' or `multi'."
     ("l" "Log options" majutsu-log-transient)
     ("N" "New" majutsu-new)
     ("n" "New (transient)" majutsu-new-transient)
-    ("y" "Duplicate" majutsu-duplicate)
-    ("Y" "Duplicate (transient)" majutsu-duplicate-transient)
+    ("y" "Duplicate (transient)" majutsu-duplicate-transient)
+    ("Y" "Duplicate" majutsu-duplicate)
     ("a" "Abandon" majutsu-abandon)
     ("d" "Describe" majutsu-describe)
     ("s" "Squash" majutsu-squash-transient)]
