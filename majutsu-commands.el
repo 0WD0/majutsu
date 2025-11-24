@@ -163,8 +163,6 @@
             (majutsu-log-refresh)
             (back-to-indentation))))))
 
-
-
 ;;; majutsu-undo
 
 (defun majutsu-undo ()
@@ -406,70 +404,6 @@ With prefix ARG, open the new transient for interactive selection."
   (interactive)
   (add-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit nil t)
   (majutsu-new-transient--internal))
-
-
-;;; majutsu-navigation
-
-(defun majutsu-goto-current ()
-  "Jump to the current changeset (@)."
-  (interactive)
-  (goto-char (point-min))
-  (if (re-search-forward "^.*@.*$" nil t)
-      (goto-char (line-beginning-position))
-    (message "Current changeset (@) not found")))
-
-(defun majutsu-goto-commit (commit-id)
-  "Jump to a specific COMMIT-ID in the log."
-  (interactive "sCommit ID: ")
-  (let ((start-pos (point)))
-    (goto-char (point-min))
-    (if (re-search-forward (regexp-quote commit-id) nil t)
-        (goto-char (line-beginning-position))
-      (goto-char start-pos)
-      (message "Commit %s not found" commit-id))))
-
-(defun majutsu--goto-log-entry (change-id &optional commit-id)
-  "Move point to the log entry section matching CHANGE-ID.
-When CHANGE-ID is nil, fall back to COMMIT-ID.
-Return non-nil when the section could be located."
-  (when-let* ((section (majutsu--find-log-entry-section change-id commit-id)))
-    (magit-section-goto section)
-    (goto-char (oref section start))
-    t))
-
-;;;###autoload
-(defun majutsu-goto-next-changeset ()
-  "Navigate to the next changeset in the log."
-  (interactive)
-  (let ((pos (point))
-        found)
-    (while (and (not found)
-                (< (point) (point-max)))
-      (magit-section-forward)
-      (when-let* ((section (magit-current-section)))
-        (when (and (eq (oref section type) 'majutsu-log-entry-section)
-                   (> (point) pos))
-          (setq found t))))
-    (unless found
-      (goto-char pos)
-      (message "No more changesets"))))
-
-;;;###autoload
-(defun majutsu-goto-prev-changeset ()
-  "Navigate to the previous changeset in the log."
-  (interactive)
-  (let ((pos (point))
-        found)
-    (while (and (not found)
-                (> (point) (point-min)))
-      (magit-section-backward)
-      (when-let* ((section (magit-current-section)))
-        (when (and (eq (oref section type) 'majutsu-log-entry-section)
-                   (< (point) pos))
-          (setq found t))))
-    (unless found
-      (goto-char pos)
-      (message "No more changesets"))))
 
 ;;; majutsu-duplicate
 
