@@ -19,8 +19,8 @@
 (require 'majutsu-core)
 (require 'majutsu-process)
 (require 'majutsu-log)
-(require 'majutsu-status)
 (require 'majutsu-transient)
+(require 'majutsu-diff)
 (require 'majutsu-commands)
 
 (with-eval-after-load 'evil

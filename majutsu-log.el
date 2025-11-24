@@ -31,6 +31,10 @@
    (change-id :initarg :change-id)
    (description :initarg :description)
    (bookmarks :initarg :bookmarks)))
+(defclass majutsu-status-section (magit-section) ())
+(defclass majutsu-conflict-section (magit-section) ())
+(defclass majutsu-conflict-file-section (magit-section)
+  ((file :initarg :file)))
 
 (defun majutsu--section-change-id (section)
   "Return the change id recorded in SECTION, if available."
@@ -293,6 +297,91 @@ instead of stopping on visual padding."
                                 (insert suffix-line)
                                 (insert "\n")))))
     (insert "\n")))
+
+;;; Log insert status
+
+(defun majutsu--analyze-status-for-hints (status-output)
+  "Analyze jj status output and provide helpful hints."
+  (when (and status-output (not (string-empty-p status-output)))
+    (cond
+     ;; No changes
+     ((string-match-p "The working copy is clean" status-output)
+      (message "Working copy is clean - no changes to commit"))
+
+     ;; Conflicts present
+     ((string-match-p "There are unresolved conflicts" status-output)
+      (message "💡 Resolve conflicts with 'jj resolve' or use diffedit (E/M)"))
+
+     ;; Untracked files
+     ((string-match-p "Untracked paths:" status-output)
+      (message "💡 Add files with 'jj file track' or create .gitignore"))
+
+     ;; Working copy changes
+     ((string-match-p "Working copy changes:" status-output)
+      (message "💡 Commit changes with 'jj commit' or describe with 'jj describe'")))))
+
+(defun majutsu-log-insert-status ()
+  "Insert jj status into current buffer."
+  (let ((status-output (majutsu--run-command "status")))
+    (when (and status-output (not (string-empty-p status-output)))
+      (magit-insert-section (majutsu-status-section)
+        (magit-insert-heading "Working Copy Status")
+        (insert status-output)
+        (insert "\n")
+        ;; Analyze status and provide hints in the minibuffer
+        (majutsu--analyze-status-for-hints status-output)))))
+
+;;; Log insert diff
+
+(defun majutsu-log-insert-diff ()
+  "Insert jj diff with hunks into current buffer asynchronously."
+  (let* ((section (magit-insert-section (majutsu-diff-section)
+                    (magit-insert-heading "Working Copy Changes")
+                    (insert "Loading diffs...\n")))
+         (buf (current-buffer)))
+    (majutsu--run-command-async
+     '("diff" "--git")
+     (lambda (output)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (let ((inhibit-read-only t)
+                 (magit-insert-section--parent section))
+             (save-excursion
+               (goto-char (oref section content))
+               (delete-region (point) (oref section end))
+               (if (and output (not (string-empty-p output)))
+                   (progn
+                     (majutsu--insert-diff-hunks output)
+                     (insert "\n"))
+                 (insert "No changes.\n"))
+               ;; Update section end marker
+               (set-marker (oref section end) (point)))))))
+     (lambda (err)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (let ((inhibit-read-only t)
+                 (magit-insert-section--parent section))
+             (save-excursion
+               (goto-char (oref section content))
+               (delete-region (point) (oref section end))
+               (insert (format "Error loading diffs: %s\n" err))
+               (set-marker (oref section end) (point)))))))
+     t)))
+
+;;; Log insert conflicts
+
+(defun majutsu-log-insert-conflicts ()
+  "Insert conflicted files section."
+  (let ((output (majutsu--run-command "resolve" "--list")))
+    (when (and output (not (string-empty-p output)))
+      (magit-insert-section (majutsu-conflict-section)
+        (magit-insert-heading "Unresolved Conflicts")
+        (dolist (line (split-string output "\n" t))
+          (let ((file (string-trim line)))
+            (magit-insert-section (majutsu-conflict-file-section file nil :file file)
+              (magit-insert-heading (propertize file 'face 'error))
+              (insert "\n"))))
+        (insert "\n")))))
 
 ;;; Log Navigation
 

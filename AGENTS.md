@@ -5,8 +5,8 @@
 - `majutsu-core.el` – Core utilities and configuration.
 - `majutsu-process.el` – Asynchronous process handling.
 - `majutsu-log.el` – Log view and parsing.
-- `majutsu-status.el` – Status and diff views.
 - `majutsu-transient.el` – Transient menus and state.
+- `majutsu-diff.el` - Diff related.
 - `majutsu-commands.el` – Interactive commands.
 - `majutsu-template.el` – Embedded DSL for composing Jujutsu templates.
 - `Eask` – Dependency and build configuration.
