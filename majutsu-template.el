@@ -1450,9 +1450,8 @@ Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
          ((and meta (not (majutsu-template--fn-keyword meta)))
           nil)
          ((and meta
-               (cl-some (lambda (node)
-                          (not (majutsu-template--method-name-node-p node)))
-                        normalized-args))
+               normalized-args
+               (not (majutsu-template--method-name-node-p (car normalized-args))))
           (user-error "majutsu-template: keyword %s on %S does not accept arguments"
                       name owner))
          (meta
