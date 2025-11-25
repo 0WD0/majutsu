@@ -547,13 +547,16 @@ Return non-nil when the section could be located."
     (magit-insert-section (magit-root-section)
       (run-hooks 'majutsu-log-sections-hook))))
 
-(defun majutsu-log-refresh ()
-  "Refresh the current majutsu log buffer asynchronously."
+(defun majutsu-log-refresh (&optional target-change target-commit)
+  "Refresh the current majutsu log buffer asynchronously.
+When TARGET-CHANGE and TARGET-COMMIT are provided, jump to that
+entry after rendering instead of restoring the pre-refresh
+section."
   (interactive)
-  (let ((root (majutsu--root))
-        (buf (current-buffer))
-        (target-change (majutsu-log--change-id-at-point))
-        (target-commit (majutsu-log--commit-id-at-point)))
+  (let* ((root (majutsu--root))
+         (buf (current-buffer))
+         (target-change (or target-change (majutsu-log--change-id-at-point)))
+         (target-commit (or target-commit (majutsu-log--commit-id-at-point))))
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-log--cached-entries nil)

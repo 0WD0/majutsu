@@ -73,6 +73,31 @@
       (should (equal (plist-get entry1 :change-id) "c1"))
       (should (equal (plist-get entry1 :suffix-lines) '("|"))))))
 
+(ert-deftest majutsu-log-refresh-uses-explicit-target ()
+  "Respect explicit target ids when refreshing the log."
+  (let (goto-args fallback-called)
+    (cl-letf (((symbol-function 'majutsu--root)
+               (lambda () default-directory))
+              ((symbol-function 'majutsu--run-command-async)
+               (lambda (_args callback &optional _err _color)
+                 (funcall callback "output")
+                 nil))
+              ((symbol-function 'majutsu-parse-log-entries)
+               (lambda (&rest _) '()))
+              ((symbol-function 'majutsu-log-render)
+               (lambda ()))
+              ((symbol-function 'majutsu--goto-log-entry)
+               (lambda (change commit)
+                 (setq goto-args (list change commit))
+                 t))
+              ((symbol-function 'majutsu-log-goto-@)
+               (lambda ()
+                 (setq fallback-called t))))
+      (with-temp-buffer
+        (majutsu-log-refresh "target-change" "target-commit")))
+    (should (equal goto-args '("target-change" "target-commit")))
+    (should-not fallback-called)))
+
 (provide 'majutsu-log-test)
 
 ;;; majutsu-log-test.el ends here
