@@ -92,6 +92,7 @@ The function must accept one argument: the buffer to display."
   "y"   'majutsu-duplicate-transient
   "Y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
+  "a"   'majutsu-abandon
   "k"   'majutsu-abandon
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo)

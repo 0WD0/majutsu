@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [[https://keepachangelog.com/en/1.1.0/][Keep a Changelog 1.1.0]] and this project adheres to [[https://semver.org/spec/v2.0.0.html][Semantic Versioning 2.0.0]].
 
 ** [Unreleased]
+*** Changed
+- Keybinding of ~majutsu-abandon~ changed from [[kbd:k]] to [[kbd:k]] / [[kbd:a]].
+
 
 ** [0.3.0] - 2025-11-25
 

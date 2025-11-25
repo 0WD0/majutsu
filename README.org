@@ -102,7 +102,7 @@ columns:
 - ~u~ / ~R~ - Undo or redo
 - ~n~ - Open the fully interactive ~majutsu-new-transient~
 - ~Y~ / ~y~ - Run the simple duplicate or its transient
-- ~a~ - Abandon
+- ~a~ / ~k~ - Abandon
 - ~d~ - Describe
 - ~E~ / ~M~ - Launch ~majutsu-diffedit-emacs~ or ~majutsu-diffedit-smerge~
 - ~?~ / ~q~ - Show transient help or quit the dispatcher
