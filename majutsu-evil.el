@@ -20,8 +20,11 @@
 (require 'majutsu-log)
 (require 'majutsu-transient)
 
-(autoload 'evil-define-key "evil-core" nil nil 'macro)
-(autoload 'evil-set-initial-state "evil-core")
+(eval-when-compile
+  ;; Silence byte-compile when Evil isn't installed at build time.
+  (unless (require 'evil nil t)
+    (defun evil-define-key* (&rest _args) nil)
+    (defun evil-set-initial-state (&rest _args) nil)))
 
 (defgroup majutsu-evil nil
   "Customization group for Majutsu's Evil integration."
@@ -46,15 +49,23 @@ When nil, Majutsu leaves Evil's state untouched."
           (symbol :tag "Custom state"))
   :group 'majutsu-evil)
 
-(defmacro majutsu-evil--define-keys (states keymap &rest bindings)
+(defun majutsu-evil--define-keys (states keymap &rest bindings)
   "Define Evil BINDINGS for each state in STATES on KEYMAP.
-STATES must be a list of Evil state symbols, and BINDINGS follows
-the usual `evil-define-key' format."
-  (declare (indent 2))
-  `(progn
-     ,@(mapcar (lambda (state)
-                 `(evil-define-key ',state ,keymap ,@bindings))
-               states)))
+STATES can be a symbol or list.  KEYMAP can be a symbol or list of
+symbols/maps.  Mirrors `evil-collection-define-key' to defer any
+macro expansion until Evil is actually present."
+  (when (and (featurep 'evil) (fboundp 'evil-define-key*))
+    (let* ((states (if (listp states) states (list states)))
+           (maps (if (listp keymap) keymap (list keymap))))
+      (dolist (state states)
+        (dolist (map maps)
+          (let ((mapobj (cond
+                         ((and (symbolp map) (boundp map)
+                               (keymapp (symbol-value map)))
+                          (symbol-value map))
+                         ((keymapp map) map))))
+            (when mapobj
+              (apply #'evil-define-key* state mapobj bindings))))))))
 
 (defun majutsu-evil--set-initial-state ()
   "Register initial Evil states for Majutsu modes."
@@ -69,7 +80,7 @@ the usual `evil-define-key' format."
 (defun majutsu-evil--define-mode-keys ()
   "Install Evil keybindings for Majutsu maps."
   ;; Normal/visual/motion share the same bindings for navigation commands.
-  (majutsu-evil--define-keys (normal visual motion) majutsu-mode-map
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
     (kbd ".") #'majutsu-log-goto-@
     (kbd "R") #'majutsu-log-refresh
     (kbd "g r") #'majutsu-log-refresh
@@ -92,7 +103,7 @@ the usual `evil-define-key' format."
     (kbd "?") #'majutsu-dispatch
     (kbd "RET") #'majutsu-enter-dwim)
 
-  (majutsu-evil--define-keys (normal) majutsu-mode-map
+  (majutsu-evil--define-keys 'normal 'majutsu-mode-map
     (kbd "y") #'majutsu-duplicate-transient
     (kbd "Y") #'majutsu-duplicate))
 
