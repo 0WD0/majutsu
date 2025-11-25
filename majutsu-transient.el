@@ -432,8 +432,6 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
          (before (majutsu--transient-normalize-revsets (or before majutsu-new-before)))
          (message (or message majutsu-new-message))
          (args '("new")))
-    (when (null parents)
-      (setq parents '("@")))
     (dolist (rev after)
       (setq args (append args (list "--after" rev))))
     (dolist (rev before)
