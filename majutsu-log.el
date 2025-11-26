@@ -264,10 +264,11 @@ Returns a plist with :template, :columns, and :field-order."
          (templates (mapcar (lambda (c)
                               (majutsu-log--column-template (plist-get c :field)))
                             complete))
-         (separate (cons :separate (cons majutsu-log--field-separator templates)))
-         (compiled (tpl-compile (vconcat (list majutsu-log--field-separator
-                                               separate
-                                               "\n")))))
+         (segments (list majutsu-log--field-separator))
+         (compiled nil))
+    (dolist (tmpl templates)
+      (setq segments (append segments (list tmpl majutsu-log--field-separator))))
+    (setq compiled (tpl-compile (vconcat segments (list "\n"))))
     (list :template compiled
           :columns complete
           :field-order field-order)))
