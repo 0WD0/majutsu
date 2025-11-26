@@ -435,33 +435,32 @@ instead of stopping on visual padding."
     (_ nil)))
 
 (defun majutsu-log--compute-column-widths (entries compiled)
-  "Compute max display width per visible column across ENTRIES.
-Returns plist with :right (alist field->width) and :left-max (max left part width)."
+  "Compute display widths for visible columns.
+Returns plist with:
+- :right (alist field->width)  ; per right-aligned column max width
+- :right-total                 ; total width of right block incl. spaces"
   (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
                                    (plist-get compiled :columns)))
-         (left-cols (seq-filter (lambda (c) (not (eq (plist-get c :align) 'right)))
-                                visible-cols))
          (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
                                  visible-cols))
-         (right-widths ())
-         (left-max 0))
+         (right-widths ()))
     (dolist (entry entries)
-      ;; compute left width for this entry (graph + left-aligned fields, no padding)
-      (let* ((prefix (or (plist-get entry :prefix) ""))
-             (current (string-width prefix)))
-        (dolist (col left-cols)
-          (let* ((field (plist-get col :field))
-                 (val (or (majutsu-log--entry-column entry field) "")))
-            (setq current (+ current 1 (string-width val)))))
-        (setq left-max (max left-max current)))
-      ;; right widths
       (dolist (col right-cols)
         (let* ((field (plist-get col :field))
                (val (or (majutsu-log--entry-column entry field) ""))
                (w (string-width val)))
           (setf (alist-get field right-widths nil nil #'eq)
                 (max w (or (alist-get field right-widths nil nil #'eq) 0))))))
-    (list :right right-widths :left-max left-max)))
+    (let* ((right-total
+            (let ((sum 0) (first t))
+              (dolist (col right-cols)
+                (let* ((field (plist-get col :field))
+                       (w (or (alist-get field right-widths nil nil #'eq) 0)))
+                  (unless first (setq sum (1+ sum)))
+                  (setq first nil)
+                  (setq sum (+ sum w))))
+              sum)))
+      (list :right right-widths :right-total right-total))))
 
 (defun majutsu-log--pad-display (text width align)
   "Pad TEXT to WIDTH using ALIGN (`left' | `right' | `center')."
@@ -476,8 +475,8 @@ Returns plist with :right (alist field->width) and :left-max (max left part widt
       (_ (concat txt (make-string pad ?\s))))))
 
 (defun majutsu-log--format-entry-line (entry compiled widths)
-  "Return plist (:line string :desc-indent col) for ENTRY using COMPILED columns.
-Left fields follow graph width per-line; right fields are block-aligned using WIDTHS."
+  "Return plist (:line string :margin string :desc-indent col).
+Left fields follow graph width per-line; right fields are rendered for margin."
   (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
                                    (plist-get compiled :columns)))
          (left-cols (seq-filter (lambda (c) (not (eq (plist-get c :align) 'right)))
@@ -500,8 +499,6 @@ Left fields follow graph width per-line; right fields are block-aligned using WI
           (setq desc-indent (- current-width (string-width formatted))))))
     (let* ((left-str (string-join parts " "))
            (left-len (string-width left-str))
-           (target (max (plist-get widths :left-max) left-len))
-           (gap (max 1 (- target left-len)))
            (right-parts '()))
       ;; build right block with per-column padding
       (dolist (col right-cols)
@@ -514,11 +511,30 @@ Left fields follow graph width per-line; right fields are block-aligned using WI
                (formatted (if face (propertize formatted 'face face) formatted)))
           (push formatted right-parts)))
       (setq right-parts (nreverse right-parts))
-      (let ((line (concat left-str
-                          (make-string gap ?\s)
-                          (string-join right-parts " "))))
-        (list :line line
+      (let ((margin (string-join right-parts " ")))
+        (list :line left-str
+              :margin margin
               :desc-indent (or desc-indent left-len))))))
+
+(defun majutsu-log--set-right-margin (width)
+  "Set right margin WIDTH (in columns) for all windows showing current buffer."
+  (dolist (win (get-buffer-window-list (current-buffer) nil t))
+    (with-selected-window win
+      (let ((left (car (window-margins win))))
+        (if (and width (> width 0))
+            (set-window-margins win left width)
+          (set-window-margins win left nil))))))
+
+(defun majutsu-log--make-margin-overlay (string)
+  "Display STRING in the right margin of the current (or previous) line."
+  (save-excursion
+    (forward-line (if (bolp) -1 0))
+    (let ((o (make-overlay (1+ (point)) (line-end-position) nil t)))
+      (overlay-put o 'evaporate t)
+      (overlay-put o 'before-string
+                   (propertize " " 'display
+                               (list (list 'margin 'right-margin)
+                                     (or string " ")))))))
 
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
@@ -527,6 +543,7 @@ Left fields follow graph width per-line; right fields are block-aligned using WI
     (let* ((compiled (majutsu-log--ensure-template))
            (entries (majutsu-parse-log-entries))
            (widths (majutsu-log--compute-column-widths entries compiled)))
+      (majutsu-log--set-right-margin (plist-get widths :right-total))
       (dolist (entry entries)
         (magit-insert-section
             (majutsu-log-entry-section entry t
@@ -536,9 +553,12 @@ Left fields follow graph width per-line; right fields are block-aligned using WI
                                        :bookmarks  (plist-get entry :bookmarks))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
                  (heading (plist-get line-info :line))
+                 (margin (plist-get line-info :margin))
                  (indent (plist-get line-info :desc-indent)))
             (magit-insert-heading
               (insert heading))
+            (when margin
+              (majutsu-log--make-margin-overlay margin))
             (when-let* ((long-desc (plist-get entry :long-desc))
                         (indented (majutsu--indent-string long-desc (or indent 0))))
               (magit-insert-section-body
