@@ -45,8 +45,7 @@
         (let ((entry (oref section value)))
           (when (listp entry)
             (majutsu--normalize-id-value
-             (or (plist-get entry :change-id)
-                 (plist-get entry :id))))))))
+             (plist-get entry :change-id)))))))
 
 (defun majutsu--section-commit-id (section)
   "Return the commit id recorded in SECTION, if available."
@@ -62,8 +61,7 @@
       (let ((entry (oref section value)))
         (when (listp entry)
           (or (plist-get entry :change-id)
-              (plist-get entry :commit_id)
-              (plist-get entry :id))))))
+              (plist-get entry :commit-id))))))
 
 ;;; Log State
 
@@ -133,62 +131,135 @@
 
 ;;; Log Template
 
-(defconst majutsu--log-template
-  (tpl-compile
-   ["\x1e"
-    [:if [:root]
-        [:separate "\x1e"
-                   [:call 'format_short_change_id [:change_id]]
-                   " "
-                   [" " [:bookmarks] [:tags] [:working_copies]]
-                   " "
-                   " "
-                   " "
-                   [:label "root" "root()"]
-                   "root"
-                   [:call 'format_short_commit_id [:commit_id]]
-                   " "
-                   [:json " "]]
-      [[:label
-        [:separate " "
-                   [:if [:current_working_copy] "working_copy"]
-                   [:if [:immutable] "immutable" "mutable"]
-                   [:if [:conflict] "conflicted"]]
-        [:separate "\x1e"
-                   [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
-                   [:call 'format_short_signature_oneline [:author]]
-                   [:separate " "
-                              [:bookmarks]
-                              [:tags]
-                              [:working_copies]]
-                   [:if [:git_head]
-                       [:label "git_head" "git_head()"]
-                     " "]
-                   [:if [:conflict]
-                       [:label "conflict" "conflict"]
-                     " "]
-                   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
-                       [:call 'format_short_cryptographic_signature [:signature]]
-                     " "]
-                   [:if [:empty]
-                       [:label "empty" "(empty)"]
-                     " "]
-                   [:if [:description]
-                       [:method [:description] :first_line]
-                     [:label
-                      [:if [:empty] "empty"]
-                      'description_placeholder]]
-                   [:call 'format_short_commit_id [:commit_id]]
-                   [:call 'format_timestamp
-                          [:call 'commit_timestamp [:raw "self" :Commit]]]
-                   [:if [:description]
-                       [:json [:description]]
-                     [:json " "]]]]
-       "\n"]]])
-  "Template for formatting log entries.
+(defconst majutsu-log--field-separator "\x1e"
+  "Separator character inserted between template fields.
+We use an ASCII record separator so parsing stays robust while
+remaining invisible in the rendered buffer.")
 
-The trailing newline keeps each entry on its own line even when
-`jj log' is invoked with `--no-graph'.")
+(defconst majutsu-log--required-columns '(change-id commit-id long-desc)
+  "Columns that must always be present in the compiled template for parsing.")
+
+(defconst majutsu-log--default-commit-columns
+  '((:field change-id :align left)
+    (:field refs :align left)
+    (:field empty :align left)
+    (:field git-head :align left)
+    (:field description :align left)
+    (:field author :align right)
+    (:field timestamp :align right)
+    (:field commit-id :align right :visible nil)
+    (:field flags :align left :visible nil)
+    (:field long-desc :visible nil))
+  "Default column layout for log entries.")
+
+(defcustom majutsu-log-commit-columns majutsu-log--default-commit-columns
+  "Column specification controlling how log rows are rendered.
+
+Each element is a plist with at least `:field'. Supported keys:
+- :field   - symbol identifying a known field (e.g. `change-id',
+             `commit-id', `refs', `description', `author',
+             `timestamp', `flags', `long-desc').
+- :align   - one of `left', `right', or `center' (defaults to `left').
+- :visible - non-nil to show in the buffer; nil keeps the field hidden
+             but still present in the template for parsing.
+
+Width is computed dynamically per buffer based on content; the optional
+:width key is currently ignored. Required fields are injected
+automatically even if omitted or hidden."
+  :type '(repeat (plist :options (:field :align :width :visible)))
+  :group 'majutsu)
+
+(defvar majutsu-log--compiled-template-cache nil
+  "Cached structure holding the compiled log template and column metadata.")
+
+(defun majutsu-log--invalidate-template-cache (&rest _)
+  "Reset cached compiled template when layout changes."
+  (setq majutsu-log--compiled-template-cache nil)
+  (setq majutsu-log--cached-entries nil))
+
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher 'majutsu-log-commit-columns
+                        #'majutsu-log--invalidate-template-cache))
+
+(defun majutsu-log--normalize-column-spec (spec)
+  "Normalize a single column SPEC into a plist with defaults."
+  (let* ((col (cond
+               ((and (plistp spec) (plist-get spec :field)) spec)
+               ((symbolp spec) (list :field spec))
+               (t (user-error "Invalid column spec: %S" spec))))
+         (field (plist-get col :field))
+         (align (or (plist-get col :align) 'left))
+         (visible (if (plist-member col :visible)
+                      (plist-get col :visible)
+                    t)))
+    (setq align (if (keywordp align) (intern (substring (symbol-name align) 1)) align))
+    (unless (memq align '(left right center))
+      (user-error "Column %S has invalid :align %S" field align))
+    (list :field field :align align :visible visible)))
+
+(defun majutsu-log--ensure-required-columns (columns)
+  "Ensure required columns are present in COLUMNS list.
+Missing required fields are appended as hidden columns."
+  (let ((present (mapcar (lambda (c) (plist-get c :field)) columns)))
+    (dolist (req majutsu-log--required-columns)
+      (unless (memq req present)
+        (setq columns (append columns (list (list :field req :visible nil :align 'left))))))
+    columns))
+
+(defun majutsu-log--column-template (field)
+  "Return majutsu-template form for FIELD."
+  (pcase field
+    ('change-id [:call 'format_short_change_id_with_hidden_and_divergent_info
+                       [:raw "self" :Commit]])
+    ('commit-id [:call 'format_short_commit_id [:commit_id]])
+    ('refs [:separate " " [:bookmarks] [:tags] [:working_copies]])
+    ('bookmarks [:bookmarks])
+    ('tags [:tags])
+    ('working-copies [:working_copies])
+    ('flags [:separate " "
+                       [:if [:current_working_copy] "@" ""]
+                       [:if [:immutable] "immutable" "mutable"]
+                       [:if [:conflict] "conflict" ""]
+                       [:if [:git_head] "git_head" ""]
+                       [:if [:root] "root" ""]
+                       [:if [:empty] "(empty)" ""]])
+    ('git-head [:if [:git_head] "git_head()" ""])
+    ('signature [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
+                    [:call 'format_short_cryptographic_signature [:signature]]
+                  ""])
+    ('empty [:if [:empty] "(empty)" ""])
+    ('description [:if [:description]
+                      [:method [:description] :first_line]
+                    [:label [:if [:empty] "empty"] 'description_placeholder]])
+    ('author [:call 'format_short_signature_oneline [:author]])
+    ('timestamp [:call 'format_timestamp
+                       [:call 'commit_timestamp [:raw "self" :Commit]]])
+    ('long-desc [:if [:description] [:json [:description]] [:json " "]])
+    (_ (user-error "Unknown column field %S" field))))
+
+(defun majutsu-log--compile-columns (&optional columns)
+  "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
+Returns a plist with :template, :columns, and :field-order."
+  (let* ((normalized (mapcar #'majutsu-log--normalize-column-spec
+                             (or columns majutsu-log-commit-columns)))
+         (complete (majutsu-log--ensure-required-columns normalized))
+         (field-order (mapcar (lambda (c) (plist-get c :field)) complete))
+         (templates (mapcar (lambda (c)
+                              (majutsu-log--column-template (plist-get c :field)))
+                            complete))
+         (separate (cons :separate (cons majutsu-log--field-separator templates)))
+         (compiled (tpl-compile (vconcat (list majutsu-log--field-separator
+                                               separate
+                                               "\n")))))
+    (list :template compiled
+          :columns complete
+          :field-order field-order)))
+
+(defun majutsu-log--ensure-template ()
+  "Return cached compiled template structure, recomputing if necessary."
+  (or majutsu-log--compiled-template-cache
+      (setq majutsu-log--compiled-template-cache
+            (majutsu-log--compile-columns majutsu-log-commit-columns))))
 
 (defun majutsu-log--build-args ()
   "Build argument list for `jj log' using current state."
@@ -201,7 +272,7 @@ The trailing newline keeps each entry on its own line even when
       (setq args (append args '("--reversed"))))
     (when (majutsu-log--state-get :no-graph)
       (setq args (append args '("--no-graph"))))
-    (setq args (append args (list "-T" majutsu--log-template)))
+    (setq args (append args (list "-T" (plist-get (majutsu-log--ensure-template) :template))))
     (setq args (append args (majutsu-log--state-get :filesets)))
     args))
 
@@ -209,6 +280,77 @@ The trailing newline keeps each entry on its own line even when
 
 (defvar-local majutsu-log--cached-entries nil
   "Cached log entries for the current buffer.")
+
+(defun majutsu-log--parse-json-safe (value)
+  "Parse VALUE as JSON, returning nil on failure or blank strings."
+  (when (and value (not (string-empty-p value)))
+    (condition-case nil
+        (json-parse-string value)
+      (error nil))))
+
+(defun majutsu-log--apply-flags (entry value)
+  "Set flag fields on ENTRY based on VALUE string."
+  (dolist (flag (split-string (or value "") " " t))
+    (pcase flag
+      ("immutable" (setq entry (plist-put entry :immutable t)))
+      ("mutable" (setq entry (plist-put entry :immutable nil)))
+      ("conflict" (setq entry (plist-put entry :conflict t)))
+      ("git_head" (setq entry (plist-put entry :git-head t)))
+      ("root" (setq entry (plist-put entry :root t)))
+      ("@" (setq entry (plist-put entry :current_working_copy t)))))
+  entry)
+
+(defun majutsu-log--record-column (entry field value)
+  "Record FIELD VALUE onto ENTRY plist and column map."
+  (let* ((columns (plist-get entry :columns)))
+    (setf (alist-get field columns nil nil #'eq) value)
+    (setq entry (plist-put entry :columns columns)))
+  (pcase field
+    ('change-id
+     (setq entry (plist-put entry :change-id value)))
+    ('commit-id
+     (setq entry (plist-put entry :commit-id value)))
+    ('refs
+     (setq entry (plist-put entry :bookmarks value)))
+    ('bookmarks
+     (setq entry (plist-put entry :bookmarks value)))
+    ('tags
+     (setq entry (plist-put entry :tags value)))
+    ('working-copies
+     (setq entry (plist-put entry :working-copies value)))
+    ('description
+     (setq entry (plist-put entry :short-desc value)))
+    ('author
+     (setq entry (plist-put entry :author value)))
+    ('timestamp
+     (setq entry (plist-put entry :timestamp value)))
+    ('long-desc
+     (setq entry (plist-put entry :long-desc (majutsu-log--parse-json-safe value))))
+    ('flags
+     (setq entry (majutsu-log--apply-flags entry value)))
+    ('git-head
+     (when (and value (not (string-empty-p value)))
+       (setq entry (plist-put entry :git-head t))))
+    ('signature
+     (setq entry (plist-put entry :signature value)))
+    ('empty
+     (setq entry (plist-put entry :empty (not (string-empty-p value))))))
+  entry)
+
+(defun majutsu-log--build-entry-from-elems (elems field-order line)
+  "Construct a log ENTRY plist from ELEMS split by separator.
+FIELD-ORDER describes which field name corresponds to each element
+after the leading graph prefix."
+  (let* ((prefix (car elems))
+         (fields (cdr elems))
+         (entry (list :prefix prefix
+                      :line line
+                      :elems elems
+                      :columns nil)))
+    (cl-loop for field in field-order
+             for value in fields
+             do (setq entry (majutsu-log--record-column entry field value)))
+    entry))
 
 (defun majutsu-parse-log-entries (&optional buf log-output)
   "Parse jj log output from BUF (defaults to `current-buffer').
@@ -223,6 +365,8 @@ instead of stopping on visual padding."
       majutsu-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (majutsu-log--build-args))
+             (compiled (majutsu-log--ensure-template))
+             (field-order (plist-get compiled :field-order))
              (output (or log-output (apply #'majutsu-run-jj args))))
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n"))
@@ -230,35 +374,15 @@ instead of stopping on visual padding."
                 (current nil)
                 (pending nil))
             (dolist (line lines)
-              (let* ((raw-elems (split-string line "\x1e"))
-                     (trimmed-elems (mapcar #'string-trim-right raw-elems))
-                     (clean-elems (seq-remove (lambda (l) (or (not l) (string-blank-p l)))
-                                              trimmed-elems)))
-                (if (> (length clean-elems) 1)
+              (let* ((raw-elems (mapcar #'string-trim-right (split-string line majutsu-log--field-separator nil))))
+                (if (> (length raw-elems) 1)
                     (progn
                       (when current
                         (when pending
                           (setq current (plist-put current :suffix-lines (nreverse pending)))
                           (setq pending nil))
                         (push current entries))
-                      (setq current
-                            (seq-let (prefix change-id author bookmarks _git-head _conflict _signature _empty short-desc commit-id timestamp long-desc)
-                                trimmed-elems
-                              (let* ((cid (if (stringp change-id) (substring-no-properties change-id) ""))
-                                     (full (if (stringp commit-id) (substring-no-properties commit-id) ""))
-                                     (id8  (if (> (length cid) 8) (substring cid 0 8) cid))
-                                     (idv  (unless (string-empty-p id8) id8)))
-                                (list :id idv
-                                      :prefix prefix
-                                      :line line
-                                      :elems clean-elems
-                                      :author author
-                                      :change-id cid
-                                      :commit_id full
-                                      :short-desc short-desc
-                                      :long-desc (when long-desc (json-parse-string long-desc))
-                                      :timestamp timestamp
-                                      :bookmarks bookmarks))))
+                      (setq current (majutsu-log--build-entry-from-elems raw-elems field-order line))
                       (setq pending nil))
                   (push line pending))))
             (when current
@@ -275,30 +399,137 @@ instead of stopping on visual padding."
                (split-string s "\n")
                "\n"))) ; Join lines with newline, prefixed by indentation
 
+(defun majutsu-log--entry-column (entry field)
+  "Return string value for FIELD stored on ENTRY."
+  (alist-get field (plist-get entry :columns) nil nil #'eq))
+
+(defun majutsu-log--field-face (field)
+  "Return face symbol for FIELD, or nil."
+  (pcase field
+    ((or 'change-id 'commit-id) 'magit-hash)
+    ('refs 'magit-branch-remote)
+    ('bookmarks 'magit-branch-local)
+    ('tags 'magit-tag)
+    ('working-copies 'magit-branch-remote)
+    ('author 'magit-log-author)
+    ('timestamp 'magit-log-date)
+    ('flags 'font-lock-comment-face)
+    (_ nil)))
+
+(defun majutsu-log--compute-column-widths (entries compiled)
+  "Compute max display width per visible column across ENTRIES.
+Returns plist with :right (alist field->width) and :left-max (max left part width)."
+  (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
+                                   (plist-get compiled :columns)))
+         (left-cols (seq-filter (lambda (c) (not (eq (plist-get c :align) 'right)))
+                                visible-cols))
+         (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
+                                 visible-cols))
+         (right-widths ())
+         (left-max 0))
+    (dolist (entry entries)
+      ;; compute left width for this entry (graph + left-aligned fields, no padding)
+      (let* ((prefix (or (plist-get entry :prefix) ""))
+             (current (string-width prefix)))
+        (dolist (col left-cols)
+          (let* ((field (plist-get col :field))
+                 (val (or (majutsu-log--entry-column entry field) "")))
+            (setq current (+ current 1 (string-width val)))))
+        (setq left-max (max left-max current)))
+      ;; right widths
+      (dolist (col right-cols)
+        (let* ((field (plist-get col :field))
+               (val (or (majutsu-log--entry-column entry field) ""))
+               (w (string-width val)))
+          (setf (alist-get field right-widths nil nil #'eq)
+                (max w (or (alist-get field right-widths nil nil #'eq) 0))))))
+    (list :right right-widths :left-max left-max)))
+
+(defun majutsu-log--pad-display (text width align)
+  "Pad TEXT to WIDTH using ALIGN (`left' | `right' | `center')."
+  (let* ((txt (or text ""))
+         (len (string-width txt))
+         (pad (max 0 (- width len))))
+    (pcase align
+      ('right (concat (make-string pad ?\s) txt))
+      ('center (let* ((left (/ pad 2))
+                      (right (- pad left)))
+                 (concat (make-string left ?\s) txt (make-string right ?\s))))
+      (_ (concat txt (make-string pad ?\s))))))
+
+(defun majutsu-log--format-entry-line (entry compiled widths)
+  "Return plist (:line string :desc-indent col) for ENTRY using COMPILED columns.
+Left fields follow graph width per-line; right fields are block-aligned using WIDTHS."
+  (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
+                                   (plist-get compiled :columns)))
+         (left-cols (seq-filter (lambda (c) (not (eq (plist-get c :align) 'right)))
+                                visible-cols))
+         (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
+                                 visible-cols))
+         (prefix (or (plist-get entry :prefix) ""))
+         (parts (list (propertize prefix 'face 'magit-graph)))
+         (current-width (string-width prefix))
+         (desc-indent nil))
+    ;; build left part without padding
+    (dolist (col left-cols)
+      (let* ((field (plist-get col :field))
+             (raw (or (majutsu-log--entry-column entry field) ""))
+             (face (majutsu-log--field-face field))
+             (formatted (if face (propertize raw 'face face) raw)))
+        (setq parts (append parts (list formatted)))
+        (setq current-width (+ current-width 1 (string-width formatted)))
+        (when (and (not desc-indent) (eq field 'description))
+          (setq desc-indent (- current-width (string-width formatted))))))
+    (let* ((left-str (string-join parts " "))
+           (left-len (string-width left-str))
+           (target (max (plist-get widths :left-max) left-len))
+           (gap (max 1 (- target left-len)))
+           (right-parts '()))
+      ;; build right block with per-column padding
+      (dolist (col right-cols)
+        (let* ((field (plist-get col :field))
+               (raw (or (majutsu-log--entry-column entry field) ""))
+               (face (majutsu-log--field-face field))
+               (col-width (or (alist-get field (plist-get widths :right) nil nil #'eq)
+                              (string-width raw)))
+               (formatted (majutsu-log--pad-display raw col-width (plist-get col :align)))
+               (formatted (if face (propertize formatted 'face face) formatted)))
+          (push formatted right-parts)))
+      (setq right-parts (nreverse right-parts))
+      (let ((line (concat left-str
+                          (make-string gap ?\s)
+                          (string-join right-parts " "))))
+        (list :line line
+              :desc-indent (or desc-indent left-len))))))
+
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
   (magit-insert-section (majutsu-log-graph-section)
     (magit-insert-heading (majutsu-log--heading-string))
-    (dolist (entry (majutsu-parse-log-entries))
-      (magit-insert-section section (majutsu-log-entry-section entry t)
-                            (oset section commit-id (or (plist-get entry :commit_id)
-                                                        (plist-get entry :id)))
-                            (oset section change-id (or (plist-get entry :change-id)
-                                                        (plist-get entry :id)))
-                            (oset section description (plist-get entry :short-desc))
-                            (oset section bookmarks (plist-get entry :bookmarks))
-                            (magit-insert-heading
-                              (insert (string-join (butlast (plist-get entry :elems)) " ")))
-                            (when-let* ((long-desc (plist-get entry :long-desc))
-                                        (indented (majutsu--indent-string long-desc
-                                                                          (+ 10 (length (plist-get entry :prefix))))))
-                              (magit-insert-section-body
-                                (insert indented)
-                                (insert "\n")))
-                            (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
-                              (dolist (suffix-line suffix-lines)
-                                (insert suffix-line)
-                                (insert "\n")))))
+    (let* ((compiled (majutsu-log--ensure-template))
+           (entries (majutsu-parse-log-entries))
+           (widths (majutsu-log--compute-column-widths entries compiled)))
+      (dolist (entry entries)
+        (magit-insert-section
+            (majutsu-log-entry-section entry t
+                                       :commit-id  (plist-get entry :commit-id)
+                                       :change-id  (plist-get entry :change-id)
+                                       :description (plist-get entry :short-desc)
+                                       :bookmarks  (plist-get entry :bookmarks))
+          (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
+                 (heading (plist-get line-info :line))
+                 (indent (plist-get line-info :desc-indent)))
+            (magit-insert-heading
+              (insert heading))
+            (when-let* ((long-desc (plist-get entry :long-desc))
+                        (indented (majutsu--indent-string long-desc (or indent 0))))
+              (magit-insert-section-body
+                (insert indented)
+                (insert "\n"))))
+          (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
+            (dolist (suffix-line suffix-lines)
+              (insert suffix-line)
+              (insert "\n"))))))
     (insert "\n")))
 
 ;;; Log insert status
@@ -652,7 +883,7 @@ mutating the wrong buffer."
                 (entries '()))
             (dolist (line lines)
               (seq-let (id user time desc) (split-string line "\x1e")
-                (push (list :id id :user user :time time :desc desc) entries)))
+                (push (list :op-id id :user user :time time :desc desc) entries)))
             (nreverse entries)))))))
 
 (defun majutsu-op-log-insert-entries ()
@@ -660,15 +891,16 @@ mutating the wrong buffer."
   (magit-insert-section (majutsu-log-graph-section)
     (magit-insert-heading "Operation Log")
     (dolist (entry (majutsu-parse-op-log-entries))
-      (magit-insert-section section (majutsu-op-log-entry-section entry t)
-                            (oset section op-id (plist-get entry :id))
-                            (magit-insert-heading
-                              (format "%-12s %-15s %-16s %s"
-                                      (propertize (plist-get entry :id) 'face 'font-lock-constant-face)
-                                      (propertize (plist-get entry :user) 'face 'font-lock-variable-name-face)
-                                      (propertize (plist-get entry :time) 'face 'font-lock-comment-face)
-                                      (plist-get entry :desc)))
-                            (insert "\n")))))
+      (magit-insert-section
+          (majutsu-op-log-entry-section entry t
+                                        :op-id (plist-get entry :op-id))
+        (magit-insert-heading
+          (format "%-12s %-15s %-16s %s"
+                  (propertize (plist-get entry :op-id) 'face 'font-lock-constant-face)
+                  (propertize (plist-get entry :user) 'face 'font-lock-variable-name-face)
+                  (propertize (plist-get entry :time) 'face 'font-lock-comment-face)
+                  (plist-get entry :desc)))
+        (insert "\n")))))
 
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
