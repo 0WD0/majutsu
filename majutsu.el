@@ -16,6 +16,7 @@
 
 ;;; Code:
 
+(require 'majutsu-base)
 (require 'majutsu-core)
 (require 'majutsu-process)
 (require 'majutsu-log)

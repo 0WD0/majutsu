@@ -16,7 +16,7 @@
 ;;; Code:
 
 (require 'magit) ; for magit-with-editor
-(require 'majutsu-core)
+(require 'majutsu-base)
 (require 'ansi-color)
 (require 'subr-x)
 (require 'with-editor nil 'noerror)
