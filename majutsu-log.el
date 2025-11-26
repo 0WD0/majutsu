@@ -209,31 +209,48 @@ Missing required fields are appended as hidden columns."
 (defun majutsu-log--column-template (field)
   "Return majutsu-template form for FIELD."
   (pcase field
-    ('change-id [:call 'format_short_change_id_with_hidden_and_divergent_info
-                       [:raw "self" :Commit]])
-    ('commit-id [:call 'format_short_commit_id [:commit_id]])
+    ('change-id [:if [:hidden]
+                    [:label "hidden"
+                            [[:change_id :shortest 8]
+                             " hidden"]]
+                  [:label
+                   [:if [:divergent] "divergent"]
+                   [[:change_id :shortest 8]
+                    [:if [:divergent] "??"]]]])
+    ('commit-id [:commit_id :shortest 8])
     ('refs [:separate " " [:bookmarks] [:tags] [:working_copies]])
     ('bookmarks [:bookmarks])
     ('tags [:tags])
     ('working-copies [:working_copies])
     ('flags [:separate " "
-                       [:if [:current_working_copy] "@" ""]
+                       [:if [:current_working_copy] "@"]
                        [:if [:immutable] "immutable" "mutable"]
-                       [:if [:conflict] "conflict" ""]
-                       [:if [:git_head] "git_head" ""]
-                       [:if [:root] "root" ""]
-                       [:if [:empty] "(empty)" ""]])
-    ('git-head [:if [:git_head] "git_head()" ""])
+                       [:if [:conflict] [:label "conflict" "conflict"]]
+                       [:if [:git_head] "git_head"]
+                       [:if [:root] "root"]
+                       [:if [:empty] "(empty)"]])
+    ('git-head [:if [:git_head] [:label "git_head" ""]])
     ('signature [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
-                    [:call 'format_short_cryptographic_signature [:signature]]
-                  ""])
-    ('empty [:if [:empty] "(empty)" ""])
+                    [:if [:signature]
+                        [:label "signature status"
+                                ["["
+                                 [:label [:signature :status]
+                                         [:coalesce
+                                          [:if [:== [:signature :status] "good"] "✓︎"]
+                                          [:if [:== [:signature :status] "unknown"] "?"]
+                                          "x"]]
+                                 "]"]]]])
+    ('empty [:if [:empty]
+                [:label "empty" "∅"]])
     ('description [:if [:description]
                       [:method [:description] :first_line]
-                    [:label [:if [:empty] "empty"] 'description_placeholder]])
-    ('author [:call 'format_short_signature_oneline [:author]])
-    ('timestamp [:call 'format_timestamp
-                       [:call 'commit_timestamp [:raw "self" :Commit]]])
+                    [:label
+                     [:if [:empty] "empty"]
+                     [:label
+                      "description placeholder"
+                      "□"]]])
+    ('author [:author :name])
+    ('timestamp [:committer :timestamp :ago])
     ('long-desc [:if [:description] [:json [:description]] [:json " "]])
     (_ (user-error "Unknown column field %S" field))))
 
