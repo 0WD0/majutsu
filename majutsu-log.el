@@ -150,7 +150,7 @@
                    " "
                    [:json " "]]
       [[:label
-        [:separate "\x1e"
+        [:separate " "
                    [:if [:current_working_copy] "working_copy"]
                    [:if [:immutable] "immutable" "mutable"]
                    [:if [:conflict] "conflicted"]]
