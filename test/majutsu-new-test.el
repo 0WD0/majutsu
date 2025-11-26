@@ -25,7 +25,7 @@
                  :before '()
                  :message nil
                  :no-edit nil)))
-    (should (equal result '("new" "@")))))
+    (should (equal result '("new")))))
 
 (ert-deftest majutsu-new-build-args-with-options ()
   "Includes all configured options in the expected order."
