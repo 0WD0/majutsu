@@ -220,7 +220,7 @@ instead of stopping on visual padding."
       majutsu-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (majutsu-log--build-args))
-             (output (or log-output (apply #'majutsu--run-command args))))
+             (output (or log-output (apply #'majutsu-run-jj args))))
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n"))
                 (entries '())
@@ -322,7 +322,7 @@ instead of stopping on visual padding."
 
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
-  (let ((status-output (majutsu--run-command "status")))
+  (let ((status-output (majutsu-run-jj "status")))
     (when (and status-output (not (string-empty-p status-output)))
       (magit-insert-section (majutsu-status-section)
         (magit-insert-heading "Working Copy Status")
@@ -339,7 +339,7 @@ instead of stopping on visual padding."
                     (magit-insert-heading "Working Copy Changes")
                     (insert "Loading diffs...\n")))
          (buf (current-buffer)))
-    (majutsu--run-command-async
+    (majutsu-run-jj-async
      '("diff" "--git")
      (lambda (output)
        (when (buffer-live-p buf)
@@ -371,7 +371,7 @@ instead of stopping on visual padding."
 
 (defun majutsu-log-insert-conflicts ()
   "Insert conflicted files section."
-  (let ((output (majutsu--run-command "resolve" "--list")))
+  (let ((output (majutsu-run-jj "resolve" "--list")))
     (when (and output (not (string-empty-p output)))
       (magit-insert-section (majutsu-conflict-section)
         (magit-insert-heading "Unresolved Conflicts")
@@ -391,10 +391,10 @@ instead of stopping on visual padding."
   (tpl-compile [:commit_id :shortest 8]))
 
 (defun majutsu-current-change-id ()
-  (majutsu--run-command "log" "--no-graph" "-r" "@" "-T" majutsu--show-change-id-template))
+  (majutsu-run-jj "log" "--no-graph" "-r" "@" "-T" majutsu--show-change-id-template))
 
 (defun majutsu-current-commit-id ()
-  (majutsu--run-command "log" "--no-graph" "-r" "@" "-T" majutsu--show-commit-id-template))
+  (majutsu-run-jj "log" "--no-graph" "-r" "@" "-T" majutsu--show-commit-id-template))
 
 (defun majutsu-log-goto-@ ()
   "Jump to the current changeset (@)."
@@ -562,7 +562,7 @@ section."
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert "Loading..."))
-    (majutsu--run-command-async
+    (majutsu-run-jj-async
      (majutsu-log--build-args)
      (lambda (output)
        (when (buffer-live-p buf)
@@ -623,7 +623,7 @@ section."
       majutsu-op-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (list "op" "log" "--no-graph" "-T" majutsu--op-log-template))
-             (output (or log-output (apply #'majutsu--run-command args))))
+             (output (or log-output (apply #'majutsu-run-jj args))))
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n" t))
                 (entries '()))
@@ -665,7 +665,7 @@ section."
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert "Loading..."))
-    (majutsu--run-command-async
+    (majutsu-run-jj-async
      (list "op" "log" "--no-graph" "-T" majutsu--op-log-template)
      (lambda (output)
        (when (buffer-live-p buf)

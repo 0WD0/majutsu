@@ -62,7 +62,7 @@ already supplied a color flag."
       (ansi-color-apply output)
     output))
 
-(defun majutsu--run-command (&rest args)
+(defun majutsu-run-jj (&rest args)
   "Run jj command with ARGS and return output."
   (let* ((start-time (current-time))
          (safe-args (majutsu--process--maybe-add-color args))
@@ -80,7 +80,7 @@ already supplied a color flag."
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun majutsu--run-command-async (args callback &optional error-callback)
+(defun majutsu-run-jj-async (args callback &optional error-callback)
   "Run jj command with ARGS asynchronously.
 CALLBACK is called with the output string on success.
 ERROR-CALLBACK is called with the error output on failure."

@@ -191,7 +191,7 @@
          (parent-temp-file (make-temp-file (format "majutsu-parent-%s" (file-name-nondirectory file))
                                            nil (when file-ext (concat "." file-ext))))
          (parent-content (let ((default-directory repo-root))
-                           (majutsu--run-command "file" "show" "-r" "@-" file))))
+                           (majutsu-run-jj "file" "show" "-r" "@-" file))))
 
     ;; Write parent content to temp file
     (with-temp-file parent-temp-file
@@ -239,7 +239,7 @@
   (let* ((repo-root (majutsu--root))
          (full-file-path (expand-file-name file repo-root))
          (parent-content (let ((default-directory repo-root))
-                           (majutsu--run-command "file" "show" "-r" "@-" file)))
+                           (majutsu-run-jj "file" "show" "-r" "@-" file)))
          (current-content (if (file-exists-p full-file-path)
                               (with-temp-buffer
                                 (insert-file-contents full-file-path)
@@ -302,7 +302,7 @@
 
 (defun majutsu--get-changed-files ()
   "Get list of files with changes in working copy."
-  (let ((diff-output (majutsu--run-command "diff" "--name-only")))
+  (let ((diff-output (majutsu-run-jj "diff" "--name-only")))
     (split-string diff-output "\n" t)))
 
 ;;; Diff Commands
@@ -356,7 +356,7 @@
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let ((default-directory repo-root)
-            (output (apply #'majutsu--run-command majutsu-diff--last-args)))
+            (output (apply #'majutsu-run-jj majutsu-diff--last-args)))
         (magit-insert-section (diff-root)
           (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
           (insert "\n")

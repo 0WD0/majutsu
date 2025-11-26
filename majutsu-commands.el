@@ -145,7 +145,7 @@
   "Edit commit at point."
   (interactive)
   (when-let* ((revset (majutsu-log--revset-at-point)))
-    (let ((result (majutsu--run-command "edit" revset)))
+    (let ((result (majutsu-run-jj "edit" revset)))
       (if (majutsu--handle-command-result (list "edit" revset) result
                                           (format "Now editing commit %s" revset)
                                           "Failed to edit commit")
@@ -155,7 +155,7 @@
   "Edit the commit at point using jj edit."
   (interactive)
   (when-let* ((revset (majutsu-log--revset-at-point)))
-    (let ((result (majutsu--run-command "edit" revset)))
+    (let ((result (majutsu-run-jj "edit" revset)))
       (if (majutsu--handle-command-result (list "edit" revset) result
                                           (format "Now editing revset %s" revset)
                                           "Failed to edit commit")
@@ -172,7 +172,7 @@
            (not (yes-or-no-p "Undo the most recent change? ")))
       (message "Undo canceled")
     (let ((revset (majutsu-log--revset-at-point)))
-      (majutsu--run-command "undo")
+      (majutsu-run-jj "undo")
       (majutsu-log-refresh)
       (when revset
         (majutsu-goto-commit revset)))))
@@ -186,7 +186,7 @@
            (not (yes-or-no-p "Redo the previously undone change? ")))
       (message "Redo canceled")
     (let ((revset (majutsu-log--revset-at-point)))
-      (majutsu--run-command "redo")
+      (majutsu-run-jj "redo")
       (majutsu-log-refresh)
       (when revset
         (majutsu-goto-commit revset)))))
@@ -201,7 +201,7 @@
                (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
           (message "Abandon canceled")
         (progn
-          (majutsu--run-command "abandon" "-r" revset)
+          (majutsu-run-jj "abandon" "-r" revset)
           (majutsu-log-refresh)))
     (message "No changeset at point to abandon")))
 
@@ -375,7 +375,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 (defun majutsu-new--run-command (args)
   "Execute jj new with ARGS and refresh the log on success."
-  (let ((result (apply #'majutsu--run-command args)))
+  (let ((result (apply #'majutsu-run-jj args)))
     (when (majutsu--handle-command-result
            args result
            "Created new changeset"
@@ -459,7 +459,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 (defun majutsu-duplicate--run-command (args)
   "Execute jj duplicate with ARGS and refresh log."
-  (let ((result (apply #'majutsu--run-command args)))
+  (let ((result (apply #'majutsu-run-jj args)))
     (when (majutsu--handle-command-result
            args result
            "Duplicated changeset(s)"
@@ -578,7 +578,7 @@ ARGS are passed from the transient."
                  (progress-msg (format "Rebasing %s onto %s" source-display dest-display))
                  (success-msg (format "Rebase completed: %s -> %s" source-display dest-display)))
             (majutsu--message-with-log "%s..." progress-msg)
-            (let ((result (apply #'majutsu--run-command all-args)))
+            (let ((result (apply #'majutsu-run-jj all-args)))
               (if (majutsu--handle-command-result all-args result success-msg "Rebase failed")
                   (progn
                     (majutsu-rebase-clear-selections)
@@ -619,7 +619,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (args (append '("bookmark" "list" "--quiet")
                        (and all-remotes '("--all"))
                        (list "-T" template))))
-    (delete-dups (split-string (apply #'majutsu--run-command args) "\n" t))))
+    (delete-dups (split-string (apply #'majutsu-run-jj args) "\n" t))))
 
 (defun majutsu-bookmark-create ()
   "Create a new bookmark."
@@ -627,7 +627,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
   (let* ((revset (or (majutsu-log--revset-at-point) "@"))
          (name (read-string "Bookmark name: ")))
     (unless (string-empty-p name)
-      (majutsu--run-command "bookmark" "create" name "-r" revset)
+      (majutsu-run-jj "bookmark" "create" name "-r" revset)
       (majutsu-log-refresh))))
 
 (defun majutsu-bookmark-delete ()
@@ -638,7 +638,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (choice (and names (completing-read "Delete bookmark (propagates on push): " table nil t))))
     (if (not choice)
         (message "No bookmarks found")
-      (majutsu--run-command "bookmark" "delete" choice)
+      (majutsu-run-jj "bookmark" "delete" choice)
       (majutsu-log-refresh)
       (message "Deleted bookmark '%s'" choice))))
 
@@ -650,7 +650,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (choice (and names (completing-read "Forget bookmark: " table nil t))))
     (if (not choice)
         (message "No bookmarks found")
-      (majutsu--run-command "bookmark" "forget" choice)
+      (majutsu-run-jj "bookmark" "forget" choice)
       (majutsu-log-refresh)
       (message "Forgot bookmark '%s'" choice))))
 
@@ -662,7 +662,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
     (if (not choice)
         (message "No remote bookmarks found")
-      (majutsu--run-command "bookmark" "track" choice)
+      (majutsu-run-jj "bookmark" "track" choice)
       (majutsu-log-refresh)
       (message "Tracking bookmark '%s'" choice))))
 
@@ -672,7 +672,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
 With prefix ALL, include remote bookmarks."
   (interactive "P")
   (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all"))))
-         (output (apply #'majutsu--run-command args))
+         (output (apply #'majutsu-run-jj args))
          (buf (get-buffer-create "*Majutsu Bookmarks*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)
@@ -702,7 +702,7 @@ When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
                         (and allow-backwards '("--allow-backwards"))
                         (list "-t" commit)
                         names)))
-      (apply #'majutsu--run-command args)
+      (apply #'majutsu-run-jj args)
       (majutsu-log-refresh)
       (message (if allow-backwards
                    "Moved bookmark(s) (allow backwards) to %s: %s"
@@ -732,7 +732,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
           (new (read-string (format "New name for %s: " old))))
      (list old new)))
   (when (and (not (string-empty-p old)) (not (string-empty-p new)))
-    (majutsu--run-command "bookmark" "rename" old new)
+    (majutsu-run-jj "bookmark" "rename" old new)
     (majutsu-log-refresh)
     (message "Renamed bookmark '%s' -> '%s'" old new)))
 
@@ -746,7 +746,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
           (at (or (majutsu-log--revset-at-point) "@"))
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list name rev)))
-  (majutsu--run-command "bookmark" "set" name "-r" commit)
+  (majutsu-run-jj "bookmark" "set" name "-r" commit)
   (majutsu-log-refresh)
   (message "Set bookmark '%s' to %s" name commit))
 
@@ -762,7 +762,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
 
   (defvar crm-separator)
   (when names
-    (apply #'majutsu--run-command (append '("bookmark" "untrack") names))
+    (apply #'majutsu-run-jj (append '("bookmark" "untrack") names))
     (majutsu-log-refresh)
     (message "Untracked: %s" (string-join names ", "))))
 
@@ -838,7 +838,7 @@ misclassifying Majutsu candidates."
                        (bookmark-args "Successfully pushed selected bookmarks")
                        (t "Successfully pushed to remote"))))
     (majutsu--message-with-log "Pushing to remote...")
-    (majutsu--run-command-async
+    (majutsu-run-jj-async
      cmd-args
      (lambda (result)
        (when (majutsu--handle-push-result cmd-args result success-msg)
@@ -918,7 +918,7 @@ misclassifying Majutsu candidates."
                            (apply #'append (mapcar (lambda (s)
                                                      (list "--remote" (substring s (length "--remote="))))
                                                    remote-args)))))
-  (majutsu--run-command-async
+  (majutsu-run-jj-async
    cmd-args
    (lambda (result)
      (when (majutsu--handle-command-result cmd-args result
@@ -931,7 +931,7 @@ misclassifying Majutsu candidates."
   "Return a list of Git remote names for the current repository.
 Tries `jj git remote list' first, then falls back to `git remote'."
   (let* ((out (condition-case _
-                  (majutsu--run-command "git" "remote" "list")
+                  (majutsu-run-jj "git" "remote" "list")
                 (error "")))
          (names (if (and out (not (string-empty-p out)))
                     (let* ((lines (split-string out "\n" t))
@@ -950,7 +950,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-git-remote-list ()
   "List Git remotes in a temporary buffer."
   (interactive)
-  (let* ((output (majutsu--run-command "git" "remote" "list"))
+  (let* ((output (majutsu-run-jj "git" "remote" "list"))
          (buf (get-buffer-create "*Majutsu Git Remotes*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)
@@ -969,7 +969,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (cmd-args (append '("git" "remote" "add")
                            (when fetch-tags (list fetch-tags))
                            (list remote url)))
-         (result (apply #'majutsu--run-command cmd-args)))
+         (result (apply #'majutsu-run-jj cmd-args)))
     (majutsu--handle-command-result cmd-args result
                                     (format "Added remote %s" remote)
                                     "Failed to add remote")))
@@ -981,7 +981,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (remote (completing-read "Remove remote: " remotes nil t)))
     (when (and remote (not (string-empty-p remote)))
       (let* ((cmd-args (list "git" "remote" "remove" remote))
-             (result (apply #'majutsu--run-command cmd-args)))
+             (result (apply #'majutsu-run-jj cmd-args)))
         (majutsu--handle-command-result cmd-args result
                                         (format "Removed remote %s" remote)
                                         "Failed to remove remote")))))
@@ -994,7 +994,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (new (read-string (format "New name for %s: " old))))
     (when (and (not (string-empty-p old)) (not (string-empty-p new)))
       (let* ((cmd-args (list "git" "remote" "rename" old new))
-             (result (apply #'majutsu--run-command cmd-args)))
+             (result (apply #'majutsu-run-jj cmd-args)))
         (majutsu--handle-command-result cmd-args result
                                         (format "Renamed remote %s -> %s" old new)
                                         "Failed to rename remote")))))
@@ -1007,7 +1007,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (url (read-string (format "New URL for %s: " remote))))
     (when (and (not (string-empty-p remote)) (not (string-empty-p url)))
       (let* ((cmd-args (list "git" "remote" "set-url" remote url))
-             (result (apply #'majutsu--run-command cmd-args)))
+             (result (apply #'majutsu-run-jj cmd-args)))
         (majutsu--handle-command-result cmd-args result
                                         (format "Set URL for %s" remote)
                                         "Failed to set remote URL")))))
@@ -1037,7 +1037,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                            (when fetch-tags (list fetch-tags))
                            (list source)
                            (when dest (list dest))))
-         (result (apply #'majutsu--run-command cmd-args)))
+         (result (apply #'majutsu-run-jj cmd-args)))
     (majutsu--handle-command-result cmd-args result
                                     "Clone completed"
                                     "Clone failed")))
@@ -1056,7 +1056,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                            (when no-colocate? '("--no-colocate"))
                            (when git-repo (list "--git-repo" git-repo))
                            (list dest)))
-         (result (apply #'majutsu--run-command cmd-args)))
+         (result (apply #'majutsu-run-jj cmd-args)))
     (majutsu--handle-command-result cmd-args result
                                     "Init completed"
                                     "Init failed")))
@@ -1065,20 +1065,20 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   "Update the underlying Git repo with changes made in the repo."
   (interactive)
   (let* ((cmd '("git" "export"))
-         (result (apply #'majutsu--run-command cmd)))
+         (result (apply #'majutsu-run-jj cmd)))
     (majutsu--handle-command-result cmd result "Exported to Git" "Export failed")))
 
 (defun majutsu-git-import ()
   "Update repo with changes made in the underlying Git repo."
   (interactive)
   (let* ((cmd '("git" "import"))
-         (result (apply #'majutsu--run-command cmd)))
+         (result (apply #'majutsu-run-jj cmd)))
     (majutsu--handle-command-result cmd result "Imported from Git" "Import failed")))
 
 (defun majutsu-git-root ()
   "Show the underlying Git directory of the current repository."
   (interactive)
-  (let* ((dir (string-trim (majutsu--run-command "git" "root"))))
+  (let* ((dir (string-trim (majutsu-run-jj "git" "root"))))
     (if (string-empty-p dir)
         (message "No underlying Git directory found")
       (kill-new dir)
