@@ -84,43 +84,43 @@
   ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
   ;; Magit's section toggling behavior for large revisions.
   (let ((ordered-lines (nreverse lines)))
-    (magit-insert-section _file-section (majutsu-file-section file nil :file file)
-                          (magit-insert-heading
-                            (propertize (majutsu--diff-file-heading file ordered-lines)
-                                        'font-lock-face 'magit-diff-file-heading))
-                          ;; Process the lines to find and insert hunks
-                          (let ((hunk-lines nil)
-                                (in-hunk nil)
-                                (hunk-header nil))
-                            (dolist (line ordered-lines)
-                              (cond
-                               ;; Hunk header
-                               ((string-match "^@@ .* @@" line)
-                                (when (and in-hunk hunk-header)
-                                  (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))
-                                (setq hunk-header line
-                                      hunk-lines nil
-                                      in-hunk t))
-                               ;; Hunk content
-                               (in-hunk
-                                (push line hunk-lines))))
-                            ;; Insert final hunk
-                            (when (and in-hunk hunk-header)
-                              (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))))))
+    (magit-insert-section  (majutsu-file-section file nil :file file)
+      (magit-insert-heading
+        (propertize (majutsu--diff-file-heading file ordered-lines)
+                    'font-lock-face 'magit-diff-file-heading))
+      ;; Process the lines to find and insert hunks
+      (let ((hunk-lines nil)
+            (in-hunk nil)
+            (hunk-header nil))
+        (dolist (line ordered-lines)
+          (cond
+           ;; Hunk header
+           ((string-match "^@@ .* @@" line)
+            (when (and in-hunk hunk-header)
+              (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))
+            (setq hunk-header line
+                  hunk-lines nil
+                  in-hunk t))
+           ;; Hunk content
+           (in-hunk
+            (push line hunk-lines))))
+        ;; Insert final hunk
+        (when (and in-hunk hunk-header)
+          (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))))))
 
 (defun majutsu--insert-hunk-section (file header lines)
   "Insert a hunk section."
-  (magit-insert-section _hunk-section (majutsu-hunk-section file nil :file file :header header)
-                        (magit-insert-heading
-                          (propertize header 'font-lock-face 'magit-diff-hunk-heading))
-                        (dolist (line lines)
-                          (insert (propertize line
-                                              'font-lock-face
-                                              (cond
-                                               ((string-prefix-p "+" line) 'magit-diff-added)
-                                               ((string-prefix-p "-" line) 'magit-diff-removed)
-                                               (t 'magit-diff-context))))
-                          (insert "\n"))))
+  (magit-insert-section (majutsu-hunk-section file nil :file file :header header)
+    (magit-insert-heading
+      (propertize header 'font-lock-face 'magit-diff-hunk-heading))
+    (dolist (line lines)
+      (insert (propertize line
+                          'font-lock-face
+                          (cond
+                           ((string-prefix-p "+" line) 'magit-diff-added)
+                           ((string-prefix-p "-" line) 'magit-diff-removed)
+                           (t 'magit-diff-context))))
+      (insert "\n"))))
 
 ;;; Navigation
 
