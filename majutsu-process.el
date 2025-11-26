@@ -21,17 +21,58 @@
 (require 'subr-x)
 (require 'with-editor nil 'noerror)
 
+;;; Customization
+
+(defgroup majutsu-process nil
+  "Process execution helpers for Majutsu."
+  :group 'majutsu)
+
+(defcustom majutsu-process-color-mode 'always
+  "How Majutsu asks `jj' to emit colors.
+
+`always'  – force color by adding `--color=always'.
+`auto'    – do not add flags; let jj auto-detect.
+nil       – request no color."
+  :type '(choice (const :tag "Always force color" always)
+          (const :tag "Respect auto detection" auto)
+          (const :tag "Disable color" nil))
+  :group 'majutsu-process)
+
+(defcustom majutsu-process-apply-ansi-colors t
+  "When non-nil, convert ANSI escapes in jj output to text properties."
+  :type 'boolean
+  :group 'majutsu-process)
+
+;;; Internal helpers
+
+(defun majutsu--process--maybe-add-color (args)
+  "Return ARGS with --color=always injected when configured.
+Respects `majutsu-process-color-mode' and avoids duplication if caller
+already supplied a color flag."
+  (let ((clean (seq-remove #'null args)))
+    (if (and (eq majutsu-process-color-mode 'always)
+             (not (seq-some (lambda (arg) (string-prefix-p "--color" arg))
+                            clean)))
+        (cons "--color=always" clean)
+      clean)))
+
+(defun majutsu--process--apply-colors (output)
+  "Apply ANSI color filtering to OUTPUT when enabled."
+  (if (and output majutsu-process-apply-ansi-colors)
+      (ansi-color-apply output)
+    output))
+
 (defun majutsu--run-command (&rest args)
   "Run jj command with ARGS and return output."
-  (let ((start-time (current-time))
-        (safe-args (seq-remove #'null args))
-        result exit-code)
+  (let* ((start-time (current-time))
+         (safe-args (majutsu--process--maybe-add-color args))
+         result exit-code)
     (majutsu--debug "Running command: %s %s" majutsu-executable (string-join safe-args " "))
     (with-temp-buffer
       (let ((coding-system-for-read 'utf-8-unix)
             (coding-system-for-write 'utf-8-unix))
         (setq exit-code (apply #'process-file majutsu-executable nil t nil safe-args)))
-      (setq result (buffer-string))
+      (setq result (majutsu--process--apply-colors (buffer-string)))
       (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                       (float-time (time-subtract (current-time) start-time))
                       exit-code)
@@ -39,32 +80,13 @@
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun majutsu--run-command-color (&rest args)
-  "Run jj command with ARGS and return colorized output."
-  (majutsu--debug "Running color command: %s --color=always %s" majutsu-executable (string-join args " "))
-  (let ((start-time (current-time))
-        result exit-code)
-    (with-temp-buffer
-      (let ((process-environment (cons "FORCE_COLOR=1" (cons "CLICOLOR_FORCE=1" process-environment))))
-        (let ((coding-system-for-read 'utf-8-unix)
-              (coding-system-for-write 'utf-8-unix))
-          (setq exit-code (apply #'process-file majutsu-executable nil t nil "--color=always" args)))
-        (setq result (ansi-color-apply (buffer-string)))
-        (majutsu--debug "Color command completed in %.3f seconds, exit code: %d"
-                        (float-time (time-subtract (current-time) start-time))
-                        exit-code)
-        result))))
-
-(defun majutsu--run-command-async (args callback &optional error-callback color)
+(defun majutsu--run-command-async (args callback &optional error-callback)
   "Run jj command with ARGS asynchronously.
 CALLBACK is called with the output string on success.
-ERROR-CALLBACK is called with the error output on failure.
-If COLOR is non-nil, force color output."
+ERROR-CALLBACK is called with the error output on failure."
   (let* ((default-directory (majutsu--root))
+         (args (majutsu--process--maybe-add-color args))
          (buffer (generate-new-buffer " *majutsu-async*"))
-         (process-environment (if color
-                                  (cons "FORCE_COLOR=1" (cons "CLICOLOR_FORCE=1" process-environment))
-                                process-environment))
          (process (apply #'start-file-process "majutsu-async" buffer majutsu-executable args)))
     (set-process-sentinel process
                           (lambda (proc _event)
@@ -74,10 +96,7 @@ If COLOR is non-nil, force color output."
                                       (exit-code (process-exit-status proc)))
                                   (kill-buffer buffer)
                                   (if (zerop exit-code)
-                                      (progn
-                                        (when color
-                                          (setq output (ansi-color-apply output)))
-                                        (funcall callback output))
+                                      (funcall callback (majutsu--process--apply-colors output))
                                     (if error-callback
                                         (funcall error-callback output)
                                       (message "Majutsu async error: %s" output))))))))

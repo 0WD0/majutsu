@@ -34,7 +34,7 @@
                          "\"Long description\"" ; json encoded
                          "\n"))
          (majutsu-executable "jj") ; Mock executable
-         (entries (cl-letf (((symbol-function 'majutsu--run-command-color)
+         (entries (cl-letf (((symbol-function 'majutsu--run-command)
                              (lambda (&rest _) sample-output)))
                     (majutsu-parse-log-entries))))
     (should (= (length entries) 1))
@@ -52,7 +52,7 @@
   (let* ((sample-output (concat
                          "@" "\x1e" "c1" "\x1e" "A1" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "Desc1" "\x1e" "cid1" "\x1e" "ts1" "\x1e" "\"Long1\"" "\n"
                          "o" "\x1e" "c2" "\x1e" "A2" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "Desc2" "\x1e" "cid2" "\x1e" "ts2" "\x1e" "\"Long2\"" "\n"))
-         (entries (cl-letf (((symbol-function 'majutsu--run-command-color)
+         (entries (cl-letf (((symbol-function 'majutsu--run-command)
                              (lambda (&rest _) sample-output)))
                     (majutsu-parse-log-entries))))
     (should (= (length entries) 2))
@@ -65,7 +65,7 @@
                          "@" "\x1e" "c1" "\x1e" "A1" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "Desc1" "\x1e" "cid1" "\x1e" "ts1" "\x1e" "\"Long1\"" "\n"
                          "|" "\n"
                          "o" "\x1e" "c2" "\x1e" "A2" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "" "\x1e" "Desc2" "\x1e" "cid2" "\x1e" "ts2" "\x1e" "\"Long2\"" "\n"))
-         (entries (cl-letf (((symbol-function 'majutsu--run-command-color)
+         (entries (cl-letf (((symbol-function 'majutsu--run-command)
                              (lambda (&rest _) sample-output)))
                     (majutsu-parse-log-entries))))
     (should (= (length entries) 2))

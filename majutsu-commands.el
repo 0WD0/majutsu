@@ -672,7 +672,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
 With prefix ALL, include remote bookmarks."
   (interactive "P")
   (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all"))))
-         (output (apply #'majutsu--run-command-color args))
+         (output (apply #'majutsu--run-command args))
          (buf (get-buffer-create "*Majutsu Bookmarks*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)
@@ -844,8 +844,7 @@ misclassifying Majutsu candidates."
        (when (majutsu--handle-push-result cmd-args result success-msg)
          (majutsu-log-refresh)))
      (lambda (err)
-       (message "Push failed: %s" err))
-     t)))
+       (message "Push failed: %s" err)))))
 
 (defun majutsu--handle-push-result (_cmd-args result success-msg)
   "Enhanced push result handler with bookmark analysis."
@@ -919,15 +918,14 @@ misclassifying Majutsu candidates."
                            (apply #'append (mapcar (lambda (s)
                                                      (list "--remote" (substring s (length "--remote="))))
                                                    remote-args)))))
-    (majutsu--run-command-async
-     cmd-args
-     (lambda (result)
-       (when (majutsu--handle-command-result cmd-args result
-                                             "Fetched from remote" "Fetch failed")
-         (majutsu-log-refresh)))
-     (lambda (err)
-       (message "Fetch failed: %s" err))
-     t)))
+  (majutsu--run-command-async
+   cmd-args
+   (lambda (result)
+     (when (majutsu--handle-command-result cmd-args result
+                                           "Fetched from remote" "Fetch failed")
+       (majutsu-log-refresh)))
+   (lambda (err)
+     (message "Fetch failed: %s" err)))))
 
 (defun majutsu--get-git-remotes ()
   "Return a list of Git remote names for the current repository.
@@ -952,7 +950,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
 (defun majutsu-git-remote-list ()
   "List Git remotes in a temporary buffer."
   (interactive)
-  (let* ((output (majutsu--run-command-color "git" "remote" "list"))
+  (let* ((output (majutsu--run-command "git" "remote" "list"))
          (buf (get-buffer-create "*Majutsu Git Remotes*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)

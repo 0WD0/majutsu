@@ -220,7 +220,7 @@ instead of stopping on visual padding."
       majutsu-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (majutsu-log--build-args))
-             (output (or log-output (apply #'majutsu--run-command-color args))))
+             (output (or log-output (apply #'majutsu--run-command args))))
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n"))
                 (entries '())
@@ -365,8 +365,7 @@ instead of stopping on visual padding."
                (goto-char (oref section content))
                (delete-region (point) (oref section end))
                (insert (format "Error loading diffs: %s\n" err))
-               (set-marker (oref section end) (point)))))))
-     t)))
+               (set-marker (oref section end) (point))))))))))
 
 ;;; Log insert conflicts
 
@@ -577,8 +576,7 @@ section."
          (with-current-buffer buf
            (let ((inhibit-read-only t))
              (erase-buffer)
-             (insert "Error: " err)))))
-     t)))
+             (insert "Error: " err))))))))
 
 (defun majutsu-log ()
   "Open the majutsu log buffer."
@@ -625,7 +623,7 @@ section."
       majutsu-op-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (list "op" "log" "--no-graph" "-T" majutsu--op-log-template))
-             (output (or log-output (apply #'majutsu--run-command-color args))))
+             (output (or log-output (apply #'majutsu--run-command args))))
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n" t))
                 (entries '()))
@@ -668,7 +666,7 @@ section."
       (erase-buffer)
       (insert "Loading..."))
     (majutsu--run-command-async
-     (list "op" "log" "--no-graph" "-T" majutsu--op-log-template "--color=always")
+     (list "op" "log" "--no-graph" "-T" majutsu--op-log-template)
      (lambda (output)
        (when (buffer-live-p buf)
          (with-current-buffer buf
@@ -676,11 +674,10 @@ section."
            (majutsu-op-log-render))))
      (lambda (err)
        (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (let ((inhibit-read-only t))
-             (erase-buffer)
-             (insert "Error: " err)))))
-     t)))
+        (with-current-buffer buf
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert "Error: " err))))))))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."

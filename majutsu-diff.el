@@ -356,7 +356,7 @@
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let ((default-directory repo-root)
-            (output (apply #'majutsu--run-command-color majutsu-diff--last-args)))
+            (output (apply #'majutsu--run-command majutsu-diff--last-args)))
         (magit-insert-section (diff-root)
           (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
           (insert "\n")
