@@ -107,6 +107,9 @@ macro expansion until Evil is actually present."
     (kbd "y") #'majutsu-duplicate-transient
     (kbd "Y") #'majutsu-duplicate)
 
+  (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
+    (kbd "g d") #'majutsu-jump-to-diffstat-or-diff)
+
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
     (kbd "O") #'majutsu-new

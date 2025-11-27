@@ -100,6 +100,9 @@ otherwise fall back to the current buffer's `tab-width'."
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
    (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
 
+(defclass majutsu-diffstat-file-section (magit-section)
+  ((file :initarg :file)))
+
 (defclass majutsu-diff-summary-section (magit-section) ())
 
 (defvar-local majutsu-diff--last-refined-section nil)
@@ -124,6 +127,81 @@ drop it and ensure a single `--stat`."
     (unless added
       (push "--stat" res))
     (nreverse res)))
+
+(defun majutsu-diff--color-diffstat-graph (graph)
+  "Return GRAPH string with +/- colored like Magit."
+  (apply #'concat
+         (mapcar (lambda (ch)
+                   (propertize (string ch) 'font-lock-face
+                               (cond ((eq ch ?+) 'magit-diffstat-added)
+                                     ((eq ch ?-) 'magit-diffstat-removed)
+                                     (t 'default))))
+                 graph)))
+
+(defun majutsu-diff--insert-stat-section (stat-output)
+  "Insert a diffstat section rendered from STAT-OUTPUT."
+  (let ((lines (split-string stat-output "\n" t))
+        (summary-lines '())
+        (inserted nil))
+    (magit-insert-section (majutsu-diff-summary-section nil)
+      (magit-insert-heading (propertize "Summary (--stat)" 'font-lock-face 'magit-section-heading))
+      (dolist (line lines)
+        (cond
+         ((string-match "^ +\\(.+?\\) | +\\([0-9]+\\) +\\([+ -]+\\)$" line)
+          (setq inserted t)
+          (let* ((file (string-trim (match-string 1 line)))
+                 (count (match-string 2 line))
+                 (graph (match-string 3 line))
+                 (colored (majutsu-diff--color-diffstat-graph graph)))
+            (magit-insert-section (majutsu-diffstat-file-section file nil :file file)
+              (insert (propertize file 'font-lock-face 'magit-filename))
+              (insert " | " count " " colored)
+              (insert "\n"))))
+         ((string-match "files changed" line)
+          (push line summary-lines))
+         (t)))
+      (when summary-lines
+        (insert (string-join (nreverse summary-lines) "\n") "\n"))
+      (when inserted
+        (insert "\n")))))
+
+(defun majutsu-diff--find-section (pred section)
+  "Depth-first search SECTION tree for PRED."
+  (or (when (funcall pred section) section)
+      (seq-some (lambda (child)
+                  (majutsu-diff--find-section pred child))
+                (oref section children))))
+
+(defun majutsu-diff--goto-file-section (file)
+  "Jump to diff body section for FILE."
+  (if-let ((sec (majutsu-diff--find-section
+                 (lambda (s)
+                   (and (object-of-class-p s 'majutsu-file-section)
+                        (equal (oref s file) file)))
+                 magit-root-section)))
+      (magit-section-goto sec)
+    (user-error "No diff found for %s" file)))
+
+(defun majutsu-diff--goto-stat-section (file)
+  "Jump to diffstat entry for FILE."
+  (if-let ((sec (majutsu-diff--find-section
+                 (lambda (s)
+                   (and (object-of-class-p s 'majutsu-diffstat-file-section)
+                        (equal (oref s file) file)))
+                 magit-root-section)))
+      (magit-section-goto sec)
+    (user-error "No diffstat entry for %s" file)))
+
+(defun majutsu-jump-to-diffstat-or-diff ()
+  "Jump between diffstat entry and its patch body."
+  (interactive)
+  (let ((sec (magit-current-section)))
+    (cond
+     ((object-of-class-p sec 'majutsu-diffstat-file-section)
+      (majutsu-diff--goto-file-section (oref sec file)))
+     ((object-of-class-p sec 'majutsu-file-section)
+      (majutsu-diff--goto-stat-section (oref sec file)))
+     (t (user-error "Not on a file entry")))))
 
 ;;; Diff Parsing & Display
 
@@ -647,7 +725,8 @@ With prefix STYLE, cycle between `all' and `t'."
   "t" #'majutsu-diff-toggle-refine-hunk
   "+" #'majutsu-diff-context-more
   "-" #'majutsu-diff-context-less
-  "=" #'majutsu-diff-context-set)
+  "=" #'majutsu-diff-context-set
+  "j" #'majutsu-jump-to-diffstat-or-diff)
 
 (define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
   "Major mode for viewing jj diffs."
@@ -674,12 +753,7 @@ With prefix STYLE, cycle between `all' and `t'."
                             (apply #'majutsu-run-jj
                                    (majutsu-diff--stat-args majutsu-diff--last-args)))))
         (when stat-output
-          (magit-insert-section (majutsu-diff-summary-section nil)
-            (magit-insert-heading (propertize "Summary (--stat)" 'face 'magit-section-heading))
-            (insert stat-output)
-            (unless (string-suffix-p "\n" stat-output)
-              (insert "\n"))
-            (insert "\n")))
+          (majutsu-diff--insert-stat-section stat-output))
         (magit-insert-section (diff-root)
           (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
           (insert "\n")
