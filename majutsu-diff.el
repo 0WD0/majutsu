@@ -218,6 +218,8 @@ drop it and ensure a single `--stat`."
     (cond
      ((object-of-class-p sec 'majutsu-diffstat-file-section)
       (majutsu-diff--goto-file-section (oref sec file)))
+     ((object-of-class-p sec 'majutsu-hunk-section)
+      (majutsu-diff--goto-stat-section (oref sec file)))
      ((object-of-class-p sec 'majutsu-file-section)
       (majutsu-diff--goto-stat-section (oref sec file)))
      (t (user-error "Not on a file entry")))))
@@ -771,14 +773,15 @@ With prefix STYLE, cycle between `all' and `t'."
                                      (not (string-empty-p output)))
                             (apply #'majutsu-run-jj
                                    (majutsu-diff--stat-args majutsu-diff--last-args)))))
-        (when stat-output
-          (majutsu-diff--insert-stat-section stat-output))
-        (magit-insert-section (diff-root)
-          (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
-          (insert "\n")
-          (if (string-empty-p output)
-              (insert (propertize "(No diff)" 'face 'shadow))
-            (majutsu--insert-diff-hunks output))))
+        (magit-insert-section (majutsu-diff-section)
+          (when stat-output
+            (majutsu-diff--insert-stat-section stat-output))
+          (magit-insert-section (diff-root)
+            (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
+            (insert "\n")
+            (if (string-empty-p output)
+                (insert (propertize "(No diff)" 'face 'shadow))
+              (majutsu--insert-diff-hunks output)))))
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement))
       (goto-char (point-min)))))
