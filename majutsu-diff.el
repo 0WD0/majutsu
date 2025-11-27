@@ -43,6 +43,13 @@
   :group 'majutsu
   :type 'boolean)
 
+(defcustom majutsu-diff-refine-max-chars 4000
+  "Skip word refinement when a hunk spans more than this many characters.
+Set to nil to always refine."
+  :group 'majutsu
+  :type '(choice (const :tag "No limit" nil)
+          (integer :tag "Max characters")))
+
 (defcustom majutsu-diff-paint-whitespace t
   "Whether to highlight whitespace issues inside diff hunks."
   :group 'majutsu
@@ -271,10 +278,18 @@ When SECTION is nil, walk all hunk sections."
              (goto-char (oref section start))
              ;; `diff-refine-hunk' cannot handle combined hunks.
              (unless (looking-at "@@@")
-               (let ((smerge-refine-ignore-whitespace
-                      majutsu-diff-refine-ignore-whitespace)
-                     (write-region-inhibit-fsync t))
-                 (diff-refine-hunk)))))
+               (let ((len (- (oref section end) (oref section start))))
+                 (if (and majutsu-diff-refine-max-chars
+                          (> len majutsu-diff-refine-max-chars))
+                     (progn
+                       (oset section refined nil)
+                       (remove-overlays (oref section start)
+                                        (oref section end)
+                                        'diff-mode 'fine))
+                   (let ((smerge-refine-ignore-whitespace
+                          majutsu-diff-refine-ignore-whitespace)
+                         (write-region-inhibit-fsync t))
+                     (diff-refine-hunk)))))))
           ((and (guard allow-remove)
                 (or `(nil t ,_) '(t t nil)))
            (oset section refined nil)
