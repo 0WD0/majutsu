@@ -138,32 +138,51 @@ drop it and ensure a single `--stat`."
                                      (t 'default))))
                  graph)))
 
+(defconst majutsu-diff--statline-re
+  (rx line-start
+      (? " ")
+      (group (+? (not (any "\n"))))   ; file name
+      (1+ (any " \t")) "|" (1+ (any " \t"))
+      (group (+ digit))                 ; count
+      (1+ (any " \t"))
+      (group (* "+"))                  ; adds bar
+      (group (* "-"))                  ; dels bar
+      line-end))
+
 (defun majutsu-diff--insert-stat-section (stat-output)
   "Insert a diffstat section rendered from STAT-OUTPUT."
   (let ((lines (split-string stat-output "\n" t))
         (summary-lines '())
         (inserted nil))
-    (magit-insert-section (majutsu-diff-summary-section nil)
-      (magit-insert-heading (propertize "Summary (--stat)" 'font-lock-face 'magit-section-heading))
-      (dolist (line lines)
-        (cond
-         ((string-match "^ +\\(.+?\\) | +\\([0-9]+\\) +\\([+ -]+\\)$" line)
-          (setq inserted t)
-          (let* ((file (string-trim (match-string 1 line)))
-                 (count (match-string 2 line))
-                 (graph (match-string 3 line))
-                 (colored (majutsu-diff--color-diffstat-graph graph)))
-            (magit-insert-section (majutsu-diffstat-file-section file nil :file file)
-              (insert (propertize file 'font-lock-face 'magit-filename))
-              (insert " | " count " " colored)
-              (insert "\n"))))
-         ((string-match "files changed" line)
-          (push line summary-lines))
-         (t)))
-      (when summary-lines
-        (insert (string-join (nreverse summary-lines) "\n") "\n"))
-      (when inserted
-        (insert "\n")))))
+    (when lines
+      (magit-insert-section (majutsu-diff-summary-section nil)
+        (magit-insert-heading (propertize "Summary (--stat)" 'font-lock-face 'magit-section-heading))
+        (dolist (line lines)
+          (let ((plain (substring-no-properties line)))
+            (cond
+             ;; File line: "<file> | <count> <graph>"
+             ((string-match majutsu-diff--statline-re plain)
+              (setq inserted t)
+              (let* ((file (string-trim (match-string 1 plain)))
+                     (count (match-string 2 plain))
+                     (adds (match-string 3 plain))
+                     (dels (match-string 4 plain))
+                     (graph (concat adds dels))
+                     (colored (majutsu-diff--color-diffstat-graph graph)))
+                (magit-insert-section (majutsu-diffstat-file-section file nil :file file)
+                  (insert (propertize file 'font-lock-face 'magit-filename))
+                  (insert " | " count)
+                  (when (and graph (not (string-empty-p graph)))
+                    (insert " " colored))
+                  (insert "\n"))))
+             ;; Summary line
+             ((string-match "files changed" plain)
+              (push plain summary-lines))
+             (t))))
+        (when summary-lines
+          (insert (string-join (nreverse summary-lines) "\n") "\n"))
+        (when inserted
+          (insert "\n"))))))
 
 (defun majutsu-diff--find-section (pred section)
   "Depth-first search SECTION tree for PRED."
