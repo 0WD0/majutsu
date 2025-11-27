@@ -54,6 +54,8 @@ When nil, Majutsu leaves Evil's state untouched."
 STATES can be a symbol or list.  KEYMAP can be a symbol or list of
 symbols/maps.  Mirrors `evil-collection-define-key' to defer any
 macro expansion until Evil is actually present."
+  (declare (indent 2)
+           (states keymap &rest bindings))
   (when (and (featurep 'evil) (fboundp 'evil-define-key*))
     (let* ((states (if (listp states) states (list states)))
            (maps (if (listp keymap) keymap (list keymap))))
