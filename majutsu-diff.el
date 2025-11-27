@@ -78,6 +78,11 @@ otherwise fall back to the current buffer's `tab-width'."
   :group 'majutsu
   :type 'integer)
 
+(defcustom majutsu-diff-show-stat t
+  "Whether to show a summary (`jj diff --stat') above the patch."
+  :group 'majutsu
+  :type 'boolean)
+
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
 
@@ -95,8 +100,30 @@ otherwise fall back to the current buffer's `tab-width'."
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
    (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
 
+(defclass majutsu-diff-summary-section (magit-section) ())
+
 (defvar-local majutsu-diff--last-refined-section nil)
 (defvar-local majutsu-diff--context-lines nil)
+
+(defun majutsu-diff--stat-args (args)
+  "Return ARGS amended with `--stat', stripping `--git'.
+JJ emits a full patch when `--git` is present; for a clean summary we
+drop it and ensure a single `--stat`."
+  (let ((res '())
+        (rest args)
+        added)
+    (while rest
+      (pcase rest
+        (`("--stat" . ,more)
+         (setq rest more added t))
+        (`("--git" . ,more)
+         (setq rest more))
+        (_
+         (push (car rest) res)
+         (setq rest (cdr rest)))))
+    (unless added
+      (push "--stat" res))
+    (nreverse res)))
 
 ;;; Diff Parsing & Display
 
@@ -640,8 +667,19 @@ With prefix STYLE, cycle between `all' and `t'."
           (repo-root (majutsu--root)))
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
-      (let ((default-directory repo-root)
-            (output (apply #'majutsu-run-jj majutsu-diff--last-args)))
+      (let* ((default-directory repo-root)
+             (output (apply #'majutsu-run-jj majutsu-diff--last-args))
+             (stat-output (when (and majutsu-diff-show-stat
+                                     (not (string-empty-p output)))
+                            (apply #'majutsu-run-jj
+                                   (majutsu-diff--stat-args majutsu-diff--last-args)))))
+        (when stat-output
+          (magit-insert-section (majutsu-diff-summary-section nil)
+            (magit-insert-heading (propertize "Summary (--stat)" 'face 'magit-section-heading))
+            (insert stat-output)
+            (unless (string-suffix-p "\n" stat-output)
+              (insert "\n"))
+            (insert "\n")))
         (magit-insert-section (diff-root)
           (magit-insert-heading (format "jj %s" (string-join majutsu-diff--last-args " ")))
           (insert "\n")
