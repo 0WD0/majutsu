@@ -157,7 +157,10 @@
         [:separate "\x1e"
                    [:call 'format_short_change_id_with_hidden_and_divergent_info [:raw "self" :Commit]]
                    [:call 'format_short_signature_oneline [:author]]
-                   [" " [:bookmarks] [:tags] [:working_copies]]
+                   [:separate " "
+                              [:bookmarks]
+                              [:tags]
+                              [:working_copies]]
                    [:if [:git_head]
                        [:label "git_head" "git_head()"]
                      " "]
@@ -674,10 +677,10 @@ section."
            (majutsu-op-log-render))))
      (lambda (err)
        (when (buffer-live-p buf)
-        (with-current-buffer buf
-          (let ((inhibit-read-only t))
-            (erase-buffer)
-            (insert "Error: " err))))))))
+         (with-current-buffer buf
+           (let ((inhibit-read-only t))
+             (erase-buffer)
+             (insert "Error: " err))))))))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
