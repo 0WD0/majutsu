@@ -43,6 +43,24 @@
   :group 'majutsu
   :type 'boolean)
 
+(defcustom majutsu-diff-paint-whitespace t
+  "Whether to highlight whitespace issues inside diff hunks."
+  :group 'majutsu
+  :type 'boolean)
+
+(defcustom majutsu-diff-highlight-trailing t
+  "Whether to mark trailing whitespace in diff hunks."
+  :group 'majutsu
+  :type 'boolean)
+
+(defcustom majutsu-diff-adjust-tab-width nil
+  "Whether to adjust displayed tab width based on the file's setting.
+When non-nil, try to read `tab-width' from a live buffer visiting the file;
+otherwise fall back to the current buffer's `tab-width'."
+  :group 'majutsu
+  :type '(choice (const :tag "Never adjust" nil)
+          (const :tag "Use live file buffer value" t)))
+
 (defcustom majutsu-diff-default-context 3
   "Default context lines to request from `jj diff --context N'."
   :group 'majutsu
@@ -52,6 +70,9 @@
   "Step size when increasing or decreasing diff context lines."
   :group 'majutsu
   :type 'integer)
+
+(defvar majutsu-diff--tab-width-cache nil
+  "Alist mapping file names to cached tab widths.")
 
 ;;; Classes
 
@@ -71,6 +92,47 @@
 (defvar-local majutsu-diff--context-lines nil)
 
 ;;; Diff Parsing & Display
+
+(defun majutsu-diff--tab-width (file)
+  "Return the tab width to use for FILE, with simple caching."
+  (cond
+   ((not majutsu-diff-adjust-tab-width) tab-width)
+   ((and (assoc file majutsu-diff--tab-width-cache)
+         (cdr (assoc file majutsu-diff--tab-width-cache))))
+   ((and (find-buffer-visiting file)
+         (setf (alist-get file majutsu-diff--tab-width-cache nil nil #'equal)
+               (buffer-local-value 'tab-width (get-file-buffer file)))))
+   (t
+    (setf (alist-get file majutsu-diff--tab-width-cache nil nil #'equal) tab-width)
+    tab-width)))
+
+(defun majutsu-diff--paint-hunk-whitespace (start end file)
+  "Paint tabs and trailing whitespace between START and END for FILE."
+  (when majutsu-diff-paint-whitespace
+    (let ((tabw (majutsu-diff--tab-width file)))
+      (save-excursion
+        (goto-char start)
+        (while (< (point) end)
+          (let ((bol (line-beginning-position))
+                (eol (line-end-position)))
+            ;; Skip the diff marker column when checking trailing whitespace so
+            ;; blank diff lines like "+" or " " don't light up.
+            (when (and majutsu-diff-highlight-trailing
+                       (< bol eol))
+              (save-excursion
+                (goto-char (min eol (1+ bol)))
+                (when (re-search-forward "[ \t]+$" eol t)
+                  (let ((ov (make-overlay (match-beginning 0) (match-end 0) nil t)))
+                    (overlay-put ov 'font-lock-face 'magit-diff-whitespace-warning)
+                    (overlay-put ov 'evaporate t)
+                    (overlay-put ov 'priority 2)))))
+            ;; Paint tabs by giving them display width.
+            (goto-char bol)
+            (while (search-forward "\t" eol t)
+              (put-text-property (1- (point)) (point)
+                                 'display (list (list 'space :width tabw)))))
+          ;; Paint tabs by giving them display width.
+          (forward-line 1))))))
 
 (defun majutsu-diff--parse-context (args)
   "Extract context line count from ARGS if present via `--context'."
@@ -182,14 +244,16 @@
   (magit-insert-section (majutsu-hunk-section file nil :file file :header header)
     (magit-insert-heading
       (propertize header 'font-lock-face 'magit-diff-hunk-heading))
-    (dolist (line lines)
-      (insert (propertize line
-                          'font-lock-face
-                          (cond
-                           ((string-prefix-p "+" line) 'magit-diff-added)
-                           ((string-prefix-p "-" line) 'magit-diff-removed)
-                           (t 'magit-diff-context))))
-      (insert "\n"))))
+    (let ((body-start (point)))
+      (dolist (line lines)
+        (insert (propertize line
+                            'font-lock-face
+                            (cond
+                             ((string-prefix-p "+" line) 'magit-diff-added)
+                             ((string-prefix-p "-" line) 'magit-diff-removed)
+                             (t 'magit-diff-context))))
+        (insert "\n"))
+      (majutsu-diff--paint-hunk-whitespace body-start (point) file))))
 
 ;;; Refinement
 
