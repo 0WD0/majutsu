@@ -49,12 +49,24 @@ nil       – request no color."
   "Return ARGS with --color=always injected when configured.
 Respects `majutsu-process-color-mode' and avoids duplication if caller
 already supplied a color flag."
+  (if (and (eq majutsu-process-color-mode 'always)
+           (not (seq-some (lambda (arg) (string-prefix-p "--color" arg))
+                          args)))
+      (cons "--color=always" args)
+    args))
+
+(defun majutsu--process--maybe-add-no-pager (args)
+  "Return ARGS with --no-pager injected.
+Avoids duplication if caller already supplied a --no-pager flag."
+  (if (member "--no-pager" args)
+      args
+    (cons "--no-pager" args)))
+
+(defun majutsu--process--maybe-add-flags (args)
+  "Return ARGS with additional flags suited to majutsu-run-jj(-async)"
   (let ((clean (seq-remove #'null args)))
-    (if (and (eq majutsu-process-color-mode 'always)
-             (not (seq-some (lambda (arg) (string-prefix-p "--color" arg))
-                            clean)))
-        (cons "--color=always" clean)
-      clean)))
+    (majutsu--process--maybe-add-color
+     (majutsu--process--maybe-add-no-pager clean))))
 
 (defun majutsu--process--apply-colors (output)
   "Apply ANSI color filtering to OUTPUT when enabled."
@@ -65,7 +77,7 @@ already supplied a color flag."
 (defun majutsu-run-jj (&rest args)
   "Run jj command with ARGS and return output."
   (let* ((start-time (current-time))
-         (safe-args (majutsu--process--maybe-add-color args))
+         (safe-args (majutsu--process--maybe-add-flags args))
          result exit-code)
     (majutsu--debug "Running command: %s %s" majutsu-executable (string-join safe-args " "))
     (with-temp-buffer
@@ -85,7 +97,7 @@ already supplied a color flag."
 CALLBACK is called with the output string on success.
 ERROR-CALLBACK is called with the error output on failure."
   (let* ((default-directory (majutsu--root))
-         (args (majutsu--process--maybe-add-color args))
+         (args (majutsu--process--maybe-add-flags args))
          (buffer (generate-new-buffer " *majutsu-async*"))
          (process (apply #'start-file-process "majutsu-async" buffer majutsu-executable args)))
     (set-process-sentinel process
