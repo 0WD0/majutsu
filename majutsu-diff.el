@@ -19,7 +19,29 @@
 (require 'majutsu-log)
 (require 'majutsu-transient)
 (require 'magit-section)
+(require 'diff-mode)
 (require 'smerge-mode)
+
+;;; Options
+
+(defcustom majutsu-diff-refine-hunk t
+  "Whether to show word-granularity differences inside hunks.
+
+`nil'  Never show refinement.
+`all'  Refine all hunks immediately.
+`t'    Refine the current hunk when it becomes selected; keep the
+       overlays until the buffer is refreshed."
+  :group 'majutsu
+  :type '(choice (const :tag "No refinement" nil)
+          (const :tag "Immediately refine all hunks" all)
+          (const :tag "Refine currently selected hunk" t)))
+
+(put 'majutsu-diff-refine-hunk 'permanent-local t)
+
+(defcustom majutsu-diff-refine-ignore-whitespace smerge-refine-ignore-whitespace
+  "Whether to ignore whitespace while refining hunks."
+  :group 'majutsu
+  :type 'boolean)
 
 ;;; Classes
 
@@ -29,7 +51,13 @@
 (defclass majutsu-hunk-section (magit-section)
   ((file :initarg :file)
    (start :initarg :hunk-start)
-   (header :initarg :header)))
+   (header :initarg :header)
+   (painted :initform nil)
+   (refined :initform nil)
+   (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
+   (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
+
+(defvar-local majutsu-diff--last-refined-section nil)
 
 ;;; Diff Parsing & Display
 
@@ -121,6 +149,92 @@
                            ((string-prefix-p "-" line) 'magit-diff-removed)
                            (t 'magit-diff-context))))
       (insert "\n"))))
+
+;;; Refinement
+
+(defun majutsu-diff--update-hunk-refinement (&optional section allow-remove)
+  "Apply or remove word-level refinement overlays.
+When SECTION is nil, walk all hunk sections."
+  (if section
+      (unless (oref section hidden)
+        (pcase (list majutsu-diff-refine-hunk
+                     (oref section refined)
+                     (eq section (magit-current-section)))
+          ((or `(all nil ,_) '(t nil t))
+           (oset section refined t)
+           (save-excursion
+             (goto-char (oref section start))
+             ;; `diff-refine-hunk' cannot handle combined hunks.
+             (unless (looking-at "@@@")
+               (let ((smerge-refine-ignore-whitespace
+                      majutsu-diff-refine-ignore-whitespace)
+                     (write-region-inhibit-fsync t))
+                 (diff-refine-hunk)))))
+          ((and (guard allow-remove)
+                (or `(nil t ,_) '(t t nil)))
+           (oset section refined nil)
+           (remove-overlays (oref section start)
+                            (oref section end)
+                            'diff-mode 'fine))))
+    (cl-labels ((walk (node)
+                  (if (magit-section-match 'majutsu-hunk-section node)
+                      (majutsu-diff--update-hunk-refinement node t)
+                    (dolist (child (oref node children))
+                      (walk child)))))
+      (walk magit-root-section))))
+
+(cl-defmethod magit-section--refine ((section majutsu-hunk-section))
+  (when (eq majutsu-diff-refine-hunk t)
+    ;; Clear previous refined hunk when moving focus.
+    (when (and majutsu-diff--last-refined-section
+               (not (eq majutsu-diff--last-refined-section section)))
+      (majutsu-diff--update-hunk-refinement majutsu-diff--last-refined-section t))
+    (majutsu-diff--update-hunk-refinement section)
+    (setq majutsu-diff--last-refined-section section)))
+
+(cl-defmethod magit-section-paint ((section majutsu-hunk-section) highlight)
+  "Paint a hunk so focus highlighting behaves like Magit.
+
+This mirrors `magit-section-paint' for `magit-hunk-section' but
+works with the simplified jj diff we render here."
+  (let* ((highlight-body (if (boundp 'magit-diff-highlight-hunk-body)
+                             magit-diff-highlight-hunk-body
+                           t))
+         (do-highlight (and highlight highlight-body))
+         (end (oref section end)))
+    (save-excursion
+      ;; Skip the hunk header.
+      (goto-char (oref section start))
+      (forward-line)
+      (while (< (point) end)
+        (let* ((line-start (point))
+               (line-end (line-end-position))
+               (face (cond
+                      ((looking-at "^\\+")
+                       (if do-highlight
+                           'magit-diff-added-highlight
+                         'magit-diff-added))
+                      ((looking-at "^-")
+                       (if do-highlight
+                           'magit-diff-removed-highlight
+                         'magit-diff-removed))
+                      (t
+                       (if do-highlight
+                           'magit-diff-context-highlight
+                         'magit-diff-context)))))
+          (put-text-property line-start (1+ line-end)
+                             'font-lock-face face))
+        (forward-line))))
+  (oset section painted (if highlight 'highlight 'plain)))
+
+(defun majutsu-diff--maybe-clear-refinement ()
+  "When leaving a hunk in `t' mode, drop old refinement overlays."
+  (when (and (eq majutsu-diff-refine-hunk t)
+             majutsu-diff--last-refined-section
+             (not (magit-section-match 'majutsu-hunk-section
+                                       (magit-current-section))))
+    (majutsu-diff--update-hunk-refinement majutsu-diff--last-refined-section t)
+    (setq majutsu-diff--last-refined-section nil)))
 
 ;;; Navigation
 
@@ -335,14 +449,38 @@
    :face '(:background "dark cyan" :foreground "white")
    :collection-var 'majutsu-diff-to))
 
+(defun majutsu-diff-toggle-refine-hunk (&optional style)
+  "Toggle word-level refinement within hunks.
+With prefix STYLE, cycle between `all' and `t'."
+  (interactive "P")
+  (setq-local majutsu-diff-refine-hunk
+              (if style
+                  (if (eq majutsu-diff-refine-hunk 'all) t 'all)
+                (not majutsu-diff-refine-hunk)))
+  (pcase majutsu-diff-refine-hunk
+    ('all
+     (setq majutsu-diff--last-refined-section nil)
+     (majutsu-diff--update-hunk-refinement))
+    ('t
+     (majutsu-diff--maybe-clear-refinement)
+     (let ((cur (magit-current-section)))
+       (when (magit-section-match 'majutsu-hunk-section cur)
+         (majutsu-diff--update-hunk-refinement cur)
+         (setq majutsu-diff--last-refined-section cur))))
+    (_
+     (majutsu-diff--update-hunk-refinement nil t)
+     (setq majutsu-diff--last-refined-section nil))))
+
 (defvar-keymap majutsu-diff-mode-map
   :doc "Keymap for `majutsu-diff-mode'."
-  :parent majutsu-mode-map)
+  :parent majutsu-mode-map
+  "t" #'majutsu-diff-toggle-refine-hunk)
 
 (define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
   "Major mode for viewing jj diffs."
   :group 'majutsu
-  (setq-local line-number-mode nil))
+  (setq-local line-number-mode nil)
+  (add-hook 'post-command-hook #'majutsu-diff--maybe-clear-refinement nil t))
 
 (defvar-local majutsu-diff--last-args nil
   "Arguments used for the last jj diff command in this buffer.")
@@ -364,6 +502,8 @@
           (if (string-empty-p output)
               (insert (propertize "(No diff)" 'face 'shadow))
             (majutsu--insert-diff-hunks output))))
+      (when (eq majutsu-diff-refine-hunk 'all)
+        (majutsu-diff--update-hunk-refinement))
       (goto-char (point-min)))))
 
 ;;;###autoload
