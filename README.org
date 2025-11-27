@@ -205,8 +205,10 @@ motion states (and mirrors the ~RET~ binding onto ~majutsu-diff-mode-map~):
 - ~C-r~ → ~majutsu-redo~
 - ~o~ → ~majtusu-new-transient~
 - ~O~ → ~majtusu-new~
+- ~I~ → ~majutsu-new~ with ~--before~ current revision
+- ~A~ → ~majutsu-new~ with ~--after~ current revision
 - ~s~ → ~majutsu-squash-transient~
-- ~L~ → ~majutsu-log-transient~
+- ~L~ → ~majutsu-log-transient~ (avoid conflict with moving right)
 - ~x~ → ~majutsu-abandon~
 - ~b~ → ~majutsu-bookmark-transient~
 - ~r~ → ~majutsu-rebase-transient~

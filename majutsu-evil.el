@@ -88,7 +88,6 @@ macro expansion until Evil is actually present."
     (kbd "c") #'majutsu-describe
     (kbd "C") #'majutsu-commit
     (kbd "o") #'majutsu-new-transient
-    (kbd "O") #'majutsu-new
     (kbd "e") #'majutsu-edit-changeset
     (kbd "u") #'majutsu-undo
     (kbd "C-r") #'majutsu-redo
@@ -109,7 +108,10 @@ macro expansion until Evil is actually present."
     (kbd "Y") #'majutsu-duplicate)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
-    (kbd ".") #'majutsu-log-goto-@))
+    (kbd ".") #'majutsu-log-goto-@
+    (kbd "O") #'majutsu-new
+    (kbd "I") #'majutsu-new-with-before
+    (kbd "A") #'majutsu-new-with-after))
 
 ;;;###autoload
 (defun majutsu-evil-setup ()

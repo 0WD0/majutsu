@@ -526,7 +526,9 @@ Return non-nil when the section could be located."
   :doc "Keymap for `majutsu-log-mode'."
   :parent majutsu-mode-map
   "n" 'majutsu-goto-next-changeset
-  "p" 'majutsu-goto-prev-changeset)
+  "p" 'majutsu-goto-prev-changeset
+  "B" 'majutsu-new-with-before
+  "A" 'majutsu-new-with-after)
 
 (define-derived-mode majutsu-log-mode majutsu-mode "Majutsu Log"
   "Major mode for interacting with jj version control system."

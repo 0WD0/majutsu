@@ -301,12 +301,24 @@ With prefix ARG, open the new transient for interactive selection."
     (let* ((parent (majutsu-log--revset-at-point))
            (parents (when parent (list parent)))
            (args (majutsu-new--build-args
-                  :parents parents
-                  :after '()
-                  :before '()
-                  :message nil
-                  :no-edit nil)))
+                  :parents parents)))
       (majutsu-new--run-command args))))
+
+(defun majutsu-new-with-after ()
+  "Create a new changeset with the commit at point as --after."
+  (interactive)
+  (let* ((after (majutsu-log--revset-at-point))
+         (args (majutsu-new--build-args
+                :after (when after (list after)))))
+    (majutsu-new--run-command args)))
+
+(defun majutsu-new-with-before ()
+  "Create a new changeset with the commit at point as --before."
+  (interactive)
+  (let* ((before (majutsu-log--revset-at-point))
+         (args (majutsu-new--build-args
+                :before (when before (list before)))))
+    (majutsu-new--run-command args)))
 
 ;;;###autoload
 (defun majutsu-new-clear-selections ()
