@@ -71,12 +71,11 @@ The function must accept one argument: the buffer to display."
 
 ;;; Section Classes
 
-(defclass majutsu-log-graph-section (magit-section) ())
 (defclass majutsu-status-section (magit-section) ())
 (defclass majutsu-conflict-section (magit-section) ())
 (defclass majutsu-diff-section (magit-section) ())
 
-(defclass majutsu-log-entry-section (magit-section)
+(defclass majutsu-commit-section (magit-section)
   ((commit-id :initarg :commit-id)
    (change-id :initarg :change-id)
    (description :initarg :description)

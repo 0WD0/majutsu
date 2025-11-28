@@ -24,7 +24,7 @@
 
 (defun majutsu--section-change-id (section)
   "Return the change id recorded in SECTION, if available."
-  (when (and section (object-of-class-p section 'majutsu-log-entry-section))
+  (when (and section (object-of-class-p section 'majutsu-commit-section))
     (or (when (and (slot-exists-p section 'change-id)
                    (slot-boundp section 'change-id))
           (majutsu--normalize-id-value (oref section change-id)))
@@ -40,7 +40,7 @@
                (slot-boundp section 'commit-id))
       (majutsu--normalize-id-value (oref section commit-id)))))
 
-(cl-defmethod magit-section-ident-value ((section majutsu-log-entry-section))
+(cl-defmethod magit-section-ident-value ((section majutsu-commit-section))
   "Identify log entry sections by their change id."
   (or (majutsu--section-change-id section)
       (majutsu--section-commit-id section)
@@ -525,7 +525,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
 
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
-  (magit-insert-section (majutsu-log-graph-section)
+  (magit-insert-section (lograph)
     (magit-insert-heading (majutsu-log--heading-string))
     (let* ((compiled (majutsu-log--ensure-template))
            (entries (majutsu-parse-log-entries))
@@ -533,11 +533,11 @@ Left fields follow graph width per-line; right fields are rendered for margin."
       (majutsu-log--set-right-margin (plist-get widths :right-total))
       (dolist (entry entries)
         (magit-insert-section
-            (majutsu-log-entry-section entry t
-                                       :commit-id  (plist-get entry :commit-id)
-                                       :change-id  (plist-get entry :change-id)
-                                       :description (plist-get entry :short-desc)
-                                       :bookmarks  (plist-get entry :bookmarks))
+            (majutsu-commit-section entry t
+                                    :commit-id  (plist-get entry :commit-id)
+                                    :change-id  (plist-get entry :change-id)
+                                    :description (plist-get entry :short-desc)
+                                    :bookmarks  (plist-get entry :bookmarks))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
                  (heading (plist-get line-info :line))
                  (margin (plist-get line-info :margin))
@@ -700,7 +700,7 @@ Return non-nil when the section could be located."
                 (< (point) (point-max)))
       (magit-section-forward)
       (when-let* ((section (magit-current-section)))
-        (when (and (eq (oref section type) 'majutsu-log-entry-section)
+        (when (and (eq (oref section type) 'majutsu-commit-section)
                    (> (point) pos))
           (setq found t))))
     (unless found
@@ -717,7 +717,7 @@ Return non-nil when the section could be located."
                 (> (point) (point-min)))
       (magit-section-backward)
       (when-let* ((section (magit-current-section)))
-        (when (and (eq (oref section type) 'majutsu-log-entry-section)
+        (when (and (eq (oref section type) 'majutsu-commit-section)
                    (< (point) pos))
           (setq found t))))
     (unless found
@@ -725,25 +725,20 @@ Return non-nil when the section could be located."
       (message "No more changesets"))))
 
 (defun majutsu--find-log-entry-section (change-id commit-id)
-  "Return the log entry section matching CHANGE-ID or COMMIT-ID, or nil."
-  (when magit-root-section
-    (let (found)
-      (cl-labels ((walk (section)
-                    (when section
-                      (when (and (object-of-class-p section 'majutsu-log-entry-section)
-                                 (or (and change-id
-                                          (let ((section-change (majutsu--section-change-id section)))
-                                            (and section-change
-                                                 (equal section-change change-id))))
-                                     (and commit-id
-                                          (slot-boundp section 'commit-id)
-                                          (equal (oref section commit-id) commit-id))))
-                        (setq found section))
-                      (dolist (child (oref section children))
-                        (unless found
-                          (walk child))))))
-        (walk magit-root-section))
-      found)))
+  "Return the log entry section matching CHANGE-ID or COMMIT-ID, or nil.
+
+Fast-path uses `magit-get-section' with the change id because
+`majutsu-commit-section' identity is defined in
+`magit-section-ident-value' to prefer change id.  If that fails
+and a commit id was supplied, fall back to a `magit-map-sections'
+scan that matches commit ids; this keeps support for callers that
+only know the commit without reimplementing our own DFS."
+  (let* ((change-id (and change-id (majutsu--normalize-id-value change-id)))
+         (commit-id (and commit-id (majutsu--normalize-id-value commit-id))))
+    (and change-id
+         (magit-get-section
+          (append `((majutsu-commit-section . ,change-id))
+                  '((lograph)) '((magit-root-section)))))))
 
 (defun majutsu-log--commit-only-at-point ()
   "Return the raw commit id at point, or nil if unavailable."

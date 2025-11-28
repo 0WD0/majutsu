@@ -125,7 +125,7 @@
     (cond
      ;; On a changeset/commit - edit it with jj edit
      ((and section
-           (eq (oref section type) 'majutsu-log-entry-section)
+           (eq (oref section type) 'majutsu-commit-section)
            (slot-boundp section 'commit-id))
       (majutsu-edit-changeset-at-point))
 
