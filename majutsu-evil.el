@@ -83,7 +83,6 @@ macro expansion until Evil is actually present."
   "Install Evil keybindings for Majutsu maps."
   ;; Normal/visual/motion share the same bindings for navigation commands.
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
-    (kbd ".") #'majutsu-log-goto-@
     (kbd "R") #'majutsu-log-refresh
     (kbd "g r") #'majutsu-log-refresh
     (kbd "c") #'majutsu-describe
@@ -107,7 +106,10 @@ macro expansion until Evil is actually present."
 
   (majutsu-evil--define-keys 'normal 'majutsu-mode-map
     (kbd "y") #'majutsu-duplicate-transient
-    (kbd "Y") #'majutsu-duplicate))
+    (kbd "Y") #'majutsu-duplicate)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
+    (kbd ".") #'majutsu-log-goto-@))
 
 ;;;###autoload
 (defun majutsu-evil-setup ()
