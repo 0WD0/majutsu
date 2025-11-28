@@ -532,7 +532,7 @@ Return non-nil when the section could be located."
   "Major mode for interacting with jj version control system."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function 'majutsu-log-refresh)
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   ;; Clear rebase selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-rebase-clear-selections nil t)
   ;; Clear new selections when buffer is killed
@@ -549,12 +549,10 @@ Return non-nil when the section could be located."
     (magit-insert-section (magit-root-section)
       (run-hooks 'majutsu-log-sections-hook))))
 
-(defun majutsu-log-refresh (&optional target-change target-commit)
-  "Refresh the current majutsu log buffer asynchronously.
-When TARGET-CHANGE and TARGET-COMMIT are provided, jump to that
-entry after rendering instead of restoring the pre-refresh
-section."
-  (interactive)
+(defun majutsu-log--refresh-buffer (target-change target-commit)
+  "Implementation helper to refresh the current log buffer.
+Assumes `current-buffer' is a `majutsu-log-mode' buffer."
+  (majutsu--assert-mode 'majutsu-log-mode)
   (let* ((root (majutsu--root))
          (buf (current-buffer))
          (target-change (or target-change (majutsu-log--change-id-at-point)))
@@ -570,16 +568,36 @@ section."
      (lambda (output)
        (when (buffer-live-p buf)
          (with-current-buffer buf
-           (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
-           (majutsu-log-render)
-           (unless (when target-change (majutsu--goto-log-entry target-change target-commit))
-             (majutsu-log-goto-@)))))
+           (when (derived-mode-p 'majutsu-log-mode)
+             (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
+             (majutsu-log-render)
+             (unless (when target-change (majutsu--goto-log-entry target-change target-commit))
+               (majutsu-log-goto-@))))))
      (lambda (err)
        (when (buffer-live-p buf)
          (with-current-buffer buf
-           (let ((inhibit-read-only t))
-             (erase-buffer)
-             (insert "Error: " err))))))))
+           (when (derived-mode-p 'majutsu-log-mode)
+             (let ((inhibit-read-only t))
+               (erase-buffer)
+               (insert "Error: " err)))))))))
+
+(defun majutsu-log-refresh (&optional target-change target-commit _ignore-auto _noconfirm)
+  "Refresh a majutsu log buffer for the current repository.
+When called outside a log buffer, try to refresh an existing log
+buffer for the same repository.  If none exists and the command
+is invoked interactively, signal a user error instead of
+mutating the wrong buffer."
+  (interactive)
+  (let* ((root (majutsu--buffer-root))
+         (buffer (majutsu--resolve-mode-buffer 'majutsu-log-mode root)))
+    (cond
+     (buffer
+      (with-current-buffer buffer
+        (majutsu-log--refresh-buffer target-change target-commit)))
+     ((called-interactively-p 'interactive)
+      (user-error "No Majutsu log buffer for this repository; open one with `majutsu-log`"))
+     (t
+      (majutsu--debug "Skipping log refresh: no log buffer for %s" (or root "unknown repo"))))))
 
 (defun majutsu-log ()
   "Open the majutsu log buffer."
@@ -660,6 +678,7 @@ section."
 (defun majutsu-op-log-refresh ()
   "Refresh the op log buffer."
   (interactive)
+  (majutsu--assert-mode 'majutsu-op-log-mode)
   (let ((root (majutsu--root))
         (buf (current-buffer)))
     (setq-local majutsu--repo-root root)
@@ -673,14 +692,16 @@ section."
      (lambda (output)
        (when (buffer-live-p buf)
          (with-current-buffer buf
-           (setq majutsu-op-log--cached-entries (majutsu-parse-op-log-entries nil output))
-           (majutsu-op-log-render))))
+           (when (derived-mode-p 'majutsu-op-log-mode)
+             (setq majutsu-op-log--cached-entries (majutsu-parse-op-log-entries nil output))
+             (majutsu-op-log-render)))))
      (lambda (err)
        (when (buffer-live-p buf)
          (with-current-buffer buf
-           (let ((inhibit-read-only t))
-             (erase-buffer)
-             (insert "Error: " err))))))))
+           (when (derived-mode-p 'majutsu-op-log-mode)
+             (let ((inhibit-read-only t))
+               (erase-buffer)
+               (insert "Error: " err)))))))))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
@@ -690,7 +711,7 @@ section."
   "Major mode for viewing jj operation log."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function 'majutsu-op-log-refresh))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
 
 (defun majutsu-op-log ()
   "Open the majutsu operation log."

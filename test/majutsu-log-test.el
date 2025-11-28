@@ -94,6 +94,7 @@
                (lambda ()
                  (setq fallback-called t))))
       (with-temp-buffer
+        (majutsu-log-mode)
         (majutsu-log-refresh "target-change" "target-commit")))
     (should (equal goto-args '("target-change" "target-commit")))
     (should-not fallback-called)))

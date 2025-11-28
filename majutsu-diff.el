@@ -350,6 +350,7 @@
 (defun majutsu-diff-refresh (&optional _ignore-auto _noconfirm)
   "Refresh the current diff buffer."
   (interactive)
+  (majutsu--assert-mode 'majutsu-diff-mode)
   (when majutsu-diff--last-args
     (let ((inhibit-read-only t)
           (repo-root (majutsu--root)))
@@ -385,7 +386,7 @@ log view) or the working copy (if elsewhere)."
       (majutsu-diff-mode)
       (setq-local majutsu--repo-root repo-root)
       (setq-local majutsu-diff--last-args final-args)
-      (setq-local revert-buffer-function #'majutsu-diff-refresh)
+      (setq-local revert-buffer-function #'majutsu-refresh-buffer)
       (majutsu-diff-refresh)
       (majutsu--display-buffer-for-editor buf))))
 
