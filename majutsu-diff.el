@@ -86,25 +86,6 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
 
-;;; Classes
-
-(defclass majutsu-diff-section (magit-section) ())
-(defclass majutsu-file-section (magit-section)
-  ((file :initarg :file)))
-(defclass majutsu-hunk-section (magit-section)
-  ((file :initarg :file)
-   (start :initarg :hunk-start)
-   (header :initarg :header)
-   (painted :initform nil)
-   (refined :initform nil)
-   (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
-   (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
-
-(defclass majutsu-diffstat-file-section (magit-section)
-  ((file :initarg :file)))
-
-(defclass majutsu-diff-summary-section (magit-section) ())
-
 (defvar-local majutsu-diff--last-refined-section nil)
 (defvar-local majutsu-diff--context-lines nil)
 

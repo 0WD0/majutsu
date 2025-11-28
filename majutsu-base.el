@@ -69,6 +69,35 @@ The function must accept one argument: the buffer to display."
           (function :tag "Custom function"))
   :group 'majutsu)
 
+;;; Section Classes
+
+(defclass majutsu-log-graph-section (magit-section) ())
+(defclass majutsu-status-section (magit-section) ())
+(defclass majutsu-conflict-section (magit-section) ())
+(defclass majutsu-diff-section (magit-section) ())
+
+(defclass majutsu-log-entry-section (magit-section)
+  ((commit-id :initarg :commit-id)
+   (change-id :initarg :change-id)
+   (description :initarg :description)
+   (bookmarks :initarg :bookmarks)))
+
+(defclass majutsu-file-section (magit-section)
+  ((file :initarg :file)))
+
+(defclass majutsu-hunk-section (magit-section)
+  ((file :initarg :file)
+   (start :initarg :hunk-start)
+   (header :initarg :header)
+   (painted :initform nil)
+   (refined :initform nil)
+   (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
+   (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
+
+(defclass majutsu-diff-summary-section (magit-section) ())
+(defclass majutsu-diffstat-file-section (magit-section)
+  ((file :initarg :file)))
+
 ;;; Utilities
 
 (defvar-local majutsu--repo-root nil

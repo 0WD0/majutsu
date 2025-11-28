@@ -22,20 +22,6 @@
 (require 'transient)
 (require 'json)
 
-;;; Classes
-
-(defclass majutsu-commits-section (magit-section) ())
-(defclass majutsu-log-graph-section (magit-section) ())
-(defclass majutsu-log-entry-section (magit-section)
-  ((commit-id :initarg :commit-id)
-   (change-id :initarg :change-id)
-   (description :initarg :description)
-   (bookmarks :initarg :bookmarks)))
-(defclass majutsu-status-section (magit-section) ())
-(defclass majutsu-conflict-section (magit-section) ())
-(defclass majutsu-conflict-file-section (magit-section)
-  ((file :initarg :file)))
-
 (defun majutsu--section-change-id (section)
   "Return the change id recorded in SECTION, if available."
   (when (and section (object-of-class-p section 'majutsu-log-entry-section))
@@ -650,7 +636,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
         (magit-insert-heading "Unresolved Conflicts")
         (dolist (line (split-string output "\n" t))
           (let ((file (string-trim line)))
-            (magit-insert-section (majutsu-conflict-file-section file nil :file file)
+            (magit-insert-section (majutsu-file-section file nil :file file)
               (magit-insert-heading (propertize file 'face 'error))
               (insert "\n"))))
         (insert "\n")))))
