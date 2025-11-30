@@ -9,9 +9,9 @@
 
 ;;; Commentary:
 
-;; Provides `majutsu-mode', the parent major mode from which all Majutsu
-;; buffer modes derive, along with its keymap and shared helpers.
-
+;; This library defines Majutsu's parent major mode, its keymap, and
+;; shared buffer helpers.
+ 
 ;;; Code:
 
 (require 'majutsu-base)
@@ -116,5 +116,6 @@ when the user has strict .dir-locals.el settings."
   :group 'majutsu
   (majutsu-hack-dir-local-variables))
 
+;;; _
 (provide 'majutsu-mode)
 ;;; majutsu-mode.el ends here

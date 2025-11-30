@@ -4,13 +4,13 @@
 
 ;; Author: 0WD0 <wd.1105848296@gmail.com>
 ;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
-;; Version: 0.0.1
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
 ;;; Commentary:
 
-;; A small Elisp EDSL to build jj template language strings.
+;; This library implements a small Elisp DSL for composing jj template
+;; strings and normalizing types.
 
 ;;; Code:
 
@@ -1498,4 +1498,6 @@ dynamic bindings of `majutsu-template-default-self-type'."
     `(let ((majutsu-template--allow-eval nil))
        (majutsu-template-compile (majutsu-template--normalize ,form) ,self-type)))))
 
+;;; _
 (provide 'majutsu-template)
+;;; majutsu-template.el ends here

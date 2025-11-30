@@ -1,0 +1,246 @@
+;;; majutsu-bookmark.el -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2025 0WD0
+
+;; Author: 0WD0 <wd.1105848296@gmail.com>
+;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
+;; Keywords: tools, vc
+;; URL: https://github.com/0WD0/majutsu
+
+;;; Commentary:
+
+;; This library implements jj bookmark commands and integrates them
+;; with Majutsu's transient UI.
+
+;;; Code:
+
+(require 'majutsu)
+
+;;; majutsu-bookmark
+
+;;;###autoload
+(defun majutsu-bookmark-transient ()
+  "Transient for jj bookmark operations."
+  (interactive)
+  (majutsu-bookmark-transient--internal))
+
+(defun majutsu--extract-bookmark-names (text)
+  "Extract bookmark names from jj command output TEXT."
+  (let ((names '())
+        (start 0))
+    (while (string-match "bookmark[: ]+\\([^ \n,]+\\)" text start)
+      (push (match-string 1 text) names)
+      (setq start (match-end 0)))
+    (nreverse names)))
+
+(defun majutsu--get-bookmark-names (&optional all-remotes)
+  "Return bookmark names using --quiet to suppress hints.
+When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
+  (let* ((template (if all-remotes
+                       "if(remote, name ++ '@' ++ remote ++ '\n', '')"
+                     "name ++ '\n'"))
+         (args (append '("bookmark" "list" "--quiet")
+                       (and all-remotes '("--all"))
+                       (list "-T" template))))
+    (delete-dups (split-string (apply #'majutsu-run-jj args) "\n" t))))
+
+(defun majutsu-bookmark-create ()
+  "Create a new bookmark."
+  (interactive)
+  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
+         (name (read-string "Bookmark name: ")))
+    (unless (string-empty-p name)
+      (majutsu-run-jj "bookmark" "create" name "-r" revset)
+      (majutsu-log-refresh))))
+
+(defun majutsu-bookmark-delete ()
+  "Delete a bookmark and propagate on next push."
+  (interactive)
+  (let* ((names (majutsu--get-bookmark-names))
+         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
+         (choice (and names (completing-read "Delete bookmark (propagates on push): " table nil t))))
+    (if (not choice)
+        (message "No bookmarks found")
+      (majutsu-run-jj "bookmark" "delete" choice)
+      (majutsu-log-refresh)
+      (message "Deleted bookmark '%s'" choice))))
+
+(defun majutsu-bookmark-forget ()
+  "Forget a bookmark (local only, no deletion propagation)."
+  (interactive)
+  (let* ((names (majutsu--get-bookmark-names))
+         (table (majutsu--completion-table-with-category names 'majutsu-bookmark))
+         (choice (and names (completing-read "Forget bookmark: " table nil t))))
+    (if (not choice)
+        (message "No bookmarks found")
+      (majutsu-run-jj "bookmark" "forget" choice)
+      (majutsu-log-refresh)
+      (message "Forgot bookmark '%s'" choice))))
+
+(defun majutsu-bookmark-track ()
+  "Track remote bookmark(s)."
+  (interactive)
+  (let* ((remote-bookmarks (majutsu--get-bookmark-names t))
+         (table (majutsu--completion-table-with-category remote-bookmarks 'majutsu-bookmark))
+         (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
+    (if (not choice)
+        (message "No remote bookmarks found")
+      (majutsu-run-jj "bookmark" "track" choice)
+      (majutsu-log-refresh)
+      (message "Tracking bookmark '%s'" choice))))
+
+;;;###autoload
+(defun majutsu-bookmark-list (&optional all)
+  "List bookmarks in a temporary buffer.
+With prefix ALL, include remote bookmarks."
+  (interactive "P")
+  (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all"))))
+         (output (apply #'majutsu-run-jj args))
+         (buf (get-buffer-create "*Majutsu Bookmarks*")))
+    (with-current-buffer buf
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      (insert output)
+      (goto-char (point-min))
+      (view-mode 1))
+    (funcall majutsu-log-display-function buf)))
+
+;;;###autoload
+(defun majutsu--bookmark-read-move-args ()
+  "Return interactive arguments for bookmark move commands."
+  (let* ((existing (majutsu--get-bookmark-names))
+         (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+         (crm-separator (or (bound-and-true-p crm-separator) ", *"))
+         (names (completing-read-multiple "Move bookmark(s): " table nil t))
+         (at (or (majutsu-log--revset-at-point) "@"))
+         (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
+    (ignore crm-separator)
+    (list rev names)))
+
+(defun majutsu--bookmark-move (commit names &optional allow-backwards)
+  "Internal helper to move bookmark(s) NAMES to COMMIT.
+When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
+  (when names
+    (let ((args (append '("bookmark" "move")
+                        (and allow-backwards '("--allow-backwards"))
+                        (list "-t" commit)
+                        names)))
+      (apply #'majutsu-run-jj args)
+      (majutsu-log-refresh)
+      (message (if allow-backwards
+                   "Moved bookmark(s) (allow backwards) to %s: %s"
+                 "Moved bookmark(s) to %s: %s")
+               commit (string-join names ", ")))))
+
+;;;###autoload
+(defun majutsu-bookmark-move (commit names &optional allow-backwards)
+  "Move existing bookmark(s) NAMES to COMMIT.
+With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
+  (interactive (majutsu--bookmark-read-move-args))
+  (majutsu--bookmark-move commit names allow-backwards))
+
+;;;###autoload
+(defun majutsu-bookmark-move-allow-backwards (commit names)
+  "Move bookmark(s) NAMES to COMMIT allowing backwards moves."
+  (interactive (majutsu--bookmark-read-move-args))
+  (majutsu--bookmark-move commit names t))
+
+;;;###autoload
+(defun majutsu-bookmark-rename (old new)
+  "Rename bookmark OLD to NEW."
+  (interactive
+   (let* ((existing (majutsu--get-bookmark-names))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+          (old (completing-read "Rename bookmark: " table nil t))
+          (new (read-string (format "New name for %s: " old))))
+     (list old new)))
+  (when (and (not (string-empty-p old)) (not (string-empty-p new)))
+    (majutsu-run-jj "bookmark" "rename" old new)
+    (majutsu-log-refresh)
+    (message "Renamed bookmark '%s' -> '%s'" old new)))
+
+;;;###autoload
+(defun majutsu-bookmark-set (name commit)
+  "Create or update bookmark NAME to point to COMMIT."
+  (interactive
+   (let* ((existing (majutsu--get-bookmark-names))
+          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
+          (name (completing-read "Set bookmark: " table nil nil))
+          (at (or (majutsu-log--revset-at-point) "@"))
+          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
+     (list name rev)))
+  (majutsu-run-jj "bookmark" "set" name "-r" commit)
+  (majutsu-log-refresh)
+  (message "Set bookmark '%s' to %s" name commit))
+
+;;;###autoload
+(defun majutsu-bookmark-untrack (names)
+  "Stop tracking remote bookmark(s) NAMES (e.g., name@remote)."
+  (interactive
+   (let* ((remote-names (majutsu--get-bookmark-names t))
+          (table (majutsu--completion-table-with-category remote-names 'majutsu-bookmark))
+          (crm-separator (or (bound-and-true-p crm-separator) ", *"))
+          (names (completing-read-multiple "Untrack remote bookmark(s): " table nil t)))
+     (list names)))
+
+  (defvar crm-separator)
+  (when names
+    (apply #'majutsu-run-jj (append '("bookmark" "untrack") names))
+    (majutsu-log-refresh)
+    (message "Untracked: %s" (string-join names ", "))))
+
+(defun majutsu--completion-table-with-category (candidates category)
+  "Wrap CANDIDATES with completion METADATA to set CATEGORY.
+This prevents third-party UIs (e.g., icons for `bookmark') from
+misclassifying Majutsu candidates."
+  (let ((metadata `(metadata (category . ,category))))
+    (cond
+     ((fboundp 'completion-table-with-metadata)
+      (completion-table-with-metadata candidates metadata))
+     ((functionp candidates)
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            metadata
+          (funcall candidates string pred action))))
+     (t
+      (lambda (string pred action)
+        (if (eq action 'metadata)
+            metadata
+          (complete-with-action action candidates string pred)))))))
+
+;;; Bookmark Transient
+
+(transient-define-prefix majutsu-bookmark-transient--internal ()
+  "Internal transient for jj bookmark operations."
+  :transient-suffix 'transient--do-exit
+  :transient-non-suffix t
+  ["Bookmark Operations"
+   [
+    ("l" "List bookmarks" majutsu-bookmark-list
+     :description "Show bookmark list" :transient nil)
+    ("c" "Create bookmark" majutsu-bookmark-create
+     :description "Create new bookmark" :transient nil)]
+   [
+    ("s" "Set bookmark" majutsu-bookmark-set
+     :description "Create/update to commit" :transient nil)
+    ("m" "Move bookmark(s)" majutsu-bookmark-move
+     :description "Move existing to commit" :transient nil)
+    ("M" "Move bookmark(s) --allow-backwards" majutsu-bookmark-move-allow-backwards
+     :description "Move allowing backwards" :transient nil)
+    ("r" "Rename bookmark" majutsu-bookmark-rename
+     :description "Rename existing bookmark" :transient nil)]
+   [
+    ("t" "Track remote" majutsu-bookmark-track
+     :description "Track remote bookmark" :transient nil)
+    ("u" "Untrack remote" majutsu-bookmark-untrack
+     :description "Stop tracking remote" :transient nil)]
+   [
+    ("d" "Delete bookmark" majutsu-bookmark-delete
+     :description "Delete (propagate)" :transient nil)
+    ("f" "Forget bookmark" majutsu-bookmark-forget
+     :description "Forget (local)" :transient nil)]
+   [("q" "Quit" transient-quit-one)]] )
+
+;;; _
+(provide 'majutsu-bookmark)
+;;; majutsu-bookmark.el ends here

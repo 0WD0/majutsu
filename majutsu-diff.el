@@ -10,14 +10,14 @@
 
 ;;; Commentary:
 
-;; Diff viewing, parsing, and editing commands for Majutsu.
+;; This library implements jj diff buffers and related transients,
+;; including context management, refinement, and diffedit helpers.
 
 ;;; Code:
 
 (require 'majutsu-core)
 (require 'majutsu-process)
 (require 'majutsu-log)
-(require 'majutsu-transient)
 (require 'magit-section)
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -651,8 +651,8 @@ works with the simplified jj diff we render here."
 (defun majutsu-diff-clear-selections ()
   "Clear all diff selections."
   (interactive)
-  (majutsu--transient-clear-overlays majutsu-diff-from)
-  (majutsu--transient-clear-overlays majutsu-diff-to)
+  (majutsu--entry-clear-overlays majutsu-diff-from)
+  (majutsu--entry-clear-overlays majutsu-diff-to)
   (setq majutsu-diff-from nil
         majutsu-diff-to nil)
   (when (called-interactively-p 'interactive)
@@ -661,7 +661,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-diff-set-from ()
   "Set the commit at point as diff --from."
   (interactive)
-  (majutsu--transient-select-refset
+  (majutsu--selection-select-revset
    :kind "from"
    :label "[FROM]"
    :face '(:background "dark orange" :foreground "black")
@@ -670,7 +670,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-diff-set-to ()
   "Set the commit at point as diff --to."
   (interactive)
-  (majutsu--transient-select-refset
+  (majutsu--selection-select-revset
    :kind "to"
    :label "[TO]"
    :face '(:background "dark cyan" :foreground "white")
@@ -801,8 +801,8 @@ log view) or the working copy (if elsewhere)."
   (interactive (list (transient-args 'majutsu-diff-transient--internal)))
   (let* ((from-entry (car majutsu-diff-from))
          (to-entry (car majutsu-diff-to))
-         (from (when from-entry (majutsu--transient-entry-revset from-entry)))
-         (to (when to-entry (majutsu--transient-entry-revset to-entry)))
+         (from (when from-entry (majutsu--entry-revset from-entry)))
+         (to (when to-entry (majutsu--entry-revset to-entry)))
          (final-args (copy-sequence args)))
     ;; If we have selections, they override or supplement standard args
     (when from
@@ -835,5 +835,52 @@ log view) or the working copy (if elsewhere)."
   (add-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit nil t)
   (majutsu-diff-transient--internal))
 
+;;; Diff Transient
+
+(defvar-local majutsu-diff-from nil
+  "List containing at most one selected log section for diff --from.")
+
+(defvar-local majutsu-diff-to nil
+  "List containing at most one selected log section for diff --to.")
+
+(defun majutsu-diff--from-entry () (car majutsu-diff-from))
+(defun majutsu-diff--to-entry () (car majutsu-diff-to))
+
+(transient-define-prefix majutsu-diff-transient--internal ()
+  "Internal transient for jj diff."
+  :transient-suffix 'transient--do-exit
+  :transient-non-suffix t
+  [:description
+   (lambda ()
+     (concat "JJ Diff"
+             (when-let* ((from (majutsu-diff--from-entry)))
+               (format " | From: %s" (majutsu--entry-display from)))
+             (when-let* ((to (majutsu-diff--to-entry)))
+               (format " | To: %s" (majutsu--entry-display to)))))
+   :class transient-columns
+   ["Selection"
+    ("f" "Set 'from'" majutsu-diff-set-from
+     :description (lambda ()
+                    (if (majutsu-diff--from-entry)
+                        (format "Set 'from' (current: %s)"
+                                (majutsu--entry-display (majutsu-diff--from-entry)))
+                      "Set 'from'"))
+     :transient t)
+    ("t" "Set 'to'" majutsu-diff-set-to
+     :description (lambda ()
+                    (if (majutsu-diff--to-entry)
+                        (format "Set 'to' (current: %s)"
+                                (majutsu--entry-display (majutsu-diff--to-entry)))
+                      "Set 'to'"))
+     :transient t)
+    ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
+   ["Options"
+    ("-s" "Stat" "--stat")
+    ("-S" "Summary" "--summary")]
+   ["Actions"
+    ("d" "Execute" majutsu-diff-execute)
+    ("q" "Quit" transient-quit-one)]])
+
+;;; _
 (provide 'majutsu-diff)
 ;;; majutsu-diff.el ends here

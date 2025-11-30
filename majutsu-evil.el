@@ -9,16 +9,13 @@
 
 ;;; Commentary:
 
-;; Optional Evil integration for Majutsu.  This file defines native Evil
-;; keybindings so Majutsu users no longer need an external Doom module or
-;; evil-collection recipe to get a consistent experience.
+;; This library adds optional Evil keybindings for Majutsu without
+;; depending on evil-collection.
 
 ;;; Code:
 
 (require 'majutsu-core)
-(require 'majutsu-commands)
 (require 'majutsu-log)
-(require 'majutsu-transient)
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
@@ -133,5 +130,6 @@ Safe to call multiple times.  Set
   (add-hook 'majutsu-mode-hook #'turn-off-evil-snipe-mode)
   (add-hook 'majutsu-mode-hook #'turn-off-evil-snipe-override-mode))
 
+;;; _
 (provide 'majutsu-evil)
 ;;; majutsu-evil.el ends here

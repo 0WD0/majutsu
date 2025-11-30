@@ -9,10 +9,8 @@
 
 ;;; Commentary:
 
-;; Aggregates foundational Majutsu pieces so other modules can depend on a
-;; single entry-point without creating circular dependencies. This mirrors
-;; Magit's `magit-core.el' as the place for shared Custom groups and widely
-;; needed requires.
+;; This library gathers foundational Majutsu pieces so other modules
+;; can depend on a single entry point, reducing circular dependencies.
 
 ;;; Code:
 
@@ -24,10 +22,6 @@
 
 (defgroup majutsu-essentials nil
   "Options that most Majutsu users should consider."
-  :group 'majutsu)
-
-(defgroup majutsu-commands nil
-  "Options controlling Majutsu commands and behaviors."
   :group 'majutsu)
 
 (defgroup majutsu-modes nil
@@ -54,5 +48,6 @@
   :group 'majutsu-extensions
   :group 'majutsu-essentials)
 
+;;; _
 (provide 'majutsu-core)
 ;;; majutsu-core.el ends here

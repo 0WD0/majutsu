@@ -9,8 +9,8 @@
 
 ;;; Commentary:
 
-;; Definitions and utilities that must be available very early because other
-;; Majutsu modules depend on them but should not depend on each other.
+;; This library provides early utilities and section subclasses that
+;; other Majutsu modules rely on while avoiding heavier dependencies.
 
 ;;; Code:
 
@@ -71,11 +71,13 @@ The function must accept one argument: the buffer to display."
 
 ;;; Section Classes
 
-(defclass majutsu-commit-section (magit-section)
+(defclass majutsu-revision-section (magit-section)
   ((commit-id :initarg :commit-id)
    (change-id :initarg :change-id)
    (description :initarg :description)
-   (bookmarks :initarg :bookmarks)))
+   (bookmarks :initarg :bookmarks)
+   (overlay   :initform nil
+              :documentation "Selection overlay used by transient UIs.")))
 
 (defclass majutsu-file-section (magit-section)
   ((file :initarg :file)))
@@ -136,5 +138,6 @@ text properties."
    ((and value (not (stringp value))) (format "%s" value))
    (t nil)))
 
+;;; _
 (provide 'majutsu-base)
 ;;; majutsu-base.el ends here

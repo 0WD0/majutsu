@@ -11,7 +11,8 @@
 
 ;;; Commentary:
 
-;; Process execution and with-editor integration for Majutsu.
+;; This library runs jj commands synchronously and asynchronously,
+;; integrating with with-editor and handling ANSI coloring.
 
 ;;; Code:
 
@@ -369,5 +370,6 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
                                (string-join args " "))
     process))
 
+;;; _
 (provide 'majutsu-process)
 ;;; majutsu-process.el ends here
