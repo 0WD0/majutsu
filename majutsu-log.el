@@ -60,7 +60,10 @@
   "Default plist template describing log view options.")
 
 (defvar majutsu-log-state (copy-sequence majutsu-log--state-template)
-  "Plist capturing the current jj log view options.")
+  "Global default/last-used plist for jj log view options.")
+
+(defvar-local majutsu-log-buffer-state nil
+  "Buffer-local log view options for the current majutsu log buffer.")
 
 (defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
                                        majutsu-log-insert-status
@@ -69,17 +72,49 @@
   :type 'hook
   :group 'majutsu)
 
+(defun majutsu-log--state-default ()
+  "Return a fresh copy of the default/last-used log state plist."
+  (copy-sequence
+   (or (get 'majutsu-log-mode 'majutsu-log-current-state)
+       majutsu-log-state
+       majutsu-log--state-template)))
+
+(defun majutsu-log--state-current ()
+  "Return the active log state plist for the current context.
+Prefer the buffer-local state in a log buffer; otherwise fall
+back to the global/default state."
+  (cond
+   ((and (boundp 'majutsu-log-buffer-state)
+         majutsu-log-buffer-state)
+    majutsu-log-buffer-state)
+   ((derived-mode-p 'majutsu-log-mode)
+    (setq-local majutsu-log-buffer-state (majutsu-log--state-default)))
+   (t (majutsu-log--state-default))))
+
+(defun majutsu-log--state-assign (state)
+  "Persist STATE to all relevant caches (buffer, global, mode property)."
+  (let ((copy (copy-sequence state)))
+    ;; buffer-local (when applicable)
+    (when (derived-mode-p 'majutsu-log-mode)
+      (setq-local majutsu-log-buffer-state (copy-sequence copy)))
+    ;; global fallback / last-used
+    (setq majutsu-log-state (copy-sequence copy))
+    ;; mode-level last-used (mirrors Magit pattern)
+    (put 'majutsu-log-mode 'majutsu-log-current-state (copy-sequence copy))
+    copy))
+
 (defun majutsu-log--reset-state ()
-  "Reset log view options to defaults."
-  (setq majutsu-log-state (copy-sequence majutsu-log--state-template)))
+  "Reset log view options to defaults (template)."
+  (majutsu-log--state-assign majutsu-log--state-template))
 
 (defun majutsu-log--state-get (key)
-  "Return value for KEY in `majutsu-log-state'."
-  (plist-get majutsu-log-state key))
+  "Return value for KEY in the active log state."
+  (plist-get (majutsu-log--state-current) key))
 
 (defun majutsu-log--state-set (key value)
-  "Set KEY in `majutsu-log-state' to VALUE."
-  (setq majutsu-log-state (plist-put majutsu-log-state key value)))
+  "Set KEY in the active log state to VALUE."
+  (majutsu-log--state-assign
+   (plist-put (copy-sequence (majutsu-log--state-current)) key value)))
 
 (defun majutsu-log--summary-parts ()
   "Return a list of human-readable fragments describing current log state."
@@ -786,6 +821,8 @@ only know the commit without reimplementing our own DFS."
   :group 'majutsu
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  ;; Initialize per-buffer log state (keeps behavior aligned with Magit's pattern).
+  (setq-local majutsu-log-buffer-state (majutsu-log--state-default))
   ;; Clear rebase selections when buffer is killed
   (add-hook 'kill-buffer-hook 'majutsu-rebase-clear-selections nil t)
   ;; Clear new selections when buffer is killed

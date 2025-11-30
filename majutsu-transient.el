@@ -258,6 +258,41 @@ TYPE is either `single' or `multi'."
 
 (defvar majutsu-log--transient-description "JJ Log Options")
 
+(transient-define-argument majutsu-log:-r ()
+  :description (lambda ()
+                 (majutsu-log--value-desc "Revset" :revisions))
+  :class 'transient-option
+  :shortarg "r"
+  :argument "-r"
+  :reader (lambda (&rest _)
+            (let* ((current (majutsu-log--state-get :revisions))
+                   (input (string-trim
+                           (read-from-minibuffer "Revset (empty to clear): "
+                                                 current))))
+              (majutsu-log--state-set :revisions
+                                      (unless (string-empty-p input) input))
+              (majutsu-log--state-get :revisions))))
+
+(transient-define-argument majutsu-log:-n ()
+  :description (lambda ()
+                 (majutsu-log--value-desc "Limit" :limit))
+  :class 'transient-option
+  :shortarg "n"
+  :argument "-n"
+  :reader (lambda (&rest _)
+            (let* ((current (majutsu-log--state-get :limit))
+                   (input (string-trim
+                           (read-from-minibuffer "Limit (empty to clear): "
+                                                 current))))
+              (cond
+               ((string-empty-p input)
+                (majutsu-log--state-set :limit nil)
+                nil)
+               ((string-match-p "\\`[0-9]+\\'" input)
+                (majutsu-log--state-set :limit input)
+                input)
+               (t (user-error "Limit must be a positive integer"))))))
+
 (transient-define-prefix majutsu-log-transient ()
   "Transient interface for adjusting jj log options."
   :transient-suffix 'transient--do-exit
@@ -265,16 +300,10 @@ TYPE is either `single' or `multi'."
   [:description majutsu-log--transient-description
    :class transient-columns
    ["Revisions"
-    ("r" "Revset" majutsu-log-transient-set-revisions
-     :description (lambda ()
-                    (majutsu-log--value-desc "Revset" :revisions))
-     :transient t)
+    (majutsu-log:-r)
+    (majutsu-log:-n)
     ("R" "Clear revset" majutsu-log-transient-clear-revisions
      :if (lambda () (majutsu-log--state-get :revisions))
-     :transient t)
-    ("n" "Limit" majutsu-log-transient-set-limit
-     :description (lambda ()
-                    (majutsu-log--value-desc "Limit" :limit))
      :transient t)
     ("N" "Clear limit" majutsu-log-transient-clear-limit
      :if (lambda () (majutsu-log--state-get :limit))
