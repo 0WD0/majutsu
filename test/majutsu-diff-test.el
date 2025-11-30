@@ -32,10 +32,10 @@
                     "-foo"
                     "+bar")
                   "\n")))
-      (magit-insert-section (root-section (majutsu-diff-section))
+      (magit-insert-section (root-section (diffbuf))
         (magit-insert-heading "Diff")
         (majutsu--insert-diff-hunks diff))
-      (let* ((root magit-root-section)
+      (let* ((root diffbuf)
              (file-section (car (oref root children)))
              (hunk-section (car (oref file-section children))))
         (should (eieio-object-p file-section))

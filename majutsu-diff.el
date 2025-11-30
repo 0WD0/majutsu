@@ -136,7 +136,7 @@ drop it and ensure a single `--stat`."
         (summary-lines '())
         (inserted nil))
     (when lines
-      (magit-insert-section (majutsu-diff-summary-section nil)
+      (magit-insert-section (diffstat)
         (magit-insert-heading (propertize "Summary (--stat)" 'font-lock-face 'magit-section-heading))
         (dolist (line lines)
           (let ((plain (substring-no-properties line)))

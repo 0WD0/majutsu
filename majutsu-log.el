@@ -583,7 +583,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
   "Insert jj status into current buffer."
   (let ((status-output (majutsu-run-jj "status")))
     (when (and status-output (not (string-empty-p status-output)))
-      (magit-insert-section (majutsu-status-section)
+      (magit-insert-section (status)
         (magit-insert-heading "Working Copy Status")
         (insert status-output)
         (insert "\n")
@@ -632,7 +632,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
   "Insert conflicted files section."
   (let ((output (majutsu-run-jj "resolve" "--list")))
     (when (and output (not (string-empty-p output)))
-      (magit-insert-section (majutsu-conflict-section)
+      (magit-insert-section (conflict)
         (magit-insert-heading "Unresolved Conflicts")
         (dolist (line (split-string output "\n" t))
           (let ((file (string-trim line)))
@@ -738,7 +738,7 @@ only know the commit without reimplementing our own DFS."
     (and change-id
          (magit-get-section
           (append `((majutsu-commit-section . ,change-id))
-                  '((lograph)) '((magit-root-section)))))))
+                  '((lograph)) '((logbuf)))))))
 
 (defun majutsu-log--commit-only-at-point ()
   "Return the raw commit id at point, or nil if unavailable."
@@ -799,7 +799,7 @@ only know the commit without reimplementing our own DFS."
   "Render the log buffer using cached data."
   (let ((inhibit-read-only t))
     (erase-buffer)
-    (magit-insert-section (magit-root-section)
+    (magit-insert-section (logbuf)
       (run-hooks 'majutsu-log-sections-hook))))
 
 (defun majutsu-log--refresh-buffer (target-change target-commit)
@@ -926,7 +926,7 @@ mutating the wrong buffer."
   "Render the op log buffer."
   (let ((inhibit-read-only t))
     (erase-buffer)
-    (magit-insert-section (magit-root-section)
+    (magit-insert-section (oplog)
       (majutsu-op-log-insert-entries))))
 
 (defun majutsu-op-log-refresh ()

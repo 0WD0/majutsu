@@ -71,10 +71,6 @@ The function must accept one argument: the buffer to display."
 
 ;;; Section Classes
 
-(defclass majutsu-status-section (magit-section) ())
-(defclass majutsu-conflict-section (magit-section) ())
-(defclass majutsu-diff-section (magit-section) ())
-
 (defclass majutsu-commit-section (magit-section)
   ((commit-id :initarg :commit-id)
    (change-id :initarg :change-id)
@@ -93,7 +89,6 @@ The function must accept one argument: the buffer to display."
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
    (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
 
-(defclass majutsu-diff-summary-section (magit-section) ())
 (defclass majutsu-diffstat-file-section (magit-section)
   ((file :initarg :file)))
 
