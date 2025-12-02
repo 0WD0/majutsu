@@ -848,6 +848,7 @@ log view) or the working copy (if elsewhere)."
 
 (transient-define-prefix majutsu-diff-transient--internal ()
   "Internal transient for jj diff."
+  :man-page "jj-diff"
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description

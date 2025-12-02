@@ -124,6 +124,7 @@
 
 (transient-define-prefix majutsu-squash-transient--internal ()
   "Internal transient for jj squash operations."
+  :man-page "jj-squash"
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description

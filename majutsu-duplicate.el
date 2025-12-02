@@ -180,6 +180,7 @@ With prefix ARG, open the duplicate transient."
 
 (transient-define-prefix majutsu-duplicate-transient--internal ()
   "Internal transient for jj duplicate."
+  :man-page "jj-duplicate"
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description majutsu-duplicate--description

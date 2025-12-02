@@ -225,6 +225,7 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
 
 (transient-define-prefix majutsu-new-transient--internal ()
   "Internal transient for jj new operations."
+  :man-page "jj-new"
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description majutsu-new--description

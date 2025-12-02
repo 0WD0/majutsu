@@ -326,6 +326,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (transient-define-prefix majutsu-git-transient ()
   "Top-level transient for jj git operations."
+  :man-page "jj-git"
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description "JJ Git"
@@ -345,6 +346,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
+  :man-page "jj-git-push"
   [:description "JJ Git Push"
    :class transient-columns
    ["Arguments"
@@ -365,6 +367,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
+  :man-page "jj-git-fetch"
   [:description "JJ Git Fetch"
    :class transient-columns
    ["Arguments"
@@ -377,6 +380,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (transient-define-prefix majutsu-git-remote-transient ()
   "Transient for managing Git remotes."
+  :man-page "jj-git-remote"
   [:description "JJ Git Remote"
    :class transient-columns
    ["Arguments (add)"
@@ -392,6 +396,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (transient-define-prefix majutsu-git-clone-transient ()
   "Transient for jj git clone."
+  :man-page "jj-git-clone"
   [:description "JJ Git Clone"
    :class transient-columns
    ["Arguments"
@@ -405,6 +410,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (transient-define-prefix majutsu-git-init-transient ()
   "Transient for jj git init."
+  :man-page "jj-git-init"
   [:description "JJ Git Init"
    :class transient-columns
    ["Arguments"
