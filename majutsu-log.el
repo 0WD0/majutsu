@@ -381,6 +381,106 @@ automatically even if omitted or hidden."
   :type '(repeat (plist :options (:field :align :width :visible)))
   :group 'majutsu)
 
+(defmacro majutsu-log-define-column (name template doc)
+  "Define a log column template variable for NAME with default TEMPLATE and DOC.
+The variable name will be `majutsu-log-template-NAME'.
+Also registers a variable watcher to invalidate the template cache."
+  (declare (indent 1) (debug t) (doc-string 3))
+  (let ((var-name (intern (format "majutsu-log-template-%s" name))))
+    `(progn
+       (defcustom ,var-name ,template
+         ,doc
+         :type 'sexp
+         :group 'majutsu)
+       (when (fboundp 'add-variable-watcher)
+         (add-variable-watcher ',var-name #'majutsu-log--invalidate-template-cache)))))
+
+(majutsu-log-define-column change-id
+  [:if [:hidden]
+      [:label "hidden"
+              [[:change_id :shortest 8]
+               " hidden"]]
+    [:label
+     [:if [:divergent] "divergent"]
+     [[:change_id :shortest 8]
+      [:if [:divergent] "??"]]]]
+  "Template for the change-id column.")
+
+(majutsu-log-define-column commit-id
+  [:commit_id :shortest 8]
+  "Template for the commit-id column.")
+
+(majutsu-log-define-column refs
+  [:separate " " [:bookmarks] [:tags] [:working_copies]]
+  "Template for the refs column.")
+
+(majutsu-log-define-column bookmarks
+  [:bookmarks]
+  "Template for the bookmarks column.")
+
+(majutsu-log-define-column tags
+  [:tags]
+  "Template for the tags column.")
+
+(majutsu-log-define-column working-copies
+  [:working_copies]
+  "Template for the working-copies column.")
+
+(majutsu-log-define-column flags
+  [:separate " "
+             [:if [:current_working_copy] "@"]
+             [:if [:immutable] "immutable" "mutable"]
+             [:if [:conflict] [:label "conflict" "conflict"]]
+             [:if [:git_head] "git_head"]
+             [:if [:root] "root"]
+             [:if [:empty] "(empty)"]]
+  "Template for the flags column.")
+
+(majutsu-log-define-column git-head
+  [:if [:git_head] [:label "git_head" ""]]
+  "Template for the git-head column.")
+
+(majutsu-log-define-column signature
+  [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
+      [:if [:signature]
+          [:label "signature status"
+                  ["["
+                   [:label [:signature :status]
+                           [:coalesce
+                            [:if [:== [:signature :status] "good"] "✓︎"]
+                            [:if [:== [:signature :status] "unknown"] "?"]
+                            "x"]]
+                   "]"]]]]
+  "Template for the signature column.")
+
+(majutsu-log-define-column empty
+  [:if [:empty]
+      [:label "empty" "∅"]]
+  "Template for the empty column.")
+
+(majutsu-log-define-column description
+  [:if [:description]
+      [:method [:description] :first_line]
+    [:label
+     [:if [:empty] "empty"]
+     [:label
+      "description placeholder"
+      "□"]]]
+  "Template for the description column.")
+
+(majutsu-log-define-column author
+  [:author :name]
+  "Template for the author column.")
+
+(majutsu-log-define-column timestamp
+  [:committer :timestamp :ago]
+  "Template for the timestamp column.")
+
+(majutsu-log-define-column long-desc
+  [:if [:description] [:json [:description]] [:json " "]]
+  "Template for the long-desc column.
+Note: This must return a valid JSON string (usually via :json) to be parsed correctly.")
+
 (defvar majutsu-log--compiled-template-cache nil
   "Cached structure holding the compiled log template and column metadata.")
 
@@ -388,10 +488,6 @@ automatically even if omitted or hidden."
   "Reset cached compiled template when layout changes."
   (setq majutsu-log--compiled-template-cache nil)
   (setq majutsu-log--cached-entries nil))
-
-(when (fboundp 'add-variable-watcher)
-  (add-variable-watcher 'majutsu-log-commit-columns
-                        #'majutsu-log--invalidate-template-cache))
 
 (defun majutsu-log--normalize-column-spec (spec)
   "Normalize a single column SPEC into a plist with defaults."
@@ -419,52 +515,12 @@ Missing required fields are appended as hidden columns."
     columns))
 
 (defun majutsu-log--column-template (field)
-  "Return majutsu-template form for FIELD."
-  (pcase field
-    ('change-id [:if [:hidden]
-                    [:label "hidden"
-                            [[:change_id :shortest 8]
-                             " hidden"]]
-                  [:label
-                   [:if [:divergent] "divergent"]
-                   [[:change_id :shortest 8]
-                    [:if [:divergent] "??"]]]])
-    ('commit-id [:commit_id :shortest 8])
-    ('refs [:separate " " [:bookmarks] [:tags] [:working_copies]])
-    ('bookmarks [:bookmarks])
-    ('tags [:tags])
-    ('working-copies [:working_copies])
-    ('flags [:separate " "
-                       [:if [:current_working_copy] "@"]
-                       [:if [:immutable] "immutable" "mutable"]
-                       [:if [:conflict] [:label "conflict" "conflict"]]
-                       [:if [:git_head] "git_head"]
-                       [:if [:root] "root"]
-                       [:if [:empty] "(empty)"]])
-    ('git-head [:if [:git_head] [:label "git_head" ""]])
-    ('signature [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
-                    [:if [:signature]
-                        [:label "signature status"
-                                ["["
-                                 [:label [:signature :status]
-                                         [:coalesce
-                                          [:if [:== [:signature :status] "good"] "✓︎"]
-                                          [:if [:== [:signature :status] "unknown"] "?"]
-                                          "x"]]
-                                 "]"]]]])
-    ('empty [:if [:empty]
-                [:label "empty" "∅"]])
-    ('description [:if [:description]
-                      [:method [:description] :first_line]
-                    [:label
-                     [:if [:empty] "empty"]
-                     [:label
-                      "description placeholder"
-                      "□"]]])
-    ('author [:author :name])
-    ('timestamp [:committer :timestamp :ago])
-    ('long-desc [:if [:description] [:json [:description]] [:json " "]])
-    (_ (user-error "Unknown column field %S" field))))
+  "Return majutsu-template form for FIELD.
+Looks up `majutsu-log-template-FIELD'."
+  (let ((var (intern-soft (format "majutsu-log-template-%s" field))))
+    (if (and var (boundp var))
+        (symbol-value var)
+      (user-error "Unknown column field %S" field))))
 
 (defun majutsu-log--compile-columns (&optional columns)
   "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
