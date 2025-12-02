@@ -18,56 +18,12 @@
 
 ;;; majutsu-git
 
-(defun majutsu-git-push (args)
+;;;###autoload (autoload 'majutsu-git-push "majutsu-git" nil t)
+(transient-define-suffix majutsu-git-push (args)
   "Push to git remote with ARGS."
   (interactive (list (transient-args 'majutsu-git-push-transient)))
-  (let* ((allow-new? (member "--allow-new" args))
-         (all? (member "--all" args))
-         (tracked? (member "--tracked" args))
-         (deleted? (member "--deleted" args))
-         (allow-empty? (member "--allow-empty-description" args))
-         (allow-private? (member "--allow-private" args))
-         (dry-run? (member "--dry-run" args))
-
-         (remote-arg (seq-find (lambda (arg) (string-prefix-p "--remote=" arg)) args))
-         (remote (when remote-arg (substring remote-arg (length "--remote="))))
-
-         ;; Collect potential multi-value options supplied via --opt=value
-         (bookmark-args (seq-filter (lambda (arg) (string-prefix-p "--bookmark=" arg)) args))
-         (revision-args (seq-filter (lambda (arg) (string-prefix-p "--revisions=" arg)) args))
-         (change-args   (seq-filter (lambda (arg) (string-prefix-p "--change=" arg)) args))
-         (named-args    (seq-filter (lambda (arg) (string-prefix-p "--named=" arg)) args))
-
-         (cmd-args (append '("git" "push")
-                           (when remote (list "--remote" remote))
-                           (when allow-new? '("--allow-new"))
-                           (when all? '("--all"))
-                           (when tracked? '("--tracked"))
-                           (when deleted? '("--deleted"))
-                           (when allow-empty? '("--allow-empty-description"))
-                           (when allow-private? '("--allow-private"))
-                           (when dry-run? '("--dry-run"))
-
-                           ;; Expand = style into separate args as jj accepts space-separated
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--bookmark" (substring s (length "--bookmark="))))
-                                                   bookmark-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--revisions" (substring s (length "--revisions="))))
-                                                   revision-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--change" (substring s (length "--change="))))
-                                                   change-args))
-                           (apply #'append (mapcar (lambda (s)
-                                                     (list "--named" (substring s (length "--named="))))
-                                                   named-args))))
-
-         (success-msg (cond
-                       ((and bookmark-args (= (length bookmark-args) 1))
-                        (format "Successfully pushed bookmark %s"
-                                (substring (car bookmark-args) (length "--bookmark="))))
-                       (bookmark-args "Successfully pushed selected bookmarks")
-                       (t "Successfully pushed to remote"))))
+  (let* ((cmd-args (append '("git" "push") args))
+         (success-msg "Successfully pushed to remote"))
     (majutsu--message-with-log "Pushing to remote...")
     (majutsu-run-jj-async
      cmd-args
@@ -318,9 +274,10 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-argument majutsu-git-push:-b ()
   :description "Bookmark"
   :class 'transient-option
-  :shortarg "b"
-  :argument "-b "
-  :reader (lambda (&rest _) (majutsu-read-bookmark "Select bookmark(s): ")))
+  :shortarg "-b"
+  :argument "--bookmark="
+  :multi-value 'repeat
+  :reader #'majutsu-read-bookmarks)
 
 ;;; Git Transients
 
@@ -362,7 +319,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-c" "Change" "--change=")
     ("-N" "Named X=REV" "--named=")
     ("-y" "Dry run" "--dry-run")]
-   [("p" "Push" majutsu-git-push :transient nil)
+   [("p" "Push" majutsu-git-push)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-fetch-transient ()
