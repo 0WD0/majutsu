@@ -1271,7 +1271,7 @@ mutating the wrong buffer."
      :if (lambda () (majutsu-log--state-get :filesets))
      :transient t)]
    ["Actions"
-    ("g" "Apply & refresh" majutsu-log-transient-apply :transient nil)
+    ("g" "Apply & refresh" majutsu-log-transient-apply)
     ("0" "Reset options" majutsu-log-transient-reset :transient t)
     ("q" "Quit" transient-quit-one)]])
 

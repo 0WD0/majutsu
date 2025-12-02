@@ -230,28 +230,28 @@ misclassifying Majutsu candidates."
   ["Bookmark Operations"
    [
     ("l" "List bookmarks" majutsu-bookmark-list
-     :description "Show bookmark list" :transient nil)
+     :description "Show bookmark list")
     ("c" "Create bookmark" majutsu-bookmark-create
-     :description "Create new bookmark" :transient nil)]
+     :description "Create new bookmark")]
    [
     ("s" "Set bookmark" majutsu-bookmark-set
-     :description "Create/update to commit" :transient nil)
+     :description "Create/update to commit")
     ("m" "Move bookmark(s)" majutsu-bookmark-move
-     :description "Move existing to commit" :transient nil)
+     :description "Move existing to commit")
     ("M" "Move bookmark(s) --allow-backwards" majutsu-bookmark-move-allow-backwards
-     :description "Move allowing backwards" :transient nil)
+     :description "Move allowing backwards")
     ("r" "Rename bookmark" majutsu-bookmark-rename
-     :description "Rename existing bookmark" :transient nil)]
+     :description "Rename existing bookmark")]
    [
     ("t" "Track remote" majutsu-bookmark-track
-     :description "Track remote bookmark" :transient nil)
+     :description "Track remote bookmark")
     ("u" "Untrack remote" majutsu-bookmark-untrack
-     :description "Stop tracking remote" :transient nil)]
+     :description "Stop tracking remote")]
    [
     ("d" "Delete bookmark" majutsu-bookmark-delete
-     :description "Delete (propagate)" :transient nil)
+     :description "Delete (propagate)")
     ("f" "Forget bookmark" majutsu-bookmark-forget
-     :description "Forget (local)" :transient nil)]
+     :description "Forget (local)")]
    [("q" "Quit" transient-quit-one)]] )
 
 ;;; _

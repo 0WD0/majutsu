@@ -332,7 +332,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-B" "Branch" "--branch=")
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
-   [("f" "Fetch" majutsu-git-fetch :transient nil)
+   [("f" "Fetch" majutsu-git-fetch)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-remote-transient ()
@@ -362,7 +362,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-x" "No colocate" "--no-colocate")
     ("-d" "Depth" "--depth=")
     ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
-   [("c" "Clone" majutsu-git-clone :transient nil)
+   [("c" "Clone" majutsu-git-clone)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-init-transient ()
@@ -374,7 +374,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
     ("-g" "Use existing git repo" "--git-repo=")]
-   [("i" "Init" majutsu-git-init :transient nil)
+   [("i" "Init" majutsu-git-init)
     ("q" "Quit" transient-quit-one)]])
 
 ;;; _

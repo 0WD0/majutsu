@@ -161,8 +161,7 @@
                               (majutsu-squash--into-display)))
                      (majutsu-squash-from
                       (format "Squash %s into parent" (majutsu-squash--from-display)))
-                     (t "Execute squash (select commits first)")))
-     :transient nil)
+                     (t "Execute squash (select commits first)"))))
     ("q" "Quit" transient-quit-one)
     ("b" "Bury" majutsu-mode-bury-squash)]])
 

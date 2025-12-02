@@ -266,13 +266,11 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
     ("n" "Create new change" majutsu-new-execute
      :description (lambda ()
                     (format "Create new change (%s)"
-                            (majutsu-new--action-summary)))
-     :transient nil)
+                            (majutsu-new--action-summary))))
     ("RET" "Create new change" majutsu-new-execute
      :description (lambda ()
                     (format "Create new change (%s)"
-                            (majutsu-new--action-summary)))
-     :transient nil)
+                            (majutsu-new--action-summary))))
     ("q" "Quit" transient-quit-one)]])
 
 ;;; _

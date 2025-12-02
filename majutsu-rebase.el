@@ -190,9 +190,7 @@ ARGS are passed from the transient."
                         (format "Rebase %s -> %s"
                                 (majutsu-rebase--source-display)
                                 (majutsu-rebase--destination-display))
-                      "Execute rebase (select source & destinations first)"))
-     :transient nil)
-
+                      "Execute rebase (select source & destinations first)")))
     ("q" "Quit" transient-quit-one)]])
 
 ;;; _
