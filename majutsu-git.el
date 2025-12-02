@@ -315,6 +315,13 @@ Prompts for SOURCE and optional DEST; uses ARGS."
       (kill-new dir)
       (message "Git root: %s (copied)" dir))))
 
+(transient-define-argument majutsu-git-push:-b ()
+  :description "Bookmark"
+  :class 'transient-option
+  :shortarg "b"
+  :argument "-b "
+  :reader (lambda (&rest _) (majutsu-read-bookmark "Select bookmark(s): ")))
+
 ;;; Git Transients
 
 (transient-define-prefix majutsu-git-transient ()
@@ -342,7 +349,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
    :class transient-columns
    ["Arguments"
     ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
-    ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
+    ;; ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
+    (majutsu-git-push:-b)
     ("-a" "All bookmarks" "--all")
     ("-t" "Tracked only" "--tracked")
     ("-D" "Deleted" "--deleted")

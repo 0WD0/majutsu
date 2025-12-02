@@ -117,16 +117,16 @@ With prefix ALL, include remote bookmarks."
     (funcall majutsu-log-display-function buf)))
 
 ;;;###autoload
-(defun majutsu--bookmark-read-move-args ()
+(defun majutsu-read-bookmark (prompt &optional default)
   "Return interactive arguments for bookmark move commands."
   (let* ((existing (majutsu--get-bookmark-names))
          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
          (crm-separator (or (bound-and-true-p crm-separator) ", *"))
-         (default (majutsu-bookmarks-at-point))
+         (default (or default (majutsu-bookmarks-at-point)))
          (names (completing-read-multiple
                  (if default
-                     (format "Move bookmark(s) (default %s): " default)
-                   "Move bookmark(s): ")
+                     (format "%s (default %s): " prompt default)
+                   (format "%s: " prompt))
                  table nil t nil nil default))
          (at (or (majutsu-log--revset-at-point) "@"))
          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
@@ -152,13 +152,13 @@ When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
 (defun majutsu-bookmark-move (commit names &optional allow-backwards)
   "Move existing bookmark(s) NAMES to COMMIT.
 With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
-  (interactive (majutsu--bookmark-read-move-args))
+  (interactive (majutsu-read-bookmark "Move bookmark(s)"))
   (majutsu--bookmark-move commit names allow-backwards))
 
 ;;;###autoload
 (defun majutsu-bookmark-move-allow-backwards (commit names)
   "Move bookmark(s) NAMES to COMMIT allowing backwards moves."
-  (interactive (majutsu--bookmark-read-move-args))
+  (interactive (majutsu-read-bookmark "Move bookmark(s)"))
   (majutsu--bookmark-move commit names t))
 
 ;;;###autoload
