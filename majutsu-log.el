@@ -202,6 +202,15 @@ TYPE is either `single' or `multi'."
 
 ;;; Utilities
 
+(defun majutsu-read-revset (prompt &optional default)
+  "Prompt user with PROMPT to read a revision set string."
+  (let ((default (or default (majutsu-log--revset-at-point) "@")))
+    (read-string
+     (if default
+         (format "%s (default %s): " prompt default)
+       (format "%s: " prompt))
+     nil nil default)))
+
 (defun majutsu--section-change-id (section)
   "Return the change id recorded in SECTION, if available."
   (when (and section (object-of-class-p section 'majutsu-revision-section))

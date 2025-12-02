@@ -349,7 +349,6 @@ Prompts for SOURCE and optional DEST; uses ARGS."
    :class transient-columns
    ["Arguments"
     ("-R" "Remote" "--remote=" :choices majutsu--get-git-remotes)
-    ;; ("-b" "Bookmark" "--bookmark=" :choices majutsu--get-bookmark-names)
     (majutsu-git-push:-b)
     ("-a" "All bookmarks" "--all")
     ("-t" "Tracked only" "--tracked")
