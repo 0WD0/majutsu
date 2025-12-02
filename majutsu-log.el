@@ -24,9 +24,12 @@
 
 ;;; Log entry helpers
 
-(defun majutsu-section-revision-p (obj)
-  "Return non-nil when OBJ is a `majutsu-revision-section'."
-  (object-of-class-p obj 'majutsu-revision-section))
+(defun majutsu-section-revision-p (section)
+  "Return non-nil when SECTION is a `majutsu-revision-section'."
+  (let ((section (if (magit-section-p section)
+                 section
+               (magit-current-section))))
+    (magit-section-match 'majutsu-revision-section section)))
 
 (defun majutsu--entry-change-id (section)
   "Extract change id from SECTION."

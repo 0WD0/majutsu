@@ -26,9 +26,9 @@
 
 (defun majutsu-bookmark-at-point ()
   "Return a list of bookmark names at point."
-  (when-let* ((at (magit-current-section))
-              (bookmarks (and (slot-boundp at 'bookmarks)
-                              (oref at bookmarks))))
+  (when-let* ((section (magit-current-section))
+              (bookmarks (and (magit-section-match 'majutsu-revision-section section)
+                              (oref section bookmarks))))
     (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
 
 (defun majutsu-bookmarks-at-point ()
