@@ -28,13 +28,6 @@
   "Return non-nil when OBJ is a `majutsu-revision-section'."
   (object-of-class-p obj 'majutsu-revision-section))
 
-(defun majutsu-section-create-revision (&rest plist)
-  "Create a synthetic `majutsu-revision-section' for selection bookkeeping.
-PLIST may contain :change-id and :commit-id."
-  (let ((change-id (plist-get plist :change-id))
-        (commit-id (plist-get plist :commit-id)))
-    (majutsu-revision-section :change-id change-id :commit-id commit-id)))
-
 (defun majutsu--entry-change-id (section)
   "Extract change id from SECTION."
   (when (magit-section-match 'majutsu-revision-section section)
@@ -166,7 +159,7 @@ TYPE is either `single' or `multi'."
                  (message "Cleared %s" kind))
              (let ((entry (or section
                               (majutsu-find-revision-section change commit)
-                              (majutsu-section-create-revision :change-id change :commit-id commit))))
+                              (majutsu-revision-section :change-id change :commit-id commit))))
                (majutsu--entry-clear-overlays entries)
                (majutsu--entry-apply-overlay entry face label)
                (set collection-var (list entry))
@@ -178,7 +171,7 @@ TYPE is either `single' or `multi'."
                  (message "Removed %s: %s" kind (majutsu--entry-display existing)))
              (let ((entry (or section
                               (majutsu-find-revision-section change commit)
-                              (majutsu-section-create-revision :change-id change :commit-id commit))))
+                              (majutsu-revision-section :change-id change :commit-id commit))))
                (majutsu--entry-apply-overlay entry face label)
                (set collection-var (append entries (list entry)))
                (message "Added %s: %s" kind (majutsu--entry-display entry))))))))))
@@ -759,7 +752,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
                                       :commit-id  (plist-get entry :commit-id)
                                       :change-id  (plist-get entry :change-id)
                                       :description (plist-get entry :short-desc)
-                                      :bookmarks  (plist-get entry :bookmarks))
+                                      :bookmarks (string-split (substring-no-properties (plist-get entry :bookmarks))))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
                  (heading (plist-get line-info :line))
                  (margin (plist-get line-info :margin))

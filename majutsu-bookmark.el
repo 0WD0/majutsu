@@ -24,6 +24,17 @@
   (interactive)
   (majutsu-bookmark-transient--internal))
 
+(defun majutsu-bookmark-at-point ()
+  "Return a list of bookmark names at point."
+  (when-let* ((at (magit-current-section))
+              (bookmarks (and (slot-boundp at 'bookmarks)
+                              (oref at bookmarks))))
+    (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
+
+(defun majutsu-bookmarks-at-point ()
+  "Return a comma-separated string of bookmark names at point."
+  (string-join (majutsu-bookmark-at-point) ","))
+
 (defun majutsu--extract-bookmark-names (text)
   "Extract bookmark names from jj command output TEXT."
   (let ((names '())
@@ -111,7 +122,12 @@ With prefix ALL, include remote bookmarks."
   (let* ((existing (majutsu--get-bookmark-names))
          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
          (crm-separator (or (bound-and-true-p crm-separator) ", *"))
-         (names (completing-read-multiple "Move bookmark(s): " table nil t))
+         (default (majutsu-bookmarks-at-point))
+         (names (completing-read-multiple
+                 (if default
+                     (format "Move bookmark(s) (default %s): " default)
+                   "Move bookmark(s): ")
+                 table nil t nil nil default))
          (at (or (majutsu-log--revset-at-point) "@"))
          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
     (ignore crm-separator)
