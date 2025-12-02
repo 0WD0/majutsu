@@ -32,7 +32,7 @@
 (defun majutsu-rebase-set-source ()
   "Set the commit at point as rebase source."
   (interactive)
-  (majutsu--selection-select-revset
+  (majutsu--selection-toggle-revsets
    :kind "source"
    :label "[SOURCE]"
    :face '(:background "dark green" :foreground "white")
@@ -74,29 +74,28 @@
          (t "-d"))))
 
 ;;;###autoload
-(defun majutsu-rebase-execute (args)
+(transient-define-suffix majutsu-rebase (args)
   "Execute rebase with selected source and destinations.
 ARGS are passed from the transient."
   (interactive (list (transient-args 'majutsu-rebase-transient--internal)))
-  (if (and (majutsu-rebase--source-entry) majutsu-rebase-destinations)
-      (let* ((source-entry (majutsu-rebase--source-entry))
-             (source-rev (majutsu--entry-revset source-entry))
-             (source-display (majutsu--entry-display source-entry))
-             (dest-revs (seq-filter (lambda (rev) (and rev (not (string-empty-p rev))))
-                                    (majutsu-rebase--destination-revsets)))
+  (if (and majutsu-rebase-source majutsu-rebase-destinations)
+      (let* ((source-revs (majutsu-rebase--source-revsets))
+             (source-display (majutsu-rebase--source-display))
+             (dest-revs (majutsu-rebase--destination-revsets))
              (dest-display (majutsu-rebase--destination-display))
              (skip-emptied? (member "--skip-emptied" args))
              (keep-divergent? (member "--keep-divergent" args)))
-        (when (and source-rev dest-revs
+        (when (and source-revs dest-revs
                    (yes-or-no-p (format "Rebase %s -> %s? " source-display dest-display)))
           (let* ((dest-args (apply #'append (mapcar (lambda (dest) (list majutsu-rebase-dest-type dest)) dest-revs)))
-                 (all-args (append (list "rebase" majutsu-rebase-source-type source-rev)
-                                   dest-args
+                 (source-args (apply #'append (mapcar (lambda (source) (list majutsu-rebase-source-type source)) source-revs)))
+                 (all-args (append '("rebase") source-args dest-args
                                    (when skip-emptied? '("--skip-emptied"))
                                    (when keep-divergent? '("--keep-divergent"))))
                  (progress-msg (format "Rebasing %s onto %s" source-display dest-display))
                  (success-msg (format "Rebase completed: %s -> %s" source-display dest-display)))
             (majutsu--message-with-log "%s..." progress-msg)
+            (majutsu--debug "Running jj rebase with args: %s" (string-join all-args " "))
             (let ((result (apply #'majutsu-run-jj all-args)))
               (if (majutsu--handle-command-result all-args result success-msg "Rebase failed")
                   (progn
@@ -115,7 +114,7 @@ ARGS are passed from the transient."
 ;;; Rebase Transient
 
 (defvar-local majutsu-rebase-source nil
-  "List containing at most one selected log section for the rebase source.")
+  "List of selected log section for the rebase source.")
 
 (defvar-local majutsu-rebase-destinations nil
   "List of selected log sections to rebase onto.")
@@ -126,24 +125,21 @@ ARGS are passed from the transient."
 (defvar-local majutsu-rebase-dest-type "-d"
   "Flag to use for rebase destination (-d, -A, or -B).")
 
-(defun majutsu-rebase--source-entry ()
-  "Return the entry selected as rebase source, if any."
-  (car majutsu-rebase-source))
-
 (defun majutsu-rebase--destination-revsets ()
   "Return the list of destination revsets."
   (mapcar #'majutsu--entry-revset majutsu-rebase-destinations))
+
+(defun majutsu-rebase--source-revsets ()
+  "Return the list of source revsets."
+  (mapcar #'majutsu--entry-revset majutsu-rebase-source))
 
 (defun majutsu-rebase--destination-display ()
   "Return a comma-separated string for destination display."
   (string-join (mapcar #'majutsu--entry-display majutsu-rebase-destinations) ", "))
 
 (defun majutsu-rebase--source-display ()
-  "Return a display string for the current source."
-  (when-let* ((entry (majutsu-rebase--source-entry)))
-    (majutsu--entry-display entry)))
-
-
+  "Return a comma-separated string for source display."
+  (string-join (mapcar #'majutsu--entry-display majutsu-rebase-source) ", "))
 
 (transient-define-prefix majutsu-rebase-transient--internal ()
   "Internal transient for jj rebase operations."
@@ -163,7 +159,7 @@ ARGS are passed from the transient."
    ["Selection"
     ("s" "Set source" majutsu-rebase-set-source
      :description (lambda ()
-                    (if (majutsu-rebase--source-entry)
+                    (if majutsu-rebase-source
                         (format "Set source (current: %s)" (majutsu-rebase--source-display))
                       "Set source"))
      :transient t)
@@ -184,9 +180,9 @@ ARGS are passed from the transient."
     ("-se" "Skip emptied" "--skip-emptied")
     ("-kd" "Keep divergent" "--keep-divergent")]
    ["Actions"
-    ("r" "Execute rebase" majutsu-rebase-execute
+    ("r" "Execute rebase" majutsu-rebase
      :description (lambda ()
-                    (if (and (majutsu-rebase--source-entry) majutsu-rebase-destinations)
+                    (if (and majutsu-rebase-source majutsu-rebase-destinations)
                         (format "Rebase %s -> %s"
                                 (majutsu-rebase--source-display)
                                 (majutsu-rebase--destination-display))
