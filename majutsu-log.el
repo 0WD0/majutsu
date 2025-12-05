@@ -1091,7 +1091,7 @@ mutating the wrong buffer."
       (setq-local majutsu--repo-root root)
       (setq default-directory root)
       (majutsu-log-refresh))
-    (majutsu-display-buffer buffer majutsu-log-display-function)))
+    (majutsu-display-buffer buffer 'log)))
 
 (defun majutsu-log--refresh-view ()
   "Refresh current log buffer or open a new one."

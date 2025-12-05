@@ -116,7 +116,7 @@ With prefix ALL, include remote bookmarks."
       (insert output)
       (goto-char (point-min))
       (view-mode 1))
-    (funcall majutsu-log-display-function buf)))
+    (majutsu-display-buffer buf 'log)))
 
 ;;;###autoload
 (defun majutsu-read-bookmarks (prompt &optional init-input history)

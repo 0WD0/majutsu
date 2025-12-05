@@ -789,12 +789,12 @@ log view) or the working copy (if elsewhere)."
       ;; Determine and remember context lines.
       (let* ((ctx-from-args (majutsu-diff--parse-context final-args))
              (ctx (or ctx-from-args majutsu-diff-default-context)))
-        (setq-local majutsu-diff--context-lines ctx)
-        (setq final-args (majutsu-diff--with-context final-args ctx)))
+      (setq-local majutsu-diff--context-lines ctx)
+      (setq final-args (majutsu-diff--with-context final-args ctx)))
       (setq-local majutsu-diff--last-args final-args)
       (setq-local revert-buffer-function #'majutsu-refresh-buffer)
       (majutsu-diff-refresh)
-      (majutsu-display-buffer buf majutsu-diff-display-function))))
+      (majutsu-display-buffer buf 'diff))))
 
 (defun majutsu-diff-execute (&optional args)
   "Execute diff using transient selections or ARGS."

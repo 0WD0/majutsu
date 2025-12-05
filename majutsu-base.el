@@ -49,8 +49,8 @@
   :type 'string
   :group 'majutsu)
 
-(defcustom majutsu-log-display-function #'pop-to-buffer
-  "Function called to display the majutsu log buffer.
+(defcustom majutsu-default-display-function #'pop-to-buffer
+  "Fallback function used to display Majutsu buffers.
 The function must accept one argument: the buffer to display."
   :type '(choice
           (function-item switch-to-buffer)
@@ -59,25 +59,27 @@ The function must accept one argument: the buffer to display."
           (function :tag "Custom function"))
   :group 'majutsu)
 
-(defcustom majutsu-diff-display-function #'pop-to-buffer
-  "Function called to display the majutsu diff buffer.
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
+(defcustom majutsu-display-functions
+  '((log . pop-to-buffer)
+    (op-log . pop-to-buffer)
+    (diff . pop-to-buffer)
+    (message . pop-to-buffer))
+  "Alist mapping Majutsu buffer kinds to display functions.
+Each function must accept one argument: the buffer to display.
+Add new entries here to extend display behavior for additional buffers."
+  :type '(alist :key-type (symbol :tag "Buffer kind")
+          :value-type (choice
+                       (function-item switch-to-buffer)
+                       (function-item pop-to-buffer)
+                       (function-item display-buffer)
+                       (function :tag "Custom function")))
   :group 'majutsu)
 
-(defcustom majutsu-message-display-function #'pop-to-buffer
-  "Function called to display the majutsu with-editor message buffer.
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
+(defun majutsu--display-function (kind)
+  "Return display function for KIND or the default fallback."
+  (or (alist-get kind majutsu-display-functions nil nil #'eq)
+      majutsu-default-display-function
+      #'pop-to-buffer))
 
 ;;; Section Classes
 
@@ -128,9 +130,14 @@ The function must accept one argument: the buffer to display."
     (majutsu--debug "User message: %s" msg)
     (message "%s" msg)))
 
-(defun majutsu-display-buffer (buffer &optional display-function)
-  "Display BUFFER using `majutsu-*-display-function'."
-  (let ((display-fn (or display-function majutsu-log-display-function #'pop-to-buffer)))
+(defun majutsu-display-buffer (buffer &optional kind display-function)
+  "Display BUFFER using a function chosen for KIND or DISPLAY-FUNCTION.
+If DISPLAY-FUNCTION is non-nil, call it directly.  Otherwise look up
+KIND (a symbol such as `log', `diff' or `message') via
+`majutsu-display-functions' and fall back to
+`majutsu-default-display-function' when no match is found."
+  (let* ((display-fn (or display-function
+                         (majutsu--display-function kind))))
     (funcall display-fn buffer)
     (or (get-buffer-window buffer t)
         (selected-window))))

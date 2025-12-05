@@ -145,7 +145,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
       (insert output)
       (goto-char (point-min))
       (view-mode 1))
-    (funcall majutsu-log-display-function buf)))
+    (majutsu-display-buffer buf 'log)))
 
 (defun majutsu-git-remote-add (args)
   "Add a Git remote. Prompts for name and URL; respects ARGS from transient."
