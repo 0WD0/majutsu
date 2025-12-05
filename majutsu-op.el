@@ -150,7 +150,7 @@
       (setq-local majutsu--repo-root root)
       (setq default-directory root)
       (majutsu-op-log-refresh))
-    (majutsu--display-buffer-for-editor buffer)))
+    (majutsu-display-buffer buffer)))
 
 ;;; _
 (provide 'majutsu-op)

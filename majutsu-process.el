@@ -283,7 +283,7 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
       (with-selected-window window
         (switch-to-buffer buffer)))
      ((buffer-live-p buffer)
-      (majutsu--display-buffer-for-editor buffer))))
+      (majutsu-display-buffer buffer majutsu-message-display-function))))
   (remove-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context t)
   (remove-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context t))
 

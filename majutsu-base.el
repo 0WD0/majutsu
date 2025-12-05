@@ -59,6 +59,16 @@ The function must accept one argument: the buffer to display."
           (function :tag "Custom function"))
   :group 'majutsu)
 
+(defcustom majutsu-diff-display-function #'pop-to-buffer
+  "Function called to display the majutsu diff buffer.
+The function must accept one argument: the buffer to display."
+  :type '(choice
+          (function-item switch-to-buffer)
+          (function-item pop-to-buffer)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
 (defcustom majutsu-message-display-function #'pop-to-buffer
   "Function called to display the majutsu with-editor message buffer.
 The function must accept one argument: the buffer to display."
@@ -118,15 +128,10 @@ The function must accept one argument: the buffer to display."
     (majutsu--debug "User message: %s" msg)
     (message "%s" msg)))
 
-(defun majutsu--display-buffer-for-editor (buffer &optional window)
-  "Display BUFFER using `majutsu-log-display-function'.
-When WINDOW is a live window, run the display function in that window.
-Return the window showing BUFFER."
-  (let ((display-fn (or majutsu-log-display-function #'pop-to-buffer)))
-    (if (window-live-p window)
-        (with-selected-window window
-          (funcall display-fn buffer))
-      (funcall display-fn buffer))
+(defun majutsu-display-buffer (buffer &optional display-function)
+  "Display BUFFER using `majutsu-*-display-function'."
+  (let ((display-fn (or display-function majutsu-log-display-function #'pop-to-buffer)))
+    (funcall display-fn buffer)
     (or (get-buffer-window buffer t)
         (selected-window))))
 

@@ -794,7 +794,7 @@ log view) or the working copy (if elsewhere)."
       (setq-local majutsu-diff--last-args final-args)
       (setq-local revert-buffer-function #'majutsu-refresh-buffer)
       (majutsu-diff-refresh)
-      (majutsu--display-buffer-for-editor buf))))
+      (majutsu-display-buffer buf majutsu-diff-display-function))))
 
 (defun majutsu-diff-execute (&optional args)
   "Execute diff using transient selections or ARGS."
