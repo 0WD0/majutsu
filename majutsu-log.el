@@ -27,8 +27,8 @@
 (defun majutsu-section-revision-p (section)
   "Return non-nil when SECTION is a `majutsu-revision-section'."
   (let ((section (if (magit-section-p section)
-                 section
-               (magit-current-section))))
+                     section
+                   (magit-current-section))))
     (magit-section-match 'majutsu-revision-section section)))
 
 (defun majutsu--entry-change-id (section)
@@ -352,9 +352,12 @@ remaining invisible in the rendered buffer.")
 (defconst majutsu-log--required-columns '(change-id commit-id long-desc)
   "Columns that must always be present in the compiled template for parsing.")
 
-(defconst majutsu-log--default-commit-columns
+(defcustom majutsu-log-commit-columns
   '((:field change-id :align left)
-    (:field refs :align left)
+    (:field refs :align left :visible nil)
+    (:field bookmarks :align left)
+    (:field tags :align left)
+    (:field working-copies :align left)
     (:field empty :align left)
     (:field git-head :align left)
     (:field description :align left)
@@ -363,9 +366,6 @@ remaining invisible in the rendered buffer.")
     (:field commit-id :align right :visible nil)
     (:field flags :align left :visible nil)
     (:field long-desc :visible nil))
-  "Default column layout for log entries.")
-
-(defcustom majutsu-log-commit-columns majutsu-log--default-commit-columns
   "Column specification controlling how log rows are rendered.
 
 Each element is a plist with at least `:field'. Supported keys:
@@ -542,7 +542,7 @@ Returns a plist with :template, :columns, and :field-order."
     ('commit-id
      (setq entry (plist-put entry :commit-id value)))
     ('refs
-     (setq entry (plist-put entry :bookmarks value)))
+     (setq entry (plist-put entry :refs value)))
     ('bookmarks
      (setq entry (plist-put entry :bookmarks value)))
     ('tags
@@ -764,7 +764,9 @@ Left fields follow graph width per-line; right fields are rendered for margin."
                                       :commit-id  (plist-get entry :commit-id)
                                       :change-id  (plist-get entry :change-id)
                                       :description (plist-get entry :short-desc)
-                                      :bookmarks (string-split (substring-no-properties (plist-get entry :bookmarks))))
+                                      :bookmarks (let ((bookmarks (plist-get entry :bookmarks)))
+                                                   (when bookmarks
+                                                     (split-string (substring-no-properties bookmarks) ", " t))))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
                  (heading (plist-get line-info :line))
                  (margin (plist-get line-info :margin))
