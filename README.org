@@ -3,10 +3,12 @@
 Majutsu provides a magit-inspired interface for [[https://github.com/martinvonz/jj][Jujutsu]], offering an efficient
 way to interact with JJ repositories from within Emacs.
 
-This project started life as a fork of [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]]. I dropped the fork
-relationship after deciding to pursue breaking changes —most notably a reworked
-Magit-style log UI, a new template DSL, and different window/message
-handling—that fundamentally diverge from the original package’s scope.
+This project started as a fork of [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]] and was later renamed to
+Majutsu. The codebase has since been heavily refactored—with a Magit-style log
+UI, a new template DSL, and reworked window/message handling—so it is no longer
+drop-in compatible with the upstream package. The GitHub fork flag was removed
+to avoid implying compatibility; this is an independently maintained fork. Many
+thanks to the original authors for the initial codebase.
 
 * Features
 - *Magit-style log viewer* with collapsible sections and syntax highlighting
@@ -232,6 +234,15 @@ directly from Elisp.
 - Keyword sugar covers JJ built-ins plus helpers registered with ~majutsu-
   template-defkeyword~ or methods declared with ~:keyword t~.
 - Usage patterns and safeguards live in =test/majutsu-template-test.el=.
+
+* Credits
+Majutsu began as a fork of [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]] by Brandon Olivier and
+has since grown into an independent project.
+
+It stands on the shoulders of [[https://github.com/jj-vcs/jj][Jujutsu]] — the DVCS it wraps — and both
+depends on and draws interface inspiration from [[https://magit.vc/][Magit]] (sections,
+transients, with-editor). Thank you to both communities for the tools,
+ideas, and care that make this package possible.
 
 * Contributing
 Issues and pull requests welcome! This project aims to provide a solid JJ
