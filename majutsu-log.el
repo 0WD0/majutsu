@@ -258,8 +258,7 @@ TYPE is either `single' or `multi'."
   "Buffer-local log view options for the current majutsu log buffer.")
 
 (defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
-                                       majutsu-log-insert-status
-                                       majutsu-log-insert-diff)
+                                       majutsu-log-insert-status)
   "Hook run to insert sections in the log buffer."
   :type 'hook
   :group 'majutsu)
