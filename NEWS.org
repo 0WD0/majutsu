@@ -3,6 +3,17 @@
 
 * [Unreleased]
 
+** Performance
+
+- Significant improvements to diff view rendering speed and memory usage.
+  - Implemented "washing" to parse =jj diff= output directly in the buffer.
+  - Added lazy font-locking (JIT) for diff highlighting.
+  - Whitespace painting is now disabled for very large hunks to preserve responsiveness.
+
+** Added
+
+- New options to control performance limits: ~majutsu-diff-whitespace-max-chars~ and ~majutsu-diff-whitespace-max-bytes~.
+
 ** Changed
 
 - Keybinding of ~majutsu-abandon~ changed from [[kbd:k]] to [[kbd:k]] / [[kbd:a]].

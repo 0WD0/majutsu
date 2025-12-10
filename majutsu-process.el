@@ -370,6 +370,45 @@ On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
                                (string-join args " "))
     process))
 
+(defun majutsu--wash (washer keep-error &rest args)
+  "Run jj with ARGS, insert output at point, then call WASHER.
+KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,
+`wash-anyway' keeps output even on non-zero exit, anything else keeps the
+error text.  Output is optionally colorized based on
+`majutsu-process-apply-ansi-colors'."
+  (declare (indent 2))
+  (setq args (flatten-tree args))
+  (setq args (majutsu--process--maybe-add-flags args))
+  (let ((beg (point))
+        (exit (apply #'process-file majutsu-executable nil t nil args)))
+    (when (and majutsu-process-apply-ansi-colors
+               (> (point) beg))
+      (ansi-color-apply-on-region beg (point)))
+    ;; `process-file' may return nil on success for some Emacs builds.
+    (when (and (not exit) (integerp exit))
+      (setq exit 0))
+    (cond
+     ;; Command produced no output.
+     ((= (point) beg)
+      (insert (propertize "(No diff)" 'face 'shadow)))
+     ;; Failure path.
+     ((and (not (eq keep-error 'wash-anyway))
+           (not (= exit 0)))
+      (goto-char beg)
+      (insert (propertize (format "jj %s failed (exit %s)\n"
+                                  (string-join args " ") exit)
+                          'font-lock-face 'error)))
+     ;; Success (or wash anyway).
+     (t
+      (save-restriction
+        (narrow-to-region beg (point))
+        (goto-char beg)
+        (funcall washer args))
+      (when (or (= (point) beg)
+                (= (point) (1+ beg)))
+        (magit-cancel-section))))
+    exit))
+
 ;;; _
 (provide 'majutsu-process)
 ;;; majutsu-process.el ends here
