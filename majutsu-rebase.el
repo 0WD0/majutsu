@@ -69,9 +69,9 @@
   (interactive)
   (setq majutsu-rebase-dest-type
         (cond
-         ((string= majutsu-rebase-dest-type "-d") "-A")
+         ((string= majutsu-rebase-dest-type "-o") "-A")
          ((string= majutsu-rebase-dest-type "-A") "-B")
-         (t "-d"))))
+         (t "-o"))))
 
 ;;;###autoload
 (transient-define-suffix majutsu-rebase (args)
@@ -122,8 +122,8 @@ ARGS are passed from the transient."
 (defvar-local majutsu-rebase-source-type "-s"
   "Flag to use for rebase source (-s, -b, or -r).")
 
-(defvar-local majutsu-rebase-dest-type "-d"
-  "Flag to use for rebase destination (-d, -A, or -B).")
+(defvar-local majutsu-rebase-dest-type "-o"
+  "Flag to use for rebase destination (-o, -A, or -B).")
 
 (defun majutsu-rebase--destination-revsets ()
   "Return the list of destination revsets."

@@ -16,7 +16,7 @@
 - Add asynchronous support for ~majutsu-log~, ~majutsu-diff~, ~majutsu-git-fetch~ and ~majutsu-git-push~.
 - Basic ~majutsu-op-log~ implementation.
 - Added ~majutsu-hack-dir-local-variables~, ignore trailing whitespace in majutsu buffers.
-- ~majutsu-rebase-transient~ now can toggle source and destination argument type (~-b~ ~-r~ ~-s~ / ~-d~ ~-A~ ~-B~).
+- ~majutsu-rebase-transient~ now can toggle source and destination argument type (~-b~ ~-r~ ~-s~ / ~-o~ ~-A~ ~-B~).
 - ~tpl-compile~ (main entry of ~majutsu-template~) add a optional ~self-type~ argument.
 - Bound ~majutsu-diff~ to [[kbd:d]].
 

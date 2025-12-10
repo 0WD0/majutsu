@@ -22,11 +22,11 @@
   "Clear duplicate selections and overlays."
   (interactive)
   (majutsu--entry-clear-overlays majutsu-duplicate-sources)
-  (majutsu--entry-clear-overlays majutsu-duplicate-destinations)
+  (majutsu--entry-clear-overlays majutsu-duplicate-onto)
   (majutsu--entry-clear-overlays majutsu-duplicate-after)
   (majutsu--entry-clear-overlays majutsu-duplicate-before)
   (setq majutsu-duplicate-sources nil
-        majutsu-duplicate-destinations nil
+        majutsu-duplicate-onto nil
         majutsu-duplicate-after nil
         majutsu-duplicate-before nil)
   (when (called-interactively-p 'interactive)
@@ -45,10 +45,10 @@
   "Toggle the commit at point as a duplicate destination."
   (interactive)
   (majutsu--selection-toggle-revsets
-   :kind "--destination"
-   :label "[DEST]"
+   :kind "--onto"
+   :label "[ONTO]"
    :face '(:background "dark green" :foreground "white")
-   :collection-var 'majutsu-duplicate-destinations))
+   :collection-var 'majutsu-duplicate-onto))
 
 (defun majutsu-duplicate-toggle-after ()
   "Toggle the commit at point as a duplicate --after entry."
@@ -114,8 +114,8 @@ With prefix ARG, open the duplicate transient."
 (defvar-local majutsu-duplicate-sources nil
   "Entry structs representing revisions to duplicate.")
 
-(defvar-local majutsu-duplicate-destinations nil
-  "Entry structs representing `--destination' parents.")
+(defvar-local majutsu-duplicate-onto nil
+  "Entry structs representing `--onto' parents.")
 
 (defvar-local majutsu-duplicate-after nil
   "Entry structs representing `--after' parents.")
@@ -140,8 +140,8 @@ With prefix ARG, open the duplicate transient."
   "Return a vector of descriptive fragments for duplicate state."
   (let (parts)
     (push (format "Sources: %s" (majutsu-duplicate--sources-display)) parts)
-    (when majutsu-duplicate-destinations
-      (push (format "Destinations: %d" (length majutsu-duplicate-destinations)) parts))
+    (when majutsu-duplicate-onto
+      (push (format "Destinations: %d" (length majutsu-duplicate-onto)) parts))
     (when majutsu-duplicate-after
       (push (format "--after: %d" (length majutsu-duplicate-after)) parts))
     (when majutsu-duplicate-before
@@ -163,14 +163,14 @@ With prefix ARG, open the duplicate transient."
                       (majutsu-duplicate--sources)
                     sources))
          (destinations (majutsu--selection-normalize-revsets
-                        (or destinations majutsu-duplicate-destinations)))
+                        (or destinations majutsu-duplicate-onto)))
          (after (majutsu--selection-normalize-revsets
                  (or after majutsu-duplicate-after)))
          (before (majutsu--selection-normalize-revsets
                   (or before majutsu-duplicate-before)))
          (args '("duplicate")))
     (dolist (rev destinations)
-      (setq args (append args (list "--destination" rev))))
+      (setq args (append args (list "--onto" rev))))
     (dolist (rev after)
       (setq args (append args (list "--after" rev))))
     (dolist (rev before)
@@ -194,10 +194,10 @@ With prefix ARG, open the duplicate transient."
     ("c" "Clear selections" majutsu-duplicate-clear-selections
      :transient t)]
    ["Placement"
-    ("d" "Toggle --destination" majutsu-duplicate-toggle-destination
+    ("o" "Toggle --onto" majutsu-duplicate-toggle-destination
      :description (lambda ()
-                    (format "--destination (%d selected)"
-                            (length majutsu-duplicate-destinations)))
+                    (format "--onto (%d selected)"
+                            (length majutsu-duplicate-onto)))
      :transient t)
     ("a" "Toggle --after" majutsu-duplicate-toggle-after
      :description (lambda ()

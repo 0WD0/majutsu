@@ -28,7 +28,7 @@ thanks to the original authors for the initial codebase.
 
 * Requirements
 - Emacs 26.1 or later
-- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] (v0.35.0) installed and in PATH
+- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] (v0.36.0) installed and in PATH
 - [[https://magit.vc/][magit]] (for section management and UI components)
 - [[https://github.com/magit/transient][transient]] (usually bundled with magit)
 - [[https://github.com/magit/with-editor][with-editor]] (usually bundled with magit)
@@ -38,7 +38,7 @@ thanks to the original authors for the initial codebase.
 - Native Evil integration ships in-tree (~majutsu-evil.el~)
 - Asynchronous refresh for ~majutsu-log~, ~majutsu-diff~, ~majutsu-git-fetch~ and ~majutsu-git-push~
 - ~majutsu-op-log~ debuts for quickly auditing recent JJ commands
-- ~majutsu-rebase-transient~ exposes both source (~-b~ ~-r~ ~-s~) and destination (~-d~ ~-A~ ~-B~) toggles
+- ~majutsu-rebase-transient~ exposes both source (~-b~ ~-r~ ~-s~) and destination (~-o~ ~-A~ ~-B~) toggles
 
 * Installation
 ** Doom Emacs
@@ -128,7 +128,7 @@ columns:
 
 *** Duplicate (~y~)
 - ~y~ - Mark or unmark sources (defaults to the change at point or ~@~)
-- ~d~ - Toggle ~--destination~ parents
+- ~d~ - Toggle ~--onto~ parents
 - ~a~ / ~b~ - Toggle ~--after~ / ~--before~ parents
 - ~c~ - Clear selections
 - ~RET~ / ~p~ - Execute duplicate with the current selections
@@ -152,7 +152,7 @@ columns:
 - ~s~ - Select the source revision
 - ~S~ - Cycle the source flag (~-s~, ~-b~, ~-r~)
 - ~d~ - Toggle destinations
-- ~D~ - Cycle the destination flag (~-d~, ~-A~, ~-B~)
+- ~D~ - Cycle the destination flag (~-o~, ~-A~, ~-B~)
 - ~c~ - Clear selections
 - ~-se~ - Toggle ~--skip-emptied~
 - ~-kd~ - Toggle ~--keep-divergent~
