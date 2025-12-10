@@ -14,6 +14,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'eieio)
 
 ;;; majutsu-undo
 

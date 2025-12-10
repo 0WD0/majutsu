@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'eieio)
 (require 'seq)
 (require 'subr-x)
 
