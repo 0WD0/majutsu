@@ -47,6 +47,20 @@ With prefix ARG, open the new transient for interactive selection."
                 :before (when before (list before)))))
     (majutsu-new--run-command args)))
 
+;;; Options and Infixes
+
+(transient-define-argument majutsu-new-infix-message ()
+  :description "Message"
+  :class 'transient-option
+  :shortarg "-m"
+  :argument "--message=")
+
+(transient-define-argument majutsu-new-infix-no-edit ()
+  :description "No edit"
+  :class 'transient-switch
+  :shortarg "-e"
+  :argument "--no-edit")
+
 ;;;###autoload
 (defun majutsu-new-clear-selections ()
   "Clear all jj new selections and overlays."
@@ -56,9 +70,7 @@ With prefix ARG, open the new transient for interactive selection."
   (majutsu--entry-clear-overlays majutsu-new-before)
   (setq majutsu-new-parents nil
         majutsu-new-after nil
-        majutsu-new-before nil
-        majutsu-new-message nil
-        majutsu-new-no-edit nil)
+        majutsu-new-before nil)
   (when (called-interactively-p 'interactive)
     (message "Cleared all jj new selections")))
 
@@ -92,26 +104,6 @@ With prefix ARG, open the new transient for interactive selection."
    :face '(:background "dark magenta" :foreground "white")
    :collection-var 'majutsu-new-before))
 
-;;;###autoload
-(defun majutsu-new-edit-message ()
-  "Prompt for a jj new commit message."
-  (interactive)
-  (let ((input (read-string "New change message (empty to clear): " majutsu-new-message)))
-    (if (string-empty-p input)
-        (setq majutsu-new-message nil)
-      (setq majutsu-new-message input))
-    (message (if majutsu-new-message
-                 "Set message for jj new"
-               "Cleared message for jj new"))))
-
-;;;###autoload
-(defun majutsu-new-toggle-no-edit ()
-  "Toggle passing --no-edit to jj new."
-  (interactive)
-  (setq majutsu-new-no-edit (not majutsu-new-no-edit))
-  (message "jj new --no-edit %s"
-           (if majutsu-new-no-edit "enabled" "disabled")))
-
 (defun majutsu-new--run-command (args)
   "Execute jj new with ARGS and refresh the log on success."
   (let ((result (apply #'majutsu-run-jj args)))
@@ -128,8 +120,8 @@ With prefix ARG, open the new transient for interactive selection."
   "Execute jj new using the current transient selections."
   (interactive)
   (let* ((transient-args (transient-args 'majutsu-new-transient--internal))
-         (ignore-immutable (member "--ignore-immutable" transient-args))
-         (args (majutsu-new--build-args :ignore-immutable ignore-immutable)))
+         (context-args (majutsu-new--build-revset-args))
+         (args (cons "new" (append transient-args context-args))))
     (when (majutsu-new--run-command args)
       (majutsu-new-clear-selections))))
 
@@ -157,17 +149,6 @@ With prefix ARG, open the new transient for interactive selection."
 (defvar-local majutsu-new-before nil
   "List of selected --before entries for jj new.")
 
-(defvar-local majutsu-new-message nil
-  "Cached commit message for jj new transient.")
-
-(defvar-local majutsu-new-no-edit nil
-  "Non-nil when jj new should pass --no-edit.")
-
-(defun majutsu-new--message-preview ()
-  "Return a truncated preview of `majutsu-new-message'."
-  (when majutsu-new-message
-    (truncate-string-to-width majutsu-new-message 30 nil nil "...")))
-
 (defun majutsu-new--selection-summary ()
   "Return a list summarizing the current jj new selections."
   (let (parts)
@@ -186,10 +167,6 @@ With prefix ARG, open the new transient for interactive selection."
                     (string-join (mapcar #'majutsu--entry-display majutsu-new-before)
                                  ", "))
             parts))
-    (when majutsu-new-message
-      (push (format "Message: %s" (majutsu-new--message-preview)) parts))
-    (when majutsu-new-no-edit
-      (push "--no-edit" parts))
     (nreverse parts)))
 
 (defun majutsu-new--description ()
@@ -206,27 +183,25 @@ With prefix ARG, open the new transient for interactive selection."
         (string-join parts " | ")
       "Parents: @")))
 
-(cl-defun majutsu-new--build-args (&key parents after before message (no-edit majutsu-new-no-edit) ignore-immutable)
-  "Build the argument list for jj new.
-PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state.
-IGNORE-IMMUTABLE is a boolean flag."
+(cl-defun majutsu-new--build-revset-args (&key parents after before)
+  "Build the revset argument list for jj new.
+PARENTS, AFTER, BEFORE default to transient state."
   (let* ((parents (majutsu--selection-normalize-revsets (or parents majutsu-new-parents)))
          (after (majutsu--selection-normalize-revsets (or after majutsu-new-after)))
          (before (majutsu--selection-normalize-revsets (or before majutsu-new-before)))
-         (message (or message majutsu-new-message))
-         (args '("new")))
+         args)
     (dolist (rev after)
-      (setq args (append args (list "--after" rev))))
+      (push rev args)
+      (push "--after" args))
     (dolist (rev before)
-      (setq args (append args (list "--before" rev))))
-    (when (and message (not (string-empty-p message)))
-      (setq args (append args (list "--message" message))))
-    (when no-edit
-      (setq args (append args '("--no-edit"))))
-    (when ignore-immutable
-      (setq args (append args '("--ignore-immutable"))))
-    (setq args (append args parents))
-    args))
+      (push rev args)
+      (push "--before" args))
+    (append args parents)))
+
+(cl-defun majutsu-new--build-args (&rest args)
+  "Legacy wrapper to build full jj new command args.
+Accepts keys :parents, :after, :before."
+  (cons "new" (apply #'majutsu-new--build-revset-args args)))
 
 (transient-define-prefix majutsu-new-transient--internal ()
   "Internal transient for jj new operations."
@@ -254,19 +229,8 @@ IGNORE-IMMUTABLE is a boolean flag."
     ("c" "Clear selections" majutsu-new-clear-selections
      :transient t)]
    ["Options"
-    ("m" "Set message" majutsu-new-edit-message
-     :description (lambda ()
-                    (if majutsu-new-message
-                        (format "Set message (%s)"
-                                (majutsu-new--message-preview))
-                      "Set message"))
-     :transient t)
-    ("e" "Toggle --no-edit" majutsu-new-toggle-no-edit
-     :description (lambda ()
-                    (if majutsu-new-no-edit
-                        "--no-edit (enabled)"
-                      "--no-edit (disabled)"))
-     :transient t)
+    (majutsu-new-infix-message)
+    (majutsu-new-infix-no-edit)
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("n" "Create new change" majutsu-new-execute
