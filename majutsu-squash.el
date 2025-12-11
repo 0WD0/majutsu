@@ -53,28 +53,30 @@
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash-transient--internal)))
   (let* ((keep (member "--keep" args))
+         (ignore-immutable (member "--ignore-immutable" args))
          (from-entries majutsu-squash-from)
          (into-entry (majutsu-squash--into-entry))
          (from-revsets (majutsu--selection-normalize-revsets from-entries))
          (into (when into-entry (majutsu--entry-revset into-entry))))
     (cond
      ((and from-revsets into)
-      (majutsu--squash-run from-revsets into keep))
+      (majutsu--squash-run from-revsets into keep ignore-immutable))
      (from-revsets
-      (majutsu--squash-run from-revsets nil keep))
+      (majutsu--squash-run from-revsets nil keep ignore-immutable))
      ((majutsu-log--revset-at-point)
-      (majutsu--squash-run (list (majutsu-log--revset-at-point)) nil keep))
+      (majutsu--squash-run (list (majutsu-log--revset-at-point)) nil keep ignore-immutable))
      (t
       (majutsu--message-with-log "No commit selected for squash")))))
 
-(defun majutsu--squash-run (from-list into keep)
+(defun majutsu--squash-run (from-list into keep ignore-immutable)
   "Run jj squash using with-editor."
   (let* ((normalized (majutsu--selection-normalize-revsets from-list))
          (froms (or normalized '("@")))
          (args (append '("squash")
                        (apply #'append (mapcar (lambda (rev) (list "--from" rev)) froms))
                        (when into (list "--into" into))
-                       (when keep '("--keep-emptied"))))
+                       (when keep '("--keep-emptied"))
+                       (when ignore-immutable '("--ignore-immutable"))))
          (from-display (string-join froms ", "))
          (success-msg (if into
                           (format "Squashed %s into %s" from-display into)
@@ -150,7 +152,8 @@
     ("c" "Clear selections" majutsu-squash-clear-selections
      :transient t)]
    ["Options"
-    ("-k" "Keep emptied commit" "--keep")]
+    ("-k" "Keep emptied commit" "--keep")
+    (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute squash" majutsu-squash-execute
      :description (lambda ()

@@ -127,7 +127,9 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-execute ()
   "Execute jj new using the current transient selections."
   (interactive)
-  (let ((args (majutsu-new--build-args)))
+  (let* ((transient-args (transient-args 'majutsu-new-transient--internal))
+         (ignore-immutable (member "--ignore-immutable" transient-args))
+         (args (majutsu-new--build-args :ignore-immutable ignore-immutable)))
     (when (majutsu-new--run-command args)
       (majutsu-new-clear-selections))))
 
@@ -204,9 +206,10 @@ With prefix ARG, open the new transient for interactive selection."
         (string-join parts " | ")
       "Parents: @")))
 
-(cl-defun majutsu-new--build-args (&key parents after before message (no-edit majutsu-new-no-edit))
+(cl-defun majutsu-new--build-args (&key parents after before message (no-edit majutsu-new-no-edit) ignore-immutable)
   "Build the argument list for jj new.
-PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
+PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state.
+IGNORE-IMMUTABLE is a boolean flag."
   (let* ((parents (majutsu--selection-normalize-revsets (or parents majutsu-new-parents)))
          (after (majutsu--selection-normalize-revsets (or after majutsu-new-after)))
          (before (majutsu--selection-normalize-revsets (or before majutsu-new-before)))
@@ -220,6 +223,8 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
       (setq args (append args (list "--message" message))))
     (when no-edit
       (setq args (append args '("--no-edit"))))
+    (when ignore-immutable
+      (setq args (append args '("--ignore-immutable"))))
     (setq args (append args parents))
     args))
 
@@ -261,7 +266,8 @@ PARENTS, AFTER, BEFORE, MESSAGE, and NO-EDIT default to transient state."
                     (if majutsu-new-no-edit
                         "--no-edit (enabled)"
                       "--no-edit (disabled)"))
-     :transient t)]
+     :transient t)
+    (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("n" "Create new change" majutsu-new-execute
      :description (lambda ()

@@ -24,6 +24,14 @@
   "Options that most Majutsu users should consider."
   :group 'majutsu)
 
+;;; Shared Transients
+
+(transient-define-argument majutsu-transient-arg-ignore-immutable ()
+  :description "Ignore immutable"
+  :class 'transient-switch
+  :shortarg "-I"
+  :argument "--ignore-immutable")
+
 (defgroup majutsu-modes nil
   "Modes used or provided by Majutsu."
   :group 'majutsu)

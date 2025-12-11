@@ -84,14 +84,16 @@ ARGS are passed from the transient."
              (dest-revs (majutsu-rebase--destination-revsets))
              (dest-display (majutsu-rebase--destination-display))
              (skip-emptied? (member "--skip-emptied" args))
-             (keep-divergent? (member "--keep-divergent" args)))
+             (keep-divergent? (member "--keep-divergent" args))
+             (ignore-immutable? (member "--ignore-immutable" args)))
         (when (and source-revs dest-revs
                    (yes-or-no-p (format "Rebase %s -> %s? " source-display dest-display)))
           (let* ((dest-args (apply #'append (mapcar (lambda (dest) (list majutsu-rebase-dest-type dest)) dest-revs)))
                  (source-args (apply #'append (mapcar (lambda (source) (list majutsu-rebase-source-type source)) source-revs)))
                  (all-args (append '("rebase") source-args dest-args
                                    (when skip-emptied? '("--skip-emptied"))
-                                   (when keep-divergent? '("--keep-divergent"))))
+                                   (when keep-divergent? '("--keep-divergent"))
+                                   (when ignore-immutable? '("--ignore-immutable"))))
                  (progress-msg (format "Rebasing %s onto %s" source-display dest-display))
                  (success-msg (format "Rebase completed: %s -> %s" source-display dest-display)))
             (majutsu--message-with-log "%s..." progress-msg)
@@ -178,7 +180,8 @@ ARGS are passed from the transient."
      :transient t)]
    ["Options"
     ("-se" "Skip emptied" "--skip-emptied")
-    ("-kd" "Keep divergent" "--keep-divergent")]
+    ("-kd" "Keep divergent" "--keep-divergent")
+    (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("r" "Execute rebase" majutsu-rebase
      :description (lambda ()
