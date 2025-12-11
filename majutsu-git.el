@@ -44,15 +44,19 @@
 
     (cond
      ;; Check for bookmark push restrictions
-     ((or (string-match-p "Refusing to push" trimmed-result)
-          (string-match-p "Refusing to create new remote bookmark" trimmed-result)
-          (string-match-p "would create new heads" trimmed-result))
+     ((or (string-match-p "Refusing to create new remote bookmark" trimmed-result)
+          (string-match-p "Refusing to push" trimmed-result)) ;; Generic refusal often linked to this in older versions
       ;; Extract bookmark names that couldn't be pushed
       (let ((bookmark-names (majutsu--extract-bookmark-names trimmed-result)))
         (if bookmark-names
-            (message "💡 Use 'jj git push --allow-new' to push new bookmarks: %s"
+            (message "💡 New bookmarks must be tracked first: 'jj bookmark track %s'"
                      (string-join bookmark-names ", "))
-          (message "💡 Use 'jj git push --allow-new' to push new bookmarks")))
+          (message "💡 New bookmarks must be tracked first (e.g. 'jj bookmark track name@remote')")))
+      nil)
+
+     ;; Check for creating new heads (often needs rebase or force, unrelated to tracking usually, but check context)
+     ((string-match-p "would create new heads" trimmed-result)
+      (message "💡 Push would create new heads. Fetch and rebase, or force push.")
       nil)
 
      ;; Check for authentication issues
@@ -312,7 +316,6 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-a" "All bookmarks" "--all")
     ("-t" "Tracked only" "--tracked")
     ("-D" "Deleted" "--deleted")
-    ("-n" "Allow new" "--allow-new")
     ("-E" "Allow empty desc" "--allow-empty-description")
     ("-P" "Allow private" "--allow-private")
     ("-r" "Revisions" "--revisions=")
