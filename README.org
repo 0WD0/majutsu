@@ -124,6 +124,7 @@ columns:
 - ~c~ - Clear all selections
 - ~m~ - Set the initial commit message
 - ~e~ - Toggle ~--no-edit~
+- ~-I~ - Toggle ~--ignore-immutable~
 - ~n~ / ~RET~ - Create the new change with the current selections
 
 *** Duplicate (~y~)
@@ -138,6 +139,7 @@ columns:
 - ~t~ - Select the destination
 - ~c~ - Clear selections
 - ~-k~ - Keep emptied commits
+- ~-I~ - Toggle ~--ignore-immutable~
 - ~s~ - Execute squash (DWIMs when only sources are marked)
 - ~b~ / ~q~ - Bury or quit the transient
 
@@ -156,6 +158,7 @@ columns:
 - ~c~ - Clear selections
 - ~-se~ - Toggle ~--skip-emptied~
 - ~-kd~ - Toggle ~--keep-divergent~
+- ~-I~ - Toggle ~--ignore-immutable~
 - ~r~ - Execute the rebase
 
 *** Bookmark (~b~)
@@ -165,8 +168,10 @@ columns:
 - ~m~ / ~M~ - Move bookmarks (with or without ~--allow-backwards~)
 - ~r~ - Rename a bookmark
 - ~t~ / ~u~ - Track or untrack a remote bookmark
+- ~g~ - Fetch remote
 - ~d~ - Delete (propagate) a bookmark
 - ~f~ - Forget a local bookmark
+- ~-I~ - Toggle ~--ignore-immutable~
 
 *** Git (~G~)
 - ~p~ - Open the push transient (supports ~-R~ remote, ~-b~ bookmark, ~-a~, ~-t~, ~-D~, ~-n~,

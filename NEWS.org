@@ -13,9 +13,13 @@
 ** Added
 
 - New options to control performance limits: ~majutsu-diff-whitespace-max-chars~ and ~majutsu-diff-whitespace-max-bytes~.
+- Support for global `--ignore-immutable` flag in rebase, squash, new, and bookmark transients.
+- Support for `--ignore-immutable` in ~majutsu-describe~ via prefix argument (~C-u~).
 
 ** Changed
 
+- Removed deprecated `--allow-new` flag from ~majutsu-git-push~.
+- ~majutsu-git-push~ now suggests `jj bookmark track` when pushing new bookmarks.
 - Keybinding of ~majutsu-abandon~ changed from ~k~ to ~k~ / ~a~.
 - Renamed ~majutsu--run-command-*~ to ~majutsu-run-jj-*~.
 
