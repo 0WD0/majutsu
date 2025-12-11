@@ -25,11 +25,14 @@
 
 ;;; majutsu-describe
 
-(defun majutsu-describe ()
-  "Update the description for the commit at point."
-  (interactive)
-  (let ((revset (or (majutsu-log--revset-at-point) "@")))
-    (majutsu--with-editor-run (list "describe" "-r" revset)
+(defun majutsu-describe (&optional arg)
+  "Update the description for the commit at point.
+With prefix ARG, add --ignore-immutable."
+  (interactive "P")
+  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
+         (args (append (list "describe" "-r" revset)
+                       (when arg '("--ignore-immutable")))))
+    (majutsu--with-editor-run args
                               (format "Description updated for %s" revset)
                               "Failed to update description")))
 
