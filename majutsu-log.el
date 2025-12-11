@@ -353,7 +353,6 @@ remaining invisible in the rendered buffer.")
 
 (defcustom majutsu-log-commit-columns
   '((:field change-id :align left)
-    (:field refs :align left :visible nil)
     (:field bookmarks :align left)
     (:field tags :align left)
     (:field working-copies :align left)
@@ -369,7 +368,7 @@ remaining invisible in the rendered buffer.")
 
 Each element is a plist with at least `:field'. Supported keys:
 - :field   - symbol identifying a known field (e.g. `change-id',
-             `commit-id', `refs', `description', `author',
+             `commit-id', `description', `author',
              `timestamp', `flags', `long-desc').
 - :align   - one of `left', `right', or `center' (defaults to `left').
 - :visible - non-nil to show in the buffer; nil keeps the field hidden
@@ -409,10 +408,6 @@ Also registers a variable watcher to invalidate the template cache."
 (majutsu-log-define-column commit-id
   [:commit_id :shortest 8]
   "Template for the commit-id column.")
-
-(majutsu-log-define-column refs
-  [:separate " " [:bookmarks] [:tags] [:working_copies]]
-  "Template for the refs column.")
 
 (majutsu-log-define-column bookmarks
   [:bookmarks]
@@ -596,8 +591,6 @@ Returns a plist with :template, :columns, and :field-order."
      (setq entry (plist-put entry :change-id value)))
     ('commit-id
      (setq entry (plist-put entry :commit-id value)))
-    ('refs
-     (setq entry (plist-put entry :refs value)))
     ('bookmarks
      (setq entry (plist-put entry :bookmarks value)))
     ('tags
@@ -693,7 +686,6 @@ instead of stopping on visual padding."
   "Return face symbol for FIELD, or nil."
   (pcase field
     ((or 'change-id 'commit-id) 'magit-hash)
-    ('refs 'magit-branch-remote)
     ('bookmarks 'magit-branch-local)
     ('tags 'magit-tag)
     ('working-copies 'magit-branch-remote)
