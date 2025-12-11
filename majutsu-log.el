@@ -810,10 +810,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
             (majutsu-revision-section entry t
                                       :commit-id  (plist-get entry :commit-id)
                                       :change-id  (plist-get entry :change-id)
-                                      :description (plist-get entry :short-desc)
-                                      :bookmarks (let ((bookmarks (plist-get entry :bookmarks)))
-                                                   (when bookmarks
-                                                     (split-string (substring-no-properties bookmarks) ", " t))))
+                                      :description (plist-get entry :short-desc))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
                  (heading (plist-get line-info :line))
                  (margin (plist-get line-info :margin))

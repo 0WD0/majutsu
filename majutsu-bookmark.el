@@ -24,11 +24,16 @@
   (interactive)
   (majutsu-bookmark-transient--internal))
 
-(defun majutsu-bookmarks-at-point ()
+(defun majutsu-bookmarks-at-point (&optional bookmark-type)
   "Return a list of bookmark names at point."
-  (when-let* ((section (magit-current-section))
-              (bookmarks (and (magit-section-match 'majutsu-revision-section section)
-                              (oref section bookmarks))))
+  (let* ((rev (or (majutsu-log--revset-at-point) "@"))
+         (args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
+                         "-T" ,(pcase bookmark-type
+                                 ('remote "remote_bookmarks")
+                                 ('local "local_bookmarks")
+                                 (_ "bookmarks")))))
+         (output (apply #'majutsu-run-jj args))
+         (bookmarks (split-string output " " t)))
     (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
 
 (defun majutsu-bookmark-at-point ()

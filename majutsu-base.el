@@ -87,7 +87,6 @@ Add new entries here to extend display behavior for additional buffers."
   ((commit-id :initarg :commit-id)
    (change-id :initarg :change-id)
    (description :initarg :description)
-   (bookmarks :initarg :bookmarks)
    (overlay   :initform nil
               :documentation "Selection overlay used by transient UIs.")))
 
