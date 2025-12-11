@@ -16,7 +16,7 @@
 
 ** Changed
 
-- Keybinding of ~majutsu-abandon~ changed from [[kbd:k]] to [[kbd:k]] / [[kbd:a]].
+- Keybinding of ~majutsu-abandon~ changed from ~k~ to ~k~ / ~a~.
 - Renamed ~majutsu--run-command-*~ to ~majutsu-run-jj-*~.
 
 * [0.3.0] - 2025-11-25
@@ -29,15 +29,15 @@
 - Added ~majutsu-hack-dir-local-variables~, ignore trailing whitespace in majutsu buffers.
 - ~majutsu-rebase-transient~ now can toggle source and destination argument type (~-b~ ~-r~ ~-s~ / ~-o~ ~-A~ ~-B~).
 - ~tpl-compile~ (main entry of ~majutsu-template~) add a optional ~self-type~ argument.
-- Bound ~majutsu-diff~ to [[kbd:d]].
+- Bound ~majutsu-diff~ to ~d~.
 
 ** Changed
 
-- Keybinding of ~majutsu-describe~ changed from [[kbd:d]] to [[kbd:c]].
-- Keybinding of ~majutsu-commit~ changed from [[kbd:c]] to [[kbd:C]].
-- Keybinding of ~majutsu-undo~ changed from [[kbd:u]] to [[kbd:C-/]].
-- Keybinding of ~majutsu-redo~ changed from [[kbd:R]] to [[kbd:C-?]].
-- Keybinding of ~majutsu-abandon~ changed from [[kbd:a]] to [[kbd:k]].
+- Keybinding of ~majutsu-describe~ changed from ~d~ to ~c~.
+- Keybinding of ~majutsu-commit~ changed from ~c~ to ~C~.
+- Keybinding of ~majutsu-undo~ changed from ~u~ to ~C-/~.
+- Keybinding of ~majutsu-redo~ changed from ~R~ to ~C-?~.
+- Keybinding of ~majutsu-abandon~ changed from ~a~ to ~k~.
 - Renamed ~majutsu-mode-transient~ to ~majutsu-dispatch~.
 - Renamed ~majutsu-goto-current~ to ~majutsu-log-goto-@~.
 
@@ -56,8 +56,8 @@
 - Added ~majutsu-duplicate-transient~.
 - Added revset, line limit and path filter argument for ~majutsu-log-transient~.
 - Added support for =jj bookmark move --allow-backwards=.
-  Use [[kbd:m]] in ~majutsu-bookmark-transient~ to denote commands without flags,
-  and use [[kbd:M]] for commands that include =--allow-backwards=.
+  Use ~m~ in ~majutsu-bookmark-transient~ to denote commands without flags,
+  and use ~M~ for commands that include =--allow-backwards=.
 
 ** Changed
 
