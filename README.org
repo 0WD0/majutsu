@@ -19,6 +19,7 @@ thanks to the original authors for the initial codebase.
 - *Asynchronous jj jobs* for log/diff/fetch/push, so UI stays responsive
 - *Context-sensitive actions* via DWIM (Do What I Mean) Enter key behavior
 - *Git integration* with push/fetch operations and configurable options
+- *Workspace support* (~jj workspace~) with list/add/forget/visit commands (Magit-style ~Z~ menu)
 - *Log transient* to tweak revsets, limits, and path filters on the fly
 - *Revset Builder* for interactively constructing complex revset expressions
 - *Operation Log* viewer (~majutsu-op-log~) to inspect repo history
@@ -94,13 +95,14 @@ S-TAB, M-n/M-p, etc.) remain available. The lists below mirror the bindings in
 - ~y~ - Open the duplicate transient
 - ~Y~ - Duplicate the change at point
 - ~G~ - Open the Git operations transient
+- ~Z~ / ~%~ - Open the workspace transient
 - ~k~ - Abandon the change at point
 - ~C-/~ / ~C-?~ - Undo / redo the last Majutsu action
 
 *** Majutsu Dispatcher (~?~)
 Use the dispatcher when you forget a binding—it mirrors ~majutsu-dispatch~'s
 columns:
-- ~g~, ~c~, ~l~, ~N~, ~s~, ~r~, ~b~, ~G~, ~D~ — same commands as above
+- ~g~, ~c~, ~l~, ~N~, ~s~, ~r~, ~b~, ~G~, ~Z~, ~D~ — same commands as above
 - ~e~ - Edit the change at point (~majutsu-edit-changeset~)
 - ~u~ / ~R~ - Undo or redo
 - ~n~ - Open the fully interactive ~majutsu-new-transient~
@@ -187,6 +189,17 @@ columns:
 - ~e~ / ~m~ - Run ~jj git export~ / ~jj git import~
   not nassesary
 
+*** Workspace (~Z~)
+- ~l~ - List workspaces in a dedicated buffer
+- ~v~ / ~RET~ - Visit a workspace (opens a Majutsu log buffer rooted at that workspace)
+- ~a~ - Add a workspace (~jj workspace add~) and then visit it
+- ~f~ - Forget workspaces (~jj workspace forget~)
+- ~n~ - Rename current workspace
+- ~u~ - Update stale working copy (~jj workspace update-stale~)
+
+If ~Visit~ can't auto-locate the workspace directory, customize
+~majutsu-workspace-search-directories~ to add parent directories to search.
+
 *** Message Buffers
 Majutsu relies on [[https://github.com/magit/with-editor][with-editor]] to populate commit/describe messages.
 When the edit buffer opens:
@@ -224,6 +237,7 @@ motion states (and mirrors the ~RET~ binding onto ~majutsu-diff-mode-map~):
 - ~Y~ → ~majutsu-duplicate-transient~
 - ~d~ → ~majutsu-diff-transient~
 - ~D~ → ~majutsu-diff~
+- ~*~ - ~majutsu-workspace-transient~
 - ~E~ → ~majutsu-diffedit-emacs~
 - ~M~ → ~majutsu-diffedit-smerge~
 - ~?~ → ~majutsu-dispatch~

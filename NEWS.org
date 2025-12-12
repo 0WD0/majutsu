@@ -5,6 +5,9 @@
 
 ** Added
 
+- Added workspace support (~jj workspace~): list/add/forget/rename/visit and log integration via the ~Z~ menu.
+- Added ~majutsu-workspace-search-directories~ to help ~Visit~ locate workspace directories on disk.
+
 ** Changed
 
 ** Fixed

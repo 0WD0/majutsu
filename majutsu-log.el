@@ -21,6 +21,7 @@
 (require 'majutsu-process)
 (require 'majutsu-template)
 (require 'majutsu-selection)
+(require 'majutsu-workspace)
 (require 'json)
 
 (defvar majutsu-buffer-log-args)
@@ -139,7 +140,8 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
 
 (defcustom majutsu-log-sections-hook '(majutsu-log-insert-error-header
                                        majutsu-log-insert-logs
-                                       majutsu-log-insert-status)
+                                       majutsu-log-insert-status
+                                       majutsu-log-insert-workspaces)
   "Hook run to insert sections in the log buffer."
   :type 'hook
   :group 'majutsu)

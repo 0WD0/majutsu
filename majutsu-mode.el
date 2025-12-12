@@ -43,6 +43,8 @@
   "y"   'majutsu-duplicate-transient
   "Y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
+  "Z"   'majutsu-workspace-transient
+  "%"   'majutsu-workspace-transient
   "a"   'majutsu-abandon
   "k"   'majutsu-abandon
   "C-/" 'majutsu-undo

@@ -59,6 +59,7 @@ Instead of invoking this alias for `majutsu-log' using
    ["Advanced"
     ("r" "Rebase" majutsu-rebase-transient)
     ("b" "Bookmarks" majutsu-bookmark-transient)
+    ("Z" "Workspaces" majutsu-workspace-transient)
     ("G" "Git" majutsu-git-transient)]
    ["Diff & Fix"
     ("D" "Diff menu" majutsu-diff-transient)
@@ -79,7 +80,8 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-restore)
   (require 'majutsu-commit)
   (require 'majutsu-new)
-  (require 'majutsu-bookmark))
+  (require 'majutsu-bookmark)
+  (require 'majutsu-workspace))
 
 (with-eval-after-load 'evil
   (require 'majutsu-evil nil t))
