@@ -77,6 +77,12 @@
 (setf (alist-get 'jj-file   magit--section-type-alist) 'majutsu-file-section)
 (setf (alist-get 'jj-hunk   magit--section-type-alist) 'majutsu-hunk-section)
 
+;; Workspace sections (`jj workspace list`)
+
+(defclass majutsu-workspace-section (magit-section)
+  ((name :initarg :name
+         :documentation "Workspace name.")))
+
 ;;; Utilities
 
 (defun majutsu--ensure-flag (args flag &optional position)
