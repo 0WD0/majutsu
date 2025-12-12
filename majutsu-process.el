@@ -115,15 +115,15 @@ ERROR-CALLBACK is called with the error output on failure."
                                       (message "Majutsu async error: %s" output))))))))
     process))
 
-(defun majutsu--with-progress (message command-func)
-  "Execute COMMAND-FUNC with minimal progress indication."
-  (let ((start-time (current-time))
-        result)
-    (majutsu--debug "Starting operation: %s" message)
-    (setq result (funcall command-func))
-    (majutsu--debug "Operation completed in %.3f seconds"
-                    (float-time (time-subtract (current-time) start-time)))
-    result))
+(defmacro majutsu-with-progress (msg &rest body)
+  "Execute BODY with minimal progress indication using MESSAGE."
+  `(let ((start-time (current-time))
+         result)
+     (majutsu--debug "Starting operation: %s" ,msg)
+     (setq result (progn ,@body))
+     (majutsu--debug "Operation completed in %.3f seconds"
+                     (float-time (time-subtract (current-time) start-time)))
+     result))
 
 (defun majutsu--handle-command-result (command-args result &optional success-msg _error-msg)
   "Handle command result with proper error checking and messaging."
