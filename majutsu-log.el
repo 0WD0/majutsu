@@ -19,7 +19,6 @@
 (require 'majutsu-core)
 (require 'majutsu-process)
 (require 'majutsu-template)
-(require 'magit-section)
 (require 'json)
 
 ;;; Log entry helpers

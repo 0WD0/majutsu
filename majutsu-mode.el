@@ -15,7 +15,6 @@
 ;;; Code:
 
 (require 'majutsu-base)
-(require 'magit-section)
 
 ;;; Keymap
 
