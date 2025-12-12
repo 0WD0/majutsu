@@ -247,7 +247,10 @@ workspace root automatically; if not found, prompt for it."
       (let ((actual (ignore-errors (majutsu-workspace-current-name dir))))
         (when (and actual (not (equal actual name)))
           (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name))))
-    (let ((default-directory dir))
+    ;; Clear the caller's cached repo root so `majutsu--root' respects the
+    ;; dynamically bound `default-directory' when jumping between workspaces.
+    (let ((default-directory dir)
+          (majutsu--repo-root nil))
       (if (fboundp 'majutsu-log)
           (majutsu-log)
         (dired dir)))))

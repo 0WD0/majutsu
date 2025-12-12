@@ -33,6 +33,17 @@
     (should-not (plist-get (nth 1 entries) :current))
     (should (equal (plist-get (nth 1 entries) :desc) ""))))
 
+(ert-deftest majutsu-workspace-visit/binds-root-cache ()
+  "Ensure visiting another workspace clears cached `majutsu--repo-root'."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-log)
+               (lambda ()
+                 (setq seen (list default-directory majutsu--repo-root)))))
+      (let ((majutsu--repo-root "/tmp/old/")
+            (default-directory "/tmp/old/"))
+        (majutsu-workspace-visit "/tmp/new/")))
+    (should (equal (car seen) (file-name-as-directory (expand-file-name "/tmp/new/"))))
+    (should (equal (cadr seen) nil))))
+
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here
-
