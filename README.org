@@ -210,8 +210,8 @@ motion states (and mirrors the ~RET~ binding onto ~majutsu-diff-mode-map~):
 - ~e~ → ~majutsu-edit-changeset~
 - ~u~ → ~majutsu-undo~
 - ~C-r~ → ~majutsu-redo~
-- ~o~ → ~majtusu-new-transient~
-- ~O~ → ~majtusu-new~
+- ~o~ → ~majutsu-new-transient~
+- ~O~ → ~majutsu-new~
 - ~I~ → ~majutsu-new~ with ~--before~ current revision
 - ~A~ → ~majutsu-new~ with ~--after~ current revision
 - ~s~ → ~majutsu-squash-transient~

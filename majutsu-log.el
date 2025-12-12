@@ -180,13 +180,13 @@ TYPE is either `single' or `multi'."
                (message "Added %s: %s" kind (majutsu--entry-display entry))))))))))
 
 (cl-defun majutsu--selection-select-revset (&key kind label face collection-var)
-  "Shared helper for `<REFSET>' style single selections."
+  "Shared helper for `<REVSET>' style single selections."
   (majutsu--selection-toggle
    :kind kind :label label :face face
    :collection-var collection-var :type 'single))
 
 (cl-defun majutsu--selection-toggle-revsets (&key kind label face collection-var)
-  "Shared helper for `<REFSETS>' style multi selections."
+  "Shared helper for `<REVSETS>' style multi selections."
   (majutsu--selection-toggle
    :kind kind :label label :face face
    :collection-var collection-var :type 'multi))
