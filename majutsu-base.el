@@ -151,6 +151,35 @@ text properties."
    ((and value (not (stringp value))) (format "%s" value))
    (t nil)))
 
+(defun majutsu--buffer-root (&optional buffer)
+  "Return the cached repo root for BUFFER (default `current-buffer').
+Falls back to `majutsu--root' when available.  This is used to match
+buffers to repositories when refreshing."
+  (with-current-buffer (or buffer (current-buffer))
+    (or (and (boundp 'majutsu--repo-root) majutsu--repo-root)
+        (ignore-errors (majutsu--root)))))
+
+(defun majutsu--find-mode-buffer (mode &optional root)
+  "Return a live buffer in MODE for ROOT (or any repo when ROOT is nil)."
+  (let ((root (or root (majutsu--buffer-root))))
+    (seq-find (lambda (buf)
+                (with-current-buffer buf
+                  (and (derived-mode-p mode)
+                       (or (null root)
+                           (equal (majutsu--buffer-root buf) root)))))
+              (buffer-list))))
+
+(defun majutsu--resolve-mode-buffer (mode &optional root)
+  "Prefer the current buffer if it is in MODE; otherwise find one for ROOT."
+  (if (derived-mode-p mode)
+      (current-buffer)
+    (majutsu--find-mode-buffer mode root)))
+
+(defun majutsu--assert-mode (mode)
+  "Signal a user error unless the current buffer derives from MODE."
+  (unless (derived-mode-p mode)
+    (user-error "Command is only valid in %s buffers" mode)))
+
 ;;; _
 (provide 'majutsu-base)
 ;;; majutsu-base.el ends here

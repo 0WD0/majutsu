@@ -16,6 +16,7 @@
 ;;; Code:
 
 (require 'majutsu-core)
+(require 'majutsu-mode)
 (require 'majutsu-process)
 (require 'majutsu-log)
 (require 'magit-diff)      ; for faces/font-lock keywords

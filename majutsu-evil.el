@@ -14,8 +14,7 @@
 
 ;;; Code:
 
-(require 'majutsu-core)
-(require 'majutsu-log)
+(require 'majutsu)
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.

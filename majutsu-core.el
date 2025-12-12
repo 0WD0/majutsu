@@ -15,7 +15,6 @@
 ;;; Code:
 
 (require 'majutsu-base)
-(require 'majutsu-mode)
 (require 'majutsu-process)
 
 ;;; Custom groups

@@ -17,14 +17,10 @@
 
 ;;; Code:
 
-(require 'majutsu-base)
 (require 'majutsu-core)
 (require 'majutsu-process)
 (require 'majutsu-log)
 (require 'majutsu-diff)
-
-(with-eval-after-load 'evil
-  (require 'majutsu-evil nil t))
 
 ;;; Aliases
 
@@ -82,3 +78,8 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-commit)
   (require 'majutsu-new)
   (require 'majutsu-bookmark))
+
+(with-eval-after-load 'evil
+  (require 'majutsu-evil nil t))
+
+;;; majutsu.el ends here
