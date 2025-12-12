@@ -37,21 +37,27 @@
 We use an ASCII record separator so parsing stays robust.")
 
 (defconst majutsu-workspace--list-template
+  ;; NOTE: Don't use `separate()` here. We need stable field positions even
+  ;; when some values are empty (e.g. the non-current marker).
   (tpl-compile
-   [:separate majutsu-workspace--field-separator
-              ;; 1. Current workspace marker
-              [:if [:target :current_working_copy] "@" ""]
-              ;; 2. Workspace name
-              [:name]
-              ;; 3. Target change id
-              [:target :change_id :shortest 8]
-              ;; 4. Target commit id
-              [:target :commit_id :shortest 8]
-              ;; 5. Target description (first line)
-              [:if [:target :description]
-                  [:method [:target :description] :first_line]
-                ""]
-              "\n"]
+   [:concat
+    ;; 1. Current workspace marker
+    [:if [:target :current_working_copy] "@" ""]
+    "\x1e"
+    ;; 2. Workspace name
+    [:name]
+    "\x1e"
+    ;; 3. Target change id
+    [:target :change_id :shortest 8]
+    "\x1e"
+    ;; 4. Target commit id
+    [:target :commit_id :shortest 8]
+    "\x1e"
+    ;; 5. Target description (first line)
+    [:if [:target :description]
+        [:method [:target :description] :first_line]
+      ""]
+    "\n"]
    'WorkspaceRef)
   "Template used to render `jj workspace list` output for parsing.")
 
@@ -227,18 +233,20 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
 If called with DIRECTORY, visit that directory. Otherwise, try to locate the
 workspace root automatically; if not found, prompt for it."
   (interactive)
-  (let* ((root (majutsu--root))
-         (name (or (majutsu-workspace--name-at-point)
-                   (completing-read "Workspace: " (majutsu-workspace--names root) nil t)))
+  (let* ((root (and (null directory) (majutsu--root)))
+         (name (and (null directory)
+                    (or (majutsu-workspace--name-at-point)
+                        (completing-read "Workspace: " (majutsu-workspace--names root) nil t))))
          (dir (or directory
                   (majutsu-workspace--locate-root name root)
                   (read-directory-name (format "Workspace root for %s: " name)
                                        (file-name-directory (directory-file-name root))
                                        nil t))))
     (setq dir (file-name-as-directory (expand-file-name dir)))
-    (let ((actual (ignore-errors (majutsu-workspace-current-name dir))))
-      (when (and actual (not (equal actual name)))
-        (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name)))
+    (when name
+      (let ((actual (ignore-errors (majutsu-workspace-current-name dir))))
+        (when (and actual (not (equal actual name)))
+          (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name))))
     (let ((default-directory dir))
       (if (fboundp 'majutsu-log)
           (majutsu-log)
@@ -409,4 +417,3 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
 ;;; _
 (provide 'majutsu-workspace)
 ;;; majutsu-workspace.el ends here
-
