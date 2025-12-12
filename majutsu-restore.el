@@ -18,6 +18,7 @@
 
 ;;; Abandon
 
+;;;###autoload
 (defun majutsu-abandon ()
   "Abandon the changeset at point."
   (interactive)

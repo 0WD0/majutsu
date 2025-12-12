@@ -62,6 +62,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
                        (list "-T" template))))
     (delete-dups (split-string (apply #'majutsu-run-jj args) "\n" t))))
 
+;;;###autoload
 (defun majutsu-bookmark-create ()
   "Create a new bookmark."
   (interactive)
@@ -71,6 +72,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
       (majutsu-run-jj "bookmark" "create" name "-r" revset)
       (majutsu-log-refresh))))
 
+;;;###autoload
 (defun majutsu-bookmark-delete ()
   "Delete a bookmark and propagate on next push."
   (interactive)
@@ -83,6 +85,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
       (majutsu-log-refresh)
       (message "Deleted bookmark '%s'" choice))))
 
+;;;###autoload
 (defun majutsu-bookmark-forget ()
   "Forget a bookmark (local only, no deletion propagation)."
   (interactive)
@@ -95,6 +98,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
       (majutsu-log-refresh)
       (message "Forgot bookmark '%s'" choice))))
 
+;;;###autoload
 (defun majutsu-bookmark-track ()
   "Track remote bookmark(s)."
   (interactive)

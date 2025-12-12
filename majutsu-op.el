@@ -17,6 +17,7 @@
 
 ;;; majutsu-undo
 
+;;;###autoload
 (defun majutsu-undo ()
   "Undo the last change."
   (interactive)
@@ -31,6 +32,7 @@
 
 ;;; majutsu-redo
 
+;;;###autoload
 (defun majutsu-redo ()
   "Redo the last undone change."
   (interactive)

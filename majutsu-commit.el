@@ -16,6 +16,7 @@
 
 ;;; majutsu-commit
 
+;;;###autoload
 (defun majutsu-commit ()
   "Create a commit using Emacs as the editor."
   (interactive)
@@ -25,6 +26,7 @@
 
 ;;; majutsu-describe
 
+;;;###autoload
 (defun majutsu-describe (&optional arg)
   "Update the description for the commit at point.
 With prefix ARG, add --ignore-immutable."

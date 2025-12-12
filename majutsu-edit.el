@@ -41,6 +41,7 @@
            (slot-boundp section 'file))
       (majutsu-visit-file)))))
 
+;;;###autoload
 (defun majutsu-edit-changeset ()
   "Edit commit at point."
   (interactive)

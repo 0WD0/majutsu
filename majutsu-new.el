@@ -18,6 +18,7 @@
 
 ;;; majutsu-new
 
+;;;###autoload
 (defun majutsu-new (arg)
   "Create a new changeset.
 Without prefix ARG, use the changeset at point (or `@` when unavailable).
@@ -31,6 +32,7 @@ With prefix ARG, open the new transient for interactive selection."
                   :parents parents)))
       (majutsu-new--run-command args))))
 
+;;;###autoload
 (defun majutsu-new-with-after ()
   "Create a new changeset with the commit at point as --after."
   (interactive)
@@ -39,6 +41,7 @@ With prefix ARG, open the new transient for interactive selection."
                 :after (when after (list after)))))
     (majutsu-new--run-command args)))
 
+;;;###autoload
 (defun majutsu-new-with-before ()
   "Create a new changeset with the commit at point as --before."
   (interactive)

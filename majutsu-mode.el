@@ -118,4 +118,8 @@ when the user has strict .dir-locals.el settings."
 
 ;;; _
 (provide 'majutsu-mode)
+
+(with-eval-after-load 'evil
+  (require 'majutsu-evil nil t))
+
 ;;; majutsu-mode.el ends here

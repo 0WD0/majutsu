@@ -1109,6 +1109,7 @@ Assumes `current-buffer' is a `majutsu-log-mode' buffer."
                (erase-buffer)
                (insert "Error: " err)))))))))
 
+;;;###autoload
 (defun majutsu-log-refresh (&optional target-change target-commit _ignore-auto _noconfirm)
   "Refresh a majutsu log buffer for the current repository.
 When called outside a log buffer, try to refresh an existing log
@@ -1127,6 +1128,7 @@ mutating the wrong buffer."
      (t
       (majutsu--debug "Skipping log refresh: no log buffer for %s" (or root "unknown repo"))))))
 
+;;;###autoload
 (defun majutsu-log ()
   "Open the majutsu log buffer."
   (interactive)
@@ -1285,6 +1287,7 @@ mutating the wrong buffer."
                 input)
                (t (user-error "Limit must be a positive integer"))))))
 
+;;;###autoload
 (transient-define-prefix majutsu-log-transient ()
   "Transient interface for adjusting jj log options."
   :man-page "jj-log"

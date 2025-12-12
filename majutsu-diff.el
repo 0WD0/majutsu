@@ -610,6 +610,7 @@ works with the simplified jj diff we render here."
 
 ;;; Diff Edit
 
+;;;###autoload
 (defun majutsu-diffedit-emacs ()
   "Emacs-based diffedit using built-in ediff."
   (interactive)
@@ -661,6 +662,7 @@ works with the simplified jj diff we render here."
 (defvar-local majutsu-smerge-repo-root nil
   "Repository root for smerge session.")
 
+;;;###autoload
 (defun majutsu-diffedit-smerge ()
   "Emacs-based diffedit using smerge-mode (merge conflict style)."
   (interactive)

@@ -28,6 +28,7 @@
 
 ;;; Aliases
 
+;;;###autoload
 (defalias 'majutsu 'majutsu-log
   "Begin using Majutsu.
 

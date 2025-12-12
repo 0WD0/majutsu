@@ -90,6 +90,8 @@
         (message "%s" success-msg))
       t))))
 
+
+;;;###autoload (autoload 'majutsu-git-fetch "majutsu-git" nil t)
 (defun majutsu-git-fetch (args)
   "Fetch from git remote with ARGS from transient."
   (interactive (list (transient-args 'majutsu-git-fetch-transient)))
@@ -285,6 +287,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 ;;; Git Transients
 
+;;;###autoload
 (transient-define-prefix majutsu-git-transient ()
   "Top-level transient for jj git operations."
   :man-page "jj-git"
@@ -325,6 +328,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
    [("p" "Push" majutsu-git-push)
     ("q" "Quit" transient-quit-one)]])
 
+;;;###autoload (autoload 'majutsu-git-fetch-transient "majutsu-git" nil t)
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
   :man-page "jj-git-fetch"
