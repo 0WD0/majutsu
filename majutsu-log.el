@@ -44,8 +44,11 @@
 (defun majutsu--entry-revset (section)
   "Return the revset string to use for SECTION, preferring change-id."
   (when (majutsu-section-revision-p section)
-    (or (majutsu--section-change-id section)
-        (majutsu--section-commit-id section))))
+    (let ((change (majutsu--section-change-id section))
+          (commit (majutsu--section-commit-id section)))
+      (if (and change (string-suffix-p "?" change))
+          (or commit change)
+        (or change commit)))))
 
 (defun majutsu--entry-display (section)
   "Return a human-readable identifier for SECTION."
