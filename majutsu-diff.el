@@ -883,7 +883,7 @@ With prefix STYLE, cycle between `all' and `t'."
 If called interactively, defaults to diffing the commit at point (if in
 log view) or the working copy (if elsewhere)."
   (interactive
-   (list (if-let* ((rev (majutsu-log--revset-at-point)))
+   (list (if-let* ((rev (magit-section-value-if 'jj-commit)))
              (list "-r" rev)
            nil)))
   (let* ((repo-root (majutsu--root))
@@ -925,7 +925,7 @@ log view) or the working copy (if elsewhere)."
                (not (member "-r" final-args))
                (not (member "--from" final-args)))
       ;; DWIM logic: if in log view, diff commit at point. Else working copy.
-      (if-let* ((rev (majutsu-log--revset-at-point)))
+      (if-let* ((rev (magit-section-value-if 'jj-commit)))
           (setq final-args (append final-args (list "-r" rev)))
         (setq final-args (append final-args (list "-r" "@")))))
 

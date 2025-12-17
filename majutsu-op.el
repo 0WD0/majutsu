@@ -24,7 +24,7 @@
   (if (and majutsu-confirm-critical-actions
            (not (yes-or-no-p "Undo the most recent change? ")))
       (message "Undo canceled")
-    (let ((revset (majutsu-log--revset-at-point)))
+    (let ((revset (magit-section-value-if 'jj-commit)))
       (majutsu-run-jj "undo")
       (majutsu-log-refresh)
       (when revset
@@ -39,7 +39,7 @@
   (if (and majutsu-confirm-critical-actions
            (not (yes-or-no-p "Redo the previously undone change? ")))
       (message "Redo canceled")
-    (let ((revset (majutsu-log--revset-at-point)))
+    (let ((revset (magit-section-value-if 'jj-commit)))
       (majutsu-run-jj "redo")
       (majutsu-log-refresh)
       (when revset

@@ -63,8 +63,8 @@
       (majutsu--squash-run from-revsets into keep ignore-immutable))
      (from-revsets
       (majutsu--squash-run from-revsets nil keep ignore-immutable))
-     ((majutsu-log--revset-at-point)
-      (majutsu--squash-run (list (majutsu-log--revset-at-point)) nil keep ignore-immutable))
+     ((magit-section-value-if 'jj-commit)
+      (majutsu--squash-run (list (magit-section-value-if 'jj-commit)) nil keep ignore-immutable))
      (t
       (majutsu--message-with-log "No commit selected for squash")))))
 

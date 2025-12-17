@@ -26,7 +26,7 @@ With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
       (majutsu-new-transient)
-    (let* ((parent (majutsu-log--revset-at-point))
+    (let* ((parent (magit-section-value-if 'jj-commit))
            (parents (when parent (list parent)))
            (args (majutsu-new--build-args
                   :parents parents)))
@@ -36,7 +36,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-after ()
   "Create a new changeset with the commit at point as --after."
   (interactive)
-  (let* ((after (majutsu-log--revset-at-point))
+  (let* ((after (magit-section-value-if 'jj-commit))
          (args (majutsu-new--build-args
                 :after (when after (list after)))))
     (majutsu-new--run-command args)))
@@ -45,7 +45,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-before ()
   "Create a new changeset with the commit at point as --before."
   (interactive)
-  (let* ((before (majutsu-log--revset-at-point))
+  (let* ((before (magit-section-value-if 'jj-commit))
          (args (majutsu-new--build-args
                 :before (when before (list before)))))
     (majutsu-new--run-command args)))

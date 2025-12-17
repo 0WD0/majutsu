@@ -38,7 +38,7 @@
 (defun majutsu-edit-changeset ()
   "Edit commit at point."
   (interactive)
-  (when-let* ((revset (majutsu-log--revset-at-point)))
+  (when-let* ((revset (magit-section-value-if 'jj-commit)))
     (let ((result (majutsu-run-jj "edit" revset)))
       (if (majutsu--handle-command-result (list "edit" revset) result
                                           (format "Now editing commit %s" revset)
@@ -48,7 +48,7 @@
 (defun majutsu-edit-changeset-at-point ()
   "Edit the commit at point using jj edit."
   (interactive)
-  (when-let* ((revset (majutsu-log--revset-at-point)))
+  (when-let* ((revset (magit-section-value-if 'jj-commit)))
     (let ((result (majutsu-run-jj "edit" revset)))
       (if (majutsu--handle-command-result (list "edit" revset) result
                                           (format "Now editing revset %s" revset)

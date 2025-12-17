@@ -203,7 +203,7 @@ TYPE is either `single' or `multi'."
 
 (defun majutsu-read-revset (prompt &optional default)
   "Prompt user with PROMPT to read a revision set string."
-  (let ((default (or default (majutsu-log--revset-at-point) "@")))
+  (let ((default (or default (magit-section-value-if 'jj-commit) "@")))
     (read-string
      (if default
          (format "%s (default %s): " prompt default)
@@ -1020,15 +1020,6 @@ only know the commit without reimplementing our own DFS."
           (commit (majutsu--section-commit-id section)))
       (when (or change commit)
         (list :change change :commit commit :section section)))))
-
-(defun majutsu-log--revset-at-point ()
-  "Return the preferred revset (change id if possible) at point."
-  (when-let* ((ids (majutsu-log--ids-at-point)))
-    (let ((change (plist-get ids :change))
-          (commit (plist-get ids :commit)))
-      (if (and change (string-suffix-p "?" change))
-          (or commit change)
-        (or change commit)))))
 
 (defun majutsu-log--change-id-at-point ()
   "Return change id for the log entry at point, or nil otherwise."

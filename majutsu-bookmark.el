@@ -26,7 +26,7 @@
 
 (defun majutsu-bookmarks-at-point (&optional bookmark-type)
   "Return a list of bookmark names at point."
-  (let* ((rev (or (majutsu-log--revset-at-point) "@"))
+  (let* ((rev (or (magit-section-value-if 'jj-commit) "@"))
          (args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
                          "-T" ,(pcase bookmark-type
                                  ('remote "remote_bookmarks")
@@ -66,7 +66,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
 (defun majutsu-bookmark-create ()
   "Create a new bookmark."
   (interactive)
-  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
+  (let* ((revset (or (magit-section-value-if 'jj-commit) "@"))
          (name (read-string "Bookmark name: ")))
     (unless (string-empty-p name)
       (majutsu-run-jj "bookmark" "create" name "-r" revset)
@@ -188,7 +188,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
    (let* ((existing (majutsu--get-bookmark-names))
           (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))
           (name (completing-read "Set bookmark: " table nil nil))
-          (at (or (majutsu-log--revset-at-point) "@"))
+          (at (or (magit-section-value-if 'jj-commit) "@"))
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list name rev)))
   (majutsu-run-jj "bookmark" "set" name "-r" commit)

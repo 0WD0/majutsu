@@ -103,7 +103,7 @@ With prefix ARG, open the duplicate transient."
   (interactive "P")
   (if arg
       (majutsu-duplicate-transient)
-    (let* ((rev (majutsu-log--revset-at-point))
+    (let* ((rev (magit-section-value-if 'jj-commit))
            (args (majutsu-duplicate--build-args
                   :sources (list (or rev "@")))))
       (majutsu-duplicate--run-command args))))
@@ -127,14 +127,14 @@ With prefix ARG, open the duplicate transient."
   "Return normalized duplicate source revsets."
   (let ((sources (majutsu--selection-normalize-revsets majutsu-duplicate-sources)))
     (if (seq-empty-p sources)
-        (list (or (majutsu-log--revset-at-point) "@"))
+        (list (magit-section-value-if 'jj-commit))
       sources)))
 
 (defun majutsu-duplicate--sources-display ()
   "Return human-readable description of duplicate sources."
   (if majutsu-duplicate-sources
       (string-join (mapcar #'majutsu--entry-display majutsu-duplicate-sources) ", ")
-    (or (majutsu-log--revset-at-point) "@")))
+    (magit-section-value-if 'jj-commit)))
 
 (defun majutsu-duplicate--summary ()
   "Return a vector of descriptive fragments for duplicate state."

@@ -31,7 +31,7 @@
   "Update the description for the commit at point.
 With prefix ARG, add --ignore-immutable."
   (interactive "P")
-  (let* ((revset (or (majutsu-log--revset-at-point) "@"))
+  (let* ((revset (or (magit-section-value-if 'jj-commit) "@"))
          (args (append (list "describe" "-r" revset)
                        (when arg '("--ignore-immutable")))))
     (majutsu--with-editor-run args
