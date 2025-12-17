@@ -24,13 +24,6 @@
 
 ;;; Log entry helpers
 
-(defun majutsu-section-revision-p (section)
-  "Return non-nil when SECTION is a `majutsu-revision-section'."
-  (let ((section (if (magit-section-p section)
-                     section
-                   (magit-current-section))))
-    (magit-section-match 'majutsu-revision-section section)))
-
 (defun majutsu--entry-change-id (section)
   "Extract change id from SECTION."
   (when (magit-section-match 'majutsu-revision-section section)
@@ -38,12 +31,12 @@
 
 (defun majutsu--entry-commit-id (section)
   "Extract commit id from SECTION."
-  (when (majutsu-section-revision-p section)
+  (when (magit-section-match 'majutsu-revision-section section)
     (majutsu--section-commit-id section)))
 
 (defun majutsu--entry-revset (section)
   "Return the revset string to use for SECTION, preferring change-id."
-  (when (majutsu-section-revision-p section)
+  (when (magit-section-match 'majutsu-revision-section section)
     (let ((change (majutsu--section-change-id section))
           (commit (majutsu--section-commit-id section)))
       (if (and change (string-suffix-p "?" change))
@@ -58,13 +51,13 @@
 
 (defun majutsu--entry-overlay (section)
   "Return overlay stored on SECTION, if any."
-  (when (and (majutsu-section-revision-p section)
+  (when (and (magit-section-match 'majutsu-revision-section section)
              (slot-exists-p section 'overlay))
     (oref section overlay)))
 
 (defun majutsu--entry-set-overlay (section overlay)
   "Associate OVERLAY with SECTION."
-  (when (majutsu-section-revision-p section)
+  (when (magit-section-match 'majutsu-revision-section section)
     (setf (oref section overlay) overlay)))
 
 (defun majutsu--entry-delete-overlay (section)
@@ -201,7 +194,7 @@ TYPE is either `single' or `multi'."
                         (cond
                          ((stringp item)
                           (substring-no-properties item))
-                         ((majutsu-section-revision-p item)
+                         ((magit-section-match 'majutsu-revision-section section)
                           (majutsu--entry-revset item))
                          (t nil)))
                       items)))
@@ -237,12 +230,7 @@ TYPE is either `single' or `multi'."
 
 (cl-defmethod magit-section-ident-value ((section majutsu-revision-section))
   "Identify log entry sections by their change id."
-  (or (majutsu--section-change-id section)
-      (majutsu--section-commit-id section)
-      (let ((entry (oref section value)))
-        (when (listp entry)
-          (or (plist-get entry :change-id)
-              (plist-get entry :commit-id))))))
+  (oref section value))
 
 ;;; Log State
 
@@ -820,8 +808,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
       (dolist (entry entries)
         (magit-insert-section
             (majutsu-revision-section entry t
-                                      :commit-id  (plist-get entry :commit-id)
-                                      :change-id  (plist-get entry :change-id)
+                                      :value  (plist-get entry :id)
                                       :description (plist-get entry :short-desc))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
                  (heading (plist-get line-info :line))
