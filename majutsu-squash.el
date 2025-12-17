@@ -35,7 +35,7 @@
 (defun majutsu-squash-set-into ()
   "Set the commit at point as squash `into' destination."
   (interactive)
-  (majutsu-selection-toggle 'into))
+  (majutsu-selection-select 'into))
 
 ;;;###autoload
 (defun majutsu-squash-execute (&optional args)

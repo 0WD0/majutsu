@@ -759,12 +759,12 @@ works with the simplified jj diff we render here."
 (defun majutsu-diff-set-from ()
   "Set the commit at point as diff --from."
   (interactive)
-  (majutsu-selection-toggle 'from))
+  (majutsu-selection-select 'from))
 
 (defun majutsu-diff-set-to ()
   "Set the commit at point as diff --to."
   (interactive)
-  (majutsu-selection-toggle 'to))
+  (majutsu-selection-select 'to))
 
 (defun majutsu-diff-context-set (n)
   "Set context lines (`jj diff --context N') and refresh."
