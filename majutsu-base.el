@@ -90,19 +90,14 @@ Add new entries here to extend display behavior for additional buffers."
             :documentation "Selection overlay used by transient UIs.")))
 
 (defclass majutsu-diff-section (magit-section)
-  ;; ((keymap :initform 'majutsu-diff-section-map))
   ((keymap :initform :keymap))
   :abstract t)
 
 (defclass majutsu-file-section (majutsu-diff-section)
-  ;;TODO ((keymap :initform 'majutsu-file-section-map))
-  ((file :initarg :file)))
+ ((keymap :initform :keymap)))
 
 (defclass majutsu-hunk-section (majutsu-diff-section)
-  (
-   ;;TODO ((keymap :initform 'majutsu-hunk-section-map))
-   ;;TODO file should get from parent file section.
-   (file :initarg :file)
+  ((keymap :initform :keymap)
    (start :initarg :hunk-start)
    (header :initarg :header)
    (painted :initform nil)
@@ -110,14 +105,10 @@ Add new entries here to extend display behavior for additional buffers."
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
    (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
 
-;;TODO should be unified with file section.
-(defclass majutsu-diffstat-file-section (magit-section)
-  ((file :initarg :file)))
-
 (setf (alist-get 'jj-commit magit--section-type-alist) 'majutsu-commit-section)
 (setf (alist-get 'jj-file   magit--section-type-alist) 'majutsu-file-section)
 (setf (alist-get 'jj-hunk   magit--section-type-alist) 'majutsu-hunk-section)
-(setf (alist-get 'jj-diffstat-file   magit--section-type-alist) 'majutsu-diffstat-file-section)
+(setf (alist-get 'jj-diffstat-file   magit--section-type-alist) 'majutsu-file-section)
 
 ;;; Utilities
 

@@ -853,21 +853,21 @@ Left fields follow graph width per-line; right fields are rendered for margin."
       (majutsu-log--set-right-margin (plist-get widths :right-total))
       (dolist (entry entries)
         (let ((id (majutsu-selection--normalize-value (plist-get entry :id))))
-        (magit-insert-section
-            (jj-commit id t)
-          (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
-                 (heading (plist-get line-info :line))
-                 (margin (plist-get line-info :margin))
-                 (indent (plist-get line-info :desc-indent)))
-            (magit-insert-heading
-              (insert heading))
-            (when margin
-              (majutsu-log--make-margin-overlay margin))
-            (when-let* ((long-desc (plist-get entry :long-desc))
-                        (indented (majutsu--indent-string long-desc (or indent 0))))
-              (magit-insert-section-body
-                (insert indented)
-                (insert "\n"))))
+          (magit-insert-section
+              (jj-commit id t)
+            (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
+                   (heading (plist-get line-info :line))
+                   (margin (plist-get line-info :margin))
+                   (indent (plist-get line-info :desc-indent)))
+              (magit-insert-heading
+                (insert heading))
+              (when margin
+                (majutsu-log--make-margin-overlay margin))
+              (when-let* ((long-desc (plist-get entry :long-desc))
+                          (indented (majutsu--indent-string long-desc (or indent 0))))
+                (magit-insert-section-body
+                  (insert indented)
+                  (insert "\n"))))
             (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
               (dolist (suffix-line suffix-lines)
                 (insert suffix-line)

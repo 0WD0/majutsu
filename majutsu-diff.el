@@ -221,11 +221,11 @@ drop it and ensure a single `--stat`."
   (let ((section (magit-current-section)))
     (cond
      ((magit-section-match 'jj-diffstat-file section)
-      (majutsu-diff--goto-file-section (oref section file)))
+      (majutsu-diff--goto-file-section (oref section value)))
      ((magit-section-match 'jj-hunk section)
-      (majutsu-diff--goto-stat-section (oref section file)))
+      (majutsu-diff--goto-stat-section (magit-section-parent-value section)))
      ((magit-section-match 'jj-file section)
-      (majutsu-diff--goto-stat-section (oref section file)))
+      (majutsu-diff--goto-stat-section (oref section value)))
      (t (user-error "Not on a file entry")))))
 
 ;;; Diff Parsing & Display
@@ -372,7 +372,7 @@ Assumes point is at the start of the diff output."
                                               (line-end-position))
               headers)
         (majutsu-diff--delete-line))
-      (magit-insert-section (majutsu-file-section file)
+      (magit-insert-section (jj-file file)
         (magit-insert-heading
           (propertize (majutsu--diff-file-heading file (nreverse headers))
                       'font-lock-face 'magit-diff-file-heading))
@@ -388,7 +388,7 @@ Assumes point is at the start of the diff output."
                                                  (line-end-position))))
     ;; Remove original header and insert a propertized one.
     (majutsu-diff--delete-line)
-    (magit-insert-section (majutsu-hunk-section file nil :header header)
+    (magit-insert-section (jj-hunk file nil :header header)
       (magit-insert-heading
         (propertize header 'font-lock-face 'magit-diff-hunk-heading))
       (let ((body-start (point)))
@@ -428,7 +428,7 @@ Assumes point is at the start of the diff output."
   ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
   ;; Magit's section toggling behavior for large revisions.
   (let ((ordered-lines (nreverse lines)))
-    (magit-insert-section  (majutsu-file-section file)
+    (magit-insert-section  (jj-file file)
       (magit-insert-heading
         (propertize (majutsu--diff-file-heading file ordered-lines)
                     'font-lock-face 'magit-diff-file-heading))
@@ -454,7 +454,7 @@ Assumes point is at the start of the diff output."
 
 (defun majutsu--insert-hunk-section (file header lines)
   "Insert a hunk section."
-  (magit-insert-section (majutsu-hunk-section file nil :header header)
+  (magit-insert-section (jj-hunk file nil :header header)
     (magit-insert-heading
       (propertize header 'font-lock-face 'magit-diff-hunk-heading))
     (let ((body-start (point)))
@@ -564,6 +564,17 @@ works with the simplified jj diff we render here."
 
 ;;; Navigation
 
+(defun majutsu-diff--file-at-point ()
+  "Return the file for the current diff/diffstat section, if any."
+  (when-let* ((section (magit-current-section)))
+    (cond
+     ((magit-section-match 'jj-hunk section)
+      (or (magit-section-parent-value section)
+          (oref section value)))
+     ((or (magit-section-match 'jj-file section)
+          (magit-section-match 'jj-diffstat-file section))
+      (oref section value)))))
+
 (defun majutsu-goto-diff-line ()
   "Jump to the line in the file corresponding to the diff line at point."
   (interactive)
@@ -601,8 +612,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
-  (when-let* ((section (magit-current-section))
-              (file (oref section file))
+  (when-let* ((file (majutsu-diff--file-at-point))
               (repo-root (majutsu--root)))
     (let ((full-file-path (expand-file-name file repo-root)))
       (find-file full-file-path))))
@@ -613,13 +623,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-diffedit-emacs ()
   "Emacs-based diffedit using built-in ediff."
   (interactive)
-  (let* ((section (magit-current-section))
-         (file (cond
-                ((and section (eq (oref section type) 'majutsu-file-section))
-                 (oref section file))
-                ((and section (eq (oref section type) 'majutsu-hunk-section))
-                 (oref section file))
-                (t nil))))
+  (let* ((file (majutsu-diff--file-at-point)))
     (if file
         (majutsu-diffedit-with-ediff file)
       (majutsu-diffedit-all))))
@@ -665,13 +669,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-diffedit-smerge ()
   "Emacs-based diffedit using smerge-mode (merge conflict style)."
   (interactive)
-  (let* ((section (magit-current-section))
-         (file (cond
-                ((and section (eq (oref section type) 'majutsu-file-section))
-                 (oref section file))
-                ((and section (eq (oref section type) 'majutsu-hunk-section))
-                 (oref section file))
-                (t nil))))
+  (let* ((file (majutsu-diff--file-at-point)))
     (if file
         (majutsu-diffedit-with-smerge file)
       (majutsu-diffedit-all))))
