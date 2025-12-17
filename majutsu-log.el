@@ -355,7 +355,8 @@ remaining invisible in the rendered buffer.")
   "Columns that must always be present in the compiled template for parsing.")
 
 (defcustom majutsu-log-commit-columns
-  '((:field change-id :align left)
+  '((:field id :align left :visible nil)
+    (:field change-id :align left)
     (:field bookmarks :align left)
     (:field tags :align left)
     (:field working-copies :align left)
@@ -396,6 +397,12 @@ Also registers a variable watcher to invalidate the template cache."
          :group 'majutsu)
        (when (fboundp 'add-variable-watcher)
          (add-variable-watcher ',var-name #'majutsu-log--invalidate-template-cache)))))
+
+(majutsu-log-define-column id
+  [:if [:or [:hidden] [:divergent]]
+      [:commit_id :shortest 8]
+    [:change_id :shortest 8]]
+  "Template for the commit-id column.")
 
 (majutsu-log-define-column change-id
   [:if [:hidden]
@@ -590,6 +597,8 @@ Returns a plist with :template, :columns, and :field-order."
     (setf (alist-get field columns nil nil #'eq) value)
     (setq entry (plist-put entry :columns columns)))
   (pcase field
+    ('id
+     (setq entry (plist-put entry :id value)))
     ('change-id
      (setq entry (plist-put entry :change-id value)))
     ('commit-id
@@ -688,7 +697,7 @@ instead of stopping on visual padding."
 (defun majutsu-log--field-face (field)
   "Return face symbol for FIELD, or nil."
   (pcase field
-    ((or 'change-id 'commit-id) 'magit-hash)
+    ((or 'id 'change-id 'commit-id) 'magit-hash)
     ('bookmarks 'magit-branch-local)
     ('tags 'magit-tag)
     ('working-copies 'magit-branch-remote)
