@@ -26,17 +26,17 @@
 
 (defun majutsu--entry-change-id (section)
   "Extract change id from SECTION."
-  (when (magit-section-match 'majutsu-revision-section section)
+  (when (magit-section-match 'majutsu-commit-section section)
     (majutsu--section-change-id section)))
 
 (defun majutsu--entry-commit-id (section)
   "Extract commit id from SECTION."
-  (when (magit-section-match 'majutsu-revision-section section)
+  (when (magit-section-match 'majutsu-commit-section section)
     (majutsu--section-commit-id section)))
 
 (defun majutsu--entry-revset (section)
   "Return the revset string to use for SECTION, preferring change-id."
-  (when (magit-section-match 'majutsu-revision-section section)
+  (when (magit-section-match 'majutsu-commit-section section)
     (let ((change (majutsu--section-change-id section))
           (commit (majutsu--section-commit-id section)))
       (if (and change (string-suffix-p "?" change))
@@ -51,13 +51,13 @@
 
 (defun majutsu--entry-overlay (section)
   "Return overlay stored on SECTION, if any."
-  (when (and (magit-section-match 'majutsu-revision-section section)
+  (when (and (magit-section-match 'majutsu-commit-section section)
              (slot-exists-p section 'overlay))
     (oref section overlay)))
 
 (defun majutsu--entry-set-overlay (section overlay)
   "Associate OVERLAY with SECTION."
-  (when (magit-section-match 'majutsu-revision-section section)
+  (when (magit-section-match 'majutsu-commit-section section)
     (setf (oref section overlay) overlay)))
 
 (defun majutsu--entry-delete-overlay (section)
@@ -158,7 +158,7 @@ TYPE is either `single' or `multi'."
                  (message "Cleared %s" kind))
              (let ((entry (or section
                               (majutsu-find-revision-section change commit)
-                              (majutsu-revision-section :change-id change :commit-id commit))))
+                              (majutsu-commit-section :change-id change :commit-id commit))))
                (majutsu--entry-clear-overlays entries)
                (majutsu--entry-apply-overlay entry face label)
                (set collection-var (list entry))
@@ -170,7 +170,7 @@ TYPE is either `single' or `multi'."
                  (message "Removed %s: %s" kind (majutsu--entry-display existing)))
              (let ((entry (or section
                               (majutsu-find-revision-section change commit)
-                              (majutsu-revision-section :change-id change :commit-id commit))))
+                              (majutsu-commit-section :change-id change :commit-id commit))))
                (majutsu--entry-apply-overlay entry face label)
                (set collection-var (append entries (list entry)))
                (message "Added %s: %s" kind (majutsu--entry-display entry))))))))))
@@ -194,7 +194,7 @@ TYPE is either `single' or `multi'."
                         (cond
                          ((stringp item)
                           (substring-no-properties item))
-                         ((magit-section-match 'majutsu-revision-section section)
+                         ((magit-section-match 'majutsu-commit-section section)
                           (majutsu--entry-revset item))
                          (t nil)))
                       items)))
@@ -212,7 +212,7 @@ TYPE is either `single' or `multi'."
 
 (defun majutsu--section-change-id (section)
   "Return the change id recorded in SECTION, if available."
-  (when (and section (object-of-class-p section 'majutsu-revision-section))
+  (when (and section (object-of-class-p section 'majutsu-commit-section))
     (or (when (and (slot-exists-p section 'change-id)
                    (slot-boundp section 'change-id))
           (majutsu--normalize-id-value (oref section change-id)))
@@ -228,7 +228,7 @@ TYPE is either `single' or `multi'."
                (slot-boundp section 'commit-id))
       (majutsu--normalize-id-value (oref section commit-id)))))
 
-(cl-defmethod magit-section-ident-value ((section majutsu-revision-section))
+(cl-defmethod magit-section-ident-value ((section majutsu-commit-section))
   "Identify log entry sections by their change id."
   (oref section value))
 
@@ -807,7 +807,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
       (majutsu-log--set-right-margin (plist-get widths :right-total))
       (dolist (entry entries)
         (magit-insert-section
-            (majutsu-revision-section entry t
+            (majutsu-commit-section entry t
                                       :value  (plist-get entry :id)
                                       :description (plist-get entry :short-desc))
           (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
@@ -972,7 +972,7 @@ Return non-nil when the section could be located."
                 (< (point) (point-max)))
       (magit-section-forward)
       (when-let* ((section (magit-current-section)))
-        (when (and (eq (oref section type) 'majutsu-revision-section)
+        (when (and (eq (oref section type) 'majutsu-commit-section)
                    (> (point) pos))
           (setq found t))))
     (unless found
@@ -989,7 +989,7 @@ Return non-nil when the section could be located."
                 (> (point) (point-min)))
       (magit-section-backward)
       (when-let* ((section (magit-current-section)))
-        (when (and (eq (oref section type) 'majutsu-revision-section)
+        (when (and (eq (oref section type) 'majutsu-commit-section)
                    (< (point) pos))
           (setq found t))))
     (unless found
@@ -1000,7 +1000,7 @@ Return non-nil when the section could be located."
   "Return the log entry section matching CHANGE-ID or COMMIT-ID, or nil.
 
 Fast-path uses `magit-get-section' with the change id because
-`majutsu-revision-section' identity is defined in
+`majutsu-commit-section' identity is defined in
 `magit-section-ident-value' to prefer change id.  If that fails
 and a commit id was supplied, fall back to a `magit-map-sections'
 scan that matches commit ids; this keeps support for callers that
@@ -1009,7 +1009,7 @@ only know the commit without reimplementing our own DFS."
          (commit-id (and commit-id (majutsu--normalize-id-value commit-id))))
     (and change-id
          (magit-get-section
-          (append `((majutsu-revision-section . ,change-id))
+          (append `((majutsu-commit-section . ,change-id))
                   '((lograph)) '((logbuf)))))))
 
 (defun majutsu-log--commit-only-at-point ()

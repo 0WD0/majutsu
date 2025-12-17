@@ -85,7 +85,7 @@ Add new entries here to extend display behavior for additional buffers."
 
 ;;; Section Classes
 
-(defclass majutsu-revision-section (magit-section)
+(defclass majutsu-commit-section (magit-section)
   ((commit-id :initarg :commit-id)
    (change-id :initarg :change-id)
    (description :initarg :description)
