@@ -55,9 +55,9 @@
   (let* ((keep (member "--keep" args))
          (ignore-immutable (member "--ignore-immutable" args))
          (from-entries majutsu-squash-from)
-         (into-entry (majutsu-squash--into-entry))
          (from-revsets (majutsu--selection-normalize-revsets from-entries))
-         (into (when into-entry (majutsu--entry-revset into-entry))))
+         (into-entry (majutsu-squash--into-entry))
+         (into (when into-entry (magit-section-value-if 'jj-commit into-entry))))
     (cond
      ((and from-revsets into)
       (majutsu--squash-run from-revsets into keep ignore-immutable))

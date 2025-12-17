@@ -910,9 +910,9 @@ log view) or the working copy (if elsewhere)."
   "Execute diff using transient selections or ARGS."
   (interactive (list (transient-args 'majutsu-diff-transient--internal)))
   (let* ((from-entry (car majutsu-diff-from))
+         (from (when from-entry (magit-section-value-if 'jj-commit from-entry)))
          (to-entry (car majutsu-diff-to))
-         (from (when from-entry (majutsu--entry-revset from-entry)))
-         (to (when to-entry (majutsu--entry-revset to-entry)))
+         (to (when to-entry (magit-section-value-if 'jj-commit to-entry)))
          (final-args (copy-sequence args)))
     ;; If we have selections, they override or supplement standard args
     (when from

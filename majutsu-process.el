@@ -329,10 +329,7 @@ SUCCESS-CALLBACK, when non-nil, is invoked after a successful command."
             (kill-buffer buffer))
           (if (and (eq status 'exit) (zerop exit-code))
               (when (majutsu--handle-command-result args output success-msg nil)
-                ;; We need to handle log refresh here, but majutsu-log-refresh is in majutsu-log.el
-                ;; We can use a hook or check if fboundp
-                (when (fboundp 'majutsu-log-refresh)
-                  (funcall 'majutsu-log-refresh))
+                (majutsu-log-refresh)
                 (when success-callback
                   (funcall success-callback)))
             (majutsu--handle-command-result args output nil

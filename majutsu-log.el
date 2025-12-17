@@ -34,15 +34,6 @@
   (when (magit-section-match 'jj-commit section)
     (majutsu--section-commit-id section)))
 
-(defun majutsu--entry-revset (section)
-  "Return the revset string to use for SECTION, preferring change-id."
-  (when (magit-section-match 'jj-commit section)
-    (let ((change (majutsu--section-change-id section))
-          (commit (majutsu--section-commit-id section)))
-      (if (and change (string-suffix-p "?" change))
-          (or commit change)
-        (or change commit)))))
-
 (defun majutsu--entry-display (section)
   "Return a human-readable identifier for SECTION."
   (or (majutsu--entry-change-id section)
@@ -87,7 +78,7 @@
 (defun majutsu--entry-apply-overlay (section face label)
   "Attach a fresh overlay to SECTION with FACE and LABEL."
   (majutsu--entry-delete-overlay section)
-  (when-let* ((ref (majutsu--entry-revset section))
+  (when-let* ((ref (magit-section-value-if 'jj-commit section))
               (overlay (majutsu--entry-make-overlay section face label ref)))
     (majutsu--entry-set-overlay section overlay)
     overlay))
@@ -195,7 +186,7 @@ TYPE is either `single' or `multi'."
                          ((stringp item)
                           (substring-no-properties item))
                          ((magit-section-match 'jj-commit section)
-                          (majutsu--entry-revset item))
+                          (magit-section-value-if 'jj-commit item))
                          (t nil)))
                       items)))
 
@@ -911,23 +902,18 @@ Left fields follow graph width per-line; right fields are rendered for margin."
 
 ;;; Log Navigation
 
-(defconst majutsu--show-change-id-template
-  (tpl-compile [:change_id :shortest 8]))
+(defconst majutsu--show-id-template
+  (tpl-compile [:if [:or [:hidden] [:divergent]]
+                   [:commit_id :shortest 8]
+                 [:change_id :shortest 8]]))
 
-(defconst majutsu--show-commit-id-template
-  (tpl-compile [:commit_id :shortest 8]))
-
-(defun majutsu-current-change-id ()
-  (majutsu-run-jj "log" "--no-graph" "-r" "@" "-T" majutsu--show-change-id-template))
-
-(defun majutsu-current-commit-id ()
-  (majutsu-run-jj "log" "--no-graph" "-r" "@" "-T" majutsu--show-commit-id-template))
+(defun majutsu-current-id ()
+  (majutsu-run-jj "log" "--no-graph" "-r" "@" "-T" majutsu--show-id-template))
 
 (defun majutsu-log-goto-@ ()
   "Jump to the current changeset (@)."
   (interactive)
-  (majutsu--goto-log-entry (majutsu-current-change-id)
-                           (majutsu-current-commit-id)))
+  (majutsu--goto-log-entry (majutsu-current-id)))
 
 (defun majutsu-goto-commit (commit-id)
   "Jump to a specific COMMIT-ID in the log."
@@ -949,11 +935,10 @@ Left fields follow graph width per-line; right fields are rendered for margin."
       (goto-char start-pos)
       (message "Change %s not found" change-id))))
 
-(defun majutsu--goto-log-entry (change-id &optional commit-id)
-  "Move point to the log entry section matching CHANGE-ID.
-When CHANGE-ID is nil, fall back to COMMIT-ID.
+(defun majutsu--goto-log-entry (commit)
+  "Move point to the log entry section matching COMMIT.
 Return non-nil when the section could be located."
-  (when-let* ((section (majutsu-find-revision-section change-id commit-id)))
+  (when-let* ((section (majutsu-find-revision-section commit)))
     (magit-section-goto section)
     (goto-char (oref section start))
     t))
@@ -992,21 +977,11 @@ Return non-nil when the section could be located."
       (goto-char pos)
       (message "No more changesets"))))
 
-(defun majutsu-find-revision-section (change-id commit-id)
-  "Return the log entry section matching CHANGE-ID or COMMIT-ID, or nil.
-
-Fast-path uses `magit-get-section' with the change id because
-`majutsu-commit-section' identity is defined in
-`magit-section-ident-value' to prefer change id.  If that fails
-and a commit id was supplied, fall back to a `magit-map-sections'
-scan that matches commit ids; this keeps support for callers that
-only know the commit without reimplementing our own DFS."
-  (let* ((change-id (and change-id (majutsu--normalize-id-value change-id)))
-         (commit-id (and commit-id (majutsu--normalize-id-value commit-id))))
-    (and change-id
-         (magit-get-section
-          (append `((jj-commit . ,change-id))
-                  '((lograph)) '((logbuf)))))))
+(defun majutsu-find-revision-section (id)
+  "A thin wrapper to get the commit section matching ID in lograph section."
+  (magit-get-section
+   (append `((jj-commit . ,change-id))
+           '((lograph)) '((logbuf)))))
 
 (defun majutsu-log--commit-only-at-point ()
   "Return the raw commit id at point, or nil if unavailable."
@@ -1063,14 +1038,13 @@ only know the commit without reimplementing our own DFS."
     (magit-insert-section (logbuf)
       (run-hooks 'majutsu-log-sections-hook))))
 
-(defun majutsu-log--refresh-buffer (target-change target-commit)
+(defun majutsu-log--refresh-buffer (target-commit)
   "Implementation helper to refresh the current log buffer.
 Assumes `current-buffer' is a `majutsu-log-mode' buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
   (let* ((root (majutsu--root))
          (buf (current-buffer))
-         (target-change (or target-change (majutsu-log--change-id-at-point)))
-         (target-commit (or target-commit (majutsu-log--commit-id-at-point))))
+         (target-commit (or target-commit (magit-section-value-if 'jj-commit))))
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-log--cached-entries nil)
@@ -1085,7 +1059,7 @@ Assumes `current-buffer' is a `majutsu-log-mode' buffer."
            (when (derived-mode-p 'majutsu-log-mode)
              (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
              (majutsu-log-render)
-             (unless (when target-change (majutsu--goto-log-entry target-change target-commit))
+             (unless (when target-commit (majutsu--goto-log-entry target-change))
                (majutsu-log-goto-@))))))
      (lambda (err)
        (when (buffer-live-p buf)
@@ -1096,7 +1070,7 @@ Assumes `current-buffer' is a `majutsu-log-mode' buffer."
                (insert "Error: " err)))))))))
 
 ;;;###autoload
-(defun majutsu-log-refresh (&optional target-change target-commit _ignore-auto _noconfirm)
+(defun majutsu-log-refresh (&optional commit)
   "Refresh a majutsu log buffer for the current repository.
 When called outside a log buffer, try to refresh an existing log
 buffer for the same repository.  If none exists and the command
@@ -1108,7 +1082,7 @@ mutating the wrong buffer."
     (cond
      (buffer
       (with-current-buffer buffer
-        (majutsu-log--refresh-buffer target-change target-commit)))
+        (majutsu-log--refresh-buffer commit)))
      ((called-interactively-p 'interactive)
       (user-error "No Majutsu log buffer for this repository; open one with `majutsu-log`"))
      (t

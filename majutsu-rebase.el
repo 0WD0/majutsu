@@ -129,11 +129,11 @@ ARGS are passed from the transient."
 
 (defun majutsu-rebase--destination-revsets ()
   "Return the list of destination revsets."
-  (mapcar #'majutsu--entry-revset majutsu-rebase-destinations))
+  (mapcar (-partial 'magit-section-value-if 'jj-commit) majutsu-rebase-destinations))
 
 (defun majutsu-rebase--source-revsets ()
   "Return the list of source revsets."
-  (mapcar #'majutsu--entry-revset majutsu-rebase-source))
+  (mapcar (-partial 'magit-section-value-if 'jj-commit) majutsu-rebase-source))
 
 (defun majutsu-rebase--destination-display ()
   "Return a comma-separated string for destination display."
