@@ -175,7 +175,7 @@ drop it and ensure a single `--stat`."
                      (dels (match-string 4 plain))
                      (graph (concat adds dels))
                      (colored (majutsu-diff--color-diffstat-graph graph)))
-                (magit-insert-section (majutsu-diffstat-file-section file nil :file file)
+                (magit-insert-section (jj-diffstat-file file)
                   (insert (propertize file 'font-lock-face 'magit-filename))
                   (insert " | " count)
                   (when (and graph (not (string-empty-p graph)))
@@ -201,7 +201,7 @@ drop it and ensure a single `--stat`."
   "Jump to diff body section for FILE."
   (if-let ((sec (majutsu-diff--find-section
                  (lambda (s)
-                   (and (object-of-class-p s 'majutsu-file-section)
+                   (and (magit-section-match 'jj-file s)
                         (equal (oref s file) file)))
                  magit-root-section)))
       (magit-section-goto sec)
@@ -211,7 +211,7 @@ drop it and ensure a single `--stat`."
   "Jump to diffstat entry for FILE."
   (if-let ((sec (majutsu-diff--find-section
                  (lambda (s)
-                   (and (object-of-class-p s 'majutsu-diffstat-file-section)
+                   (and (magit-section-match 'jj-diffstat-file s)
                         (equal (oref s file) file)))
                  magit-root-section)))
       (magit-section-goto sec)
@@ -220,14 +220,14 @@ drop it and ensure a single `--stat`."
 (defun majutsu-jump-to-diffstat-or-diff ()
   "Jump between diffstat entry and its patch body."
   (interactive)
-  (let ((sec (magit-current-section)))
+  (let ((section (magit-current-section)))
     (cond
-     ((object-of-class-p sec 'majutsu-diffstat-file-section)
-      (majutsu-diff--goto-file-section (oref sec file)))
-     ((object-of-class-p sec 'majutsu-hunk-section)
-      (majutsu-diff--goto-stat-section (oref sec file)))
-     ((object-of-class-p sec 'majutsu-file-section)
-      (majutsu-diff--goto-stat-section (oref sec file)))
+     ((magit-section-match 'jj-diffstat-file section)
+      (majutsu-diff--goto-file-section (oref section file)))
+     ((magit-section-match 'jj-hunk section)
+      (majutsu-diff--goto-stat-section (oref section file)))
+     ((magit-section-match 'jj-file section)
+      (majutsu-diff--goto-stat-section (oref section file)))
      (t (user-error "Not on a file entry")))))
 
 ;;; Diff Parsing & Display
@@ -570,8 +570,8 @@ works with the simplified jj diff we render here."
   "Jump to the line in the file corresponding to the diff line at point."
   (interactive)
   (when-let* ((section (magit-current-section))
-              (_ (eq (oref section type) 'majutsu-hunk-section))
-              (file (oref section file))
+              (_ (magit-section-match 'jj-hunk section))
+              (file (magit-section-parent-value section))
               (header (oref section header))
               (repo-root (majutsu--root)))
     ;; Parse the hunk header to get line numbers

@@ -21,25 +21,18 @@
 (defun majutsu-enter-dwim ()
   "Context-sensitive Enter key behavior."
   (interactive)
-  (let ((section (magit-current-section)))
-    (cond
-     ;; On a changeset/commit - edit it with jj edit
-     ((and section
-           (eq (oref section type) 'majutsu-commit-section)
-           (slot-boundp section 'commit-id))
-      (majutsu-edit-changeset-at-point))
+  (cond
+   ;; On a changeset/commit - edit it with jj edit
+   ((magit-section-value-if 'jj-commit)
+    (majutsu-edit-changeset-at-point))
 
-     ;; On a diff hunk line - jump to that line in the file
-     ((and section
-           (eq (oref section type) 'majutsu-hunk-section)
-           (slot-boundp section 'file))
-      (majutsu-goto-diff-line))
+   ;; On a diff hunk line - jump to that line in the file
+   ((magit-section-value-if 'jj-hunk)
+    (majutsu-goto-diff-line))
 
-     ;; On a file section - visit the file
-     ((and section
-           (eq (oref section type) 'majutsu-file-section)
-           (slot-boundp section 'file))
-      (majutsu-visit-file)))))
+   ;; On a file section - visit the file
+   ((magit-section-value-if 'jj-file)
+    (majutsu-visit-file))))
 
 ;;;###autoload
 (defun majutsu-edit-changeset ()
