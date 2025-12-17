@@ -904,7 +904,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
         (magit-insert-heading "Unresolved Conflicts")
         (dolist (line (split-string output "\n" t))
           (let ((file (string-trim line)))
-            (magit-insert-section (majutsu-file-section file nil :file file)
+            (magit-insert-section (majutsu-file-section file)
               (magit-insert-heading (propertize file 'face 'error))
               (insert "\n"))))
         (insert "\n")))))

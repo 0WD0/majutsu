@@ -95,13 +95,12 @@ Add new entries here to extend display behavior for additional buffers."
 
 (defclass majutsu-file-section (majutsu-diff-section)
   ;;TODO ((keymap :initform 'majutsu-file-section-map))
-  (file :initarg :file)
   )
 
 (defclass majutsu-hunk-section (majutsu-diff-section)
   (
    ;;TODO ((keymap :initform 'majutsu-hunk-section-map))
-   ;;TODO file should read from parent file section.
+   ;;TODO file should get from parent file section.
    (file :initarg :file)
    (start :initarg :hunk-start)
    (header :initarg :header)

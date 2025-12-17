@@ -374,7 +374,7 @@ Assumes point is at the start of the diff output."
                                               (line-end-position))
               headers)
         (majutsu-diff--delete-line))
-      (magit-insert-section (majutsu-file-section file nil :file file)
+      (magit-insert-section (majutsu-file-section file)
         (magit-insert-heading
           (propertize (majutsu--diff-file-heading file (nreverse headers))
                       'font-lock-face 'magit-diff-file-heading))
@@ -390,7 +390,7 @@ Assumes point is at the start of the diff output."
                                                  (line-end-position))))
     ;; Remove original header and insert a propertized one.
     (majutsu-diff--delete-line)
-    (magit-insert-section (majutsu-hunk-section file nil :file file :header header)
+    (magit-insert-section (majutsu-hunk-section file nil :header header)
       (magit-insert-heading
         (propertize header 'font-lock-face 'magit-diff-hunk-heading))
       (let ((body-start (point)))
@@ -430,7 +430,7 @@ Assumes point is at the start of the diff output."
   ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
   ;; Magit's section toggling behavior for large revisions.
   (let ((ordered-lines (nreverse lines)))
-    (magit-insert-section  (majutsu-file-section file nil :file file)
+    (magit-insert-section  (majutsu-file-section file)
       (magit-insert-heading
         (propertize (majutsu--diff-file-heading file ordered-lines)
                     'font-lock-face 'magit-diff-file-heading))
@@ -456,7 +456,7 @@ Assumes point is at the start of the diff output."
 
 (defun majutsu--insert-hunk-section (file header lines)
   "Insert a hunk section."
-  (magit-insert-section (majutsu-hunk-section file nil :file file :header header)
+  (magit-insert-section (majutsu-hunk-section file nil :header header)
     (magit-insert-heading
       (propertize header 'font-lock-face 'magit-diff-hunk-heading))
     (let ((body-start (point)))
