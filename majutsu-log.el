@@ -849,8 +849,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
             (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
               (dolist (suffix-line suffix-lines)
                 (insert suffix-line)
-                (insert "\n"))))))
-        ))
+                (insert "\n")))))))
     (insert "\n")))
 
 ;;; Log insert status
@@ -890,7 +889,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
 
 (defun majutsu-log-insert-diff ()
   "Insert jj diff with hunks into current buffer asynchronously."
-  (let* ((section (magit-insert-section (majutsu-diff-section)
+  (let* ((section (magit-insert-section (diffbuf)
                     (magit-insert-heading "Working Copy Changes")
                     (insert "Loading diffs...\n")))
          (buf (current-buffer)))
@@ -1072,7 +1071,7 @@ Assumes `current-buffer' is a `majutsu-log-mode' buffer."
            (when (derived-mode-p 'majutsu-log-mode)
              (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
              (majutsu-log-render)
-             (unless (when target-commit (majutsu--goto-log-entry target-change))
+             (unless (when target-commit (majutsu--goto-log-entry target-commit))
                (majutsu-log-goto-@))))))
      (lambda (err)
        (when (buffer-live-p buf)

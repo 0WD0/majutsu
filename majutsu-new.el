@@ -66,14 +66,9 @@ With prefix ARG, open the new transient for interactive selection."
 
 ;;;###autoload
 (defun majutsu-new-clear-selections ()
-  "Clear all jj new selections and overlays."
+  "Clear all jj new selections."
   (interactive)
-  (majutsu--entry-clear-overlays majutsu-new-parents)
-  (majutsu--entry-clear-overlays majutsu-new-after)
-  (majutsu--entry-clear-overlays majutsu-new-before)
-  (setq majutsu-new-parents nil
-        majutsu-new-after nil
-        majutsu-new-before nil)
+  (majutsu-selection-clear)
   (when (called-interactively-p 'interactive)
     (message "Cleared all jj new selections")))
 
@@ -81,31 +76,19 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-toggle-parent ()
   "Toggle the commit at point as a jj new parent."
   (interactive)
-  (majutsu--selection-toggle-revsets
-   :kind "parent"
-   :label "[PARENT]"
-   :face '(:background "dark orange" :foreground "black")
-   :collection-var 'majutsu-new-parents))
+  (majutsu-selection-toggle 'parent))
 
 ;;;###autoload
 (defun majutsu-new-toggle-after ()
   "Toggle the commit at point as a jj new --after target."
   (interactive)
-  (majutsu--selection-toggle-revsets
-   :kind "--after"
-   :label "[AFTER]"
-   :face '(:background "dark blue" :foreground "white")
-   :collection-var 'majutsu-new-after))
+  (majutsu-selection-toggle 'after))
 
 ;;;###autoload
 (defun majutsu-new-toggle-before ()
   "Toggle the commit at point as a jj new --before target."
   (interactive)
-  (majutsu--selection-toggle-revsets
-   :kind "--before"
-   :label "[BEFORE]"
-   :face '(:background "dark magenta" :foreground "white")
-   :collection-var 'majutsu-new-before))
+  (majutsu-selection-toggle 'before))
 
 (defun majutsu-new--run-command (args)
   "Execute jj new with ARGS and refresh the log on success."
@@ -114,8 +97,7 @@ With prefix ARG, open the new transient for interactive selection."
            args result
            "Created new changeset"
            "Failed to create new changeset")
-      (majutsu-log-refresh (majutsu-current-change-id)
-                           (majutsu-current-commit-id))
+      (majutsu-log-refresh (majutsu-current-id))
       t)))
 
 ;;;###autoload
@@ -126,49 +108,44 @@ With prefix ARG, open the new transient for interactive selection."
          (context-args (majutsu-new--build-revset-args))
          (args (cons "new" (append transient-args context-args))))
     (when (majutsu-new--run-command args)
-      (majutsu-new-clear-selections))))
-
-;;;###autoload
-(defun majutsu-new-cleanup-on-exit ()
-  "Clean up jj new selections when the transient exits."
-  (majutsu-new-clear-selections)
-  (remove-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit t))
+      (majutsu-selection-session-end))))
 
 ;;;###autoload
 (defun majutsu-new-transient ()
   "Open the jj new transient."
   (interactive)
-  (add-hook 'transient-exit-hook 'majutsu-new-cleanup-on-exit nil t)
+  (majutsu-selection-session-begin
+   '((:key parent
+      :label "[PARENT]"
+      :face (:background "dark orange" :foreground "black")
+      :type multi)
+     (:key after
+      :label "[AFTER]"
+      :face (:background "dark blue" :foreground "white")
+      :type multi)
+     (:key before
+      :label "[BEFORE]"
+      :face (:background "dark magenta" :foreground "white")
+      :type multi)))
+  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
   (majutsu-new-transient--internal))
 
 ;;; New Transient
 
-(defvar-local majutsu-new-parents nil
-  "List of selected parent entries for jj new.")
-
-(defvar-local majutsu-new-after nil
-  "List of selected --after entries for jj new.")
-
-(defvar-local majutsu-new-before nil
-  "List of selected --before entries for jj new.")
-
 (defun majutsu-new--selection-summary ()
   "Return a list summarizing the current jj new selections."
   (let (parts)
-    (when majutsu-new-parents
+    (when-let* ((values (majutsu-selection-values 'parent)))
       (push (format "Parents: %s"
-                    (string-join (mapcar #'majutsu--entry-display majutsu-new-parents)
-                                 ", "))
+                    (string-join values ", "))
             parts))
-    (when majutsu-new-after
+    (when-let* ((values (majutsu-selection-values 'after)))
       (push (format "After: %s"
-                    (string-join (mapcar #'majutsu--entry-display majutsu-new-after)
-                                 ", "))
+                    (string-join values ", "))
             parts))
-    (when majutsu-new-before
+    (when-let* ((values (majutsu-selection-values 'before)))
       (push (format "Before: %s"
-                    (string-join (mapcar #'majutsu--entry-display majutsu-new-before)
-                                 ", "))
+                    (string-join values ", "))
             parts))
     (nreverse parts)))
 
@@ -189,16 +166,14 @@ With prefix ARG, open the new transient for interactive selection."
 (cl-defun majutsu-new--build-revset-args (&key parents after before)
   "Build the revset argument list for jj new.
 PARENTS, AFTER, BEFORE default to transient state."
-  (let* ((parents (majutsu--selection-normalize-revsets (or parents majutsu-new-parents)))
-         (after (majutsu--selection-normalize-revsets (or after majutsu-new-after)))
-         (before (majutsu--selection-normalize-revsets (or before majutsu-new-before)))
+  (let* ((parents (or parents (majutsu-selection-values 'parent)))
+         (after (or after (majutsu-selection-values 'after)))
+         (before (or before (majutsu-selection-values 'before)))
          args)
     (dolist (rev after)
-      (push rev args)
-      (push "--after" args))
+      (setq args (append args (list "--after" rev))))
     (dolist (rev before)
-      (push rev args)
-      (push "--before" args))
+      (setq args (append args (list "--before" rev))))
     (append args parents)))
 
 (cl-defun majutsu-new--build-args (&rest args)
@@ -217,17 +192,17 @@ Accepts keys :parents, :after, :before."
     ("p" "Toggle parent" majutsu-new-toggle-parent
      :description (lambda ()
                     (format "Toggle parent (%d selected)"
-                            (length majutsu-new-parents)))
+                            (majutsu-selection-count 'parent)))
      :transient t)
     ("a" "Toggle --after" majutsu-new-toggle-after
      :description (lambda ()
                     (format "Toggle --after (%d selected)"
-                            (length majutsu-new-after)))
+                            (majutsu-selection-count 'after)))
      :transient t)
     ("b" "Toggle --before" majutsu-new-toggle-before
      :description (lambda ()
                     (format "Toggle --before (%d selected)"
-                            (length majutsu-new-before)))
+                            (majutsu-selection-count 'before)))
      :transient t)
     ("c" "Clear selections" majutsu-new-clear-selections
      :transient t)]

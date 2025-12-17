@@ -201,8 +201,7 @@ drop it and ensure a single `--stat`."
   "Jump to diff body section for FILE."
   (if-let ((sec (majutsu-diff--find-section
                  (lambda (s)
-                   (and (magit-section-match 'jj-file s)
-                        (equal (oref s file) file)))
+                   (equal (magit-section-value-if 'jj-file s) file))
                  magit-root-section)))
       (magit-section-goto sec)
     (user-error "No diff found for %s" file)))
@@ -211,8 +210,7 @@ drop it and ensure a single `--stat`."
   "Jump to diffstat entry for FILE."
   (if-let ((sec (majutsu-diff--find-section
                  (lambda (s)
-                   (and (magit-section-match 'jj-diffstat-file s)
-                        (equal (oref s file) file)))
+                   (equal (magit-section-value-if 'jj-diffstat-file s) file))
                  magit-root-section)))
       (magit-section-goto sec)
     (user-error "No diffstat entry for %s" file)))
@@ -754,30 +752,19 @@ works with the simplified jj diff we render here."
 (defun majutsu-diff-clear-selections ()
   "Clear all diff selections."
   (interactive)
-  (majutsu--entry-clear-overlays majutsu-diff-from)
-  (majutsu--entry-clear-overlays majutsu-diff-to)
-  (setq majutsu-diff-from nil
-        majutsu-diff-to nil)
+  (majutsu-selection-clear)
   (when (called-interactively-p 'interactive)
     (message "Cleared diff selections")))
 
 (defun majutsu-diff-set-from ()
   "Set the commit at point as diff --from."
   (interactive)
-  (majutsu--selection-select-revset
-   :kind "from"
-   :label "[FROM]"
-   :face '(:background "dark orange" :foreground "black")
-   :collection-var 'majutsu-diff-from))
+  (majutsu-selection-toggle 'from))
 
 (defun majutsu-diff-set-to ()
   "Set the commit at point as diff --to."
   (interactive)
-  (majutsu--selection-select-revset
-   :kind "to"
-   :label "[TO]"
-   :face '(:background "dark cyan" :foreground "white")
-   :collection-var 'majutsu-diff-to))
+  (majutsu-selection-toggle 'to))
 
 (defun majutsu-diff-context-set (n)
   "Set context lines (`jj diff --context N') and refresh."
@@ -866,7 +853,7 @@ With prefix STYLE, cycle between `all' and `t'."
         (setq-local majutsu-diff--paint-whitespace-enabled
                     (or (not majutsu-diff-whitespace-max-bytes)
                         (< (buffer-size) majutsu-diff-whitespace-max-bytes)))
-        (magit-insert-section (majutsu-diff-section)
+        (magit-insert-section (diffbuf)
           (magit-insert-section (diff-root)
             (magit-insert-heading
               (format "jj %s" (string-join majutsu-diff--last-args " ")))
@@ -909,10 +896,8 @@ log view) or the working copy (if elsewhere)."
 (defun majutsu-diff-execute (&optional args)
   "Execute diff using transient selections or ARGS."
   (interactive (list (transient-args 'majutsu-diff-transient--internal)))
-  (let* ((from-entry (car majutsu-diff-from))
-         (from (when from-entry (magit-section-value-if 'jj-commit from-entry)))
-         (to-entry (car majutsu-diff-to))
-         (to (when to-entry (magit-section-value-if 'jj-commit to-entry)))
+  (let* ((from (car (majutsu-selection-values 'from)))
+         (to (car (majutsu-selection-values 'to)))
          (final-args (copy-sequence args)))
     ;; If we have selections, they override or supplement standard args
     (when from
@@ -930,31 +915,25 @@ log view) or the working copy (if elsewhere)."
         (setq final-args (append final-args (list "-r" "@")))))
 
     (majutsu-diff final-args)
-    ;; Clear selections after successful execution
-    (majutsu-diff-clear-selections)))
-
-(defun majutsu-diff-cleanup-on-exit ()
-  "Clean up diff selections when transient exits."
-  (majutsu-diff-clear-selections)
-  (remove-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit t))
+    (majutsu-selection-session-end)))
 
 ;;;###autoload
 (defun majutsu-diff-transient ()
   "Transient for jj diff operations."
   (interactive)
-  (add-hook 'transient-exit-hook 'majutsu-diff-cleanup-on-exit nil t)
+  (majutsu-selection-session-begin
+   '((:key from
+      :label "[FROM]"
+      :face (:background "dark orange" :foreground "black")
+      :type single)
+     (:key to
+      :label "[TO]"
+      :face (:background "dark cyan" :foreground "white")
+      :type single)))
+  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
   (majutsu-diff-transient--internal))
 
 ;;; Diff Transient
-
-(defvar-local majutsu-diff-from nil
-  "List containing at most one selected log section for diff --from.")
-
-(defvar-local majutsu-diff-to nil
-  "List containing at most one selected log section for diff --to.")
-
-(defun majutsu-diff--from-entry () (car majutsu-diff-from))
-(defun majutsu-diff--to-entry () (car majutsu-diff-to))
 
 (transient-define-prefix majutsu-diff-transient--internal ()
   "Internal transient for jj diff."
@@ -964,24 +943,24 @@ log view) or the working copy (if elsewhere)."
   [:description
    (lambda ()
      (concat "JJ Diff"
-             (when-let* ((from (majutsu-diff--from-entry)))
-               (format " | From: %s" (majutsu--entry-display from)))
-             (when-let* ((to (majutsu-diff--to-entry)))
-               (format " | To: %s" (majutsu--entry-display to)))))
+             (when-let* ((from (car (majutsu-selection-values 'from))))
+               (format " | From: %s" from))
+             (when-let* ((to (car (majutsu-selection-values 'to))))
+               (format " | To: %s" to))))
    :class transient-columns
    ["Selection"
     ("f" "Set 'from'" majutsu-diff-set-from
      :description (lambda ()
-                    (if (majutsu-diff--from-entry)
+                    (if (> (majutsu-selection-count 'from) 0)
                         (format "Set 'from' (current: %s)"
-                                (majutsu--entry-display (majutsu-diff--from-entry)))
+                                (car (majutsu-selection-values 'from)))
                       "Set 'from'"))
      :transient t)
     ("t" "Set 'to'" majutsu-diff-set-to
      :description (lambda ()
-                    (if (majutsu-diff--to-entry)
+                    (if (> (majutsu-selection-count 'to) 0)
                         (format "Set 'to' (current: %s)"
-                                (majutsu--entry-display (majutsu-diff--to-entry)))
+                                (car (majutsu-selection-values 'to)))
                       "Set 'to'"))
      :transient t)
     ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]

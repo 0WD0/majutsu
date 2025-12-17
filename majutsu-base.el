@@ -90,12 +90,13 @@ Add new entries here to extend display behavior for additional buffers."
             :documentation "Selection overlay used by transient UIs.")))
 
 (defclass majutsu-diff-section (magit-section)
-  ((keymap :initform 'majutsu-diff-section-map))
+  ;; ((keymap :initform 'majutsu-diff-section-map))
+  ((keymap :initform :keymap))
   :abstract t)
 
 (defclass majutsu-file-section (majutsu-diff-section)
   ;;TODO ((keymap :initform 'majutsu-file-section-map))
-  )
+  ((file :initarg :file)))
 
 (defclass majutsu-hunk-section (majutsu-diff-section)
   (
