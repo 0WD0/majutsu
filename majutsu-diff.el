@@ -157,12 +157,19 @@ drop it and ensure a single `--stat`."
 
 (defun majutsu-diff--insert-stat-section (stat-output)
   "Insert a diffstat section rendered from STAT-OUTPUT."
-  (let ((lines (split-string stat-output "\n" t))
-        (summary-lines '())
-        (inserted nil))
+  (let* ((lines (split-string stat-output "\n" t))
+         (summary
+          (seq-find (lambda (line)
+                      (string-match-p "\\bfiles? changed\\b"
+                                      (string-trim (substring-no-properties line))))
+                    (reverse lines)))
+         (inserted nil))
     (when lines
       (magit-insert-section (diffstat)
-        (magit-insert-heading (propertize "Summary (--stat)" 'font-lock-face 'magit-section-heading))
+        (magit-insert-heading
+          (propertize (or (and summary (string-trim (substring-no-properties summary)))
+                          "Summary (--stat)")
+                      'font-lock-face 'magit-diff-file-heading))
         (dolist (line lines)
           (let ((plain (substring-no-properties line)))
             (cond
@@ -181,12 +188,10 @@ drop it and ensure a single `--stat`."
                   (when (and graph (not (string-empty-p graph)))
                     (insert " " colored))
                   (insert "\n"))))
-             ;; Summary line
-             ((string-match "files changed" plain)
-              (push plain summary-lines))
+             ;; Summary line is used as the section heading (Magit-style).
+             ((and summary (equal (string-trim plain)
+                                 (string-trim (substring-no-properties summary)))))
              (t))))
-        (when summary-lines
-          (insert (string-join (nreverse summary-lines) "\n") "\n"))
         (when inserted
           (insert "\n"))))))
 
