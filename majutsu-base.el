@@ -108,7 +108,6 @@ Add new entries here to extend display behavior for additional buffers."
 (setf (alist-get 'jj-commit magit--section-type-alist) 'majutsu-commit-section)
 (setf (alist-get 'jj-file   magit--section-type-alist) 'majutsu-file-section)
 (setf (alist-get 'jj-hunk   magit--section-type-alist) 'majutsu-hunk-section)
-(setf (alist-get 'jj-diffstat-file   magit--section-type-alist) 'majutsu-file-section)
 
 ;;; Utilities
 

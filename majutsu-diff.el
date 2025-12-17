@@ -175,7 +175,7 @@ drop it and ensure a single `--stat`."
                      (dels (match-string 4 plain))
                      (graph (concat adds dels))
                      (colored (majutsu-diff--color-diffstat-graph graph)))
-                (magit-insert-section (jj-diffstat-file file)
+                (magit-insert-section (jj-file file)
                   (insert (propertize file 'font-lock-face 'magit-filename))
                   (insert " | " count)
                   (when (and graph (not (string-empty-p graph)))
@@ -190,43 +190,50 @@ drop it and ensure a single `--stat`."
         (when inserted
           (insert "\n"))))))
 
-(defun majutsu-diff--find-section (pred section)
-  "Depth-first search SECTION tree for PRED."
-  (or (when (funcall pred section) section)
-      (seq-some (lambda (child)
-                  (majutsu-diff--find-section pred child))
-                (oref section children))))
+(defun majutsu-diff--get-file-section (file)
+  "Return the diff body section for FILE."
+  (magit-get-section (append `((jj-file . ,file) (diff-root))
+                            (magit-section-ident magit-root-section))))
+
+(defun majutsu-diff--get-stat-section (file)
+  "Return the diffstat section for FILE."
+  (magit-get-section (append `((jj-file . ,file) (diffstat) (diff-root))
+                            (magit-section-ident magit-root-section))))
 
 (defun majutsu-diff--goto-file-section (file)
   "Jump to diff body section for FILE."
-  (if-let ((sec (majutsu-diff--find-section
-                 (lambda (s)
-                   (equal (magit-section-value-if 'jj-file s) file))
-                 magit-root-section)))
+  (if-let* ((sec (majutsu-diff--get-file-section file)))
       (magit-section-goto sec)
     (user-error "No diff found for %s" file)))
 
 (defun majutsu-diff--goto-stat-section (file)
   "Jump to diffstat entry for FILE."
-  (if-let ((sec (majutsu-diff--find-section
-                 (lambda (s)
-                   (equal (magit-section-value-if 'jj-diffstat-file s) file))
-                 magit-root-section)))
+  (if-let* ((sec (majutsu-diff--get-stat-section file)))
       (magit-section-goto sec)
     (user-error "No diffstat entry for %s" file)))
 
-(defun majutsu-jump-to-diffstat-or-diff ()
-  "Jump between diffstat entry and its patch body."
-  (interactive)
-  (let ((section (magit-current-section)))
-    (cond
-     ((magit-section-match 'jj-diffstat-file section)
-      (majutsu-diff--goto-file-section (oref section value)))
-     ((magit-section-match 'jj-hunk section)
-      (majutsu-diff--goto-stat-section (magit-section-parent-value section)))
-     ((magit-section-match 'jj-file section)
-      (majutsu-diff--goto-stat-section (oref section value)))
-     (t (user-error "Not on a file entry")))))
+(defun majutsu-jump-to-diffstat-or-diff (&optional expand)
+  "Jump to the diffstat or diff.
+When point is on a file inside the diffstat section, then jump
+to the respective diff section, otherwise jump to the diffstat
+section or a child thereof."
+  (interactive "P")
+  (cond-let
+    ([section
+      (magit-get-section
+       (append
+        (magit-section-case
+          ([jj-file diffstat] `((jj-file . ,(oref it value)) (diff-root)))
+          (jj-file `((jj-file . ,(oref it value)) (diffstat) (diff-root)))
+          (jj-hunk `((jj-file . ,(magit-section-parent-value it))
+                     (diffstat) (diff-root)))
+          (t '((diffstat) (diff-root))))
+        (magit-section-ident magit-root-section)))]
+     (goto-char (oref section start))
+     (when expand
+       (with-local-quit (magit-section-show section))
+       (recenter 0)))
+    ((user-error "No diffstat in this buffer"))))
 
 ;;; Diff Parsing & Display
 
@@ -571,8 +578,7 @@ works with the simplified jj diff we render here."
      ((magit-section-match 'jj-hunk section)
       (or (magit-section-parent-value section)
           (oref section value)))
-     ((or (magit-section-match 'jj-file section)
-          (magit-section-match 'jj-diffstat-file section))
+     ((magit-section-match 'jj-file section)
       (oref section value)))))
 
 (defun majutsu-goto-diff-line ()
