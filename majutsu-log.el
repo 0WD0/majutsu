@@ -246,7 +246,7 @@ VALUES defaults to the commit(s) at point or in the active region."
            (majutsu-selection--render-id id)))))))
 
 (defun majutsu-selection-select (key &optional values)
-  "Select a single commit in category KEY.
+  "Toggle a single commit selection in category KEY.
 
 KEY must be a `single' selection category.  VALUES defaults to the
 commit(s) at point or in the active region."
@@ -255,17 +255,11 @@ commit(s) at point or in the active region."
          (values (or values (majutsu-selection--targets-at-point))))
     (unless values
       (user-error "No changeset at point"))
-    (when (and (cdr values) (eq (majutsu-selection-category-type cat) 'single))
+    (unless (eq (majutsu-selection-category-type cat) 'single)
+      (user-error "Selection category %S is not single-select" key))
+    (when (cdr values)
       (user-error "Selection category %S only accepts one changeset" key))
-    (pcase (majutsu-selection-category-type cat)
-      ('single
-       (let* ((new (majutsu-selection--normalize-value (car values)))
-              (old (car (majutsu-selection-category-values cat))))
-         (setf (majutsu-selection-category-values cat) (and new (list new)))
-         (when old (majutsu-selection--render-id old))
-         (when new (majutsu-selection--render-id new))))
-      (_
-       (user-error "Selection category %S is not single-select" key)))))
+    (majutsu-selection-toggle key values)))
 
 ;;; Utilities
 
