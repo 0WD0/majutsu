@@ -17,6 +17,68 @@
 (require 'majutsu-base)
 (require 'majutsu-process)
 
+;;; Transient UX integration
+
+(defun majutsu--transient--majutsu-prefix-p ()
+  "Return non-nil when the active transient prefix is a Majutsu command."
+  (and (boundp 'transient--prefix)
+       (eieio-object-p transient--prefix)
+       (string-prefix-p "majutsu-"
+                        (symbol-name (oref transient--prefix command)))))
+
+(defun majutsu--transient--selection-active-p ()
+  "Return non-nil if the user is in Evil visual state."
+  (and (bound-and-true-p evil-local-mode)
+       (fboundp 'evil-visual-state-p)
+       (evil-visual-state-p)))
+
+(defun majutsu--transient--quit-event ()
+  "Return the final event of the current quit key sequence."
+  (let ((keys (this-command-keys-vector)))
+    (and (vectorp keys)
+         (> (length keys) 0)
+         (aref keys (1- (length keys))))))
+
+(defun majutsu--transient--cancel-selection ()
+  "Cancel the current visual selection/region in current buffer."
+  (cond
+   ((and (bound-and-true-p evil-local-mode)
+         (fboundp 'evil-visual-state-p)
+         (evil-visual-state-p)
+         (fboundp 'evil-exit-visual-state))
+    (evil-exit-visual-state))
+   (t
+    (deactivate-mark))))
+
+(defun majutsu--transient--do-quit-one-dwim (orig-fn &rest args)
+  "Advice around `transient--do-quit-one' for Majutsu transients.
+
+If the user presses <escape> or C-g while in Evil visual state, then
+exit visual state and keep the transient.  Otherwise quit as usual.
+
+Note: <escape> does not affect the plain Emacs region."
+  (let ((event (majutsu--transient--quit-event)))
+    (cond
+     ((and (majutsu--transient--majutsu-prefix-p)
+           (memq event '(escape ?\C-g))
+           (majutsu--transient--selection-active-p))
+      (majutsu--transient--cancel-selection)
+      t)
+     ((and (majutsu--transient--majutsu-prefix-p)
+           (eq event ?\C-g)
+           (use-region-p))
+      (deactivate-mark)
+      t)
+     (t
+      (apply orig-fn args)))))
+
+(with-eval-after-load 'transient
+  (when (fboundp 'transient--do-quit-one)
+    (unless (advice-member-p #'majutsu--transient--do-quit-one-dwim
+                             'transient--do-quit-one)
+      (advice-add 'transient--do-quit-one :around
+                  #'majutsu--transient--do-quit-one-dwim))))
+
 ;;; Custom groups
 
 (defgroup majutsu-essentials nil
