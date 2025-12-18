@@ -354,16 +354,6 @@ ARG may be a process object or an exit code.  Return the exit code."
     (when-let ((cb (and process (process-get process 'finish-callback))))
       (unless (and (integerp exit-code) (= exit-code 0))
         (funcall cb process exit-code)))
-
-    (when (and command-buf (buffer-live-p command-buf))
-      (with-current-buffer command-buf
-        (when (derived-mode-p 'majutsu-mode)
-          (ignore-errors (majutsu-refresh-buffer)))))
-    (when (and default-dir (fboundp 'majutsu-log-refresh))
-      (with-temp-buffer
-        (setq default-directory default-dir)
-        (when (ignore-errors (majutsu--root))
-          (majutsu-log-refresh))))
     exit-code))
 
 (defun majutsu--process-display-buffer (process)
@@ -403,7 +393,17 @@ ARG may be a process object or an exit code.  Return the exit code."
 (defun majutsu--process-sentinel (process _event)
   "Default sentinel used by `majutsu-start-jj'."
   (when (memq (process-status process) '(exit signal))
-    (majutsu--process-finish process)))
+    (majutsu--process-finish process)
+    (unless (process-get process 'inhibit-refresh)
+      (let ((command-buf (process-get process 'command-buf))
+            (default-dir (process-get process 'default-dir)))
+        (if (buffer-live-p command-buf)
+            (with-current-buffer command-buf
+              (let ((default-directory (or default-dir default-directory)))
+                (majutsu-refresh)))
+          (with-temp-buffer
+            (setq default-directory (or default-dir default-directory))
+            (majutsu-refresh)))))))
 
 (defun majutsu-start-jj (args &optional success-msg finish-callback)
   "Run jj ARGS asynchronously for side-effects and log output.
@@ -456,7 +456,9 @@ Process output goes into a new section in the buffer returned by
                                   (backward-char 1))))))
                  (inhibit-read-only t)
                  (exit (apply #'process-file majutsu-executable nil process-buf nil args)))
-      (majutsu--process-finish exit process-buf (current-buffer) default-directory section))))
+      (setq exit (majutsu--process-finish exit process-buf (current-buffer) default-directory section))
+      (majutsu-refresh)
+      exit)))
 
 (defun majutsu-run-jj (&rest args)
   "Run jj command with ARGS and return output."

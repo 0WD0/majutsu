@@ -59,6 +59,9 @@ keymaps remap this command to another command that visits the thing at
 
 ;;; Helpers
 
+(defvar majutsu-inhibit-refresh nil
+  "When non-nil, inhibit refreshing Majutsu buffers.")
+
 (defun majutsu--refresh-buffer-function ()
   "Return the refresh function for the current Majutsu buffer, if any.
 The function name is derived from `major-mode' by replacing the
@@ -80,9 +83,23 @@ This is suitable for use as `revert-buffer-function'."
     (user-error "No refresh function defined for %s" major-mode)))
 
 (defun majutsu-refresh ()
-  "Refresh the current Majutsu buffer (Magit-style `g`)."
+  "Refresh Majutsu buffers belonging to the current repository.
+
+Refresh the current buffer if its major mode derives from
+`majutsu-mode', and refresh the corresponding log buffer."
   (interactive)
-  (majutsu-refresh-buffer))
+  (unless majutsu-inhibit-refresh
+    (let ((root (majutsu--buffer-root)))
+      (when (derived-mode-p 'majutsu-mode)
+        (if (called-interactively-p 'interactive)
+            (majutsu-refresh-buffer)
+          (ignore-errors (majutsu-refresh-buffer))))
+      (when (and root
+                 (not (derived-mode-p 'majutsu-log-mode))
+                 (fboundp 'majutsu-log-refresh))
+        (when-let ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode root)))
+          (with-current-buffer buffer
+            (ignore-errors (majutsu-log-refresh))))))))
 
 (defun majutsu-hack-dir-local-variables ()
   "Like `hack-dir-local-variables-non-file-buffer' but ignore some variables.
