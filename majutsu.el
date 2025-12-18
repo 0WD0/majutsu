@@ -6,7 +6,7 @@
 ;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "29.1") (transient "0.5.0") (magit "3.3.0"))
 
 ;;; Commentary:

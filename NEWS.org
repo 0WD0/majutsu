@@ -3,26 +3,38 @@
 
 * [Unreleased]
 
-** Performance
+** Added
+
+** Changed
+
+** Fixed
+
+* [0.4.0] - 2025-12-18
+
+** Added
+
+- Support for global =--ignore-immutable= flag in rebase, squash, new, and bookmark transients.
+- Support for =--ignore-immutable= in ~majutsu-describe~ and ~majutsu-edit~ via prefix argument (~C-u~).
+- Region sections selection in transient for commands now supports toggling more than one commits at once.
+- Magit-style per-repository process buffer (~majutsu-process-buffer~, bond to ~$~, or ~`~ for evil) for inspecting jj command output and failures.
+
+** Changed
 
 - Significant improvements to diff view rendering speed and memory usage.
   - Implemented "washing" to parse =jj diff= output directly in the buffer.
   - Added lazy font-locking (JIT) for diff highlighting.
   - Whitespace painting is now disabled for very large hunks to preserve responsiveness.
-
-** Added
-
-- New options to control performance limits: ~majutsu-diff-whitespace-max-chars~ and ~majutsu-diff-whitespace-max-bytes~.
-- Support for global `--ignore-immutable` flag in rebase, squash, new, and bookmark transients.
-- Support for `--ignore-immutable` in ~majutsu-describe~ via prefix argument (~C-u~).
-- Magit-style per-repository process buffer (~$~, ~majutsu-process-buffer~) for inspecting jj command output and failures.
-
-** Changed
-
-- Removed deprecated `--allow-new` flag from ~majutsu-git-push~.
-- ~majutsu-git-push~ now suggests `jj bookmark track` when pushing new bookmarks.
+- Removed deprecated =--allow-new= flag from ~majutsu-git-push~.
 - Keybinding of ~majutsu-abandon~ changed from ~k~ to ~k~ / ~a~.
-- Renamed ~majutsu--run-command-*~ to ~majutsu-run-jj-*~.
+- Replaced ~majutsu-enter-dwim~ with ~majutsu-visit-thing~, and use section keymaps so ~RET~ does the right thing in log/diff buffers (edit commit, visit file, jump to hunk).
+- Diffstat summary line is now displayed as the diffstat section heading.
+- ~majutsu-log-refresh~ now restores point using section successors, keeping navigation stable across operations like abandon.
+
+** Fixed
+
+- Trimmed timestamp strings (e.g., removing " ago") in right-margin display.
+- In majutsu transients, pressing ~ESC~ / ~C-g~ while there is an active region deactivates the region (or exits visual state in evil) first instead of immediately quitting the transient.
+- Fixed diffstat rendering (misaligned stat lines) in ~majutsu-diff~ when using combined =jj diff --git --stat= output.
 
 * [0.3.0] - 2025-11-25
 
