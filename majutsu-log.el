@@ -621,9 +621,6 @@ Returns a plist with :template, :columns, and :field-order."
 
 (defun majutsu-log--record-column (entry field value)
   "Record FIELD VALUE onto ENTRY plist and column map."
-  (let* ((columns (plist-get entry :columns)))
-    (setf (alist-get field columns nil nil #'eq) value)
-    (setq entry (plist-put entry :columns columns)))
   (pcase field
     ('id
      (setq entry (plist-put entry :id value)))
@@ -642,6 +639,7 @@ Returns a plist with :template, :columns, and :field-order."
     ('author
      (setq entry (plist-put entry :author value)))
     ('timestamp
+     (setq value (string-remove-suffix " ago" value))
      (setq entry (plist-put entry :timestamp value)))
     ('long-desc
      (setq entry (plist-put entry :long-desc (majutsu-log--parse-json-safe value))))
@@ -654,6 +652,9 @@ Returns a plist with :template, :columns, and :field-order."
      (setq entry (plist-put entry :signature value)))
     ('empty
      (setq entry (plist-put entry :empty (not (string-empty-p value))))))
+  (let* ((columns (plist-get entry :columns)))
+    (setf (alist-get field columns nil nil #'eq) value)
+    (setq entry (plist-put entry :columns columns)))
   entry)
 
 (defun majutsu-log--build-entry-from-elems (elems field-order line)
