@@ -81,6 +81,7 @@ S-TAB, M-n/M-p, etc.) remain available. The lists below mirror the bindings in
 
 *** Primary Commands (~majutsu-mode-map~)
 - ~g~ - Refresh the log (~majutsu-log-refresh~)
+- ~$~ - Show the per-repo process buffer (~majutsu-process-buffer~)
 - ~l~ - Open the log options transient
 - ~?~ - Open the Majutsu dispatcher (~majutsu-dispatch~)
 - ~C~ / ~c~ - Commit / describe the change at point
@@ -205,6 +206,7 @@ motion states (and mirrors the ~RET~ binding onto ~majutsu-diff-mode-map~):
 
 - ~.~ → ~majutsu-log-goto-@~
 - ~R~ / ~g r~ → ~majutsu-log-refresh~
+- ~`~ → ~majutsu-process-buffer~
 - ~c~ → ~majutsu-describe~
 - ~C~ → ~majutsu-commit~
 - ~e~ → ~majutsu-edit-changeset~

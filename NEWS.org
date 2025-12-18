@@ -15,6 +15,7 @@
 - New options to control performance limits: ~majutsu-diff-whitespace-max-chars~ and ~majutsu-diff-whitespace-max-bytes~.
 - Support for global `--ignore-immutable` flag in rebase, squash, new, and bookmark transients.
 - Support for `--ignore-immutable` in ~majutsu-describe~ via prefix argument (~C-u~).
+- Magit-style per-repository process buffer (~$~, ~majutsu-process-buffer~) for inspecting jj command output and failures.
 
 ** Changed
 

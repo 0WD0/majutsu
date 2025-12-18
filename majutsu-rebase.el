@@ -91,10 +91,9 @@ ARGS are passed from the transient."
                  (success-msg (format "Rebase completed: %s -> %s" source-display dest-display)))
             (majutsu--message-with-log "%s..." progress-msg)
             (majutsu--debug "Running jj rebase with args: %s" (string-join all-args " "))
-            (let ((result (apply #'majutsu-run-jj all-args)))
-              (when (majutsu--handle-command-result all-args result success-msg "Rebase failed")
-                (majutsu-selection-session-end)
-                (majutsu-log-refresh))))))
+            (when (zerop (apply #'majutsu-call-jj all-args))
+              (message "%s" success-msg)
+              (majutsu-selection-session-end)))))
     (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
 
 ;;;###autoload

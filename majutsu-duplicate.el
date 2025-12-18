@@ -47,14 +47,10 @@
 
 (defun majutsu-duplicate--run-command (args)
   "Execute jj duplicate with ARGS and refresh log."
-  (let ((result (apply #'majutsu-run-jj args)))
-    (when (majutsu--handle-command-result
-           args result
-           "Duplicated changeset(s)"
-           "Failed to duplicate changeset(s)")
-      (majutsu-selection-session-end)
-      (majutsu-log-refresh)
-      t)))
+  (when (zerop (apply #'majutsu-call-jj args))
+    (message "Duplicated changeset(s)")
+    (majutsu-selection-session-end)
+    t))
 
 (defun majutsu-duplicate-execute ()
   "Execute jj duplicate using transient selections."

@@ -294,7 +294,14 @@ commit(s) at point or in the active region."
 (defvar-local majutsu-log-buffer-state nil
   "Buffer-local log view options for the current majutsu log buffer.")
 
-(defcustom majutsu-log-sections-hook '(majutsu-log-insert-logs
+(defvar-local majutsu-log--this-error nil
+  "Last jj side-effect error summary for this log buffer.
+
+This is set by process runners (see `majutsu-process-buffer') and
+rendered by `majutsu-log-insert-error-header' on the next refresh.")
+
+(defcustom majutsu-log-sections-hook '(majutsu-log-insert-error-header
+                                       majutsu-log-insert-logs
                                        majutsu-log-insert-status)
   "Hook run to insert sections in the log buffer."
   :type 'hook
@@ -843,6 +850,23 @@ Left fields follow graph width per-line; right fields are rendered for margin."
                    (propertize " " 'display
                                (list (list 'margin 'right-margin)
                                      (or string " ")))))))
+
+(defun majutsu-log-insert-error-header ()
+  "Insert the message about the jj error that just occurred.
+
+This function only knows about the last error that occurred when jj was
+run for side-effects.  Refreshing the log buffer causes this section to
+disappear again."
+  (when majutsu-log--this-error
+    (magit-insert-section (error 'jj)
+      (insert (propertize (format "%-10s" "JJError! ")
+                          'font-lock-face 'magit-section-heading))
+      (insert (propertize majutsu-log--this-error 'font-lock-face 'error))
+      (when-let* ((_ majutsu-show-process-buffer-hint)
+                  (key (car (where-is-internal 'majutsu-process-buffer))))
+        (insert (format "  [Type %s for details]" (key-description key))))
+      (insert ?\n))
+    (setq majutsu-log--this-error nil)))
 
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."

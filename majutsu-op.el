@@ -25,10 +25,9 @@
            (not (yes-or-no-p "Undo the most recent change? ")))
       (message "Undo canceled")
     (let ((revset (magit-section-value-if 'jj-commit)))
-      (majutsu-run-jj "undo")
-      (majutsu-log-refresh)
-      (when revset
-        (majutsu-goto-commit revset)))))
+      (when (zerop (majutsu-call-jj "undo"))
+        (when revset
+          (majutsu-goto-commit revset))))))
 
 ;;; majutsu-redo
 
@@ -40,10 +39,9 @@
            (not (yes-or-no-p "Redo the previously undone change? ")))
       (message "Redo canceled")
     (let ((revset (magit-section-value-if 'jj-commit)))
-      (majutsu-run-jj "redo")
-      (majutsu-log-refresh)
-      (when revset
-        (majutsu-goto-commit revset)))))
+      (when (zerop (majutsu-call-jj "redo"))
+        (when revset
+          (majutsu-goto-commit revset))))))
 
 ;;; op log
 

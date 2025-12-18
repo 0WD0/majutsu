@@ -24,6 +24,7 @@
   "RET" 'majutsu-visit-thing
   "g"   'majutsu-refresh
   "q"   'quit-window
+  "$"   'majutsu-process-buffer
   "l"   'majutsu-log-transient
   "?"   'majutsu-dispatch
   "c"   'majutsu-describe

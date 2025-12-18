@@ -25,22 +25,22 @@
   (let* ((cmd-args (append '("git" "push") args))
          (success-msg "Successfully pushed to remote"))
     (majutsu--message-with-log "Pushing to remote...")
-    (majutsu-run-jj-async
+    (majutsu-start-jj
      cmd-args
-     (lambda (result)
-       (when (majutsu--handle-push-result cmd-args result success-msg)
-         (majutsu-log-refresh)))
-     (lambda (err)
-       (message "Push failed: %s" err)))))
+     nil
+     (lambda (process exit-code)
+       (majutsu--handle-push-result cmd-args
+                                    (majutsu--process-section-output process)
+                                    success-msg
+                                    exit-code)))))
 
-(defun majutsu--handle-push-result (_cmd-args result success-msg)
-  "Enhanced push result handler with bookmark analysis."
-  (let ((trimmed-result (string-trim result)))
+(defun majutsu--handle-push-result (_cmd-args result success-msg exit-code)
+  "Push result handler with bookmark analysis.
+
+RESULT is the recorded output from the process buffer.  EXIT-CODE is
+jj's exit status."
+  (let ((trimmed-result (string-trim (or result ""))))
     (majutsu--debug "Push result: %s" trimmed-result)
-
-    ;; Always show the raw command output first (like CLI)
-    (unless (string-empty-p trimmed-result)
-      (message "%s" trimmed-result))
 
     (cond
      ;; Check for bookmark push restrictions
@@ -75,14 +75,14 @@
       nil)
 
      ;; Analyze majutsu-specific push patterns and provide contextual help
-     ((string-match-p "Nothing changed" trimmed-result)
+     ((and (integerp exit-code) (zerop exit-code)
+           (string-match-p "Nothing changed" trimmed-result))
       (message "💡 Nothing to push - all bookmarks are up to date")
       t)
 
-     ;; General error check
-     ((or (string-match-p "^error:" trimmed-result)
-          (string-match-p "^fatal:" trimmed-result))
-      nil)                              ; Error already shown above
+     ;; Error path: rely on process buffer + error summary message.
+     ((and (integerp exit-code) (not (zerop exit-code)))
+      nil)
 
      ;; Success case
      (t
@@ -110,15 +110,8 @@
                                                    branch-args))
                            (apply #'append (mapcar (lambda (s)
                                                      (list "--remote" (substring s (length "--remote="))))
-                                                   remote-args)))))
-    (majutsu-run-jj-async
-     cmd-args
-     (lambda (result)
-       (when (majutsu--handle-command-result cmd-args result
-                                             "Fetched from remote" "Fetch failed")
-         (majutsu-log-refresh)))
-     (lambda (err)
-       (message "Fetch failed: %s" err)))))
+						   remote-args)))))
+    (majutsu-start-jj cmd-args "Fetched from remote")))
 
 (defun majutsu--get-git-remotes ()
   "Return a list of Git remote names for the current repository.
@@ -162,10 +155,9 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (cmd-args (append '("git" "remote" "add")
                            (when fetch-tags (list fetch-tags))
                            (list remote url)))
-         (result (apply #'majutsu-run-jj cmd-args)))
-    (majutsu--handle-command-result cmd-args result
-                                    (format "Added remote %s" remote)
-                                    "Failed to add remote")))
+         (exit (apply #'majutsu-call-jj cmd-args)))
+    (when (zerop exit)
+      (message "Added remote %s" remote))))
 
 (defun majutsu-git-remote-remove ()
   "Remove a Git remote and forget its bookmarks."
@@ -174,10 +166,9 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (remote (completing-read "Remove remote: " remotes nil t)))
     (when (and remote (not (string-empty-p remote)))
       (let* ((cmd-args (list "git" "remote" "remove" remote))
-             (result (apply #'majutsu-run-jj cmd-args)))
-        (majutsu--handle-command-result cmd-args result
-                                        (format "Removed remote %s" remote)
-                                        "Failed to remove remote")))))
+             (exit (apply #'majutsu-call-jj cmd-args)))
+        (when (zerop exit)
+          (message "Removed remote %s" remote))))))
 
 (defun majutsu-git-remote-rename ()
   "Rename a Git remote."
@@ -187,10 +178,9 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (new (read-string (format "New name for %s: " old))))
     (when (and (not (string-empty-p old)) (not (string-empty-p new)))
       (let* ((cmd-args (list "git" "remote" "rename" old new))
-             (result (apply #'majutsu-run-jj cmd-args)))
-        (majutsu--handle-command-result cmd-args result
-                                        (format "Renamed remote %s -> %s" old new)
-                                        "Failed to rename remote")))))
+             (exit (apply #'majutsu-call-jj cmd-args)))
+        (when (zerop exit)
+          (message "Renamed remote %s -> %s" old new))))))
 
 (defun majutsu-git-remote-set-url ()
   "Set URL of a Git remote."
@@ -200,10 +190,9 @@ Tries `jj git remote list' first, then falls back to `git remote'."
          (url (read-string (format "New URL for %s: " remote))))
     (when (and (not (string-empty-p remote)) (not (string-empty-p url)))
       (let* ((cmd-args (list "git" "remote" "set-url" remote url))
-             (result (apply #'majutsu-run-jj cmd-args)))
-        (majutsu--handle-command-result cmd-args result
-                                        (format "Set URL for %s" remote)
-                                        "Failed to set remote URL")))))
+             (exit (apply #'majutsu-call-jj cmd-args)))
+        (when (zerop exit)
+          (message "Set URL for %s" remote))))))
 
 (defun majutsu-git-clone (args)
   "Clone a Git repo into a new jj repo.
@@ -230,10 +219,9 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                            (when fetch-tags (list fetch-tags))
                            (list source)
                            (when dest (list dest))))
-         (result (apply #'majutsu-run-jj cmd-args)))
-    (majutsu--handle-command-result cmd-args result
-                                    "Clone completed"
-                                    "Clone failed")))
+         (exit (apply #'majutsu-call-jj cmd-args)))
+    (when (zerop exit)
+      (message "Clone completed"))))
 
 (defun majutsu-git-init (args)
   "Initialize a new Git-backed jj repo. Prompts for DEST; uses ARGS."
@@ -249,24 +237,23 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                            (when no-colocate? '("--no-colocate"))
                            (when git-repo (list "--git-repo" git-repo))
                            (list dest)))
-         (result (apply #'majutsu-run-jj cmd-args)))
-    (majutsu--handle-command-result cmd-args result
-                                    "Init completed"
-                                    "Init failed")))
+         (exit (apply #'majutsu-call-jj cmd-args)))
+    (when (zerop exit)
+      (message "Init completed"))))
 
 (defun majutsu-git-export ()
   "Update the underlying Git repo with changes made in the repo."
   (interactive)
-  (let* ((cmd '("git" "export"))
-         (result (apply #'majutsu-run-jj cmd)))
-    (majutsu--handle-command-result cmd result "Exported to Git" "Export failed")))
+  (let ((exit (majutsu-call-jj "git" "export")))
+    (when (zerop exit)
+      (message "Exported to Git"))))
 
 (defun majutsu-git-import ()
   "Update repo with changes made in the underlying Git repo."
   (interactive)
-  (let* ((cmd '("git" "import"))
-         (result (apply #'majutsu-run-jj cmd)))
-    (majutsu--handle-command-result cmd result "Imported from Git" "Import failed")))
+  (let ((exit (majutsu-call-jj "git" "import")))
+    (when (zerop exit)
+      (message "Imported from Git"))))
 
 (defun majutsu-git-root ()
   "Show the underlying Git directory of the current repository."

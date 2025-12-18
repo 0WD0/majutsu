@@ -69,8 +69,7 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
   (let* ((revset (or (magit-section-value-if 'jj-commit) "@"))
          (name (read-string "Bookmark name: ")))
     (unless (string-empty-p name)
-      (majutsu-run-jj "bookmark" "create" name "-r" revset)
-      (majutsu-log-refresh))))
+      (majutsu-call-jj "bookmark" "create" name "-r" revset))))
 
 ;;;###autoload
 (defun majutsu-bookmark-delete ()
@@ -81,9 +80,8 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (choice (and names (completing-read "Delete bookmark (propagates on push): " table nil t))))
     (if (not choice)
         (message "No bookmarks found")
-      (majutsu-run-jj "bookmark" "delete" choice)
-      (majutsu-log-refresh)
-      (message "Deleted bookmark '%s'" choice))))
+      (when (zerop (majutsu-call-jj "bookmark" "delete" choice))
+        (message "Deleted bookmark '%s'" choice)))))
 
 ;;;###autoload
 (defun majutsu-bookmark-forget ()
@@ -94,9 +92,8 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (choice (and names (completing-read "Forget bookmark: " table nil t))))
     (if (not choice)
         (message "No bookmarks found")
-      (majutsu-run-jj "bookmark" "forget" choice)
-      (majutsu-log-refresh)
-      (message "Forgot bookmark '%s'" choice))))
+      (when (zerop (majutsu-call-jj "bookmark" "forget" choice))
+        (message "Forgot bookmark '%s'" choice)))))
 
 ;;;###autoload
 (defun majutsu-bookmark-track ()
@@ -107,9 +104,8 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
          (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
     (if (not choice)
         (message "No remote bookmarks found")
-      (majutsu-run-jj "bookmark" "track" choice)
-      (majutsu-log-refresh)
-      (message "Tracking bookmark '%s'" choice))))
+      (when (zerop (majutsu-call-jj "bookmark" "track" choice))
+        (message "Tracking bookmark '%s'" choice)))))
 
 ;;;###autoload
 (defun majutsu-bookmark-list (&optional all)
@@ -147,12 +143,11 @@ When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
                         (and allow-backwards '("--allow-backwards"))
                         (list "-t" commit)
                         names)))
-      (apply #'majutsu-run-jj args)
-      (majutsu-log-refresh)
-      (message (if allow-backwards
-                   "Moved bookmark(s) (allow backwards) to %s: %s"
-                 "Moved bookmark(s) to %s: %s")
-               commit (string-join names ", ")))))
+      (when (zerop (apply #'majutsu-call-jj args))
+        (message (if allow-backwards
+                     "Moved bookmark(s) (allow backwards) to %s: %s"
+                   "Moved bookmark(s) to %s: %s")
+                 commit (string-join names ", "))))))
 
 ;;;###autoload
 (defun majutsu-bookmark-move (names commit &optional allow-backwards)
@@ -177,9 +172,8 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
           (new (read-string (format "New name for %s: " old))))
      (list old new)))
   (when (and (not (string-empty-p old)) (not (string-empty-p new)))
-    (majutsu-run-jj "bookmark" "rename" old new)
-    (majutsu-log-refresh)
-    (message "Renamed bookmark '%s' -> '%s'" old new)))
+    (when (zerop (majutsu-call-jj "bookmark" "rename" old new))
+      (message "Renamed bookmark '%s' -> '%s'" old new))))
 
 ;;;###autoload
 (defun majutsu-bookmark-set (name commit)
@@ -191,9 +185,8 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
           (at (or (magit-section-value-if 'jj-commit) "@"))
           (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
      (list name rev)))
-  (majutsu-run-jj "bookmark" "set" name "-r" commit)
-  (majutsu-log-refresh)
-  (message "Set bookmark '%s' to %s" name commit))
+  (when (zerop (majutsu-call-jj "bookmark" "set" name "-r" commit))
+    (message "Set bookmark '%s' to %s" name commit)))
 
 ;;;###autoload
 (defun majutsu-bookmark-untrack (names)
@@ -207,9 +200,8 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
 
   (defvar crm-separator)
   (when names
-    (apply #'majutsu-run-jj (append '("bookmark" "untrack") names))
-    (majutsu-log-refresh)
-    (message "Untracked: %s" (string-join names ", "))))
+    (when (zerop (apply #'majutsu-call-jj (append '("bookmark" "untrack") names)))
+      (message "Untracked: %s" (string-join names ", ")))))
 
 (defun majutsu--completion-table-with-category (candidates category)
   "Wrap CANDIDATES with completion METADATA to set CATEGORY.

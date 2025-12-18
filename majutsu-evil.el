@@ -81,6 +81,7 @@ macro expansion until Evil is actually present."
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
     (kbd "R") #'majutsu-refresh
     (kbd "g r") #'majutsu-refresh
+    (kbd "`") #'majutsu-process-buffer
     (kbd "c") #'majutsu-describe
     (kbd "C") #'majutsu-commit
     (kbd "o") #'majutsu-new-transient
