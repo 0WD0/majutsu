@@ -43,6 +43,45 @@
         (should (eieio-object-p hunk-section))
         (should (oref hunk-section content))))))
 
+(ert-deftest majutsu-diff-wash-diffs-parses-diffstat-and-diff ()
+  "Diff washer should parse combined `--stat' and `--git' output."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let* ((inhibit-read-only t)
+           (magit-section-inhibit-markers t)
+           (output (string-join
+                    '("foo | 1 +"
+                      "1 file changed, 1 insertion(+), 0 deletions(-)"
+                      "diff --git a/foo b/foo"
+                      "index 1234567..89abcde 100644"
+                      "--- a/foo"
+                      "+++ b/foo"
+                      "@@ -1 +1 @@"
+                      "-foo"
+                      "+bar")
+                    "\n")))
+      (magit-insert-section (diffbuf)
+        (magit-insert-section (diff-root)
+          (insert output)
+          (save-restriction
+            (narrow-to-region (point-min) (point-max))
+            (majutsu-diff-wash-diffs '("--stat")))))
+      (let* ((diff-root (car (oref magit-root-section children)))
+             (children (oref diff-root children))
+             (diffstat (seq-find (lambda (sec) (eq (oref sec type) 'diffstat))
+                                 children))
+             (diff-file (seq-find (lambda (sec)
+                                    (and (eq (oref sec type) 'jj-file)
+                                         (equal (oref sec value) "foo")))
+                                  children)))
+        (should (eieio-object-p diffstat))
+        (should (seq-find (lambda (sec)
+                            (and (eq (oref sec type) 'jj-file)
+                                 (equal (oref sec value) "foo")))
+                          (oref diffstat children)))
+        (should (eieio-object-p diff-file))
+        (should (oref diff-file content))))))
+
 (provide 'majutsu-diff-test)
 
 ;;; majutsu-diff-test.el ends here

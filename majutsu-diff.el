@@ -114,108 +114,62 @@ Set to nil to always allow painting."
   (delete-region (line-beginning-position)
                  (min (point-max) (1+ (line-end-position)))))
 
-(defun majutsu-diff--stat-args (args)
-  "Return ARGS amended with `--stat', stripping `--git'.
-JJ emits a full patch when `--git` is present; for a clean summary we
-drop it and ensure a single `--stat`."
-  (let ((res '())
-        (rest args)
-        added)
-    (while rest
-      (pcase rest
-        (`("--stat" . ,more)
-         (setq rest more added t))
-        (`("--git" . ,more)
-         (setq rest more))
-        (_
-         (push (car rest) res)
-         (setq rest (cdr rest)))))
-    (unless added
-      (push "--stat" res))
-    (nreverse res)))
+(defconst majutsu-diff-statline-re
+  (concat "^ ?"
+          "\\(.*\\)"     ; file
+          "\\( +| +\\)"  ; separator
+          "\\([0-9]+\\|Bin\\(?: +[0-9]+ -> [0-9]+ bytes\\)?$\\) ?"
+          "\\(\\+*\\)"   ; add
+          "\\(-*\\)$")   ; del
+  "Regexp matching `jj diff --stat` entries, modeled after Magit's statline.")
 
-(defun majutsu-diff--color-diffstat-graph (graph)
-  "Return GRAPH string with +/- colored like Magit."
-  (apply #'concat
-         (mapcar (lambda (ch)
-                   (propertize (string ch) 'font-lock-face
-                               (cond ((eq ch ?+) 'magit-diffstat-added)
-                                     ((eq ch ?-) 'magit-diffstat-removed)
-                                     (t 'default))))
-                 graph)))
+(defun majutsu-diff-wash-diffstat ()
+  "Wash the diffstat produced by `jj diff --stat'.
 
-(defconst majutsu-diff--statline-re
-  (rx line-start
-      (? " ")
-      (group (+? (not (any "\n"))))   ; file name
-      (1+ (any " \t")) "|" (1+ (any " \t"))
-      (group (+ digit))                 ; count
-      (1+ (any " \t"))
-      (group (* "+"))                  ; adds bar
-      (group (* "-"))                  ; dels bar
-      line-end))
-
-(defun majutsu-diff--insert-stat-section (stat-output)
-  "Insert a diffstat section rendered from STAT-OUTPUT."
-  (let* ((lines (split-string stat-output "\n" t))
-         (summary
-          (seq-find (lambda (line)
-                      (string-match-p "\\bfiles? changed\\b"
-                                      (string-trim (substring-no-properties line))))
-                    (reverse lines)))
-         (inserted nil))
-    (when lines
+Assumes point is at the start of the diff output and that the output was
+generated using `--git --stat', meaning the diffstat appears before the
+first \"diff --git\" header."
+  (let (heading (beg (point)))
+    ;; Like `magit-diff-wash-diffstat': find the summary line first, delete it,
+    ;; then rewrite each stat line as a `diffstat' section.
+    (when (re-search-forward "^ ?\\([0-9]+ +files? change[^\n]*\n\\)" nil t)
+      (setq heading (match-string 1))
+      (delete-region (match-beginning 0) (match-end 0))
+      (goto-char beg)
       (magit-insert-section (diffstat)
         (magit-insert-heading
-          (propertize (or (and summary (string-trim (substring-no-properties summary)))
-                          "Summary (--stat)")
-                      'font-lock-face 'magit-diff-file-heading))
-        (dolist (line lines)
-          (let ((plain (substring-no-properties line)))
+          (propertize heading 'font-lock-face 'magit-diff-file-heading))
+        (while (looking-at majutsu-diff-statline-re)
+          (let* ((file (match-string 1))
+                 (sep  (match-string 2))
+                 (cnt  (match-string 3))
+                 (add  (match-string 4))
+                 (del  (match-string 5))
+                 (value file))
+            (majutsu-diff--delete-line)
+            (when (string-match " +$" file)
+              (setq sep (concat (match-string 0 file) sep))
+              (setq file (substring file 0 (match-beginning 0))))
+            (setq file (string-trim-right file))
+            ;; For renames, use the destination path as the section value so
+            ;; `majutsu-jump-to-diffstat-or-diff' can locate the diff section.
             (cond
-             ;; File line: "<file> | <count> <graph>"
-             ((string-match majutsu-diff--statline-re plain)
-              (setq inserted t)
-              (let* ((file (string-trim (match-string 1 plain)))
-                     (count (match-string 2 plain))
-                     (adds (match-string 3 plain))
-                     (dels (match-string 4 plain))
-                     (graph (concat adds dels))
-                     (colored (majutsu-diff--color-diffstat-graph graph)))
-                (magit-insert-section (jj-file file)
-                  (insert (propertize file 'font-lock-face 'magit-filename))
-                  (insert " | " count)
-                  (when (and graph (not (string-empty-p graph)))
-                    (insert " " colored))
-                  (insert "\n"))))
-             ;; Summary line is used as the section heading (Magit-style).
-             ((and summary (equal (string-trim plain)
-                                 (string-trim (substring-no-properties summary)))))
-             (t))))
-        (when inserted
-          (insert "\n"))))))
-
-(defun majutsu-diff--get-file-section (file)
-  "Return the diff body section for FILE."
-  (magit-get-section (append `((jj-file . ,file) (diff-root))
-                            (magit-section-ident magit-root-section))))
-
-(defun majutsu-diff--get-stat-section (file)
-  "Return the diffstat section for FILE."
-  (magit-get-section (append `((jj-file . ,file) (diffstat) (diff-root))
-                            (magit-section-ident magit-root-section))))
-
-(defun majutsu-diff--goto-file-section (file)
-  "Jump to diff body section for FILE."
-  (if-let* ((sec (majutsu-diff--get-file-section file)))
-      (magit-section-goto sec)
-    (user-error "No diff found for %s" file)))
-
-(defun majutsu-diff--goto-stat-section (file)
-  "Jump to diffstat entry for FILE."
-  (if-let* ((sec (majutsu-diff--get-stat-section file)))
-      (magit-section-goto sec)
-    (user-error "No diffstat entry for %s" file)))
+             ((string-match "{.* => \\(.*\\)}" value)
+              (setq value (replace-match (match-string 1 value) nil t value)))
+             ((string-match " => " value)
+              (setq value (substring value (match-end 0)))))
+            (setq value (string-trim value))
+            (magit-insert-section (jj-file value)
+              (insert (magit-format-file 'stat file 'magit-filename))
+              (insert sep cnt " ")
+              (when add
+                (insert (propertize add 'font-lock-face
+                                    'magit-diffstat-added)))
+              (when del
+                (insert (propertize del 'font-lock-face
+                                    'magit-diffstat-removed)))
+              (insert "\n"))))
+        (if (looking-at "^$") (forward-line) (insert "\n"))))))
 
 (defun majutsu-jump-to-diffstat-or-diff (&optional expand)
   "Jump to the diffstat or diff.
@@ -345,29 +299,27 @@ section or a child thereof."
     (when (and in-file-section current-file)
       (majutsu--insert-file-section current-file file-section-content))))
 
-(defun majutsu-diff--wash-diffs (_args)
+(defun majutsu-diff-wash-diffs (args)
   "Parse a jj diff already inserted into the current buffer.
 Assumes point is at the start of the diff output."
-  (let (stat-text)
-    (goto-char (point-min))
-    (when (and majutsu-diff-show-stat
-               (re-search-forward "^diff --git " nil t))
-      (setq stat-text (buffer-substring-no-properties (point-min)
-                                                      (match-beginning 0)))
-      (delete-region (point-min) (match-beginning 0))
-      (goto-char (point-min)))
-    (when (and stat-text (not (string-empty-p stat-text)))
-      (majutsu-diff--insert-stat-section stat-text))
-    (cond
-     ((looking-at "^diff --git ")
-      (while (and (not (eobp))
-                  (looking-at "^diff --git "))
-        (majutsu-diff--wash-file))
-      (unless (bolp) (insert "\n")))
-     (t
-      (insert (propertize "(No diff)" 'face 'shadow))))))
+  (goto-char (point-min))
+  (when (member "--stat" args)
+    (majutsu-diff-wash-diffstat))
+  (goto-char (point-min))
+  (when (re-search-forward "^diff --git " nil t)
+    (goto-char (match-beginning 0)))
+  (cond
+   ((looking-at "^diff --git ")
+    (while (and (not (eobp))
+                (looking-at "^diff --git "))
+      (majutsu-diff-wash-file))
+    (unless (bolp) (insert "\n")))
+   ((save-excursion
+      (goto-char (point-min))
+      (looking-at-p (rx (* (any " \t\n")) eos)))
+    (insert (propertize "(No diff)" 'face 'shadow)))))
 
-(defun majutsu-diff--wash-file ()
+(defun majutsu-diff-wash-file ()
   "Parse a single file section at point and wrap it in Magit sections."
   (when (looking-at "^diff --git a/\\(.*\\) b/\\(.*\\)$")
     (let* ((file-a (match-string 1))
@@ -390,11 +342,11 @@ Assumes point is at the start of the diff output."
                       'font-lock-face 'magit-diff-file-heading))
         ;; Hunk bodies remain in the buffer; just wrap them.
         (while (and (not (eobp)) (looking-at "^@@ "))
-          (majutsu-diff--wash-hunk file))
+          (majutsu-diff-wash-hunk file))
         (insert "\n"))))
   t)
 
-(defun majutsu-diff--wash-hunk (file)
+(defun majutsu-diff-wash-hunk (file)
   "Wrap the current hunk in a section for FILE without copying its body."
   (let* ((header (buffer-substring-no-properties (line-beginning-position)
                                                  (line-end-position))))
@@ -898,7 +850,7 @@ With prefix STYLE, cycle between `all' and `t'."
               (format "jj %s" (string-join majutsu-diff--last-args " ")))
             (insert "\n")
             (majutsu-diff--wash-with-state
-                #'majutsu-diff--wash-diffs 'wash-anyway cmd-args))))
+                #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement))
       (goto-char (point-min)))))
