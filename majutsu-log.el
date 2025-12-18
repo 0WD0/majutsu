@@ -901,36 +901,13 @@ disappear again."
 
 ;;; Log insert status
 
-(defun majutsu--analyze-status-for-hints (status-output)
-  "Analyze jj status output and provide helpful hints."
-  (when (and status-output (not (string-empty-p status-output)))
-    (cond
-     ;; No changes
-     ((string-match-p "The working copy is clean" status-output)
-      (message "Working copy is clean - no changes to commit"))
-
-     ;; Conflicts present
-     ((string-match-p "There are unresolved conflicts" status-output)
-      (message "💡 Resolve conflicts with 'jj resolve' or use diffedit (E/M)"))
-
-     ;; Untracked files
-     ((string-match-p "Untracked paths:" status-output)
-      (message "💡 Add files with 'jj file track' or create .gitignore"))
-
-     ;; Working copy changes
-     ((string-match-p "Working copy changes:" status-output)
-      (message "💡 Commit changes with 'jj commit' or describe with 'jj describe'")))))
-
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
   (let ((status-output (majutsu-run-jj "status")))
     (when (and status-output (not (string-empty-p status-output)))
       (magit-insert-section (status)
         (magit-insert-heading "Working Copy Status")
-        (insert status-output)
-        (insert "\n")
-        ;; Analyze status and provide hints in the minibuffer
-        (majutsu--analyze-status-for-hints status-output)))))
+        (insert status-output)))))
 
 ;;; Log insert diff
 
