@@ -26,7 +26,7 @@
 
 (defvar-keymap majutsu-commit-section-map
   :doc "Keymap for `jj-commit' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset-at-point)
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
 
 ;;; Transient Selection (value-keyed)
 

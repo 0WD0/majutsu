@@ -19,20 +19,16 @@
 ;;; Edit
 
 ;;;###autoload
-(defun majutsu-edit-changeset ()
-  "Edit commit at point."
-  (interactive)
-  (when-let* ((revset (magit-section-value-if 'jj-commit)))
-    (when (zerop (majutsu-call-jj "edit" revset))
-      (message "Now editing commit %s" revset))))
+(defun majutsu-edit-changeset (&optional arg)
+  "Edit commit at point.
 
-(defun majutsu-edit-changeset-at-point ()
-  "Edit the commit at point using jj edit."
-  (interactive)
-  (when-let* ((revset (magit-section-value-if 'jj-commit)))
-    (when (zerop (majutsu-call-jj "edit" revset))
-      (message "Now editing revset %s" revset)
-      (back-to-indentation))))
+With prefix ARG, pass --ignore-immutable."
+  (interactive "P")
+  (when-let* ((revset (magit-section-value-if 'jj-commit))
+              (args (append (list "edit" revset)
+                            (when arg (list "--ignore-immutable")))))
+    (when (zerop (apply #'majutsu-call-jj args))
+      (message "Now editing commit %s" revset))))
 
 ;;; _
 (provide 'majutsu-edit)

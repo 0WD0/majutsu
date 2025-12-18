@@ -93,7 +93,6 @@ With prefix ARG, open the duplicate transient."
                   :sources (list (or rev "@")))))
       (majutsu-duplicate--run-command args))))
 
-
 ;;; Duplicate Transient
 
 (defun majutsu-duplicate--sources ()
