@@ -21,7 +21,7 @@
 (defvar-keymap majutsu-mode-map
   :doc "Parent keymap for modes derived from `majutsu-mode'."
   :parent magit-section-mode-map
-  "RET" 'majutsu-enter-dwim
+  "RET" 'majutsu-visit-thing
   "g"   'majutsu-refresh
   "q"   'quit-window
   "l"   'majutsu-log-transient
@@ -42,6 +42,20 @@
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo)
 
+;;; Visit
+
+(defun majutsu-visit-thing ()
+  "Visit the thing at point.
+
+This is a placeholder command.  Where applicable, section-specific
+keymaps remap this command to another command that visits the thing at
+  point."
+  (declare (completion ignore))
+  (interactive)
+  (if-let* ((url (thing-at-point 'url t)))
+      (browse-url url)
+    (user-error "There is no thing at point that could be visited")))
+
 ;;; Helpers
 
 (defun majutsu--refresh-buffer-function ()
@@ -60,7 +74,7 @@ The function name is derived from `major-mode' by replacing the
 This is suitable for use as `revert-buffer-function'."
   (interactive)
   (majutsu--assert-mode 'majutsu-mode)
-  (if-let ((fn (majutsu--refresh-buffer-function)))
+  (if-let* ((fn (majutsu--refresh-buffer-function)))
       (funcall fn)
     (user-error "No refresh function defined for %s" major-mode)))
 

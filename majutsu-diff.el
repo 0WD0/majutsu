@@ -628,6 +628,36 @@ works with the simplified jj diff we render here."
     (let ((full-file-path (expand-file-name file repo-root)))
       (find-file full-file-path))))
 
+;;;###autoload
+(defun majutsu-diff-visit-file ()
+  "Visit the file at point.
+
+When point is on a hunk section, jump to the corresponding line in the
+file."
+  (interactive)
+  (let ((section (magit-current-section)))
+    (cond
+     ((and section (magit-section-match 'jj-hunk section))
+      (majutsu-goto-diff-line))
+     ((majutsu-diff--file-at-point)
+      (majutsu-visit-file))
+     (t
+      (user-error "No file at point")))))
+
+;;; Section Keymaps
+
+(defvar-keymap majutsu-diff-section-map
+  :doc "Keymap for diff sections."
+  "<remap> <majutsu-visit-thing>" #'majutsu-diff-visit-file)
+
+(defvar-keymap majutsu-file-section-map
+  :doc "Keymap for `jj-file' sections."
+  :parent majutsu-diff-section-map)
+
+(defvar-keymap majutsu-hunk-section-map
+  :doc "Keymap for `jj-hunk' sections."
+  :parent majutsu-diff-section-map)
+
 ;;; Diff Edit
 
 ;;;###autoload

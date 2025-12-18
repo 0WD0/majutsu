@@ -76,7 +76,7 @@ S-TAB, M-n/M-p, etc.) remain available. The lists below mirror the bindings in
 
 *** Navigation
 - ~n~ / ~p~ - Move to the next/previous changeset in log buffers
-- ~RET~ - Run ~majutsu-enter-dwim~ (visit file, expand section, etc.)
+- ~RET~ - Run ~majutsu-visit-thing~ (visit file, edit revision, etc.)
 - ~.~ - Goto ~@~ (current) section
 
 *** Primary Commands (~majutsu-mode-map~)
@@ -225,7 +225,7 @@ motion states (and mirrors the ~RET~ binding onto ~majutsu-diff-mode-map~):
 - ~E~ → ~majutsu-diffedit-emacs~
 - ~M~ → ~majutsu-diffedit-smerge~
 - ~?~ → ~majutsu-dispatch~
-- ~RET~ → ~majutsu-enter-dwim~
+- ~RET~ → ~majutsu-visit-thing~
 
 When [[https://github.com/hlissner/evil-snipe][evil-snipe]] is present, Majutsu automatically calls ~turn-off-evil-snipe-mode~
 and ~turn-off-evil-snipe-override-mode~ on ~majutsu-mode-hook~ to avoid conflicting

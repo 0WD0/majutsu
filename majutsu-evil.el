@@ -97,7 +97,7 @@ macro expansion until Evil is actually present."
     (kbd "E") #'majutsu-diffedit-emacs
     (kbd "M") #'majutsu-diffedit-smerge
     (kbd "?") #'majutsu-dispatch
-    (kbd "RET") #'majutsu-enter-dwim)
+    (kbd "RET") #'majutsu-visit-thing)
 
   (majutsu-evil--define-keys 'normal 'majutsu-mode-map
     (kbd "y") #'majutsu-duplicate-transient

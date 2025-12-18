@@ -87,17 +87,18 @@ Add new entries here to extend display behavior for additional buffers."
 
 (defclass majutsu-commit-section (magit-section)
   ((overlay :initform nil
-            :documentation "Selection overlay used by transient UIs.")))
+            :documentation "Selection overlay used by transient UIs.")
+   (keymap :initform 'majutsu-commit-section-map)))
 
 (defclass majutsu-diff-section (magit-section)
-  ((keymap :initform :keymap))
+  ((keymap :initform 'majutsu-diff-section-map))
   :abstract t)
 
 (defclass majutsu-file-section (majutsu-diff-section)
- ((keymap :initform :keymap)))
+ ((keymap :initform 'majutsu-file-section-map)))
 
 (defclass majutsu-hunk-section (majutsu-diff-section)
-  ((keymap :initform :keymap)
+  ((keymap :initform 'majutsu-hunk-section-map)
    (start :initarg :hunk-start)
    (header :initarg :header)
    (painted :initform nil)
