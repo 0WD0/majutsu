@@ -84,6 +84,11 @@ otherwise fall back to the current buffer's `tab-width'."
   :group 'majutsu
   :type 'boolean)
 
+(defface majutsu-diffstat-binary
+  '((t :inherit font-lock-constant-face :foreground "#81c8be"))
+  "Face for the (binary) label in diffstat entries."
+  :group 'majutsu)
+
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
 
@@ -118,9 +123,12 @@ Set to nil to always allow painting."
   (concat "^ ?"
           "\\(.*\\)"     ; file
           "\\( +| +\\)"  ; separator
-          "\\([0-9]+\\|Bin\\(?: +[0-9]+ -> [0-9]+ bytes\\)?$\\) ?"
-          "\\(\\+*\\)"   ; add
-          "\\(-*\\)$")   ; del
+          "\\("
+          "\\(?:[0-9]+\\)"
+          "\\|"
+          "(binary)\\(?: +[+-][0-9]+ bytes\\)?"
+          "\\)"
+          "\\(?: +\\(\\+*\\)\\(-*\\)\\)?$") ; add/del graph (optional)
   "Regexp matching `jj diff --stat` entries, modeled after Magit's statline.")
 
 (defun majutsu-diff-wash-diffstat ()
@@ -161,7 +169,21 @@ first \"diff --git\" header."
             (setq value (string-trim value))
             (magit-insert-section (jj-file value)
               (insert (magit-format-file 'stat file 'magit-filename))
-              (insert sep cnt " ")
+              (insert sep)
+              (cond
+               ((string-match "\\`(binary)\\(?: +\\([+-][0-9]+\\) bytes\\)?\\'" cnt)
+                (insert (propertize "(binary)" 'font-lock-face
+                                    'majutsu-diffstat-binary))
+                (when-let ((delta (match-string 1 cnt)))
+                  (insert " "
+                          (propertize delta 'font-lock-face
+                                      (if (string-prefix-p "-" delta)
+                                          'magit-diffstat-removed
+                                        'magit-diffstat-added))
+                          " bytes")))
+               (t
+                (insert cnt)))
+              (insert " ")
               (when add
                 (insert (propertize add 'font-lock-face
                                     'magit-diffstat-added)))
