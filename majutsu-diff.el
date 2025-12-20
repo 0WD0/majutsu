@@ -131,13 +131,25 @@ Set to nil to always allow painting."
           "\\(?: +\\(\\+*\\)\\(-*\\)\\)?$") ; add/del graph (optional)
   "Regexp matching `jj diff --stat` entries, modeled after Magit's statline.")
 
+(defun majutsu-diff--collect-diff-files ()
+  "Return a list of file paths from \"diff --git\" headers in the buffer.
+The list is in the same order as the diff headers appear."
+  (save-excursion
+    (goto-char (point-min))
+    (let (files)
+      (while (re-search-forward "^diff --git a/\\(.*\\) b/\\(.*\\)$" nil t)
+        (push (match-string 2) files))
+      (nreverse files))))
+
 (defun majutsu-diff-wash-diffstat ()
   "Wash the diffstat produced by `jj diff --stat'.
 
 Assumes point is at the start of the diff output and that the output was
 generated using `--git --stat', meaning the diffstat appears before the
 first \"diff --git\" header."
-  (let (heading (beg (point)))
+  (let ((files (majutsu-diff--collect-diff-files))
+        heading
+        (beg (point)))
     ;; Like `magit-diff-wash-diffstat': find the summary line first, delete it,
     ;; then rewrite each stat line as a `diffstat' section.
     (when (re-search-forward "^ ?\\([0-9]+ +files? change[^\n]*\n\\)" nil t)
@@ -152,22 +164,13 @@ first \"diff --git\" header."
                  (sep  (match-string 2))
                  (cnt  (match-string 3))
                  (add  (match-string 4))
-                 (del  (match-string 5))
-                 (value file))
+                 (del  (match-string 5)))
             (majutsu-diff--delete-line)
             (when (string-match " +$" file)
               (setq sep (concat (match-string 0 file) sep))
               (setq file (substring file 0 (match-beginning 0))))
             (setq file (string-trim-right file))
-            ;; For renames, use the destination path as the section value so
-            ;; `majutsu-jump-to-diffstat-or-diff' can locate the diff section.
-            (cond
-             ((string-match "{.* => \\(.*\\)}" value)
-              (setq value (replace-match (match-string 1 value) nil t value)))
-             ((string-match " => " value)
-              (setq value (substring value (match-end 0)))))
-            (setq value (string-trim value))
-            (magit-insert-section (jj-file value)
+            (magit-insert-section (jj-file (pop files))
               (insert (magit-format-file 'stat file 'magit-filename))
               (insert sep)
               (cond
