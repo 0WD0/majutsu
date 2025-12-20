@@ -350,7 +350,10 @@ Assumes point is at the start of the diff output."
     (let* ((file-a (match-string 1))
            (file-b (match-string 2))
            (file (or file-b file-a))
-           (headers nil))
+           (headers nil)
+           (diff-header (buffer-substring-no-properties
+                         (line-beginning-position)
+                         (min (point-max) (1+ (line-end-position))))))
       ;; Drop the diff header line; keep the rest of the text in place.
       (majutsu-diff--delete-line)
       ;; Collect extended headers
@@ -358,10 +361,13 @@ Assumes point is at the start of the diff output."
                   (not (looking-at "^diff --git "))
                   (not (looking-at "^@@ ")))
         (push (buffer-substring-no-properties (line-beginning-position)
-                                              (line-end-position))
+                                              (min (point-max)
+                                                   (1+ (line-end-position))))
               headers)
         (majutsu-diff--delete-line))
-      (magit-insert-section (jj-file file)
+      (magit-insert-section
+          (jj-file file nil
+                   :header (concat diff-header (string-join (nreverse headers) "")))
         (magit-insert-heading
           (propertize (majutsu--diff-file-heading file (nreverse headers))
                       'font-lock-face 'magit-diff-file-heading))
@@ -377,7 +383,7 @@ Assumes point is at the start of the diff output."
                                                  (line-end-position))))
     ;; Remove original header and insert a propertized one.
     (majutsu-diff--delete-line)
-    (magit-insert-section (jj-hunk file nil :header header)
+    (magit-insert-section (jj-hunk file)
       (magit-insert-heading
         (propertize header 'font-lock-face 'magit-diff-hunk-heading))
       (let ((body-start (point)))
@@ -412,12 +418,25 @@ Assumes point is at the start of the diff output."
   "Return a formatted heading string for FILE using parsed LINES."
   (format "%-11s %s" (majutsu--diff-file-status lines) file))
 
+(defun majutsu--diff-file-header-from-lines (lines)
+  "Return raw diff header text from LINES up to the first hunk."
+  (let ((header-lines nil)
+        (in-header t))
+    (dolist (line lines)
+      (cond
+       ((string-match "^@@ " line)
+        (setq in-header nil))
+       (in-header
+        (push (concat line "\n") header-lines))))
+    (apply #'concat (nreverse header-lines))))
+
 (defun majutsu--insert-file-section (file lines)
   "Insert a file section with its hunks."
   ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
   ;; Magit's section toggling behavior for large revisions.
-  (let ((ordered-lines (nreverse lines)))
-    (magit-insert-section  (jj-file file)
+  (let* ((ordered-lines (nreverse lines))
+         (header (majutsu--diff-file-header-from-lines ordered-lines)))
+    (magit-insert-section (jj-file file nil :header header)
       (magit-insert-heading
         (propertize (majutsu--diff-file-heading file ordered-lines)
                     'font-lock-face 'magit-diff-file-heading))
@@ -443,7 +462,7 @@ Assumes point is at the start of the diff output."
 
 (defun majutsu--insert-hunk-section (file header lines)
   "Insert a hunk section."
-  (magit-insert-section (jj-hunk file nil :header header)
+  (magit-insert-section (jj-hunk file)
     (magit-insert-heading
       (propertize header 'font-lock-face 'magit-diff-hunk-heading))
     (let ((body-start (point)))
@@ -569,33 +588,37 @@ works with the simplified jj diff we render here."
   (when-let* ((section (magit-current-section))
               (_ (magit-section-match 'jj-hunk section))
               (file (magit-section-parent-value section))
-              (header (oref section header))
               (repo-root (majutsu--root)))
-    ;; Parse the hunk header to get line numbers
-    (when (string-match "^@@.*\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)?.*@@" header)
-      (let* ((start-line (string-to-number (match-string 1 header)))
-             ;; Calculate which line within the hunk we're on
-             (hunk-start (oref section start))
-             (current-pos (point))
-             (line-offset 0)
-             (full-file-path (expand-file-name file repo-root)))
-        ;; Count lines from hunk start to current position
-        (save-excursion
-          (goto-char hunk-start)
-          (forward-line 1) ; Skip hunk header
-          (while (< (point) current-pos)
-            (let ((line (buffer-substring-no-properties
-                         (line-beginning-position) (line-end-position))))
-              ;; Only count context and added lines for line numbering
-              (unless (string-prefix-p "-" line)
-                (setq line-offset (1+ line-offset))))
-            (forward-line 1)))
-        ;; Open file and jump to calculated line
-        (let ((target-line (+ start-line line-offset -1))) ; -1 because we start counting from the header
-          (find-file full-file-path)
-          (goto-char (point-min))
-          (forward-line (max 0 target-line))
-          (message "Jumped to line %d in %s" (1+ target-line) file))))))
+    (let ((header (save-excursion
+                    (goto-char (oref section start))
+                    (buffer-substring-no-properties
+                     (line-beginning-position)
+                     (line-end-position)))))
+      ;; Parse the hunk header to get line numbers
+      (when (string-match "^@@.*\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)?.*@@" header)
+        (let* ((start-line (string-to-number (match-string 1 header)))
+               ;; Calculate which line within the hunk we're on
+               (hunk-start (oref section start))
+               (current-pos (point))
+               (line-offset 0)
+               (full-file-path (expand-file-name file repo-root)))
+          ;; Count lines from hunk start to current position
+          (save-excursion
+            (goto-char hunk-start)
+            (forward-line 1) ; Skip hunk header
+            (while (< (point) current-pos)
+              (let ((line (buffer-substring-no-properties
+                           (line-beginning-position) (line-end-position))))
+                ;; Only count context and added lines for line numbering
+                (unless (string-prefix-p "-" line)
+                  (setq line-offset (1+ line-offset))))
+              (forward-line 1)))
+          ;; Open file and jump to calculated line
+          (let ((target-line (+ start-line line-offset -1))) ; -1 because we start counting from the header
+            (find-file full-file-path)
+            (goto-char (point-min))
+            (forward-line (max 0 target-line))
+            (message "Jumped to line %d in %s" (1+ target-line) file)))))))
 
 (defun majutsu-visit-file ()
   "Visit the file at point."
