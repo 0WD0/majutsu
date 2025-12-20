@@ -95,12 +95,14 @@ Add new entries here to extend display behavior for additional buffers."
   :abstract t)
 
 (defclass majutsu-file-section (majutsu-diff-section)
- ((keymap :initform 'majutsu-file-section-map)))
+  ((keymap :initform 'majutsu-file-section-map)
+   (header :initarg :header
+           :initform nil
+           :documentation "Raw file header text (diff --git + extended headers).")))
 
 (defclass majutsu-hunk-section (majutsu-diff-section)
   ((keymap :initform 'majutsu-hunk-section-map)
    (start :initarg :hunk-start)
-   (header :initarg :header)
    (painted :initform nil)
    (refined :initform nil)
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
