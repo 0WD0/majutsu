@@ -96,7 +96,6 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar-local majutsu-diff--context-lines nil)
 (defvar-local majutsu-diff--paint-whitespace-enabled t)
 (defvar-local majutsu-diff--inserted-bytes 0)
-(defvar-local majutsu-diff--paint-whitespace-enabled t)
 (defcustom majutsu-diff-whitespace-max-chars 12000
   "Skip whitespace painting for hunks larger than this many chars.
 Set to nil to always paint whitespace inside hunks."
@@ -296,33 +295,17 @@ section or a child thereof."
     res))
 
 (defun majutsu--insert-diff-hunks (diff-output)
-  "Parse and insert diff output as navigable hunk sections."
-  (let ((lines (split-string diff-output "\n"))
-        current-file
-        file-section-content
-        in-file-section)
-    (dolist (line lines)
-      (let ((clean-line (substring-no-properties line)))
-        (cond
-         ;; File header
-         ((string-match "^diff --git a/\\(.*\\) b/\\(.*\\)$" clean-line)
-          (let ((file-a (match-string 1 clean-line))
-                (file-b (match-string 2 clean-line)))
-            ;; Finish previous file section
-            (when (and in-file-section current-file)
-              (majutsu--insert-file-section current-file file-section-content))
-            ;; Start new file section
-            (setq current-file (or file-b file-a)
-                  file-section-content (list line)
-                  in-file-section t))) 
-         ;; Collect lines for current file section
-         (in-file-section
-          (push line file-section-content))
-         ;; Outside of any file section
-         (t nil))))
-    ;; Process final file section if any
-    (when (and in-file-section current-file)
-      (majutsu--insert-file-section current-file file-section-content))))
+  "Insert DIFF-OUTPUT and wash it into navigable hunk sections."
+  (let ((start (point)))
+    (when diff-output
+      (insert diff-output)
+      (unless (or (string-empty-p diff-output)
+                  (string-suffix-p "\n" diff-output))
+        (insert "\n")))
+    (save-restriction
+      (narrow-to-region start (point))
+      (goto-char (point-min))
+      (majutsu-diff-wash-diffs '("--git")))))
 
 (defun majutsu-diff-wash-diffs (args)
   "Parse a jj diff already inserted into the current buffer.
@@ -380,10 +363,35 @@ Assumes point is at the start of the diff output."
 (defun majutsu-diff-wash-hunk (file)
   "Wrap the current hunk in a section for FILE without copying its body."
   (let* ((header (buffer-substring-no-properties (line-beginning-position)
-                                                 (line-end-position))))
+                                                 (line-end-position)))
+         (ranges nil)
+         (about nil)
+         (combined nil)
+         (from-range nil)
+         (from-ranges nil)
+         (to-range nil))
+    (when (string-match "^@\\{2,\\} \\(.+?\\) @\\{2,\\}\\(?: \\(.*\\)\\)?$" header)
+      (setq about (match-string 2 header))
+      (setq ranges (mapcar (lambda (str)
+                             (let ((nums (mapcar #'string-to-number
+                                                 (split-string (substring str 1) ","))))
+                               (if (= (length nums) 1)
+                                   (append nums (list 1))
+                                 nums)))
+                           (split-string (match-string 1 header))))
+      (setq combined (= (length ranges) 3))
+      (setq from-ranges (and combined (butlast ranges)))
+      (setq from-range (if combined (car from-ranges) (car ranges)))
+      (setq to-range (car (last ranges))))
     ;; Remove original header and insert a propertized one.
     (majutsu-diff--delete-line)
-    (magit-insert-section (jj-hunk file)
+    (magit-insert-section
+        (jj-hunk file nil
+                 :combined combined
+                 :from-range from-range
+                 :from-ranges from-ranges
+                 :to-range to-range
+                 :about about)
       (magit-insert-heading
         (propertize header 'font-lock-face 'magit-diff-hunk-heading))
       (let ((body-start (point)))
@@ -417,64 +425,6 @@ Assumes point is at the start of the diff output."
 (defun majutsu--diff-file-heading (file lines)
   "Return a formatted heading string for FILE using parsed LINES."
   (format "%-11s %s" (majutsu--diff-file-status lines) file))
-
-(defun majutsu--diff-file-header-from-lines (lines)
-  "Return raw diff header text from LINES up to the first hunk."
-  (let ((header-lines nil)
-        (in-header t))
-    (dolist (line lines)
-      (cond
-       ((string-match "^@@ " line)
-        (setq in-header nil))
-       (in-header
-        (push (concat line "\n") header-lines))))
-    (apply #'concat (nreverse header-lines))))
-
-(defun majutsu--insert-file-section (file lines)
-  "Insert a file section with its hunks."
-  ;; Loosely modeled after `magit-diff-insert-file-section' to leverage
-  ;; Magit's section toggling behavior for large revisions.
-  (let* ((ordered-lines (nreverse lines))
-         (header (majutsu--diff-file-header-from-lines ordered-lines)))
-    (magit-insert-section (jj-file file nil :header header)
-      (magit-insert-heading
-        (propertize (majutsu--diff-file-heading file ordered-lines)
-                    'font-lock-face 'magit-diff-file-heading))
-      ;; Process the lines to find and insert hunks
-      (let ((hunk-lines nil)
-            (in-hunk nil)
-            (hunk-header nil))
-        (dolist (line ordered-lines)
-          (cond
-           ;; Hunk header
-           ((string-match "^@@ .* @@" line)
-            (when (and in-hunk hunk-header)
-              (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))
-            (setq hunk-header line
-                  hunk-lines nil
-                  in-hunk t))
-           ;; Hunk content
-           (in-hunk
-            (push line hunk-lines))))
-        ;; Insert final hunk
-        (when (and in-hunk hunk-header)
-          (majutsu--insert-hunk-section file hunk-header (nreverse hunk-lines)))))))
-
-(defun majutsu--insert-hunk-section (file header lines)
-  "Insert a hunk section."
-  (magit-insert-section (jj-hunk file)
-    (magit-insert-heading
-      (propertize header 'font-lock-face 'magit-diff-hunk-heading))
-    (let ((body-start (point)))
-      (dolist (line lines)
-        (insert (propertize line
-                            'font-lock-face
-                            (cond
-                             ((string-prefix-p "+" line) 'magit-diff-added)
-                             ((string-prefix-p "-" line) 'magit-diff-removed)
-                             (t 'magit-diff-context))))
-        (insert "\n"))
-      (majutsu-diff--paint-hunk-whitespace body-start (point) file))))
 
 ;;; Refinement
 
@@ -589,14 +539,18 @@ works with the simplified jj diff we render here."
               (_ (magit-section-match 'jj-hunk section))
               (file (magit-section-parent-value section))
               (repo-root (majutsu--root)))
-    (let ((header (save-excursion
-                    (goto-char (oref section start))
-                    (buffer-substring-no-properties
-                     (line-beginning-position)
-                     (line-end-position)))))
-      ;; Parse the hunk header to get line numbers
-      (when (string-match "^@@.*\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)?.*@@" header)
-        (let* ((start-line (string-to-number (match-string 1 header)))
+    (let* ((to-range (oref section to-range))
+           (start-line (and to-range (car to-range))))
+      (unless start-line
+        (let ((header (save-excursion
+                        (goto-char (oref section start))
+                        (buffer-substring-no-properties
+                         (line-beginning-position)
+                         (line-end-position)))))
+          (when (string-match "^@@.*\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)?.*@@" header)
+            (setq start-line (string-to-number (match-string 1 header))))))
+      (when start-line
+        (let* ((start-line start-line)
                ;; Calculate which line within the hunk we're on
                (hunk-start (oref section start))
                (current-pos (point))
