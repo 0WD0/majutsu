@@ -911,37 +911,7 @@ disappear again."
 
 (defun majutsu-log-insert-diff ()
   "Insert jj diff with hunks into current buffer asynchronously."
-  (let* ((section (magit-insert-section (diffbuf)
-                    (magit-insert-heading "Working Copy Changes")
-                    (insert "Loading diffs...\n")))
-         (buf (current-buffer)))
-    (majutsu-run-jj-async
-     '("diff" "--git")
-     (lambda (output)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (let ((inhibit-read-only t)
-                 (magit-insert-section--parent section))
-             (save-excursion
-               (goto-char (oref section content))
-               (delete-region (point) (oref section end))
-               (if (and output (not (string-empty-p output)))
-                   (progn
-                     (majutsu--insert-diff-hunks output)
-                     (insert "\n"))
-                 (insert "No changes.\n"))
-               ;; Update section end marker
-               (set-marker (oref section end) (point)))))))
-     (lambda (err)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (let ((inhibit-read-only t)
-                 (magit-insert-section--parent section))
-             (save-excursion
-               (goto-char (oref section content))
-               (delete-region (point) (oref section end))
-               (insert (format "Error loading diffs: %s\n" err))
-               (set-marker (oref section end) (point))))))))))
+  (majutsu-insert-diff nil "Working Copy Changes"))
 
 ;;; Log insert conflicts
 

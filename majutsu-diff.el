@@ -109,10 +109,6 @@ Set to nil to always allow painting."
   :type '(choice (const :tag "No limit" nil)
           (integer :tag "Max bytes")))
 
-(defun majutsu-diff--ensure-flag (args flag)
-  "Return ARGS ensuring FLAG is present once at the end."
-  (if (member flag args) args (append args (list flag))))
-
 (defun majutsu-diff--delete-line ()
   "Delete current line, including trailing newline if present."
   (delete-region (line-beginning-position)
@@ -294,8 +290,9 @@ section or a child thereof."
       (setq res (nconc res (list "--context" (number-to-string ctx)))))
     res))
 
-(defun majutsu--insert-diff-hunks (diff-output)
-  "Insert DIFF-OUTPUT and wash it into navigable hunk sections."
+(defun majutsu--insert-diff-hunks (diff-output &optional args)
+  "Insert DIFF-OUTPUT and wash it into navigable hunk sections.
+ARGS are the diff arguments used to produce DIFF-OUTPUT."
   (let ((start (point)))
     (when diff-output
       (insert diff-output)
@@ -305,7 +302,48 @@ section or a child thereof."
     (save-restriction
       (narrow-to-region start (point))
       (goto-char (point-min))
-      (majutsu-diff-wash-diffs '("--git")))))
+      (majutsu-diff-wash-diffs args))))
+
+(defun majutsu--insert-diff (section &optional args keep-error)
+  "Run `jj diff' with ARGS, insert into SECTION, and wash.
+When KEEP-ERROR is non-nil, preserve existing content on error."
+  (let* ((buf (current-buffer))
+         (diff-args (majutsu--ensure-flag (copy-sequence args) "--git")))
+    (majutsu-run-jj-async
+     (cons "diff" diff-args)
+     (lambda (output)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (let ((inhibit-read-only t)
+                 (magit-insert-section--parent section))
+             (save-excursion
+               (goto-char (oref section content))
+               (delete-region (point) (oref section end))
+               (if (and output (not (string-empty-p output)))
+                   (majutsu--insert-diff-hunks output diff-args)
+                 (insert (propertize "No changes." 'face 'shadow)))
+               (insert "\n")
+               (set-marker (oref section end) (point)))))))
+     (lambda (err)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (let ((inhibit-read-only t)
+                 (magit-insert-section--parent section))
+             (save-excursion
+               (goto-char (oref section content))
+               (unless keep-error
+                 (delete-region (point) (oref section end))
+                 (insert (format "Error loading diffs: %s\n" err)))
+               (set-marker (oref section end) (point))))))))))
+
+(defun majutsu-insert-diff (&optional args heading)
+  "Insert a diff section and populate it asynchronously.
+ARGS are passed to `jj diff' (\"--git\" is ensured)."
+  (let ((section (magit-insert-section (diffbuf)
+                   (magit-insert-heading (or heading "Working Copy Changes"))
+                   (insert "Loading diffs...\n"))))
+    (majutsu--insert-diff section args)
+    section))
 
 (defun majutsu-diff-wash-diffs (args)
   "Parse a jj diff already inserted into the current buffer.
@@ -838,7 +876,7 @@ With prefix STYLE, cycle between `all' and `t'."
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
              (cmd-args (if majutsu-diff-show-stat
-                           (majutsu-diff--ensure-flag majutsu-diff--last-args "--stat")
+                           (majutsu--ensure-flag majutsu-diff--last-args "--stat")
                          majutsu-diff--last-args))
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)

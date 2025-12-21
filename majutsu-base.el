@@ -120,6 +120,16 @@ Add new entries here to extend display behavior for additional buffers."
 
 ;;; Utilities
 
+(defun majutsu--ensure-flag (args flag &optional position)
+  "Return ARGS ensuring FLAG is present once.
+POSITION may be `front' to insert FLAG at the beginning; otherwise FLAG
+is appended."
+  (if (member flag args)
+      args
+    (if (eq position 'front)
+        (cons flag args)
+      (append args (list flag)))))
+
 (defvar-local majutsu--repo-root nil
   "Cached repository root for the current buffer.")
 
