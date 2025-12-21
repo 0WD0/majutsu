@@ -18,6 +18,7 @@
 (require 'majutsu-core)
 (require 'majutsu-mode)
 (require 'majutsu-process)
+(require 'majutsu-config)
 (require 'majutsu-log)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
