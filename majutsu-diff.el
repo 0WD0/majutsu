@@ -951,11 +951,16 @@ When called from transient, use transient args and selections.
 When called interactively, diff commit at point or working copy."
   (interactive (list (if (eq transient-current-command 'majutsu-diff-transient--internal)
                          (majutsu-diff-arguments)
-                       (when-let ((rev (magit-section-value-if 'jj-commit)))
-                         (list "-r" rev)))))
+                       (if (and (eq major-mode 'majutsu-diff-mode)
+                                majutsu-buffer-diff-args)
+                           majutsu-buffer-diff-args
+                         (when-let ((rev (magit-section-value-if 'jj-commit)))
+                           (list "-r" rev))))))
   (let* ((from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
-         (final-args (append '("--git") (copy-sequence args))))
+         (final-args (if args
+                         (append '("--git") (copy-sequence args))
+                       '("--git"))))
     ;; Add selections
     (when from
       (setq final-args (append final-args (list "--from" from))))
