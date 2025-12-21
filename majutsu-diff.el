@@ -74,16 +74,6 @@ otherwise fall back to the current buffer's `tab-width'."
   :group 'majutsu
   :type 'integer)
 
-(defcustom majutsu-diff-context-step 2
-  "Step size when increasing or decreasing diff context lines."
-  :group 'majutsu
-  :type 'integer)
-
-(defcustom majutsu-diff-show-stat t
-  "Whether to show a summary (`jj diff --stat') above the patch."
-  :group 'majutsu
-  :type 'boolean)
-
 (defface majutsu-diffstat-binary
   '((t :inherit font-lock-constant-face :foreground "#81c8be"))
   "Face for the (binary) label in diffstat entries."
@@ -93,7 +83,6 @@ otherwise fall back to the current buffer's `tab-width'."
   "Alist mapping file names to cached tab widths.")
 
 (defvar-local majutsu-diff--last-refined-section nil)
-(defvar-local majutsu-diff--context-lines nil)
 (defvar-local majutsu-diff--paint-whitespace-enabled t)
 (defvar-local majutsu-diff--inserted-bytes 0)
 (defvar-local majutsu-diff--filesets nil
@@ -296,7 +285,7 @@ section or a child thereof."
   :description "Context lines"
   :class 'transient-option
   :key "-c"
-  :argument "--context="
+  :argument "--context "
   :reader #'transient-read-number-N0)
 
 ;;; Diff Parsing & Display
@@ -344,36 +333,6 @@ section or a child thereof."
                                  'display (list (list 'space :width tabw)))))
           ;; Paint tabs by giving them display width.
           (forward-line 1))))))
-
-(defun majutsu-diff--parse-context (args)
-  "Extract context line count from ARGS if present via `--context'."
-  (let ((rest args)
-        ctx)
-    (while rest
-      (pcase rest
-        (`("--context" ,num . ,more)
-         (setq ctx (string-to-number num)
-               rest nil))
-        (_ (setq rest (cdr rest)))))
-    ctx))
-
-(defun majutsu-diff--with-context (args ctx)
-  "Return ARGS where \"--context ctx\" is ensured or updated."
-  (let ((res '())
-        (rest args)
-        replaced)
-    (while rest
-      (pcase rest
-        (`("--context" ,_ . ,more)
-         (setq res (nconc res (list "--context" (number-to-string ctx))))
-         (setq rest more
-               replaced t))
-        (_
-         (setq res (nconc res (list (car rest))))
-         (setq rest (cdr rest)))))
-    (unless replaced
-      (setq res (nconc res (list "--context" (number-to-string ctx)))))
-    res))
 
 (defun majutsu--insert-diff-hunks (diff-output &optional args)
   "Insert DIFF-OUTPUT and wash it into navigable hunk sections.
@@ -882,28 +841,33 @@ file."
   (interactive)
   (majutsu-selection-select 'to))
 
-(defun majutsu-diff-context-set (n)
-  "Set context lines (`jj diff --context N') and refresh."
-  (interactive "nContext lines: ")
-  (setq majutsu-diff--context-lines (max 0 n))
-  (when majutsu-diff--last-args
-    (setq majutsu-diff--last-args
-          (majutsu-diff--with-context majutsu-diff--last-args majutsu-diff--context-lines))
-    (majutsu-diff-refresh)))
+(defun majutsu-diff-less-context (&optional count)
+  "Decrease the context for diff hunks by COUNT lines."
+  (interactive "p")
+  (majutsu-diff-set-context (##max 0 (- (or % 0) count))))
 
-(defun majutsu-diff-context-more ()
-  "Increase diff context lines and refresh."
-  (interactive)
-  (majutsu-diff-context-set
-   (+ (or majutsu-diff--context-lines majutsu-diff-default-context)
-      majutsu-diff-context-step)))
+(defun majutsu-diff-more-context (&optional count)
+  "Increase the context for diff hunks by COUNT lines."
+  (interactive "p")
+  (majutsu-diff-set-context (##+ (or % 0) count)))
 
-(defun majutsu-diff-context-less ()
-  "Decrease diff context lines and refresh (not below 0)."
+(defun majutsu-diff-default-context ()
+  "Reset context for diff hunks to the default height."
   (interactive)
-  (majutsu-diff-context-set
-   (max 0 (- (or majutsu-diff--context-lines majutsu-diff-default-context)
-             majutsu-diff-context-step))))
+  (majutsu-diff-set-context #'ignore))
+
+(defun majutsu-diff-set-context (fn)
+  (let* ((def majutsu-diff-default-context)
+         (val majutsu-diff--last-args)
+         (arg (seq-find (##string-match "^--context " %) val))
+         (num (if arg
+                  (string-to-number (substring arg 10))
+                def))
+         (val (delq arg val))
+         (num (funcall fn num))
+         (arg (and num (not (= num def)) (format "--context %d" num)))
+         (val (if arg (cons arg val) val)))
+    (majutsu-diff--set-value val)))
 
 (defun majutsu-diff-toggle-refine-hunk (&optional style)
   "Toggle word-level refinement within hunks.
@@ -931,9 +895,9 @@ With prefix STYLE, cycle between `all' and `t'."
   :doc "Keymap for `majutsu-diff-mode'."
   :parent majutsu-mode-map
   "t" #'majutsu-diff-toggle-refine-hunk
-  "+" #'majutsu-diff-context-more
-  "-" #'majutsu-diff-context-less
-  "=" #'majutsu-diff-context-set
+  "+" #'majutsu-diff-more-context
+  "-" #'majutsu-diff-less-context
+  "0" #'majutsu-diff-default-context
   "j" #'majutsu-jump-to-diffstat-or-diff)
 
 (define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
@@ -960,9 +924,7 @@ With prefix STYLE, cycle between `all' and `t'."
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
-             (cmd-args (if majutsu-diff-show-stat
-                           (majutsu--ensure-flag majutsu-diff--last-args "--stat")
-                         majutsu-diff--last-args))
+             (cmd-args majutsu-diff--last-args)
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
              (majutsu-process-apply-ansi-colors nil))
@@ -991,19 +953,11 @@ log view) or the working copy (if elsewhere)."
            nil)))
   (let* ((repo-root (majutsu--root))
          (buf (get-buffer-create "*majutsu-diff*"))
-         ;; Ensure we use --git format for our parser to work correctly
-         (final-args (append '("diff")
-                             (unless (member "--git" args) '("--git"))
-                             args)))
+         (final-args (append '("diff" "--git") args)))
     (with-current-buffer buf
       (setq default-directory repo-root)
       (majutsu-diff-mode)
       (setq-local majutsu--repo-root repo-root)
-      ;; Determine and remember context lines.
-      (let* ((ctx-from-args (majutsu-diff--parse-context final-args))
-             (ctx (or ctx-from-args majutsu-diff-default-context)))
-        (setq-local majutsu-diff--context-lines ctx)
-        (setq final-args (majutsu-diff--with-context final-args ctx)))
       (setq-local majutsu-diff--last-args final-args)
       (setq-local revert-buffer-function #'majutsu-refresh-buffer)
       (majutsu-diff-refresh)
