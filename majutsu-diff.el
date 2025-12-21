@@ -70,11 +70,6 @@ otherwise fall back to the current buffer's `tab-width'."
   :type '(choice (const :tag "Never adjust" nil)
           (const :tag "Use live file buffer value" t)))
 
-(defcustom majutsu-diff-default-context 3
-  "Default context lines to request from `jj diff --context N'."
-  :group 'majutsu
-  :type 'integer)
-
 (defface majutsu-diffstat-binary
   '((t :inherit font-lock-constant-face :foreground "#81c8be"))
   "Face for the (binary) label in diffstat entries."
@@ -858,7 +853,9 @@ file."
   (majutsu-diff-set-context #'ignore))
 
 (defun majutsu-diff-set-context (fn)
-  (let* ((def majutsu-diff-default-context)
+  (let* ((def (if-let* ((context (majutsu-get "diff.git.context")))
+                  (string-to-number context)
+                3))
          (val majutsu-diff--last-args)
          (arg (seq-find (##string-match "^--context " %) val))
          (num (if arg
