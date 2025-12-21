@@ -102,7 +102,6 @@ Add new entries here to extend display behavior for additional buffers."
 
 (defclass majutsu-hunk-section (majutsu-diff-section)
   ((keymap :initform 'majutsu-hunk-section-map)
-   (start :initarg :hunk-start)
    (fontified :initform nil)
    (combined :initarg :combined :initform nil)
    (from-range :initarg :from-range :initform nil)
