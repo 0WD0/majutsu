@@ -32,7 +32,7 @@
   "N"   'majutsu-new
   "s"   'majutsu-squash-transient
   "d"   'majutsu-diff-transient
-  "D"   'majutsu-diff
+  "D"   'majutsu-diff-dwim
   "r"   'majutsu-rebase-transient
   "b"   'majutsu-bookmark-transient
   "y"   'majutsu-duplicate-transient
