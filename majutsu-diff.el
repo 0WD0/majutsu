@@ -214,6 +214,24 @@ section or a child thereof."
        (recenter 0)))
     ((user-error "No diffstat in this buffer"))))
 
+(transient-define-argument majutsu-diff:--stat ()
+  :description "Show stats"
+  :class 'transient-switch
+  :key "-s"
+  :argument "--stat")
+
+(transient-define-argument majutsu-diff:--summary ()
+  :description "Show summary"
+  :class 'transient-switch
+  :key "-S"
+  :argument "--summary")
+
+(transient-define-argument majutsu-diff:--git ()
+  :description "Use git format (Always on)"
+  :class 'transient-switch
+  :key "-g"
+  :argument "--git")
+
 ;;; Diff Parsing & Display
 
 (defun majutsu-diff--tab-width (file)
@@ -996,8 +1014,7 @@ log view) or the working copy (if elsewhere)."
      :transient t)
     ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
    ["Options"
-    ("-s" "Stat" "--stat")
-    ("-S" "Summary" "--summary")]
+    (majutsu-diff:--stat)]
    ["Actions"
     ("d" "Execute" majutsu-diff-execute)
     ("q" "Quit" transient-quit-one)]])
