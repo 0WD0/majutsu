@@ -89,15 +89,13 @@ already supplied a color flag."
   (if (and (eq majutsu-process-color-mode 'always)
            (not (seq-some (lambda (arg) (string-prefix-p "--color" arg))
                           args)))
-      (cons "--color=always" args)
+      (majutsu--ensure-flag args "--color=always" 'front)
     args))
 
 (defun majutsu--process--maybe-add-no-pager (args)
   "Return ARGS with --no-pager injected.
 Avoids duplication if caller already supplied a --no-pager flag."
-  (if (member "--no-pager" args)
-      args
-    (cons "--no-pager" args)))
+  (majutsu--ensure-flag args "--no-pager" 'front))
 
 (defun majutsu--process--maybe-add-flags (args)
   "Return ARGS with additional flags suited to majutsu-run-jj(-async)"
