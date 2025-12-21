@@ -131,12 +131,12 @@ Returns (args filesets) pair."
    ;; Current buffer has args
    ((and (memq use-buffer-args '(always current))
          (eq major-mode 'majutsu-diff-mode))
-    (list majutsu-diff--last-args majutsu-diff--filesets))
+    (list majutsu-buffer-diff-args majutsu-diff--filesets))
 
    ;; Selected diff buffer has args
    ((and (memq use-buffer-args '(always selected))
          (when-let ((buf (majutsu--get-mode-buffer 'majutsu-diff-mode)))
-           (list (buffer-local-value 'majutsu-diff--last-args buf)
+           (list (buffer-local-value 'majutsu-buffer-diff-args buf)
                  (buffer-local-value 'majutsu-diff--filesets buf)))))
 
    ;; Saved transient values
@@ -155,7 +155,7 @@ ARGS are the diff options, FILESETS are path filters."
     (setf (alist-get 'majutsu-diff transient-values) args)
     (transient-save-values))
   (when (eq major-mode 'majutsu-diff-mode)
-    (setq-local majutsu-diff--last-args args)
+    (setq-local majutsu-buffer-diff-args args)
     (setq-local majutsu-diff--filesets filesets)
     (majutsu-diff-refresh)))
 
@@ -856,7 +856,7 @@ file."
   (let* ((def (if-let* ((context (majutsu-get "diff.git.context")))
                   (string-to-number context)
                 3))
-         (val majutsu-diff--last-args)
+         (val majutsu-buffer-diff-args)
          (arg (seq-find (##string-match "^--context " %) val))
          (num (if arg
                   (string-to-number (substring arg 10))
@@ -909,20 +909,20 @@ With prefix STYLE, cycle between `all' and `t'."
   (setq-local font-lock-multiline t)
   (add-hook 'post-command-hook #'majutsu-diff--maybe-clear-refinement nil t))
 
-(defvar-local majutsu-diff--last-args nil
+(defvar-local majutsu-buffer-diff-args nil
   "Arguments used for the last jj diff command in this buffer.")
 
 (defun majutsu-diff-refresh (&optional _ignore-auto _noconfirm)
   "Refresh the current diff buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-diff-mode)
-  (when majutsu-diff--last-args
+  (when majutsu-buffer-diff-args
     (let ((inhibit-read-only t)
           (repo-root (majutsu--root)))
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
-             (cmd-args majutsu-diff--last-args)
+             (cmd-args majutsu-buffer-diff-args)
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
              (majutsu-process-apply-ansi-colors nil))
@@ -932,7 +932,7 @@ With prefix STYLE, cycle between `all' and `t'."
         (magit-insert-section (diffbuf)
           (magit-insert-section (diff-root)
             (magit-insert-heading
-              (format "jj %s" (string-join majutsu-diff--last-args " ")))
+              (format "jj %s" (string-join majutsu-buffer-diff-args " ")))
             (insert "\n")
             (majutsu-diff--wash-with-state
                 #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
@@ -956,7 +956,7 @@ log view) or the working copy (if elsewhere)."
       (setq default-directory repo-root)
       (majutsu-diff-mode)
       (setq-local majutsu--repo-root repo-root)
-      (setq-local majutsu-diff--last-args final-args)
+      (setq-local majutsu-buffer-diff-args final-args)
       (setq-local revert-buffer-function #'majutsu-refresh-buffer)
       (majutsu-diff-refresh)
       (majutsu-display-buffer buf 'diff))))
