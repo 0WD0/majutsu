@@ -95,18 +95,23 @@ otherwise fall back to the current buffer's `tab-width'."
           (const :tag "Selected" selected)
           (const :tag "Current" current)
           (const :tag "Never" never)))
+
 (defcustom majutsu-diff-whitespace-max-chars 12000
   "Skip whitespace painting for hunks larger than this many chars.
 Set to nil to always paint whitespace inside hunks."
   :group 'majutsu
   :type '(choice (const :tag "No limit" nil)
           (integer :tag "Max characters")))
+
 (defcustom majutsu-diff-whitespace-max-bytes 800000
   "Disable whitespace painting when a diff exceeds this many bytes.
 Set to nil to always allow painting."
   :group 'majutsu
   :type '(choice (const :tag "No limit" nil)
           (integer :tag "Max bytes")))
+
+(put 'majutsu-diff-mode 'majutsu-diff-default-arguments
+     '("--stat"))
 
 (defun majutsu-diff--delete-line ()
   "Delete current line, including trailing newline if present."
