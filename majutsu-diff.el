@@ -144,8 +144,7 @@ Returns (args filesets) pair."
       (list saved nil)))
 
    ;; Mode default
-   ((list (or (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)
-              '("--context" "3"))
+   ((list (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)
           nil))))
 
 (defun majutsu-diff--set-value (args &optional save filesets)
@@ -281,7 +280,7 @@ section or a child thereof."
   :description "Context lines"
   :class 'transient-option
   :key "-c"
-  :argument "--context "
+  :argument "--context="
   :reader #'transient-read-number-N0)
 
 ;;; Diff Parsing & Display
@@ -857,13 +856,13 @@ file."
                   (string-to-number context)
                 3))
          (val majutsu-buffer-diff-args)
-         (arg (seq-find (##string-match "^--context " %) val))
+         (arg (seq-find (##string-match "^--context=" %) val))
          (num (if arg
                   (string-to-number (substring arg 10))
                 def))
          (val (delq arg val))
          (num (funcall fn num))
-         (arg (and num (not (= num def)) (format "--context %d" num)))
+         (arg (and num (not (= num def)) (format "--context=%d" num)))
          (val (if arg (cons arg val) val)))
     (majutsu-diff--set-value val)))
 
@@ -922,7 +921,7 @@ With prefix STYLE, cycle between `all' and `t'."
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
-             (cmd-args majutsu-buffer-diff-args)
+             (cmd-args (cons "diff" majutsu-buffer-diff-args))
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
              (majutsu-process-apply-ansi-colors nil))
@@ -932,7 +931,7 @@ With prefix STYLE, cycle between `all' and `t'."
         (magit-insert-section (diffbuf)
           (magit-insert-section (diff-root)
             (magit-insert-heading
-              (format "jj %s" (string-join majutsu-buffer-diff-args " ")))
+              (format "jj diff %s" (string-join majutsu-buffer-diff-args " ")))
             (insert "\n")
             (majutsu-diff--wash-with-state
                 #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
@@ -951,7 +950,7 @@ log view) or the working copy (if elsewhere)."
            nil)))
   (let* ((repo-root (majutsu--root))
          (buf (get-buffer-create "*majutsu-diff*"))
-         (final-args (append '("diff" "--git") args)))
+         (final-args (append '("--git") args)))
     (with-current-buffer buf
       (setq default-directory repo-root)
       (majutsu-diff-mode)
