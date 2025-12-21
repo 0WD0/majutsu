@@ -945,33 +945,33 @@ With prefix STYLE, cycle between `all' and `t'."
       (goto-char (point-min)))))
 
 ;;;###autoload
-(defun majutsu-diff-dwim (&optional args)
-  "Show diff with ARGS, using DWIM logic.
-When called from transient, use transient args and selections.
-When called interactively, diff commit at point or working copy."
-  (interactive (list (if (eq transient-current-command 'majutsu-diff-transient--internal)
-                         (majutsu-diff-arguments)
-                       (if (and (eq major-mode 'majutsu-diff-mode)
-                                majutsu-buffer-diff-args)
-                           majutsu-buffer-diff-args
-                         (when-let ((rev (magit-section-value-if 'jj-commit)))
-                           (list "-r" rev))))))
+(defun majutsu-diff-dwim (&optional args files)
+  "Show changes for the thing at point."
+  (interactive (list (car (majutsu-diff--get-value))
+                     (cadr (majutsu-diff--get-value))))
+  (pcase (majutsu-diff--dwim)
+    (`(commit . ,rev)
+     (majutsu-diff-show rev args files))
+    (_ (majutsu-diff-show "@" args files))))
+
+(defun majutsu-diff--dwim ()
+  "Return information for performing DWIM diff."
+  (if-let ((rev (magit-section-value-if 'jj-commit)))
+      (cons 'commit rev)
+    nil))
+
+(defun majutsu-diff-show (rev &optional args files)
+  "Show diff for REV with ARGS and FILES."
   (let* ((from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
-         (final-args (if args
-                         (append '("--git") (copy-sequence args))
-                       '("--git"))))
-    ;; Add selections
-    (when from
-      (setq final-args (append final-args (list "--from" from))))
-    (when to
-      (setq final-args (append final-args (list "--to" to))))
-    ;; DWIM: if no revision specified, use @
-    (when (and (not from) (not to)
-               (not (member "-r" final-args))
-               (not (member "--from" final-args)))
-      (setq final-args (append final-args (list "-r" "@"))))
-    ;; Create buffer
+         (args (majutsu--ensure-flag args "--git"))
+         (final-args (append args
+                             (cond
+                              ((and from to) (list "--from" from "--to" to))
+                              (from (list "--from" from))
+                              (to (list "--to" to))
+                              (t (list "-r" rev)))
+                             (when files files))))
     (let* ((repo-root (majutsu--root))
            (buf (get-buffer-create "*majutsu-diff*")))
       (with-current-buffer buf
@@ -979,6 +979,7 @@ When called interactively, diff commit at point or working copy."
         (majutsu-diff-mode)
         (setq-local majutsu--repo-root repo-root)
         (setq-local majutsu-buffer-diff-args final-args)
+        (setq-local majutsu-diff--filesets files)
         (setq-local revert-buffer-function #'majutsu-refresh-buffer)
         (majutsu-diff-refresh)
         (majutsu-display-buffer buf 'diff)))
