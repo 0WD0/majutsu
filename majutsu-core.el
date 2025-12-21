@@ -19,6 +19,31 @@
 
 ;;; Transient UX integration
 
+(defcustom majutsu-prefix-use-buffer-arguments 'selected
+  "Whether Majutsu transient prefixes reuse arguments from relevant buffers.
+
+Valid values are:
+`always'   Always use arguments from an existing relevant buffer.
+`selected' Use arguments from a relevant buffer displayed in a window.
+`current'  Use arguments only when the current buffer is relevant.
+`never'    Never reuse arguments from buffers."
+  :group 'majutsu
+  :type '(choice (const :tag "Always" always)
+          (const :tag "Selected" selected)
+          (const :tag "Current" current)
+          (const :tag "Never" never)))
+
+(defcustom majutsu-direct-use-buffer-arguments 'selected
+  "Whether direct commands reuse arguments from relevant buffers.
+
+This affects commands that can be invoked from a transient prefix, but
+are also commonly invoked directly."
+  :group 'majutsu
+  :type '(choice (const :tag "Always" always)
+          (const :tag "Selected" selected)
+          (const :tag "Current" current)
+          (const :tag "Never" never)))
+
 (defun majutsu--transient--majutsu-prefix-p ()
   "Return non-nil when the active transient prefix is a Majutsu command."
   (and (boundp 'transient--prefix)

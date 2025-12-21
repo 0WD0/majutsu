@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'majutsu)
 
 (ert-deftest majutsu-diff-inserts-toggleable-sections ()
@@ -81,6 +82,45 @@
                           (oref diffstat children)))
         (should (eieio-object-p diff-file))
         (should (oref diff-file content))))))
+
+(ert-deftest majutsu-diff-remembered-args-filters-only-formatting-options ()
+  "Only diff formatting options should be remembered per buffer."
+  (should (equal (majutsu-diff--remembered-args
+                  '("--stat"
+                    "-r" "@-"
+                    "--from" "main"
+                    "--context=5"
+                    "--tool" ":git"
+                    "--ignore-all-space"))
+                 '("--stat" "--context=5" "--tool" ":git" "--ignore-all-space"))))
+
+(ert-deftest majutsu-diff-set-buffer-args-does-not-clear-filesets ()
+  "Updating diff args must not clear existing filesets unless requested."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-filesets '("a" "b"))
+    (cl-letf (((symbol-function 'majutsu-diff-refresh) #'ignore))
+      (majutsu-diff--set-buffer-args '("--summary")))
+    (should (equal majutsu-buffer-diff-filesets '("a" "b")))
+    (should (equal majutsu-buffer-diff-args '("--summary")))))
+
+(ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
+  "When called from the transient, DWIM should use current transient args."
+  (let ((transient-current-command 'majutsu-diff-transient--internal)
+        (majutsu-direct-use-buffer-arguments 'never)
+        called-args
+        called-files)
+    (cl-letf (((symbol-function 'majutsu-diff-show)
+               (lambda (_rev args files)
+                 (setq called-args args
+                       called-files files)))
+              ((symbol-function 'majutsu-diff--dwim)
+               (lambda () '(commit . "abc123")))
+              ((symbol-function 'transient-args)
+               (lambda (&rest _) '("--context=9" "--stat"))))
+      (call-interactively #'majutsu-diff-dwim)
+      (should (equal called-args '("--context=9" "--stat")))
+      (should (equal called-files nil)))))
 
 (provide 'majutsu-diff-test)
 
