@@ -83,6 +83,8 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar-local majutsu-diff--inserted-bytes 0)
 (defvar-local majutsu-diff--filesets nil
   "Filesets filter for current diff buffer.")
+(defvar-local majutsu-diff--rev-args nil
+  "Revision arguments for current diff buffer.")
 
 (defcustom majutsu-diff-use-buffer-arguments 'selected
   "Whether to use buffer arguments in diff transient.
@@ -926,7 +928,10 @@ With prefix STYLE, cycle between `all' and `t'."
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
-             (cmd-args (cons "diff" majutsu-buffer-diff-args))
+             (cmd-args (append (list "diff")
+                               majutsu-buffer-diff-args
+                               majutsu-diff--rev-args
+                               majutsu-diff--filesets))
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
              (majutsu-process-apply-ansi-colors nil))
@@ -965,21 +970,21 @@ With prefix STYLE, cycle between `all' and `t'."
   (let* ((from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
          (args (majutsu--ensure-flag args "--git"))
-         (final-args (append args
-                             (cond
-                              ((and from to) (list "--from" from "--to" to))
-                              (from (list "--from" from))
-                              (to (list "--to" to))
-                              (t (list "-r" rev)))
-                             (when files files))))
+         (rev-args (cond
+                    ((and from to) (list "--from" from "--to" to))
+                    (from (list "--from" from))
+                    (to (list "--to" to))
+                    (t (list "-r" rev))))
+         (final-args (append args rev-args (when files files))))
     (let* ((repo-root (majutsu--root))
            (buf (get-buffer-create "*majutsu-diff*")))
       (with-current-buffer buf
         (setq default-directory repo-root)
         (majutsu-diff-mode)
         (setq-local majutsu--repo-root repo-root)
-        (setq-local majutsu-buffer-diff-args final-args)
+        (setq-local majutsu-buffer-diff-args args)
         (setq-local majutsu-diff--filesets files)
+        (setq-local majutsu-diff--rev-args rev-args)
         (setq-local revert-buffer-function #'majutsu-refresh-buffer)
         (majutsu-diff-refresh)
         (majutsu-display-buffer buf 'diff)))
