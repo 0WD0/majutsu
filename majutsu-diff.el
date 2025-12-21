@@ -945,48 +945,38 @@ With prefix STYLE, cycle between `all' and `t'."
       (goto-char (point-min)))))
 
 ;;;###autoload
-(defun majutsu-diff (&optional args)
-  "Show diff with ARGS.
-If called interactively, defaults to diffing the commit at point (if in
-log view) or the working copy (if elsewhere)."
-  (interactive
-   (list (if-let* ((rev (magit-section-value-if 'jj-commit)))
-             (list "-r" rev)
-           nil)))
-  (let* ((repo-root (majutsu--root))
-         (buf (get-buffer-create "*majutsu-diff*"))
-         (final-args (append '("--git") args)))
-    (with-current-buffer buf
-      (setq default-directory repo-root)
-      (majutsu-diff-mode)
-      (setq-local majutsu--repo-root repo-root)
-      (setq-local majutsu-buffer-diff-args final-args)
-      (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-      (majutsu-diff-refresh)
-      (majutsu-display-buffer buf 'diff))))
-
-(defun majutsu-diff-execute (&optional args)
-  "Execute diff using transient selections or ARGS."
-  (interactive (list (majutsu-diff-arguments)))
+(defun majutsu-diff-dwim (&optional args)
+  "Show diff with ARGS, using DWIM logic.
+When called from transient, use transient args and selections.
+When called interactively, diff commit at point or working copy."
+  (interactive (list (if (eq transient-current-command 'majutsu-diff-transient--internal)
+                         (majutsu-diff-arguments)
+                       (when-let ((rev (magit-section-value-if 'jj-commit)))
+                         (list "-r" rev)))))
   (let* ((from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
-         (final-args (copy-sequence args)))
-    ;; If we have selections, they override or supplement standard args
+         (final-args (append '("--git") (copy-sequence args))))
+    ;; Add selections
     (when from
       (setq final-args (append final-args (list "--from" from))))
     (when to
       (setq final-args (append final-args (list "--to" to))))
-
-    ;; If no selections and no specific revision args, fallback to DWIM
+    ;; DWIM: if no revision specified, use @
     (when (and (not from) (not to)
                (not (member "-r" final-args))
                (not (member "--from" final-args)))
-      ;; DWIM logic: if in log view, diff commit at point. Else working copy.
-      (if-let* ((rev (magit-section-value-if 'jj-commit)))
-          (setq final-args (append final-args (list "-r" rev)))
-        (setq final-args (append final-args (list "-r" "@")))))
-
-    (majutsu-diff final-args)
+      (setq final-args (append final-args (list "-r" "@"))))
+    ;; Create buffer
+    (let* ((repo-root (majutsu--root))
+           (buf (get-buffer-create "*majutsu-diff*")))
+      (with-current-buffer buf
+        (setq default-directory repo-root)
+        (majutsu-diff-mode)
+        (setq-local majutsu--repo-root repo-root)
+        (setq-local majutsu-buffer-diff-args final-args)
+        (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+        (majutsu-diff-refresh)
+        (majutsu-display-buffer buf 'diff)))
     (majutsu-selection-session-end)))
 
 ;;;###autoload
@@ -1041,7 +1031,7 @@ log view) or the working copy (if elsewhere)."
     (majutsu-diff:--summary)
     (majutsu-diff:--context)]
    ["Actions"
-    ("d" "Execute" majutsu-diff-execute)
+    ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
     ("g" "Refresh" majutsu-diff-refresh-transient :transient t)
     ("q" "Quit" transient-quit-one)]])
