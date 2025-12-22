@@ -1273,7 +1273,6 @@ mutating the wrong buffer."
 (transient-define-prefix majutsu-log-transient ()
   "Transient interface for adjusting jj log options."
   :man-page "jj-log"
-  :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description majutsu-log--transient-description
    :class transient-columns
