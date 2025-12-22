@@ -227,7 +227,6 @@ misclassifying Majutsu candidates."
 
 (transient-define-prefix majutsu-bookmark-transient--internal ()
   "Internal transient for jj bookmark operations."
-  :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   ["Bookmark Operations"
    [

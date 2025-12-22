@@ -278,7 +278,6 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-transient ()
   "Top-level transient for jj git operations."
   :man-page "jj-git"
-  :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description "JJ Git"
    :class transient-columns
