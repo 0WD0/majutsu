@@ -186,7 +186,6 @@ Accepts keys :parents, :after, :before."
 (transient-define-prefix majutsu-new-transient--internal ()
   "Internal transient for jj new operations."
   :man-page "jj-new"
-  :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description majutsu-new--description
    :class transient-columns

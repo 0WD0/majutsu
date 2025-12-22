@@ -133,7 +133,6 @@ ARGS are passed from the transient."
 (transient-define-prefix majutsu-rebase-transient--internal ()
   "Internal transient for jj rebase operations."
   :man-page "jj-rebase"
-  :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   [:description
    (lambda ()
