@@ -523,7 +523,7 @@ Also registers a variable watcher to invalidate the template cache."
   "Template for the timestamp column.")
 
 (majutsu-log-define-column long-desc
-  [:if [:description] [:json [:description]] [:json " "]]
+  [:json [:description :trim_end]]
   "Template for the long-desc column.
 Note: This must return a valid JSON string (usually via :json) to be parsed correctly.")
 
@@ -578,11 +578,8 @@ Returns a plist with :template, :columns, and :field-order."
          (templates (mapcar (lambda (c)
                               (majutsu-log--column-template (plist-get c :field)))
                             complete))
-         (segments (list majutsu-log--field-separator))
-         (compiled nil))
-    (dolist (tmpl templates)
-      (setq segments (append segments (list tmpl majutsu-log--field-separator))))
-    (setq compiled (tpl-compile (vconcat segments (list "\n"))))
+         (compiled (tpl-compile `[,majutsu-log--field-separator
+                                  ,(vconcat (list :join majutsu-log--field-separator) templates)])))
     (list :template compiled
           :columns complete
           :field-order field-order)))
