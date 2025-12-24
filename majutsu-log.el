@@ -655,7 +655,7 @@ Returns a plist with :template, :columns, and :field-order."
      (setq value (string-remove-suffix " ago" value))
      (setq entry (plist-put entry :timestamp value)))
     ('long-desc
-     (setq entry (plist-put entry :long-desc (majutsu-log--parse-json-safe value))))
+     (setq entry (plist-put entry :long-desc (string-join (cdr (string-lines (majutsu-log--parse-json-safe value))) "\n"))))
     ('flags
      (setq entry (majutsu-log--apply-flags entry value)))
     ('git-head
