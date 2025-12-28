@@ -96,7 +96,7 @@
 (ert-deftest test-majutsu-template-compile-map-join ()
   (mt--is (tpl-compile [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
           "self.bookmarks().map(|b| b.name())")
-  (mt--is (tpl-compile [:join [:str ", "] [:raw "self.bookmarks()"] b [:raw "b.name()"]])
+  (mt--is (tpl-compile [:map-join [:str ", "] [:raw "self.bookmarks()"] b [:raw "b.name()"]])
           "self.bookmarks().map(|b| b.name()).join(\", \")"))
 
 (ert-deftest test-majutsu-template-compile-filter-any-all ()
@@ -328,8 +328,8 @@
     (should (equal (majutsu-template-compile node)
                    "label(\"status\", \"ok\")"))))
 
-(ert-deftest test-majutsu-template-join-helper ()
-  (let ((node (majutsu-template-join [:str ", "]
+(ert-deftest test-majutsu-template-map-join-helper ()
+  (let ((node (majutsu-template-map-join [:str ", "]
                                      [:raw "self.parents()"]
                                      'p
                                      [:raw "p.commit_id()"])))
