@@ -118,6 +118,7 @@ With prefix ALL, include remote bookmarks."
     (with-current-buffer buf
       (setq buffer-read-only nil)
       (erase-buffer)
+      (font-lock-mode 1)
       (insert output)
       (goto-char (point-min))
       (view-mode 1))
