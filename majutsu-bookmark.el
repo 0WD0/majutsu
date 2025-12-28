@@ -99,9 +99,9 @@ When ALL-REMOTES is non-nil, include remote bookmarks formatted as NAME@REMOTE."
 (defun majutsu-bookmark-track ()
   "Track remote bookmark(s)."
   (interactive)
-  (let* ((remote-bookmarks (majutsu--get-bookmark-names t))
-         (table (majutsu--completion-table-with-category remote-bookmarks 'majutsu-bookmark))
-         (choice (and remote-bookmarks (completing-read "Track remote bookmark: " table nil t))))
+  (let* ((bookmarks (majutsu--get-bookmark-names t))
+         (table (majutsu--completion-table-with-category bookmarks 'majutsu-bookmark))
+         (choice (completing-read "Track remote bookmark: " table)))
     (if (not choice)
         (message "No remote bookmarks found")
       (when (zerop (majutsu-call-jj "bookmark" "track" choice))
