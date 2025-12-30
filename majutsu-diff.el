@@ -84,7 +84,7 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar-local majutsu-diff--last-refined-section nil)
 (defvar-local majutsu-diff--paint-whitespace-enabled t)
 (defvar-local majutsu-diff--inserted-bytes 0)
-(defvar-local majutsu-diff--filesets nil
+(defvar-local majutsu-buffer-diff-filesets nil
   "Filesets filter for current diff buffer.")
 (defvar-local majutsu-diff--rev-args nil
   "Revision arguments for current diff buffer.")
@@ -176,31 +176,28 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
           (setq rest (cdr rest))))))
     (nreverse out)))
 
-(defun majutsu-diff--get-value (&optional mode use-buffer-args)
+(defun majutsu-diff--get-value (mode &optional use-buffer-args)
   "Get diff arguments for MODE.
 
 Returns (args filesets) pair.  USE-BUFFER-ARGS follows
 `majutsu-prefix-use-buffer-arguments' or
 `majutsu-direct-use-buffer-arguments'."
-  (setq mode (or mode 'majutsu-diff-mode))
   (setq use-buffer-args
-        (pcase use-buffer-args
-          ('prefix
-           majutsu-prefix-use-buffer-arguments)
-          ((or 'direct (pred null))
-           majutsu-direct-use-buffer-arguments)
+        (pcase-exhaustive use-buffer-args
+          ('prefix majutsu-prefix-use-buffer-arguments)
+          ('direct majutsu-direct-use-buffer-arguments)
+          ('nil majutsu-direct-use-buffer-arguments)
           ((or 'always 'selected 'current 'never)
-           use-buffer-args)
-          (_
-           majutsu-direct-use-buffer-arguments)))
+           use-buffer-args)))
   (cond
    ((and (memq use-buffer-args '(always selected current))
          (eq major-mode mode))
-    (list majutsu-buffer-diff-args majutsu-diff--filesets))
+    (list majutsu-buffer-diff-args
+          majutsu-buffer-diff-filesets))
    ((and (memq use-buffer-args '(always selected))
          (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
            (list (buffer-local-value 'majutsu-buffer-diff-args buf)
-                 (buffer-local-value 'majutsu-diff--filesets buf)))))
+                 (buffer-local-value 'majutsu-buffer-diff-filesets buf)))))
    ((plist-member (symbol-plist mode) 'majutsu-diff-current-arguments)
     (list (get mode 'majutsu-diff-current-arguments) nil))
    ((when-let* ((elt (assq (intern (format "majutsu-diff:%s" mode))
@@ -1026,7 +1023,7 @@ With prefix STYLE, cycle between `all' and `t'."
              (cmd-args (append (list "diff")
                                formatting-args
                                majutsu-diff--rev-args
-                               majutsu-diff--filesets))
+                               majutsu-buffer-diff-filesets))
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
              (majutsu-process-apply-ansi-colors nil))
@@ -1080,7 +1077,7 @@ With prefix STYLE, cycle between `all' and `t'."
         (setq-local majutsu--repo-root repo-root)
         (setq-local majutsu-buffer-diff-args formatting-args)
         (put 'majutsu-diff-mode 'majutsu-diff-current-arguments formatting-args)
-        (setq-local majutsu-diff--filesets files)
+        (setq-local majutsu-buffer-diff-filesets files)
         (setq-local majutsu-diff--rev-args rev-args)
         (setq-local revert-buffer-function #'majutsu-refresh-buffer)
         (majutsu-diff-refresh)
