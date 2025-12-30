@@ -84,12 +84,6 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar-local majutsu-diff--last-refined-section nil)
 (defvar-local majutsu-diff--paint-whitespace-enabled t)
 (defvar-local majutsu-diff--inserted-bytes 0)
-(defvar-local majutsu-buffer-diff-filesets nil
-  "Filesets filter for current diff buffer.")
-(defvar-local majutsu-diff--rev-args nil
-  "Revision arguments for current diff buffer.")
-(defvar-local majutsu-buffer-diff-args nil
-  "Remembered diff formatting arguments for the current diff buffer.")
 
 (defconst majutsu-diff--formatting-args
   '("--stat"
@@ -1022,7 +1016,7 @@ With prefix STYLE, cycle between `all' and `t'."
                                majutsu-buffer-diff-args))
              (cmd-args (append (list "diff")
                                formatting-args
-                               majutsu-diff--rev-args
+                               majutsu-buffer-diff-revsets
                                majutsu-buffer-diff-filesets))
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
@@ -1078,7 +1072,7 @@ With prefix STYLE, cycle between `all' and `t'."
         (setq-local majutsu-buffer-diff-args formatting-args)
         (put 'majutsu-diff-mode 'majutsu-diff-current-arguments formatting-args)
         (setq-local majutsu-buffer-diff-filesets files)
-        (setq-local majutsu-diff--rev-args rev-args)
+        (setq-local majutsu-buffer-diff-revsets rev-args)
         (setq-local revert-buffer-function #'majutsu-refresh-buffer)
         (majutsu-diff-refresh)
         (majutsu-display-buffer buf 'diff)))

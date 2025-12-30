@@ -11,7 +11,7 @@
 
 ;; This library defines Majutsu's parent major mode, its keymap, and
 ;; shared buffer helpers.
- 
+
 ;;; Code:
 
 (require 'majutsu-base)
@@ -116,6 +116,15 @@ when the user has strict .dir-locals.el settings."
   :interactive nil
   :group 'majutsu
   (majutsu-hack-dir-local-variables))
+
+;;; Local Variables
+
+(defvar-local majutsu-buffer-diff-filesets nil
+  "Filesets filter for current diff buffer.")
+(defvar-local majutsu-buffer-diff-revsets nil
+  "Revision arguments for current diff buffer.")
+(defvar-local majutsu-buffer-diff-args nil
+  "Remembered diff formatting arguments for the current diff buffer.")
 
 ;;; _
 (provide 'majutsu-mode)

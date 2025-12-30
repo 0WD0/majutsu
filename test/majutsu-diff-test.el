@@ -98,10 +98,10 @@
   "Updating diff args must not clear existing filesets unless requested."
   (with-temp-buffer
     (majutsu-diff-mode)
-    (setq-local majutsu-diff--filesets '("a" "b"))
+    (setq-local majutsu-buffer-diff-filesets '("a" "b"))
     (cl-letf (((symbol-function 'majutsu-diff-refresh) #'ignore))
       (majutsu-diff--set-buffer-args '("--summary")))
-    (should (equal majutsu-diff--filesets '("a" "b")))
+    (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
