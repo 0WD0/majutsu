@@ -91,9 +91,8 @@
                     "--from" "main"
                     "--context=5"
                     "--tool" ":git"
-                    "--ignore-all-space"
-                    "-w"))
-                 '("--stat" "--context=5" "--tool" ":git"))))
+                    "--ignore-all-space"))
+                 '("--stat" "--context=5" "--tool" ":git" "--ignore-all-space"))))
 
 (ert-deftest majutsu-diff-set-buffer-args-does-not-clear-filesets ()
   "Updating diff args must not clear existing filesets unless requested."
@@ -101,14 +100,14 @@
     (majutsu-diff-mode)
     (setq-local majutsu-diff--filesets '("a" "b"))
     (cl-letf (((symbol-function 'majutsu-diff-refresh) #'ignore))
-      (majutsu-diff--set-buffer-args '("--summary") nil nil))
+      (majutsu-diff--set-buffer-args '("--summary")))
     (should (equal majutsu-diff--filesets '("a" "b")))
-    (should (equal majutsu-buffer-diff-args '("--summary" "--git")))))
+    (should (equal majutsu-buffer-diff-args '("--summary")))))
 
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
   "When called from the transient, DWIM should use current transient args."
   (let ((transient-current-command 'majutsu-diff-transient--internal)
-        (majutsu-diff-use-buffer-arguments 'never)
+        (majutsu-direct-use-buffer-arguments 'never)
         called-args
         called-files)
     (cl-letf (((symbol-function 'majutsu-diff-show)
