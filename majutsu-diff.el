@@ -85,6 +85,19 @@ otherwise fall back to the current buffer's `tab-width'."
   "Filesets filter for current diff buffer.")
 (defvar-local majutsu-diff--rev-args nil
   "Revision arguments for current diff buffer.")
+(defvar-local majutsu-buffer-diff-args nil
+  "Remembered diff formatting arguments for the current diff buffer.")
+
+(defconst majutsu-diff--formatting-args
+  '("--stat"
+    "--summary"
+    "--types"
+    "--name-only"
+    "--git"
+    "--color-words")
+  "Arguments that are considered jj diff \"Diff Formatting Options\".
+
+These are the only arguments that are remembered per diff buffer.")
 
 (defcustom majutsu-diff-use-buffer-arguments 'selected
   "Whether to use buffer arguments in diff transient.
@@ -120,56 +133,134 @@ Set to nil to always allow painting."
   (delete-region (line-beginning-position)
                  (min (point-max) (1+ (line-end-position)))))
 
-(defun majutsu--get-mode-buffer (mode)
-  "Get a buffer in MODE, preferring visible ones."
-  (or (seq-find (lambda (buf)
-                  (and (eq (buffer-local-value 'major-mode buf) mode)
-                       (get-buffer-window buf)))
-                (buffer-list))
-      (seq-find (lambda (buf)
-                  (eq (buffer-local-value 'major-mode buf) mode))
-                (buffer-list))))
+(defun majutsu--get-mode-buffer (mode &optional selected)
+  "Get a buffer in MODE.
 
-(defun majutsu-diff--get-value (&optional use-buffer-args)
-  "Get diff arguments based on USE-BUFFER-ARGS strategy.
-Returns (args filesets) pair."
-  (setq use-buffer-args (or use-buffer-args majutsu-diff-use-buffer-arguments))
+If SELECTED is non-nil, then only consider buffers displayed in a window
+of the selected frame."
+  (let ((pred (if selected
+                  (lambda (buf)
+                    (and (eq (buffer-local-value 'major-mode buf) mode)
+                         (get-buffer-window buf)))
+                (lambda (buf)
+                  (eq (buffer-local-value 'major-mode buf) mode)))))
+    (or (and (not selected)
+             (seq-find (lambda (buf)
+                         (and (funcall pred buf)
+                              (get-buffer-window buf)))
+                       (buffer-list)))
+        (seq-find pred (buffer-list)))))
+
+(defun majutsu-diff--remembered-args (args)
+  "Return the subset of ARGS that should be remembered by diff buffers."
+  (let ((out nil)
+        (rest args))
+    (while rest
+      (let ((arg (car rest)))
+        (cond
+         ((member arg majutsu-diff--formatting-args)
+          (push arg out)
+          (setq rest (cdr rest)))
+         ((string-prefix-p "--context=" arg)
+          (push arg out)
+          (setq rest (cdr rest)))
+         ((member arg '("--context" "--template" "--tool"))
+          (push arg out)
+          (when (cadr rest)
+            (push (cadr rest) out))
+          (setq rest (cddr rest)))
+         ((seq-some (lambda (prefix)
+                      (string-prefix-p prefix arg))
+                    '("--context=" "--template=" "--tool="))
+          (push arg out)
+          (setq rest (cdr rest)))
+         (t
+          (setq rest (cdr rest))))))
+    (nreverse out)))
+
+(defun majutsu-diff--get-value (&optional mode use-buffer-args)
+  "Get diff arguments for MODE.
+
+Returns (args filesets) pair.  USE-BUFFER-ARGS follows
+`majutsu-diff-use-buffer-arguments'."
+  (setq mode (or mode 'majutsu-diff-mode))
+  (setq use-buffer-args
+        (pcase use-buffer-args
+          ((or 'prefix 'direct (pred null))
+           majutsu-diff-use-buffer-arguments)
+          ((or 'always 'selected 'current 'never)
+           use-buffer-args)
+          (_
+           majutsu-diff-use-buffer-arguments)))
   (cond
-   ;; Current buffer has args
-   ((and (memq use-buffer-args '(always current))
-         (eq major-mode 'majutsu-diff-mode))
+   ((and (memq use-buffer-args '(always selected current))
+         (eq major-mode mode))
     (list majutsu-buffer-diff-args majutsu-diff--filesets))
-
-   ;; Selected diff buffer has args
    ((and (memq use-buffer-args '(always selected))
-         (when-let ((buf (majutsu--get-mode-buffer 'majutsu-diff-mode)))
+         (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
            (list (buffer-local-value 'majutsu-buffer-diff-args buf)
                  (buffer-local-value 'majutsu-diff--filesets buf)))))
+   ((plist-member (symbol-plist mode) 'majutsu-diff-current-arguments)
+    (list (get mode 'majutsu-diff-current-arguments) nil))
+   ((when-let* ((elt (assq (intern (format "majutsu-diff:%s" mode))
+                           transient-values)))
+      (list (cdr elt) nil)))
+   (t
+    (list (get mode 'majutsu-diff-default-arguments) nil))))
 
-   ;; Saved transient values
-   ((when-let ((saved (alist-get 'majutsu-diff transient-values)))
-      (list saved nil)))
+(defun majutsu-diff--set-buffer-args (args &optional filesets refresh)
+  "Set current buffer's remembered diff ARGS, and optionally FILESETS.
 
-   ;; Mode default
-   ((list (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)
-          nil))))
-
-(defun majutsu-diff--set-value (args &optional save filesets)
-  "Set diff arguments and optionally SAVE them.
-ARGS are the diff options, FILESETS are path filters."
-  (when save
-    (setf (alist-get 'majutsu-diff transient-values) args)
-    (transient-save-values))
-  (when (eq major-mode 'majutsu-diff-mode)
+When REFRESH is non-nil, refresh the current diff buffer."
+  (let ((args (majutsu--ensure-flag (majutsu-diff--remembered-args args) "--git")))
     (setq-local majutsu-buffer-diff-args args)
-    (setq-local majutsu-diff--filesets filesets)
-    (majutsu-diff-refresh)))
+    (put 'majutsu-diff-mode 'majutsu-diff-current-arguments args)
+    (when filesets
+      (setq-local majutsu-diff--filesets filesets))
+    (when refresh
+      (majutsu-diff-refresh))))
+
+(defclass majutsu-diff-prefix (transient-prefix)
+  ((history-key :initform 'majutsu-diff)
+   (major-mode :initform 'majutsu-diff-mode)))
+
+(cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
+  (pcase-let ((`(,args ,_filesets)
+               (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
+    (oset obj value args)))
+
+(cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (args (majutsu-diff--remembered-args
+                (transient-args (oref obj command)))))
+    (put mode 'majutsu-diff-current-arguments args)
+    (transient--history-push obj)
+    (when (eq major-mode mode)
+      (majutsu-diff--set-buffer-args args nil nil))))
+
+(cl-defmethod transient-save-value ((obj majutsu-diff-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (key (intern (format "majutsu-diff:%s" mode)))
+         (args (majutsu-diff--remembered-args
+                (transient-args (oref obj command)))))
+    (put mode 'majutsu-diff-current-arguments args)
+    (setf (alist-get key transient-values) args)
+    (transient-save-values)
+    (transient--history-push obj)
+    (when (eq major-mode mode)
+      (majutsu-diff--set-buffer-args args nil nil))))
 
 (defun majutsu-diff-arguments ()
   "Return current diff arguments."
   (if (eq transient-current-command 'majutsu-diff-transient--internal)
       (transient-args 'majutsu-diff-transient--internal)
-    (car (majutsu-diff--get-value))))
+    (car (majutsu-diff--get-value 'majutsu-diff-mode 'direct))))
+
+(defun majutsu-diff-filesets ()
+  "Return current diff filesets (path filters), if any."
+  (cadr (majutsu-diff--get-value 'majutsu-diff-mode 'direct)))
 
 (defconst majutsu-diff-statline-re
   (concat "^ ?"
@@ -274,13 +365,13 @@ section or a child thereof."
 (transient-define-argument majutsu-diff:--stat ()
   :description "Show stats"
   :class 'transient-switch
-  :key "-s"
+  :key "-S"
   :argument "--stat")
 
 (transient-define-argument majutsu-diff:--summary ()
   :description "Show summary"
   :class 'transient-switch
-  :key "-S"
+  :key "-s"
   :argument "--summary")
 
 (transient-define-argument majutsu-diff:--context ()
@@ -871,7 +962,7 @@ file."
          (num (funcall fn num))
          (arg (and num (not (= num def)) (format "--context=%d" num)))
          (val (if arg (cons arg val) val)))
-    (majutsu-diff--set-value val)))
+    (majutsu-diff--set-buffer-args val nil t)))
 
 (defun majutsu-diff-toggle-refine-hunk (&optional style)
   "Toggle word-level refinement within hunks.
@@ -915,9 +1006,6 @@ With prefix STYLE, cycle between `all' and `t'."
   (setq-local font-lock-multiline t)
   (add-hook 'post-command-hook #'majutsu-diff--maybe-clear-refinement nil t))
 
-(defvar-local majutsu-buffer-diff-args nil
-  "Arguments used for the last jj diff command in this buffer.")
-
 (defun majutsu-diff-refresh (&optional _ignore-auto _noconfirm)
   "Refresh the current diff buffer."
   (interactive)
@@ -952,8 +1040,8 @@ With prefix STYLE, cycle between `all' and `t'."
 ;;;###autoload
 (defun majutsu-diff-dwim (&optional args files)
   "Show changes for the thing at point."
-  (interactive (list (car (majutsu-diff--get-value))
-                     (cadr (majutsu-diff--get-value))))
+  (interactive (list (majutsu-diff-arguments)
+                     (majutsu-diff-filesets)))
   (pcase (majutsu-diff--dwim)
     (`(commit . ,rev)
      (majutsu-diff-show rev args files))
@@ -969,20 +1057,22 @@ With prefix STYLE, cycle between `all' and `t'."
   "Show diff for REV with ARGS and FILES."
   (let* ((from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
-         (args (majutsu--ensure-flag args "--git"))
+         (args (majutsu--ensure-flag (or args (majutsu-diff-arguments)) "--git"))
+         (remembered-args (majutsu--ensure-flag (majutsu-diff--remembered-args args)
+                                                "--git"))
          (rev-args (cond
                     ((and from to) (list "--from" from "--to" to))
                     (from (list "--from" from))
                     (to (list "--to" to))
-                    (t (list "-r" rev))))
-         (final-args (append args rev-args (when files files))))
+                    (t (list "-r" rev)))))
     (let* ((repo-root (majutsu--root))
            (buf (get-buffer-create "*majutsu-diff*")))
       (with-current-buffer buf
         (setq default-directory repo-root)
         (majutsu-diff-mode)
         (setq-local majutsu--repo-root repo-root)
-        (setq-local majutsu-buffer-diff-args args)
+        (setq-local majutsu-buffer-diff-args remembered-args)
+        (put 'majutsu-diff-mode 'majutsu-diff-current-arguments remembered-args)
         (setq-local majutsu-diff--filesets files)
         (setq-local majutsu-diff--rev-args rev-args)
         (setq-local revert-buffer-function #'majutsu-refresh-buffer)
@@ -1011,8 +1101,8 @@ With prefix STYLE, cycle between `all' and `t'."
 (transient-define-prefix majutsu-diff-transient--internal ()
   "Internal transient for jj diff."
   :man-page "jj-diff"
+  :class 'majutsu-diff-prefix
   :transient-non-suffix t
-  :value (lambda () (car (majutsu-diff--get-value)))
   [:description
    (lambda ()
      (concat "JJ Diff"
@@ -1050,17 +1140,31 @@ With prefix STYLE, cycle between `all' and `t'."
 (defun majutsu-diff-save-arguments ()
   "Save current transient arguments as defaults."
   (interactive)
-  (majutsu-diff--set-value
-   (transient-args 'majutsu-diff-transient--internal)
-   'save)
-  (message "Saved diff arguments as defaults"))
+  (let* ((mode 'majutsu-diff-mode)
+         (key (intern (format "majutsu-diff:%s" mode)))
+         (args (majutsu-diff--remembered-args
+                (transient-args 'majutsu-diff-transient--internal))))
+    (put mode 'majutsu-diff-current-arguments args)
+    (setf (alist-get key transient-values) args)
+    (transient-save-values)
+    (message "Saved diff arguments as defaults")))
 
 (defun majutsu-diff-refresh-transient ()
   "Refresh diff buffer with current transient arguments."
   (interactive)
-  (when (eq major-mode 'majutsu-diff-mode)
-    (majutsu-diff--set-value
-     (transient-args 'majutsu-diff-transient--internal))))
+  (let ((args (transient-args 'majutsu-diff-transient--internal)))
+    (cond
+     ((eq major-mode 'majutsu-diff-mode)
+     (majutsu-diff--set-buffer-args args nil t))
+     ((and (memq majutsu-diff-use-buffer-arguments '(always selected))
+           (when-let* ((buf (majutsu--get-mode-buffer
+                             'majutsu-diff-mode
+                             (eq majutsu-diff-use-buffer-arguments 'selected))))
+             (with-current-buffer buf
+               (majutsu-diff--set-buffer-args args nil t))
+             t)))
+     (t
+      (user-error "No majutsu diff buffer found to refresh")))))
 
 (defun majutsu-diff--wash-with-state (washer keep-error &rest args)
   "Wrap `majutsu--wash' to also track diff buffer bookkeeping.
