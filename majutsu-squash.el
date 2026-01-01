@@ -73,8 +73,7 @@
          (success-msg (if into
                           (format "Squashed %s into %s" from-display into)
                         (format "Squashed %s into parent" from-display))))
-    (majutsu--with-editor-run args success-msg "Squash failed"
-                              #'majutsu-selection-session-end)))
+    (majutsu-run-jj-with-editor args)))
 
 ;;;###autoload
 (defun majutsu-squash-transient ()

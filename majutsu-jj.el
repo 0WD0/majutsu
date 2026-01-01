@@ -38,6 +38,7 @@ Also respect the value of `majutsu-with-editor-envvar'."
 
 (defcustom majutsu-jj-global-arguments
   `("--no-pager" "--color=always")
+  "List of global arguments to pass to jj commands."
   :group 'majutsu-commands
   :group 'majutsu-process
   :type '(repeat string))

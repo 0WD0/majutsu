@@ -20,9 +20,7 @@
 (defun majutsu-commit ()
   "Create a commit using Emacs as the editor."
   (interactive)
-  (majutsu--with-editor-run '("commit")
-                            "Successfully committed changes"
-                            "Failed to commit"))
+  (majutsu-run-jj-with-editor '("commit")))
 
 ;;; majutsu-describe
 
@@ -34,9 +32,7 @@ With prefix ARG, add --ignore-immutable."
   (let* ((revset (or (magit-section-value-if 'jj-commit) "@"))
          (args (append (list "describe" "-r" revset)
                        (when arg '("--ignore-immutable")))))
-    (majutsu--with-editor-run args
-                              (format "Description updated for %s" revset)
-                              "Failed to update description")))
+    (majutsu-run-jj-with-editor args)))
 
 ;;; _
 (provide 'majutsu-commit)
