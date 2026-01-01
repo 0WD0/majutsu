@@ -24,9 +24,6 @@
 (require 'diff-mode)
 (require 'smerge-mode)
 
-(defvar majutsu-prefix-use-buffer-arguments)
-(defvar majutsu-direct-use-buffer-arguments)
-
 ;;; Options
 ;;;; Diff Mode
 
@@ -1005,8 +1002,7 @@ With prefix STYLE, cycle between `all' and `t'."
   "Show changes for the thing at point."
   (interactive (list (majutsu-diff-arguments)
                      (majutsu-diff-filesets)))
-  (let* ((session-buf (current-buffer))
-         (rev (pcase (majutsu-diff--dwim)
+  (let* ((rev (pcase (majutsu-diff--dwim)
                 (`(commit . ,rev) rev)
                 (_ "@")))
          (from (car (majutsu-selection-values 'from)))
@@ -1020,9 +1016,7 @@ With prefix STYLE, cycle between `all' and `t'."
                     (to (list "--to" to))
                     (t (list "-r" rev)))))
     (majutsu-diff-setup-buffer formatting-args files rev-args)
-    (when (buffer-live-p session-buf)
-      (with-current-buffer session-buf
-        (majutsu-selection-session-end)))))
+    (majutsu-selection-session-end)))
 
 ;; TODO: implement more DWIM cases
 (defun majutsu-diff--dwim ()
