@@ -984,19 +984,12 @@ With prefix STYLE, cycle between `all' and `t'."
 (defun majutsu-diff-refresh (&optional _ignore-auto _noconfirm)
   "Refresh the current diff buffer."
   (interactive)
-  (majutsu--assert-mode 'majutsu-diff-mode)
   (when majutsu-buffer-diff-args
     (let ((inhibit-read-only t)
           (repo-root (majutsu--root)))
       (erase-buffer)
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
-             (formatting-args (majutsu-diff--formatting-args-for-command
-                               majutsu-buffer-diff-args))
-             (cmd-args (append (list "diff")
-                               formatting-args
-                               majutsu-buffer-diff-revsets
-                               majutsu-buffer-diff-filesets))
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-process-color-mode nil)
              (majutsu-process-apply-ansi-colors nil))
@@ -1014,30 +1007,10 @@ With prefix STYLE, cycle between `all' and `t'."
   "Show changes for the thing at point."
   (interactive (list (majutsu-diff-arguments)
                      (majutsu-diff-filesets)))
-  (pcase (majutsu-diff--dwim)
-    (`(commit . ,rev)
-     (majutsu-diff-show rev args files))
-    (_ (majutsu-diff-show "@" args files))))
-
-;; TODO: implement more DWIM cases
-(defun majutsu-diff--dwim ()
-  "Return information for performing DWIM diff."
-  (if-let* ((rev (magit-section-value-if 'jj-commit)))
-      (cons 'commit rev)
-    nil))
-
-;; TODO: test this function
-(defun majutus-diff-setup-buffer (args filesets revsets &optional locked)
-  "Set up the current buffer as a diff buffer with ARGS, FILESETS, and REV-ARGS."
-  (require 'magit)
-  (magit-setup-buffer #'majutsu-diff-mode locked
-    (majutsu-buffer-diff-args args)
-    (majutsu-buffer-diff-filesets filesets)
-    (majutsu-buffer-diff-revsets revsets)))
-
-(defun majutsu-diff-show (rev &optional args files)
-  "Show diff for REV with ARGS and FILES."
-  (let* ((from (car (majutsu-selection-values 'from)))
+  (let* ((rev (pcase (majutsu-diff--dwim)
+                (`(commit . ,rev) rev)
+                (_ "@")))
+         (from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
          (formatting-args (or (majutsu-diff--remembered-args
                                (or args (majutsu-diff-arguments)))
@@ -1047,20 +1020,22 @@ With prefix STYLE, cycle between `all' and `t'."
                     (from (list "--from" from))
                     (to (list "--to" to))
                     (t (list "-r" rev)))))
-    (let* ((repo-root (majutsu--root))
-           (buf (get-buffer-create "*majutsu-diff*")))
-      (with-current-buffer buf
-        (setq default-directory repo-root)
-        (majutsu-diff-mode)
-        (setq-local majutsu--repo-root repo-root)
-        (setq-local majutsu-buffer-diff-args formatting-args)
-        (put 'majutsu-diff-mode 'majutsu-diff-current-arguments formatting-args)
-        (setq-local majutsu-buffer-diff-filesets files)
-        (setq-local majutsu-buffer-diff-revsets rev-args)
-        (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-        (majutsu-diff-refresh)
-        (majutsu-display-buffer buf 'diff)))
+    (majutsu-diff-setup-buffer formatting-args files rev-args)
     (majutsu-selection-session-end)))
+
+;; TODO: implement more DWIM cases
+(defun majutsu-diff--dwim ()
+  "Return information for performing DWIM diff."
+  (if-let* ((rev (magit-section-value-if 'jj-commit)))
+      (cons 'commit rev)
+    nil))
+
+(defun majutsu-diff-setup-buffer (args filesets revsets &optional locked)
+  "Display a diff buffer configured by ARGS, FILESETS and REVSETS."
+  (majutsu-setup-buffer #'majutsu-diff-mode locked
+    (majutsu-buffer-diff-args args)
+    (majutsu-buffer-diff-filesets filesets)
+    (majutsu-buffer-diff-revsets revsets)))
 
 ;;; Commands
 ;;;; Prefix Commands

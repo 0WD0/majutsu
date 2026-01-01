@@ -178,6 +178,7 @@ INITIAL-SECTION SELECT-SECTION &rest BINDINGS)"
 (cl-defun majutsu-setup-buffer-internal
     (mode locked bindings &key buffer directory initial-section select-section)
   (let* ((topdir (majutsu--toplevel-safe directory))
+         (kind (or kind (get mode 'majutsu-buffer-kind)))
          (value (and locked
                      (with-temp-buffer
                        (pcase-dolist (`(,var ,val) bindings)
