@@ -899,7 +899,7 @@ disappear again."
   "Wash jj log output in the current (narrowed) buffer region.
 
 This function is meant to be used as a WASHER for `majutsu-jj-wash'."
-  (let* ((output (buffer-substring-no-properties (point-min) (point-max)))
+  (let* ((output (buffer-substring (point-min) (point-max)))
          (compiled (majutsu-log--ensure-template))
          (entries (majutsu-parse-log-entries nil output))
          (widths (majutsu-log--compute-column-widths entries compiled)))
