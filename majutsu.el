@@ -21,6 +21,7 @@
 (require 'majutsu-process)
 (require 'majutsu-log)
 (require 'majutsu-diff)
+(require 'majutsu-jjdescription)
 
 ;;; Aliases
 

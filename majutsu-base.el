@@ -20,16 +20,11 @@
 (require 'eieio)
 (require 'magit-section)
 
-;;; Customization
+;;; Options
 
 (defgroup majutsu nil
   "Interface to jj version control system."
   :group 'tools)
-
-(defcustom majutsu-executable "jj"
-  "Path to jj executable."
-  :type 'string
-  :group 'majutsu)
 
 (defcustom majutsu-debug nil
   "Enable debug logging for jj operations."
@@ -44,11 +39,6 @@
 (defcustom majutsu-confirm-critical-actions t
   "If non-nil, prompt for confirmation before undo/redo/abandon operations."
   :type 'boolean
-  :group 'majutsu)
-
-(defcustom majutsu-with-editor-envvar "JJ_EDITOR"
-  "Environment variable used to tell jj which editor to invoke."
-  :type 'string
   :group 'majutsu)
 
 (defcustom majutsu-default-display-function #'pop-to-buffer

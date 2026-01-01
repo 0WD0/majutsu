@@ -14,6 +14,7 @@
 
 ;;; Code:
 
+(require 'majutsu-jj)
 (require 'majutsu-base)
 (require 'majutsu-process)
 
