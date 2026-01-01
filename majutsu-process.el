@@ -155,7 +155,7 @@ it."
           (magit-insert-section (processbuf)
             (insert "\n")))))
     (unless nodisplay
-      (majutsu-display-buffer buffer 'message))
+      (majutsu-display-buffer buffer 'process))
     buffer))
 
 (defun majutsu-process-kill ()
@@ -363,7 +363,7 @@ ARG may be a process object or an exit code.  Return the exit code."
        ((= majutsu-process-popup-time 0)
         (if (minibufferp)
             (switch-to-buffer-other-window buf)
-          (majutsu-display-buffer buf 'message)))
+          (majutsu-display-buffer buf 'process)))
        ((> majutsu-process-popup-time 0)
         (run-with-timer majutsu-process-popup-time nil
                         (lambda (p)
@@ -372,7 +372,7 @@ ARG may be a process object or an exit code.  Return the exit code."
                                       (_(buffer-live-p b)))
                             (if (minibufferp)
                                 (switch-to-buffer-other-window b)
-                              (majutsu-display-buffer b 'message))))
+                              (majutsu-display-buffer b 'process))))
                         process))))))
 
 (defun majutsu--process-filter (proc string)

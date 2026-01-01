@@ -175,11 +175,20 @@ INITIAL-SECTION SELECT-SECTION &rest BINDINGS)"
                            args))
       ,@(nreverse kwargs))))
 
+(defun majutsu--mode-kind (mode)
+  "Infer display kind from MODE symbol name.
+
+For modes named like `majutsu-FOO-mode', return the symbol `FOO'."
+  (when (symbolp mode)
+    (let ((name (symbol-name mode)))
+      (when (string-match "\\`majutsu-\\(.*\\)-mode\\'" name)
+        (intern (match-string 1 name))))))
+
 (cl-defun majutsu-setup-buffer-internal
     (mode locked bindings
-          &key buffer directory initial-section select-section kind display-function)
+          &key buffer directory initial-section select-section)
   (let* ((topdir (majutsu--toplevel-safe directory))
-         (kind (or kind (get mode 'majutsu-buffer-kind)))
+         (kind (majutsu--mode-kind mode))
          (value (and locked
                      (with-temp-buffer
                        (pcase-dolist (`(,var ,val) bindings)
@@ -205,7 +214,7 @@ INITIAL-SECTION SELECT-SECTION &rest BINDINGS)"
         (set (make-local-variable var) val))
       (when created
         (run-hooks 'majutsu-create-buffer-hook)))
-    (majutsu-display-buffer buffer kind display-function)
+    (majutsu-display-buffer buffer kind)
     (with-current-buffer buffer
       (run-hooks 'majutsu-setup-buffer-hook)
       (majutsu-refresh-buffer-internal created
