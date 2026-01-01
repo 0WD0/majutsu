@@ -895,35 +895,45 @@ disappear again."
       (insert ?\n))
     (setq majutsu-log--this-error nil)))
 
+(defun majutsu-log--wash-logs (_args)
+  "Wash jj log output in the current (narrowed) buffer region.
+
+This function is meant to be used as a WASHER for `majutsu-jj-wash'."
+  (let* ((output (buffer-substring-no-properties (point-min) (point-max)))
+         (compiled (majutsu-log--ensure-template))
+         (entries (majutsu-parse-log-entries nil output))
+         (widths (majutsu-log--compute-column-widths entries compiled)))
+    (delete-region (point-min) (point-max))
+    (goto-char (point-min))
+    (majutsu-log--set-right-margin (plist-get widths :right-total))
+    (dolist (entry entries)
+      (let ((id (majutsu-selection--normalize-value (plist-get entry :id))))
+        (magit-insert-section
+            (jj-commit id t)
+          (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
+                 (heading (plist-get line-info :line))
+                 (margin (plist-get line-info :margin))
+                 (indent (plist-get line-info :desc-indent)))
+            (magit-insert-heading
+              (insert heading))
+            (when margin
+              (majutsu-log--make-margin-overlay margin))
+            (when-let* ((long-desc (plist-get entry :long-desc))
+                        (indented (majutsu--indent-string long-desc (or indent 0))))
+              (magit-insert-section-body
+                (insert indented)
+                (insert "\n"))))
+          (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
+            (dolist (suffix-line suffix-lines)
+              (insert suffix-line)
+              (insert "\n"))))))
+    (insert "\n")))
+
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
   (magit-insert-section (lograph)
     (magit-insert-heading (majutsu-log--heading-string))
-    (let* ((compiled (majutsu-log--ensure-template))
-           (entries (majutsu-parse-log-entries))
-           (widths (majutsu-log--compute-column-widths entries compiled)))
-      (majutsu-log--set-right-margin (plist-get widths :right-total))
-      (dolist (entry entries)
-        (let ((id (majutsu-selection--normalize-value (plist-get entry :id))))
-          (magit-insert-section
-              (jj-commit id t)
-            (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
-                   (heading (plist-get line-info :line))
-                   (margin (plist-get line-info :margin))
-                   (indent (plist-get line-info :desc-indent)))
-              (magit-insert-heading
-                (insert heading))
-              (when margin
-                (majutsu-log--make-margin-overlay margin))
-              (when-let* ((long-desc (plist-get entry :long-desc))
-                          (indented (majutsu--indent-string long-desc (or indent 0))))
-                (magit-insert-section-body
-                  (insert indented)
-                  (insert "\n"))))
-            (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
-              (dolist (suffix-line suffix-lines)
-                (insert suffix-line)
-                (insert "\n")))))))
+    (majutsu-jj-wash #'majutsu-log--wash-logs nil (majutsu-log--build-args))
     (insert "\n")))
 
 ;;; Log insert status
@@ -1070,7 +1080,6 @@ Return non-nil when the section could be located."
 Assumes `current-buffer' is a `majutsu-log-mode' buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
   (let* ((root (majutsu--root))
-         (buf (current-buffer))
          (pos (and (null target-commit)
                    (when-let ((section (magit-section-at)))
                      (pcase-let ((`(,line ,char)
@@ -1081,38 +1090,21 @@ Assumes `current-buffer' is a `majutsu-log-mode' buffer."
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-log--cached-entries nil)
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert "Loading..."))
-    (majutsu-run-jj-async
-     (majutsu-log--build-args)
-     (lambda (output)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (when (derived-mode-p 'majutsu-log-mode)
-             (setq majutsu-log--cached-entries (majutsu-parse-log-entries nil output))
-             (majutsu-log-render)
-             (cond
-              (target-commit
-               (unless (majutsu--goto-log-entry target-commit)
-                 (majutsu-log-goto-@)))
-              ((and pos
-                    (let ((section (nth 0 pos))
-                          (line (nth 1 pos))
-                          (char (nth 2 pos)))
-                      (if (get-buffer-window-list buf nil t)
-                          (magit-section-goto-successor section line char)
-                        (let ((magit-section-movement-hook nil))
-                          (magit-section-goto-successor section line char))))))
-              ((and fallback-commit (majutsu--goto-log-entry fallback-commit)))
-              (t (majutsu-log-goto-@)))))))
-     (lambda (err)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (when (derived-mode-p 'majutsu-log-mode)
-             (let ((inhibit-read-only t))
-               (erase-buffer)
-               (insert "Error: " err)))))))))
+    (majutsu-log-render)
+    (cond
+     (target-commit
+      (unless (majutsu--goto-log-entry target-commit)
+        (majutsu-log-goto-@)))
+     ((and pos
+           (let ((section (nth 0 pos))
+                 (line (nth 1 pos))
+                 (char (nth 2 pos)))
+             (if (get-buffer-window-list (current-buffer) nil t)
+                 (magit-section-goto-successor section line char)
+               (let ((magit-section-movement-hook nil))
+                 (magit-section-goto-successor section line char))))))
+     ((and fallback-commit (majutsu--goto-log-entry fallback-commit)))
+     (t (majutsu-log-goto-@)))))
 
 ;;;###autoload
 (defun majutsu-log-refresh (&optional commit)
