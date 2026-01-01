@@ -207,6 +207,7 @@ Returns (args filesets) pair.  USE-BUFFER-ARGS follows
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
   (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
 
+;; TODO: get rid of this function
 (defun majutsu-diff--formatting-args-for-command (args)
   "Return effective formatting ARGS for running `jj diff'."
   (let ((args (copy-sequence args)))
@@ -215,9 +216,14 @@ Returns (args filesets) pair.  USE-BUFFER-ARGS follows
         (delete "--git" args)
       (majutsu--ensure-flag args "--git"))))
 
+;;; Arguments
+;;;; Prefix Classes
+
 (defclass majutsu-diff-prefix (transient-prefix)
   ((history-key :initform 'majutsu-diff)
    (major-mode :initform 'majutsu-diff-mode)))
+
+;;;; Prefix Methods
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
   (pcase-let ((`(,args ,_filesets)
@@ -279,61 +285,6 @@ The list is in the same order as the diff headers appear."
         (push (match-string 2) files))
       (nreverse files))))
 
-(defun majutsu-diff-wash-diffstat ()
-  "Wash the diffstat produced by `jj diff --stat'.
-
-Assumes point is at the start of the diff output and that the output was
-generated using `--git --stat', meaning the diffstat appears before the
-first \"diff --git\" header."
-  (let ((files (majutsu-diff--collect-diff-files))
-        heading
-        (beg (point)))
-    ;; Like `magit-diff-wash-diffstat': find the summary line first, delete it,
-    ;; then rewrite each stat line as a `diffstat' section.
-    (when (re-search-forward "^ ?\\([0-9]+ +files? change[^\n]*\n\\)" nil t)
-      (setq heading (match-string 1))
-      (delete-region (match-beginning 0) (match-end 0))
-      (goto-char beg)
-      (magit-insert-section (diffstat)
-        (magit-insert-heading
-          (propertize heading 'font-lock-face 'magit-diff-file-heading))
-        (while (looking-at majutsu-diff-statline-re)
-          (let* ((file (match-string 1))
-                 (sep  (match-string 2))
-                 (cnt  (match-string 3))
-                 (add  (match-string 4))
-                 (del  (match-string 5)))
-            (majutsu-diff--delete-line)
-            (when (string-match " +$" file)
-              (setq sep (concat (match-string 0 file) sep))
-              (setq file (substring file 0 (match-beginning 0))))
-            (setq file (string-trim-right file))
-            (magit-insert-section (jj-file (pop files))
-              (insert (magit-format-file 'stat file 'magit-filename))
-              (insert sep)
-              (cond
-               ((string-match "\\`(binary)\\(?: +\\([+-][0-9]+\\) bytes\\)?\\'" cnt)
-                (insert (propertize "(binary)" 'font-lock-face
-                                    'majutsu-diffstat-binary))
-                (when-let* ((delta (match-string 1 cnt)))
-                  (insert " "
-                          (propertize delta 'font-lock-face
-                                      (if (string-prefix-p "-" delta)
-                                          'magit-diffstat-removed
-                                        'magit-diffstat-added))
-                          " bytes")))
-               (t
-                (insert cnt)))
-              (insert " ")
-              (when add
-                (insert (propertize add 'font-lock-face
-                                    'magit-diffstat-added)))
-              (when del
-                (insert (propertize del 'font-lock-face
-                                    'magit-diffstat-removed)))
-              (insert "\n"))))
-        (if (looking-at "^$") (forward-line) (insert "\n"))))))
-
 (defun majutsu-jump-to-diffstat-or-diff (&optional expand)
   "Jump to the diffstat or diff.
 When point is on a file inside the diffstat section, then jump
@@ -356,25 +307,6 @@ section or a child thereof."
        (with-local-quit (magit-section-show section))
        (recenter 0)))
     ((user-error "No diffstat in this buffer"))))
-
-(transient-define-argument majutsu-diff:--stat ()
-  :description "Show stats"
-  :class 'transient-switch
-  :key "-S"
-  :argument "--stat")
-
-(transient-define-argument majutsu-diff:--summary ()
-  :description "Show summary"
-  :class 'transient-switch
-  :key "-s"
-  :argument "--summary")
-
-(transient-define-argument majutsu-diff:--context ()
-  :description "Context lines"
-  :class 'transient-option
-  :key "-c"
-  :argument "--context="
-  :reader #'transient-read-number-N0)
 
 ;;; Diff Parsing & Display
 
@@ -479,6 +411,61 @@ ARGS are passed to `jj diff' (\"--git\" is ensured)."
 
 ;;; Diff wash
 
+(defun majutsu-diff-wash-diffstat ()
+  "Wash the diffstat produced by `jj diff --stat'.
+
+Assumes point is at the start of the diff output and that the output was
+generated using `--git --stat', meaning the diffstat appears before the
+first \"diff --git\" header."
+  (let ((files (majutsu-diff--collect-diff-files))
+        heading
+        (beg (point)))
+    ;; Like `magit-diff-wash-diffstat': find the summary line first, delete it,
+    ;; then rewrite each stat line as a `diffstat' section.
+    (when (re-search-forward "^ ?\\([0-9]+ +files? change[^\n]*\n\\)" nil t)
+      (setq heading (match-string 1))
+      (delete-region (match-beginning 0) (match-end 0))
+      (goto-char beg)
+      (magit-insert-section (diffstat)
+        (magit-insert-heading
+          (propertize heading 'font-lock-face 'magit-diff-file-heading))
+        (while (looking-at majutsu-diff-statline-re)
+          (let* ((file (match-string 1))
+                 (sep  (match-string 2))
+                 (cnt  (match-string 3))
+                 (add  (match-string 4))
+                 (del  (match-string 5)))
+            (majutsu-diff--delete-line)
+            (when (string-match " +$" file)
+              (setq sep (concat (match-string 0 file) sep))
+              (setq file (substring file 0 (match-beginning 0))))
+            (setq file (string-trim-right file))
+            (magit-insert-section (jj-file (pop files))
+              (insert (magit-format-file 'stat file 'magit-filename))
+              (insert sep)
+              (cond
+               ((string-match "\\`(binary)\\(?: +\\([+-][0-9]+\\) bytes\\)?\\'" cnt)
+                (insert (propertize "(binary)" 'font-lock-face
+                                    'majutsu-diffstat-binary))
+                (when-let* ((delta (match-string 1 cnt)))
+                  (insert " "
+                          (propertize delta 'font-lock-face
+                                      (if (string-prefix-p "-" delta)
+                                          'magit-diffstat-removed
+                                        'magit-diffstat-added))
+                          " bytes")))
+               (t
+                (insert cnt)))
+              (insert " ")
+              (when add
+                (insert (propertize add 'font-lock-face
+                                    'magit-diffstat-added)))
+              (when del
+                (insert (propertize del 'font-lock-face
+                                    'magit-diffstat-removed)))
+              (insert "\n"))))
+        (if (looking-at "^$") (forward-line) (insert "\n"))))))
+
 (defun majutsu-diff-wash-diffs (args)
   "Parse a jj diff already inserted into the current buffer.
 Assumes point is at the start of the diff output."
@@ -524,7 +511,7 @@ Assumes point is at the start of the diff output."
           (jj-file file nil
                    :header (concat diff-header (string-join (nreverse headers) "")))
         (magit-insert-heading
-          (propertize (majutsu--diff-file-heading file (nreverse headers))
+          (propertize (majutsu-diff--file-heading file (nreverse headers))
                       'font-lock-face 'magit-diff-file-heading))
         ;; Hunk bodies remain in the buffer; just wrap them.
         (while (and (not (eobp)) (looking-at "^@@ "))
@@ -581,20 +568,20 @@ Assumes point is at the start of the diff output."
         (when majutsu-diff--paint-whitespace-enabled
           (majutsu-diff--paint-hunk-whitespace body-start (point) file))))))
 
-(defun majutsu--diff-line-matching-p (regexp lines)
+(defun majutsu-diff--line-matching-p (regexp lines)
   "Return non-nil if any string in LINES matches REGEXP."
   (seq-some (lambda (line) (and line (string-match-p regexp line))) lines))
 
 (defun majutsu--diff-file-status (lines)
   "Infer the jj diff status for a file based on LINES."
   (cond
-   ((majutsu--diff-line-matching-p "^new file" lines) "new file")
-   ((majutsu--diff-line-matching-p "^deleted file" lines) "deleted")
-   ((majutsu--diff-line-matching-p "^rename \\(from\\|to\\)" lines) "renamed")
-   ((majutsu--diff-line-matching-p "^copy \\(from\\|to\\)" lines) "copied")
+   ((majutsu-diff--line-matching-p "^new file" lines) "new file")
+   ((majutsu-diff--line-matching-p "^deleted file" lines) "deleted")
+   ((majutsu-diff--line-matching-p "^rename \\(from\\|to\\)" lines) "renamed")
+   ((majutsu-diff--line-matching-p "^copy \\(from\\|to\\)" lines) "copied")
    (t "modified")))
 
-(defun majutsu--diff-file-heading (file lines)
+(defun majutsu-diff--file-heading (file lines)
   "Return a formatted heading string for FILE using parsed LINES."
   (format "%-11s %s" (majutsu--diff-file-status lines) file))
 
@@ -1080,23 +1067,8 @@ With prefix STYLE, cycle between `all' and `t'."
         (majutsu-display-buffer buf 'diff)))
     (majutsu-selection-session-end)))
 
-;;;###autoload
-(defun majutsu-diff-transient ()
-  "Transient for jj diff operations."
-  (interactive)
-  (majutsu-selection-session-begin
-   '((:key from
-      :label "[FROM]"
-      :face (:background "dark orange" :foreground "black")
-      :type single)
-     (:key to
-      :label "[TO]"
-      :face (:background "dark cyan" :foreground "white")
-      :type single)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (majutsu-diff-transient--internal))
-
-;;; Diff Transient
+;;; Commands
+;;;; Prefix Commands
 
 (transient-define-prefix majutsu-diff-transient--internal ()
   "Internal transient for jj diff."
@@ -1136,6 +1108,43 @@ With prefix STYLE, cycle between `all' and `t'."
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
     ("g" "Refresh" majutsu-diff-refresh-transient :transient t)
     ("q" "Quit" transient-quit-one)]])
+
+;;;; Infix Commands
+
+(transient-define-argument majutsu-diff:--stat ()
+  :description "Show stats"
+  :class 'transient-switch
+  :key "-S"
+  :argument "--stat")
+
+(transient-define-argument majutsu-diff:--summary ()
+  :description "Show summary"
+  :class 'transient-switch
+  :key "-s"
+  :argument "--summary")
+
+(transient-define-argument majutsu-diff:--context ()
+  :description "Context lines"
+  :class 'transient-option
+  :key "-c"
+  :argument "--context="
+  :reader #'transient-read-number-N0)
+
+;;;###autoload
+(defun majutsu-diff-transient ()
+  "Transient for jj diff operations."
+  (interactive)
+  (majutsu-selection-session-begin
+   '((:key from
+      :label "[FROM]"
+      :face (:background "dark orange" :foreground "black")
+      :type single)
+     (:key to
+      :label "[TO]"
+      :face (:background "dark cyan" :foreground "white")
+      :type single)))
+  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
+  (majutsu-diff-transient--internal))
 
 (defun majutsu-diff-save-arguments ()
   "Save current transient arguments as defaults."
