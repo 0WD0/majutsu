@@ -116,7 +116,7 @@ Set to nil to always allow painting."
           (integer :tag "Max bytes")))
 
 (put 'majutsu-diff-mode 'majutsu-diff-default-arguments
-     '("--stat"))
+     '("--git" "--stat"))
 
 (defun majutsu-diff--delete-line ()
   "Delete current line, including trailing newline if present."
