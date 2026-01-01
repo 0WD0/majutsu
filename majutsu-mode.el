@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'majutsu-base)
+(require 'majutsu-jj)
 
 ;;; Keymap
 

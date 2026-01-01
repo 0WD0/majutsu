@@ -19,6 +19,7 @@
 (require 'magit) ; for magit-with-editor
 (require 'majutsu-base)
 (require 'majutsu-mode)
+(require 'majutsu-jj)
 (require 'ansi-color)
 (require 'subr-x)
 (require 'with-editor nil 'noerror)
@@ -416,9 +417,9 @@ process terminates."
          (default-directory (or (ignore-errors (majutsu--root)) default-directory))
          (process-buf (majutsu-process-buffer t))
          (section (with-current-buffer process-buf
-                    (prog1 (majutsu--process-insert-section pwd majutsu-executable args nil nil)
+                    (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
                       (backward-char 1))))
-         (process (apply #'start-file-process "majutsu-jj" process-buf majutsu-executable args)))
+         (process (apply #'start-file-process "majutsu-jj" process-buf majutsu-jj-executable args)))
     (set-process-query-on-exit-flag process nil)
     (process-put process 'section section)
     (process-put process 'command-buf (current-buffer))
@@ -450,10 +451,10 @@ Process output goes into a new section in the buffer returned by
     (pcase-let* ((`(,process-buf . ,section)
                   (let ((buf (majutsu-process-buffer t)))
                     (cons buf (with-current-buffer buf
-                                (prog1 (majutsu--process-insert-section pwd majutsu-executable args nil nil)
+                                (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
                                   (backward-char 1))))))
                  (inhibit-read-only t)
-                 (exit (apply #'process-file majutsu-executable nil process-buf nil args)))
+                 (exit (apply #'process-file majutsu-jj-executable nil process-buf nil args)))
       (setq exit (majutsu--process-finish exit process-buf (current-buffer) default-directory section))
       (majutsu-refresh)
       exit)))
@@ -463,11 +464,11 @@ Process output goes into a new section in the buffer returned by
   (let* ((start-time (current-time))
          (safe-args (majutsu--process--maybe-add-flags args))
          result exit-code)
-    (majutsu--debug "Running command: %s %s" majutsu-executable (string-join safe-args " "))
+    (majutsu--debug "Running command: %s %s" majutsu-jj-executable (string-join safe-args " "))
     (with-temp-buffer
       (let ((coding-system-for-read 'utf-8-unix)
             (coding-system-for-write 'utf-8-unix))
-        (setq exit-code (apply #'process-file majutsu-executable nil t nil safe-args)))
+        (setq exit-code (apply #'process-file majutsu-jj-executable nil t nil safe-args)))
       (setq result (majutsu--process--apply-colors (buffer-string)))
       (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                       (float-time (time-subtract (current-time) start-time))
@@ -483,7 +484,7 @@ ERROR-CALLBACK is called with the error output on failure."
   (let* ((default-directory (majutsu--root))
          (args (majutsu--process--maybe-add-flags args))
          (buffer (generate-new-buffer " *majutsu-async*"))
-         (process (apply #'start-file-process "majutsu-async" buffer majutsu-executable args)))
+         (process (apply #'start-file-process "majutsu-async" buffer majutsu-jj-executable args)))
     (set-process-sentinel process
                           (lambda (proc _event)
                             (let ((status (process-status proc)))
@@ -513,11 +514,6 @@ ERROR-CALLBACK is called with the error output on failure."
 (eval-when-compile
   (require 'with-editor nil 'noerror)
   (declare-function with-editor--setup "with-editor" ()))
-(defvar with-editor-emacsclient-executable)
-(defvar with-editor-filter-visit-hook)
-(defvar with-editor--envvar)
-(defvar with-editor-envvars)
-(defvar with-editor-server-window-alist)
 
 (defun majutsu--with-editor--normalize-editor (command)
   "Normalize editor COMMAND before exporting it to jj.
@@ -635,13 +631,6 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
   (add-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context nil t)
   (add-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context nil t))
 
-(defmacro majutsu-with-editor (&rest body)
-  "Ensure BODY runs with the correct editor environment for jj."
-  (declare (indent 0) (debug (body)))
-  `(let ((magit-with-editor-envvar majutsu-with-editor-envvar))
-     (magit-with-editor
-       ,@body)))
-
 (defun majutsu--with-editor-run (args success-msg error-msg &optional success-callback)
   "Run JJ ARGS using with-editor.
 On success, display SUCCESS-MSG and refresh the log; otherwise use ERROR-MSG."
@@ -684,7 +673,7 @@ error text.  Output is optionally colorized based on
   (setq args (flatten-tree args))
   (setq args (majutsu--process--maybe-add-flags args))
   (let ((beg (point))
-        (exit (apply #'process-file majutsu-executable nil t nil args)))
+        (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
     (when (and majutsu-process-apply-ansi-colors
                (> (point) beg))
       (ansi-color-apply-on-region beg (point)))
