@@ -1031,6 +1031,7 @@ With prefix STYLE, cycle between `all' and `t'."
 (defun majutsu-diff-setup-buffer (args filesets revsets &optional locked)
   "Display a diff buffer configured by ARGS, FILESETS and REVSETS."
   (majutsu-setup-buffer #'majutsu-diff-mode locked
+    :kind 'diff
     (majutsu-buffer-diff-args args)
     (majutsu-buffer-diff-filesets filesets)
     (majutsu-buffer-diff-revsets revsets)))
