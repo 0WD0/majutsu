@@ -176,7 +176,8 @@ INITIAL-SECTION SELECT-SECTION &rest BINDINGS)"
       ,@(nreverse kwargs))))
 
 (cl-defun majutsu-setup-buffer-internal
-    (mode locked bindings &key buffer directory initial-section select-section)
+    (mode locked bindings
+          &key buffer directory initial-section select-section kind display-function)
   (let* ((topdir (majutsu--toplevel-safe directory))
          (kind (or kind (get mode 'majutsu-buffer-kind)))
          (value (and locked
@@ -204,7 +205,7 @@ INITIAL-SECTION SELECT-SECTION &rest BINDINGS)"
         (set (make-local-variable var) val))
       (when created
         (run-hooks 'majutsu-create-buffer-hook)))
-    (majutsu-display-buffer buffer)
+    (majutsu-display-buffer buffer kind display-function)
     (with-current-buffer buffer
       (run-hooks 'majutsu-setup-buffer-hook)
       (majutsu-refresh-buffer-internal created
