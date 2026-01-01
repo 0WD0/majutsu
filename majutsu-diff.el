@@ -383,45 +383,26 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
       (goto-char (point-min))
       (majutsu-diff-wash-diffs args))))
 
-(defun majutsu--insert-diff (section &optional args keep-error)
-  "Run `jj diff' with ARGS, insert into SECTION, and wash.
-When KEEP-ERROR is non-nil, preserve existing content on error."
-  (let* ((buf (current-buffer))
-         (diff-args (majutsu--ensure-flag (copy-sequence args) "--git")))
-    (majutsu-run-jj-async
-     (cons "diff" diff-args)
-     (lambda (output)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (let ((inhibit-read-only t)
-                 (magit-insert-section--parent section))
-             (save-excursion
-               (goto-char (oref section content))
-               (delete-region (point) (oref section end))
-               (if (and output (not (string-empty-p output)))
-                   (majutsu--insert-diff-hunks output diff-args)
-                 (insert (propertize "No changes." 'face 'shadow)))
-               (insert "\n")
-               (set-marker (oref section end) (point)))))))
-     (lambda (err)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (let ((inhibit-read-only t)
-                 (magit-insert-section--parent section))
-             (save-excursion
-               (goto-char (oref section content))
-               (unless keep-error
-                 (delete-region (point) (oref section end))
-                 (insert (format "Error loading diffs: %s\n" err)))
-               (set-marker (oref section end) (point))))))))))
-
 (defun majutsu-insert-diff (&optional args heading)
-  "Insert a diff section and populate it asynchronously.
-ARGS are passed to `jj diff' (\"--git\" is ensured)."
-  (let ((section (magit-insert-section (diffbuf)
-                   (magit-insert-heading (or heading (format "jj diff %s" (string-join formatting-args " "))))))
-    (majutsu--insert-diff section args)
-    section))
+  "Insert a diff section and wash it, Magit-style.
+
+When ARGS is non-nil, use it as diff formatting args; otherwise use the
+current buffer's `majutsu-buffer-diff-args'.  HEADING, when non-nil,
+replaces the default heading."
+  (let* ((formatting-args
+          (majutsu-diff--formatting-args-for-command
+           (or args majutsu-buffer-diff-args)))
+         (cmd-args (append (list "diff")
+                           formatting-args
+                           majutsu-buffer-diff-revsets
+                           majutsu-buffer-diff-filesets)))
+    (magit-insert-section (diff-root)
+      (magit-insert-heading
+        (or heading
+            (format "jj diff %s" (string-join formatting-args " "))))
+      (insert "\n")
+      (majutsu-diff--wash-with-state
+          #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
 
 ;;; Diff wash
 
@@ -489,16 +470,11 @@ Assumes point is at the start of the diff output."
   (goto-char (point-min))
   (when (re-search-forward "^diff --git " nil t)
     (goto-char (match-beginning 0)))
-  (cond
-   ((looking-at "^diff --git ")
+  (when (looking-at "^diff --git ")
     (while (and (not (eobp))
                 (looking-at "^diff --git "))
       (majutsu-diff-wash-file))
-    (unless (bolp) (insert "\n")))
-   ((save-excursion
-      (goto-char (point-min))
-      (looking-at-p (rx (* (any " \t\n")) eos)))
-    (insert (propertize "(No diff)" 'face 'shadow)))))
+    (unless (bolp) (insert "\n"))))
 
 (defun majutsu-diff-wash-file ()
   "Parse a single file section at point and wrap it in Magit sections."
@@ -1028,16 +1004,7 @@ With prefix STYLE, cycle between `all' and `t'."
                     (or (not majutsu-diff-whitespace-max-bytes)
                         (< (buffer-size) majutsu-diff-whitespace-max-bytes)))
         (magit-insert-section (diffbuf)
-          ;; FIXME: majutsu-insert-diff 不显示 diffstat
-          (magit-run-section-hook 'majutsu-diff-sections-hook)
-
-          ;; (magit-insert-section (diff-root)
-          ;;   (magit-insert-heading
-          ;;     (format "jj diff %s" (string-join formatting-args " ")))
-          ;;   (insert "\n")
-          ;; (majutsu-diff--wash-with-state
-          ;;     #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))
-          ))
+          (magit-run-section-hook 'majutsu-diff-sections-hook)))
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement))
       (goto-char (point-min)))))
@@ -1059,7 +1026,7 @@ With prefix STYLE, cycle between `all' and `t'."
       (cons 'commit rev)
     nil))
 
-;; TODO: 使用 `magit-setup-buffer' 来管这些东西
+;; TODO: test this function
 (defun majutus-diff-setup-buffer (args filesets revsets &optional locked)
   "Set up the current buffer as a diff buffer with ARGS, FILESETS, and REV-ARGS."
   (require 'magit)

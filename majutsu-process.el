@@ -550,28 +550,27 @@ error text.  Output is optionally colorized based on
                (> (point) beg))
       (ansi-color-apply-on-region beg (point)))
     ;; `process-file' may return nil on success for some Emacs builds.
-    (when (and (not exit) (integerp exit))
+    (when (null exit)
       (setq exit 0))
-    (cond
-     ;; Command produced no output.
-     ((= (point) beg)
-      (insert (propertize "(No diff)" 'face 'shadow)))
-     ;; Failure path.
-     ((and (not (eq keep-error 'wash-anyway))
-           (not (= exit 0)))
+    (when (and (not (eq keep-error 'wash-anyway))
+               (not (= exit 0)))
       (goto-char beg)
       (insert (propertize (format "jj %s failed (exit %s)\n"
                                   (string-join args " ") exit)
                           'font-lock-face 'error)))
-     ;; Success (or wash anyway).
-     (t
-      (save-restriction
-        (narrow-to-region beg (point))
-        (goto-char beg)
-        (funcall washer args))
-      (when (or (= (point) beg)
-                (= (point) (1+ beg)))
-        (magit-cancel-section))))
+    (if (= (point) beg)
+        (magit-cancel-section)
+      (unless (bolp)
+        (insert "\n"))
+      (when (or (= exit 0)
+                (eq keep-error 'wash-anyway))
+        (save-restriction
+          (narrow-to-region beg (point))
+          (goto-char beg)
+          (funcall washer args))
+        (when (or (= (point) beg)
+                  (= (point) (1+ beg)))
+          (magit-cancel-section))))
     exit))
 
 ;;; _
