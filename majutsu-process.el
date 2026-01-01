@@ -535,7 +535,7 @@ outer shell quoting that `with-editor' adds, matching Magit's workaround."
   "Run JJ ARGS using with-editor."
   (majutsu-with-editor (majutsu-run-jj-async args)))
 
-(defun majutsu--wash (washer keep-error &rest args)
+(defun majutsu-jj-wash (washer keep-error &rest args)
   "Run jj with ARGS, insert output at point, then call WASHER.
 KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,
 `wash-anyway' keeps output even on non-zero exit, anything else keeps the

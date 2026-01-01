@@ -907,12 +907,6 @@ disappear again."
         (magit-insert-heading "Working Copy Status")
         (insert status-output)))))
 
-;;; Log insert diff
-
-(defun majutsu-log-insert-diff ()
-  "Insert jj diff with hunks into current buffer asynchronously."
-  (majutsu-insert-diff nil "Working Copy Changes"))
-
 ;;; Log insert conflicts
 
 (defun majutsu-log-insert-conflicts ()
