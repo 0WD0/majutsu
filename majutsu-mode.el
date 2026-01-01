@@ -120,12 +120,12 @@ when the user has strict .dir-locals.el settings."
 
 ;;; Local Variables
 
-(defvar-local majutsu-buffer-diff-filesets nil
-  "Filesets filter for current diff buffer.")
-(defvar-local majutsu-buffer-diff-revsets nil
-  "Revision arguments for current diff buffer.")
 (defvar-local majutsu-buffer-diff-args nil
   "Remembered diff formatting arguments for the current diff buffer.")
+(defvar-local majutsu-buffer-diff-revsets nil
+  "Revision arguments for current diff buffer.")
+(defvar-local majutsu-buffer-diff-filesets nil
+  "Filesets filter for current diff buffer.")
 
 ;;; _
 (provide 'majutsu-mode)

@@ -1034,11 +1034,21 @@ With prefix STYLE, cycle between `all' and `t'."
      (majutsu-diff-show rev args files))
     (_ (majutsu-diff-show "@" args files))))
 
+;; TODO: implement more DWIM cases
 (defun majutsu-diff--dwim ()
   "Return information for performing DWIM diff."
   (if-let* ((rev (magit-section-value-if 'jj-commit)))
       (cons 'commit rev)
     nil))
+
+;; TODO: 使用 `magit-setup-buffer' 来管这些东西
+(defun majutus-diff-setup-buffer (args filesets revsets &optional locked)
+  "Set up the current buffer as a diff buffer with ARGS, FILESETS, and REV-ARGS."
+  (require 'magit)
+  (magit-setup-buffer #'majutsu-diff-mode locked
+    (majutsu-buffer-diff-args args)
+    (majutsu-buffer-diff-filesets filesets)
+    (majutsu-buffer-diff-revsets revsets)))
 
 (defun majutsu-diff-show (rev &optional args files)
   "Show diff for REV with ARGS and FILES."
