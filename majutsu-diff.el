@@ -477,6 +477,8 @@ ARGS are passed to `jj diff' (\"--git\" is ensured)."
     (majutsu--insert-diff section args)
     section))
 
+;;; Diff wash
+
 (defun majutsu-diff-wash-diffs (args)
   "Parse a jj diff already inserted into the current buffer.
 Assumes point is at the start of the diff output."
@@ -1164,13 +1166,13 @@ With prefix STYLE, cycle between `all' and `t'."
       (user-error "No majutsu diff buffer found to refresh")))))
 
 (defun majutsu-diff--wash-with-state (washer keep-error &rest args)
-  "Wrap `majutsu--wash' to also track diff buffer bookkeeping.
+  "Wrap `majutsu-jj-wash' to also track diff buffer bookkeeping.
 Sets `majutsu-diff--inserted-bytes' and whitespace painting flag
 after the wash finishes.  KEEP-ERROR and ARGS are forwarded unchanged."
   (declare (indent 2))
   (let ((before-size (buffer-size)))
     (prog1
-        (apply #'majutsu--wash washer keep-error args)
+        (apply #'majutsu-jj-wash washer keep-error args)
       (let ((bytes (- (buffer-size) before-size)))
         (setq-local majutsu-diff--inserted-bytes bytes)
         (setq-local majutsu-diff--paint-whitespace-enabled
