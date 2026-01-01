@@ -24,8 +24,7 @@
 (require 'diff-mode)
 (require 'smerge-mode)
 
-(defvar majutsu-prefix-use-buffer-arguments)
-(defvar majutsu-direct-use-buffer-arguments)
+(declare-function majutsu-jj-wash "majutsu-process" (washer keep-error &rest args))
 
 ;;; Options
 ;;;; Diff Mode

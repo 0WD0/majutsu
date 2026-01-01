@@ -552,14 +552,27 @@ error text.  Output is optionally colorized based on
     ;; `process-file' may return nil on success for some Emacs builds.
     (when (null exit)
       (setq exit 0))
-    (when (and (not (eq keep-error 'wash-anyway))
-               (not (= exit 0)))
+    (cond
+     ;; Command produced no output.
+     ((= (point) beg)
+      (if (= exit 0)
+          (magit-cancel-section)
+        (insert (propertize (format "jj %s failed (exit %s)\n"
+                                    (string-join args " ") exit)
+                            'font-lock-face 'error))
+        (unless (bolp)
+          (insert "\n"))))
+     ;; Failure path (unless we explicitly wash anyway).
+     ((and (not (eq keep-error 'wash-anyway))
+           (not (= exit 0)))
       (goto-char beg)
       (insert (propertize (format "jj %s failed (exit %s)\n"
                                   (string-join args " ") exit)
-                          'font-lock-face 'error)))
-    (if (= (point) beg)
-        (magit-cancel-section)
+                          'font-lock-face 'error))
+      (unless (bolp)
+        (insert "\n")))
+     ;; Success (or wash anyway).
+     (t
       (unless (bolp)
         (insert "\n"))
       (when (or (= exit 0)
@@ -570,7 +583,7 @@ error text.  Output is optionally colorized based on
           (funcall washer args))
         (when (or (= (point) beg)
                   (= (point) (1+ beg)))
-          (magit-cancel-section))))
+          (magit-cancel-section)))))
     exit))
 
 ;;; _
