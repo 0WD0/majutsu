@@ -55,6 +55,7 @@ The function must accept one argument: the buffer to display."
   '((log . pop-to-buffer)
     (op-log . pop-to-buffer)
     (diff . pop-to-buffer)
+    (process . pop-to-buffer)
     (message . pop-to-buffer))
   "Alist mapping Majutsu buffer kinds to display functions.
 Each function must accept one argument: the buffer to display.
