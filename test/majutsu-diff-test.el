@@ -109,18 +109,21 @@
   (let ((transient-current-command 'majutsu-diff-transient--internal)
         (majutsu-direct-use-buffer-arguments 'never)
         called-args
-        called-files)
-    (cl-letf (((symbol-function 'majutsu-diff-show)
-               (lambda (_rev args files)
+        called-files
+        called-revsets)
+    (cl-letf (((symbol-function 'majutsu-diff-setup-buffer)
+               (lambda (args filesets revsets &rest _)
                  (setq called-args args
-                       called-files files)))
+                       called-files filesets
+                       called-revsets revsets)))
               ((symbol-function 'majutsu-diff--dwim)
                (lambda () '(commit . "abc123")))
               ((symbol-function 'transient-args)
                (lambda (&rest _) '("--context=9" "--stat"))))
       (call-interactively #'majutsu-diff-dwim)
       (should (equal called-args '("--context=9" "--stat")))
-      (should (equal called-files nil)))))
+      (should (equal called-files nil))
+      (should (equal called-revsets '("-r" "abc123"))))))
 
 (provide 'majutsu-diff-test)
 
