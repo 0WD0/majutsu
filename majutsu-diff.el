@@ -28,6 +28,15 @@
 (defvar majutsu-direct-use-buffer-arguments)
 
 ;;; Options
+;;;; Diff Mode
+
+(defcustom majutsu-diff-sections-hook
+  (list #'majutsu-insert-diff
+        ;; #'majutsu-insert-xref-buttons
+        )
+  "Hook run to insert sections into a `majutsu-diff-mode' buffer."
+  :group 'majutsu-diff
+  :type 'hook)
 
 (defcustom majutsu-diff-refine-hunk t
   "Whether to show word-granularity differences inside hunks.
@@ -73,10 +82,16 @@ otherwise fall back to the current buffer's `tab-width'."
   :type '(choice (const :tag "Never adjust" nil)
           (const :tag "Use live file buffer value" t)))
 
+
+
+;;; Faces
+
 (defface majutsu-diffstat-binary
   '((t :inherit font-lock-constant-face :foreground "#81c8be"))
   "Face for the (binary) label in diffstat entries."
   :group 'majutsu)
+
+;;;
 
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
@@ -404,8 +419,7 @@ When KEEP-ERROR is non-nil, preserve existing content on error."
   "Insert a diff section and populate it asynchronously.
 ARGS are passed to `jj diff' (\"--git\" is ensured)."
   (let ((section (magit-insert-section (diffbuf)
-                   (magit-insert-heading (or heading "Working Copy Changes"))
-                   (insert "Loading diffs...\n"))))
+                   (magit-insert-heading (or heading (format "jj diff %s" (string-join formatting-args " "))))))
     (majutsu--insert-diff section args)
     section))
 
@@ -1014,12 +1028,16 @@ With prefix STYLE, cycle between `all' and `t'."
                     (or (not majutsu-diff-whitespace-max-bytes)
                         (< (buffer-size) majutsu-diff-whitespace-max-bytes)))
         (magit-insert-section (diffbuf)
-          (magit-insert-section (diff-root)
-            (magit-insert-heading
-              (format "jj diff %s" (string-join formatting-args " ")))
-            (insert "\n")
-            (majutsu-diff--wash-with-state
-                #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
+          ;; FIXME: majutsu-insert-diff 不显示 diffstat
+          (magit-run-section-hook 'majutsu-diff-sections-hook)
+
+          ;; (magit-insert-section (diff-root)
+          ;;   (magit-insert-heading
+          ;;     (format "jj diff %s" (string-join formatting-args " ")))
+          ;;   (insert "\n")
+          ;; (majutsu-diff--wash-with-state
+          ;;     #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))
+          ))
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement))
       (goto-char (point-min)))))
