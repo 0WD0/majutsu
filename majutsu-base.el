@@ -19,6 +19,7 @@
 (require 'subr-x)
 (require 'eieio)
 (require 'magit-section)
+(require 'magit-mode)  ; for `majutsu-display-function'
 
 ;;; Options
 
@@ -40,39 +41,6 @@
   "If non-nil, prompt for confirmation before undo/redo/abandon operations."
   :type 'boolean
   :group 'majutsu)
-
-(defcustom majutsu-default-display-function #'pop-to-buffer
-  "Fallback function used to display Majutsu buffers.
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
-
-(defcustom majutsu-display-functions
-  '((log . pop-to-buffer)
-    (op-log . pop-to-buffer)
-    (diff . pop-to-buffer)
-    (process . pop-to-buffer)
-    (message . pop-to-buffer))
-  "Alist mapping Majutsu buffer kinds to display functions.
-Each function must accept one argument: the buffer to display.
-Add new entries here to extend display behavior for additional buffers."
-  :type '(alist :key-type (symbol :tag "Buffer kind")
-          :value-type (choice
-                       (function-item switch-to-buffer)
-                       (function-item pop-to-buffer)
-                       (function-item display-buffer)
-                       (function :tag "Custom function")))
-  :group 'majutsu)
-
-(defun majutsu--display-function (kind)
-  "Return display function for KIND or the default fallback."
-  (or (alist-get kind majutsu-display-functions nil nil #'eq)
-      majutsu-default-display-function
-      #'pop-to-buffer))
 
 ;;; Section Classes
 
@@ -149,7 +117,7 @@ KIND (a symbol such as `log', `diff' or `message') via
 `majutsu-display-functions' and fall back to
 `majutsu-default-display-function' when no match is found."
   (let* ((display-fn (or display-function
-                         (majutsu--display-function kind))))
+                         (majutsu-display-function kind))))
     (funcall display-fn buffer)
     (or (get-buffer-window buffer t)
         (selected-window))))

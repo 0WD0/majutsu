@@ -15,6 +15,7 @@
 (require 'majutsu-process)
 
 (require 'with-editor)
+(require 'server)
 
 (defconst majutsu-jjdescription-regexp
   (rx (seq (or string-start
