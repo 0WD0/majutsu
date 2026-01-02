@@ -27,6 +27,30 @@
 (defvar majutsu-buffer-log-revsets)
 (defvar majutsu-buffer-log-filesets)
 
+(defcustom majutsu-log-field-faces
+  '((bookmarks . magit-branch-local)
+    (tags . magit-tag)
+    (working-copies . magit-branch-remote)
+    (author . magit-log-author)
+    (timestamp . magit-log-date)
+    (flags . font-lock-comment-face))
+  "Alist mapping log fields to face behavior.
+
+Each entry is (FIELD . SPEC).  SPEC can be:
+
+- t    Preserve existing font-lock-face properties produced
+       by JJ and `ansi-color-apply-text-property-face'.
+- nil  Remove face properties from that field.
+- FACE Apply FACE to that field (overriding existing faces).
+
+When a field is not present in this alist, it defaults to t."
+  :type '(alist :tag "Field face behavior"
+          :key-type (symbol :tag "Field")
+          :value-type (choice (const :tag "Preserve existing faces" t)
+                              (const :tag "No faces" nil)
+                              (face :tag "Use this face")))
+  :group 'majutsu)
+
 ;;; Section Keymaps
 
 (defvar-keymap majutsu-commit-section-map
@@ -498,15 +522,7 @@ after the leading graph prefix."
 
 (defun majutsu-log--field-face (field)
   "Return face symbol for FIELD, or nil."
-  (pcase field
-    ((or 'id 'change-id 'commit-id) 'magit-hash)
-    ('bookmarks 'magit-branch-local)
-    ('tags 'magit-tag)
-    ('working-copies 'magit-branch-remote)
-    ('author 'magit-log-author)
-    ('timestamp 'magit-log-date)
-    ('flags 'font-lock-comment-face)
-    (_ nil)))
+  (alist-get field majutsu-log-field-faces nil nil #'eq))
 
 (defun majutsu-log--compute-column-widths (entries compiled)
   "Compute display widths for visible columns.
@@ -548,13 +564,6 @@ Returns plist with:
                  (concat (make-string left ?\s) txt (make-string right ?\s))))
       (_ (concat txt (make-string pad ?\s))))))
 
-(defun majutsu-log--string-has-face-p (string)
-  "Return non-nil if STRING has any face text property."
-  (and (stringp string)
-       (> (length string) 0)
-       (or (text-property-not-all 0 (length string) 'face nil string)
-           (text-property-not-all 0 (length string) 'font-lock-face nil string))))
-
 (defun majutsu-log--format-entry-line (entry compiled widths)
   "Return plist (:line string :margin string :desc-indent col).
 Left fields follow graph width per-line; right fields are rendered for margin."
@@ -573,9 +582,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
       (let* ((field (plist-get col :field))
              (raw (or (majutsu-log--entry-column entry field) ""))
              (face (majutsu-log--field-face field))
-             (formatted (if (and face (not (majutsu-log--string-has-face-p raw)))
-                            (propertize raw 'font-lock-face face)
-                          raw)))
+             (formatted (if face (propertize raw 'font-lock-face face) raw)))
         (unless (string-empty-p formatted)
           (setq parts (append parts (list formatted)))
           (setq current-width (+ current-width 1 (string-width formatted)))
@@ -592,9 +599,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
                (col-width (or (alist-get field (plist-get widths :right) nil nil #'eq)
                               (string-width raw)))
                (formatted (majutsu-log--pad-display raw col-width (plist-get col :align)))
-               (formatted (if (and face (not (majutsu-log--string-has-face-p raw)))
-                              (propertize formatted 'font-lock-face face)
-                            formatted)))
+               (formatted (if face (propertize formatted 'font-lock-face face) formatted)))
           (push formatted right-parts)))
       (setq right-parts (nreverse right-parts))
       (let ((margin (string-join right-parts " ")))
