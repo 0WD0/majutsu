@@ -319,6 +319,13 @@ when the user has strict .dir-locals.el settings."
 
 ;;; Local Variables
 
+(defvar-local majutsu-buffer-log-args nil
+  "Remembered log arguments for the current log buffer.")
+(defvar-local majutsu-buffer-log-revsets nil
+  "Revision set argument for the current log buffer.")
+(defvar-local majutsu-buffer-log-filesets nil
+  "Filesets filter for the current log buffer.")
+
 (defvar-local majutsu-buffer-diff-args nil
   "Remembered diff formatting arguments for the current diff buffer.")
 (defvar-local majutsu-buffer-diff-revsets nil
