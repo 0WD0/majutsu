@@ -313,45 +313,66 @@ commit(s) at point or in the active region."
 
 ;;; Log State
 
-(defun majutsu-log--current-log-args ()
-  (if (derived-mode-p 'majutsu-log-mode)
-      majutsu-buffer-log-args
-    (get 'majutsu-log-mode 'majutsu-log-default-args)))
+(defun majutsu-log--get-value (mode &optional use-buffer-args)
+  "Get log arguments for MODE.
 
-(defun majutsu-log--current-log-revsets ()
-  (if (derived-mode-p 'majutsu-log-mode)
-      majutsu-buffer-log-revsets
-    (get 'majutsu-log-mode 'majutsu-log-default-revsets)))
+Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
+`majutsu-prefix-use-buffer-arguments' or
+`majutsu-direct-use-buffer-arguments'."
+  (setq use-buffer-args
+        (pcase-exhaustive use-buffer-args
+          ('prefix majutsu-prefix-use-buffer-arguments)
+          ('direct majutsu-direct-use-buffer-arguments)
+          ('nil majutsu-direct-use-buffer-arguments)
+          ((or 'always 'selected 'current 'never)
+           use-buffer-args)))
+  (cond
+   ((and (memq use-buffer-args '(always selected current))
+         (eq major-mode mode))
+    (list majutsu-buffer-log-args
+          majutsu-buffer-log-revsets
+          majutsu-buffer-log-filesets))
+   ((and (memq use-buffer-args '(always selected))
+         (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
+           (list (buffer-local-value 'majutsu-buffer-log-args buf)
+                 (buffer-local-value 'majutsu-buffer-log-revsets buf)
+                 (buffer-local-value 'majutsu-buffer-log-filesets buf)))))
+   ((plist-member (symbol-plist mode) 'majutsu-log-current-arguments)
+    (list (get mode 'majutsu-log-current-arguments)
+          (get mode 'majutsu-log-current-revsets)
+          (get mode 'majutsu-log-current-filesets)))
+   ((when-let* ((elt (assq (intern (format "majutsu-log:%s" mode))
+                           transient-values)))
+      (list (cdr elt)
+            (get mode 'majutsu-log-current-revsets)
+            (get mode 'majutsu-log-current-filesets))))
+   (t
+    (list (get mode 'majutsu-log-default-arguments)
+          (get mode 'majutsu-log-default-revsets)
+          (get mode 'majutsu-log-default-filesets)))))
 
-(defun majutsu-log--current-log-filesets ()
-  (if (derived-mode-p 'majutsu-log-mode)
-      majutsu-buffer-log-filesets
-    (get 'majutsu-log-mode 'majutsu-log-default-filesets)))
+(defun majutsu-log--set-value (mode args revsets filesets &optional save)
+  "Set current log values for MODE.
 
-(defun majutsu-log--set-log-args (args)
+When SAVE is non-nil, also persist ARGS using `transient-values'."
   (setq args (seq-remove #'null (flatten-tree args)))
-  (when (derived-mode-p 'majutsu-log-mode)
-    (setq-local majutsu-buffer-log-args args))
-  (put 'majutsu-log-mode 'majutsu-log-default-args args)
-  args)
-
-(defun majutsu-log--set-log-revsets (revset)
-  (when (derived-mode-p 'majutsu-log-mode)
-    (setq-local majutsu-buffer-log-revsets revset))
-  (put 'majutsu-log-mode 'majutsu-log-default-revsets revset)
-  revset)
-
-(defun majutsu-log--set-log-filesets (filesets)
   (setq filesets
         (and filesets
              (seq-remove (lambda (s)
                            (or (null s)
                                (and (stringp s) (string-empty-p s))))
                          (flatten-tree filesets))))
-  (when (derived-mode-p 'majutsu-log-mode)
+  (put mode 'majutsu-log-current-arguments args)
+  (put mode 'majutsu-log-current-revsets revsets)
+  (put mode 'majutsu-log-current-filesets filesets)
+  (when save
+    (setf (alist-get (intern (format "majutsu-log:%s" mode)) transient-values) args)
+    (transient-save-values))
+  (when (eq major-mode mode)
+    (setq-local majutsu-buffer-log-args args)
+    (setq-local majutsu-buffer-log-revsets revsets)
     (setq-local majutsu-buffer-log-filesets filesets))
-  (put 'majutsu-log-mode 'majutsu-log-default-filesets filesets)
-  filesets)
+  nil)
 
 (defvar-local majutsu-log--this-error nil
   "Last jj side-effect error summary for this log buffer.
@@ -402,23 +423,22 @@ When TAKES-VALUE is non-nil, also remove the following element."
 
 (defun majutsu-log--summary-parts ()
   "Return a list of human-readable fragments describing current log buffer."
-  (let ((parts '()))
-    (when-let* ((rev (majutsu-log--current-log-revsets)))
-      (push (format "rev=%s" rev) parts))
-    (let* ((args (majutsu-log--current-log-args))
-           (limit (majutsu-log--args-get-option args "-n")))
-      (when limit
-        (push (format "limit=%s" limit) parts))
-      (when (majutsu-log--args-member-p args "--reversed")
-        (push "reversed" parts))
-      (when (majutsu-log--args-member-p args "--no-graph")
-        (push "no-graph" parts)))
-    (let ((paths (majutsu-log--current-log-filesets)))
-      (when paths
-        (push (if (= (length paths) 1)
-                  (format "path=%s" (car paths))
-                (format "paths=%d" (length paths)))
-              parts)))
+  (pcase-let* ((`(,args ,revsets ,filesets)
+                (majutsu-log--get-value 'majutsu-log-mode 'current))
+               (parts '()))
+    (when revsets
+      (push (format "rev=%s" revsets) parts))
+    (when-let* ((limit (majutsu-log--args-get-option args "-n")))
+      (push (format "limit=%s" limit) parts))
+    (when (majutsu-log--args-member-p args "--reversed")
+      (push "reversed" parts))
+    (when (majutsu-log--args-member-p args "--no-graph")
+      (push "no-graph" parts))
+    (when filesets
+      (push (if (= (length filesets) 1)
+                (format "path=%s" (car filesets))
+              (format "paths=%d" (length filesets)))
+            parts))
     (nreverse parts)))
 
 (defun majutsu-log--format-summary (prefix)
@@ -644,13 +664,15 @@ Returns a plist with :template, :columns, and :field-order."
 
 (defun majutsu-log--build-args ()
   "Build argument list for `jj log' using current log variables."
-  (let ((args '("log")))
-    (setq args (append args (majutsu-log--current-log-args)))
-    (when-let* ((rev (majutsu-log--current-log-revsets)))
-      (setq args (append args (list "-r" rev))))
-    (setq args (append args (list "-T" (plist-get (majutsu-log--ensure-template) :template))))
-    (setq args (append args (majutsu-log--current-log-filesets)))
-    args))
+  (pcase-let ((`(,args ,revsets ,filesets)
+               (majutsu-log--get-value 'majutsu-log-mode 'current)))
+    (let ((cmd '("log")))
+      (setq cmd (append cmd args))
+      (when revsets
+        (setq cmd (append cmd (list "-r" revsets))))
+      (setq cmd (append cmd (list "-T" (plist-get (majutsu-log--ensure-template) :template))))
+      (setq cmd (append cmd filesets))
+      cmd)))
 
 ;;; Log Parsing
 
@@ -1178,10 +1200,12 @@ mutating the wrong buffer."
 
 When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
   (with-current-buffer
-      (majutsu-setup-buffer #'majutsu-log-mode locked
-        (majutsu-buffer-log-args (copy-sequence (or (get 'majutsu-log-mode 'majutsu-log-default-args) nil)))
-        (majutsu-buffer-log-revsets (get 'majutsu-log-mode 'majutsu-log-default-revsets))
-        (majutsu-buffer-log-filesets (copy-sequence (or (get 'majutsu-log-mode 'majutsu-log-default-filesets) nil))))
+      (pcase-let ((`(,args ,revsets ,filesets)
+                   (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+        (majutsu-setup-buffer #'majutsu-log-mode locked
+          (majutsu-buffer-log-args (copy-sequence args))
+          (majutsu-buffer-log-revsets revsets)
+          (majutsu-buffer-log-filesets (copy-sequence filesets))))
     (when commit
       (unless (majutsu--goto-log-entry commit)
         (majutsu-log-goto-@)))
@@ -1204,77 +1228,94 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
 (defun majutsu-log-transient-set-revisions ()
   "Prompt for a revset and store it in the current log variables."
   (interactive)
-  (let* ((current (majutsu-log--current-log-revsets))
+  (let* ((current (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
          (input (string-trim (read-from-minibuffer "Revset (empty to clear): " current))))
-    (majutsu-log--set-log-revsets (unless (string-empty-p input) input))
+    (pcase-let ((`(,args ,_revsets ,filesets)
+                 (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+      (majutsu-log--set-value 'majutsu-log-mode args
+                              (unless (string-empty-p input) input)
+                              filesets))
     (majutsu-log-transient--redisplay)))
 
 (defun majutsu-log-transient-clear-revisions ()
   "Clear the stored revset."
   (interactive)
-  (majutsu-log--set-log-revsets nil)
+  (pcase-let ((`(,args ,_revsets ,filesets)
+               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+    (majutsu-log--set-value 'majutsu-log-mode args nil filesets))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-set-limit ()
   "Prompt for a numeric limit and store it in the current log variables."
   (interactive)
-  (let* ((current (majutsu-log--args-get-option (majutsu-log--current-log-args) "-n"))
-         (input (string-trim (read-from-minibuffer "Limit (empty to clear): " current))))
+  (pcase-let* ((`(,args ,revsets ,filesets)
+                (majutsu-log--get-value 'majutsu-log-mode 'direct))
+               (current (majutsu-log--args-get-option args "-n"))
+               (input (string-trim (read-from-minibuffer "Limit (empty to clear): " current))))
     (cond
      ((string-empty-p input)
-      (majutsu-log--set-log-args
-       (majutsu-log--args-set-option (majutsu-log--current-log-args) "-n" nil)))
+      (setq args (majutsu-log--args-set-option args "-n" nil)))
      ((string-match-p "\\`[0-9]+\\'" input)
-      (majutsu-log--set-log-args
-       (majutsu-log--args-set-option (majutsu-log--current-log-args) "-n" input)))
+      (setq args (majutsu-log--args-set-option args "-n" input)))
      (t
-      (user-error "Limit must be a positive integer"))))
+      (user-error "Limit must be a positive integer")))
+    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-clear-limit ()
   "Clear the stored limit."
   (interactive)
-  (majutsu-log--set-log-args
-   (majutsu-log--args-set-option (majutsu-log--current-log-args) "-n" nil))
+  (pcase-let ((`(,args ,revsets ,filesets)
+               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+    (setq args (majutsu-log--args-set-option args "-n" nil))
+    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-toggle-reversed ()
   "Toggle reversed log ordering."
   (interactive)
-  (majutsu-log--set-log-args
-   (majutsu-log--args-toggle-flag (majutsu-log--current-log-args) "--reversed"))
+  (pcase-let ((`(,args ,revsets ,filesets)
+               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+    (setq args (majutsu-log--args-toggle-flag args "--reversed"))
+    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-toggle-no-graph ()
   "Toggle whether jj log should hide the ASCII graph."
   (interactive)
-  (majutsu-log--set-log-args
-   (majutsu-log--args-toggle-flag (majutsu-log--current-log-args) "--no-graph"))
+  (pcase-let ((`(,args ,revsets ,filesets)
+               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+    (setq args (majutsu-log--args-toggle-flag args "--no-graph"))
+    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-add-path ()
   "Add a fileset/path filter to the log view."
   (interactive)
   (let* ((input (string-trim (read-from-minibuffer "Add path/pattern: ")))
-         (paths (majutsu-log--current-log-filesets)))
+         (paths (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
     (when (and (not (string-empty-p input))
                (not (member input paths)))
-      (majutsu-log--set-log-filesets (append paths (list input)))
+      (pcase-let ((`(,args ,revsets ,_filesets)
+                   (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+        (majutsu-log--set-value 'majutsu-log-mode args revsets (append paths (list input))))
       (majutsu-log-transient--redisplay))))
 
 (defun majutsu-log-transient-clear-paths ()
   "Clear all path filters."
   (interactive)
-  (majutsu-log--set-log-filesets nil)
+  (pcase-let ((`(,args ,revsets ,_filesets)
+               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+    (majutsu-log--set-value 'majutsu-log-mode args revsets nil))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-reset ()
   "Reset log options to defaults."
   (interactive)
-  (majutsu-log--set-log-revsets nil)
-  (majutsu-log--set-log-args nil)
-  (majutsu-log--set-log-filesets nil)
-  (majutsu-log-transient--redisplay))
+  (majutsu-log--set-value 'majutsu-log-mode nil nil nil)
+  (if (fboundp 'transient-reset)
+      (transient-reset)
+    (majutsu-log-transient--redisplay)))
 
 (defun majutsu-log-transient-apply ()
   "Apply the current log state by refreshing or opening the log view."
@@ -1283,7 +1324,7 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
 
 (defun majutsu-log--toggle-desc (label flag)
   "Return LABEL annotated with ON/OFF state for FLAG in log args."
-  (if (member flag (majutsu-log--current-log-args))
+  (if (member flag (car (majutsu-log--get-value 'majutsu-log-mode 'direct)))
       (format "%s [on]" label)
     (format "%s [off]" label)))
 
@@ -1295,7 +1336,7 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
 
 (defun majutsu-log--paths-desc ()
   "Return description for path filters."
-  (let ((paths (majutsu-log--current-log-filesets)))
+  (let ((paths (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
     (cond
      ((null paths) "Add path filter")
      ((= (length paths) 1) (format "Add path filter (%s)" (car paths)))
@@ -1308,75 +1349,109 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
     (when (fboundp 'transient--redisplay)
       (transient--redisplay))))
 
-(transient-define-argument majutsu-log:-r ()
-  :description (lambda ()
-                 (majutsu-log--value-desc "Revset" (majutsu-log--current-log-revsets)))
-  :class 'transient-option
-  :shortarg "r"
-  :argument "-r "
-  :reader (lambda (&rest _)
-            (let* ((current (majutsu-log--current-log-revsets))
-                   (input (string-trim
-                           (read-from-minibuffer "Revset (empty to clear): "
-                                                 current))))
-              (majutsu-log--set-log-revsets
-               (unless (string-empty-p input) input)))))
+;;; Arguments
+;;;; Prefix Classes
+
+(defclass majutsu-log-prefix (transient-prefix)
+  ((history-key :initform 'majutsu-log)
+   (major-mode :initform 'majutsu-log-mode)))
+
+;;;; Prefix Methods
+
+(cl-defmethod transient-init-value ((obj majutsu-log-prefix))
+  (pcase-let ((`(,args ,_revsets ,_filesets)
+               (majutsu-log--get-value (oref obj major-mode) 'prefix)))
+    (oset obj value args)))
+
+(cl-defmethod transient-set-value ((obj majutsu-log-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (args (transient-args (oref obj command))))
+    (pcase-let ((`(,_old-args ,revsets ,filesets)
+                 (majutsu-log--get-value mode 'direct)))
+      (put mode 'majutsu-log-current-arguments args)
+      (transient--history-push obj)
+      (when (eq major-mode mode)
+        (setq-local majutsu-buffer-log-args args))
+      (put mode 'majutsu-log-current-revsets revsets)
+      (put mode 'majutsu-log-current-filesets filesets))))
+
+(cl-defmethod transient-save-value ((obj majutsu-log-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (key (intern (format "majutsu-log:%s" mode)))
+         (args (transient-args (oref obj command))))
+    (put mode 'majutsu-log-current-arguments args)
+    (setf (alist-get key transient-values) args)
+    (transient-save-values)
+    (transient--history-push obj)
+    (when (eq major-mode mode)
+      (setq-local majutsu-buffer-log-args args))))
 
 (transient-define-argument majutsu-log:-n ()
   :description (lambda ()
                  (majutsu-log--value-desc
                   "Limit"
-                  (majutsu-log--args-get-option (majutsu-log--current-log-args) "-n")))
+                  (majutsu-log--args-get-option
+                   (car (majutsu-log--get-value 'majutsu-log-mode 'direct))
+                   "-n")))
   :class 'transient-option
   :shortarg "n"
   :argument "-n "
   :reader (lambda (&rest _)
-            (let* ((current (majutsu-log--args-get-option (majutsu-log--current-log-args) "-n"))
-                   (input (string-trim
-                           (read-from-minibuffer "Limit (empty to clear): "
-                                                 current))))
+            (pcase-let* ((`(,args ,_revsets ,_filesets)
+                          (majutsu-log--get-value 'majutsu-log-mode 'direct))
+                         (current (majutsu-log--args-get-option args "-n"))
+                         (input (string-trim
+                                 (read-from-minibuffer "Limit (empty to clear): "
+                                                       current))))
               (cond
                ((string-empty-p input)
-                (majutsu-log--set-log-args
-                 (majutsu-log--args-set-option (majutsu-log--current-log-args) "-n" nil))
                 nil)
                ((string-match-p "\\`[0-9]+\\'" input)
-                (majutsu-log--set-log-args
-                 (majutsu-log--args-set-option (majutsu-log--current-log-args) "-n" input))
                 input)
                (t (user-error "Limit must be a positive integer"))))))
+
+(transient-define-argument majutsu-log:--reversed ()
+  :description "Reverse order"
+  :class 'transient-switch
+  :key "v"
+  :argument "--reversed")
+
+(transient-define-argument majutsu-log:--no-graph ()
+  :description "Hide graph"
+  :class 'transient-switch
+  :key "t"
+  :argument "--no-graph")
 
 ;;;###autoload
 (transient-define-prefix majutsu-log-transient ()
   "Transient interface for adjusting jj log options."
   :man-page "jj-log"
+  :class 'majutsu-log-prefix
   :transient-non-suffix t
   [:description majutsu-log--transient-description
    :class transient-columns
    ["Revisions"
-    (majutsu-log:-r)
+    ("r" "Set revset" majutsu-log-transient-set-revisions
+     :description (lambda ()
+                    (majutsu-log--value-desc
+                     "Set revset"
+                     (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
+     :transient t)
     (majutsu-log:-n)
-    ("v" "Reverse order" majutsu-log-transient-toggle-reversed
-     :description (lambda ()
-                    (majutsu-log--toggle-desc "Reverse order" "--reversed"))
-     :transient t)
-    ("t" "Hide graph" majutsu-log-transient-toggle-no-graph
-     :description (lambda ()
-                    (majutsu-log--toggle-desc "Hide graph" "--no-graph"))
-     :transient t)
+    (majutsu-log:--reversed)
+    (majutsu-log:--no-graph)
     ("R" "Clear revset" majutsu-log-transient-clear-revisions
-     :if (lambda () (majutsu-log--current-log-revsets))
+     :if (lambda () (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
      :transient t)
-    ("N" "Clear limit" majutsu-log-transient-clear-limit
-     :if (lambda ()
-           (majutsu-log--args-get-option (majutsu-log--current-log-args) "-n"))
-     :transient t)]
+    ]
    ["Paths"
     ("a" "Add path filter" majutsu-log-transient-add-path
      :description majutsu-log--paths-desc
      :transient t)
     ("A" "Clear path filters" majutsu-log-transient-clear-paths
-     :if (lambda () (majutsu-log--current-log-filesets))
+     :if (lambda () (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
      :transient t)]
    ["Actions"
     ("g" "Apply & refresh" majutsu-log-transient-apply)
