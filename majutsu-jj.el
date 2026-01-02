@@ -17,7 +17,23 @@
 (require 'majutsu-base)
 (require 'ansi-color)
 
+(require 'with-editor)
+
 ;;; Options
+
+(defcustom majutsu-jj-executable "jj"
+  "Path to jj executable."
+  :group 'majutsu-process
+  :type 'string)
+
+(defcustom majutsu-jj-global-arguments
+  `("--no-pager" "--color=always")
+  "List of global arguments to pass to jj commands."
+  :group 'majutsu-commands
+  :group 'majutsu-process
+  :type '(repeat string))
+
+;;; with-editor
 
 (defcustom majutsu-with-editor-envvar "JJ_EDITOR"
   "Environment variable used to tell jj which editor to invoke."
@@ -31,18 +47,6 @@ Also respect the value of `majutsu-with-editor-envvar'."
   `(let ((majutsu-process-popup-time -1))
      (with-editor* majutsu-with-editor-envvar
        ,@body)))
-
-(defcustom majutsu-jj-executable "jj"
-  "Path to jj executable."
-  :group 'majutsu-process
-  :type 'string)
-
-(defcustom majutsu-jj-global-arguments
-  `("--no-pager" "--color=always")
-  "List of global arguments to pass to jj commands."
-  :group 'majutsu-commands
-  :group 'majutsu-process
-  :type '(repeat string))
 
 ;;; JJ
 
