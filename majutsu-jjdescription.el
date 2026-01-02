@@ -28,7 +28,7 @@
 (add-to-list 'with-editor-file-name-history-exclude majutsu-jjdescription-regexp)
 
 (add-to-list 'with-editor-server-window-alist
-             (cons majutsu-jjdescription-regexp #'pop-to-buffer-same-window))
+             (cons majutsu-jjdescription-regexp (majutsu-display-function 'message)))
 
 ;;; _
 (provide 'majutsu-jjdescription)
