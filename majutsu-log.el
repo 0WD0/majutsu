@@ -1090,6 +1090,9 @@ Return non-nil when the section could be located."
   (setq-local majutsu-log-buffer-state (majutsu-log--state-default))
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
+(cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-log-mode))
+  majutsu-log-buffer-state)
+
 (defun majutsu-log-render ()
   "Render the log buffer using cached data."
   (let ((inhibit-read-only t))
@@ -1129,6 +1132,11 @@ Assumes `current-buffer' is a `majutsu-log-mode' buffer."
      ((and fallback-commit (majutsu--goto-log-entry fallback-commit)))
      (t (majutsu-log-goto-@)))))
 
+(defun majutsu-log-refresh-buffer ()
+  "Refresh the current Majutsu log buffer."
+  (interactive)
+  (majutsu-log--refresh-buffer nil))
+
 ;;;###autoload
 (defun majutsu-log-refresh (&optional commit)
   "Refresh a majutsu log buffer for the current repository.
@@ -1148,23 +1156,28 @@ mutating the wrong buffer."
      (t
       (majutsu--debug "Skipping log refresh: no log buffer for %s" (or root "unknown repo"))))))
 
+(defun majutsu-log-setup-buffer (&optional commit locked)
+  "Set up a Majutsu log buffer and optionally focus COMMIT.
+
+When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
+  (with-current-buffer
+      (majutsu-setup-buffer #'majutsu-log-mode locked
+        (majutsu-log-buffer-state (majutsu-log--state-default)))
+    (when commit
+      (unless (majutsu--goto-log-entry commit)
+        (majutsu-log-goto-@)))
+    (current-buffer)))
+
 ;;;###autoload
 (defun majutsu-log ()
   "Open the majutsu log buffer."
   (interactive)
-  (let* ((root (majutsu--root))
-         (buffer (get-buffer-create (format "*majutsu: %s*" (file-name-nondirectory (directory-file-name root))))))
-    (with-current-buffer buffer
-      (majutsu-log-mode)
-      (setq-local majutsu--repo-root root)
-      (setq default-directory root)
-      (majutsu-log-refresh))
-    (majutsu-display-buffer buffer 'log)))
+  (majutsu-log-setup-buffer))
 
 (defun majutsu-log--refresh-view ()
   "Refresh current log buffer or open a new one."
   (if (derived-mode-p 'majutsu-log-mode)
-      (majutsu-log-refresh)
+      (majutsu-log-refresh-buffer)
     (majutsu-log)))
 
 ;;; Commands

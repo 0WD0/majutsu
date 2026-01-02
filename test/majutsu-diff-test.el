@@ -99,7 +99,7 @@
   (with-temp-buffer
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-filesets '("a" "b"))
-    (cl-letf (((symbol-function 'majutsu-diff-refresh) #'ignore))
+    (cl-letf (((symbol-function 'majutsu-diff-refresh-buffer) #'ignore))
       (majutsu-diff--set-buffer-args '("--summary")))
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
