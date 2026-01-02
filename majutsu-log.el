@@ -549,10 +549,11 @@ Returns plist with:
       (_ (concat txt (make-string pad ?\s))))))
 
 (defun majutsu-log--string-has-face-p (string)
-  "Return non-nil if STRING has any non-nil `face' text property."
+  "Return non-nil if STRING has any face text property."
   (and (stringp string)
        (> (length string) 0)
-       (text-property-not-all 0 (length string) 'face nil string)))
+       (or (text-property-not-all 0 (length string) 'face nil string)
+           (text-property-not-all 0 (length string) 'font-lock-face nil string))))
 
 (defun majutsu-log--format-entry-line (entry compiled widths)
   "Return plist (:line string :margin string :desc-indent col).
@@ -573,7 +574,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
              (raw (or (majutsu-log--entry-column entry field) ""))
              (face (majutsu-log--field-face field))
              (formatted (if (and face (not (majutsu-log--string-has-face-p raw)))
-                            (propertize raw 'face face)
+                            (propertize raw 'font-lock-face face)
                           raw)))
         (unless (string-empty-p formatted)
           (setq parts (append parts (list formatted)))
@@ -592,7 +593,7 @@ Left fields follow graph width per-line; right fields are rendered for margin."
                               (string-width raw)))
                (formatted (majutsu-log--pad-display raw col-width (plist-get col :align)))
                (formatted (if (and face (not (majutsu-log--string-has-face-p raw)))
-                              (propertize formatted 'face face)
+                              (propertize formatted 'font-lock-face face)
                             formatted)))
           (push formatted right-parts)))
       (setq right-parts (nreverse right-parts))

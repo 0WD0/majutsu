@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'majutsu-base)
+(require 'ansi-color)
 
 ;;; Options
 
@@ -69,7 +70,10 @@ error text.  Output is optionally colorized based on
         (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
     (when (and majutsu-process-apply-ansi-colors
                (> (point) beg))
-      (ansi-color-apply-on-region beg (point)))
+      ;; Use text-properties instead of overlays so that subsequent
+      ;; washing/parsing that uses `buffer-substring' preserves faces.
+      (let ((ansi-color-apply-face-function #'ansi-color-apply-text-property-face))
+        (ansi-color-apply-on-region beg (point))))
     ;; `process-file' may return nil on success for some Emacs builds.
     (when (null exit)
       (setq exit 0))
