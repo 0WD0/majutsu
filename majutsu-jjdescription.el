@@ -17,6 +17,9 @@
 (require 'with-editor)
 (require 'server)
 
+(defvar recentf-exclude)
+(defvar better-jumper-ignored-file-patterns)
+
 (defconst majutsu-jjdescription-regexp
   (rx (seq (or string-start
                (seq (* (not (any ?\n)))
@@ -24,6 +27,12 @@
            "editor-" (+ (in "0-9A-Za-z"))
            ".jjdescription" string-end))
   "Regexp matching temporary jj description files created for editing.")
+
+(with-eval-after-load 'recentf
+  (add-to-list 'recentf-exclude majutsu-jjdescription-regexp))
+
+(with-eval-after-load 'better-jumper
+  (add-to-list 'better-jumper-ignored-file-patterns majutsu-jjdescription-regexp))
 
 (add-to-list 'with-editor-file-name-history-exclude majutsu-jjdescription-regexp)
 
