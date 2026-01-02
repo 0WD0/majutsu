@@ -1140,44 +1140,17 @@ Return non-nil when the section could be located."
       (run-hooks 'majutsu-log-sections-hook)
       (majutsu-selection-render))))
 
-(defun majutsu-log--refresh-buffer (target-commit)
-  "Implementation helper to refresh the current log buffer.
-Assumes `current-buffer' is a `majutsu-log-mode' buffer."
+(defun majutsu-log-refresh-buffer ()
+  "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
-  (let* ((root (majutsu--root))
-         (pos (and (null target-commit)
-                   (when-let ((section (magit-section-at)))
-                     (pcase-let ((`(,line ,char)
-                                  (magit-section-get-relative-position section)))
-                       (list section line char)))))
-         (fallback-commit (and (null target-commit)
-                               (magit-section-value-if 'jj-commit))))
+  (let ((root (majutsu--root)))
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-log--cached-entries nil)
-    (majutsu-log-render)
-    (cond
-     (target-commit
-      (unless (majutsu--goto-log-entry target-commit)
-        (majutsu-log-goto-@)))
-     ((and pos
-           (let ((section (nth 0 pos))
-                 (line (nth 1 pos))
-                 (char (nth 2 pos)))
-             (if (get-buffer-window-list (current-buffer) nil t)
-                 (magit-section-goto-successor section line char)
-               (let ((magit-section-movement-hook nil))
-                 (magit-section-goto-successor section line char))))))
-     ((and fallback-commit (majutsu--goto-log-entry fallback-commit)))
-     (t (majutsu-log-goto-@)))))
-
-(defun majutsu-log-refresh-buffer ()
-  "Refresh the current Majutsu log buffer."
-  (interactive)
-  (majutsu-log--refresh-buffer nil))
+    (majutsu-log-render)))
 
 ;;;###autoload
-(defun majutsu-log-refresh (&optional commit)
+(defun majutsu-log-refresh ()
   "Refresh a majutsu log buffer for the current repository.
 When called outside a log buffer, try to refresh an existing log
 buffer for the same repository.  If none exists and the command
@@ -1189,7 +1162,7 @@ mutating the wrong buffer."
     (cond
      (buffer
       (with-current-buffer buffer
-        (majutsu-log--refresh-buffer commit)))
+        (majutsu-refresh-buffer)))
      ((called-interactively-p 'interactive)
       (user-error "No Majutsu log buffer for this repository; open one with `majutsu-log`"))
      (t
@@ -1220,7 +1193,7 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
 (defun majutsu-log--refresh-view ()
   "Refresh current log buffer or open a new one."
   (if (derived-mode-p 'majutsu-log-mode)
-      (majutsu-log-refresh-buffer)
+      (majutsu-refresh-buffer)
     (majutsu-log)))
 
 ;;; Commands

@@ -97,7 +97,7 @@ With prefix ARG, open the new transient for interactive selection."
     (if (zerop exit)
         (progn
           (message "Created new changeset")
-          (majutsu-log-refresh (majutsu-current-id))
+          (majutsu-log-refresh)
           t)
       (majutsu-refresh)
       nil)))
