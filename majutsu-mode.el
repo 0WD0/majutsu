@@ -333,7 +333,7 @@ when the user has strict .dir-locals.el settings."
 (defvar-local majutsu-buffer-diff-filesets nil
   "Filesets filter for current diff buffer.")
 
-;;;
+;;; Display functions
 
 (defcustom majutsu-default-display-function #'pop-to-buffer
   "Fallback function used to display Majutsu buffers.
