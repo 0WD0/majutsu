@@ -43,6 +43,20 @@ Also respect the value of `majutsu-with-editor-envvar'."
   :group 'majutsu-process
   :type '(repeat string))
 
+;;; JJ
+
+(defun majutsu-process-jj-arguments (args)
+  "Prepare ARGS for a function that invokes JJ.
+
+Majutsu has many specialized functions for running JJ; they all
+pass arguments through this function before handing them to JJ,
+to do the following.
+
+* Flatten ARGS, removing nil arguments.
+* Prepend `majutsu-jj-global-arguments' to ARGS."
+  (setq args (seq-remove #'null (flatten-tree args)))
+  (append (seq-remove #'null majutsu-jj-global-arguments) args))
+
 ;;; _
 (provide 'majutsu-jj)
 ;;; majutsu-jj.el ends here

@@ -986,7 +986,11 @@ With prefix STYLE, cycle between `all' and `t'."
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
              ;; Avoid ANSI; let our painting run lazily.
-             (majutsu-process-color-mode nil)
+             (majutsu-jj-global-arguments
+              (cons "--color=never"
+                    (seq-remove (lambda (arg)
+                                  (string-prefix-p "--color" arg))
+                                majutsu-jj-global-arguments)))
              (majutsu-process-apply-ansi-colors nil))
         (setq-local majutsu-diff--paint-whitespace-enabled
                     (or (not majutsu-diff-whitespace-max-bytes)
