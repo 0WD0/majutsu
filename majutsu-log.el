@@ -1007,21 +1007,30 @@ Assumes point is at the beginning of a commit line (a line containing
            (line-info (majutsu-log--format-entry-line entry compiled widths))
            (heading (plist-get line-info :line))
            (margin (plist-get line-info :margin))
-           (indent (plist-get line-info :desc-indent)))
-      (magit-insert-section
-          (jj-commit id t)
-        (magit-insert-heading
-          (insert heading))
+           (indent (plist-get line-info :desc-indent))
+           (long-desc (plist-get entry :long-desc))
+           (has-body (and (stringp long-desc)
+                          (not (string-empty-p (string-trim long-desc))))))
+      (magit-insert-section (jj-commit id t)
+        ;; Insert the visible, non-folded part of the section.  The log
+        ;; contains "suffix lines" that are part of the ASCII graph but
+        ;; don't carry record fields; those should remain visible even
+        ;; when the section is folded.
+        (insert heading)
+        (insert "\n")
         (when margin
           (majutsu-log--make-margin-overlay margin))
-        (when-let* ((long-desc (plist-get entry :long-desc))
-                    (indented (majutsu--indent-string long-desc (or indent 0))))
-          (magit-insert-section-body
-            (insert indented)
-            (insert "\n")))
         (dolist (suffix-line suffix-lines)
           (insert suffix-line)
-          (insert "\n"))))))
+          (insert "\n"))
+        (when has-body
+          ;; Start of foldable body: everything inserted after this point is
+          ;; hidden when the section is collapsed.
+          (magit-insert-heading)
+          (let ((indented (majutsu--indent-string long-desc (or indent 0))))
+            (magit-insert-section-body
+              (insert indented)
+              (insert "\n"))))))))
 
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
