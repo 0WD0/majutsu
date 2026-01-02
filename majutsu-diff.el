@@ -932,7 +932,7 @@ file."
          (arg (and num (not (= num def)) (format "--context=%d" num)))
          (val (if arg (cons arg val) val)))
     (majutsu-diff--set-buffer-args val)
-    (majutsu-diff-refresh)))
+    (majutsu-diff-refresh-buffer)))
 
 (defun majutsu-diff-toggle-refine-hunk (&optional style)
   "Toggle word-level refinement within hunks.
@@ -976,7 +976,12 @@ With prefix STYLE, cycle between `all' and `t'."
   (setq-local font-lock-multiline t)
   (add-hook 'post-command-hook #'majutsu-diff--maybe-clear-refinement nil t))
 
-(defun majutsu-diff-refresh (&optional _ignore-auto _noconfirm)
+(cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-diff-mode))
+  (list majutsu-buffer-diff-args
+        majutsu-buffer-diff-revsets
+        majutsu-buffer-diff-filesets))
+
+(defun majutsu-diff-refresh-buffer (&optional _ignore-auto _noconfirm)
   "Refresh the current diff buffer."
   (interactive)
   (when majutsu-buffer-diff-args
@@ -1131,14 +1136,14 @@ With prefix STYLE, cycle between `all' and `t'."
     (cond
      ((eq major-mode 'majutsu-diff-mode)
       (majutsu-diff--set-buffer-args args)
-      (majutsu-diff-refresh))
+      (majutsu-diff-refresh-buffer))
      ((and (memq majutsu-prefix-use-buffer-arguments '(always selected))
            (when-let* ((buf (majutsu--get-mode-buffer
                              'majutsu-diff-mode
                              (eq majutsu-prefix-use-buffer-arguments 'selected))))
              (with-current-buffer buf
                (majutsu-diff--set-buffer-args args)
-               (majutsu-diff-refresh))
+               (majutsu-diff-refresh-buffer))
              t)))
      (t
       (user-error "No majutsu diff buffer found to refresh")))))

@@ -102,7 +102,7 @@
     (magit-insert-section (oplog)
       (majutsu-op-log-insert-entries))))
 
-(defun majutsu-op-log-refresh ()
+(defun majutsu-op-log-refresh-buffer ()
   "Refresh the op log buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
@@ -111,24 +111,10 @@
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-op-log--cached-entries nil)
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert "Loading..."))
-    (majutsu-run-jj-async
-     (list "op" "log" "--no-graph" "-T" majutsu--op-log-template)
-     (lambda (output)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (when (derived-mode-p 'majutsu-op-log-mode)
-             (setq majutsu-op-log--cached-entries (majutsu-parse-op-log-entries nil output))
-             (majutsu-op-log-render)))))
-     (lambda (err)
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (when (derived-mode-p 'majutsu-op-log-mode)
-             (let ((inhibit-read-only t))
-               (erase-buffer)
-               (insert "Error: " err)))))))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (derived-mode-p 'majutsu-op-log-mode)
+          (majutsu-op-log-render))))))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
@@ -149,7 +135,7 @@
       (majutsu-op-log-mode)
       (setq-local majutsu--repo-root root)
       (setq default-directory root)
-      (majutsu-op-log-refresh))
+      (majutsu-op-log-refresh-buffer))
     (majutsu-display-buffer buffer 'op-log)))
 
 ;;; _

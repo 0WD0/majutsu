@@ -343,8 +343,44 @@ ARG may be a process object or an exit code.  Return the exit code."
                               (majutsu-display-buffer b 'process))))
                         process))))))
 
+(defun majutsu-start-process (program &optional input &rest args)
+  "Start PROGRAM asynchronously, preparing for refresh, and return the process.
+
+PROGRAM is started using `start-file-process' and then setup to use
+`majutsu--process-sentinel' and `majutsu--process-filter'.  After the
+process terminates, the sentinel refreshes the buffer that was current
+when this function was called (if still alive), as well as the
+repository's log buffer (see `majutsu-refresh')."
+  (let* ((args (flatten-tree args))
+         (pwd default-directory)
+         (default-directory (or (ignore-errors (majutsu--root)) default-directory))
+         (process-buf (majutsu-process-buffer t))
+         (section (with-current-buffer process-buf
+                    (prog1 (majutsu--process-insert-section pwd program args nil nil)
+                      (backward-char 1))))
+         (process (apply #'start-file-process (file-name-nondirectory program)
+                         process-buf program args)))
+    (set-process-query-on-exit-flag process nil)
+    (process-put process 'section section)
+    (process-put process 'command-buf (current-buffer))
+    (process-put process 'default-dir default-directory)
+    (oset section process process)
+    (oset section value process)
+    (with-current-buffer process-buf
+      (set-marker (process-mark process) (point)))
+    (if (fboundp 'with-editor-set-process-filter)
+        (with-editor-set-process-filter process #'majutsu--process-filter)
+      (set-process-filter process #'majutsu--process-filter))
+    (set-process-sentinel process #'majutsu--process-sentinel)
+    (when input
+      (with-current-buffer input
+        (process-send-region process (point-min) (point-max))
+        (process-send-eof process)))
+    (majutsu--process-display-buffer process)
+    process))
+
 (defun majutsu--process-filter (proc string)
-  "Default filter used by `majutsu-start-jj'."
+  "Default filter used by `majutsu-start-process'."
   (with-current-buffer (process-buffer proc)
     (let ((inhibit-read-only t))
       (goto-char (process-mark proc))
@@ -358,7 +394,7 @@ ARG may be a process object or an exit code.  Return the exit code."
       (set-marker (process-mark proc) (point)))))
 
 (defun majutsu--process-sentinel (process _event)
-  "Default sentinel used by `majutsu-start-jj'."
+  "Default sentinel used by `majutsu-start-process'."
   (when (memq (process-status process) '(exit signal))
     (majutsu--process-finish process)
     (unless (process-get process 'inhibit-refresh)
@@ -381,30 +417,11 @@ SUCCESS-MSG is displayed on exit code 0.  When FINISH-CALLBACK is
 non-nil, call it as (FINISH-CALLBACK PROCESS EXIT-CODE) after the
 process terminates."
   (let* ((args (majutsu-process-jj-arguments args))
-         (pwd default-directory)
-         (default-directory (or (ignore-errors (majutsu--root)) default-directory))
-         (process-buf (majutsu-process-buffer t))
-         (section (with-current-buffer process-buf
-                    (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
-                      (backward-char 1))))
-         (process (apply #'start-file-process "majutsu-jj" process-buf majutsu-jj-executable args)))
-    (set-process-query-on-exit-flag process nil)
-    (process-put process 'section section)
-    (process-put process 'command-buf (current-buffer))
-    (process-put process 'default-dir default-directory)
+         (process (apply #'majutsu-start-process majutsu-jj-executable nil args)))
     (when success-msg
       (process-put process 'success-msg success-msg))
     (when finish-callback
       (process-put process 'finish-callback finish-callback))
-    (oset section process process)
-    (oset section value process)
-    (with-current-buffer process-buf
-      (set-marker (process-mark process) (point)))
-    (if (fboundp 'with-editor-set-process-filter)
-        (with-editor-set-process-filter process #'majutsu--process-filter)
-      (set-process-filter process #'majutsu--process-filter))
-    (set-process-sentinel process #'majutsu--process-sentinel)
-    (majutsu--process-display-buffer process)
     process))
 
 (defun majutsu-call-jj (&rest args)
@@ -426,6 +443,15 @@ Process output goes into a new section in the buffer returned by
       (majutsu-refresh)
       exit)))
 
+(defun majutsu-run-jj-async (&rest args)
+  "Start jj asynchronously, preparing for refresh, and return the process.
+ARGS is flattened before being passed to jj."
+  (let ((flat (flatten-tree args)))
+    (majutsu--message-with-log "Running %s %s"
+                               majutsu-jj-executable
+                               (string-join flat " ")))
+  (majutsu-start-jj args))
+
 (defun majutsu-run-jj (&rest args)
   "Run jj command with ARGS and return output."
   (let* ((start-time (current-time))
@@ -444,31 +470,9 @@ Process output goes into a new section in the buffer returned by
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
 
-(defun majutsu-run-jj-async (args callback &optional error-callback)
-  "Run jj command with ARGS asynchronously.
-CALLBACK is called with the output string on success.
-ERROR-CALLBACK is called with the error output on failure."
-  (let* ((default-directory (majutsu--root))
-         (args (majutsu-process-jj-arguments args))
-         (buffer (generate-new-buffer " *majutsu-async*"))
-         (process (apply #'start-file-process "majutsu-async" buffer majutsu-jj-executable args)))
-    (set-process-sentinel process
-                          (lambda (proc _event)
-                            (let ((status (process-status proc)))
-                              (when (memq status '(exit signal))
-                                (let ((output (with-current-buffer buffer (buffer-string)))
-                                      (exit-code (process-exit-status proc)))
-                                  (kill-buffer buffer)
-                                  (if (zerop exit-code)
-                                      (funcall callback (majutsu--process--apply-colors output))
-                                    (if error-callback
-                                        (funcall error-callback output)
-                                      (message "Majutsu async error: %s" output))))))))
-    process))
-
 (defun majutsu-run-jj-with-editor (&rest args)
   "Run JJ ARGS using with-editor."
-  (majutsu-with-editor (majutsu-run-jj-async args)))
+  (majutsu-with-editor (apply #'majutsu-run-jj-async args)))
 
 ;;; _
 (provide 'majutsu-process)
