@@ -579,7 +579,8 @@ Returns a plist with :template, :columns, and :field-order."
                               (majutsu-log--column-template (plist-get c :field)))
                             complete))
          (compiled (tpl-compile `[,majutsu-log--field-separator
-                                  ,(vconcat (list :join majutsu-log--field-separator) templates)])))
+                                  ,(vconcat (list :join majutsu-log--field-separator) templates)
+                                  "\n"])))
     (list :template compiled
           :columns complete
           :field-order field-order)))
