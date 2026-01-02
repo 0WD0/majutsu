@@ -57,6 +57,56 @@ to do the following.
   (setq args (seq-remove #'null (flatten-tree args)))
   (append (seq-remove #'null majutsu-jj-global-arguments) args))
 
+(defun majutsu-jj-wash (washer keep-error &rest args)
+  "Run jj with ARGS, insert output at point, then call WASHER.
+KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,
+`wash-anyway' keeps output even on non-zero exit, anything else keeps the
+error text.  Output is optionally colorized based on
+`majutsu-process-apply-ansi-colors'."
+  (declare (indent 2))
+  (setq args (majutsu-process-jj-arguments args))
+  (let ((beg (point))
+        (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+    (when (and majutsu-process-apply-ansi-colors
+               (> (point) beg))
+      (ansi-color-apply-on-region beg (point)))
+    ;; `process-file' may return nil on success for some Emacs builds.
+    (when (null exit)
+      (setq exit 0))
+    (cond
+     ;; Command produced no output.
+     ((= (point) beg)
+      (if (= exit 0)
+          (magit-cancel-section)
+        (insert (propertize (format "jj %s failed (exit %s)\n"
+                                    (string-join args " ") exit)
+                            'font-lock-face 'error))
+        (unless (bolp)
+          (insert "\n"))))
+     ;; Failure path (unless we explicitly wash anyway).
+     ((and (not (eq keep-error 'wash-anyway))
+           (not (= exit 0)))
+      (goto-char beg)
+      (insert (propertize (format "jj %s failed (exit %s)\n"
+                                  (string-join args " ") exit)
+                          'font-lock-face 'error))
+      (unless (bolp)
+        (insert "\n")))
+     ;; Success (or wash anyway).
+     (t
+      (unless (bolp)
+        (insert "\n"))
+      (when (or (= exit 0)
+                (eq keep-error 'wash-anyway))
+        (save-restriction
+          (narrow-to-region beg (point))
+          (goto-char beg)
+          (funcall washer args))
+        (when (or (= (point) beg)
+                  (= (point) (1+ beg)))
+          (magit-cancel-section)))))
+    exit))
+
 ;;; _
 (provide 'majutsu-jj)
 ;;; majutsu-jj.el ends here
