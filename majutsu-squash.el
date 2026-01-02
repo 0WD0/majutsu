@@ -49,15 +49,15 @@
          (into (car (majutsu-selection-values 'into))))
     (cond
      ((and from-revsets into)
-      (majutsu--squash-run from-revsets into keep ignore-immutable))
+      (majutsu-squash-run from-revsets into keep ignore-immutable))
      (from-revsets
-      (majutsu--squash-run from-revsets nil keep ignore-immutable))
+      (majutsu-squash-run from-revsets nil keep ignore-immutable))
      ((magit-section-value-if 'jj-commit)
-      (majutsu--squash-run (list (magit-section-value-if 'jj-commit)) nil keep ignore-immutable))
+      (majutsu-squash-run (list (magit-section-value-if 'jj-commit)) nil keep ignore-immutable))
      (t
       (majutsu--message-with-log "No commit selected for squash")))))
 
-(defun majutsu--squash-run (from-list into keep ignore-immutable)
+(defun majutsu-squash-run (from-list into keep ignore-immutable)
   "Run jj squash using with-editor."
   (let* ((froms (seq-filter (lambda (rev)
                               (and rev (not (string-empty-p (string-trim rev)))))
@@ -68,11 +68,7 @@
                        (apply #'append (mapcar (lambda (rev) (list "--from" rev)) froms))
                        (when into (list "--into" into))
                        (when keep '("--keep-emptied"))
-                       (when ignore-immutable '("--ignore-immutable"))))
-         (from-display (string-join froms ", "))
-         (success-msg (if into
-                          (format "Squashed %s into %s" from-display into)
-                        (format "Squashed %s into parent" from-display))))
+                       (when ignore-immutable '("--ignore-immutable")))))
     (majutsu-run-jj-with-editor args)))
 
 ;;;###autoload
