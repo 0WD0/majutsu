@@ -353,7 +353,8 @@ Also registers a variable watcher to invalidate the template cache."
 (majutsu-log-define-column long-desc
   [:json [:description :trim_end]]
   "Template for the long-desc column.
-Note: This must return a valid JSON string (usually via :json) to be parsed correctly.")
+Note: This must return a valid JSON string (usually via :json)
+to be parsed correctly.")
 
 (defvar majutsu-log--compiled-template-cache nil
   "Cached structure holding the compiled log template and column metadata.")

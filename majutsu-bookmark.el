@@ -125,7 +125,7 @@ With prefix ALL, include remote bookmarks."
     (majutsu-display-buffer buf 'log)))
 
 ;;;###autoload
-(defun majutsu-read-bookmarks (prompt &optional init-input history)
+(defun majutsu-read-bookmarks (prompt &optional _init-input _history)
   "Return interactive arguments for bookmark move commands."
   (let* ((existing (majutsu--get-bookmark-names))
          (table (majutsu--completion-table-with-category existing 'majutsu-bookmark))

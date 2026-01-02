@@ -474,8 +474,7 @@ ARGS is flattened before being passed to jj."
   "Run JJ ARGS using with-editor."
   (let* ((origin-window (selected-window))
          (origin-buffer (current-buffer))
-         (visit-hook (majutsu--with-editor--visit-hook origin-window origin-buffer))
-         process)
+         (visit-hook (majutsu--with-editor--visit-hook origin-window origin-buffer)))
     (majutsu--with-editor--queue-visit visit-hook)
     (majutsu-with-editor (apply #'majutsu-run-jj-async args))))
 
