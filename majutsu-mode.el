@@ -230,7 +230,7 @@ The function name is derived from `major-mode' by replacing the
 \"-mode\" suffix with \"-refresh-buffer\", mirroring Magit's approach."
   (when (derived-mode-p 'majutsu-mode)
     (let* ((base (string-remove-suffix "-mode" (symbol-name major-mode)))
-           (fn (intern (format "%s-refresh" base))))
+           (fn (intern (format "%s-refresh-buffer" base))))
       (and (fboundp fn)
            (not (memq fn '(majutsu-refresh
                            majutsu-refresh-buffer
