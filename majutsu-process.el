@@ -30,17 +30,6 @@
   "Process execution helpers for Majutsu."
   :group 'majutsu)
 
-(defcustom majutsu-process-color-mode 'always
-  "How Majutsu asks `jj' to emit colors.
-
-`always'  – force color by adding `--color=always'.
-`auto'    – do not add flags; let jj auto-detect.
-nil       – request no color."
-  :type '(choice (const :tag "Always force color" always)
-          (const :tag "Respect auto detection" auto)
-          (const :tag "Disable color" nil))
-  :group 'majutsu-process)
-
 (defcustom majutsu-process-apply-ansi-colors t
   "When non-nil, convert ANSI escapes in jj output to text properties."
   :type 'boolean
@@ -82,27 +71,6 @@ the heading of each process section."
   :group 'majutsu-process)
 
 ;;; Internal helpers
-
-(defun majutsu--process--maybe-add-color (args)
-  "Return ARGS with --color=always injected when configured.
-Respects `majutsu-process-color-mode' and avoids duplication if caller
-already supplied a color flag."
-  (if (and (eq majutsu-process-color-mode 'always)
-           (not (seq-some (lambda (arg) (string-prefix-p "--color" arg))
-                          args)))
-      (majutsu--ensure-flag args "--color=always" 'front)
-    args))
-
-(defun majutsu--process--maybe-add-no-pager (args)
-  "Return ARGS with --no-pager injected.
-Avoids duplication if caller already supplied a --no-pager flag."
-  (majutsu--ensure-flag args "--no-pager" 'front))
-
-(defun majutsu--process--maybe-add-flags (args)
-  "Return ARGS with additional flags suited to majutsu-run-jj(-async)"
-  (let ((clean (seq-remove #'null args)))
-    (majutsu--process--maybe-add-color
-     (majutsu--process--maybe-add-no-pager clean))))
 
 (defun majutsu--process--apply-colors (output)
   "Apply ANSI color filtering to OUTPUT when enabled."
@@ -412,7 +380,7 @@ Return the process object.
 SUCCESS-MSG is displayed on exit code 0.  When FINISH-CALLBACK is
 non-nil, call it as (FINISH-CALLBACK PROCESS EXIT-CODE) after the
 process terminates."
-  (let* ((args (majutsu--process--maybe-add-flags (flatten-tree args)))
+  (let* ((args (majutsu-process-jj-arguments args))
          (pwd default-directory)
          (default-directory (or (ignore-errors (majutsu--root)) default-directory))
          (process-buf (majutsu-process-buffer t))
@@ -444,8 +412,7 @@ process terminates."
 
 Process output goes into a new section in the buffer returned by
 `majutsu-process-buffer'.  Return the exit code."
-  (setq args (flatten-tree args))
-  (let* ((args (majutsu--process--maybe-add-flags args))
+  (let* ((args (majutsu-process-jj-arguments args))
          (pwd default-directory)
          (default-directory (or (ignore-errors (majutsu--root)) default-directory)))
     (pcase-let* ((`(,process-buf . ,section)
@@ -462,7 +429,7 @@ Process output goes into a new section in the buffer returned by
 (defun majutsu-run-jj (&rest args)
   "Run jj command with ARGS and return output."
   (let* ((start-time (current-time))
-         (safe-args (majutsu--process--maybe-add-flags args))
+         (safe-args (majutsu-process-jj-arguments args))
          result exit-code)
     (majutsu--debug "Running command: %s %s" majutsu-jj-executable (string-join safe-args " "))
     (with-temp-buffer
@@ -482,7 +449,7 @@ Process output goes into a new section in the buffer returned by
 CALLBACK is called with the output string on success.
 ERROR-CALLBACK is called with the error output on failure."
   (let* ((default-directory (majutsu--root))
-         (args (majutsu--process--maybe-add-flags args))
+         (args (majutsu-process-jj-arguments args))
          (buffer (generate-new-buffer " *majutsu-async*"))
          (process (apply #'start-file-process "majutsu-async" buffer majutsu-jj-executable args)))
     (set-process-sentinel process
@@ -542,8 +509,7 @@ KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,
 error text.  Output is optionally colorized based on
 `majutsu-process-apply-ansi-colors'."
   (declare (indent 2))
-  (setq args (flatten-tree args))
-  (setq args (majutsu--process--maybe-add-flags args))
+  (setq args (majutsu-process-jj-arguments args))
   (let ((beg (point))
         (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
     (when (and majutsu-process-apply-ansi-colors
