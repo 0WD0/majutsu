@@ -933,63 +933,115 @@ from each element like the old `string-trim-right' based implementation."
       (push (majutsu-log--buffer-substring-trim-right start eol) elems)
       (nreverse elems))))
 
+(defun majutsu-log--line-has-fields-p (bol eol)
+  "Return non-nil if the line between BOL and EOL contains template fields."
+  (save-excursion
+    (goto-char bol)
+    (search-forward majutsu-log--field-separator eol t)))
+
+(defun majutsu-log--compute-column-widths-in-buffer (compiled)
+  "Compute right-aligned column widths for COMPILED in the current buffer.
+
+Return a plist like `majutsu-log--compute-column-widths'."
+  (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
+                                   (plist-get compiled :columns)))
+         (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
+                                 visible-cols))
+         (field-order (plist-get compiled :field-order))
+         (right-widths nil))
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((bol (line-beginning-position))
+              (eol (line-end-position)))
+          (when (majutsu-log--line-has-fields-p bol eol)
+            (let* ((elems (majutsu-log--split-line-into-elems bol eol))
+                   (entry (majutsu-log--build-entry-from-elems elems field-order
+                                                               (buffer-substring bol eol))))
+              (dolist (col right-cols)
+                (let* ((field (plist-get col :field))
+                       (val (or (majutsu-log--entry-column entry field) ""))
+                       (w (string-width val)))
+                  (setf (alist-get field right-widths nil nil #'eq)
+                        (max w (or (alist-get field right-widths nil nil #'eq) 0))))))))
+        (forward-line 1)))
+    (let ((right-total
+           (let ((sum 0) (first t))
+             (dolist (col right-cols)
+               (let* ((field (plist-get col :field))
+                      (w (or (alist-get field right-widths nil nil #'eq) 0)))
+                 (unless first (setq sum (1+ sum)))
+                 (setq first nil)
+                 (setq sum (+ sum w))))
+             sum)))
+      (list :right right-widths :right-total right-total))))
+
+(defun majutsu-log--wash-entry (compiled widths)
+  "Wash the log entry at point using COMPILED and WIDTHS.
+
+Assumes point is at the beginning of a commit line (a line containing
+`majutsu-log--field-separator').  Replaces the raw line(s) with a
+`jj-commit' section and moves point to the end of the inserted section."
+  (let* ((field-order (plist-get compiled :field-order))
+         (bol (line-beginning-position))
+         (eol (line-end-position))
+         (elems (majutsu-log--split-line-into-elems bol eol))
+         (line (buffer-substring bol eol))
+         (entry (majutsu-log--build-entry-from-elems elems field-order line))
+         (suffix-lines nil)
+         (delete-end
+          (save-excursion
+            (forward-line 1)
+            (while (and (not (eobp))
+                        (let ((bol (line-beginning-position))
+                              (eol (line-end-position)))
+                          (not (majutsu-log--line-has-fields-p bol eol))))
+              (push (buffer-substring (line-beginning-position) (line-end-position))
+                    suffix-lines)
+              (forward-line 1))
+            (point))))
+    (setq suffix-lines (nreverse suffix-lines))
+    (delete-region bol delete-end)
+    (goto-char bol)
+    (let* ((id (majutsu-selection--normalize-value (plist-get entry :id)))
+           (line-info (majutsu-log--format-entry-line entry compiled widths))
+           (heading (plist-get line-info :line))
+           (margin (plist-get line-info :margin))
+           (indent (plist-get line-info :desc-indent)))
+      (magit-insert-section
+          (jj-commit id t)
+        (magit-insert-heading
+          (insert heading))
+        (when margin
+          (majutsu-log--make-margin-overlay margin))
+        (when-let* ((long-desc (plist-get entry :long-desc))
+                    (indented (majutsu--indent-string long-desc (or indent 0))))
+          (magit-insert-section-body
+            (insert indented)
+            (insert "\n")))
+        (dolist (suffix-line suffix-lines)
+          (insert suffix-line)
+          (insert "\n"))))))
+
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
 
 This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   (let* ((compiled (majutsu-log--ensure-template))
-         (field-order (plist-get compiled :field-order))
-         (entries nil)
-         (current nil)
-         (pending nil))
+         (widths (majutsu-log--compute-column-widths-in-buffer compiled)))
+    (majutsu-log--set-right-margin (plist-get widths :right-total))
     (goto-char (point-min))
+    ;; Convert raw output incrementally, one commit at a time, like Magit.
     (while (not (eobp))
       (let ((bol (line-beginning-position))
             (eol (line-end-position)))
-        (if (save-excursion
-              (goto-char bol)
-              (search-forward majutsu-log--field-separator eol t))
-            (let* ((elems (majutsu-log--split-line-into-elems bol eol))
-                   (line (buffer-substring bol eol)))
-              (when current
-                (when pending
-                  (setq current (plist-put current :suffix-lines (nreverse pending)))
-                  (setq pending nil))
-                (push current entries))
-              (setq current (majutsu-log--build-entry-from-elems elems field-order line)))
-          (push (buffer-substring bol eol) pending)))
-      (forward-line 1))
-    (when current
-      (when pending
-        (setq current (plist-put current :suffix-lines (nreverse pending))))
-      (push current entries))
-    (setq entries (nreverse entries))
-    (let ((widths (majutsu-log--compute-column-widths entries compiled)))
-      (delete-region (point-min) (point-max))
-      (goto-char (point-min))
-      (majutsu-log--set-right-margin (plist-get widths :right-total))
-      (dolist (entry entries)
-        (let ((id (majutsu-selection--normalize-value (plist-get entry :id))))
-          (magit-insert-section
-              (jj-commit id t)
-            (let* ((line-info (majutsu-log--format-entry-line entry compiled widths))
-                   (heading (plist-get line-info :line))
-                   (margin (plist-get line-info :margin))
-                   (indent (plist-get line-info :desc-indent)))
-              (magit-insert-heading
-                (insert heading))
-              (when margin
-                (majutsu-log--make-margin-overlay margin))
-              (when-let* ((long-desc (plist-get entry :long-desc))
-                          (indented (majutsu--indent-string long-desc (or indent 0))))
-                (magit-insert-section-body
-                  (insert indented)
-                  (insert "\n"))))
-            (when-let* ((suffix-lines (plist-get entry :suffix-lines)))
-              (dolist (suffix-line suffix-lines)
-                (insert suffix-line)
-                (insert "\n"))))))
-      (insert "\n"))))
+        (cond
+         ((majutsu-log--line-has-fields-p bol eol)
+          (majutsu-log--wash-entry compiled widths))
+         (t
+          ;; Leading/trailing graph-only noise; drop it.
+          (magit-delete-line)))))
+    (insert "\n")))
 
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
