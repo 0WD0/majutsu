@@ -466,39 +466,7 @@ ERROR-CALLBACK is called with the error output on failure."
                                       (message "Majutsu async error: %s" output))))))))
     process))
 
-(defmacro majutsu-with-progress (msg &rest body)
-  "Execute BODY with minimal progress indication using MESSAGE."
-  `(let ((start-time (current-time))
-         result)
-     (majutsu--debug "Starting operation: %s" ,msg)
-     (setq result (progn ,@body))
-     (majutsu--debug "Operation completed in %.3f seconds"
-                     (float-time (time-subtract (current-time) start-time)))
-     result))
-
-;;; with-editor integration
-
-(eval-when-compile
-  (require 'with-editor nil 'noerror)
-  (declare-function with-editor--setup "with-editor" ()))
-
-(defun majutsu--with-editor--normalize-editor (command)
-  "Normalize editor COMMAND before exporting it to jj.
-On Windows the jj launcher expects a bare executable path, so strip the
-outer shell quoting that `with-editor' adds, matching Magit's workaround."
-  (let ((trimmed (string-trim (or command ""))))
-    (if (and (eq system-type 'windows-nt)
-             (string-match "\\`\"\\([^\"]+\\)\"\\(.*\\)\\'" trimmed))
-        (concat (match-string 1 trimmed)
-                (match-string 2 trimmed))
-      trimmed)))
-
-(defun majutsu--with-editor-available-p ()
-  "Return non-nil when `with-editor' can be used for JJ commands."
-  (and (require 'with-editor nil 'noerror)
-       with-editor-emacsclient-executable))
-
-(defun majutsu-run-jj-with-editor (args)
+(defun majutsu-run-jj-with-editor (&rest args)
   "Run JJ ARGS using with-editor."
   (majutsu-with-editor (majutsu-run-jj-async args)))
 
