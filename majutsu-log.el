@@ -745,7 +745,7 @@ Assumes point is at the beginning of a commit line (a line containing
     (setq suffix-lines (nreverse suffix-lines))
     (delete-region bol delete-end)
     (goto-char bol)
-    (let* ((id (majutsu-selection--normalize-value (plist-get entry :id)))
+    (let* ((id (majutsu--normalize-id-value (plist-get entry :id)))
            (line-info (majutsu-log--format-entry-line entry compiled widths))
            (heading (plist-get line-info :line))
            (margin (plist-get line-info :margin))
@@ -908,7 +908,7 @@ Return non-nil when the section could be located."
 
 (defun majutsu-find-revision-section (id)
   "Return the jj-commit section matching ID inside the log buffer."
-  (let ((id (majutsu-selection--normalize-value (string-trim (or id "")))))
+  (let ((id (majutsu--normalize-id-value (string-trim (or id "")))))
     (and id
          (not (string-empty-p id))
          (or (magit-get-section `((jj-commit . ,id) (lograph) (logbuf)))
@@ -922,7 +922,7 @@ Return non-nil when the section could be located."
                  (magit-map-sections
                   (lambda (section)
                     (when (magit-section-match 'jj-commit section)
-                      (let ((value (majutsu-selection--normalize-value
+                      (let ((value (majutsu--normalize-id-value
                                     (oref section value))))
                         (when (and value
                                    (or (string-prefix-p id value)
