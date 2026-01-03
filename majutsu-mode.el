@@ -153,7 +153,6 @@ If VALUE is non-nil, return the buffer locked to that value."
     (with-current-buffer buffer
       (setq majutsu--default-directory topdir)
       (setq majutsu-buffer-locked-p (and value t))
-      (setq-local majutsu--repo-root topdir)
       (setq default-directory topdir))
     buffer))
 
@@ -206,7 +205,6 @@ For modes named like `majutsu-FOO-mode', return the symbol `FOO'."
     (with-current-buffer buffer
       (setq majutsu-previous-section section)
       (setq majutsu--default-directory topdir)
-      (setq-local majutsu--repo-root topdir)
       (when directory
         (setq default-directory directory))
       (funcall mode)

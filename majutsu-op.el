@@ -105,7 +105,7 @@
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
   (let ((root (majutsu--root)))
-    (setq-local majutsu--repo-root root)
+    (setq majutsu--default-directory root)
     (setq default-directory root)
     (setq majutsu-op-log--cached-entries nil)
     (majutsu-op-log-render)))
@@ -127,7 +127,7 @@
          (buffer (get-buffer-create (format "*majutsu-op: %s*" (file-name-nondirectory (directory-file-name root))))))
     (with-current-buffer buffer
       (majutsu-op-log-mode)
-      (setq-local majutsu--repo-root root)
+      (setq majutsu--default-directory root)
       (setq default-directory root)
       (majutsu-op-log-refresh-buffer))
     (majutsu-display-buffer buffer 'op-log)))

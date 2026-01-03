@@ -986,7 +986,6 @@ With prefix STYLE, cycle between `all' and `t'."
   (interactive)
   (when majutsu-buffer-diff-args
     (let ((repo-root (majutsu--root)))
-      (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-jj-global-arguments
