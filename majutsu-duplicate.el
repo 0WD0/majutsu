@@ -47,7 +47,7 @@
 
 (defun majutsu-duplicate--run-command (args)
   "Execute jj duplicate with ARGS and refresh log."
-  (when (zerop (apply #'majutsu-call-jj args))
+  (when (zerop (apply #'majutsu-run-jj args))
     (message "Duplicated changeset(s)")
     (majutsu-selection-session-end)
     t))

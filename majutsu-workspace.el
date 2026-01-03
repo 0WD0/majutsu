@@ -26,6 +26,7 @@
 (require 'majutsu-process)
 (require 'majutsu-template)
 
+;; Avoid circular dependency: majutsu-log requires majutsu-workspace
 (declare-function majutsu-log "majutsu-log" ())
 (declare-function majutsu-log-refresh "majutsu-log" ())
 
@@ -99,19 +100,19 @@ Each entry contains:
   "Return workspace entries for DIRECTORY (defaults to current repo root).
 Entries are parsed from `jj workspace list -T ...`."
   (let* ((default-directory (or directory default-directory))
-         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--list-template)))
+         (output (majutsu-jj-string "workspace" "list" "-T" majutsu-workspace--list-template)))
     (majutsu-workspace-parse-list-output output)))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
   (let* ((default-directory (or directory default-directory))
-         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--names-template)))
+         (output (majutsu-jj-string "workspace" "list" "-T" majutsu-workspace--names-template)))
     (delete-dups (split-string output "\n" t))))
 
 (defun majutsu-workspace-current-name (&optional directory)
   "Return current workspace name for DIRECTORY, or nil if it can't be determined."
   (let* ((default-directory (or directory default-directory))
-         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
+         (output (majutsu-jj-string "workspace" "list" "-T" majutsu-workspace--current-name-template)))
     (car (split-string output "\n" t))))
 
 ;;; Interactive helpers
@@ -267,11 +268,9 @@ workspace root automatically; if not found, prompt for it."
 (defun majutsu-workspace-update-stale ()
   "Update the current workspace if it has become stale."
   (interactive)
-  (if (zerop (majutsu-call-jj "workspace" "update-stale"))
+  (if (zerop (majutsu-run-jj "workspace" "update-stale"))
       (progn
-        (message "Workspace updated")
-        (when (fboundp 'majutsu-log-refresh)
-          (majutsu-log-refresh)))
+        (message "Workspace updated"))
     (message "Workspace update failed")))
 
 ;;;###autoload
@@ -292,13 +291,9 @@ directory."
     (let* ((root (majutsu--toplevel-safe))
            (dir (majutsu-workspace--read-root workspace root))
            (default-directory dir))
-      (if (zerop (majutsu-call-jj "workspace" "rename" new-name))
+      (if (zerop (majutsu-run-jj "workspace" "rename" new-name))
           (progn
-            (message "Workspace renamed")
-            (when (fboundp 'majutsu-log-refresh)
-              (majutsu-log-refresh))
-            (when (derived-mode-p 'majutsu-workspace-mode)
-              (majutsu-refresh)))
+            (message "Workspace renamed"))
         (message "Workspace rename failed")))))
 
 ;;;###autoload
@@ -317,13 +312,9 @@ workspace directories are not touched on disk."
                (not (yes-or-no-p (format "Forget workspace(s) %s? "
                                          (string-join names ", ")))))
       (user-error "Forget canceled"))
-    (if (zerop (apply #'majutsu-call-jj (append '("workspace" "forget") names)))
+    (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
         (progn
-          (message "Workspace(s) forgotten")
-          (when (fboundp 'majutsu-log-refresh)
-            (majutsu-log-refresh))
-          (when (derived-mode-p 'majutsu-workspace-mode)
-            (majutsu-refresh)))
+          (message "Workspace(s) forgotten"))
       (message "Workspace forget failed"))))
 
 ;;;###autoload
@@ -350,12 +341,10 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
                        (and name (list "--name" name))
                        (and revision (list "--revision" revision))
                        (and sparse-patterns (list "--sparse-patterns" sparse-patterns))))
-         (exit (apply #'majutsu-call-jj args)))
+         (exit (apply #'majutsu-run-jj args)))
     (if (zerop exit)
         (progn
           (message "Workspace created in %s" dest)
-          (when (fboundp 'majutsu-log-refresh)
-            (majutsu-log-refresh))
           ;; Like Magit, visit the new workspace.
           (majutsu-workspace-visit dest))
       (message "Workspace creation failed"))))

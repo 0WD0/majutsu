@@ -8,7 +8,7 @@
 
 (defun majutsu-get (key)
   "Get config value for KEY from jj."
-  (let ((output (majutsu-run-jj "config" "get" key)))
+  (let ((output (majutsu-jj-string "config" "get" key)))
     (unless (string-empty-p output)
       (string-trim output))))
 
@@ -33,7 +33,7 @@ Returns alist of (name . value) pairs."
                                  ('workspace "--workspace")
                                  ('user "--user"))))
                        (when prefix (list prefix))))
-         (output (apply #'majutsu-run-jj args)))
+         (output (apply #'majutsu-jj-string args)))
     (when output
       (mapcar (lambda (line)
                 (when (string-match "^\\([^=]+\\)=\"?\\(.*?\\)\"?$" line)

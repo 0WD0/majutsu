@@ -92,8 +92,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 (defun majutsu-new--run-command (args)
   "Execute jj new with ARGS and refresh the log on success."
-  (let ((exit (let ((majutsu-inhibit-refresh t))
-                (apply #'majutsu-call-jj args))))
+  (let ((exit (apply #'majutsu-call-jj args)))
     (if (zerop exit)
         (progn
           (message "Created new changeset")

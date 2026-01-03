@@ -26,7 +26,7 @@
       (if (and majutsu-confirm-critical-actions
                (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
           (message "Abandon canceled")
-        (majutsu-call-jj "abandon" "-r" revset))
+        (majutsu-run-jj "abandon" "-r" revset))
     (message "No changeset at point to abandon")))
 
 ;;; _

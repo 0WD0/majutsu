@@ -805,7 +805,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
-  (let ((status-output (majutsu-run-jj "status")))
+  (let ((status-output (majutsu-jj-string "status")))
     (when (and status-output (not (string-empty-p status-output)))
       (magit-insert-section (status)
         (magit-insert-heading "Working Copy Status")
@@ -815,7 +815,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 (defun majutsu-log-insert-conflicts ()
   "Insert conflicted files section."
-  (let ((output (majutsu-run-jj "resolve" "--list")))
+  (let ((output (majutsu-jj-string "resolve" "--list")))
     (when (and output (not (string-empty-p output)))
       (magit-insert-section (conflict)
         (magit-insert-heading "Unresolved Conflicts")
@@ -834,7 +834,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
                  [:change_id :shortest 8]]))
 
 (defun majutsu-current-id ()
-  (when-let* ((output (majutsu-run-jj "log" "--no-graph" "-r" "@" "-T" majutsu--show-id-template)))
+  (when-let* ((output (majutsu-jj-string "log" "--no-graph" "-r" "@" "-T" majutsu--show-id-template)))
     (string-trim output)))
 
 (defun majutsu-log-goto-@ ()

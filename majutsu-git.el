@@ -18,6 +18,7 @@
 (require 'seq)
 (require 'subr-x)
 
+(declare-function majutsu-jj-string "majutsu-process" (&rest args))
 (declare-function majutsu--toplevel-safe "majutsu-jj" (&optional directory))
 (declare-function majutsu-with-toplevel "majutsu-jj" (&rest body))
 
@@ -26,6 +27,10 @@
 (defun majutsu-git--call (&rest args)
   "Call `jj git ARGS' synchronously, for side-effects."
   (apply #'majutsu-call-jj (append '("git") args)))
+
+(defun majutsu-git--run (&rest args)
+  "Call `jj git ARGS' synchronously, and refresh."
+  (apply #'majutsu-run-jj (append '("git") args)))
 
 (defun majutsu-git--start (args &optional success-msg finish-callback)
   "Start `jj git ARGS' asynchronously, for side-effects."
@@ -37,7 +42,7 @@
 This calls `jj git remote list` and parses the first word of each line."
   (let ((default-directory (or directory default-directory)))
     (condition-case _
-        (let* ((out (majutsu-run-jj "git" "remote" "list"))
+        (let* ((out (majutsu-jj-string "git" "remote" "list"))
                (lines (split-string (or out "") "\n" t)))
           (delete-dups
            (delq nil
@@ -75,7 +80,7 @@ This calls `jj git remote list` and parses the first word of each line."
 (defun majutsu-git-remote-list ()
   "List Git remotes in a temporary buffer."
   (interactive)
-  (let* ((output (majutsu-run-jj "git" "remote" "list"))
+  (let* ((output (majutsu-jj-string "git" "remote" "list"))
          (buf (get-buffer-create "*Majutsu Git Remotes*")))
     (with-current-buffer buf
       (setq buffer-read-only nil)
@@ -94,7 +99,7 @@ This calls `jj git remote list` and parses the first word of each line."
          (cmd-args (append '("remote" "add")
                            (when fetch-tags (list fetch-tags))
                            (list remote url)))
-         (exit (apply #'majutsu-git--call cmd-args)))
+         (exit (apply #'majutsu-git--run cmd-args)))
     (when (zerop exit)
       (message "Added remote %s" remote))))
 
@@ -104,7 +109,7 @@ This calls `jj git remote list` and parses the first word of each line."
   (let ((remote (majutsu-git--read-remote "Remove remote: ")))
     (when (and remote (not (string-empty-p remote)))
       (let* ((cmd-args (list "remote" "remove" remote))
-             (exit (apply #'majutsu-git--call cmd-args)))
+             (exit (apply #'majutsu-git--run cmd-args)))
         (when (zerop exit)
           (message "Removed remote %s" remote))))))
 
@@ -115,7 +120,7 @@ This calls `jj git remote list` and parses the first word of each line."
          (new (read-string (format "New name for %s: " old))))
     (when (and (not (string-empty-p old)) (not (string-empty-p new)))
       (let* ((cmd-args (list "remote" "rename" old new))
-             (exit (apply #'majutsu-git--call cmd-args)))
+             (exit (apply #'majutsu-git--run cmd-args)))
         (when (zerop exit)
           (message "Renamed remote %s -> %s" old new))))))
 
@@ -126,7 +131,7 @@ This calls `jj git remote list` and parses the first word of each line."
          (url (read-string (format "New URL for %s: " remote))))
     (when (and (not (string-empty-p remote)) (not (string-empty-p url)))
       (let* ((cmd-args (list "remote" "set-url" remote url))
-             (exit (apply #'majutsu-git--call cmd-args)))
+             (exit (apply #'majutsu-git--run cmd-args)))
         (when (zerop exit)
           (message "Set URL for %s" remote))))))
 
@@ -160,21 +165,21 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (defun majutsu-git-export ()
   "Update the underlying Git repo with changes made in the repo."
   (interactive)
-  (let ((exit (majutsu-git--call "export")))
+  (let ((exit (majutsu-git--run "export")))
     (when (zerop exit)
       (message "Exported to Git"))))
 
 (defun majutsu-git-import ()
   "Update repo with changes made in the underlying Git repo."
   (interactive)
-  (let ((exit (majutsu-git--call "import")))
+  (let ((exit (majutsu-git--run "import")))
     (when (zerop exit)
       (message "Imported from Git"))))
 
 (defun majutsu-git-root ()
   "Show the underlying Git directory of the current repository."
   (interactive)
-  (let* ((dir (string-trim (majutsu-run-jj "git" "root"))))
+  (let* ((dir (string-trim (majutsu-jj-string "git" "root"))))
     (if (string-empty-p dir)
         (message "No underlying Git directory found")
       (kill-new dir)

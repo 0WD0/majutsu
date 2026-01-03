@@ -427,7 +427,10 @@ process terminates."
   "Call jj synchronously in a separate process, for side-effects.
 
 Process output goes into a new section in the buffer returned by
-`majutsu-process-buffer'.  Return the exit code."
+`majutsu-process-buffer'.  Return the exit code.
+
+Unlike `majutsu-start-jj', this does not implicitly refresh any Majutsu
+buffers.  Call `majutsu-refresh' explicitly when desired."
   (let* ((args (majutsu-process-jj-arguments args))
          (pwd default-directory)
          (process-buf (let ((default-directory pwd))
@@ -440,7 +443,6 @@ Process output goes into a new section in the buffer returned by
                  (inhibit-read-only t)
                  (exit (apply #'process-file majutsu-jj-executable nil process-buf nil args)))
       (setq exit (majutsu-process-finish exit process-buf (current-buffer) root section))
-      (majutsu-refresh)
       exit)))
 
 (defun majutsu-run-jj-async (&rest args)
@@ -453,7 +455,16 @@ ARGS is flattened before being passed to jj."
   (majutsu-start-jj args))
 
 (defun majutsu-run-jj (&rest args)
-  "Run jj command with ARGS and return output."
+  "Call jj synchronously in a separate process, and refresh.
+
+Process output goes into a new section in the buffer returned by
+`majutsu-process-buffer'.  Return the exit code."
+  (let ((exit (apply #'majutsu-call-jj args)))
+    (majutsu-refresh)
+    exit))
+
+(defun majutsu-jj-string (&rest args)
+  "Run jj command with ARGS and return its output as a string."
   (let* ((start-time (current-time))
          (safe-args (majutsu-process-jj-arguments args))
          result exit-code)

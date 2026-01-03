@@ -41,7 +41,7 @@ With prefix ARG, pass --ignore-immutable."
   (when-let* ((revset (magit-section-value-if 'jj-commit))
               (args (append (list "edit" revset)
                             (when arg (list "--ignore-immutable")))))
-    (when (zerop (apply #'majutsu-call-jj args))
+    (when (zerop (apply #'majutsu-run-jj args))
       (message "Now editing commit %s" revset))))
 
 ;;; _
