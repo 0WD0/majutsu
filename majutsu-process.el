@@ -103,8 +103,7 @@ If that buffer doesn't exist yet, then create it.  Non-interactively
 return the buffer and unless optional NODISPLAY is non-nil also display
 it."
   (interactive)
-  (let* ((root (or (ignore-errors (majutsu--root))
-                   (file-name-as-directory (expand-file-name default-directory))))
+  (let* ((root majutsu--default-directory)
          (name (format "*majutsu-process: %s*"
                        (abbreviate-file-name (directory-file-name root))))
          (buffer (or (majutsu--find-mode-buffer 'majutsu-process-mode root)
@@ -307,10 +306,7 @@ ARG may be a process object or an exit code.  Return the exit code."
      ((integerp exit-code)
       (let* ((msg (majutsu--process-error-summary process-buf section))
              (usage (majutsu--process--error-usage process-buf))
-             (root (and default-dir
-                        (with-temp-buffer
-                          (setq default-directory default-dir)
-                          (ignore-errors (majutsu--root))))))
+             (root default-dir))
         (when-let ((log-buf (and root (majutsu--find-mode-buffer 'majutsu-log-mode root))))
           (with-current-buffer log-buf
             (setq-local majutsu-log--this-error (or msg "Command failed"))))
@@ -353,7 +349,8 @@ when this function was called (if still alive), as well as the
 repository's log buffer (see `majutsu-refresh')."
   (let* ((args (flatten-tree args))
          (pwd default-directory)
-         (default-directory (or (ignore-errors (majutsu--root)) default-directory))
+         (root majutsu--default-directory)
+         (default-directory root)
          (process-buf (majutsu-process-buffer t))
          (section (with-current-buffer process-buf
                     (prog1 (majutsu--process-insert-section pwd program args nil nil)
@@ -363,7 +360,7 @@ repository's log buffer (see `majutsu-refresh')."
     (set-process-query-on-exit-flag process nil)
     (process-put process 'section section)
     (process-put process 'command-buf (current-buffer))
-    (process-put process 'default-dir default-directory)
+    (process-put process 'default-dir root)
     (oset section process process)
     (oset section value process)
     (with-current-buffer process-buf
@@ -404,9 +401,10 @@ repository's log buffer (see `majutsu-refresh')."
             (with-current-buffer command-buf
               (let ((default-directory (or default-dir default-directory)))
                 (majutsu-refresh)))
-          (with-temp-buffer
-            (setq default-directory (or default-dir default-directory))
-            (majutsu-refresh)))))))
+          (when (and default-dir (fboundp 'majutsu-log-refresh))
+            (when-let ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode default-dir)))
+              (with-current-buffer buffer
+                (ignore-errors (majutsu-log-refresh))))))))))
 
 (defun majutsu-start-jj (args &optional success-msg finish-callback)
   "Run jj ARGS asynchronously for side-effects and log output.
@@ -431,7 +429,7 @@ Process output goes into a new section in the buffer returned by
 `majutsu-process-buffer'.  Return the exit code."
   (let* ((args (majutsu-process-jj-arguments args))
          (pwd default-directory)
-         (default-directory (or (ignore-errors (majutsu--root)) default-directory)))
+         (default-directory majutsu--default-directory))
     (pcase-let* ((`(,process-buf . ,section)
                   (let ((buf (majutsu-process-buffer t)))
                     (cons buf (with-current-buffer buf

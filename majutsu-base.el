@@ -95,13 +95,6 @@ is appended."
         (cons flag args)
       (append args (list flag)))))
 
-(defun majutsu--root ()
-  "Find root of the current repository."
-  (let ((root (majutsu-toplevel)))
-    (unless root
-      (user-error "Cannot find root -- not in a JJ repo"))
-    root))
-
 (defun majutsu--debug (format-string &rest args)
   "Log debug message if `majutsu-debug' is enabled."
   (when majutsu-debug
@@ -138,8 +131,7 @@ text properties."
 
 This is used to match buffers to repositories when refreshing."
   (with-current-buffer (or buffer (current-buffer))
-    (or (and (boundp 'majutsu--default-directory) majutsu--default-directory)
-        (majutsu-toplevel))))
+    (and (boundp 'majutsu--default-directory) majutsu--default-directory)))
 
 (defun majutsu--find-mode-buffer (mode &optional root)
   "Return a live buffer in MODE for ROOT (or any repo when ROOT is nil)."

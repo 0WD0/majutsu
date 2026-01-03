@@ -115,9 +115,8 @@ another value."
 
 (defun majutsu--toplevel-safe (&optional directory)
   "Return repository root for DIRECTORY or `default-directory'."
-  (let ((default-directory (or directory default-directory)))
-    (or (ignore-errors (majutsu--root))
-        (user-error "Not inside a jj repository"))))
+  (or (majutsu-toplevel directory)
+      (user-error "Not inside a jj repository")))
 
 (defun majutsu-get-mode-buffer (mode &optional value directory)
   "Return a buffer for DIRECTORY whose `major-mode' is MODE.

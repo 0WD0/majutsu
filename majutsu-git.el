@@ -127,7 +127,7 @@ Tries `jj git remote list' first, then falls back to `git remote'."
                       (delete-dups (copy-sequence names)))
                   ;; Fallback to plain `git remote`
                   (with-temp-buffer
-                    (let* ((default-directory (majutsu--root))
+                    (let* ((default-directory majutsu--default-directory)
                            (exit (process-file "git" nil t nil "remote")))
                       (when (eq exit 0)
                         (split-string (buffer-string) "\n" t)))))))

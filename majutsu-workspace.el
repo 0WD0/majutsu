@@ -98,19 +98,19 @@ Each entry contains:
 (defun majutsu-workspace-list-entries (&optional directory)
   "Return workspace entries for DIRECTORY (defaults to current repo root).
 Entries are parsed from `jj workspace list -T ...`."
-  (let* ((default-directory (or directory (majutsu--root)))
+  (let* ((default-directory (or directory default-directory))
          (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--list-template)))
     (majutsu-workspace-parse-list-output output)))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
-  (let* ((default-directory (or directory (majutsu--root)))
+  (let* ((default-directory (or directory default-directory))
          (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--names-template)))
     (delete-dups (split-string output "\n" t))))
 
 (defun majutsu-workspace-current-name (&optional directory)
   "Return current workspace name for DIRECTORY, or nil if it can't be determined."
-  (let* ((default-directory (or directory (majutsu--root)))
+  (let* ((default-directory (or directory default-directory))
          (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
     (car (split-string output "\n" t))))
 
@@ -137,7 +137,7 @@ If nil, fall back to searching the parent directory of the current workspace."
   "Try to locate WORKSPACE-NAME on disk and return its root directory, or nil.
 
 This uses `jj` itself to verify candidates (no `.jj/` inspection)."
-  (let* ((root (file-name-as-directory (or root (majutsu--root))))
+  (let* ((root (file-name-as-directory (or root default-directory)))
          (search-dirs (majutsu-workspace--candidate-search-dirs root)))
     (or
      ;; Current workspace is trivial.
@@ -205,7 +205,7 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
 If called with DIRECTORY, visit that directory. Otherwise, try to locate the
 workspace root automatically; if not found, prompt for it."
   (interactive)
-  (let* ((root (and (null directory) (majutsu--root)))
+  (let* ((root (and (null directory) default-directory))
          (name (and (null directory)
                     (or (magit-section-value-if 'jj-workspace)
                         (completing-read "Workspace: " (majutsu-workspace--names root) nil t))))
@@ -231,7 +231,7 @@ workspace root automatically; if not found, prompt for it."
 (defun majutsu-workspace-list ()
   "Show workspaces in a dedicated buffer."
   (interactive)
-  (let* ((root (majutsu--root))
+  (let* ((root (majutsu--toplevel-safe))
          (repo (file-name-nondirectory (directory-file-name root))))
     (majutsu-setup-buffer #'majutsu-workspace-mode nil
       :buffer (format "*majutsu-workspaces: %s*" repo))))
@@ -306,9 +306,9 @@ workspace directories are not touched on disk."
 
 DESTINATION is where to create the new workspace.
 Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
-`jj workspace add` options."
+  `jj workspace add` options."
   (interactive
-   (let* ((root (majutsu--root))
+   (let* ((root (majutsu--toplevel-safe))
           (parent (file-name-directory (directory-file-name root)))
           (destination (read-directory-name "Create workspace at: " parent nil nil))
           (name (string-trim (read-string "Workspace name (empty = default): ")))
@@ -372,9 +372,8 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
 (defun majutsu-workspace-refresh-buffer ()
   "Refresh the workspace list buffer."
   (majutsu--assert-mode 'majutsu-workspace-mode)
-  (let ((default-directory (majutsu--root)))
-    (magit-insert-section (workspace-list)
-      (majutsu-workspace--insert-entries (majutsu-workspace-list-entries) t))))
+  (magit-insert-section (workspace-list)
+    (majutsu-workspace--insert-entries (majutsu-workspace-list-entries) t)))
 
 ;;; _
 (provide 'majutsu-workspace)

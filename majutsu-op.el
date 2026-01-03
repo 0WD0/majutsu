@@ -104,11 +104,9 @@
   "Refresh the op log buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
-  (let ((root (majutsu--root)))
-    (setq majutsu--default-directory root)
-    (setq default-directory root)
-    (setq majutsu-op-log--cached-entries nil)
-    (majutsu-op-log-render)))
+  (setq default-directory majutsu--default-directory)
+  (setq majutsu-op-log--cached-entries nil)
+  (majutsu-op-log-render))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
@@ -123,7 +121,7 @@
 (defun majutsu-op-log ()
   "Open the majutsu operation log."
   (interactive)
-  (let* ((root (majutsu--root))
+  (let* ((root (majutsu--toplevel-safe))
          (buffer (get-buffer-create (format "*majutsu-op: %s*" (file-name-nondirectory (directory-file-name root))))))
     (with-current-buffer buffer
       (majutsu-op-log-mode)
