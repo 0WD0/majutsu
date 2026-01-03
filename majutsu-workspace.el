@@ -29,18 +29,6 @@
 (declare-function majutsu-log "majutsu-log" ())
 (declare-function majutsu-log-refresh "majutsu-log" ())
 
-;;; Internal helpers
-
-(defun majutsu-workspace--with-no-color (fn)
-  "Call FN with JJ color disabled for structured parsing commands."
-  (let* ((majutsu-jj-global-arguments
-          (cons "--color=never"
-                (seq-remove (lambda (arg)
-                              (string-prefix-p "--color" arg))
-                            majutsu-jj-global-arguments)))
-         (majutsu-process-apply-ansi-colors nil))
-    (funcall fn)))
-
 ;;; Templates
 
 (defconst majutsu-workspace--field-separator "\x1e"
@@ -121,27 +109,21 @@ Each entry contains:
 (defun majutsu-workspace-list-entries (&optional directory)
   "Return workspace entries for DIRECTORY (defaults to current repo root).
 Entries are parsed from `jj workspace list -T ...`."
-  (majutsu-workspace--with-no-color
-   (lambda ()
-     (let* ((default-directory (or directory (majutsu--root)))
-            (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--list-template)))
-       (majutsu-workspace-parse-list-output output)))))
+  (let* ((default-directory (or directory (majutsu--root)))
+         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--list-template)))
+    (majutsu-workspace-parse-list-output output)))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
-  (majutsu-workspace--with-no-color
-   (lambda ()
-     (let* ((default-directory (or directory (majutsu--root)))
-            (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--names-template)))
-       (delete-dups (split-string output "\n" t))))))
+  (let* ((default-directory (or directory (majutsu--root)))
+         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--names-template)))
+    (delete-dups (split-string output "\n" t))))
 
 (defun majutsu-workspace-current-name (&optional directory)
   "Return current workspace name for DIRECTORY, or nil if it can't be determined."
-  (majutsu-workspace--with-no-color
-   (lambda ()
-     (let* ((default-directory (or directory (majutsu--root)))
-            (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
-       (car (split-string output "\n" t))))))
+  (let* ((default-directory (or directory (majutsu--root)))
+         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
+    (car (split-string output "\n" t))))
 
 ;;; Workspace root discovery
 
