@@ -24,6 +24,8 @@
 (require 'subr-x)
 (require 'with-editor)
 
+(declare-function majutsu--toplevel-safe "majutsu-mode" (&optional directory))
+
 ;;; Customization
 
 (defgroup majutsu-process nil
@@ -103,7 +105,7 @@ If that buffer doesn't exist yet, then create it.  Non-interactively
 return the buffer and unless optional NODISPLAY is non-nil also display
 it."
   (interactive)
-  (let* ((root majutsu--default-directory)
+  (let* ((root (or majutsu--default-directory (majutsu--toplevel-safe)))
          (name (format "*majutsu-process: %s*"
                        (abbreviate-file-name (directory-file-name root))))
          (buffer (or (majutsu--find-mode-buffer 'majutsu-process-mode root)
@@ -128,7 +130,7 @@ it."
 (defun majutsu-process-kill ()
   "Kill the process at point."
   (interactive)
-  (when-let ((process (magit-section-value-if 'process)))
+  (when-let* ((process (magit-section-value-if 'process)))
     (unless (eq (process-status process) 'run)
       (user-error "Process isn't running"))
     (kill-process process)))
@@ -207,7 +209,7 @@ it."
                 (goto-char (oref section end))
                 (catch 'found
                   (dolist (re majutsu-process-error-message-regexps)
-                    (when-let ((match (save-excursion
+                    (when-let* ((match (save-excursion
                                         (when (re-search-backward re (oref section start) t)
                                           (string-trim (match-string 1))))))
                       (throw 'found match)))
@@ -221,7 +223,7 @@ it."
       (goto-char (point-max))
       (catch 'found
         (dolist (re majutsu-process-error-message-regexps)
-          (when-let ((match (save-excursion
+          (when-let* ((match (save-excursion
                               (when (re-search-backward re nil t)
                                 (string-trim (match-string 1))))))
             (throw 'found match)))
@@ -274,19 +276,18 @@ it."
 
 (defun majutsu--process--error-usage (process-buf)
   (and majutsu-show-process-buffer-hint
-       (if-let ((keys (where-is-internal 'majutsu-process-buffer)))
+       (if-let* ((keys (where-is-internal 'majutsu-process-buffer)))
            (format "Type %s to see %S for details"
                    (key-description (car keys)) process-buf)
          (format "See %S for details" process-buf))))
 
-(defun majutsu--process-finish (arg &optional process-buf command-buf default-dir section)
+(defun majutsu-process-finish (arg &optional process-buf _command-buf default-dir section)
   "Finalize a jj process log SECTION.
 ARG may be a process object or an exit code.  Return the exit code."
   (let ((process (unless (integerp arg) arg))
         exit-code)
     (unless (integerp arg)
       (setq process-buf (process-buffer arg))
-      (setq command-buf (process-get arg 'command-buf))
       (setq default-dir (process-get arg 'default-dir))
       (setq section     (process-get arg 'section))
       (setq exit-code   (process-exit-status arg)))
@@ -299,22 +300,22 @@ ARG may be a process object or an exit code.  Return the exit code."
 
     (cond
      ((and (integerp exit-code) (= exit-code 0))
-      (when-let ((success-msg (and process (process-get process 'success-msg))))
+      (when-let* ((success-msg (and process (process-get process 'success-msg))))
         (message "%s" success-msg))
-      (when-let ((cb (and process (process-get process 'finish-callback))))
+      (when-let* ((cb (and process (process-get process 'finish-callback))))
         (funcall cb process exit-code)))
      ((integerp exit-code)
       (let* ((msg (majutsu--process-error-summary process-buf section))
              (usage (majutsu--process--error-usage process-buf))
              (root default-dir))
-        (when-let ((log-buf (and root (majutsu--find-mode-buffer 'majutsu-log-mode root))))
+        (when-let* ((log-buf (and root (majutsu--find-mode-buffer 'majutsu-log-mode root))))
           (with-current-buffer log-buf
             (setq-local majutsu-log--this-error (or msg "Command failed"))))
         (message "jj error: %s%s"
                  (or msg "Command failed")
                  (and usage (format " [%s]" usage))))))
 
-    (when-let ((cb (and process (process-get process 'finish-callback))))
+    (when-let* ((cb (and process (process-get process 'finish-callback))))
       (unless (and (integerp exit-code) (= exit-code 0))
         (funcall cb process exit-code)))
     exit-code))
@@ -349,32 +350,33 @@ when this function was called (if still alive), as well as the
 repository's log buffer (see `majutsu-refresh')."
   (let* ((args (flatten-tree args))
          (pwd default-directory)
-         (root majutsu--default-directory)
-         (default-directory root)
-         (process-buf (majutsu-process-buffer t))
+         (root (or majutsu--default-directory (majutsu--toplevel-safe pwd)))
+         (default-directory root))
+    (let* ((majutsu--default-directory root)
+           (process-buf (majutsu-process-buffer t))
          (section (with-current-buffer process-buf
                     (prog1 (majutsu--process-insert-section pwd program args nil nil)
                       (backward-char 1))))
          (process (apply #'start-file-process (file-name-nondirectory program)
                          process-buf program args)))
-    (set-process-query-on-exit-flag process nil)
-    (process-put process 'section section)
-    (process-put process 'command-buf (current-buffer))
-    (process-put process 'default-dir root)
-    (oset section process process)
-    (oset section value process)
-    (with-current-buffer process-buf
-      (set-marker (process-mark process) (point)))
-    (if (fboundp 'with-editor-set-process-filter)
-        (with-editor-set-process-filter process #'majutsu--process-filter)
-      (set-process-filter process #'majutsu--process-filter))
-    (set-process-sentinel process #'majutsu--process-sentinel)
-    (when input
-      (with-current-buffer input
-        (process-send-region process (point-min) (point-max))
-        (process-send-eof process)))
-    (majutsu--process-display-buffer process)
-    process))
+      (set-process-query-on-exit-flag process nil)
+      (process-put process 'section section)
+      (process-put process 'command-buf (current-buffer))
+      (process-put process 'default-dir root)
+      (oset section process process)
+      (oset section value process)
+      (with-current-buffer process-buf
+        (set-marker (process-mark process) (point)))
+      (if (fboundp 'with-editor-set-process-filter)
+          (with-editor-set-process-filter process #'majutsu--process-filter)
+        (set-process-filter process #'majutsu--process-filter))
+      (set-process-sentinel process #'majutsu--process-sentinel)
+      (when input
+        (with-current-buffer input
+          (process-send-region process (point-min) (point-max))
+          (process-send-eof process)))
+      (majutsu--process-display-buffer process)
+      process)))
 
 (defun majutsu--process-filter (proc string)
   "Default filter used by `majutsu-start-process'."
@@ -383,7 +385,7 @@ repository's log buffer (see `majutsu-refresh')."
       (goto-char (process-mark proc))
       ;; Find last ^M in STRING.  If one was found, ignore everything
       ;; before it and delete the current line.
-      (when-let ((ret-pos (cl-position ?\r string :from-end t)))
+      (when-let* ((ret-pos (cl-position ?\r string :from-end t)))
         (setq string (substring string (1+ ret-pos)))
         (delete-region (line-beginning-position) (point)))
       (insert (propertize string 'magit-section
@@ -393,7 +395,7 @@ repository's log buffer (see `majutsu-refresh')."
 (defun majutsu--process-sentinel (process _event)
   "Default sentinel used by `majutsu-start-process'."
   (when (memq (process-status process) '(exit signal))
-    (majutsu--process-finish process)
+    (majutsu-process-finish process)
     (unless (process-get process 'inhibit-refresh)
       (let ((command-buf (process-get process 'command-buf))
             (default-dir (process-get process 'default-dir)))
@@ -402,7 +404,7 @@ repository's log buffer (see `majutsu-refresh')."
               (let ((default-directory (or default-dir default-directory)))
                 (majutsu-refresh)))
           (when (and default-dir (fboundp 'majutsu-log-refresh))
-            (when-let ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode default-dir)))
+            (when-let* ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode default-dir)))
               (with-current-buffer buffer
                 (ignore-errors (majutsu-log-refresh))))))))))
 
@@ -429,15 +431,18 @@ Process output goes into a new section in the buffer returned by
 `majutsu-process-buffer'.  Return the exit code."
   (let* ((args (majutsu-process-jj-arguments args))
          (pwd default-directory)
-         (default-directory majutsu--default-directory))
+         (root (or majutsu--default-directory (majutsu--toplevel-safe pwd)))
+         (default-directory root)
+         (majutsu--default-directory root))
     (pcase-let* ((`(,process-buf . ,section)
                   (let ((buf (majutsu-process-buffer t)))
-                    (cons buf (with-current-buffer buf
-                                (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
-                                  (backward-char 1))))))
+                    (cons buf
+                          (with-current-buffer buf
+                            (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
+                              (backward-char 1))))))
                  (inhibit-read-only t)
                  (exit (apply #'process-file majutsu-jj-executable nil process-buf nil args)))
-      (setq exit (majutsu--process-finish exit process-buf (current-buffer) default-directory section))
+      (setq exit (majutsu-process-finish exit process-buf (current-buffer) default-directory section))
       (majutsu-refresh)
       exit)))
 
