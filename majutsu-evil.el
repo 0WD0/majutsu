@@ -16,6 +16,9 @@
 
 (require 'majutsu)
 
+(declare-function turn-off-evil-snipe-mode "evil-snipe" ())
+(declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
+
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
   (unless (require 'evil nil t)
@@ -50,8 +53,7 @@ When nil, Majutsu leaves Evil's state untouched."
 STATES can be a symbol or list.  KEYMAP can be a symbol or list of
 symbols/maps.  Mirrors `evil-collection-define-key' to defer any
 macro expansion until Evil is actually present."
-  (declare (indent 2)
-           (states keymap &rest bindings))
+  (declare (indent 2))
   (when (and (featurep 'evil) (fboundp 'evil-define-key*))
     (let* ((states (if (listp states) states (list states)))
            (maps (if (listp keymap) keymap (list keymap))))
