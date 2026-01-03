@@ -14,8 +14,10 @@
 
 ;;; Code:
 
-(require 'majutsu-base)
 (require 'ansi-color)
+(require 'magit-section)
+(require 'seq)
+(require 'subr-x)
 
 (require 'with-editor)
 
@@ -50,6 +52,26 @@ Also respect the value of `majutsu-with-editor-envvar'."
 
 ;;; JJ
 
+(defun majutsu-toplevel (&optional directory)
+  "Return the workspace root for DIRECTORY or `default-directory'.
+
+This runs `jj workspace root' and returns a directory name (with a
+trailing slash) or nil if not inside a JJ workspace."
+  (let* ((default-directory (or directory default-directory))
+         (args (majutsu-process-jj-arguments '("workspace" "root"))))
+    (with-temp-buffer
+      (let ((coding-system-for-read 'utf-8-unix)
+            (coding-system-for-write 'utf-8-unix)
+            (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+        ;; `process-file' may return nil on success for some Emacs builds.
+        (when (null exit)
+          (setq exit 0))
+        (when (zerop exit)
+          (let* ((out (ansi-color-filter-apply (buffer-string)))
+                 (out (string-trim out)))
+            (unless (string-empty-p out)
+              (file-name-as-directory (expand-file-name out)))))))))
+
 (defun majutsu-process-jj-arguments (args)
   "Prepare ARGS for a function that invokes JJ.
 
@@ -72,7 +94,7 @@ error text.  Output is optionally colorized based on
   (setq args (majutsu-process-jj-arguments args))
   (let ((beg (point))
         (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
-    (when (and majutsu-process-apply-ansi-colors
+    (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
                (> (point) beg))
       ;; Use text-properties instead of overlays so that subsequent
       ;; washing/parsing that uses `buffer-substring' preserves faces.
