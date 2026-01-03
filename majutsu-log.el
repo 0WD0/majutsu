@@ -944,7 +944,6 @@ Return non-nil when the section could be located."
 (defun majutsu-log-refresh-buffer ()
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
-  (setq default-directory majutsu--default-directory)
   (setq majutsu-log--cached-entries nil)
   (majutsu-log-render))
 
