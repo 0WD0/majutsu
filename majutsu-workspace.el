@@ -114,6 +114,35 @@ Entries are parsed from `jj workspace list -T ...`."
          (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
     (car (split-string output "\n" t))))
 
+;;; Interactive helpers
+
+(defun majutsu-workspace--read-name (&optional prompt root default)
+  "Read a workspace name.
+
+Prefer the workspace section at point, otherwise use completion over
+the workspaces for ROOT."
+  (or (magit-section-value-if 'jj-workspace)
+      (let* ((root (or root default-directory))
+             (default (or default (majutsu-workspace-current-name root) ""))
+             (prompt (or prompt "Workspace: ")))
+        (completing-read prompt (majutsu-workspace--names root) nil t nil nil default))))
+
+(defun majutsu-workspace--read-root (name &optional root)
+  "Return the workspace root directory for NAME.
+
+If it can't be located automatically, prompt for it."
+  (let* ((root (file-name-as-directory (or root default-directory)))
+         (dir (or (majutsu-workspace--locate-root name root)
+                  (read-directory-name (format "Workspace root for %s: " name)
+                                       (file-name-directory (directory-file-name root))
+                                       nil t))))
+    (setq dir (file-name-as-directory (expand-file-name dir)))
+    (let ((actual (and (majutsu-toplevel dir)
+                       (majutsu-workspace-current-name dir))))
+      (when (and actual (not (equal actual name)))
+        (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name)))
+    dir))
+
 ;;; Workspace root discovery
 
 (defcustom majutsu-workspace-search-directories nil
@@ -205,21 +234,10 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
 If called with DIRECTORY, visit that directory. Otherwise, try to locate the
 workspace root automatically; if not found, prompt for it."
   (interactive)
-  (let* ((root (and (null directory) default-directory))
-         (name (and (null directory)
-                    (or (magit-section-value-if 'jj-workspace)
-                        (completing-read "Workspace: " (majutsu-workspace--names root) nil t))))
-         (dir (or directory
-                  (majutsu-workspace--locate-root name root)
-                  (read-directory-name (format "Workspace root for %s: " name)
-                                       (file-name-directory (directory-file-name root))
-                                       nil t))))
-    (setq dir (file-name-as-directory (expand-file-name dir)))
-    (when name
-      (let ((actual (and (majutsu-toplevel dir)
-                         (majutsu-workspace-current-name dir))))
-        (when (and actual (not (equal actual name)))
-          (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name))))
+  (let* ((root default-directory)
+         (dir (if directory
+                  (file-name-as-directory (expand-file-name directory))
+                (majutsu-workspace--read-root (majutsu-workspace--read-name "Workspace: " root) root))))
     (let ((default-directory dir))
       (if (fboundp 'majutsu-log)
           (majutsu-log)
@@ -258,41 +276,32 @@ workspace root automatically; if not found, prompt for it."
 
 ;;;###autoload
 (defun majutsu-workspace-rename (workspace new-name)
-  "Rename WORKSPACE to NEW-NAME."
+  "Rename WORKSPACE to NEW-NAME.
+
+Note that Jujutsu renames the workspace associated with the current
+working directory, so this command may prompt for the workspace root
+directory."
   (interactive
    (let* ((root (or (majutsu-toplevel)
                     (user-error "Not inside a jj repository")))
-          (current (or (majutsu-workspace-current-name root) ""))
-          (workspace (or (magit-section-value-if 'jj-workspace)
-                         (completing-read "Rename workspace: "
-                                          (majutsu-workspace--names root)
-                                          nil t nil nil current)))
-          (prompt (format "Rename workspace (%s) to: " workspace))
-          (new-name (read-string prompt nil nil workspace)))
+          (workspace (majutsu-workspace--read-name "Rename workspace: " root))
+          (new-name (read-string (format "Rename workspace (%s) to: " workspace)
+                                 nil nil workspace)))
      (list workspace new-name)))
   (when (and workspace (not (string-empty-p workspace))
              new-name (not (string-empty-p new-name)))
     (let* ((root (or (majutsu-toplevel)
                      (user-error "Not inside a jj repository")))
-           (dir (or (majutsu-workspace--locate-root workspace root)
-                    (read-directory-name (format "Workspace root for %s: " workspace)
-                                         (file-name-directory (directory-file-name root))
-                                         nil t))))
-      (setq dir (file-name-as-directory (expand-file-name dir)))
-      (let ((actual (and (majutsu-toplevel dir)
-                         (majutsu-workspace-current-name dir))))
-        (when (and actual (not (equal actual workspace)))
-          (message "Warning: selected directory is workspace '%s' (expected '%s')"
-                   actual workspace)))
-      (let ((default-directory dir))
-        (if (zerop (majutsu-call-jj "workspace" "rename" new-name))
-            (progn
-              (message "Workspace renamed")
-              (when (fboundp 'majutsu-log-refresh)
-                (majutsu-log-refresh))
-              (when (derived-mode-p 'majutsu-workspace-mode)
-                (majutsu-refresh)))
-          (message "Workspace rename failed"))))))
+           (dir (majutsu-workspace--read-root workspace root))
+           (default-directory dir))
+      (if (zerop (majutsu-call-jj "workspace" "rename" new-name))
+          (progn
+            (message "Workspace renamed")
+            (when (fboundp 'majutsu-log-refresh)
+              (majutsu-log-refresh))
+            (when (derived-mode-p 'majutsu-workspace-mode)
+              (majutsu-refresh)))
+        (message "Workspace rename failed")))))
 
 ;;;###autoload
 (defun majutsu-workspace-forget (names)
