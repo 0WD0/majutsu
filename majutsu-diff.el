@@ -683,8 +683,7 @@ works with the simplified jj diff we render here."
   (interactive)
   (when-let* ((section (magit-current-section))
               (_ (magit-section-match 'jj-hunk section))
-              (file (magit-section-parent-value section))
-              (repo-root majutsu--default-directory))
+              (file (magit-section-parent-value section)))
     (let* ((to-range (oref section to-range))
            (start-line (and to-range (car to-range))))
       (unless start-line
@@ -701,7 +700,7 @@ works with the simplified jj diff we render here."
                (hunk-start (oref section start))
                (current-pos (point))
                (line-offset 0)
-               (full-file-path (expand-file-name file repo-root)))
+               (full-file-path (expand-file-name file default-directory)))
           ;; Count lines from hunk start to current position
           (save-excursion
             (goto-char hunk-start)
@@ -723,10 +722,8 @@ works with the simplified jj diff we render here."
 (defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
-  (when-let* ((file (majutsu-diff--file-at-point))
-              (repo-root majutsu--default-directory))
-    (let ((full-file-path (expand-file-name file repo-root)))
-      (find-file full-file-path))))
+  (when-let* ((file (majutsu-diff--file-at-point)))
+    (find-file (expand-file-name file default-directory))))
 
 ;;;###autoload
 (defun majutsu-diff-visit-file ()
@@ -771,7 +768,7 @@ file."
 
 (defun majutsu-diffedit-with-ediff (file)
   "Open ediff session for a specific file against parent."
-  (let* ((repo-root majutsu--default-directory)
+  (let* ((repo-root default-directory)
          (full-file-path (expand-file-name file repo-root))
          (file-ext (file-name-extension file))
          (parent-temp-file (make-temp-file (format "majutsu-parent-%s" (file-name-nondirectory file))
@@ -817,7 +814,7 @@ file."
 
 (defun majutsu-diffedit-with-smerge (file)
   "Open smerge-mode session for a specific file."
-  (let* ((repo-root majutsu--default-directory)
+  (let* ((repo-root default-directory)
          (full-file-path (expand-file-name file repo-root))
          (parent-content (let ((default-directory repo-root))
                            (majutsu-run-jj "file" "show" "-r" "@-" file)))
@@ -987,20 +984,18 @@ With prefix STYLE, cycle between `all' and `t'."
   "Refresh the current diff buffer."
   (interactive)
   (when majutsu-buffer-diff-args
-    (let ((repo-root majutsu--default-directory))
-      (let* ((default-directory repo-root)
-             ;; Avoid ANSI; let our painting run lazily.
-             (majutsu-jj-global-arguments
-              (cons "--color=never"
-                    (seq-remove (lambda (arg)
-                                  (string-prefix-p "--color" arg))
-                                majutsu-jj-global-arguments)))
-             (majutsu-process-apply-ansi-colors nil))
-        (setq-local majutsu-diff--paint-whitespace-enabled
-                    (or (not majutsu-diff-whitespace-max-bytes)
-                        (< (buffer-size) majutsu-diff-whitespace-max-bytes)))
-        (magit-insert-section (diffbuf)
-          (magit-run-section-hook 'majutsu-diff-sections-hook)))
+    (let* (;; Avoid ANSI; let our painting run lazily.
+           (majutsu-jj-global-arguments
+            (cons "--color=never"
+                  (seq-remove (lambda (arg)
+                                (string-prefix-p "--color" arg))
+                              majutsu-jj-global-arguments)))
+           (majutsu-process-apply-ansi-colors nil))
+      (setq-local majutsu-diff--paint-whitespace-enabled
+                  (or (not majutsu-diff-whitespace-max-bytes)
+                      (< (buffer-size) majutsu-diff-whitespace-max-bytes)))
+      (magit-insert-section (diffbuf)
+        (magit-run-section-hook 'majutsu-diff-sections-hook))
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement)))))
 

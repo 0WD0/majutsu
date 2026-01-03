@@ -104,7 +104,6 @@
   "Refresh the op log buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
-  (setq default-directory majutsu--default-directory)
   (setq majutsu-op-log--cached-entries nil)
   (majutsu-op-log-render))
 
