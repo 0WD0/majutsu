@@ -83,6 +83,8 @@
   ((name :initarg :name
          :documentation "Workspace name.")))
 
+(setf (alist-get 'jj-workspace magit--section-type-alist) 'majutsu-workspace-section)
+
 ;;; Utilities
 
 (defun majutsu--ensure-flag (args flag &optional position)
