@@ -235,7 +235,11 @@ The function name is derived from `major-mode' by replacing the
            (not (memq fn '(majutsu-refresh
                            majutsu-refresh-buffer
                            majutsu-refresh-buffer-internal)))
-           fn))))
+           (lambda ()
+             (let ((inhibit-read-only t))
+               (erase-buffer)
+               (save-excursion
+                 (funcall fn))))))))
 
 (cl-defun majutsu-refresh-buffer-internal (&optional created &key initial-section select-section)
   "Refresh the current Majutsu buffer.
