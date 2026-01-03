@@ -911,7 +911,29 @@ Return non-nil when the section could be located."
   (let ((id (majutsu-selection--normalize-value (string-trim (or id "")))))
     (and id
          (not (string-empty-p id))
-         (magit-get-section `((jj-commit . ,id) (lograph) (logbuf))))))
+         (or (magit-get-section `((jj-commit . ,id) (lograph) (logbuf)))
+             (let ((root (magit-get-section '((lograph) (logbuf))))
+                   (anchor (or (and-let* ((cur (magit-current-section)))
+                                 (oref cur start))
+                               (point)))
+                   best
+                   best-dist)
+               (when root
+                 (magit-map-sections
+                  (lambda (section)
+                    (when (magit-section-match 'jj-commit section)
+                      (let ((value (majutsu-selection--normalize-value
+                                    (oref section value))))
+                        (when (and value
+                                   (or (string-prefix-p id value)
+                                       (string-prefix-p value id)))
+                          (let* ((pos (oref section start))
+                                 (dist (abs (- pos anchor))))
+                            (when (or (null best-dist) (< dist best-dist))
+                              (setq best section)
+                              (setq best-dist dist)))))))
+                  root))
+               best)))))
 
 ;;; Log Mode
 
