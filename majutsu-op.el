@@ -122,13 +122,10 @@
   "Open the majutsu operation log."
   (interactive)
   (let* ((root (majutsu--toplevel-safe))
-         (buffer (get-buffer-create (format "*majutsu-op: %s*" (file-name-nondirectory (directory-file-name root))))))
-    (with-current-buffer buffer
-      (majutsu-op-log-mode)
-      (setq majutsu--default-directory root)
-      (setq default-directory root)
-      (majutsu-op-log-refresh-buffer))
-    (majutsu-display-buffer buffer 'op-log)))
+         (repo (file-name-nondirectory (directory-file-name root))))
+    (majutsu-setup-buffer #'majutsu-op-log-mode nil
+      :buffer (format "*majutsu-op: %s*" repo)
+      :directory root)))
 
 ;;; _
 (provide 'majutsu-op)

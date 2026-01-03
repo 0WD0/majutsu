@@ -123,7 +123,7 @@ another value."
 
 If VALUE is nil, return the first unlocked buffer.
 If VALUE is non-nil, return the buffer locked to that value."
-  (let ((topdir (majutsu--toplevel-safe directory)))
+  (let ((topdir (or directory (majutsu--toplevel-safe))))
     (seq-find
      (lambda (buffer)
        (with-current-buffer buffer
@@ -137,8 +137,7 @@ If VALUE is non-nil, return the buffer locked to that value."
      (buffer-list))))
 
 (defun majutsu--generate-buffer-name (mode &optional value directory)
-  (let* ((default-directory (or directory default-directory))
-         (topdir (majutsu--toplevel-safe))
+  (let* ((topdir (or directory (majutsu--toplevel-safe)))
          (repo (file-name-nondirectory (directory-file-name topdir)))
          (base (string-remove-suffix "-mode" (symbol-name mode)))
          (val (and value (format "%s" (ensure-list value)))))
@@ -148,7 +147,8 @@ If VALUE is non-nil, return the buffer locked to that value."
 
 (defun majutsu-generate-new-buffer (mode &optional value directory)
   "Generate a new Majutsu buffer for MODE in DIRECTORY."
-  (let* ((topdir (majutsu--toplevel-safe directory))
+  (let* ((topdir (or directory (majutsu--toplevel-safe)))
+         (default-directory topdir)
          (name (majutsu--generate-buffer-name mode value topdir))
          (buffer (generate-new-buffer name)))
     (with-current-buffer buffer
@@ -206,8 +206,7 @@ For modes named like `majutsu-FOO-mode', return the symbol `FOO'."
     (with-current-buffer buffer
       (setq majutsu-previous-section section)
       (setq majutsu--default-directory topdir)
-      (when directory
-        (setq default-directory directory))
+      (setq default-directory topdir)
       (funcall mode)
       (pcase-dolist (`(,var ,val) bindings)
         (set (make-local-variable var) val))
@@ -240,17 +239,66 @@ The function name is derived from `major-mode' by replacing the
                (save-excursion
                  (funcall fn))))))))
 
+(defun majutsu--refresh-buffer-get-positions ()
+  "Return positions for all windows displaying the current buffer.
+
+The returned value is a list of entries of the form:
+  (WINDOW SECTION LINE CHAR WS-SECTION WS-LINE WINDOW-START)."
+  (let* ((buffer (current-buffer))
+         (windows (nreverse (get-buffer-window-list buffer nil t)))
+         positions)
+    (dolist (window windows)
+      (with-selected-window window
+        (with-current-buffer buffer
+          (when-let* ((section (magit-section-at)))
+            (pcase-let* ((`(,line ,char)
+                          (magit-section-get-relative-position section))
+                         (ws (magit-section-at (window-start)))
+                         (ws-line (and ws
+                                       (car (magit-section-get-relative-position ws))))
+                         (ws-start (and ws (window-start))))
+              (push (list window section line char ws ws-line ws-start)
+                    positions))))))
+    (or (nreverse positions)
+        (when-let* ((section (magit-section-at)))
+          (pcase-let ((`(,line ,char)
+                       (magit-section-get-relative-position section)))
+            (list (list nil section line char nil nil nil)))))))
+
+(defun majutsu--refresh-buffer-set-positions (positions)
+  "Restore POSITIONS returned by `majutsu--refresh-buffer-get-positions'."
+  (pcase-dolist
+      (`(,window ,section ,line ,char ,ws-section ,ws-line ,window-start)
+       positions)
+    (if window
+        (with-selected-window window
+          (magit-section-goto-successor section line char)
+          (unless (derived-mode-p 'majutsu-log-mode)
+            (cond
+             ((not window-start))
+             ((> window-start (point)))
+             ((and ws-section
+                   (magit-section-equal ws-section
+                                       (magit-section-at window-start)))
+              (set-window-start window window-start t))
+             (t
+              (let ((pos (save-excursion
+                           (and ws-section
+                                (integerp ws-line)
+                                (magit-section-goto-successor--same
+                                 ws-section ws-line 0)
+                                (point)))))
+                (when pos
+                  (set-window-start window pos t)))))))
+      (let ((magit-section-movement-hook nil))
+        (magit-section-goto-successor section line char)))))
+
 (cl-defun majutsu-refresh-buffer-internal (&optional created &key initial-section select-section)
   "Refresh the current Majutsu buffer.
 
 CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
-  (when-let ((refresh (majutsu--refresh-buffer-function)))
-    (let* ((action (if created "Creating" "Refreshing"))
-           (pos (and (not created)
-                     (when-let ((section (magit-section-at)))
-                       (pcase-let ((`(,line ,char)
-                                    (magit-section-get-relative-position section)))
-                         (list section line char))))))
+  (when-let* ((refresh (majutsu--refresh-buffer-function)))
+    (let ((action (if created "Creating" "Refreshing")))
       (when (eq major-mode 'majutsu-mode)
         (majutsu--debug "%s buffer `%s'..." action (buffer-name)))
       (cond
@@ -260,14 +308,15 @@ CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
               (select-section (funcall select-section))))
        (t
         (deactivate-mark)
-        (funcall refresh)
-        (cond (select-section (funcall select-section))
-              ((and pos
-                    (let ((section (nth 0 pos))
-                          (line (nth 1 pos))
-                          (char (nth 2 pos)))
-                      (let ((magit-section-movement-hook nil))
-                        (magit-section-goto-successor section line char))))))))
+        (setq magit-section-pre-command-section nil)
+        (setq magit-section-highlight-overlays nil)
+        (setq magit-section-selection-overlays nil)
+        (setq magit-section-highlighted-sections nil)
+        (setq magit-section-focused-sections nil)
+        (let ((positions (majutsu--refresh-buffer-get-positions)))
+          (funcall refresh)
+          (cond (select-section (funcall select-section))
+                ((majutsu--refresh-buffer-set-positions positions))))))
       (let ((magit-section-cache-visibility nil))
         (when (bound-and-true-p magit-root-section)
           (magit-section-show magit-root-section)))
@@ -300,7 +349,7 @@ Refresh the current buffer if its major mode derives from
       (when (and root
                  (not (derived-mode-p 'majutsu-log-mode))
                  (fboundp 'majutsu-log-refresh))
-        (when-let ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode root)))
+        (when-let* ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode root)))
           (with-current-buffer buffer
             (ignore-errors (majutsu-log-refresh))))))))
 
