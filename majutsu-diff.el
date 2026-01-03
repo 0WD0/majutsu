@@ -318,7 +318,7 @@ contains the remaining args."
 (cl-defmethod transient-infix-set ((obj majutsu-diff--range-option) value)
   (cl-call-next-method)
   (when-let* ((key (oref obj selection-key)))
-    (when (majutsu-selection-session-active-p)
+    (when (majutsu-selection--session-buffer)
       (if value
           (progn
             (majutsu-selection-clear key)
@@ -327,7 +327,7 @@ contains the remaining args."
 
 (cl-defmethod transient-infix-set ((_obj majutsu-diff--revisions-option) value)
   (cl-call-next-method)
-  (when (and value (majutsu-selection-session-active-p))
+  (when (and value (majutsu-selection--session-buffer))
     (majutsu-selection-clear 'from)
     (majutsu-selection-clear 'to)))
 

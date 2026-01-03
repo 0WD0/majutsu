@@ -51,10 +51,6 @@ are meant to exist only while a transient is active.")
        (with-current-buffer ,buf
          ,@body))))
 
-(defun majutsu-selection-session-active-p ()
-  "Return non-nil if a transient selection session is active."
-  (and (majutsu-selection--session-buffer) t))
-
 (defun majutsu-selection--delete-all-overlays ()
   (when-let* ((session majutsu-selection--session))
     (let ((overlays (majutsu-selection-session-overlays session)))
