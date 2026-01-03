@@ -55,9 +55,6 @@ are meant to exist only while a transient is active.")
   "Return non-nil if a transient selection session is active."
   (and (majutsu-selection--session-buffer) t))
 
-(defun majutsu-selection--normalize-value (value)
-  (majutsu--normalize-id-value value))
-
 (defun majutsu-selection--delete-all-overlays ()
   (when-let* ((session majutsu-selection--session))
     (let ((overlays (majutsu-selection-session-overlays session)))
@@ -161,7 +158,7 @@ CATEGORIES is a list of plists, each containing:
                       (list value)))))
     (seq-filter
      (lambda (v) (and v (not (string-empty-p v))))
-     (mapcar #'majutsu-selection--normalize-value values))))
+     (mapcar #'majutsu--normalize-id-value values))))
 
 (defun majutsu-selection--overlay-range (section)
   (let ((start (oref section start))
