@@ -72,15 +72,16 @@ Instead of invoking this alias for `majutsu-log' using
 (provide 'majutsu)
 
 (cl-eval-when (load eval)
+  (require 'majutsu-bookmark)
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)
-  (require 'majutsu-op)
   (require 'majutsu-git)
   (require 'majutsu-rebase)
   (require 'majutsu-restore)
+  (require 'majutsu-squash)
   (require 'majutsu-commit)
   (require 'majutsu-new)
-  (require 'majutsu-bookmark)
+  (require 'majutsu-op)
   (require 'majutsu-workspace))
 
 (with-eval-after-load 'evil
