@@ -943,7 +943,6 @@ Return non-nil when the section could be located."
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
   (let ((root (majutsu--root)))
-    (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-log--cached-entries nil)
     (majutsu-log-render)))

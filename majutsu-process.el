@@ -104,13 +104,13 @@ return the buffer and unless optional NODISPLAY is non-nil also display
 it."
   (interactive)
   (let* ((root (or (ignore-errors (majutsu--root))
-                   (expand-file-name default-directory)))
+                   (file-name-as-directory (expand-file-name default-directory))))
          (name (format "*majutsu-process: %s*"
                        (abbreviate-file-name (directory-file-name root))))
          (buffer (or (majutsu--find-mode-buffer 'majutsu-process-mode root)
                      (get-buffer-create name))))
     (with-current-buffer buffer
-      (setq-local majutsu--repo-root root)
+      (setq majutsu--default-directory root)
       (setq default-directory root)
       (if magit-root-section
           (when majutsu-process-log-max
