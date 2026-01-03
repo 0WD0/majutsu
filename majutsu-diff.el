@@ -232,15 +232,6 @@ Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
   (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
 
-;; TODO: get rid of this function
-(defun majutsu-diff--formatting-args-for-command (args)
-  "Return effective formatting ARGS for running `jj diff'."
-  (let ((args (copy-sequence args)))
-    (if (or (member "--tool" args)
-            (seq-some (lambda (arg) (string-prefix-p "--tool=" arg)) args))
-        (delete "--git" args)
-      (majutsu--ensure-flag args "--git"))))
-
 ;;; Arguments
 ;;;; Prefix Classes
 
@@ -399,17 +390,15 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
 When ARGS is non-nil, use it as diff formatting args; otherwise use the
 current buffer's `majutsu-buffer-diff-args'.  HEADING, when non-nil,
 replaces the default heading."
-  (let* ((formatting-args
-          (majutsu-diff--formatting-args-for-command
-           (or args majutsu-buffer-diff-args)))
+  (let* ((args (or args majutsu-buffer-diff-args))
          (cmd-args (append (list "diff")
-                           formatting-args
+                           args
                            majutsu-buffer-diff-revsets
                            majutsu-buffer-diff-filesets)))
     (magit-insert-section (diff-root)
       (magit-insert-heading
         (or heading
-            (format "jj diff %s" (string-join formatting-args " "))))
+            (format "jj diff %s" (string-join args " "))))
       (insert "\n")
       (majutsu-diff--wash-with-state
           #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
