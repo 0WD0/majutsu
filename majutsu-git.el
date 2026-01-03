@@ -229,6 +229,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                  (if (and d (not (string-empty-p d))) (directory-file-name d) ".")))
          (git-repo (let ((arg (seq-find (lambda (a) (string-prefix-p "--git-repo=" a)) args)))
                      (when arg (substring arg (length "--git-repo=")))))
+         (dest (directory-file-name (expand-file-name dest)))
+         (git-repo (expand-file-name git-repo))
          (colocate? (member "--colocate" args))
          (no-colocate? (member "--no-colocate" args))
          (cmd-args (append '("git" "init")
