@@ -985,9 +985,7 @@ With prefix STYLE, cycle between `all' and `t'."
   "Refresh the current diff buffer."
   (interactive)
   (when majutsu-buffer-diff-args
-    (let ((inhibit-read-only t)
-          (repo-root (majutsu--root)))
-      (erase-buffer)
+    (let ((repo-root (majutsu--root)))
       (setq-local majutsu--repo-root repo-root)
       (let* ((default-directory repo-root)
              ;; Avoid ANSI; let our painting run lazily.
@@ -1003,8 +1001,7 @@ With prefix STYLE, cycle between `all' and `t'."
         (magit-insert-section (diffbuf)
           (magit-run-section-hook 'majutsu-diff-sections-hook)))
       (when (eq majutsu-diff-refine-hunk 'all)
-        (majutsu-diff--update-hunk-refinement))
-      (goto-char (point-min)))))
+        (majutsu-diff--update-hunk-refinement)))))
 
 ;;;###autoload
 (defun majutsu-diff-dwim (&optional args files)

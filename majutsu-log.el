@@ -935,11 +935,9 @@ Return non-nil when the section could be located."
 
 (defun majutsu-log-render ()
   "Render the log buffer using cached data."
-  (let ((inhibit-read-only t))
-    (erase-buffer)
-    (magit-insert-section (logbuf)
-      (run-hooks 'majutsu-log-sections-hook)
-      (majutsu-selection-render))))
+  (magit-insert-section (logbuf)
+    (run-hooks 'majutsu-log-sections-hook)
+    (majutsu-selection-render)))
 
 (defun majutsu-log-refresh-buffer ()
   "Refresh the current Majutsu log buffer."
