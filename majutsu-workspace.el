@@ -39,24 +39,14 @@ We use an ASCII record separator so parsing stays robust.")
   ;; NOTE: Don't use `separate()` here. We need stable field positions even
   ;; when some values are empty (e.g. the non-current marker).
   (tpl-compile
-   [:concat
-    ;; 1. Current workspace marker
-    [:if [:target :current_working_copy] "@" ""]
-    "\x1e"
-    ;; 2. Workspace name
-    [:name]
-    "\x1e"
-    ;; 3. Target change id
-    [:target :change_id :shortest 8]
-    "\x1e"
-    ;; 4. Target commit id
-    [:target :commit_id :shortest 8]
-    "\x1e"
-    ;; 5. Target description (first line)
-    [:if [:target :description]
-        [:method [:target :description] :first_line]
-      ""]
-    "\n"]
+   [:join "\x1e"
+          [:if [:target :current_working_copy] "@"]
+          [:name]
+          [:target :change_id :shortest 8]
+          [:target :commit_id :shortest 8]
+          [:if [:target :description]
+              [:method [:target :description] :first_line]]
+          "\n"]
    'WorkspaceRef)
   "Template used to render `jj workspace list` output for parsing.")
 
@@ -70,8 +60,7 @@ We use an ASCII record separator so parsing stays robust.")
   (tpl-compile
    [:concat
     [:if [:target :current_working_copy]
-        [:name]
-      ""]
+        [:name]]
     "\n"]
    'WorkspaceRef)
   "Template that renders the current workspace name and blanks for others.")
@@ -90,16 +79,16 @@ Each entry contains:
   (let ((entries nil))
     (dolist (line (split-string (or output "") "\n" t))
       (let* ((fields (split-string line (regexp-quote majutsu-workspace--field-separator) nil))
-             (marker (or (nth 0 fields) ""))
-             (name (or (nth 1 fields) ""))
-             (change-id (or (nth 2 fields) ""))
-             (commit-id (or (nth 3 fields) ""))
-             (desc (or (nth 4 fields) "")))
+             (marker (nth 0 fields))
+             (name (nth 1 fields))
+             (change-id (nth 2 fields))
+             (commit-id (nth 3 fields))
+             (desc (nth 4 fields)))
         (when (and name (not (string-empty-p name)))
           (push (list :name name
                       :current (equal marker "@")
-                      :change-id (or change-id "")
-                      :commit-id (or commit-id "")
+                      :change-id change-id
+                      :commit-id commit-id
                       :desc (or desc ""))
                 entries))))
     (nreverse entries)))
@@ -169,9 +158,9 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
   "Format workspace ENTRY for insertion, padding name to NAME-WIDTH."
   (let* ((name (plist-get entry :name))
          (current (plist-get entry :current))
-         (change-id (or (plist-get entry :change-id) ""))
-         (commit-id (or (plist-get entry :commit-id) ""))
-         (desc (or (plist-get entry :desc) ""))
+         (change-id (plist-get entry :change-id))
+         (commit-id (plist-get entry :commit-id))
+         (desc (plist-get entry :desc))
          (name-face (if current 'magit-branch-current 'magit-branch-local))
          (name-str (propertize name 'face name-face))
          (pad (make-string (max 0 (- name-width (string-width name))) ?\s))
