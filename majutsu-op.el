@@ -97,24 +97,18 @@
 
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
-  (let ((inhibit-read-only t))
-    (erase-buffer)
-    (magit-insert-section (oplog)
-      (majutsu-op-log-insert-entries))))
+  (magit-insert-section (oplog)
+    (majutsu-op-log-insert-entries)))
 
 (defun majutsu-op-log-refresh-buffer ()
   "Refresh the op log buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
-  (let ((root (majutsu--root))
-        (buf (current-buffer)))
+  (let ((root (majutsu--root)))
     (setq-local majutsu--repo-root root)
     (setq default-directory root)
     (setq majutsu-op-log--cached-entries nil)
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (when (derived-mode-p 'majutsu-op-log-mode)
-          (majutsu-op-log-render))))))
+    (majutsu-op-log-render)))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
