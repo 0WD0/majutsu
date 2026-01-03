@@ -58,6 +58,11 @@ Also respect the value of `majutsu-with-editor-envvar'."
 This runs `jj workspace root' and returns a directory name (with a
 trailing slash) or nil if not inside a JJ workspace."
   (let* ((default-directory (or directory default-directory))
+         (majutsu-jj-global-arguments
+          (cons "--color=never"
+                (seq-remove (lambda (arg)
+                              (string-prefix-p "--color" arg))
+                            majutsu-jj-global-arguments)))
          (args (majutsu-process-jj-arguments '("workspace" "root"))))
     (with-temp-buffer
       (let ((coding-system-for-read 'utf-8-unix)
@@ -67,8 +72,7 @@ trailing slash) or nil if not inside a JJ workspace."
         (when (null exit)
           (setq exit 0))
         (when (zerop exit)
-          (let* ((out (ansi-color-filter-apply (buffer-string)))
-                 (out (string-trim out)))
+          (let* ((out (string-trim (buffer-string))))
             (unless (string-empty-p out)
               (file-name-as-directory (expand-file-name out)))))))))
 

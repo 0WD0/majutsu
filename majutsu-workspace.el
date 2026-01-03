@@ -22,13 +22,24 @@
 (require 'seq)
 (require 'subr-x)
 
-(require 'majutsu-core)
 (require 'majutsu-mode)
 (require 'majutsu-process)
 (require 'majutsu-template)
 
 (declare-function majutsu-log "majutsu-log" ())
 (declare-function majutsu-log-refresh "majutsu-log" ())
+
+;;; Internal helpers
+
+(defun majutsu-workspace--with-no-color (fn)
+  "Call FN with JJ color disabled for structured parsing commands."
+  (let* ((majutsu-jj-global-arguments
+          (cons "--color=never"
+                (seq-remove (lambda (arg)
+                              (string-prefix-p "--color" arg))
+                            majutsu-jj-global-arguments)))
+         (majutsu-process-apply-ansi-colors nil))
+    (funcall fn)))
 
 ;;; Templates
 
@@ -115,21 +126,27 @@ Each entry contains:
 (defun majutsu-workspace-list-entries (&optional directory)
   "Return workspace entries for DIRECTORY (defaults to current repo root).
 Entries are parsed from `jj workspace list -T ...`."
-  (let* ((default-directory (or directory (majutsu--root)))
-         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--list-template)))
-    (majutsu-workspace-parse-list-output output)))
+  (majutsu-workspace--with-no-color
+   (lambda ()
+     (let* ((default-directory (or directory (majutsu--root)))
+            (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--list-template)))
+       (majutsu-workspace-parse-list-output output)))))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
-  (let* ((default-directory (or directory (majutsu--root)))
-         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--names-template)))
-    (delete-dups (split-string output "\n" t))))
+  (majutsu-workspace--with-no-color
+   (lambda ()
+     (let* ((default-directory (or directory (majutsu--root)))
+            (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--names-template)))
+       (delete-dups (split-string output "\n" t))))))
 
 (defun majutsu-workspace-current-name (&optional directory)
   "Return current workspace name for DIRECTORY, or nil if it can't be determined."
-  (let* ((default-directory (or directory (majutsu--root)))
-         (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
-    (car (split-string output "\n" t))))
+  (majutsu-workspace--with-no-color
+   (lambda ()
+     (let* ((default-directory (or directory (majutsu--root)))
+            (output (majutsu-run-jj "workspace" "list" "-T" majutsu-workspace--current-name-template)))
+       (car (split-string output "\n" t))))))
 
 ;;; Workspace root discovery
 
@@ -164,9 +181,9 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
       (lambda (dir)
         (let* ((candidate (file-name-as-directory (expand-file-name workspace-name dir))))
           (when (file-directory-p candidate)
-            (let ((current (ignore-errors (majutsu-workspace-current-name candidate))))
-              (when (equal current workspace-name)
-                candidate)))))
+            (when (and (majutsu-toplevel candidate)
+                       (equal (majutsu-workspace-current-name candidate) workspace-name))
+              candidate))))
       search-dirs))))
 
 ;;; UI: Workspaces section
@@ -202,24 +219,23 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
         (magit-insert-heading (if (length> entries 1) "Workspaces" "Workspace"))
         (dolist (entry entries)
           (let ((name (plist-get entry :name)))
-            (magit-insert-section (majutsu-workspace-section entry t :name name)
+            (magit-insert-section (jj-workspace entry t :name name)
               (magit-insert-heading
-                (insert (majutsu-workspace--format-entry entry name-width)))
+                (majutsu-workspace--format-entry entry name-width))
               (insert "\n"))))
         (insert "\n")))))
 
 ;;;###autoload
 (defun majutsu-log-insert-workspaces ()
   "Insert a Workspaces section in the current log buffer."
-  (let ((entries (ignore-errors (majutsu-workspace-list-entries))))
-    (majutsu-workspace--insert-entries entries nil)))
+  (majutsu-workspace--insert-entries (majutsu-workspace-list-entries) nil))
 
 ;;; Actions
 
 (defun majutsu-workspace--name-at-point ()
   "Return workspace name at point, or nil."
   (let ((section (magit-current-section)))
-    (when (and section (eq (oref section type) 'majutsu-workspace-section))
+    (when (and section (eq (oref section type) 'jj-workspace))
       (let ((entry (oref section value)))
         (or (and (listp entry) (plist-get entry :name))
             (and (slot-exists-p section 'name)
@@ -244,13 +260,11 @@ workspace root automatically; if not found, prompt for it."
                                        nil t))))
     (setq dir (file-name-as-directory (expand-file-name dir)))
     (when name
-      (let ((actual (ignore-errors (majutsu-workspace-current-name dir))))
+      (let ((actual (and (majutsu-toplevel dir)
+                         (majutsu-workspace-current-name dir))))
         (when (and actual (not (equal actual name)))
           (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name))))
-    ;; Clear the caller's cached repo root so `majutsu--root' respects the
-    ;; dynamically bound `default-directory' when jumping between workspaces.
-    (let ((default-directory dir)
-          (majutsu--repo-root nil))
+    (let ((default-directory dir))
       (if (fboundp 'majutsu-log)
           (majutsu-log)
         (dired dir)))))
@@ -262,34 +276,29 @@ workspace root automatically; if not found, prompt for it."
   "Show workspaces in a dedicated buffer."
   (interactive)
   (let* ((root (majutsu--root))
-         (buf (get-buffer-create
-               (format "*majutsu-workspaces: %s*"
-                       (file-name-nondirectory (directory-file-name root))))))
-    (with-current-buffer buf
-      (majutsu-workspace-mode)
-      (setq-local majutsu--repo-root root)
-      (setq default-directory root)
-      (majutsu-workspace-refresh))
-    (majutsu-display-buffer buf 'log)))
+         (repo (file-name-nondirectory (directory-file-name root))))
+    (majutsu-setup-buffer #'majutsu-workspace-mode nil
+      :buffer (format "*majutsu-workspaces: %s*" repo))))
 
 ;;;###autoload
 (defun majutsu-workspace-root ()
   "Show and copy the current workspace root directory."
   (interactive)
-  (let ((root (string-trim (majutsu-run-jj "workspace" "root"))))
+  (let ((root (or (majutsu-toplevel) "")))
     (when (and root (not (string-empty-p root)))
-      (kill-new root)
+      (kill-new (directory-file-name root))
       (message "%s (copied)" root))))
 
 ;;;###autoload
 (defun majutsu-workspace-update-stale ()
   "Update the current workspace if it has become stale."
   (interactive)
-  (let ((result (majutsu-run-jj "workspace" "update-stale")))
-    (when (majutsu--handle-command-result '("workspace" "update-stale") result
-                                          "Workspace updated" "Workspace update failed")
-      (when (fboundp 'majutsu-log-refresh)
-        (majutsu-log-refresh)))))
+  (if (zerop (majutsu-call-jj "workspace" "update-stale"))
+      (progn
+        (message "Workspace updated")
+        (when (fboundp 'majutsu-log-refresh)
+          (majutsu-log-refresh)))
+    (message "Workspace update failed")))
 
 ;;;###autoload
 (defun majutsu-workspace-rename (new-name)
@@ -301,13 +310,14 @@ workspace root automatically; if not found, prompt for it."
                     (format "Rename workspace (%s) to: " current))))
      (list (read-string prompt nil nil current))))
   (when (and new-name (not (string-empty-p new-name)))
-    (let ((result (majutsu-run-jj "workspace" "rename" new-name)))
-      (when (majutsu--handle-command-result (list "workspace" "rename" new-name) result
-                                            "Workspace renamed" "Workspace rename failed")
-        (when (fboundp 'majutsu-log-refresh)
-          (majutsu-log-refresh))
-        (when (derived-mode-p 'majutsu-workspace-mode)
-          (majutsu-workspace-refresh))))))
+    (if (zerop (majutsu-call-jj "workspace" "rename" new-name))
+        (progn
+          (message "Workspace renamed")
+          (when (fboundp 'majutsu-log-refresh)
+            (majutsu-log-refresh))
+          (when (derived-mode-p 'majutsu-workspace-mode)
+            (majutsu-refresh)))
+      (message "Workspace rename failed"))))
 
 ;;;###autoload
 (defun majutsu-workspace-forget (names)
@@ -325,13 +335,14 @@ workspace directories are not touched on disk."
                (not (yes-or-no-p (format "Forget workspace(s) %s? "
                                          (string-join names ", ")))))
       (user-error "Forget canceled"))
-    (let ((result (apply #'majutsu-run-jj (append '("workspace" "forget") names))))
-      (when (majutsu--handle-command-result (append (list "workspace" "forget") names) result
-                                            "Workspace(s) forgotten" "Workspace forget failed")
-        (when (fboundp 'majutsu-log-refresh)
-          (majutsu-log-refresh))
-        (when (derived-mode-p 'majutsu-workspace-mode)
-          (majutsu-workspace-refresh))))))
+    (if (zerop (apply #'majutsu-call-jj (append '("workspace" "forget") names)))
+        (progn
+          (message "Workspace(s) forgotten")
+          (when (fboundp 'majutsu-log-refresh)
+            (majutsu-log-refresh))
+          (when (derived-mode-p 'majutsu-workspace-mode)
+            (majutsu-refresh)))
+      (message "Workspace forget failed"))))
 
 ;;;###autoload
 (defun majutsu-workspace-add (destination &optional name revision sparse-patterns)
@@ -357,14 +368,15 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
                        (and name (list "--name" name))
                        (and revision (list "--revision" revision))
                        (and sparse-patterns (list "--sparse-patterns" sparse-patterns))))
-         (result (apply #'majutsu-run-jj args)))
-    (when (majutsu--handle-command-result args result
-                                          (format "Workspace created in %s" dest)
-                                          "Workspace creation failed")
-      (when (fboundp 'majutsu-log-refresh)
-        (majutsu-log-refresh))
-      ;; Like Magit, visit the new workspace.
-      (majutsu-workspace-visit dest))))
+         (exit (apply #'majutsu-call-jj args)))
+    (if (zerop exit)
+        (progn
+          (message "Workspace created in %s" dest)
+          (when (fboundp 'majutsu-log-refresh)
+            (majutsu-log-refresh))
+          ;; Like Magit, visit the new workspace.
+          (majutsu-workspace-visit dest))
+      (message "Workspace creation failed"))))
 
 ;;; Transient
 
@@ -401,21 +413,12 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer))
 
-(defun majutsu-workspace-render ()
-  "Render the workspace list buffer."
-  (let ((inhibit-read-only t))
-    (erase-buffer)
+(defun majutsu-workspace-refresh-buffer ()
+  "Refresh the workspace list buffer."
+  (majutsu--assert-mode 'majutsu-workspace-mode)
+  (let ((default-directory (majutsu--root)))
     (magit-insert-section (workspace-list)
       (majutsu-workspace--insert-entries (majutsu-workspace-list-entries) t))))
-
-;;;###autoload
-(defun majutsu-workspace-refresh ()
-  "Refresh the workspace list buffer."
-  (interactive)
-  (majutsu--assert-mode 'majutsu-workspace-mode)
-  (setq-local majutsu--repo-root (majutsu--root))
-  (setq default-directory majutsu--repo-root)
-  (majutsu-workspace-render))
 
 ;;; _
 (provide 'majutsu-workspace)
