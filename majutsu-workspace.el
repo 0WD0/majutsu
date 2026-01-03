@@ -218,8 +218,8 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
       (magit-insert-section (workspaces)
         (magit-insert-heading (if (length> entries 1) "Workspaces" "Workspace"))
         (dolist (entry entries)
-          (let ((name (plist-get entry :name)))
-            (magit-insert-section (jj-workspace entry t :name name)
+          (let ((name (majutsu-workspace--normalize (plist-get entry :name))))
+            (magit-insert-section (jj-workspace name t)
               (magit-insert-heading
                 (majutsu-workspace--format-entry entry name-width))
               (insert "\n"))))
@@ -234,13 +234,7 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
 
 (defun majutsu-workspace--name-at-point ()
   "Return workspace name at point, or nil."
-  (let ((section (magit-current-section)))
-    (when (and section (eq (oref section type) 'jj-workspace))
-      (let ((entry (oref section value)))
-        (or (and (listp entry) (plist-get entry :name))
-            (and (slot-exists-p section 'name)
-                 (slot-boundp section 'name)
-                 (majutsu-workspace--normalize (oref section name))))))))
+  (majutsu-workspace--normalize (magit-section-value-if 'jj-workspace)))
 
 ;;;###autoload
 (defun majutsu-workspace-visit (&optional directory)

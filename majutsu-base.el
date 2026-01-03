@@ -79,9 +79,7 @@
 
 ;; Workspace sections (`jj workspace list`)
 
-(defclass majutsu-workspace-section (magit-section)
-  ((name :initarg :name
-         :documentation "Workspace name.")))
+(defclass majutsu-workspace-section (magit-section) ())
 
 (setf (alist-get 'jj-workspace magit--section-type-alist) 'majutsu-workspace-section)
 
