@@ -90,11 +90,6 @@ We use an ASCII record separator so parsing stays robust.")
 
 ;;; Parsing
 
-(defun majutsu-workspace--normalize (s)
-  "Return S without text properties and trailing whitespace."
-  (when (stringp s)
-    (string-trim-right (substring-no-properties s))))
-
 (defun majutsu-workspace-parse-list-output (output)
   "Parse `jj workspace list -T ...` OUTPUT into a list of plists.
 
@@ -107,11 +102,11 @@ Each entry contains:
   (let ((entries nil))
     (dolist (line (split-string (or output "") "\n" t))
       (let* ((fields (split-string line (regexp-quote majutsu-workspace--field-separator) nil))
-             (marker (majutsu-workspace--normalize (nth 0 fields)))
-             (name (majutsu-workspace--normalize (nth 1 fields)))
-             (change-id (majutsu-workspace--normalize (nth 2 fields)))
-             (commit-id (majutsu-workspace--normalize (nth 3 fields)))
-             (desc (majutsu-workspace--normalize (nth 4 fields))))
+             (marker (or (nth 0 fields) ""))
+             (name (or (nth 1 fields) ""))
+             (change-id (or (nth 2 fields) ""))
+             (commit-id (or (nth 3 fields) ""))
+             (desc (or (nth 4 fields) "")))
         (when (and name (not (string-empty-p name)))
           (push (list :name name
                       :current (equal marker "@")
@@ -196,7 +191,7 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
          (commit-id (or (plist-get entry :commit-id) ""))
          (desc (or (plist-get entry :desc) ""))
          (name-face (if current 'magit-branch-current 'magit-branch-local))
-         (name-str (propertize (majutsu-workspace--normalize name) 'face name-face))
+         (name-str (propertize name 'face name-face))
          (pad (make-string (max 0 (- name-width (string-width name))) ?\s))
          (marker (if current "@ " "  ")))
     (concat marker
@@ -218,7 +213,7 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
       (magit-insert-section (workspaces)
         (magit-insert-heading (if (length> entries 1) "Workspaces" "Workspace"))
         (dolist (entry entries)
-          (let ((name (majutsu-workspace--normalize (plist-get entry :name))))
+          (let ((name (plist-get entry :name)))
             (magit-insert-section (jj-workspace name t)
               (magit-insert-heading
                 (majutsu-workspace--format-entry entry name-width))
@@ -234,7 +229,7 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
 
 (defun majutsu-workspace--name-at-point ()
   "Return workspace name at point, or nil."
-  (majutsu-workspace--normalize (magit-section-value-if 'jj-workspace)))
+  (magit-section-value-if 'jj-workspace))
 
 ;;;###autoload
 (defun majutsu-workspace-visit (&optional directory)
