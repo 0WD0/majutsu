@@ -209,10 +209,6 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
 
 ;;; Actions
 
-(defun majutsu-workspace--name-at-point ()
-  "Return workspace name at point, or nil."
-  (magit-section-value-if 'jj-workspace))
-
 ;;;###autoload
 (defun majutsu-workspace-visit (&optional directory)
   "Visit workspace at point.
@@ -222,7 +218,7 @@ workspace root automatically; if not found, prompt for it."
   (interactive)
   (let* ((root (and (null directory) (majutsu--root)))
          (name (and (null directory)
-                    (or (majutsu-workspace--name-at-point)
+                    (or (magit-section-value-if 'jj-workspace)
                         (completing-read "Workspace: " (majutsu-workspace--names root) nil t))))
          (dir (or directory
                   (majutsu-workspace--locate-root name root)
