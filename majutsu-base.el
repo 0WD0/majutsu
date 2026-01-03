@@ -85,6 +85,16 @@
 
 ;;; Utilities
 
+(defun majutsu--ensure-flag (args flag &optional position)
+  "Return ARGS ensuring FLAG is present once.
+POSITION may be `front' to insert FLAG at the beginning; otherwise FLAG
+is appended."
+  (if (member flag args)
+      args
+    (if (eq position 'front)
+        (cons flag args)
+      (append args (list flag)))))
+
 (defun majutsu--debug (format-string &rest args)
   "Log debug message if `majutsu-debug' is enabled."
   (when majutsu-debug
