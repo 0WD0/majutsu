@@ -15,6 +15,8 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-jj-string "majutsu-process" (&rest args))
+
 ;;; majutsu-undo
 
 ;;;###autoload
@@ -25,7 +27,7 @@
            (not (yes-or-no-p "Undo the most recent change? ")))
       (message "Undo canceled")
     (let ((revset (magit-section-value-if 'jj-commit)))
-      (when (zerop (majutsu-call-jj "undo"))
+      (when (zerop (majutsu-run-jj "undo"))
         (when revset
           (majutsu-goto-commit revset))))))
 
@@ -39,7 +41,7 @@
            (not (yes-or-no-p "Redo the previously undone change? ")))
       (message "Redo canceled")
     (let ((revset (magit-section-value-if 'jj-commit)))
-      (when (zerop (majutsu-call-jj "redo"))
+      (when (zerop (majutsu-run-jj "redo"))
         (when revset
           (majutsu-goto-commit revset))))))
 
@@ -70,7 +72,7 @@
       majutsu-op-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (list "op" "log" "--no-graph" "-T" majutsu--op-log-template))
-             (output (or log-output (apply #'majutsu-run-jj args))))
+             (output (or log-output (apply #'majutsu-jj-string args))))
         (when (and output (not (string-empty-p output)))
           (let ((lines (split-string output "\n" t))
                 (entries '()))

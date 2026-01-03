@@ -24,6 +24,7 @@
 (require 'diff-mode)
 (require 'smerge-mode)
 
+(declare-function majutsu-jj-string "majutsu-process" (&rest args))
 (declare-function majutsu-jj-wash "majutsu-process" (washer keep-error &rest args))
 
 ;;; Options
@@ -774,7 +775,7 @@ file."
          (parent-temp-file (make-temp-file (format "majutsu-parent-%s" (file-name-nondirectory file))
                                            nil (when file-ext (concat "." file-ext))))
          (parent-content (let ((default-directory repo-root))
-                           (majutsu-run-jj "file" "show" "-r" "@-" file))))
+                           (majutsu-jj-string "file" "show" "-r" "@-" file))))
 
     ;; Write parent content to temp file
     (with-temp-file parent-temp-file
@@ -817,7 +818,7 @@ file."
   (let* ((repo-root default-directory)
          (full-file-path (expand-file-name file repo-root))
          (parent-content (let ((default-directory repo-root))
-                           (majutsu-run-jj "file" "show" "-r" "@-" file)))
+                           (majutsu-jj-string "file" "show" "-r" "@-" file)))
          (current-content (if (file-exists-p full-file-path)
                               (with-temp-buffer
                                 (insert-file-contents full-file-path)
@@ -880,7 +881,7 @@ file."
 
 (defun majutsu--get-changed-files ()
   "Get list of files with changes in working copy."
-  (let ((diff-output (majutsu-run-jj "diff" "--name-only")))
+  (let ((diff-output (majutsu-jj-string "diff" "--name-only")))
     (split-string diff-output "\n" t)))
 
 ;;; Diff Commands
