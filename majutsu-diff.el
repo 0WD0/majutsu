@@ -1006,9 +1006,10 @@ Return non-nil if COMMAND was found and updated."
 (defun majutsu-diff-clear-selections ()
   "Clear all diff selections."
   (interactive)
-  (unless (or (majutsu-diff--set-infix-value 'majutsu-diff:--from nil)
-              (majutsu-diff--set-infix-value 'majutsu-diff:--to nil))
-    (majutsu-selection-clear))
+  (let ((cleared-from (majutsu-diff--set-infix-value 'majutsu-diff:--from nil))
+        (cleared-to (majutsu-diff--set-infix-value 'majutsu-diff:--to nil)))
+    (unless (or cleared-from cleared-to)
+      (majutsu-selection-clear)))
   (when (called-interactively-p 'interactive)
     (message "Cleared diff selections")))
 
