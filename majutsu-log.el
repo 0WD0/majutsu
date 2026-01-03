@@ -991,12 +991,6 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
   (interactive)
   (majutsu-log-setup-buffer))
 
-(defun majutsu-log--refresh-view ()
-  "Refresh current log buffer or open a new one."
-  (if (derived-mode-p 'majutsu-log-mode)
-      (majutsu-refresh-buffer)
-    (majutsu-log)))
-
 ;;; Commands
 
 (defun majutsu-log-transient-set-revisions ()
@@ -1047,11 +1041,6 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
       (transient-reset)
     (majutsu-log-transient--redisplay)))
 
-(defun majutsu-log-transient-apply ()
-  "Apply the current log state by refreshing or opening the log view."
-  (interactive)
-  (majutsu-log--refresh-view))
-
 (defun majutsu-log--toggle-desc (label flag)
   "Return LABEL annotated with ON/OFF state for FLAG in log args."
   (if (member flag (car (majutsu-log--get-value 'majutsu-log-mode 'direct)))
@@ -1099,24 +1088,19 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
          (args (transient-args (oref obj command))))
     (pcase-let ((`(,_old-args ,revsets ,filesets)
                  (majutsu-log--get-value mode 'direct)))
-      (put mode 'majutsu-log-current-arguments args)
+      (majutsu-log--set-value mode args revsets filesets)
       (transient--history-push obj)
-      (when (eq major-mode mode)
-        (setq-local majutsu-buffer-log-args args))
-      (put mode 'majutsu-log-current-revsets revsets)
-      (put mode 'majutsu-log-current-filesets filesets))))
+      (majutsu-refresh))))
 
 (cl-defmethod transient-save-value ((obj majutsu-log-prefix))
   (let* ((obj (oref obj prototype))
          (mode (or (oref obj major-mode) major-mode))
-         (key (intern (format "majutsu-log:%s" mode)))
          (args (transient-args (oref obj command))))
-    (put mode 'majutsu-log-current-arguments args)
-    (setf (alist-get key transient-values) args)
-    (transient-save-values)
-    (transient--history-push obj)
-    (when (eq major-mode mode)
-      (setq-local majutsu-buffer-log-args args))))
+    (pcase-let ((`(,_old-args ,revsets ,filesets)
+                 (majutsu-log--get-value mode 'direct)))
+      (majutsu-log--set-value mode args revsets filesets t)
+      (transient--history-push obj)
+      (majutsu-refresh))))
 
 (transient-define-argument majutsu-log:-n ()
   :description (lambda ()
@@ -1126,8 +1110,8 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
                    (car (majutsu-log--get-value 'majutsu-log-mode 'direct))
                    "-n")))
   :class 'transient-option
-  :shortarg "n"
-  :argument "-n "
+  :shortarg "-n"
+  :argument "-n"
   :reader (lambda (&rest _)
             (pcase-let* ((`(,args ,_revsets ,_filesets)
                           (majutsu-log--get-value 'majutsu-log-mode 'direct))
@@ -1184,9 +1168,20 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
      :if (lambda () (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
      :transient t)]
    ["Actions"
-    ("g" "Apply & refresh" majutsu-log-transient-apply)
+    ("g" "buffer" majutsu-log-transient)
+    ("s" "buffer and set defaults" transient-set-and-exit)
+    ("w" "buffer and save defaults" transient-save-and-exit)
     ("0" "Reset options" majutsu-log-transient-reset :transient t)
-    ("q" "Quit" transient-quit-one)]])
+    ("q" "Quit" transient-quit-one)]]
+  (interactive)
+  (cond
+   ((not (eq transient-current-command 'majutsu-log-transient))
+    (transient-setup 'majutsu-log-transient))
+   (t
+    (unless (derived-mode-p 'majutsu-log-mode)
+      (user-error "Not in a Majutsu log buffer"))
+    (setq-local majutsu-buffer-log-args (transient-args transient-current-command))
+    (majutsu-refresh-buffer))))
 
 ;;; _
 (provide 'majutsu-log)
