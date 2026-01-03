@@ -375,8 +375,13 @@ when the user has strict .dir-locals.el settings."
 
 (defvar-local majutsu-buffer-diff-args nil
   "Remembered diff formatting arguments for the current diff buffer.")
-(defvar-local majutsu-buffer-diff-revsets nil
-  "Revision arguments for current diff buffer.")
+(defvar-local majutsu-buffer-diff-range nil
+  "Remembered diff range for the current diff buffer.
+
+This is a tagged union (plist).  The supported shapes are:
+
+- (:type revisions :revisions STRING) for `jj diff -r/--revisions'
+- (:type from-to  :from STRING? :to STRING?) for `jj diff --from/--to'.")
 (defvar-local majutsu-buffer-diff-filesets nil
   "Filesets filter for current diff buffer.")
 

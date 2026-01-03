@@ -110,12 +110,12 @@
         (majutsu-direct-use-buffer-arguments 'never)
         called-args
         called-files
-        called-revsets)
+        called-range)
     (cl-letf (((symbol-function 'majutsu-diff-setup-buffer)
-               (lambda (args filesets revsets &rest _)
+               (lambda (args range filesets &rest _)
                  (setq called-args args
                        called-files filesets
-                       called-revsets revsets)))
+                       called-range range)))
               ((symbol-function 'majutsu-diff--dwim)
                (lambda () '(commit . "abc123")))
               ((symbol-function 'transient-args)
@@ -123,7 +123,7 @@
       (call-interactively #'majutsu-diff-dwim)
       (should (equal called-args '("--context=9" "--stat")))
       (should (equal called-files nil))
-      (should (equal called-revsets '("-r" "abc123"))))))
+      (should (equal called-range '(:type revisions :revisions "abc123"))))))
 
 (provide 'majutsu-diff-test)
 

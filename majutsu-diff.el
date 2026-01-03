@@ -23,7 +23,7 @@
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
-
+ 
 ;;; Options
 ;;;; Diff Mode
 
@@ -183,7 +183,7 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 (defun majutsu-diff--get-value (mode &optional use-buffer-args)
   "Get diff arguments for MODE.
 
-Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
+Returns (args range filesets) triple.  USE-BUFFER-ARGS follows
 `majutsu-prefix-use-buffer-arguments' or
 `majutsu-direct-use-buffer-arguments'."
   (setq use-buffer-args
@@ -197,32 +197,32 @@ Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
    ((and (memq use-buffer-args '(always selected current))
          (eq major-mode mode))
     (list majutsu-buffer-diff-args
-          majutsu-buffer-diff-revsets
+          majutsu-buffer-diff-range
           majutsu-buffer-diff-filesets))
    ((and (memq use-buffer-args '(always selected))
          (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
            (list (buffer-local-value 'majutsu-buffer-diff-args buf)
-                 (buffer-local-value 'majutsu-buffer-diff-revsets buf)
+                 (buffer-local-value 'majutsu-buffer-diff-range buf)
                  (buffer-local-value 'majutsu-buffer-diff-filesets buf)))))
    ((plist-member (symbol-plist mode) 'majutsu-diff-current-arguments)
     (list (get mode 'majutsu-diff-current-arguments)
-          (get mode 'majutsu-diff-current-revsets)
+          (get mode 'majutsu-diff-current-range)
           (get mode 'majutsu-diff-current-filesets)))
    ((when-let* ((elt (assq (intern (format "majutsu-diff:%s" mode))
                            transient-values)))
       (list (cdr elt)
-            (get mode 'majutsu-diff-current-revsets)
+            (get mode 'majutsu-diff-current-range)
             (get mode 'majutsu-diff-current-filesets))))
    (t
     (list (get mode 'majutsu-diff-default-arguments) nil nil))))
 
-(defun majutsu-diff--set-buffer-revsets (revsets)
-  "Set current buffer's diff REVSETS (range arguments)."
-  (setq-local majutsu-buffer-diff-revsets revsets)
-  (put 'majutsu-diff-mode 'majutsu-diff-current-revsets revsets))
+(defun majutsu-diff--set-buffer-range (range)
+  "Set current buffer's diff RANGE (range arguments)."
+  (setq-local majutsu-buffer-diff-range range)
+  (put 'majutsu-diff-mode 'majutsu-diff-current-range range))
 
-(defun majutsu-diff-revsets ()
-  "Return current diff revsets (range arguments)."
+(defun majutsu-diff-range-value ()
+  "Return current diff range."
   (cadr (majutsu-diff--get-value 'majutsu-diff-mode 'direct)))
 
 (defun majutsu-diff--set-buffer-args (args &optional _filesets _refresh)
@@ -231,6 +231,60 @@ Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
               (or (majutsu-diff--remembered-args args)
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
   (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
+
+(defun majutsu-diff--split-transient-args (args)
+  "Split ARGS into (FORMAT-ARGS . RANGE).
+
+RANGE is a value suitable for `majutsu-buffer-diff-range'.  FORMAT-ARGS
+contains the remaining args."
+  (let ((format-args nil)
+        (revisions nil)
+        (from nil)
+        (to nil)
+        (rest (flatten-tree args)))
+    (while rest
+      (let ((arg (pop rest)))
+        (cond
+         ((member arg '("-r" "--revisions"))
+          (when-let* ((value (pop rest)))
+            (setq revisions value)))
+         ((and (stringp arg) (string-prefix-p "-r" arg) (> (length arg) 2))
+          (setq revisions (substring arg 2)))
+         ((and (stringp arg) (string-prefix-p "--revisions=" arg))
+          (setq revisions (substring arg (length "--revisions="))))
+         ((member arg '("--from" "--to"))
+          (when-let* ((value (pop rest)))
+            (pcase arg
+              ("--from" (setq from value))
+              ("--to" (setq to value)))))
+         ((and (stringp arg) (string-prefix-p "--from=" arg))
+          (setq from (substring arg (length "--from="))))
+         ((and (stringp arg) (string-prefix-p "--to=" arg))
+          (setq to (substring arg (length "--to="))))
+         (t
+          (push arg format-args)))))
+    (when (and revisions (or from to))
+      (user-error "jj diff: -r/--revisions cannot be used with --from/--to"))
+    (cons (nreverse format-args)
+          (cond
+           (revisions (list :type 'revisions :revisions revisions))
+           ((or from to) (list :type 'from-to :from from :to to))
+           (t nil)))))
+
+(defun majutsu-diff--range-arguments (range)
+  "Convert RANGE (see `majutsu-buffer-diff-range') to jj CLI arguments."
+  (pcase (plist-get range :type)
+    ('revisions
+     (when-let* ((revset (plist-get range :revisions)))
+       (list "-r" revset)))
+    ('from-to
+     (append (when-let* ((from (plist-get range :from)))
+               (list "--from" from))
+             (when-let* ((to (plist-get range :to)))
+               (list "--to" to))))
+    ('nil nil)
+    (_
+     (error "Invalid diff range: %S" range))))
 
 ;;; Arguments
 ;;;; Prefix Classes
@@ -242,9 +296,15 @@ Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
 ;;;; Prefix Methods
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
-  (pcase-let ((`(,args ,_revsets ,_filesets)
+  (pcase-let ((`(,args ,range ,_filesets)
                (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
-    (oset obj value args)))
+    (oset obj value
+          (append (pcase (plist-get range :type)
+                    ('revisions
+                     (when-let* ((revset (plist-get range :revisions)))
+                       (list "-r" revset)))
+                    (_ nil))
+                  args))))
 
 (cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
   (let* ((obj (oref obj prototype))
@@ -393,7 +453,7 @@ replaces the default heading."
   (let* ((args (or args majutsu-buffer-diff-args))
          (cmd-args (append (list "diff")
                            args
-                           majutsu-buffer-diff-revsets
+                           (majutsu-diff--range-arguments majutsu-buffer-diff-range)
                            majutsu-buffer-diff-filesets)))
     (magit-insert-section (diff-root)
       (magit-insert-heading
@@ -979,7 +1039,7 @@ With prefix STYLE, cycle between `all' and `t'."
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-diff-mode))
   (list majutsu-buffer-diff-args
-        majutsu-buffer-diff-revsets
+        majutsu-buffer-diff-range
         majutsu-buffer-diff-filesets))
 
 (defun majutsu-diff-refresh-buffer (&optional _ignore-auto _noconfirm)
@@ -1011,15 +1071,14 @@ With prefix STYLE, cycle between `all' and `t'."
                 (_ "@")))
          (from (car (majutsu-selection-values 'from)))
          (to (car (majutsu-selection-values 'to)))
-         (formatting-args (or (majutsu-diff--remembered-args
-                               (or args (majutsu-diff-arguments)))
+         (split (majutsu-diff--split-transient-args (or args (majutsu-diff-arguments))))
+         (formatting-args (or (majutsu-diff--remembered-args (car split))
                               (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (rev-args (cond
-                    ((and from to) (list "--from" from "--to" to))
-                    (from (list "--from" from))
-                    (to (list "--to" to))
-                    (t (list "-r" rev)))))
-    (majutsu-diff-setup-buffer formatting-args files rev-args)
+         (range (cond
+                 ((cdr split) (cdr split))
+                 ((or from to) (list :type 'from-to :from from :to to))
+                 (t (list :type 'revisions :revisions rev)))))
+    (majutsu-diff-setup-buffer formatting-args range files)
     (majutsu-selection-session-end)))
 
 ;;;###autoload
@@ -1032,8 +1091,8 @@ REVSET is passed to jj diff using `-r'."
                      (majutsu-diff-filesets)))
   (let* ((formatting-args (or (majutsu-diff--remembered-args (or args (majutsu-diff-arguments)))
                               (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (rev-args (list "-r" revset)))
-    (majutsu-diff-setup-buffer formatting-args files rev-args)))
+         (range (list :type 'revisions :revisions revset)))
+    (majutsu-diff-setup-buffer formatting-args range files)))
 
 ;; TODO: implement more DWIM cases
 (defun majutsu-diff--dwim ()
@@ -1042,12 +1101,12 @@ REVSET is passed to jj diff using `-r'."
       (cons 'commit rev)
     nil))
 
-(defun majutsu-diff-setup-buffer (args filesets revsets &optional locked)
-  "Display a diff buffer configured by ARGS, FILESETS and REVSETS."
+(defun majutsu-diff-setup-buffer (args range filesets &optional locked)
+  "Display a diff buffer configured by ARGS, RANGE and FILESETS."
   (majutsu-setup-buffer #'majutsu-diff-mode locked
     (majutsu-buffer-diff-args args)
-    (majutsu-buffer-diff-filesets filesets)
-    (majutsu-buffer-diff-revsets revsets)))
+    (majutsu-buffer-diff-range range)
+    (majutsu-buffer-diff-filesets filesets)))
 
 ;;; Commands
 ;;;; Prefix Commands
@@ -1060,12 +1119,20 @@ REVSET is passed to jj diff using `-r'."
   [:description
    (lambda ()
      (concat "JJ Diff"
+             (when-let* ((split (ignore-errors
+                                  (majutsu-diff--split-transient-args
+                                   (transient-args 'majutsu-diff-transient--internal))))
+                         (range (cdr split))
+                         (rev (and (eq (plist-get range :type) 'revisions)
+                                   (plist-get range :revisions))))
+               (format " | -r: %s" rev))
              (when-let* ((from (car (majutsu-selection-values 'from))))
                (format " | From: %s" from))
              (when-let* ((to (car (majutsu-selection-values 'to))))
                (format " | To: %s" to))))
    :class transient-columns
    ["Selection"
+    (majutsu-diff:-r)
     ("f" "Set 'from'" majutsu-diff-set-from
      :description (lambda ()
                     (if (> (majutsu-selection-count 'from) 0)
@@ -1087,7 +1154,6 @@ REVSET is passed to jj diff using `-r'."
     (majutsu-diff:--context)]
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
-    ("r" "Diff revset" majutsu-diff-range)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
     ("g" "Refresh" majutsu-diff-refresh-transient :transient t)
     ("q" "Quit" transient-quit-one)]])
@@ -1112,6 +1178,15 @@ REVSET is passed to jj diff using `-r'."
   :key "-c"
   :argument "--context="
   :reader #'transient-read-number-N0)
+
+(defun majutsu-diff--transient-read-revset (prompt _initial-input _history)
+  (majutsu-read-revset prompt))
+
+(transient-define-argument majutsu-diff:-r ()
+  :description "Revisions"
+  :class 'transient-option
+  :argument "-r"
+  :reader #'majutsu-diff--transient-read-revset)
 
 ;;;###autoload
 (defun majutsu-diff-transient ()
@@ -1141,10 +1216,15 @@ REVSET is passed to jj diff using `-r'."
 (defun majutsu-diff-refresh-transient ()
   "Refresh diff buffer with current transient arguments."
   (interactive)
-  (let ((args (transient-args 'majutsu-diff-transient--internal)))
+  (let* ((raw (transient-args 'majutsu-diff-transient--internal))
+         (split (majutsu-diff--split-transient-args raw))
+         (args (car split))
+         (range (cdr split)))
     (cond
      ((eq major-mode 'majutsu-diff-mode)
       (majutsu-diff--set-buffer-args args)
+      (when range
+        (majutsu-diff--set-buffer-range range))
       (majutsu-diff-refresh-buffer))
      ((and (memq majutsu-prefix-use-buffer-arguments '(always selected))
            (when-let* ((buf (majutsu--get-mode-buffer
@@ -1152,6 +1232,8 @@ REVSET is passed to jj diff using `-r'."
                              (eq majutsu-prefix-use-buffer-arguments 'selected))))
              (with-current-buffer buf
                (majutsu-diff--set-buffer-args args)
+               (when range
+                 (majutsu-diff--set-buffer-range range))
                (majutsu-diff-refresh-buffer))
              t)))
      (t
