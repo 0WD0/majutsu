@@ -983,10 +983,48 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
     (current-buffer)))
 
 ;;;###autoload
-(defun majutsu-log ()
-  "Open the majutsu log buffer."
-  (interactive)
-  (majutsu-log-setup-buffer))
+(defun majutsu-log (&optional directory)
+  "Open the majutsu log buffer.
+
+If the current directory isn't located within a jj repository, then
+prompt for a directory.  If that directory isn't a repository either,
+offer to create one using `jj git init`."
+  (interactive
+   (list (and (or current-prefix-arg (not (majutsu-toplevel)))
+              (file-name-as-directory
+               (expand-file-name
+                (read-directory-name "Repository or directory: "
+                                     nil nil nil))))))
+  (let* ((default-directory (or directory default-directory))
+         (topdir (majutsu-toplevel default-directory)))
+    (cond
+     (topdir
+      (let ((default-directory topdir))
+        (majutsu-log-setup-buffer)))
+     ((y-or-n-p (format "Create jj repository in %s? "
+                        (abbreviate-file-name default-directory)))
+      (unless (executable-find majutsu-jj-executable)
+        (signal 'majutsu-jj-executable-not-found (list majutsu-jj-executable)))
+      (let* ((dest (file-name-as-directory (expand-file-name default-directory)))
+             (args (majutsu-process-jj-arguments (list "git" "init" dest)))
+             (exit nil)
+             (out ""))
+        (with-temp-buffer
+          (let ((coding-system-for-read 'utf-8-unix)
+                (coding-system-for-write 'utf-8-unix))
+            (setq exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+          (setq out (string-trim (buffer-string))))
+        (when (null exit)
+          (setq exit 0))
+        (if (zerop exit)
+            (let ((default-directory dest))
+              (majutsu-log-setup-buffer))
+          (user-error "jj git init failed: %s"
+                      (if (string-empty-p out)
+                          (format "exit %s" exit)
+                        out)))))
+     (t
+      (user-error "Abort")))))
 
 ;;; Commands
 
