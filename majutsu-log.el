@@ -1019,50 +1019,6 @@ When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
     (majutsu-log--set-value 'majutsu-log-mode args nil filesets))
   (majutsu-log-transient--redisplay))
 
-(defun majutsu-log-transient-set-limit ()
-  "Prompt for a numeric limit and store it in the current log variables."
-  (interactive)
-  (pcase-let* ((`(,args ,revsets ,filesets)
-                (majutsu-log--get-value 'majutsu-log-mode 'direct))
-               (current (majutsu-log--args-get-option args "-n"))
-               (input (string-trim (read-from-minibuffer "Limit (empty to clear): " current))))
-    (cond
-     ((string-empty-p input)
-      (setq args (majutsu-log--args-set-option args "-n" nil)))
-     ((string-match-p "\\`[0-9]+\\'" input)
-      (setq args (majutsu-log--args-set-option args "-n" input)))
-     (t
-      (user-error "Limit must be a positive integer")))
-    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
-  (majutsu-log-transient--redisplay))
-
-(defun majutsu-log-transient-clear-limit ()
-  "Clear the stored limit."
-  (interactive)
-  (pcase-let ((`(,args ,revsets ,filesets)
-               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-    (setq args (majutsu-log--args-set-option args "-n" nil))
-    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
-  (majutsu-log-transient--redisplay))
-
-(defun majutsu-log-transient-toggle-reversed ()
-  "Toggle reversed log ordering."
-  (interactive)
-  (pcase-let ((`(,args ,revsets ,filesets)
-               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-    (setq args (majutsu-log--args-toggle-flag args "--reversed"))
-    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
-  (majutsu-log-transient--redisplay))
-
-(defun majutsu-log-transient-toggle-no-graph ()
-  "Toggle whether jj log should hide the ASCII graph."
-  (interactive)
-  (pcase-let ((`(,args ,revsets ,filesets)
-               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-    (setq args (majutsu-log--args-toggle-flag args "--no-graph"))
-    (majutsu-log--set-value 'majutsu-log-mode args revsets filesets))
-  (majutsu-log-transient--redisplay))
-
 (defun majutsu-log-transient-add-path ()
   "Add a fileset/path filter to the log view."
   (interactive)
