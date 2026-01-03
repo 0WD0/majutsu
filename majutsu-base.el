@@ -20,6 +20,7 @@
 (require 'eieio)
 (require 'magit-section)
 (require 'magit-mode)  ; for `majutsu-display-function'
+(require 'majutsu-jj)
 
 ;;; Options
 
@@ -88,25 +89,9 @@ is appended."
         (cons flag args)
       (append args (list flag)))))
 
-(defun majutsu--workspace-root (&optional directory)
-  "Return the workspace root for DIRECTORY (or `default-directory').
-
-This uses `jj workspace root' and returns a directory name (with
-trailing slash) or nil if not inside a JJ workspace."
-  (let ((default-directory (or directory default-directory))
-        (exe (if (boundp 'majutsu-jj-executable) majutsu-jj-executable "jj")))
-    (with-temp-buffer
-      (let ((exit (ignore-errors
-                    (process-file exe nil t nil "workspace" "root"))))
-        (when (and (integerp exit) (zerop exit))
-          (let ((out (string-trim (buffer-string))))
-            (unless (string-empty-p out)
-              (file-name-as-directory (expand-file-name out)))))))))
-
 (defun majutsu--root ()
   "Find root of the current repository."
-  (let ((root (or (and (boundp 'majutsu--default-directory) majutsu--default-directory)
-                  (majutsu--workspace-root))))
+  (let ((root (majutsu-toplevel)))
     (unless root
       (user-error "Cannot find root -- not in a JJ repo"))
     root))
@@ -148,7 +133,7 @@ text properties."
 This is used to match buffers to repositories when refreshing."
   (with-current-buffer (or buffer (current-buffer))
     (or (and (boundp 'majutsu--default-directory) majutsu--default-directory)
-        (ignore-errors (majutsu--root)))))
+        (majutsu-toplevel))))
 
 (defun majutsu--find-mode-buffer (mode &optional root)
   "Return a live buffer in MODE for ROOT (or any repo when ROOT is nil)."
