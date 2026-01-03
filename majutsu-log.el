@@ -944,10 +944,9 @@ Return non-nil when the section could be located."
 (defun majutsu-log-refresh-buffer ()
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
-  (let ((root (majutsu--root)))
-    (setq default-directory root)
-    (setq majutsu-log--cached-entries nil)
-    (majutsu-log-render)))
+  (setq default-directory majutsu--default-directory)
+  (setq majutsu-log--cached-entries nil)
+  (majutsu-log-render))
 
 ;;;###autoload
 (defun majutsu-log-refresh ()
@@ -958,13 +957,13 @@ is invoked interactively, signal a user error instead of
 mutating the wrong buffer."
   (interactive)
   (let* ((root (majutsu--buffer-root))
-         (buffer (majutsu--resolve-mode-buffer 'majutsu-log-mode root)))
+         (buffer (and root (majutsu--resolve-mode-buffer 'majutsu-log-mode root))))
     (cond
      (buffer
       (with-current-buffer buffer
         (majutsu-refresh-buffer)))
      ((called-interactively-p 'interactive)
-      (user-error "No Majutsu log buffer for this repository; open one with `majutsu-log`"))
+      (user-error "Not in a Majutsu buffer; open one with `majutsu-log`"))
      (t
       (majutsu--debug "Skipping log refresh: no log buffer for %s" (or root "unknown repo"))))))
 

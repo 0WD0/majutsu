@@ -684,7 +684,7 @@ works with the simplified jj diff we render here."
   (when-let* ((section (magit-current-section))
               (_ (magit-section-match 'jj-hunk section))
               (file (magit-section-parent-value section))
-              (repo-root (majutsu--root)))
+              (repo-root majutsu--default-directory))
     (let* ((to-range (oref section to-range))
            (start-line (and to-range (car to-range))))
       (unless start-line
@@ -724,7 +724,7 @@ works with the simplified jj diff we render here."
   "Visit the file at point."
   (interactive)
   (when-let* ((file (majutsu-diff--file-at-point))
-              (repo-root (majutsu--root)))
+              (repo-root majutsu--default-directory))
     (let ((full-file-path (expand-file-name file repo-root)))
       (find-file full-file-path))))
 
@@ -771,7 +771,7 @@ file."
 
 (defun majutsu-diffedit-with-ediff (file)
   "Open ediff session for a specific file against parent."
-  (let* ((repo-root (majutsu--root))
+  (let* ((repo-root majutsu--default-directory)
          (full-file-path (expand-file-name file repo-root))
          (file-ext (file-name-extension file))
          (parent-temp-file (make-temp-file (format "majutsu-parent-%s" (file-name-nondirectory file))
@@ -817,7 +817,7 @@ file."
 
 (defun majutsu-diffedit-with-smerge (file)
   "Open smerge-mode session for a specific file."
-  (let* ((repo-root (majutsu--root))
+  (let* ((repo-root majutsu--default-directory)
          (full-file-path (expand-file-name file repo-root))
          (parent-content (let ((default-directory repo-root))
                            (majutsu-run-jj "file" "show" "-r" "@-" file)))
@@ -987,7 +987,7 @@ With prefix STYLE, cycle between `all' and `t'."
   "Refresh the current diff buffer."
   (interactive)
   (when majutsu-buffer-diff-args
-    (let ((repo-root (majutsu--root)))
+    (let ((repo-root majutsu--default-directory))
       (let* ((default-directory repo-root)
              ;; Avoid ANSI; let our painting run lazily.
              (majutsu-jj-global-arguments
