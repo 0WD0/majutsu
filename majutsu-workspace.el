@@ -282,16 +282,14 @@ Note that Jujutsu renames the workspace associated with the current
 working directory, so this command may prompt for the workspace root
 directory."
   (interactive
-   (let* ((root (or (majutsu-toplevel)
-                    (user-error "Not inside a jj repository")))
+   (let* ((root (majutsu--toplevel-safe))
           (workspace (majutsu-workspace--read-name "Rename workspace: " root))
           (new-name (read-string (format "Rename workspace (%s) to: " workspace)
                                  nil nil workspace)))
      (list workspace new-name)))
   (when (and workspace (not (string-empty-p workspace))
              new-name (not (string-empty-p new-name)))
-    (let* ((root (or (majutsu-toplevel)
-                     (user-error "Not inside a jj repository")))
+    (let* ((root (majutsu--toplevel-safe))
            (dir (majutsu-workspace--read-root workspace root))
            (default-directory dir))
       (if (zerop (majutsu-call-jj "workspace" "rename" new-name))
