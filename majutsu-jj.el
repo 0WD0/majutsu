@@ -50,6 +50,43 @@ Also respect the value of `majutsu-with-editor-envvar'."
      (with-editor* majutsu-with-editor-envvar
        ,@body)))
 
+;;; Safe default-directory
+
+(defun majutsu--safe-default-directory (&optional file)
+  "Return a safe `default-directory' based on FILE or `default-directory'.
+
+If the expanded directory is not accessible, walk up parent directories
+until an accessible directory is found.  Return nil if none is found."
+  (catch 'unsafe-default-dir
+    (let ((dir (file-name-as-directory
+                (expand-file-name (or file default-directory))))
+          (previous nil))
+      (while (not (file-accessible-directory-p dir))
+        (setq dir (file-name-directory (directory-file-name dir)))
+        (when (equal dir previous)
+          (throw 'unsafe-default-dir nil))
+        (setq previous dir))
+      dir)))
+
+(defmacro majutsu--with-safe-default-directory (file &rest body)
+  (declare (indent 1) (debug (form body)))
+  `(when-let* ((default-directory (majutsu--safe-default-directory ,file)))
+     ,@body))
+
+;;; Errors
+
+(define-error 'majutsu-outside-jj-repo "Not inside jj repository")
+(define-error 'majutsu-jj-executable-not-found "jj executable cannot be found")
+
+(defun majutsu--assert-usable-jj ()
+  (unless (executable-find majutsu-jj-executable)
+    (signal 'majutsu-jj-executable-not-found (list majutsu-jj-executable)))
+  nil)
+
+(defun majutsu--not-inside-repository-error ()
+  (majutsu--assert-usable-jj)
+  (signal 'majutsu-outside-jj-repo (list default-directory)))
+
 ;;; JJ
 
 (defun majutsu-toplevel (&optional directory)
@@ -57,24 +94,38 @@ Also respect the value of `majutsu-with-editor-envvar'."
 
 This runs `jj workspace root' and returns a directory name (with a
 trailing slash) or nil if not inside a JJ workspace."
-  (let* ((default-directory (or directory default-directory))
-         (majutsu-jj-global-arguments
-          (cons "--color=never"
-                (seq-remove (lambda (arg)
-                              (string-prefix-p "--color" arg))
-                            majutsu-jj-global-arguments)))
-         (args (majutsu-process-jj-arguments '("workspace" "root"))))
-    (with-temp-buffer
-      (let ((coding-system-for-read 'utf-8-unix)
-            (coding-system-for-write 'utf-8-unix)
-            (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
-        ;; `process-file' may return nil on success for some Emacs builds.
-        (when (null exit)
-          (setq exit 0))
-        (when (zerop exit)
-          (let* ((out (string-trim (buffer-string))))
-            (unless (string-empty-p out)
-              (file-name-as-directory (expand-file-name out)))))))))
+  (majutsu--with-safe-default-directory directory
+    (let* ((majutsu-jj-global-arguments
+            (cons "--color=never"
+                  (seq-remove (lambda (arg)
+                                (string-prefix-p "--color" arg))
+                              majutsu-jj-global-arguments)))
+           (args (majutsu-process-jj-arguments '("workspace" "root"))))
+      (with-temp-buffer
+        (let ((coding-system-for-read 'utf-8-unix)
+              (coding-system-for-write 'utf-8-unix)
+              (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+          ;; `process-file' may return nil on success for some Emacs builds.
+          (when (null exit)
+            (setq exit 0))
+          (when (zerop exit)
+            (let ((out (string-trim (buffer-string))))
+              (unless (string-empty-p out)
+                (file-name-as-directory (expand-file-name out))))))))))
+
+(defun majutsu--toplevel-safe (&optional directory)
+  "Return the workspace root for DIRECTORY or signal an error."
+  (or (majutsu-toplevel directory)
+      (let ((default-directory
+             (or (majutsu--safe-default-directory directory)
+                 (file-name-as-directory
+                  (expand-file-name (or directory default-directory))))))
+        (majutsu--not-inside-repository-error))))
+
+(defmacro majutsu-with-toplevel (&rest body)
+  (declare (indent defun) (debug (body)))
+  `(let ((default-directory (majutsu--toplevel-safe)))
+     ,@body))
 
 (defun majutsu-process-jj-arguments (args)
   "Prepare ARGS for a function that invokes JJ.

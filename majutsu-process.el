@@ -24,7 +24,7 @@
 (require 'subr-x)
 (require 'with-editor)
 
-(declare-function majutsu--toplevel-safe "majutsu-mode" (&optional directory))
+(declare-function majutsu--toplevel-safe "majutsu-jj" (&optional directory))
 
 ;;; Customization
 
