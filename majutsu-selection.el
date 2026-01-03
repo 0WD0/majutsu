@@ -13,6 +13,7 @@
 ;;; Code:
 
 (require 'magit-section)
+(require 'transient)
 
 (cl-defstruct (majutsu-selection-category
                (:constructor majutsu-selection-category-create))
@@ -71,6 +72,7 @@ are meant to exist only while a transient is active.")
   (interactive)
   (when majutsu-selection--session
     (majutsu-selection--delete-all-overlays)
+    (remove-hook 'transient-exit-hook #'majutsu-selection--transient-exit)
     (setq majutsu-selection--session nil)))
 
 (defun majutsu-selection-session-end-if-owner ()
@@ -108,6 +110,7 @@ CATEGORIES is a list of plists, each containing:
           :key key :label label :face face :type type :values nil)))
      categories)
     :overlays (make-hash-table :test 'equal)))
+  (add-hook 'transient-exit-hook #'majutsu-selection--transient-exit)
   (majutsu-selection-render))
 
 (defun majutsu-selection--category (key)
@@ -140,11 +143,17 @@ CATEGORIES is a list of plists, each containing:
     (let (parts)
       (dolist (cat (majutsu-selection-session-categories session))
         (when (member id (majutsu-selection-category-values cat))
-          (push (propertize (majutsu-selection-category-label cat)
-                            'face (majutsu-selection-category-face cat))
-                parts)))
+          (let ((label (majutsu-selection-category-label cat)))
+            (unless (string-empty-p label)
+              (push (propertize label
+                                'face (majutsu-selection-category-face cat))
+                    parts)))))
       (when parts
         (concat (mapconcat #'identity (nreverse parts) " ") " ")))))
+
+(defun majutsu-selection--transient-exit ()
+  "End active selection session when leaving a transient."
+  (majutsu-selection-session-end))
 
 (defun majutsu-selection--targets-at-point ()
   (let ((values (or (magit-region-values 'jj-commit t)

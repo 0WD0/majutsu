@@ -293,6 +293,44 @@ contains the remaining args."
   ((history-key :initform 'majutsu-diff)
    (major-mode :initform 'majutsu-diff-mode)))
 
+;;;; Range Infix Classes
+
+(defclass majutsu-diff--range-option (transient-option)
+  ((selection-key :initarg :selection-key :initform nil)))
+
+(defclass majutsu-diff--revisions-option (transient-option) ())
+
+(defun majutsu-diff--transient-original-buffer ()
+  (and (boundp 'transient--original-buffer)
+       (buffer-live-p transient--original-buffer)
+       transient--original-buffer))
+
+(defun majutsu-diff--transient-default-revset ()
+  (with-current-buffer (or (majutsu-diff--transient-original-buffer)
+                           (current-buffer))
+    (or (magit-section-value-if 'jj-commit) "@")))
+
+(defun majutsu-diff--transient-read-revset (prompt initial-input _history)
+  (if current-prefix-arg
+      nil
+    (majutsu-read-revset prompt (or initial-input (majutsu-diff--transient-default-revset)))))
+
+(cl-defmethod transient-infix-set ((obj majutsu-diff--range-option) value)
+  (cl-call-next-method)
+  (when-let* ((key (oref obj selection-key)))
+    (when (majutsu-selection-session-active-p)
+      (if value
+          (progn
+            (majutsu-selection-clear key)
+            (majutsu-selection-select key (list value)))
+        (majutsu-selection-clear key)))))
+
+(cl-defmethod transient-infix-set ((_obj majutsu-diff--revisions-option) value)
+  (cl-call-next-method)
+  (when (and value (majutsu-selection-session-active-p))
+    (majutsu-selection-clear 'from)
+    (majutsu-selection-clear 'to)))
+
 ;;;; Prefix Methods
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
@@ -303,6 +341,11 @@ contains the remaining args."
                     ('revisions
                      (when-let* ((revset (plist-get range :revisions)))
                        (list "-r" revset)))
+                    ('from-to
+                     (append (when-let* ((from (plist-get range :from)))
+                               (list "--from" from))
+                             (when-let* ((to (plist-get range :to)))
+                               (list "--to" to))))
                     (_ nil))
                   args))))
 
@@ -947,22 +990,51 @@ file."
 
 ;;; Diff Commands
 
+(defun majutsu-diff--set-infix-value (command value)
+  "Set transient infix COMMAND to VALUE in the active transient, if any.
+
+Return non-nil if COMMAND was found and updated."
+  (when (and (boundp 'transient--suffixes)
+             (consp transient--suffixes))
+    (when-let* ((obj (seq-find (lambda (obj)
+                                 (and (cl-typep obj 'transient-infix)
+                                      (eq (oref obj command) command)))
+                               transient--suffixes)))
+      (transient-infix-set obj value)
+      t)))
+
 (defun majutsu-diff-clear-selections ()
   "Clear all diff selections."
   (interactive)
-  (majutsu-selection-clear)
+  (unless (or (majutsu-diff--set-infix-value 'majutsu-diff:--from nil)
+              (majutsu-diff--set-infix-value 'majutsu-diff:--to nil))
+    (majutsu-selection-clear))
   (when (called-interactively-p 'interactive)
     (message "Cleared diff selections")))
 
 (defun majutsu-diff-set-from ()
   "Set the commit at point as diff --from."
   (interactive)
-  (majutsu-selection-select 'from))
+  (let ((id (or (magit-section-value-if 'jj-commit)
+                (user-error "No changeset at point")))
+        (cur (car (majutsu-selection-values 'from))))
+    (setq id (majutsu--normalize-id-value id))
+    (setq cur (and cur (majutsu--normalize-id-value cur)))
+    (if (equal cur id)
+        (majutsu-diff--set-infix-value 'majutsu-diff:--from nil)
+      (majutsu-diff--set-infix-value 'majutsu-diff:--from id))))
 
 (defun majutsu-diff-set-to ()
   "Set the commit at point as diff --to."
   (interactive)
-  (majutsu-selection-select 'to))
+  (let ((id (or (magit-section-value-if 'jj-commit)
+                (user-error "No changeset at point")))
+        (cur (car (majutsu-selection-values 'to))))
+    (setq id (majutsu--normalize-id-value id))
+    (setq cur (and cur (majutsu--normalize-id-value cur)))
+    (if (equal cur id)
+        (majutsu-diff--set-infix-value 'majutsu-diff:--to nil)
+      (majutsu-diff--set-infix-value 'majutsu-diff:--to id))))
 
 (defun majutsu-diff-less-context (&optional count)
   "Decrease the context for diff hunks by COUNT lines."
@@ -1069,14 +1141,11 @@ With prefix STYLE, cycle between `all' and `t'."
   (let* ((rev (pcase (majutsu-diff--dwim)
                 (`(commit . ,rev) rev)
                 (_ "@")))
-         (from (car (majutsu-selection-values 'from)))
-         (to (car (majutsu-selection-values 'to)))
          (split (majutsu-diff--split-transient-args (or args (majutsu-diff-arguments))))
          (formatting-args (or (majutsu-diff--remembered-args (car split))
                               (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
          (range (cond
                  ((cdr split) (cdr split))
-                 ((or from to) (list :type 'from-to :from from :to to))
                  (t (list :type 'revisions :revisions rev)))))
     (majutsu-diff-setup-buffer formatting-args range files)
     (majutsu-selection-session-end)))
@@ -1115,6 +1184,8 @@ REVSET is passed to jj diff using `-r'."
   "Internal transient for jj diff."
   :man-page "jj-diff"
   :class 'majutsu-diff-prefix
+  :incompatible '(("-r" "--from")
+                  ("-r" "--to"))
   :transient-non-suffix t
   [:description
    (lambda ()
@@ -1133,6 +1204,8 @@ REVSET is passed to jj diff using `-r'."
    :class transient-columns
    ["Selection"
     (majutsu-diff:-r)
+    (majutsu-diff:--from)
+    (majutsu-diff:--to)
     ("f" "Set 'from'" majutsu-diff-set-from
      :description (lambda ()
                     (if (> (majutsu-selection-count 'from) 0)
@@ -1179,13 +1252,26 @@ REVSET is passed to jj diff using `-r'."
   :argument "--context="
   :reader #'transient-read-number-N0)
 
-(defun majutsu-diff--transient-read-revset (prompt _initial-input _history)
-  (majutsu-read-revset prompt))
-
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
-  :class 'transient-option
+  :class 'majutsu-diff--revisions-option
   :argument "-r"
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-diff:--from ()
+  :description "From"
+  :class 'majutsu-diff--range-option
+  :selection-key 'from
+  :key "-f"
+  :argument "--from"
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-diff:--to ()
+  :description "To"
+  :class 'majutsu-diff--range-option
+  :selection-key 'to
+  :key "-t"
+  :argument "--to"
   :reader #'majutsu-diff--transient-read-revset)
 
 ;;;###autoload
@@ -1201,7 +1287,6 @@ REVSET is passed to jj diff using `-r'."
       :label "[TO]"
       :face (:background "dark cyan" :foreground "white")
       :type single)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
   (majutsu-diff-transient--internal))
 
 (defun majutsu-diff-save-arguments ()
