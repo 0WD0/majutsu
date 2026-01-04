@@ -43,6 +43,11 @@ Used to avoid scanning all buffers on transient exit.")
   (when (buffer-live-p buffer)
     (puthash buffer t majutsu-selection--overlay-buffers)))
 
+(defun majutsu-selection--cleanup-overlays-in-buffer (buffer)
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (remove-overlays (point-min) (point-max) 'majutsu-selection t))))
+
 (defun majutsu-selection--session-buffer ()
   "Return the buffer that owns the active selection session, if any."
   (when-let* ((session (transient-scope)))
@@ -75,15 +80,33 @@ Used to avoid scanning all buffers on transient exit.")
 
 (defun majutsu-selection--transient-setup-buffer ()
   "Render selection overlays when a transient menu is being setup."
-  (when-let* ((session (transient-scope)))
-    (when-let* ((buf (majutsu-selection-session-buffer session))
-                (_ (buffer-live-p buf)))
-      ;; Avoid leaking old overlays when switching between nested transients.
-      ;; We can't reliably access scope in exit hooks, so clean up here.
+  (let* ((session (transient-scope))
+         (buf (and session (majutsu-selection-session-buffer session))))
+    ;; Ideal behavior: when a transient is popped/replaced (i.e. "out of
+    ;; the transient stack"), clear overlays belonging to that transient.
+    ;;
+    ;; We can't reliably access scope in `transient-exit-hook' because the
+    ;; exiting prefix object is cleared before that hook runs.  Instead,
+    ;; clear overlays from any buffers we've previously touched here, then
+    ;; render overlays for the new active transient (if it has a session).
+    (maphash
+     (lambda (old-buf _)
+       (when (and (buffer-live-p old-buf)
+                  (not (eq old-buf buf)))
+         (majutsu-selection--cleanup-overlays-in-buffer old-buf)
+         (remhash old-buf majutsu-selection--overlay-buffers)))
+     majutsu-selection--overlay-buffers)
+    (cond
+     ((and buf (buffer-live-p buf))
       (majutsu-selection--track-overlay-buffer buf)
-      (with-current-buffer buf
-        (remove-overlays (point-min) (point-max) 'majutsu-selection t)))
-    (majutsu-selection-render session)))
+      (majutsu-selection--cleanup-overlays-in-buffer buf)
+      (majutsu-selection-render session))
+     (t
+      ;; New transient doesn't use selection; clear leftovers.
+      (maphash (lambda (old-buf _)
+                 (majutsu-selection--cleanup-overlays-in-buffer old-buf))
+               majutsu-selection--overlay-buffers)
+      (clrhash majutsu-selection--overlay-buffers)))))
 
 (defun majutsu-selection--transient-post-exit ()
   "Remove selection overlays when leaving the transient stack.
@@ -94,9 +117,8 @@ time (nested/replaced), at which point we might accidentally remove the
 new transient's overlays."
   (maphash
    (lambda (buf _)
-     (if (buffer-live-p buf)
-         (with-current-buffer buf
-           (remove-overlays (point-min) (point-max) 'majutsu-selection t))
+     (majutsu-selection--cleanup-overlays-in-buffer buf)
+     (unless (buffer-live-p buf)
        (remhash buf majutsu-selection--overlay-buffers)))
    majutsu-selection--overlay-buffers)
   (clrhash majutsu-selection--overlay-buffers))
@@ -107,8 +129,8 @@ new transient's overlays."
 This clears selection values and disassociates the session from the
 current transient's scope."
   (interactive)
-  (when-let* ((prefix (transient-active-prefix))
-              (session (transient-scope)))
+  (when-let* ((prefix (transient-prefix-object))
+              (session (oref prefix scope)))
     (majutsu-selection--delete-all-overlays session)
     (majutsu-selection--clear-all-values session)
     (oset prefix scope nil)))
