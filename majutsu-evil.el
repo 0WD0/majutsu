@@ -94,7 +94,7 @@ macro expansion until Evil is actually present."
     (kbd "s") #'majutsu-squash
     (kbd "L") #'majutsu-log-transient
     (kbd "b") #'majutsu-bookmark
-    (kbd "r") #'majutsu-rebase-transient
+    (kbd "r") #'majutsu-rebase
     (kbd "d") #'majutsu-diff
     (kbd "D") #'majutsu-diff-dwim
     (kbd "*") #'majutsu-workspace-transient

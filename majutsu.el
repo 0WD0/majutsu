@@ -57,7 +57,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("d" "Describe" majutsu-describe)
     ("s" "Squash" majutsu-squash)]
    ["Advanced"
-    ("r" "Rebase" majutsu-rebase-transient)
+    ("r" "Rebase" majutsu-rebase)
     ("b" "Bookmarks" majutsu-bookmark)
     ("Z" "Workspaces" majutsu-workspace-transient)
     ("G" "Git" majutsu-git-transient)]
