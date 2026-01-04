@@ -35,7 +35,7 @@
   "c"   'majutsu-describe
   "C"   'majutsu-commit
   "N"   'majutsu-new-dwim
-  "s"   'majutsu-squash-transient
+  "s"   'majutsu-squash
   "d"   'majutsu-diff
   "D"   'majutsu-diff-dwim
   "r"   'majutsu-rebase-transient
