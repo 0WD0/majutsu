@@ -40,7 +40,7 @@
 ;;;###autoload
 (defun majutsu-squash-execute (&optional args)
   "Execute squash with selections recorded in the transient."
-  (interactive (list (transient-args 'majutsu-squash-transient--internal)))
+  (interactive (list (transient-args 'majutsu-squash)))
   (let* ((keep (member "--keep" args))
          (ignore-immutable (member "--ignore-immutable" args))
          (from-revsets (or (majutsu-selection-values 'from)
@@ -71,26 +71,6 @@
                        (when ignore-immutable '("--ignore-immutable")))))
     (majutsu-run-jj-with-editor args)))
 
-;;;###autoload
-(defun majutsu-squash-transient ()
-  "Transient for jj squash operations."
-  (interactive)
-  (majutsu-selection-session-begin
-   '((:key from
-      :label "[FROM]"
-      :face (:background "dark orange" :foreground "white")
-      :type multi)
-     (:key into
-      :label "[INTO]"
-      :face (:background "dark cyan" :foreground "white")
-      :type single)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (majutsu-squash-transient--internal))
-
-(defun majutsu-mode-bury-squash ()
-  (interactive)
-  (transient-quit-one))
-
 ;;; Squash Transient
 
 (defun majutsu-squash--from-display ()
@@ -102,7 +82,7 @@
   "Return a display string for the squash destination."
   (car (majutsu-selection-values 'into)))
 
-(transient-define-prefix majutsu-squash-transient--internal ()
+(transient-define-prefix majutsu-squash ()
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
   :transient-non-suffix t
@@ -143,8 +123,19 @@
                      ((> (majutsu-selection-count 'from) 0)
                       (format "Squash %s into parent" (majutsu-squash--from-display)))
                      (t "Execute squash (select commits first)"))))
-    ("q" "Quit" transient-quit-one)
-    ("b" "Bury" majutsu-mode-bury-squash)]])
+    ("q" "Quit" transient-quit-one)]]
+  (interactive)
+  (majutsu-selection-session-begin
+   '((:key from
+      :label "[FROM]"
+      :face (:background "dark orange" :foreground "white")
+      :type multi)
+     (:key into
+      :label "[INTO]"
+      :face (:background "dark cyan" :foreground "white")
+      :type single)))
+  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
+  (transient-setup 'majutsu-squash))
 
 ;;; _
 (provide 'majutsu-squash)
