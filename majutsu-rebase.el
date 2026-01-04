@@ -163,17 +163,18 @@ ARGS are passed from the transient."
                       "Execute rebase (select source & destinations first)")))
     ("q" "Quit" transient-quit-one)]]
   (interactive)
-  (majutsu-selection-session-begin
-   '((:key source
-      :label "[SOURCE]"
-      :face (:background "dark green" :foreground "white")
-      :type multi)
-     (:key destination
-      :label "[DEST]"
-      :face (:background "dark blue" :foreground "white")
-      :type multi)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (transient-setup 'majutsu-rebase))
+  (transient-setup
+   'majutsu-rebase nil nil
+   :scope
+   (majutsu-selection-session-begin
+    '((:key source
+       :label "[SOURCE]"
+       :face (:background "dark green" :foreground "white")
+       :type multi)
+      (:key destination
+       :label "[DEST]"
+       :face (:background "dark blue" :foreground "white")
+       :type multi)))))
 
 ;;; _
 (provide 'majutsu-rebase)

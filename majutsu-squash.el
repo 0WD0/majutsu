@@ -125,17 +125,18 @@
                      (t "Execute squash (select commits first)"))))
     ("q" "Quit" transient-quit-one)]]
   (interactive)
-  (majutsu-selection-session-begin
-   '((:key from
-      :label "[FROM]"
-      :face (:background "dark orange" :foreground "white")
-      :type multi)
-     (:key into
-      :label "[INTO]"
-      :face (:background "dark cyan" :foreground "white")
-      :type single)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (transient-setup 'majutsu-squash))
+  (transient-setup
+   'majutsu-squash nil nil
+   :scope
+   (majutsu-selection-session-begin
+    '((:key from
+       :label "[FROM]"
+       :face (:background "dark orange" :foreground "white")
+       :type multi)
+      (:key into
+       :label "[INTO]"
+       :face (:background "dark cyan" :foreground "white")
+       :type single)))))
 
 ;;; _
 (provide 'majutsu-squash)

@@ -61,24 +61,6 @@
 (defun majutsu-duplicate-transient ()
   "Open the jj duplicate transient."
   (interactive)
-  (majutsu-selection-session-begin
-   '((:key source
-      :label "[SRC]"
-      :face (:background "goldenrod" :foreground "black")
-      :type multi)
-     (:key onto
-      :label "[ONTO]"
-      :face (:background "dark green" :foreground "white")
-      :type multi)
-     (:key after
-      :label "[AFTER]"
-      :face (:background "dark blue" :foreground "white")
-      :type multi)
-     (:key before
-      :label "[BEFORE]"
-      :face (:background "dark magenta" :foreground "white")
-      :type multi)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
   (majutsu-duplicate-transient--internal))
 
 ;;;###autoload
@@ -174,7 +156,28 @@ With prefix ARG, open the duplicate transient."
    ["Actions"
     ("RET" "Duplicate changes" majutsu-duplicate-execute)
     ("p" "Duplicate changes" majutsu-duplicate-execute)
-    ("q" "Quit" transient-quit-one)]])
+    ("q" "Quit" transient-quit-one)]]
+  (interactive)
+  (transient-setup
+   'majutsu-duplicate-transient--internal nil nil
+   :scope
+   (majutsu-selection-session-begin
+    '((:key source
+       :label "[SRC]"
+       :face (:background "goldenrod" :foreground "black")
+       :type multi)
+      (:key onto
+       :label "[ONTO]"
+       :face (:background "dark green" :foreground "white")
+       :type multi)
+      (:key after
+       :label "[AFTER]"
+       :face (:background "dark blue" :foreground "white")
+       :type multi)
+      (:key before
+       :label "[BEFORE]"
+       :face (:background "dark magenta" :foreground "white")
+       :type multi)))))
 
 ;;; _
 (provide 'majutsu-duplicate)
