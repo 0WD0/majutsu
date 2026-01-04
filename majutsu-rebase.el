@@ -92,8 +92,7 @@ ARGS are passed from the transient."
             (majutsu--message-with-log "%s..." progress-msg)
             (majutsu--debug "Running jj rebase with args: %s" (string-join all-args " "))
             (when (zerop (apply #'majutsu-run-jj all-args))
-              (message "%s" success-msg)
-              (majutsu-selection-session-end)))))
+              (message "%s" success-msg)))))
     (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
 
 ;;; Rebase Transient

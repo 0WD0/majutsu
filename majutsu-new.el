@@ -108,8 +108,7 @@ With prefix ARG, open the new transient for interactive selection."
   (let* ((args (transient-args 'majutsu-new))
          (context-args (majutsu-new--build-revset-args))
          (args (cons "new" (append args context-args))))
-    (when (majutsu-new--run-command args)
-      (majutsu-selection-session-end))))
+    (majutsu-new--run-command args)))
 
 ;;; New Transient
 
