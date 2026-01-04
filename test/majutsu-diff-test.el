@@ -118,8 +118,6 @@
                        called-range range)))
               ((symbol-function 'majutsu-diff--dwim)
                (lambda () '(commit . "abc123")))
-              ((symbol-function 'majutsu-diff--transient-range-values)
-               (lambda () (list nil nil nil)))
               ((symbol-function 'transient-args)
                (lambda (&rest _) (list '("--context=9" "--stat") nil nil))))
       (call-interactively #'majutsu-diff-dwim)
