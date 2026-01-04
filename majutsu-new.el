@@ -19,13 +19,13 @@
 ;;; majutsu-new
 
 ;;;###autoload
-(defun majutsu-new (arg)
+(defun majutsu-new-dwim (arg)
   "Create a new changeset.
 Without prefix ARG, use the changeset at point (or `@` when unavailable).
 With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
-      (majutsu-new-transient)
+      (transient-setup 'majutsu-new)
     (let* ((parent (magit-section-value-if 'jj-commit))
            (parents (when parent (list parent)))
            (args (majutsu-new--build-args
@@ -105,31 +105,11 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-execute ()
   "Execute jj new using the current transient selections."
   (interactive)
-  (let* ((transient-args (transient-args 'majutsu-new-transient--internal))
+  (let* ((args (transient-args 'majutsu-new))
          (context-args (majutsu-new--build-revset-args))
-         (args (cons "new" (append transient-args context-args))))
+         (args (cons "new" (append args context-args))))
     (when (majutsu-new--run-command args)
       (majutsu-selection-session-end))))
-
-;;;###autoload
-(defun majutsu-new-transient ()
-  "Open the jj new transient."
-  (interactive)
-  (majutsu-selection-session-begin
-   '((:key parent
-      :label "[PARENT]"
-      :face (:background "dark orange" :foreground "black")
-      :type multi)
-     (:key after
-      :label "[AFTER]"
-      :face (:background "dark blue" :foreground "white")
-      :type multi)
-     (:key before
-      :label "[BEFORE]"
-      :face (:background "dark magenta" :foreground "white")
-      :type multi)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (majutsu-new-transient--internal))
 
 ;;; New Transient
 
@@ -182,7 +162,7 @@ PARENTS, AFTER, BEFORE default to transient state."
 Accepts keys :parents, :after, :before."
   (cons "new" (apply #'majutsu-new--build-revset-args args)))
 
-(transient-define-prefix majutsu-new-transient--internal ()
+(transient-define-prefix majutsu-new ()
   "Internal transient for jj new operations."
   :man-page "jj-new"
   :transient-non-suffix t
@@ -219,7 +199,23 @@ Accepts keys :parents, :after, :before."
      :description (lambda ()
                     (format "Create new change (%s)"
                             (majutsu-new--action-summary))))
-    ("q" "Quit" transient-quit-one)]])
+    ("q" "Quit" transient-quit-one)]]
+  (interactive)
+  (majutsu-selection-session-begin
+   '((:key parent
+      :label "[PARENT]"
+      :face (:background "dark orange" :foreground "black")
+      :type multi)
+     (:key after
+      :label "[AFTER]"
+      :face (:background "dark blue" :foreground "white")
+      :type multi)
+     (:key before
+      :label "[BEFORE]"
+      :face (:background "dark magenta" :foreground "white")
+      :type multi)))
+  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
+  (transient-setup 'majutsu-new))
 
 ;;; _
 (provide 'majutsu-new)
