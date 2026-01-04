@@ -18,12 +18,6 @@
 
 ;;; majutsu-bookmark
 
-;;;###autoload
-(defun majutsu-bookmark-transient ()
-  "Transient for jj bookmark operations."
-  (interactive)
-  (majutsu-bookmark-transient--internal))
-
 (defun majutsu-bookmarks-at-point (&optional bookmark-type)
   "Return a list of bookmark names at point."
   (let* ((rev (or (magit-section-value-if 'jj-commit) "@"))
@@ -225,7 +219,7 @@ misclassifying Majutsu candidates."
 
 ;;; Bookmark Transient
 
-(transient-define-prefix majutsu-bookmark-transient--internal ()
+(transient-define-prefix majutsu-bookmark ()
   "Internal transient for jj bookmark operations."
   :transient-non-suffix t
   ["Bookmark Operations"
@@ -253,7 +247,7 @@ misclassifying Majutsu candidates."
      :description "Delete (propagate)")
     ("f" "Forget bookmark" majutsu-bookmark-forget
      :description "Forget (local)")]
-   [("q" "Quit" transient-quit-one)]] )
+   [("q" "Quit" transient-quit-one)]])
 
 ;;; _
 (provide 'majutsu-bookmark)

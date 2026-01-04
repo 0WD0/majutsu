@@ -25,7 +25,7 @@ Without prefix ARG, use the changeset at point (or `@` when unavailable).
 With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
-      (transient-setup 'majutsu-new)
+      (call-interactively #'majutsu-new)
     (let* ((parent (magit-section-value-if 'jj-commit))
            (parents (when parent (list parent)))
            (args (majutsu-new--build-args
@@ -169,6 +169,7 @@ Accepts keys :parents, :after, :before."
   [:description majutsu-new--description
    :class transient-columns
    ["Selections"
+    ;; TODO: 这里的参数管理需要重构，和 diff 的对齐，才能引入 incompatible 设置
     ("p" "Toggle parent" majutsu-new-toggle-parent
      :description (lambda ()
                     (format "Toggle parent (%d selected)"
