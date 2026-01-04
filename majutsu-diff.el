@@ -244,13 +244,19 @@ unless `--tool' is used, in which case jj rejects `--git'."
   "Convert RANGE (see `majutsu-buffer-diff-range') to jj CLI arguments."
   (pcase (plist-get range :type)
     ('revisions
-     (when-let* ((revset (plist-get range :revisions)))
-       (list "-r" revset)))
+     (when-let* ((revsets (plist-get range :revisions)))
+       (let ((revsets (cond
+                       ((stringp revsets) (list revsets))
+                       ((listp revsets) revsets)
+                       (t nil))))
+         (mapcar (lambda (revset)
+                   (concat "--revisions=" revset))
+                 (seq-remove #'null revsets)))))
     ('from-to
      (append (when-let* ((from (plist-get range :from)))
-               (list "--from" from))
+               (list (concat "--from=" from)))
              (when-let* ((to (plist-get range :to)))
-               (list "--to" to))))
+               (list (concat "--to=" to)))))
     ('nil nil)
     (_
      (error "Invalid diff range: %S" range))))
@@ -280,11 +286,81 @@ unless `--tool' is used, in which case jj rejects `--git'."
       (transient-get-value)
     (transient-args 'majutsu-diff-transient--internal)))
 
-(defun majutsu-diff--args-option (args option)
-  "Return OPTION's value from ARGS.
+(defun majutsu-diff--args-get-option-value (args option)
+  "Return OPTION's value from ARGS when OPTION is a separate-arg option.
 
-ARGS may contain cons cells of the form (OPTION . VALUE)."
-  (cdr (assoc option args)))
+ARGS may contain string arguments, or cons cells of the form (OPTION . VALUE)."
+  (catch 'found
+    (let ((rest args))
+      (while rest
+        (let ((arg (pop rest)))
+          (cond
+           ((and (consp arg) (equal (car arg) option))
+            (throw 'found (cdr arg)))
+           ((and (stringp arg) (equal arg option))
+            (when (and rest (stringp (car rest)))
+              (throw 'found (pop rest))))))))
+    nil))
+
+(defun majutsu-diff--args-get-equal-value (args prefix)
+  "Return the value from ARGS of the first argument starting with PREFIX.
+
+PREFIX should include the trailing \"=\", e.g. \"--from=\"."
+  (and-let* ((arg (seq-find (lambda (a)
+                              (and (stringp a)
+                                   (string-prefix-p prefix a)))
+                            args)))
+    (substring arg (length prefix))))
+
+(defun majutsu-diff--args-get-equal-values (args prefix)
+  "Return all values from ARGS whose string arguments start with PREFIX."
+  (let (out)
+    (dolist (arg args (nreverse out))
+      (when (and (stringp arg)
+                 (string-prefix-p prefix arg))
+        (push (substring arg (length prefix)) out)))))
+
+(defun majutsu-diff--args-revsets (args)
+  "Return a list of revset strings selected by revisions arguments in ARGS.
+
+This supports both modern \"--revisions=REVSET\" arguments as well as
+legacy \"-r REVSET\" style pairs."
+  (let ((rest args)
+        out)
+    (while rest
+      (let ((arg (pop rest)))
+        (cond
+         ;; Cons cell representation: (OPTION . VALUE)
+         ((and (consp arg) (stringp (car arg)))
+          (pcase (car arg)
+            ((or "-r" "--revisions" "--revision")
+             (let ((val (cdr arg)))
+               (cond
+                ((stringp val) (push val out))
+                ((listp val) (setq out (append (reverse val) out))))))))
+         ;; Equals form: --revisions=REVSET / --revision=REVSET
+         ((and (stringp arg) (string-prefix-p "--revisions=" arg))
+          (push (substring arg (length "--revisions=")) out))
+         ((and (stringp arg) (string-prefix-p "--revision=" arg))
+          (push (substring arg (length "--revision=")) out))
+         ;; Split form: -r REVSET / --revisions REVSET / --revision REVSET
+         ((and (stringp arg) (member arg '("-r" "--revisions" "--revision")))
+          (when (and rest (stringp (car rest)))
+            (push (pop rest) out)))
+         ;; Concatenated short form: -rREVSET
+         ((and (stringp arg) (string-prefix-p "-r" arg) (> (length arg) 2))
+          (push (substring arg 2) out)))))
+    (nreverse out)))
+
+(defun majutsu-diff--args-from (args)
+  "Return the --from revset from ARGS, if any."
+  (or (majutsu-diff--args-get-equal-value args "--from=")
+      (majutsu-diff--args-get-option-value args "--from")))
+
+(defun majutsu-diff--args-to (args)
+  "Return the --to revset from ARGS, if any."
+  (or (majutsu-diff--args-get-equal-value args "--to=")
+      (majutsu-diff--args-get-option-value args "--to")))
 
 (defun majutsu-diff--transient-original-buffer ()
   (and (buffer-live-p transient--original-buffer)
@@ -309,6 +385,17 @@ ARGS may contain cons cells of the form (OPTION . VALUE)."
             (majutsu-selection-clear key)
             (majutsu-selection-select key (list value)))
         (majutsu-selection-clear key))))
+  (when (and value
+             (not majutsu-diff--infix-syncing)
+             (memq (oref obj selection-key) '(from to))
+             (consp transient--suffixes))
+    ;; `jj diff' does not allow combining --revisions with --from/--to.  Don't
+    ;; rely on `:incompatible' here because `--revisions' is multi-value.
+    (let ((majutsu-diff--infix-syncing t))
+      (dolist (other transient--suffixes)
+        (when (and (cl-typep other 'majutsu-diff--revisions-option)
+                   (slot-boundp other 'value))
+          (transient-infix-set other nil)))))
   (when (and (not majutsu-diff--infix-syncing)
              (consp transient--suffixes)
              (slot-boundp obj 'argument)
@@ -327,6 +414,15 @@ ARGS may contain cons cells of the form (OPTION . VALUE)."
 
 (cl-defmethod transient-infix-set ((_obj majutsu-diff--revisions-option) value)
   (cl-call-next-method)
+  (when (and value
+             (not majutsu-diff--infix-syncing)
+             (consp transient--suffixes))
+    ;; `jj diff' does not allow combining --revisions with --from/--to.
+    (let ((majutsu-diff--infix-syncing t))
+      (dolist (other transient--suffixes)
+        (when (and (cl-typep other 'majutsu-diff--range-option)
+                   (memq (oref other selection-key) '(from to)))
+          (transient-infix-set other nil)))))
   (when (and value (majutsu-selection--session-buffer))
     (majutsu-selection-clear 'from)
     (majutsu-selection-clear 'to)))
@@ -360,13 +456,19 @@ ARGS may contain cons cells of the form (OPTION . VALUE)."
     (oset obj value
           (append (pcase (plist-get range :type)
                     ('revisions
-                     (when-let* ((revset (plist-get range :revisions)))
-                       (list (cons "-r" revset))))
+                     (when-let* ((revsets (plist-get range :revisions)))
+                       (let ((revsets (cond
+                                       ((stringp revsets) (list revsets))
+                                       ((listp revsets) revsets)
+                                       (t nil))))
+                         (mapcar (lambda (revset)
+                                   (concat "--revisions=" revset))
+                                 (seq-remove #'null revsets)))))
                     ('from-to
                      (append (when-let* ((from (plist-get range :from)))
-                               (list (cons "--from" from)))
+                               (list (concat "--from=" from)))
                              (when-let* ((to (plist-get range :to)))
-                               (list (cons "--to" to)))))
+                               (list (concat "--to=" to)))))
                     (_ nil))
                   args))))
 
@@ -1135,13 +1237,13 @@ With prefix STYLE, cycle between `all' and `t'."
                 (_ "@")))
          (formatting-args (or (majutsu-diff--remembered-args raw)
                               (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (revset (majutsu-diff--args-option raw "-r"))
-         (from (or (majutsu-diff--args-option raw "--from")
+         (revsets (majutsu-diff--args-revsets raw))
+         (from (or (majutsu-diff--args-from raw)
                    (car (majutsu-selection-values 'from))))
-         (to (or (majutsu-diff--args-option raw "--to")
+         (to (or (majutsu-diff--args-to raw)
                  (car (majutsu-selection-values 'to))))
          (range (cond
-                 (revset (list :type 'revisions :revisions revset))
+                 (revsets (list :type 'revisions :revisions revsets))
                  ((or from to) (list :type 'from-to :from from :to to))
                  (t (list :type 'revisions :revisions rev)))))
     (majutsu-diff-setup-buffer formatting-args range files)
@@ -1151,7 +1253,7 @@ With prefix STYLE, cycle between `all' and `t'."
 (defun majutsu-diff-range (revset &optional args files)
   "Show changes for REVSET.
 
-REVSET is passed to jj diff using `-r'."
+REVSET is passed to jj diff using `--revisions='."
   (interactive (list (majutsu-read-revset "Diff revset")
                      (majutsu-diff-arguments)
                      (majutsu-diff-filesets)))
@@ -1181,20 +1283,20 @@ REVSET is passed to jj diff using `-r'."
   "Internal transient for jj diff."
   :man-page "jj-diff"
   :class 'majutsu-diff-prefix
-  :incompatible '(("-r" "--from=")
-                  ("-r" "--to="))
+  :incompatible '(("--revisions=" "--from=")
+                  ("--revisions=" "--to="))
   :transient-non-suffix t
   [:description
    (lambda ()
      (let* ((args (majutsu-diff--transient-get-value))
-            (rev (majutsu-diff--args-option args "-r"))
-            (from (or (majutsu-diff--args-option args "--from")
+            (revsets (majutsu-diff--args-revsets args))
+            (from (or (majutsu-diff--args-from args)
                       (car (majutsu-selection-values 'from))))
-            (to (or (majutsu-diff--args-option args "--to")
+            (to (or (majutsu-diff--args-to args)
                     (car (majutsu-selection-values 'to)))))
        (concat "JJ Diff"
-               (when rev
-                 (format " | -r: %s" rev))
+               (when revsets
+                 (format " | -r: %s" (string-join revsets ", ")))
                (when from
                  (format " | From: %s" from))
                (when to
@@ -1241,8 +1343,10 @@ REVSET is passed to jj diff using `-r'."
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
   :class 'majutsu-diff--revisions-option
-  :argument "-r"
-  :reader #'majutsu-diff--transient-read-revset)
+  :key "-r"
+  :argument "--revisions="
+  :multi-value 'repeat
+  :prompt "Revisions: ")
 
 (transient-define-argument majutsu-diff:--from ()
   :description "From"
@@ -1302,13 +1406,13 @@ REVSET is passed to jj diff using `-r'."
   (interactive)
   (let* ((raw (transient-args 'majutsu-diff-transient--internal))
          (args (majutsu-diff--remembered-args raw))
-         (revset (majutsu-diff--args-option raw "-r"))
-         (from (or (majutsu-diff--args-option raw "--from")
+         (revsets (majutsu-diff--args-revsets raw))
+         (from (or (majutsu-diff--args-from raw)
                    (car (majutsu-selection-values 'from))))
-         (to (or (majutsu-diff--args-option raw "--to")
+         (to (or (majutsu-diff--args-to raw)
                  (car (majutsu-selection-values 'to))))
          (range (cond
-                 (revset (list :type 'revisions :revisions revset))
+                 (revsets (list :type 'revisions :revisions revsets))
                  ((or from to) (list :type 'from-to :from from :to to))
                  (t nil))))
     (cond
