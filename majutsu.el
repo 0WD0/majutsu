@@ -58,7 +58,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("s" "Squash" majutsu-squash-transient)]
    ["Advanced"
     ("r" "Rebase" majutsu-rebase-transient)
-    ("b" "Bookmarks" majutsu-bookmark-transient)
+    ("b" "Bookmarks" majutsu-bookmark)
     ("Z" "Workspaces" majutsu-workspace-transient)
     ("G" "Git" majutsu-git-transient)]
    ["Diff & Fix"

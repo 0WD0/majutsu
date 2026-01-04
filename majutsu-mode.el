@@ -43,7 +43,7 @@
   "d"   'majutsu-diff
   "D"   'majutsu-diff-dwim
   "r"   'majutsu-rebase-transient
-  "b"   'majutsu-bookmark-transient
+  "b"   'majutsu-bookmark
   "y"   'majutsu-duplicate-transient
   "Y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
