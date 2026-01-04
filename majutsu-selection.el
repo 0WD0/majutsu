@@ -76,31 +76,30 @@ Used to avoid scanning all buffers on transient exit.")
 (defun majutsu-selection--transient-setup-buffer ()
   "Render selection overlays when a transient menu is being setup."
   (when-let* ((session (transient-scope)))
-    (majutsu-selection--track-overlay-buffer
-     (majutsu-selection-session-buffer session))
+    (when-let* ((buf (majutsu-selection-session-buffer session))
+                (_ (buffer-live-p buf)))
+      ;; Avoid leaking old overlays when switching between nested transients.
+      ;; We can't reliably access scope in exit hooks, so clean up here.
+      (majutsu-selection--track-overlay-buffer buf)
+      (with-current-buffer buf
+        (remove-overlays (point-min) (point-max) 'majutsu-selection t)))
     (majutsu-selection-render session)))
 
-(defun majutsu-selection--transient-exit ()
-  "Remove selection overlays when exiting a transient menu.
+(defun majutsu-selection--transient-post-exit ()
+  "Remove selection overlays when leaving the transient stack.
 
-This hook runs even when switching to another transient (nested or
-replacement), so we only remove overlays here and keep the selection
-values intact.  When returning to a stacked transient, overlays are
-re-rendered via `transient-setup-buffer-hook'."
-  ;; `transient-exit-hook' runs after `transient--pre-exit', which clears
-  ;; internal variables like `transient--prefix' and `transient--original-buffer'.
-  ;; Also, when the user quits a transient, no state is exported, so we
-  ;; cannot rely on transient scope being available here.
-  ;;
-  ;; Instead, just remove overlays by property; the active/new transient
-  ;; (if any) will re-render its overlays in `transient-setup-buffer-hook'.
+We use `transient-post-exit-hook' (not `transient-exit-hook') because
+the latter also runs when another transient becomes active at the same
+time (nested/replaced), at which point we might accidentally remove the
+new transient's overlays."
   (maphash
    (lambda (buf _)
      (if (buffer-live-p buf)
          (with-current-buffer buf
            (remove-overlays (point-min) (point-max) 'majutsu-selection t))
        (remhash buf majutsu-selection--overlay-buffers)))
-   majutsu-selection--overlay-buffers))
+   majutsu-selection--overlay-buffers)
+  (clrhash majutsu-selection--overlay-buffers))
 
 (defun majutsu-selection-session-end ()
   "End the active transient selection session and remove its overlays.
@@ -108,12 +107,8 @@ re-rendered via `transient-setup-buffer-hook'."
 This clears selection values and disassociates the session from the
 current transient's scope."
   (interactive)
-  (when-let* ((prefix (or (and (boundp 'transient-current-prefix)
-                               transient-current-prefix)
-                          (and (boundp 'transient--prefix) transient--prefix)
-                          (transient-active-prefix)))
-              (session (and (majutsu-selection-session-p (oref prefix scope))
-                            (oref prefix scope))))
+  (when-let* ((prefix (transient-active-prefix))
+              (session (transient-scope)))
     (majutsu-selection--delete-all-overlays session)
     (majutsu-selection--clear-all-values session)
     (oset prefix scope nil)))
@@ -340,7 +335,7 @@ commit(s) at point or in the active region."
       (majutsu-selection-toggle key values))))
 
 (add-hook 'transient-setup-buffer-hook #'majutsu-selection--transient-setup-buffer)
-(add-hook 'transient-exit-hook #'majutsu-selection--transient-exit)
+(add-hook 'transient-post-exit-hook #'majutsu-selection--transient-post-exit)
 
 ;;; _
 (provide 'majutsu-selection)
