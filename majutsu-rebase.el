@@ -58,10 +58,10 @@
          (t "-o"))))
 
 ;;;###autoload
-(transient-define-suffix majutsu-rebase (args)
+(defun majutsu-rebase-execute (args)
   "Execute rebase with selected source and destinations.
 ARGS are passed from the transient."
-  (interactive (list (transient-args 'majutsu-rebase-transient--internal)))
+  (interactive (list (transient-args 'majutsu-rebase)))
   (if (and (> (majutsu-selection-count 'source) 0)
            (> (majutsu-selection-count 'destination) 0))
       (let* ((source-revs (majutsu-selection-values 'source))
@@ -96,22 +96,6 @@ ARGS are passed from the transient."
               (majutsu-selection-session-end)))))
     (majutsu--message-with-log "Please select source (s) and at least one destination (d) first")))
 
-;;;###autoload
-(defun majutsu-rebase-transient ()
-  "Transient for jj rebase operations."
-  (interactive)
-  (majutsu-selection-session-begin
-   '((:key source
-      :label "[SOURCE]"
-      :face (:background "dark green" :foreground "white")
-      :type multi)
-     (:key destination
-      :label "[DEST]"
-      :face (:background "dark blue" :foreground "white")
-      :type multi)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (majutsu-rebase-transient--internal))
-
 ;;; Rebase Transient
 
 (defvar-local majutsu-rebase-source-type "-s"
@@ -130,7 +114,7 @@ ARGS are passed from the transient."
   (when-let* ((values (majutsu-selection-values 'source)))
     (string-join values ", ")))
 
-(transient-define-prefix majutsu-rebase-transient--internal ()
+(transient-define-prefix majutsu-rebase ()
   "Internal transient for jj rebase operations."
   :man-page "jj-rebase"
   :transient-non-suffix t
@@ -169,7 +153,7 @@ ARGS are passed from the transient."
     ("-kd" "Keep divergent" "--keep-divergent")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("r" "Execute rebase" majutsu-rebase
+    ("r" "Execute rebase" majutsu-rebase-execute
      :description (lambda ()
                     (if (and (> (majutsu-selection-count 'source) 0)
                              (> (majutsu-selection-count 'destination) 0))
@@ -177,7 +161,19 @@ ARGS are passed from the transient."
                                 (majutsu-rebase--source-display)
                                 (majutsu-rebase--destination-display))
                       "Execute rebase (select source & destinations first)")))
-    ("q" "Quit" transient-quit-one)]])
+    ("q" "Quit" transient-quit-one)]]
+  (interactive)
+  (majutsu-selection-session-begin
+   '((:key source
+      :label "[SOURCE]"
+      :face (:background "dark green" :foreground "white")
+      :type multi)
+     (:key destination
+      :label "[DEST]"
+      :face (:background "dark blue" :foreground "white")
+      :type multi)))
+  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
+  (transient-setup 'majutsu-rebase))
 
 ;;; _
 (provide 'majutsu-rebase)

@@ -38,7 +38,7 @@
   "s"   'majutsu-squash
   "d"   'majutsu-diff
   "D"   'majutsu-diff-dwim
-  "r"   'majutsu-rebase-transient
+  "r"   'majutsu-rebase
   "b"   'majutsu-bookmark
   "y"   'majutsu-duplicate-transient
   "Y"   'majutsu-duplicate
