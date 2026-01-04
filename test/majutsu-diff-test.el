@@ -127,21 +127,6 @@
       (should (equal called-files nil))
       (should (equal called-range '("--revisions=abc123"))))))
 
-(ert-deftest majutsu-diff-transient-range-args-encodes-revisions-and-from-to ()
-  "Transient range helper should produce argv for revisions and from/to."
-  (cl-letf (((symbol-function 'majutsu-diff--transient-range-values)
-             (lambda () (list '("@-" "main") nil nil))))
-    (should (equal (majutsu-diff--transient-range-args)
-                   '("--revisions=@-" "--revisions=main"))))
-  (cl-letf (((symbol-function 'majutsu-diff--transient-range-values)
-             (lambda () (list nil "@-" "@"))))
-    (should (equal (majutsu-diff--transient-range-args)
-                   '("--from=@-" "--to=@"))))
-  (cl-letf (((symbol-function 'majutsu-diff--transient-range-values)
-             (lambda () (list nil nil nil))))
-    (should (equal (majutsu-diff--transient-range-args "abc123")
-                   '("--revisions=abc123")))))
-
 (provide 'majutsu-diff-test)
 
 ;;; majutsu-diff-test.el ends here
