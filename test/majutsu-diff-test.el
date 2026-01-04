@@ -125,6 +125,26 @@
       (should (equal called-files nil))
       (should (equal called-range '(:type revisions :revisions "abc123"))))))
 
+(ert-deftest majutsu-diff-range-arguments-encode-revisions-and-from-to ()
+  "Range arguments should produce jj-friendly CLI args."
+  (should (equal (majutsu-diff--range-arguments nil) nil))
+  (should (equal (majutsu-diff--range-arguments '(:type nil)) nil))
+  (should (equal (majutsu-diff--range-arguments '(:type revisions :revisions "abc123"))
+                 '("--revisions=abc123")))
+  (should (equal (majutsu-diff--range-arguments '(:type revisions :revisions ("@-" "main")))
+                 '("--revisions=@-" "--revisions=main")))
+  (should (equal (majutsu-diff--range-arguments '(:type from-to :from "@-" :to "@"))
+                 '("--from=@-" "--to=@"))))
+
+(ert-deftest majutsu-diff-args-revsets-extracts-revisions ()
+  "Revsets should be extracted from various transient argument encodings."
+  (should (equal (majutsu-diff--args-revsets '("--revisions=@-" "--revisions=main"))
+                 '("@-" "main")))
+  (should (equal (majutsu-diff--args-revsets '("-r" "@-" "-rmain" "--revisions" "dev"))
+                 '("@-" "main" "dev")))
+  (should (equal (majutsu-diff--args-revsets '(("-r" . "@-") ("--revisions" . "main")))
+                 '("@-" "main"))))
+
 (provide 'majutsu-diff-test)
 
 ;;; majutsu-diff-test.el ends here
