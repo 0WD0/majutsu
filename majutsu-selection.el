@@ -29,6 +29,8 @@
   categories
   overlays)
 
+;; FIXME: 这种处理方式是不合理的，我们有可能有两层 transient，上层下层
+;; 都有 selection session，它们甚至可能在两个不同的 buffer 中。
 (defvar majutsu-selection--session nil
   "Active transient selection session.
 

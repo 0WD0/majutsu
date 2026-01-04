@@ -1113,18 +1113,14 @@ With prefix STYLE, cycle between `all' and `t'."
     (majutsu-selection-session-end)))
 
 ;;;###autoload
-(defun majutsu-diff-range (revset &optional args files)
-  "Show changes for REVSET.
+(defun majutsu-diff-revset (revset &optional args _range filesets)
+  "Show changes for a REVSET.
 
 REVSET is passed to jj diff using `--revisions='."
-  (interactive
-   (let ((revset (majutsu-read-revset "Diff revset")))
-     (pcase-let ((`(,diff-args ,_range ,filesets) (majutsu-diff-arguments)))
-       (list revset diff-args filesets))))
-  (let* ((formatting-args (or (majutsu-diff--remembered-args (or args (car (majutsu-diff-arguments))))
-                              (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (range (list (concat "--revisions=" (majutsu--normalize-id-value revset)))))
-    (majutsu-diff-setup-buffer formatting-args range files)))
+  (interactive (cons (majutsu-read-revset "Diff revset")
+                     (majutsu-diff-arguments)))
+  (let ((range (list (concat "--revisions=" (majutsu--normalize-id-value revset)))))
+    (majutsu-diff-setup-buffer args range filesets)))
 
 ;; TODO: implement more DWIM cases
 (defun majutsu-diff--dwim ()
