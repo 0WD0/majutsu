@@ -151,7 +151,6 @@ of the selected frame."
                        (buffer-list)))
         (seq-find pred (buffer-list)))))
 
-;; FIXME: 不应该存在
 (defun majutsu-diff--remembered-args (args)
   "Return the subset of ARGS that should be remembered by diff buffers.
 
@@ -1102,25 +1101,15 @@ With prefix STYLE, cycle between `all' and `t'."
         (majutsu-diff--update-hunk-refinement)))))
 
 ;;;###autoload
-(defun majutsu-diff-dwim (&optional args files)
+(defun majutsu-diff-dwim (&optional args range filesets)
   "Show changes for the thing at point."
-  (interactive
-   (pcase-let ((`(,diff-args ,_range ,filesets) (majutsu-diff-arguments)))
-     (list diff-args filesets)))
-  (let* ((current (majutsu-diff-arguments))
-         (raw (or args (car current)))
-         (rev (pcase (majutsu-diff--dwim)
+  (interactive (majutsu-diff-arguments))
+  (let* ((rev (pcase (majutsu-diff--dwim)
                 (`(commit . ,rev) rev)
                 (_ "@")))
-         (formatting-args (or (majutsu-diff--remembered-args raw)
-                              (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (range (cond
-                 ((eq transient-current-command 'majutsu-diff)
-                  (or (cadr current)
-                      (list (concat "--revisions=" (majutsu--normalize-id-value rev)))))
-                 (t
-                  (list (concat "--revisions=" (majutsu--normalize-id-value rev)))))))
-    (majutsu-diff-setup-buffer formatting-args range files)
+         (range (or range
+                    (list (concat "--revisions=" (majutsu--normalize-id-value rev))))))
+    (majutsu-diff-setup-buffer args range filesets)
     (majutsu-selection-session-end)))
 
 ;;;###autoload
