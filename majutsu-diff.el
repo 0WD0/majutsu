@@ -175,27 +175,20 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
             (push arg out))))))
     (nreverse out)))
 
-;; FIXME: 不应该存在，应该直接借鉴 formatting args 的取用逻辑
-(defun majutsu-diff--transient-range-args (&optional default-revset)
-  "Return `jj diff' range argv derived from the current diff transient.
+(defconst majutsu-diff--range-arg-prefixes
+  '("--revisions=" "--from=" "--to=")
+  "Prefixes for arguments that restrict the diff range.")
 
-When DEFAULT-REVSET is non-nil, use it as fallback when no range inputs
-are present."
-  (pcase-let* ((`(,revsets ,from ,to) (majutsu-diff--transient-range-values))
-               (revsets (cond
-                         ((null revsets) nil)
-                         ((stringp revsets) (list revsets))
-                         ((listp revsets) revsets)
-                         (t nil)))
-               (revsets (seq-remove #'null (mapcar #'majutsu--normalize-id-value revsets)))
-               (from (majutsu--normalize-id-value from))
-               (to (majutsu--normalize-id-value to)))
-    (cond
-     (revsets (mapcar (lambda (revset) (concat "--revisions=" revset)) revsets))
-     ((or from to) (append (and from (list (concat "--from=" from)))
-                           (and to (list (concat "--to=" to)))))
-     (default-revset (list (concat "--revisions=" default-revset)))
-     (t nil))))
+(defun majutsu-diff--range-arg-p (arg)
+  "Return non-nil if ARG is a `jj diff' range argument."
+  (and (stringp arg)
+       (seq-some (lambda (prefix) (string-prefix-p prefix arg))
+                 majutsu-diff--range-arg-prefixes)))
+
+(defun majutsu-diff--extract-range-args (args)
+  "Return the subset of ARGS that restrict `jj diff' range."
+  (mapcar #'substring-no-properties
+          (seq-filter #'majutsu-diff--range-arg-p args)))
 
 (defun majutsu-diff--transient-original-buffer ()
   (and (buffer-live-p transient--original-buffer)
@@ -274,6 +267,14 @@ are present."
                           (t (format "%s" cur))))))
       (if (equal cur id) nil id))))
 
+(cl-defmethod transient-infix-value ((_obj majutsu-diff--toggle-range-option))
+  "Toggle-at-point range infixes only set selection/state; they don't emit argv.
+
+The corresponding `--from=' / `--to=' infixes are kept in sync by
+`transient-infix-set', so emitting argv here would duplicate range
+arguments (e.g. two `--from=' entries)."
+  nil)
+
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
   (pcase-let ((`(,args ,range ,_filesets)
                (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
@@ -288,7 +289,7 @@ diff range arguments derived from `-r' or `--from/--to'.  FILESETS is a
 list of filesets (path filters)."
   (let* ((raw (cl-call-next-method obj))
          (args (majutsu-diff--remembered-args raw))
-         (range (majutsu-diff--transient-range-args))
+         (range (majutsu-diff--extract-range-args raw))
          (mode (or (oref obj major-mode) major-mode))
          (filesets
           (cond
@@ -371,35 +372,6 @@ list of filesets (path filters)."
               (or (majutsu-diff--remembered-args args)
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
   (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
-
-;; FIXME: 不应该存在，需要先重构 `majutsu-diff--transient-range-values'
-(defun majutsu-diff--transient-range-suffixes ()
-  "Return suffix objects for the diff transient."
-  (cond
-   ((and (boundp 'transient--suffixes) (consp transient--suffixes))
-    transient--suffixes)
-   ((and (boundp 'transient-current-suffixes) (consp transient-current-suffixes))
-    transient-current-suffixes)
-   (t
-    (transient-suffixes 'majutsu-diff))))
-
-;; FIXME: 不应该存在，需要先重构 `majutsu-diff--transient-range-args'
-(defun majutsu-diff--transient-range-values ()
-  "Return (REVSETS FROM TO) from the current diff transient."
-  (let (revsets from to)
-    (dolist (obj (majutsu-diff--transient-range-suffixes))
-      (cond
-       ((cl-typep obj 'majutsu-diff--revisions-option)
-        (when (slot-boundp obj 'value)
-          (setq revsets (oref obj value))))
-       ((and (cl-typep obj 'majutsu-diff--range-option)
-             (memq (oref obj selection-key) '(from to))
-             (slot-boundp obj 'value)
-             (oref obj value))
-        (pcase (oref obj selection-key)
-          ('from (setq from (oref obj value)))
-          ('to (setq to (oref obj value)))))))
-    (list revsets from to)))
 
 (defun majutsu-diff-arguments (&optional mode)
   "Return the current diff arguments.
@@ -1135,15 +1107,19 @@ With prefix STYLE, cycle between `all' and `t'."
   (interactive
    (pcase-let ((`(,diff-args ,_range ,filesets) (majutsu-diff-arguments)))
      (list diff-args filesets)))
-  (let* ((raw (or args (car (majutsu-diff-arguments))))
+  (let* ((current (majutsu-diff-arguments))
+         (raw (or args (car current)))
          (rev (pcase (majutsu-diff--dwim)
                 (`(commit . ,rev) rev)
                 (_ "@")))
          (formatting-args (or (majutsu-diff--remembered-args raw)
                               (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (range (if (eq transient-current-command 'majutsu-diff)
-                    (majutsu-diff--transient-range-args rev)
-                  (list (concat "--revisions=" (majutsu--normalize-id-value rev))))))
+         (range (cond
+                 ((eq transient-current-command 'majutsu-diff)
+                  (or (cadr current)
+                      (list (concat "--revisions=" (majutsu--normalize-id-value rev)))))
+                 (t
+                  (list (concat "--revisions=" (majutsu--normalize-id-value rev)))))))
     (majutsu-diff-setup-buffer formatting-args range files)
     (majutsu-selection-session-end)))
 
