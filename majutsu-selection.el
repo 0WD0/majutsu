@@ -13,9 +13,10 @@
 ;;; Code:
 
 (require 'magit-section)
+(require 'subr-x)
 (require 'transient)
 
-(declare-function majutsu-selection-render "majutsu-selection" (&optional session))
+(declare-function magit-root-section "magit-section")
 
 (cl-defstruct (majutsu-selection-category
                (:constructor majutsu-selection-category-create))
@@ -39,6 +40,9 @@
 
 Used to avoid scanning all buffers on transient exit.")
 
+(defvar-local majutsu-selection--active-session nil
+  "Selection session whose overlays are currently rendered in this buffer.")
+
 (defun majutsu-selection--track-overlay-buffer (buffer)
   (when (buffer-live-p buffer)
     (puthash buffer t majutsu-selection--overlay-buffers)))
@@ -46,32 +50,17 @@ Used to avoid scanning all buffers on transient exit.")
 (defun majutsu-selection--cleanup-overlays-in-buffer (buffer)
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (remove-overlays (point-min) (point-max) 'majutsu-selection t))))
-
-(defun majutsu-selection--session-buffer ()
-  "Return the buffer that owns the active selection session, if any."
-  (when-let* ((session (transient-scope)))
-    (majutsu-selection-session-buffer session)))
+      (remove-overlays (point-min) (point-max) 'majutsu-selection t)
+      (setq majutsu-selection--active-session nil))))
 
 (defmacro majutsu-selection--with-session-buffer (session &rest body)
   "Run BODY in SESSION's buffer."
   (declare (indent 1) (debug (form &rest form)))
   (let ((buf (make-symbol "buf")))
-    `(when-let* ((,buf (and ,session
-                            (majutsu-selection-session-buffer ,session)
-                            (buffer-live-p (majutsu-selection-session-buffer ,session))
-                            (majutsu-selection-session-buffer ,session))))
+    `(when-let* ((,buf (and ,session (majutsu-selection-session-buffer ,session)))
+                 ((buffer-live-p ,buf)))
        (with-current-buffer ,buf
          ,@body))))
-
-(defun majutsu-selection--delete-all-overlays (session)
-  (let ((overlays (and session (majutsu-selection-session-overlays session))))
-    (when overlays
-      (maphash (lambda (_id ov)
-                 (when (overlayp ov)
-                   (delete-overlay ov)))
-               overlays)
-      (clrhash overlays))))
 
 (defun majutsu-selection--clear-all-values (session)
   (when session
@@ -82,13 +71,9 @@ Used to avoid scanning all buffers on transient exit.")
   "Render selection overlays when a transient menu is being setup."
   (let* ((session (transient-scope))
          (buf (and session (majutsu-selection-session-buffer session))))
-    ;; Ideal behavior: when a transient is popped/replaced (i.e. "out of
-    ;; the transient stack"), clear overlays belonging to that transient.
-    ;;
-    ;; We can't reliably access scope in `transient-exit-hook' because the
-    ;; exiting prefix object is cleared before that hook runs.  Instead,
-    ;; clear overlays from any buffers we've previously touched here, then
-    ;; render overlays for the new active transient (if it has a session).
+    ;; When switching between transients, clear overlays belonging to the
+    ;; previous one.  We avoid `transient-exit-hook' because the exiting
+    ;; prefix is cleared before that hook runs.
     (maphash
      (lambda (old-buf _)
        (when (and (buffer-live-p old-buf)
@@ -99,8 +84,11 @@ Used to avoid scanning all buffers on transient exit.")
     (cond
      ((and buf (buffer-live-p buf))
       (majutsu-selection--track-overlay-buffer buf)
-      (majutsu-selection--cleanup-overlays-in-buffer buf)
-      (majutsu-selection-render session))
+      (with-current-buffer buf
+        (unless (eq majutsu-selection--active-session session)
+          (majutsu-selection--cleanup-overlays-in-buffer buf)
+          (setq majutsu-selection--active-session session)
+          (majutsu-selection-render session))))
      (t
       ;; New transient doesn't use selection; clear leftovers.
       (maphash (lambda (old-buf _)
@@ -123,24 +111,13 @@ new transient's overlays."
    majutsu-selection--overlay-buffers)
   (clrhash majutsu-selection--overlay-buffers))
 
-(defun majutsu-selection-session-end ()
-  "End the active transient selection session and remove its overlays.
-
-This clears selection values and disassociates the session from the
-current transient's scope."
-  (interactive)
-  (when-let* ((prefix (transient-prefix-object))
-              (session (oref prefix scope)))
-    (majutsu-selection--delete-all-overlays session)
-    (majutsu-selection--clear-all-values session)
-    (oset prefix scope nil)))
-
 (defun majutsu-selection-session-end-if-owner ()
   "Remove selection overlays in the current buffer.
 
 Intended for `kill-buffer-hook'."
   (remhash (current-buffer) majutsu-selection--overlay-buffers)
-  (remove-overlays (point-min) (point-max) 'majutsu-selection t))
+  (remove-overlays (point-min) (point-max) 'majutsu-selection t)
+  (setq majutsu-selection--active-session nil))
 
 (defun majutsu-selection--targets-default ()
   "Default selection target's value."
@@ -155,36 +132,36 @@ Intended for `kill-buffer-hook'."
                         (append `((,type . ,value)) (magit-section-ident root)))))
     (majutsu-selection--overlay-range section)))
 
-(defun majutsu-selection-find-revision-section (id &optional root)
-  "Return the closest `jj-commit' section matching ID.
+(defun majutsu-selection-find-revision-section (value &optional root)
+  "Return the closest section matching VALUE.
 
-This is intended for Majutsu log buffers but does not depend on a
-specific section root layout.  When ROOT is non-nil, traverse from that
-section, otherwise from `magit-root-section'."
+When ROOT is non-nil, traverse from that section, otherwise from
+`magit-root-section'."
   (let* ((root (or root (ignore-errors (magit-root-section))))
          (anchor (or (and-let* ((cur (magit-current-section)))
                        (oref cur start))
                      (point)))
-         (id (and id (substring-no-properties id)))
+         (type (oref (magit-current-section) type))
+         (exact (and root value
+                     (ignore-errors
+                       (magit-get-section
+                        (append `((,type . ,value)) (magit-section-ident root))))))
          best
          best-dist)
-    (when (and root id (stringp id) (not (string-empty-p id)))
-      (magit-map-sections
-       (lambda (section)
-         (when (magit-section-match 'jj-commit section)
-           (let ((value (oref section value)))
-             (when (stringp value)
-               (setq value (substring-no-properties value)))
-             (when (and value (stringp value)
-                        (or (string-prefix-p id value)
-                            (string-prefix-p value id)))
-               (let* ((pos (oref section start))
-                      (dist (abs (- pos anchor))))
-                 (when (or (null best-dist) (< dist best-dist))
-                   (setq best section)
-                   (setq best-dist dist)))))))
-       root))
-    best))
+    (or exact
+        (progn
+          (magit-map-sections
+           (##let ((value (magit-section-value-if type it))
+                   (when (and value (stringp value)
+                              (or (string-prefix-p id value)
+                                  (string-prefix-p value id)))
+                     (let* ((pos (oref it start))
+                            (dist (abs (- pos anchor))))
+                       (when (or (null best-dist) (< dist best-dist))
+                         (setq best it)
+                         (setq best-dist dist))))))
+           root))
+        best)))
 
 (cl-defun majutsu-selection-session-begin (categories &key locate-fn targets-fn)
   "Create a transient selection session for the current buffer.
@@ -234,12 +211,6 @@ CATEGORIES is a list of plists, each containing:
 (defun majutsu-selection-count (key)
   "Return number of selected commits for category KEY."
   (length (majutsu-selection-values key)))
-
-(defun majutsu-selection--selected-any-p (id &optional session)
-  (when-let* ((session (or session (transient-scope))))
-    (seq-some (lambda (cat)
-                (member id (majutsu-selection-category-values cat)))
-              (majutsu-selection-session-categories session))))
 
 (defun majutsu-selection--labels-for (id &optional session)
   (when-let* ((session (or session (transient-scope))))
@@ -305,8 +276,7 @@ CATEGORIES is a list of plists, each containing:
                (or explicit
                    (eq (current-buffer)
                        (majutsu-selection-session-buffer session))))
-      (let* ((session session)
-             (overlays (majutsu-selection-session-overlays session))
+      (let* ((overlays (majutsu-selection-session-overlays session))
              (selected (make-hash-table :test 'equal)))
         (dolist (cat (majutsu-selection-session-categories session))
           (dolist (id (majutsu-selection-category-values cat))

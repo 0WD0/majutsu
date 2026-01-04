@@ -24,10 +24,6 @@
 (require 'majutsu-workspace)
 (require 'json)
 
-(defvar majutsu-buffer-log-args)
-(defvar majutsu-buffer-log-revsets)
-(defvar majutsu-buffer-log-filesets)
-
 (defcustom majutsu-log-field-faces
   '((bookmarks . magit-branch-local)
     (tags . magit-tag)
@@ -906,33 +902,11 @@ Return non-nil when the section could be located."
       (goto-char pos)
       (message "No more changesets"))))
 
-;; TODO: 需要重构，让它不限制在 log buffer 内，需要放到 majutsu-selection.el 里去
-;; 他应该接受 pred root value 参数，而不是单纯在 log graph 里找
+;; TODO: use this function in locate-fn of majutsu-selection
 (defun majutsu-find-revision-section (id)
   "Return the jj-commit section matching ID inside the log buffer."
-  (or (magit-get-section `((jj-commit . ,id) (lograph) (logbuf)))
-      (let ((root (magit-get-section '((lograph) (logbuf))))
-            (anchor (or (and-let* ((cur (magit-current-section)))
-                          (oref cur start))
-                        (point)))
-            best
-            best-dist)
-        (when root
-          (magit-map-sections
-           (lambda (section)
-             (when (magit-section-match 'jj-commit section)
-               (let ((value (majutsu--normalize-id-value
-                             (oref section value))))
-                 (when (and value
-                            (or (string-prefix-p id value)
-                                (string-prefix-p value id)))
-                   (let* ((pos (oref section start))
-                          (dist (abs (- pos anchor))))
-                     (when (or (null best-dist) (< dist best-dist))
-                       (setq best section)
-                       (setq best-dist dist)))))))
-           root))
-        best)))
+  (majutsu-selection-find-revision-section
+   id (magit-get-section '((lograph) (logbuf)))))
 
 ;;; Log Mode
 

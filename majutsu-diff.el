@@ -20,6 +20,7 @@
 (require 'majutsu-process)
 (require 'majutsu-config)
 (require 'majutsu-log)
+(require 'majutsu-selection)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -226,7 +227,9 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 (cl-defmethod transient-infix-set ((obj majutsu-diff--range-option) value)
   (cl-call-next-method)
   (when-let* ((key (oref obj selection-key)))
-    (when (majutsu-selection--session-buffer)
+    (when-let* ((session (transient-scope))
+                (buf (majutsu-selection-session-buffer session))
+                ((buffer-live-p buf)))
       (if value
           (progn
             (majutsu-selection-clear key)
@@ -1109,8 +1112,7 @@ With prefix STYLE, cycle between `all' and `t'."
                 (_ "@")))
          (range (or range
                     (list (concat "--revisions=" (majutsu--normalize-id-value rev))))))
-    (majutsu-diff-setup-buffer args range filesets)
-    (majutsu-selection-session-end)))
+    (majutsu-diff-setup-buffer args range filesets)))
 
 ;;;###autoload
 (defun majutsu-diff-revset (revset &optional args _range filesets)
