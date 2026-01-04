@@ -175,40 +175,7 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
             (push arg out))))))
     (nreverse out)))
 
-;; FIXME: 不应该存在
-(defun majutsu-diff--formatting-args-for-command (args)
-  "Return effective formatting ARGS for running `jj diff'.
-
-Majutsu's diff washer expects Git-style diffs.  Ensure `--git' is present
-unless `--tool' is used, in which case jj rejects `--git'."
-  (let ((args (copy-sequence args)))
-    (if (or (member "--tool" args)
-            (seq-some (lambda (arg)
-                        (and (stringp arg)
-                             (string-prefix-p "--tool=" arg)))
-                      args))
-        (delete "--git" args)
-      (majutsu--ensure-flag args "--git"))))
-
-;;; Arguments
-;;;; Prefix Classes
-
-(defclass majutsu-diff-prefix (transient-prefix)
-  ((history-key :initform 'majutsu-diff)
-   (major-mode :initform 'majutsu-diff-mode)))
-
-;;;; Infix Classes
-
-(defclass majutsu-diff--range-option (transient-option)
-  ((selection-key :initarg :selection-key :initform nil)))
-
-(defclass majutsu-diff--toggle-range-option (majutsu-diff--range-option) ())
-
-(defclass majutsu-diff--revisions-option (transient-option) ())
-
-(defvar majutsu-diff--infix-syncing nil)
-
-;; FIXME: 不应该存在
+;; FIXME: 不应该存在，应该直接借鉴 formatting args 的取用逻辑
 (defun majutsu-diff--transient-range-args (&optional default-revset)
   "Return `jj diff' range argv derived from the current diff transient.
 
@@ -243,6 +210,24 @@ are present."
   (if current-prefix-arg
       nil
     (majutsu-read-revset prompt (or initial-input (majutsu-diff--transient-default-revset)))))
+
+;;; Arguments
+;;;; Prefix Classes
+
+(defclass majutsu-diff-prefix (transient-prefix)
+  ((history-key :initform 'majutsu-diff)
+   (major-mode :initform 'majutsu-diff-mode)))
+
+;;;; Infix Classes
+
+(defclass majutsu-diff--range-option (transient-option)
+  ((selection-key :initarg :selection-key :initform nil)))
+
+(defclass majutsu-diff--toggle-range-option (majutsu-diff--range-option) ())
+
+(defclass majutsu-diff--revisions-option (transient-option) ())
+
+(defvar majutsu-diff--infix-syncing nil)
 
 ;;;; Prefix Methods
 
@@ -387,7 +372,7 @@ list of filesets (path filters)."
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
   (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
 
-;; FIXME: 不应该存在
+;; FIXME: 不应该存在，需要先重构 `majutsu-diff--transient-range-values'
 (defun majutsu-diff--transient-range-suffixes ()
   "Return suffix objects for the diff transient."
   (cond
@@ -398,7 +383,7 @@ list of filesets (path filters)."
    (t
     (transient-suffixes 'majutsu-diff))))
 
-;; FIXME: 不应该存在
+;; FIXME: 不应该存在，需要先重构 `majutsu-diff--transient-range-args'
 (defun majutsu-diff--transient-range-values ()
   "Return (REVSETS FROM TO) from the current diff transient."
   (let (revsets from to)
@@ -536,7 +521,6 @@ When ARGS is non-nil, use it as diff formatting args; otherwise use the
 current buffer's `majutsu-buffer-diff-args'.  HEADING, when non-nil,
 replaces the default heading."
   (let* ((args (or args majutsu-buffer-diff-args))
-         (args (majutsu-diff--formatting-args-for-command args))
          (cmd-args (append (list "diff")
                            args
                            majutsu-buffer-diff-range
@@ -1211,6 +1195,7 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:to)
     ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
    ["Options"
+    (majutsu-diff:--git)
     (majutsu-diff:--stat)
     (majutsu-diff:--summary)
     (majutsu-diff:--context)]
@@ -1233,6 +1218,12 @@ REVSET is passed to jj diff using `--revisions='."
   (transient-setup 'majutsu-diff))
 
 ;;;; Infix Commands
+
+(transient-define-argument majutsu-diff:--git ()
+  :description "Show git style diff"
+  :class 'transient-switch
+  :key "-g"
+  :argument "--git")
 
 (transient-define-argument majutsu-diff:--stat ()
   :description "Show stats"
