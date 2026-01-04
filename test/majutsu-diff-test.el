@@ -90,9 +90,8 @@
                     "-r" "@-"
                     "--from" "main"
                     "--context=5"
-                    "--tool" ":git"
                     "--ignore-all-space"))
-                 '("--stat" "--context=5" "--tool" ":git" "--ignore-all-space"))))
+                 '("--stat" "--context=5" "--ignore-all-space"))))
 
 (ert-deftest majutsu-diff-set-buffer-args-does-not-clear-filesets ()
   "Updating diff args must not clear existing filesets unless requested."
