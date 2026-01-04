@@ -62,7 +62,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("Z" "Workspaces" majutsu-workspace-transient)
     ("G" "Git" majutsu-git-transient)]
    ["Diff & Fix"
-    ("D" "Diff menu" majutsu-diff-transient)
+    ("D" "Diff menu" majutsu-diff)
     ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
     ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
    ["Exit"

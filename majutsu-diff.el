@@ -396,7 +396,7 @@ list of filesets (path filters)."
    ((and (boundp 'transient-current-suffixes) (consp transient-current-suffixes))
     transient-current-suffixes)
    (t
-    (transient-suffixes 'majutsu-diff-transient--internal))))
+    (transient-suffixes 'majutsu-diff))))
 
 ;; FIXME: 不应该存在
 (defun majutsu-diff--transient-range-values ()
@@ -420,8 +420,8 @@ list of filesets (path filters)."
   "Return the current diff arguments.
 
 The returned value is a (ARGS RANGE FILESETS) triple."
-  (if (eq transient-current-command 'majutsu-diff-transient--internal)
-      (transient-args 'majutsu-diff-transient--internal)
+  (if (eq transient-current-command 'majutsu-diff)
+      (transient-args 'majutsu-diff)
     (majutsu-diff--get-value (or mode 'majutsu-diff-mode) 'direct)))
 
 ;;; Diff Parsing & Display
@@ -1157,7 +1157,7 @@ With prefix STYLE, cycle between `all' and `t'."
                 (_ "@")))
          (formatting-args (or (majutsu-diff--remembered-args raw)
                               (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-         (range (if (eq transient-current-command 'majutsu-diff-transient--internal)
+         (range (if (eq transient-current-command 'majutsu-diff)
                     (majutsu-diff--transient-range-args rev)
                   (list (concat "--revisions=" (majutsu--normalize-id-value rev))))))
     (majutsu-diff-setup-buffer formatting-args range files)
@@ -1194,7 +1194,7 @@ REVSET is passed to jj diff using `--revisions='."
 ;;; Commands
 ;;;; Prefix Commands
 
-(transient-define-prefix majutsu-diff-transient--internal ()
+(transient-define-prefix majutsu-diff ()
   "Internal transient for jj diff."
   :man-page "jj-diff"
   :class 'majutsu-diff-prefix
@@ -1218,7 +1218,19 @@ REVSET is passed to jj diff using `--revisions='."
     ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
     ("g" "Refresh" majutsu-diff-refresh :transient t)
-    ("q" "Quit" transient-quit-one)]])
+    ("q" "Quit" transient-quit-one)]]
+  (interactive)
+  ;; FIXME: 其实我觉得 selection 需要的属性应该给 infix 对象来管理
+  (majutsu-selection-session-begin
+   '((:key from
+      :label "[FROM]"
+      :face (:background "dark orange" :foreground "black")
+      :type single)
+     (:key to
+      :label "[TO]"
+      :face (:background "dark cyan" :foreground "white")
+      :type single)))
+  (transient-setup 'majutsu-diff))
 
 ;;;; Infix Commands
 
@@ -1279,21 +1291,6 @@ REVSET is passed to jj diff using `--revisions='."
   :key "t"
   :argument "--to=")
 
-;;;###autoload
-(defun majutsu-diff-transient ()
-  "Transient for jj diff operations."
-  (interactive)
-  (majutsu-selection-session-begin
-   '((:key from
-      :label "[FROM]"
-      :face (:background "dark orange" :foreground "black")
-      :type single)
-     (:key to
-      :label "[TO]"
-      :face (:background "dark cyan" :foreground "white")
-      :type single)))
-  (majutsu-diff-transient--internal))
-
 (defun majutsu-diff-save-arguments ()
   "Save current transient arguments as defaults."
   (interactive)
@@ -1306,7 +1303,7 @@ REVSET is passed to jj diff using `--revisions='."
   "Refresh diff buffer with current transient arguments."
   (interactive)
   (pcase-let* ((`(,args ,range ,_filesets)
-                (transient-args 'majutsu-diff-transient--internal)))
+                (transient-args 'majutsu-diff)))
     (cond
      ((eq major-mode 'majutsu-diff-mode)
       (majutsu-diff--set-buffer-args args)
