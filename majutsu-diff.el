@@ -938,7 +938,7 @@ file."
               (lambda ()
                 (when (file-exists-p parent-temp-file)
                   (delete-file parent-temp-file))
-                (majutsu-log-refresh))
+                (majutsu-refresh))
               nil t)
 
     ;; Start ediff session
@@ -1014,7 +1014,7 @@ file."
                   (string-match "^>>>>>>>" content))
         (with-temp-file full-file-path
           (insert content))
-        (majutsu-log-refresh)
+        (majutsu-refresh)
         (message "Changes applied to %s" file)))))
 
 (defun majutsu-diffedit-all ()
@@ -1077,7 +1077,7 @@ file."
          (arg (and num (not (= num def)) (format "--context=%d" num)))
          (val (if arg (cons arg val) val)))
     (majutsu-diff--set-buffer-args val)
-    (majutsu-diff-refresh-buffer)))
+    (majutsu-refresh)))
 
 (defun majutsu-diff-toggle-refine-hunk (&optional style)
   "Toggle word-level refinement within hunks.
@@ -1217,7 +1217,7 @@ REVSET is passed to jj diff using `--revisions='."
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
-    ("g" "Refresh" majutsu-diff-refresh :transient t)
+    ("g" "Refresh" majutsu-refresh :transient t)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   ;; FIXME: 其实我觉得 selection 需要的属性应该给 infix 对象来管理
