@@ -133,6 +133,37 @@ Intended for `kill-buffer-hook'."
                         (append `((,type . ,value)) (magit-section-ident root)))))
     (majutsu-selection--overlay-range section)))
 
+(defun majutsu-selection-find-revision-section (id &optional root)
+  "Return the closest `jj-commit' section matching ID.
+
+This is intended for Majutsu log buffers but does not depend on a
+specific section root layout.  When ROOT is non-nil, traverse from that
+section, otherwise from `magit-root-section'."
+  (let* ((root (or root (ignore-errors (magit-root-section))))
+         (anchor (or (and-let* ((cur (magit-current-section)))
+                       (oref cur start))
+                     (point)))
+         (id (and id (substring-no-properties id)))
+         best
+         best-dist)
+    (when (and root id (stringp id) (not (string-empty-p id)))
+      (magit-map-sections
+       (lambda (section)
+         (when (magit-section-match 'jj-commit section)
+           (let ((value (oref section value)))
+             (when (stringp value)
+               (setq value (substring-no-properties value)))
+             (when (and value (stringp value)
+                        (or (string-prefix-p id value)
+                            (string-prefix-p value id)))
+               (let* ((pos (oref section start))
+                      (dist (abs (- pos anchor))))
+                 (when (or (null best-dist) (< dist best-dist))
+                   (setq best section)
+                   (setq best-dist dist)))))))
+       root))
+    best))
+
 (cl-defun majutsu-selection-session-begin (categories &key locate-fn targets-fn)
   "Create a transient selection session for the current buffer.
 
