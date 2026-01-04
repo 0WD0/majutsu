@@ -1166,17 +1166,18 @@ REVSET is passed to jj diff using `--revisions='."
     ("g" "Refresh" majutsu-refresh :transient t)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
-  ;; FIXME: 其实我觉得 selection 需要的属性应该给 infix 对象来管理
-  (majutsu-selection-session-begin
-   '((:key from
-      :label "[FROM]"
-      :face (:background "dark orange" :foreground "black")
-      :type single)
-     (:key to
-      :label "[TO]"
-      :face (:background "dark cyan" :foreground "white")
-      :type single)))
-  (transient-setup 'majutsu-diff))
+  (transient-setup
+   'majutsu-diff nil nil
+   :scope
+   (majutsu-selection-session-begin
+    '((:key from
+       :label "[FROM]"
+       :face (:background "dark orange" :foreground "black")
+       :type single)
+      (:key to
+       :label "[TO]"
+       :face (:background "dark cyan" :foreground "white")
+       :type single)))))
 
 ;;;; Infix Commands
 

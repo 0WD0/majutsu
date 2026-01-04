@@ -274,7 +274,7 @@ The returned value is a list of entries of the form:
              ((> window-start (point)))
              ((and ws-section
                    (magit-section-equal ws-section
-                                       (magit-section-at window-start)))
+                                        (magit-section-at window-start)))
               (set-window-start window window-start t))
              (t
               (let ((pos (save-excursion

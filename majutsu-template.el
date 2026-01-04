@@ -1124,9 +1124,9 @@ Further passes (type-checking, rendering) operate on these nodes."
   :returns 'Template :doc "Raw literal helper." :flavor :custom))
 
 (majutsu-template-defun map-join ((separator Template)
-                              (collection Template)
-                              (var Template)
-                              (body Template))
+                                  (collection Template)
+                                  (var Template)
+                                  (body Template))
   (:returns Template :doc "map-then-join helper.")
   (majutsu-template--map-join-impl separator collection var body))
 

@@ -330,28 +330,28 @@
 
 (ert-deftest test-majutsu-template-map-join-helper ()
   (let ((node (majutsu-template-map-join [:str ", "]
-                                     [:raw "self.parents()"]
-                                     'p
-                                     [:raw "p.commit_id()"])))
+                                         [:raw "self.parents()"]
+                                         'p
+                                         [:raw "p.commit_id()"])))
     (should (majutsu-template-node-p node))
     (should (equal (majutsu-template-compile node)
                    "self.parents().map(|p| p.commit_id()).join(\", \")"))))
 
 (ert-deftest test-majutsu-template-self-keyword-basic ()
-    (mt--is (tpl-compile [:description] 'Commit)
-            "self.description()"))
+  (mt--is (tpl-compile [:description] 'Commit)
+          "self.description()"))
 
 (ert-deftest test-majutsu-template-self-keyword-chain ()
-    (mt--is (tpl-compile [:parents :len] 'Commit)
-            "self.parents().len()"))
+  (mt--is (tpl-compile [:parents :len] 'Commit)
+          "self.parents().len()"))
 
 (ert-deftest test-majutsu-template-self-keyword-custom-defkeyword ()
-    (mt--is (tpl-compile [:test-commit-keyword] 'Commit)
-            "self.test-commit-keyword()"))
+  (mt--is (tpl-compile [:test-commit-keyword] 'Commit)
+          "self.test-commit-keyword()"))
 
 (ert-deftest test-majutsu-template-self-keyword-custom-defmethod-opt-in ()
-    (mt--is (tpl-compile [:test-commit-optflag] 'Commit)
-            "self.test-commit-optflag()"))
+  (mt--is (tpl-compile [:test-commit-optflag] 'Commit)
+          "self.test-commit-optflag()"))
 
 (ert-deftest test-majutsu-template-with-self-binding ()
   (let ((majutsu-template-default-self-type nil)

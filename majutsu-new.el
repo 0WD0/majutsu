@@ -202,21 +202,22 @@ Accepts keys :parents, :after, :before."
                             (majutsu-new--action-summary))))
     ("q" "Quit" transient-quit-one)]]
   (interactive)
-  (majutsu-selection-session-begin
-   '((:key parent
-      :label "[PARENT]"
-      :face (:background "dark orange" :foreground "black")
-      :type multi)
-     (:key after
-      :label "[AFTER]"
-      :face (:background "dark blue" :foreground "white")
-      :type multi)
-     (:key before
-      :label "[BEFORE]"
-      :face (:background "dark magenta" :foreground "white")
-      :type multi)))
-  (add-hook 'transient-exit-hook #'majutsu-selection-session-end nil t)
-  (transient-setup 'majutsu-new))
+  (transient-setup
+   'majutsu-new nil nil
+   :scope
+   (majutsu-selection-session-begin
+    '((:key parent
+       :label "[PARENT]"
+       :face (:background "dark orange" :foreground "black")
+       :type multi)
+      (:key after
+       :label "[AFTER]"
+       :face (:background "dark blue" :foreground "white")
+       :type multi)
+      (:key before
+       :label "[BEFORE]"
+       :face (:background "dark magenta" :foreground "white")
+       :type multi)))))
 
 ;;; _
 (provide 'majutsu-new)

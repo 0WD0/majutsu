@@ -23,14 +23,14 @@
   "Context-sensitive Enter key behavior."
   (interactive)
   (magit-section-case
-   (jj-commit
-    (majutsu-edit-changeset))
-   (jj-hunk
-    (majutsu-goto-diff-line))
-   (jj-file
-    (majutsu-visit-file))
-   (jj-workspace
-    (majutsu-workspace-visit))))
+    (jj-commit
+     (majutsu-edit-changeset))
+    (jj-hunk
+     (majutsu-goto-diff-line))
+    (jj-file
+     (majutsu-visit-file))
+    (jj-workspace
+     (majutsu-workspace-visit))))
 
 ;;;###autoload
 (defun majutsu-edit-changeset (&optional arg)
