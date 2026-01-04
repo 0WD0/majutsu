@@ -1201,24 +1201,7 @@ REVSET is passed to jj diff using `--revisions='."
   :incompatible '(("--revisions=" "--from=")
                   ("--revisions=" "--to="))
   :transient-non-suffix t
-  [:description
-   (lambda ()
-     (pcase-let* ((`(,revsets ,from ,to) (majutsu-diff--transient-range-values))
-                  (revsets (cond
-                            ((null revsets) nil)
-                            ((stringp revsets) (list revsets))
-                            ((listp revsets) revsets)
-                            (t nil)))
-                  (revsets (seq-remove #'null (mapcar #'majutsu--normalize-id-value revsets)))
-                  (from (majutsu--normalize-id-value from))
-                  (to (majutsu--normalize-id-value to)))
-       (concat "JJ Diff"
-               (when revsets
-                 (format " | -r: %s" (string-join revsets ", ")))
-               (when from
-                 (format " | From: %s" from))
-               (when to
-                 (format " | To: %s" to)))))
+  [:description "JJ Diff"
    :class transient-columns
    ["Selection"
     (majutsu-diff:-r)
