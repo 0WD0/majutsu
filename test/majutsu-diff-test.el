@@ -106,7 +106,7 @@
 
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
   "When called from the transient, DWIM should use current transient args."
-  (let ((transient-current-command 'majutsu-diff-transient--internal)
+  (let ((transient-current-command 'majutsu-diff)
         (majutsu-direct-use-buffer-arguments 'never)
         called-args
         called-files
