@@ -36,7 +36,7 @@ ARGS are passed from the transient."
                                   (string-prefix-p "--insert-before=" arg)))
                             args)))
     (if has-dest
-        (when (yes-or-no-p "Rebase with current selections? ")
+        (when (majutsu-confirm 'rebase "Rebase with current selections? ")
           (let ((all-args (cons "rebase" args)))
             (majutsu--message-with-log "Rebasing...")
             (majutsu--debug "Running jj rebase with args: %s" (string-join all-args " "))
