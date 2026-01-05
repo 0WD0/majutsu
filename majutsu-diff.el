@@ -211,69 +211,12 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 
 ;;;; Infix Classes
 
-(defclass majutsu-diff--range-option (transient-option)
+(defclass majutsu-diff--range-option (majutsu-selection-option)
   ((selection-key :initarg :selection-key :initform nil)))
 
-(defclass majutsu-diff--toggle-range-option (majutsu-diff--range-option) ())
+(defclass majutsu-diff--toggle-range-option (majutsu-selection-toggle-option) ())
 
 (defclass majutsu-diff--revisions-option (transient-option) ())
-
-(defvar majutsu-diff--infix-syncing nil)
-
-;;;; Prefix Methods
-
-(cl-defmethod transient-infix-set ((obj majutsu-diff--range-option) value)
-  (cl-call-next-method)
-  (when-let* ((key (oref obj selection-key)))
-    (when-let* ((session (transient-scope))
-                (buf (majutsu-selection-session-buffer session))
-                ((buffer-live-p buf)))
-      (if value
-          (progn
-            (majutsu-selection-clear key)
-            (majutsu-selection-select key (list value)))
-        (majutsu-selection-clear key))))
-  (when (and (not majutsu-diff--infix-syncing)
-             (consp transient--suffixes)
-             (slot-boundp obj 'argument)
-             (slot-boundp obj 'selection-key))
-    (let ((majutsu-diff--infix-syncing t)
-          (argument (oref obj argument))
-          (selection-key (oref obj selection-key)))
-      (dolist (other transient--suffixes)
-        (when (and (not (eq other obj))
-                   (cl-typep other 'majutsu-diff--range-option)
-                   (slot-boundp other 'argument)
-                   (slot-boundp other 'selection-key)
-                   (equal (oref other argument) argument)
-                   (eq (oref other selection-key) selection-key))
-          (transient-infix-set other value))))))
-
-(cl-defmethod transient-infix-read ((obj majutsu-diff--toggle-range-option))
-  (with-current-buffer (or (majutsu-diff--transient-original-buffer)
-                           (current-buffer))
-    (let* ((id (or (magit-section-value-if 'jj-commit)
-                   (user-error "No changeset at point")))
-           (id (cond
-                ((stringp id) (substring-no-properties id))
-                ((symbolp id) (symbol-name id))
-                ((integerp id) (char-to-string id))
-                (t (format "%s" id))))
-           (cur (oref obj value))
-           (cur (and cur (cond
-                          ((stringp cur) (substring-no-properties cur))
-                          ((symbolp cur) (symbol-name cur))
-                          ((integerp cur) (char-to-string cur))
-                          (t (format "%s" cur))))))
-      (if (equal cur id) nil id))))
-
-(cl-defmethod transient-infix-value ((_obj majutsu-diff--toggle-range-option))
-  "Toggle-at-point range infixes only set selection/state; they don't emit argv.
-
-The corresponding `--from=' / `--to=' infixes are kept in sync by
-`transient-infix-set', so emitting argv here would duplicate range
-arguments (e.g. two `--from=' entries)."
-  nil)
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
   (pcase-let ((`(,args ,range ,_filesets)
@@ -1168,17 +1111,7 @@ REVSET is passed to jj diff using `--revisions='."
   (interactive)
   (transient-setup
    'majutsu-diff nil nil
-   :scope
-   (majutsu-selection-session-begin
-    '((:key from
-       :label "[FROM]"
-       :face (:background "dark orange" :foreground "black")
-       :type single)
-      (:key to
-       :label "[TO]"
-       :face (:background "dark cyan" :foreground "white")
-       :type single))
-    :locate-fn (##majutsu-section-find % 'jj-commit))))
+   :scope (majutsu-selection-setup-scope)))
 
 ;;;; Infix Commands
 
@@ -1219,6 +1152,10 @@ REVSET is passed to jj diff using `--revisions='."
   :description "From"
   :class 'majutsu-diff--range-option
   :selection-key 'from
+  :selection-label "[FROM]"
+  :selection-face '(:background "dark orange" :foreground "black")
+  :selection-type 'single
+  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-f"
   :argument "--from="
   :reader #'majutsu-diff--transient-read-revset)
@@ -1227,6 +1164,10 @@ REVSET is passed to jj diff using `--revisions='."
   :description "To"
   :class 'majutsu-diff--range-option
   :selection-key 'to
+  :selection-label "[TO]"
+  :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-type 'single
+  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-t"
   :argument "--to="
   :reader #'majutsu-diff--transient-read-revset)
@@ -1235,6 +1176,7 @@ REVSET is passed to jj diff using `--revisions='."
   :description "From (toggle at point)"
   :class 'majutsu-diff--toggle-range-option
   :selection-key 'from
+  :selection-type 'single
   :key "f"
   :argument "--from=")
 
@@ -1242,6 +1184,7 @@ REVSET is passed to jj diff using `--revisions='."
   :description "To (toggle at point)"
   :class 'majutsu-diff--toggle-range-option
   :selection-key 'to
+  :selection-type 'single
   :key "t"
   :argument "--to=")
 

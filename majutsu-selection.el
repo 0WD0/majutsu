@@ -8,34 +8,32 @@
 
 ;;; Commentary:
 
-;;; This library provides magit-section selection functionalities for Majutsu.
+;;; This library provides magit-section selection for Majutsu.
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'magit-section)
 (require 'subr-x)
 (require 'transient)
 
-(cl-defstruct (majutsu-selection-category
-               (:constructor majutsu-selection-category-create))
-  key
-  label
-  face
-  type
-  locate-fn
-  targets-fn
-  values)
+(defclass majutsu-selection-option (transient-option)
+  ((selection-key   :initarg :selection-key   :initform nil)
+   (selection-label :initarg :selection-label :initform nil)
+   (selection-face  :initarg :selection-face  :initform nil)
+   (selection-type  :initarg :selection-type  :initform 'multi)
+   (locate-fn       :initarg :locate-fn       :initform nil)
+   (targets-fn      :initarg :targets-fn      :initform nil))
+  "Base class for options that control majutsu selection categories.")
 
 (cl-defstruct (majutsu-selection-session
                (:constructor majutsu-selection-session-create))
   buffer
-  categories
   overlays)
 
 (defvar majutsu-selection--overlay-buffers
   (make-hash-table :test 'eq :weakness 'key)
-  "Buffers that may contain `majutsu-selection' overlays.
-Used to avoid scanning all buffers on transient exit.")
+  "Buffers that may contain `majutsu-selection' overlays.")
 
 (defvar-local majutsu-selection--active-session nil
   "Selection session whose overlays are currently rendered in this buffer.")
@@ -58,11 +56,6 @@ Used to avoid scanning all buffers on transient exit.")
                  ((buffer-live-p ,buf)))
        (with-current-buffer ,buf
          ,@body))))
-
-(defun majutsu-selection--clear-all-values (session)
-  (when session
-    (dolist (cat (majutsu-selection-session-categories session))
-      (setf (majutsu-selection-category-values cat) nil))))
 
 (defun majutsu-selection--transient-setup-buffer ()
   "Render selection overlays when a transient menu is being setup."
@@ -91,8 +84,7 @@ Used to avoid scanning all buffers on transient exit.")
   (clrhash majutsu-selection--overlay-buffers))
 
 (defun majutsu-selection-session-end-if-owner ()
-  "Remove selection overlays in the current buffer.
-Intended for `kill-buffer-hook'."
+  "Remove selection overlays in the current buffer."
   (remhash (current-buffer) majutsu-selection--overlay-buffers)
   (remove-overlays (point-min) (point-max) 'majutsu-selection t)
   (setq majutsu-selection--active-session nil))
@@ -103,103 +95,57 @@ Intended for `kill-buffer-hook'."
       (list (magit-section-ident-value (magit-current-section)))))
 
 (defun majutsu-selection--locate-default (value)
-  "Default locator for selection overlays.
-Return the sibling section of the current section whose value equals VALUE."
+  "Default locator for selection overlays."
   (when-let* ((cur (magit-current-section))
               (parent (oref cur parent))
               (type (oref cur type)))
     (magit-get-section
      (append `((,type . ,value)) (magit-section-ident parent)))))
 
-(cl-defun majutsu-selection-session-begin (categories &key locate-fn targets-fn)
+(defun majutsu-selection-session-begin (&rest _args)
   "Create a transient selection session for the current buffer.
 
-CATEGORIES is a list of plists, each containing:
-- :key        symbol identifying the selection bucket
-- :label      string displayed before selected commits
-- :face       face (symbol or plist) applied to the label
-- :type       either `single' or `multi' (defaults to `multi')
-- :locate-fn  override default locate function
-- :targets-fn override default targets function"
-  (let ((def-locate (or locate-fn #'majutsu-selection--locate-default))
-        (def-targets (or targets-fn #'majutsu-selection--targets-default)))
-    (majutsu-selection-session-create
-     :buffer (current-buffer)
-     :categories
-     (mapcar
-      (lambda (spec)
-        (let ((key (plist-get spec :key))
-              (type (or (plist-get spec :type) 'multi)))
-          (unless (symbolp key)
-            (user-error "Selection category :key must be a symbol: %S" spec))
-          (unless (memq type '(single multi))
-            (user-error "Selection category :type must be `single' or `multi': %S" spec))
-          (majutsu-selection-category-create
-           :key key
-           :label (or (plist-get spec :label) "")
-           :face (plist-get spec :face)
-           :type type
-           :locate-fn (or (plist-get spec :locate-fn) def-locate)
-           :targets-fn (or (plist-get spec :targets-fn) def-targets)
-           :values nil)))
-      categories)
-     :overlays (make-hash-table :test 'equal))))
+Arguments are ignored for backward compatibility."
+  (majutsu-selection-session-create
+   :buffer (current-buffer)
+   :overlays (make-hash-table :test 'equal)))
 
-(defun majutsu-selection--category (key &optional session)
-  (when-let* ((session (or session (transient-scope))))
-    (seq-find (lambda (cat) (eq (majutsu-selection-category-key cat) key))
-              (majutsu-selection-session-categories session))))
+(defalias 'majutsu-selection-setup-scope 'majutsu-selection-session-begin)
 
-(defun majutsu-selection--require-category (key &optional session)
-  (or (majutsu-selection--category key session)
-      (user-error "No such selection category: %S" key)))
+(defun majutsu-selection--find-option (key)
+  (when (boundp 'transient--suffixes)
+    (seq-find (lambda (obj)
+                (and (cl-typep obj 'majutsu-selection-option)
+                     (eq (oref obj selection-key) key)))
+              transient--suffixes)))
 
 (defun majutsu-selection-values (key)
   "Return selected values for category KEY."
-  (let ((cat (majutsu-selection--category key)))
-    (copy-sequence (and cat (majutsu-selection-category-values cat)))))
+  (when-let* ((obj (majutsu-selection--find-option key)))
+    (let ((val (oref obj value)))
+      (if (listp val) val (list val)))))
 
 (defun majutsu-selection-count (key)
   "Return number of selected values for category KEY."
   (length (majutsu-selection-values key)))
-
-(defun majutsu-selection--labels-for (id &optional session)
-  (when-let* ((session (or session (transient-scope))))
-    (let (parts)
-      (dolist (cat (majutsu-selection-session-categories session))
-        (when (member id (majutsu-selection-category-values cat))
-          (when-let* ((label (majutsu-selection-category-label cat))
-                      ((not (string-empty-p label))))
-            (push (propertize label 'face (majutsu-selection-category-face cat))
-                  parts))))
-      (when parts
-        (concat (mapconcat #'identity (nreverse parts) " ") " ")))))
 
 (defun majutsu-selection--overlay-range (section)
   (let ((start (oref section start))
         (end (or (oref section content) (oref section end))))
     (and start end (cons start end))))
 
-(defun majutsu-selection--resolve-locator (session id)
-  (seq-some (lambda (cat)
-              (and (member id (majutsu-selection-category-values cat))
-                   (majutsu-selection-category-locate-fn cat)))
-            (majutsu-selection-session-categories session)))
-
-(defun majutsu-selection--render-id (session id)
-  (let ((overlays (majutsu-selection-session-overlays session)))
-    (if-let* ((labels (majutsu-selection--labels-for id session)))
-        ;; Render overlay
-        (majutsu-selection--with-session-buffer session
-          (when-let* ((locate-fn (majutsu-selection--resolve-locator session id))
-                      (located (funcall locate-fn id))
+(defun majutsu-selection--render-overlay (session id labels locate-fn)
+  (majutsu-selection--with-session-buffer session
+    (let ((overlays (majutsu-selection-session-overlays session))
+          (locate-fn (or locate-fn #'majutsu-selection--locate-default)))
+      (if labels
+          (when-let* ((located (funcall locate-fn id))
                       (range (cond ((consp located) located)
                                    ((eieio-object-p located)
                                     (majutsu-selection--overlay-range located)))))
             (let* ((existing (gethash id overlays))
                    (start (car range))
                    (end (cdr range)))
-              ;; Reuse existing overlay if range matches
               (unless (and existing
                            (= (overlay-start existing) start)
                            (= (overlay-end existing) end))
@@ -209,82 +155,136 @@ CATEGORIES is a list of plists, each containing:
                 (overlay-put existing 'priority '(nil . 50))
                 (overlay-put existing 'majutsu-selection t)
                 (puthash id existing overlays))
-              (overlay-put existing 'before-string labels))))
-      ;; No labels -> remove overlay
-      (when-let* ((existing (gethash id overlays)))
-        (delete-overlay existing)
-        (remhash id overlays)))))
+              (overlay-put existing 'before-string
+                           (concat (mapconcat #'identity (nreverse labels) " ") " "))))
+        (when-let* ((existing (gethash id overlays)))
+          (delete-overlay existing)
+          (remhash id overlays))))))
 
 (defun majutsu-selection-render (&optional session)
   "Re-render selection overlays for the current buffer."
-  (let* ((explicit session)
-         (session (or explicit (transient-scope))))
-    (when (and session
-               (or explicit
-                   (eq (current-buffer) (majutsu-selection-session-buffer session))))
-      (let ((selected (make-hash-table :test 'equal)))
-        ;; Collect all currently selected IDs
-        (dolist (cat (majutsu-selection-session-categories session))
-          (dolist (id (majutsu-selection-category-values cat))
-            (puthash id t selected)))
-        ;; Cleanup unselected overlays
+  (let* ((session (or session (transient-scope)))
+         (buf (and session (majutsu-selection-session-buffer session))))
+    (when (and buf (buffer-live-p buf) (boundp 'transient--suffixes))
+      (let ((overlays (majutsu-selection-session-overlays session))
+            (active-ids (make-hash-table :test 'equal)))
+        (dolist (obj transient--suffixes)
+          (when (cl-typep obj 'majutsu-selection-option)
+            (let ((vals (oref obj value))
+                  (label (oref obj selection-label))
+                  (face (oref obj selection-face)))
+              (when vals
+                (unless (listp vals) (setq vals (list vals)))
+                (dolist (id vals)
+                  (let ((existing (gethash id active-ids)))
+                    (puthash id (cons (cons (propertize (or label "") 'face face)
+                                            (car existing))
+                                      obj)
+                             active-ids)))))))
         (maphash (lambda (id ov)
-                   (unless (gethash id selected)
+                   (unless (gethash id active-ids)
                      (delete-overlay ov)
-                     (remhash id (majutsu-selection-session-overlays session))))
-                 (majutsu-selection-session-overlays session))
-        ;; Render selected IDs
-        (maphash (lambda (id _) (majutsu-selection--render-id session id))
-                 selected)))))
+                     (remhash id overlays)))
+                 overlays)
+        (maphash (lambda (id data)
+                   (majutsu-selection--render-overlay
+                    session id (car data) (oref (cdr data) locate-fn)))
+                 active-ids)))))
 
 (defun majutsu-selection-clear (&optional key)
   "Clear selections.
 If KEY is non-nil, clear only that selection category."
   (interactive)
-  (when-let* ((session (transient-scope)))
-    (if key
-        (when-let* ((cat (majutsu-selection--require-category key session)))
-          (setf (majutsu-selection-category-values cat) nil))
-      (majutsu-selection--clear-all-values session))
-    (majutsu-selection-render session)))
+  (when (boundp 'transient--suffixes)
+    (dolist (obj transient--suffixes)
+      (when (and (cl-typep obj 'majutsu-selection-option)
+                 (or (null key)
+                     (eq (oref obj selection-key) key)))
+        (oset obj value nil)))
+    (majutsu-selection-render)))
 
 (defun majutsu-selection-toggle (key &optional values)
   "Toggle selected values in category KEY.
 VALUES defaults to the target(s) at point."
   (interactive)
   (let* ((session (or (transient-scope) (user-error "No active selection session")))
-         (cat (majutsu-selection--require-category key session)))
+         (obj (majutsu-selection--find-option key)))
+    (unless obj
+      (user-error "No selection option for key: %S" key))
     (unless values
       (majutsu-selection--with-session-buffer session
-        (setq values (funcall (majutsu-selection-category-targets-fn cat)))))
+        (let ((fn (or (oref obj targets-fn) #'majutsu-selection--targets-default)))
+          (setq values (funcall fn)))))
     (unless values
       (user-error "No selection target at point"))
-    
-    (if (eq (majutsu-selection-category-type cat) 'single)
-        ;; Single selection mode
-        (let ((new (car values))
-              (old (car (majutsu-selection-category-values cat))))
-          (setf (majutsu-selection-category-values cat)
-                (if (equal old new) nil (list new))))
-      ;; Multi selection mode
-      (let ((current (majutsu-selection-category-values cat)))
+    (let ((current (oref obj value))
+          (type (oref obj selection-type)))
+      (if (eq type 'single)
+          (let ((new (car values))
+                (old (if (listp current) (car current) current)))
+            (setq current (if (equal old new) nil (list new))))
+        (unless (listp current) (setq current (list current)))
         (dolist (id values)
           (setq current (if (member id current)
                             (delete id current)
-                          (append current (list id)))))
-        (setf (majutsu-selection-category-values cat) current)))
-    
-    (majutsu-selection-render session)))
+                          (append current (list id))))))
+      (transient-infix-set obj current))))
 
 (defun majutsu-selection-select (key &optional values)
   "Select a single value in category KEY.
 KEY must be a `single' selection category."
   (interactive)
-  (let* ((session (or (transient-scope) (user-error "No active selection session")))
-         (cat (majutsu-selection--require-category key session)))
-    (unless (eq (majutsu-selection-category-type cat) 'single)
+  (let* ((obj (majutsu-selection--find-option key)))
+    (unless (and obj (eq (oref obj selection-type) 'single))
       (user-error "Category %S is not single-select" key))
     (majutsu-selection-toggle key values)))
+
+(defvar majutsu-selection--infix-syncing nil
+  "Prevent infinite recursion when syncing selection options.")
+
+(defclass majutsu-selection-toggle-option (majutsu-selection-option)
+  ()
+  "Option class for toggling selection at point.")
+
+(cl-defmethod transient-infix-set ((obj majutsu-selection-option) value)
+  (cl-call-next-method)
+  (when (and (not majutsu-selection--infix-syncing)
+             (boundp 'transient--suffixes)
+             (consp transient--suffixes)
+             (slot-boundp obj 'argument)
+             (slot-boundp obj 'selection-key))
+    (let ((majutsu-selection--infix-syncing t)
+          (argument (oref obj argument))
+          (selection-key (oref obj selection-key)))
+      (dolist (other transient--suffixes)
+        (when (and (not (eq other obj))
+                   (cl-typep other 'majutsu-selection-option)
+                   (slot-boundp other 'argument)
+                   (slot-boundp other 'selection-key)
+                   (equal (oref other argument) argument)
+                   (eq (oref other selection-key) selection-key))
+          (transient-infix-set other value)))))
+  (majutsu-selection-render))
+
+(cl-defmethod transient-infix-read ((obj majutsu-selection-toggle-option))
+  (with-current-buffer (or (and (boundp 'transient--original-buffer)
+                                (buffer-live-p transient--original-buffer)
+                                transient--original-buffer)
+                           (current-buffer))
+    (let* ((id (or (magit-section-value-if 'jj-commit)
+                   (user-error "No changeset at point")))
+           (id (if (stringp id) id (format "%s" id)))
+           (current (oref obj value))
+           (type (oref obj selection-type)))
+      (if (eq type 'single)
+          (if (equal current id) nil id)
+        (let ((list (if (listp current) current (list current))))
+          (if (member id list)
+              (delete id list)
+            (append list (list id))))))))
+
+(cl-defmethod transient-infix-value ((_obj majutsu-selection-toggle-option))
+  nil)
 
 (add-hook 'transient-setup-buffer-hook #'majutsu-selection--transient-setup-buffer)
 (add-hook 'transient-post-exit-hook #'majutsu-selection--transient-post-exit)
