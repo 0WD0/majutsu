@@ -269,6 +269,13 @@ KEY must be a `single' selection category."
           (transient-infix-set other value)))))
   (majutsu-selection-render))
 
+;; TODO: 应该有更加准确的处理方式
+(cl-defmethod transient-infix-read :around ((obj majutsu-selection-option))
+  (let ((value (cl-call-next-method)))
+    (if (oref obj multi-value)
+        (ensure-list value)
+      value)))
+
 (cl-defmethod transient-infix-read ((obj majutsu-selection-toggle-option))
   (with-current-buffer (or (and (boundp 'transient--original-buffer)
                                 (buffer-live-p transient--original-buffer)
