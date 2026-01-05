@@ -246,7 +246,7 @@ KEY must be a `single' selection category."
   "Prevent infinite recursion when syncing selection options.")
 
 (defclass majutsu-selection-toggle-option (majutsu-selection-option)
-  ()
+  ((format :initform " %k %d"))
   "Option class for toggling selection at point.")
 
 (cl-defmethod transient-infix-set ((obj majutsu-selection-option) value)
