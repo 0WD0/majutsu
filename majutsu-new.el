@@ -71,16 +71,16 @@ With prefix ARG, open the new transient for interactive selection."
   :shortarg "-e"
   :argument "--no-edit")
 
-(transient-define-argument majutsu-new:--parent ()
+(transient-define-argument majutsu-new:-r ()
   :description "Parent"
   :class 'majutsu-new-option
   :selection-key 'parent
   :selection-label "[PARENT]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-type 'multi
-  :key "-P"
-  :argument "--parent="
-  :multi-value t
+  :key "-r"
+  :argument "-r"
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-new:--after ()
@@ -113,8 +113,8 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-key 'parent
   :selection-type 'multi
   :key "p"
-  :argument "--parent="
-  :multi-value t)
+  :argument "-r"
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-new:after ()
   :description "After (toggle at point)"
@@ -162,14 +162,20 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-execute (args)
   "Execute jj new using the current transient selections."
   (interactive (list (transient-args 'majutsu-new)))
-  (let* ((parents (mapcar (lambda (s) (substring s 9))
-                          (seq-filter (lambda (s) (string-prefix-p "--parent=" s)) args)))
+  (let* ((parents (seq-remove
+                   #'string-empty-p
+                   (mapcar (lambda (s) (substring s 2))
+                           (seq-filter (lambda (s)
+                                         (or (string-prefix-p "-r" s)
+                                             (string-prefix-p "-o" s)))
+                                       args))))
          (afters (mapcar (lambda (s) (substring s 8))
                          (seq-filter (lambda (s) (string-prefix-p "--after=" s)) args)))
          (befores (mapcar (lambda (s) (substring s 9))
                           (seq-filter (lambda (s) (string-prefix-p "--before=" s)) args)))
          (other-args (seq-filter (lambda (s)
-                                   (not (or (string-prefix-p "--parent=" s)
+                                   (not (or (string-prefix-p "-r" s)
+                                            (string-prefix-p "-o" s)
                                             (string-prefix-p "--after=" s)
                                             (string-prefix-p "--before=" s))))
                                  args))
@@ -241,7 +247,7 @@ Accepts keys :parents, :after, :before."
   [:description majutsu-new--description
    :class transient-columns
    ["Selections"
-    (majutsu-new:--parent)
+    (majutsu-new:-r)
     (majutsu-new:--after)
     (majutsu-new:--before)
     (majutsu-new:parent)
