@@ -92,7 +92,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-type 'multi
   :key "-A"
   :argument "--after="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-new:--before ()
@@ -104,7 +104,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-type 'multi
   :key "-B"
   :argument "--before="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-new:parent ()
@@ -123,7 +123,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-type 'multi
   :key "a"
   :argument "--after="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-new:before ()
   :description "Before (toggle at point)"
@@ -132,7 +132,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-type 'multi
   :key "b"
   :argument "--before="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (defun majutsu-new-clear-selections ()
   "Clear all jj new selections."

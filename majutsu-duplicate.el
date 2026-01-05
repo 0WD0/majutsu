@@ -78,7 +78,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "-s"
   :argument "--source="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:--onto ()
@@ -90,7 +90,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "-o"
   :argument "--onto="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:--after ()
@@ -102,7 +102,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "-a"
   :argument "--after="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:--before ()
@@ -114,7 +114,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "-b"
   :argument "--before="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:source ()
@@ -124,7 +124,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "y"
   :argument "--source="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-duplicate:onto ()
   :description "Onto (toggle at point)"
@@ -133,7 +133,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "o"
   :argument "--onto="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-duplicate:after ()
   :description "After (toggle at point)"
@@ -142,7 +142,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "a"
   :argument "--after="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-duplicate:before ()
   :description "Before (toggle at point)"
@@ -151,7 +151,7 @@ With prefix ARG, open the duplicate transient."
   :selection-type 'multi
   :key "b"
   :argument "--before="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (defun majutsu-duplicate-clear-selections ()
   "Clear duplicate selections."
