@@ -34,27 +34,7 @@
 (defun majutsu-duplicate-execute (args)
   "Execute jj duplicate using transient selections."
   (interactive (list (transient-args 'majutsu-duplicate)))
-  (let* ((sources (mapcar (lambda (s) (substring s 9))
-                          (seq-filter (lambda (s) (string-prefix-p "--source=" s)) args)))
-         (ontos (mapcar (lambda (s) (substring s 7))
-                        (seq-filter (lambda (s) (string-prefix-p "--onto=" s)) args)))
-         (afters (mapcar (lambda (s) (substring s 8))
-                         (seq-filter (lambda (s) (string-prefix-p "--after=" s)) args)))
-         (befores (mapcar (lambda (s) (substring s 9))
-                          (seq-filter (lambda (s) (string-prefix-p "--before=" s)) args)))
-         (cmd-args '("duplicate")))
-    (unless sources
-      (when-let* ((rev (magit-section-value-if 'jj-commit)))
-        (setq sources (list rev))))
-    (unless sources (setq sources '("@")))
-    (dolist (rev ontos)
-      (setq cmd-args (append cmd-args (list "--onto" rev))))
-    (dolist (rev afters)
-      (setq cmd-args (append cmd-args (list "--after" rev))))
-    (dolist (rev befores)
-      (setq cmd-args (append cmd-args (list "--before" rev))))
-    (setq cmd-args (append cmd-args sources))
-    (majutsu-duplicate--run-command cmd-args)))
+  (majutsu-duplicate--run-command (cons "duplicate" args)))
 
 ;;;###autoload
 (defun majutsu-duplicate-dwim (arg)
@@ -69,15 +49,15 @@ With prefix ARG, open the duplicate transient."
       (majutsu-duplicate--run-command args))))
 
 ;;; Duplicate Transient
-(transient-define-argument majutsu-duplicate:--source ()
+(transient-define-argument majutsu-duplicate:-r ()
   :description "Source"
   :class 'majutsu-duplicate-option
   :selection-key 'source
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-type 'multi
-  :key "-s"
-  :argument "--source="
+  :key "-r"
+  :argument "-r"
   :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
@@ -100,8 +80,8 @@ With prefix ARG, open the duplicate transient."
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-type 'multi
-  :key "-a"
-  :argument "--after="
+  :key "-A"
+  :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
@@ -112,8 +92,8 @@ With prefix ARG, open the duplicate transient."
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-type 'multi
-  :key "-b"
-  :argument "--before="
+  :key "-B"
+  :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
@@ -123,7 +103,7 @@ With prefix ARG, open the duplicate transient."
   :selection-key 'source
   :selection-type 'multi
   :key "y"
-  :argument "--source="
+  :argument "-r"
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-duplicate:onto ()
@@ -141,7 +121,7 @@ With prefix ARG, open the duplicate transient."
   :selection-key 'after
   :selection-type 'multi
   :key "a"
-  :argument "--after="
+  :argument "--insert-after="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-duplicate:before ()
@@ -150,7 +130,7 @@ With prefix ARG, open the duplicate transient."
   :selection-key 'before
   :selection-type 'multi
   :key "b"
-  :argument "--before="
+  :argument "--insert-before="
   :multi-value 'repeat)
 
 (defun majutsu-duplicate-clear-selections ()
@@ -178,9 +158,9 @@ With prefix ARG, open the duplicate transient."
     (dolist (rev destinations)
       (setq args (append args (list "--onto" rev))))
     (dolist (rev after)
-      (setq args (append args (list "--after" rev))))
+      (setq args (append args (list "--insert-after" rev))))
     (dolist (rev before)
-      (setq args (append args (list "--before" rev))))
+      (setq args (append args (list "--insert-before" rev))))
     (setq args (append args sources))
     args))
 
@@ -191,7 +171,7 @@ With prefix ARG, open the duplicate transient."
   [:description "JJ Duplicate"
    :class transient-columns
    ["Sources"
-    (majutsu-duplicate:--source)
+    (majutsu-duplicate:-r)
     (majutsu-duplicate:source)
     ("c" "Clear selections" majutsu-duplicate-clear-selections
      :transient t)]
