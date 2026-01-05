@@ -864,7 +864,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 Return non-nil when the section could be located."
   (when-let* ((id (and id (string-trim id)))
               (_(not (string-empty-p id)))
-              (section (majutsu-find-revision-section id)))
+              (section (majutsu-section-find id 'jj-commit)))
     (magit-section-goto section)
     (goto-char (oref section start))
     t))
@@ -902,13 +902,6 @@ Return non-nil when the section could be located."
     (unless found
       (goto-char pos)
       (message "No more changesets"))))
-
-;; TODO: use this function in locate-fn of majutsu-selection
-(defun majutsu-find-revision-section (id)
-  "Return the jj-commit section matching ID inside the log buffer."
-  (majutsu-section-find id
-                                         (oref (magit-current-section) type)
-                                         (magit-get-section '((lograph) (logbuf)))))
 
 ;;; Log Mode
 

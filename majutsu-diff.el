@@ -1177,7 +1177,8 @@ REVSET is passed to jj diff using `--revisions='."
       (:key to
        :label "[TO]"
        :face (:background "dark cyan" :foreground "white")
-       :type single)))))
+       :type single))
+    :locate-fn (##majutsu-section-find % 'jj-commit))))
 
 ;;;; Infix Commands
 
