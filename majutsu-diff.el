@@ -1111,7 +1111,7 @@ REVSET is passed to jj diff using `--revisions='."
   (interactive)
   (transient-setup
    'majutsu-diff nil nil
-   :scope (majutsu-selection-setup-scope)))
+   :scope (majutsu-selection-session-begin)))
 
 ;;;; Infix Commands
 

@@ -102,7 +102,7 @@
     (magit-get-section
      (append `((,type . ,value)) (magit-section-ident parent)))))
 
-(defun majutsu-selection-session-begin (&rest _args)
+(defun majutsu-selection-session-begin ()
   "Create a transient selection session for the current buffer.
 
 Arguments are ignored for backward compatibility."
@@ -110,14 +110,28 @@ Arguments are ignored for backward compatibility."
    :buffer (current-buffer)
    :overlays (make-hash-table :test 'equal)))
 
-(defalias 'majutsu-selection-setup-scope 'majutsu-selection-session-begin)
-
 (defun majutsu-selection--find-option (key)
   (when (boundp 'transient--suffixes)
     (seq-find (lambda (obj)
                 (and (cl-typep obj 'majutsu-selection-option)
                      (eq (oref obj selection-key) key)))
               transient--suffixes)))
+
+(defun majutsu-selection--toggle-current (current values type)
+  (setq values (ensure-list values))
+  (unless values
+    (user-error "No selection target at point"))
+  (if (eq type 'single)
+      (let ((new (car values))
+            (old (if (listp current) (car current) current)))
+        (if (equal old new) nil new))
+    (unless (listp current)
+      (setq current (and current (list current))))
+    (dolist (id values)
+      (setq current (if (member id current)
+                        (delete id current)
+                      (append current (list id)))))
+    current))
 
 (defun majutsu-selection-values (key)
   "Return selected values for category KEY."
@@ -215,19 +229,8 @@ VALUES defaults to the target(s) at point."
       (majutsu-selection--with-session-buffer session
         (let ((fn (or (oref obj targets-fn) #'majutsu-selection--targets-default)))
           (setq values (funcall fn)))))
-    (unless values
-      (user-error "No selection target at point"))
-    (let ((current (oref obj value))
-          (type (oref obj selection-type)))
-      (if (eq type 'single)
-          (let ((new (car values))
-                (old (if (listp current) (car current) current)))
-            (setq current (if (equal old new) nil (list new))))
-        (unless (listp current) (setq current (list current)))
-        (dolist (id values)
-          (setq current (if (member id current)
-                            (delete id current)
-                          (append current (list id))))))
+    (let ((current (majutsu-selection--toggle-current
+                    (oref obj value) values (oref obj selection-type))))
       (transient-infix-set obj current))))
 
 (defun majutsu-selection-select (key &optional values)
@@ -271,17 +274,10 @@ KEY must be a `single' selection category."
                                 (buffer-live-p transient--original-buffer)
                                 transient--original-buffer)
                            (current-buffer))
-    (let* ((id (or (magit-section-value-if 'jj-commit)
-                   (user-error "No changeset at point")))
-           (id (if (stringp id) id (format "%s" id)))
-           (current (oref obj value))
-           (type (oref obj selection-type)))
-      (if (eq type 'single)
-          (if (equal current id) nil id)
-        (let ((list (if (listp current) current (list current))))
-          (if (member id list)
-              (delete id list)
-            (append list (list id))))))))
+    (let* ((fn (or (oref obj targets-fn) #'majutsu-selection--targets-default))
+           (values (funcall fn)))
+      (majutsu-selection--toggle-current
+       (oref obj value) values (oref obj selection-type)))))
 
 (cl-defmethod transient-infix-value ((_obj majutsu-selection-toggle-option))
   nil)
