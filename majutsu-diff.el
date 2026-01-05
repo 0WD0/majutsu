@@ -187,8 +187,7 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 
 (defun majutsu-diff--extract-range-args (args)
   "Return the subset of ARGS that restrict `jj diff' range."
-  (mapcar #'substring-no-properties
-          (seq-filter #'majutsu-diff--range-arg-p args)))
+  (seq-filter #'majutsu-diff--range-arg-p args))
 
 (defun majutsu-diff--transient-original-buffer ()
   (and (buffer-live-p transient--original-buffer)
@@ -200,8 +199,7 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
     (or (magit-section-value-if 'jj-commit) "@")))
 
 (defun majutsu-diff--transient-read-revset (prompt initial-input _history)
-  (if current-prefix-arg
-      nil
+  (unless current-prefix-arg
     (majutsu-read-revset prompt (or initial-input (majutsu-diff--transient-default-revset)))))
 
 ;;; Arguments
