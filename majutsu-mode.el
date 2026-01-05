@@ -40,8 +40,8 @@
   "D"   'majutsu-diff-dwim
   "r"   'majutsu-rebase
   "b"   'majutsu-bookmark
-  "y"   'majutsu-duplicate-transient
-  "Y"   'majutsu-duplicate
+  "y"   'majutsu-duplicate
+  "Y"   'majutsu-duplicate-dwim
   "G"   'majutsu-git-transient
   "Z"   'majutsu-workspace-transient
   "%"   'majutsu-workspace-transient

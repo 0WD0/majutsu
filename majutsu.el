@@ -51,8 +51,8 @@ Instead of invoking this alias for `majutsu-log' using
     ("l" "Log options" majutsu-log-transient)
     ("N" "New" majutsu-new-dwim)
     ("n" "New (transient)" majutsu-new)
-    ("y" "Duplicate (transient)" majutsu-duplicate-transient)
-    ("Y" "Duplicate" majutsu-duplicate)
+    ("y" "Duplicate (transient)" majutsu-duplicate)
+    ("Y" "Duplicate" majutsu-duplicate-dwim)
     ("a" "Abandon" majutsu-abandon)
     ("d" "Describe" majutsu-describe)
     ("s" "Squash" majutsu-squash)]

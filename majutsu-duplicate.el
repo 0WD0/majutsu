@@ -57,18 +57,12 @@
   (majutsu-duplicate--run-command (majutsu-duplicate--build-args)))
 
 ;;;###autoload
-(defun majutsu-duplicate-transient ()
-  "Open the jj duplicate transient."
-  (interactive)
-  (majutsu-duplicate-transient--internal))
-
-;;;###autoload
-(defun majutsu-duplicate (arg)
+(defun majutsu-duplicate-dwim (arg)
   "Duplicate the changeset at point.
 With prefix ARG, open the duplicate transient."
   (interactive "P")
   (if arg
-      (majutsu-duplicate-transient)
+      (call-interactively #'majutsu-duplicate)
     (let* ((rev (magit-section-value-if 'jj-commit))
            (args (majutsu-duplicate--build-args
                   :sources (list (or rev "@")))))
@@ -122,7 +116,7 @@ With prefix ARG, open the duplicate transient."
     (setq args (append args sources))
     args))
 
-(transient-define-prefix majutsu-duplicate-transient--internal ()
+(transient-define-prefix majutsu-duplicate ()
   "Internal transient for jj duplicate."
   :man-page "jj-duplicate"
   :transient-non-suffix t
@@ -158,7 +152,7 @@ With prefix ARG, open the duplicate transient."
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   (transient-setup
-   'majutsu-duplicate-transient--internal nil nil
+   'majutsu-duplicate nil nil
    :scope
    (majutsu-selection-session-begin
     '((:key source
