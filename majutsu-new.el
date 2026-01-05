@@ -15,6 +15,13 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-selection)
+
+(defclass majutsu-new-option (majutsu-selection-option)
+  ((selection-key :initarg :selection-key :initform nil)))
+
+(defclass majutsu-new--toggle-option (majutsu-selection-toggle-option)
+  ())
 
 ;;; majutsu-new
 
@@ -64,31 +71,81 @@ With prefix ARG, open the new transient for interactive selection."
   :shortarg "-e"
   :argument "--no-edit")
 
-;;;###autoload
+(transient-define-argument majutsu-new:--parent ()
+  :description "Parent"
+  :class 'majutsu-new-option
+  :selection-key 'parent
+  :selection-label "[PARENT]"
+  :selection-face '(:background "dark orange" :foreground "black")
+  :selection-type 'multi
+  :key "-P"
+  :argument "--parent="
+  :multi-value t
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-new:--after ()
+  :description "After"
+  :class 'majutsu-new-option
+  :selection-key 'after
+  :selection-label "[AFTER]"
+  :selection-face '(:background "dark blue" :foreground "white")
+  :selection-type 'multi
+  :key "-A"
+  :argument "--after="
+  :multi-value t
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-new:--before ()
+  :description "Before"
+  :class 'majutsu-new-option
+  :selection-key 'before
+  :selection-label "[BEFORE]"
+  :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-type 'multi
+  :key "-B"
+  :argument "--before="
+  :multi-value t
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-new:parent ()
+  :description "Parent (toggle at point)"
+  :class 'majutsu-new--toggle-option
+  :selection-key 'parent
+  :selection-type 'multi
+  :key "p"
+  :argument "--parent="
+  :multi-value t)
+
+(transient-define-argument majutsu-new:after ()
+  :description "After (toggle at point)"
+  :class 'majutsu-new--toggle-option
+  :selection-key 'after
+  :selection-type 'multi
+  :key "a"
+  :argument "--after="
+  :multi-value t)
+
+(transient-define-argument majutsu-new:before ()
+  :description "Before (toggle at point)"
+  :class 'majutsu-new--toggle-option
+  :selection-key 'before
+  :selection-type 'multi
+  :key "b"
+  :argument "--before="
+  :multi-value t)
+
 (defun majutsu-new-clear-selections ()
   "Clear all jj new selections."
   (interactive)
-  (majutsu-selection-clear)
-  (when (called-interactively-p 'interactive)
-    (message "Cleared all jj new selections")))
-
-;;;###autoload
-(defun majutsu-new-toggle-parent ()
-  "Toggle the commit at point as a jj new parent."
-  (interactive)
-  (majutsu-selection-toggle 'parent))
-
-;;;###autoload
-(defun majutsu-new-toggle-after ()
-  "Toggle the commit at point as a jj new --after target."
-  (interactive)
-  (majutsu-selection-toggle 'after))
-
-;;;###autoload
-(defun majutsu-new-toggle-before ()
-  "Toggle the commit at point as a jj new --before target."
-  (interactive)
-  (majutsu-selection-toggle 'before))
+  (when (consp transient--suffixes)
+    (dolist (obj transient--suffixes)
+      (when (and (cl-typep obj 'majutsu-new-option)
+                 (memq (oref obj selection-key) '(parent after before)))
+        (transient-infix-set obj nil))))
+  (when transient--prefix
+    (transient--redisplay))
+  (majutsu-selection-render)
+  (message "Cleared all jj new selections"))
 
 (defun majutsu-new--run-command (args)
   "Execute jj new with ARGS and refresh the log on success."
@@ -102,13 +159,29 @@ With prefix ARG, open the new transient for interactive selection."
       nil)))
 
 ;;;###autoload
-(defun majutsu-new-execute ()
+(defun majutsu-new-execute (args)
   "Execute jj new using the current transient selections."
-  (interactive)
-  (let* ((args (transient-args 'majutsu-new))
-         (context-args (majutsu-new--build-revset-args))
-         (args (cons "new" (append args context-args))))
-    (majutsu-new--run-command args)))
+  (interactive (list (transient-args 'majutsu-new)))
+  (let* ((parents (mapcar (lambda (s) (substring s 9))
+                          (seq-filter (lambda (s) (string-prefix-p "--parent=" s)) args)))
+         (afters (mapcar (lambda (s) (substring s 8))
+                         (seq-filter (lambda (s) (string-prefix-p "--after=" s)) args)))
+         (befores (mapcar (lambda (s) (substring s 9))
+                          (seq-filter (lambda (s) (string-prefix-p "--before=" s)) args)))
+         (other-args (seq-filter (lambda (s)
+                                   (not (or (string-prefix-p "--parent=" s)
+                                            (string-prefix-p "--after=" s)
+                                            (string-prefix-p "--before=" s))))
+                                 args))
+         (rev-args nil))
+    (dolist (rev afters)
+      (push "--after" rev-args)
+      (push rev rev-args))
+    (dolist (rev befores)
+      (push "--before" rev-args)
+      (push rev rev-args))
+    (let ((final-args (append '("new") other-args (nreverse rev-args) parents)))
+      (majutsu-new--run-command final-args))))
 
 ;;; New Transient
 
@@ -168,22 +241,12 @@ Accepts keys :parents, :after, :before."
   [:description majutsu-new--description
    :class transient-columns
    ["Selections"
-    ;; TODO: 这里的参数管理需要重构，和 diff 的对齐，才能引入 incompatible 设置
-    ("p" "Toggle parent" majutsu-new-toggle-parent
-     :description (lambda ()
-                    (format "Toggle parent (%d selected)"
-                            (majutsu-selection-count 'parent)))
-     :transient t)
-    ("a" "Toggle --after" majutsu-new-toggle-after
-     :description (lambda ()
-                    (format "Toggle --after (%d selected)"
-                            (majutsu-selection-count 'after)))
-     :transient t)
-    ("b" "Toggle --before" majutsu-new-toggle-before
-     :description (lambda ()
-                    (format "Toggle --before (%d selected)"
-                            (majutsu-selection-count 'before)))
-     :transient t)
+    (majutsu-new:--parent)
+    (majutsu-new:--after)
+    (majutsu-new:--before)
+    (majutsu-new:parent)
+    (majutsu-new:after)
+    (majutsu-new:before)
     ("c" "Clear selections" majutsu-new-clear-selections
      :transient t)]
    ["Options"
@@ -204,19 +267,7 @@ Accepts keys :parents, :after, :before."
   (transient-setup
    'majutsu-new nil nil
    :scope
-   (majutsu-selection-session-begin
-    '((:key parent
-       :label "[PARENT]"
-       :face (:background "dark orange" :foreground "black")
-       :type multi)
-      (:key after
-       :label "[AFTER]"
-       :face (:background "dark blue" :foreground "white")
-       :type multi)
-      (:key before
-       :label "[BEFORE]"
-       :face (:background "dark magenta" :foreground "white")
-       :type multi)))))
+   (majutsu-selection-session-begin)))
 
 ;;; _
 (provide 'majutsu-new)
