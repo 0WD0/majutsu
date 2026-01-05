@@ -25,16 +25,14 @@
 
 ;;; Duplicate
 
-(defun majutsu-duplicate--run-command (args)
-  "Execute jj duplicate with ARGS and refresh log."
-  (when (zerop (apply #'majutsu-run-jj args))
-    (message "Duplicated changeset(s)")
-    t))
+(defun majutsu-duplicate-run-jj (args)
+  "Execute jj duplicate with ARGS."
+  (apply #'majutsu-run-jj "duplicate" args))
 
 (defun majutsu-duplicate-execute (args)
   "Execute jj duplicate using transient selections."
   (interactive (list (transient-args 'majutsu-duplicate)))
-  (majutsu-duplicate--run-command (cons "duplicate" args)))
+  (majutsu-duplicate-run-jj args))
 
 ;;;###autoload
 (defun majutsu-duplicate-dwim (arg)
@@ -43,8 +41,11 @@ With prefix ARG, open the duplicate transient."
   (interactive "P")
   (if arg
       (call-interactively #'majutsu-duplicate)
-    (let ((rev (or (magit-section-value-if 'jj-commit) "@")))
-      (majutsu-duplicate--run-command (list "duplicate" rev)))))
+    (let* ((revsets (or (magit-region-values nil t)
+                        (and (magit-section-value-if 'jj-commit)
+                             (list (magit-section-value-if 'jj-commit)))
+                        (list "@"))))
+      (majutsu-duplicate-run-jj revsets))))
 
 ;;; Duplicate Transient
 (transient-define-argument majutsu-duplicate:-r ()
