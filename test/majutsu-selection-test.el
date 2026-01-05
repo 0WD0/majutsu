@@ -1,43 +1,52 @@
-;;; majutsu-selection-test.el --- Tests for selection helpers  -*- lexical-binding: t; -*-
-
-;; Copyright (C) 2026 0WD0
-
-;; Author: 0WD0 <wd.1105848296@gmail.com>
-;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
-;; Keywords: tools, vc
-;; URL: https://github.com/0WD0/majutsu
-
-;;; Commentary:
-
-;; Tests for `majutsu-selection'.
-
-;;; Code:
+;;; majutsu-selection-test.el --- Tests for selection  -*- lexical-binding: t; -*-
 
 (require 'ert)
-(require 'majutsu)
+(require 'majutsu-selection)
+(require 'transient)
+(require 'magit-section)
 
-(ert-deftest majutsu-selection-locate-default-returns-section ()
-  "Default locate-fn should return the matching section object."
+(defclass majutsu-test-option (majutsu-selection-option)
+  ())
+
+(ert-deftest majutsu-selection-render-test ()
   (with-temp-buffer
     (magit-section-mode)
-    (let ((inhibit-read-only t)
-          (magit-section-inhibit-markers t))
-      (magit-insert-section (logbuf)
-        (magit-insert-section (jj-commit "a")
-          (magit-insert-heading "a")
-          (insert "A\n"))
-        (magit-insert-section (jj-commit "b")
-          (magit-insert-heading "b")
-          (insert "B\n")))
-      (let* ((root magit-root-section)
-             (a (car (oref root children)))
-             (b (cadr (oref root children))))
-        (goto-char (oref b start))
-        (should (eq (magit-current-section) b))
-        (let ((found (majutsu-selection--locate-default "a")))
-          (should (eieio-object-p found))
-          (should (eq found a)))))))
+    (let ((inhibit-read-only t))
+      (insert "1234567890")
+      (let* ((session (majutsu-selection-session-begin))
+             (obj (make-instance 'majutsu-test-option
+                                 :command 'ignore
+                                 :key "a"
+                                 :argument "--a="
+                                 :selection-key 'key-a
+                                 :selection-label "A"
+                                 :selection-type 'single
+                                 :locate-fn (lambda (val)
+                                              (if (equal val "1")
+                                                  (cons 1 3)
+                                                (cons 4 6)))))
+             (transient--suffixes (list obj)))
+        (oset obj value "1")
+        (majutsu-selection-render session)
+        (let ((ovs (overlays-at 1)))
+          (should ovs)
+          (let ((ov (seq-find (lambda (o) (overlay-get o 'majutsu-selection)) ovs)))
+            (should ov)
+            (should (= (overlay-start ov) 1))
+            (should (= (overlay-end ov) 3))
+            (should (string-match-p "A" (overlay-get ov 'before-string)))))
+        (oset obj value "2")
+        (majutsu-selection-render session)
+        (let ((ovs (overlays-at 4)))
+          (should ovs)
+          (let ((ov (seq-find (lambda (o) (overlay-get o 'majutsu-selection)) ovs)))
+            (should ov)
+            (should (= (overlay-start ov) 4))
+            (should (= (overlay-end ov) 6))))
+        (oset obj value nil)
+        (majutsu-selection-render session)
+        (should-not (seq-find (lambda (o) (overlay-get o 'majutsu-selection))
+                              (overlays-in (point-min) (point-max))))))))
 
 (provide 'majutsu-selection-test)
 ;;; majutsu-selection-test.el ends here
-
