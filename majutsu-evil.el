@@ -97,7 +97,7 @@ macro expansion until Evil is actually present."
     (kbd "r") #'majutsu-rebase
     (kbd "d") #'majutsu-diff
     (kbd "D") #'majutsu-diff-dwim
-    (kbd "*") #'majutsu-workspace-transient
+    (kbd "*") #'majutsu-workspace
     (kbd "E") #'majutsu-diffedit-emacs
     (kbd "M") #'majutsu-diffedit-smerge
     (kbd "?") #'majutsu-dispatch

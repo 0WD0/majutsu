@@ -59,7 +59,7 @@ Instead of invoking this alias for `majutsu-log' using
    ["Advanced"
     ("r" "Rebase" majutsu-rebase)
     ("b" "Bookmarks" majutsu-bookmark)
-    ("Z" "Workspaces" majutsu-workspace-transient)
+    ("Z" "Workspaces" majutsu-workspace)
     ("G" "Git" majutsu-git-transient)]
    ["Diff & Fix"
     ("D" "Diff menu" majutsu-diff)

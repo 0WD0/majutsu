@@ -351,13 +351,7 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
 
 ;;; Transient
 
-;;;###autoload
-(defun majutsu-workspace-transient ()
-  "Transient for jj workspace operations."
-  (interactive)
-  (majutsu-workspace-transient--internal))
-
-(transient-define-prefix majutsu-workspace-transient--internal ()
+(transient-define-prefix majutsu-workspace ()
   "Internal transient for jj workspace operations."
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
