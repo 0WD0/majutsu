@@ -1177,6 +1177,7 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'majutsu-diff--toggle-range-option
   :selection-key 'from
   :selection-type 'single
+  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "f"
   :argument "--from=")
 
@@ -1185,6 +1186,7 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'majutsu-diff--toggle-range-option
   :selection-key 'to
   :selection-type 'single
+  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "t"
   :argument "--to=")
 
