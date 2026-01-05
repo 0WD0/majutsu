@@ -15,15 +15,16 @@
 (require 'subr-x)
 (require 'magit-section)
 
-(defun majutsu-section-find (value &optional condition root)
+(defun majutsu-section-find (value &optional type root)
   "Return the closest section matching VALUE.
 
 When ROOT is non-nil, traverse from that section, otherwise from
 `magit-root-section'."
-  (let* ((root (or root (magit-root-section)))
+  (let* ((root (or root magit-root-section))
          (anchor (or (and-let* ((cur (magit-current-section)))
                        (oref cur start))
                      (point)))
+         (type (or type (oref (magit-current-section) type)))
          (exact (and root value
                      (magit-get-section
                       (append `((,type . ,value)) (magit-section-ident root)))))
@@ -32,15 +33,15 @@ When ROOT is non-nil, traverse from that section, otherwise from
     (or exact
         (progn
           (magit-map-sections
-           (##let ((value (magit-section-value-if condition it))
-                   (when (and value (stringp value)
-                              (or (string-prefix-p id value)
-                                  (string-prefix-p value id)))
-                     (let* ((pos (oref it start))
-                            (dist (abs (- pos anchor))))
-                       (when (or (null best-dist) (< dist best-dist))
-                         (setq best it)
-                         (setq best-dist dist))))))
+           (##let ((id (magit-section-value-if type %)))
+                  (when (and id (stringp id)
+                             (or (string-prefix-p id value)
+                                 (string-prefix-p value id)))
+                    (let* ((pos (oref % start))
+                           (dist (abs (- pos anchor))))
+                      (when (or (null best-dist) (< dist best-dist))
+                        (setq best %)
+                        (setq best-dist dist)))))
            root))
         best)))
 
