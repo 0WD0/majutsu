@@ -43,10 +43,8 @@ With prefix ARG, open the duplicate transient."
   (interactive "P")
   (if arg
       (call-interactively #'majutsu-duplicate)
-    (let* ((rev (magit-section-value-if 'jj-commit))
-           (args (majutsu-duplicate--build-args
-                  :sources (list (or rev "@")))))
-      (majutsu-duplicate--run-command args))))
+    (let ((rev (or (magit-section-value-if 'jj-commit) "@")))
+      (majutsu-duplicate--run-command (list "duplicate" rev)))))
 
 ;;; Duplicate Transient
 (transient-define-argument majutsu-duplicate:-r ()
@@ -145,24 +143,6 @@ With prefix ARG, open the duplicate transient."
     (transient--redisplay))
   (majutsu-selection-render)
   (message "Cleared duplicate selections"))
-
-(cl-defun majutsu-duplicate--build-args (&key sources destinations after before)
-  "Legacy builder."
-  (let* ((sources (or sources
-                      (majutsu-selection-values 'source)
-                      (list (or (magit-section-value-if 'jj-commit) "@"))))
-         (destinations (or destinations (majutsu-selection-values 'onto)))
-         (after (or after (majutsu-selection-values 'after)))
-         (before (or before (majutsu-selection-values 'before)))
-         (args '("duplicate")))
-    (dolist (rev destinations)
-      (setq args (append args (list "--onto" rev))))
-    (dolist (rev after)
-      (setq args (append args (list "--insert-after" rev))))
-    (dolist (rev before)
-      (setq args (append args (list "--insert-before" rev))))
-    (setq args (append args sources))
-    args))
 
 (transient-define-prefix majutsu-duplicate ()
   "Internal transient for jj duplicate."
