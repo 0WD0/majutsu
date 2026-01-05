@@ -29,34 +29,16 @@
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash)))
   (let* ((keep (member "--keep" args))
-         (ignore-immutable (member "--ignore-immutable" args))
-         (froms (mapcar (lambda (s) (substring s 7))
-                        (seq-filter (lambda (s) (string-prefix-p "--from=" s)) args)))
-         (intos (mapcar (lambda (s) (substring s 7))
-                        (seq-filter (lambda (s) (string-prefix-p "--into=" s)) args))))
-    (cond
-     ((and froms intos)
-      (majutsu-squash-run froms (car intos) keep ignore-immutable))
-     (froms
-      (majutsu-squash-run froms nil keep ignore-immutable))
-     ((magit-section-value-if 'jj-commit)
-      (majutsu-squash-run (list (magit-section-value-if 'jj-commit)) nil keep ignore-immutable))
-     (t
-      (majutsu--message-with-log "No commit selected for squash")))))
-
-(defun majutsu-squash-run (from-list into keep ignore-immutable)
-  "Run jj squash using with-editor."
-  (let* ((froms (seq-filter (lambda (rev)
-                              (and rev (not (string-empty-p (string-trim rev)))))
-                            (mapcar (lambda (rev) (and rev (string-trim rev)))
-                                    from-list)))
-         (froms (or froms '("@")))
-         (args (append '("squash")
-                       (apply #'append (mapcar (lambda (rev) (list "--from" rev)) froms))
-                       (when into (list "--into" into))
-                       (when keep '("--keep-emptied"))
-                       (when ignore-immutable '("--ignore-immutable")))))
-    (majutsu-run-jj-with-editor args)))
+         (args (seq-remove (lambda (arg) (string= arg "--keep")) args)))
+    (unless (seq-some (lambda (arg) (string-prefix-p "--from=" arg)) args)
+      (if-let ((rev (magit-section-value-if 'jj-commit)))
+          (push (format "--from=%s" rev) args)
+        (majutsu--message-with-log "No commit selected for squash")
+        (setq args nil)))
+    (when args
+      (when keep
+        (push "--keep-emptied" args))
+      (majutsu-run-jj-with-editor (cons "squash" args)))))
 
 ;;;; Infix Commands
 
