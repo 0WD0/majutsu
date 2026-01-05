@@ -16,8 +16,6 @@
 (require 'subr-x)
 (require 'transient)
 
-(declare-function magit-root-section "magit-section")
-
 (cl-defstruct (majutsu-selection-category
                (:constructor majutsu-selection-category-create))
   key
@@ -125,43 +123,15 @@ Intended for `kill-buffer-hook'."
       (list (magit-section-ident-value (magit-current-section)))))
 
 (defun majutsu-selection--locate-default (value)
-  "Default locator for selection overlays."
-  (when-let* ((root (oref (magit-current-section) parent))
-              (type (oref (magit-current-section) type))
-              (section (magit-get-section
-                        (append `((,type . ,value)) (magit-section-ident root)))))
-    (majutsu-selection--overlay-range section)))
+  "Default locator for selection overlays.
 
-(defun majutsu-selection-find-revision-section (value &optional root)
-  "Return the closest section matching VALUE.
-
-When ROOT is non-nil, traverse from that section, otherwise from
-`magit-root-section'."
-  (let* ((root (or root (ignore-errors (magit-root-section))))
-         (anchor (or (and-let* ((cur (magit-current-section)))
-                       (oref cur start))
-                     (point)))
-         (type (oref (magit-current-section) type))
-         (exact (and root value
-                     (ignore-errors
-                       (magit-get-section
-                        (append `((,type . ,value)) (magit-section-ident root))))))
-         best
-         best-dist)
-    (or exact
-        (progn
-          (magit-map-sections
-           (##let ((value (magit-section-value-if type it))
-                   (when (and value (stringp value)
-                              (or (string-prefix-p id value)
-                                  (string-prefix-p value id)))
-                     (let* ((pos (oref it start))
-                            (dist (abs (- pos anchor))))
-                       (when (or (null best-dist) (< dist best-dist))
-                         (setq best it)
-                         (setq best-dist dist))))))
-           root))
-        best)))
+Return the sibling section of the current section whose value equals
+VALUE."
+  (when-let* ((cur (magit-current-section))
+              (parent (oref cur parent))
+              (type (oref cur type)))
+    (magit-get-section
+     (append `((,type . ,value)) (magit-section-ident parent)))))
 
 (cl-defun majutsu-selection-session-begin (categories &key locate-fn targets-fn)
   "Create a transient selection session for the current buffer.
@@ -171,6 +141,9 @@ CATEGORIES is a list of plists, each containing:
 - :label string displayed before selected commits
 - :face  face (symbol or plist) applied to the label
 - :type  either `single' or `multi' (defaults to `multi')"
+  ;; LOCATE-FN should accept a selected value and return the
+  ;; corresponding section (or nil).  For compatibility it may also
+  ;; return a cons cell (START . END) that identifies the overlay range.
   (let ((locate-fn (or locate-fn #'majutsu-selection--locate-default))
         (targets-fn (or targets-fn #'majutsu-selection--targets-default)))
     (majutsu-selection-session-create
@@ -254,7 +227,12 @@ CATEGORIES is a list of plists, each containing:
           (setq existing nil))
         (majutsu-selection--with-session-buffer session
           (when-let* ((locate-fn (majutsu-selection-session-locate-fn session))
-                      (range (and locate-fn (funcall locate-fn id))))
+                      (located (and locate-fn (funcall locate-fn id)))
+                      (range (cond
+                              ((consp located) located)
+                              ((eieio-object-p located)
+                               (majutsu-selection--overlay-range located))
+                              (t nil))))
             (pcase-let ((`(,start . ,end) range))
               (unless (and existing
                            (= (overlay-start existing) start)

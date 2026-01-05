@@ -21,11 +21,12 @@
 (require 'majutsu-process)
 (require 'majutsu-template)
 (require 'majutsu-selection)
+(require 'majutsu-section)
 (require 'majutsu-workspace)
 (require 'json)
 
 (declare-function majutsu-jj-string "majutsu-process" (&rest args))
-(declare-function majutsu-selection-find-revision-section "majutsu-selection" (id &optional root))
+(declare-function majutsu-section-find "majutsu-section" (value &optional condition root))
 
 (defvar majutsu-buffer-log-args)
 (defvar majutsu-buffer-log-revsets)
@@ -912,8 +913,9 @@ Return non-nil when the section could be located."
 ;; TODO: use this function in locate-fn of majutsu-selection
 (defun majutsu-find-revision-section (id)
   "Return the jj-commit section matching ID inside the log buffer."
-  (majutsu-selection-find-revision-section
-   id (magit-get-section '((lograph) (logbuf)))))
+  (majutsu-section-find id
+                                         (oref (magit-current-section) type)
+                                         (magit-get-section '((lograph) (logbuf)))))
 
 ;;; Log Mode
 
