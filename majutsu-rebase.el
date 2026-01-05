@@ -99,7 +99,7 @@ ARGS are passed from the transient."
   :selection-type 'multi
   :key "-S"
   :argument "--source="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-rebase:--destination ()
@@ -111,7 +111,7 @@ ARGS are passed from the transient."
   :selection-type 'multi
   :key "-D"
   :argument "--destination="
-  :multi-value t
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-rebase:source ()
@@ -121,7 +121,7 @@ ARGS are passed from the transient."
   :selection-type 'multi
   :key "s"
   :argument "--source="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-rebase:destination ()
   :description "Destination (toggle at point)"
@@ -130,7 +130,7 @@ ARGS are passed from the transient."
   :selection-type 'multi
   :key "d"
   :argument "--destination="
-  :multi-value t)
+  :multi-value 'repeat)
 
 (defun majutsu-rebase-clear-selections ()
   "Clear all rebase selections."
