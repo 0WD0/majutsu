@@ -33,29 +33,24 @@ With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
       (call-interactively #'majutsu-new)
-    (let* ((parent (magit-section-value-if 'jj-commit))
-           (parents (when parent (list parent)))
-           (args (majutsu-new--build-args
-                  :parents parents)))
-      (majutsu-new--run-command args))))
+    (let ((parent (magit-section-value-if 'jj-commit)))
+      (majutsu-new--run-command (if parent
+                                    (list "new" parent)
+                                  (list "new"))))))
 
 ;;;###autoload
 (defun majutsu-new-with-after ()
   "Create a new changeset with the commit at point as --after."
   (interactive)
-  (let* ((after (magit-section-value-if 'jj-commit))
-         (args (majutsu-new--build-args
-                :after (when after (list after)))))
-    (majutsu-new--run-command args)))
+  (when-let* ((after (magit-section-value-if 'jj-commit)))
+    (majutsu-new--run-command (list "new" "--insert-after" after))))
 
 ;;;###autoload
 (defun majutsu-new-with-before ()
   "Create a new changeset with the commit at point as --before."
   (interactive)
-  (let* ((before (magit-section-value-if 'jj-commit))
-         (args (majutsu-new--build-args
-                :before (when before (list before)))))
-    (majutsu-new--run-command args)))
+  (when-let* ((before (magit-section-value-if 'jj-commit)))
+    (majutsu-new--run-command (list "new" "--insert-before" before))))
 
 ;;; Options and Infixes
 
@@ -91,7 +86,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-type 'multi
   :key "-A"
-  :argument "--after="
+  :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
@@ -103,7 +98,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-type 'multi
   :key "-B"
-  :argument "--before="
+  :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
@@ -122,7 +117,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-key 'after
   :selection-type 'multi
   :key "a"
-  :argument "--after="
+  :argument "--insert-after="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-new:before ()
@@ -131,7 +126,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-key 'before
   :selection-type 'multi
   :key "b"
-  :argument "--before="
+  :argument "--insert-before="
   :multi-value 'repeat)
 
 (defun majutsu-new-clear-selections ()
@@ -162,32 +157,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-execute (args)
   "Execute jj new using the current transient selections."
   (interactive (list (transient-args 'majutsu-new)))
-  (let* ((parents (seq-remove
-                   #'string-empty-p
-                   (mapcar (lambda (s) (substring s 2))
-                           (seq-filter (lambda (s)
-                                         (or (string-prefix-p "-r" s)
-                                             (string-prefix-p "-o" s)))
-                                       args))))
-         (afters (mapcar (lambda (s) (substring s 8))
-                         (seq-filter (lambda (s) (string-prefix-p "--after=" s)) args)))
-         (befores (mapcar (lambda (s) (substring s 9))
-                          (seq-filter (lambda (s) (string-prefix-p "--before=" s)) args)))
-         (other-args (seq-filter (lambda (s)
-                                   (not (or (string-prefix-p "-r" s)
-                                            (string-prefix-p "-o" s)
-                                            (string-prefix-p "--after=" s)
-                                            (string-prefix-p "--before=" s))))
-                                 args))
-         (rev-args nil))
-    (dolist (rev afters)
-      (push "--after" rev-args)
-      (push rev rev-args))
-    (dolist (rev befores)
-      (push "--before" rev-args)
-      (push rev rev-args))
-    (let ((final-args (append '("new") other-args (nreverse rev-args) parents)))
-      (majutsu-new--run-command final-args))))
+  (majutsu-new--run-command (cons "new" args)))
 
 ;;; New Transient
 
@@ -221,24 +191,6 @@ With prefix ARG, open the new transient for interactive selection."
     (if parts
         (string-join parts " | ")
       "Parents: @")))
-
-(cl-defun majutsu-new--build-revset-args (&key parents after before)
-  "Build the revset argument list for jj new.
-PARENTS, AFTER, BEFORE default to transient state."
-  (let* ((parents (or parents (majutsu-selection-values 'parent)))
-         (after (or after (majutsu-selection-values 'after)))
-         (before (or before (majutsu-selection-values 'before)))
-         args)
-    (dolist (rev after)
-      (setq args (append args (list "--after" rev))))
-    (dolist (rev before)
-      (setq args (append args (list "--before" rev))))
-    (append args parents)))
-
-(cl-defun majutsu-new--build-args (&rest args)
-  "Legacy wrapper to build full jj new command args.
-Accepts keys :parents, :after, :before."
-  (cons "new" (apply #'majutsu-new--build-revset-args args)))
 
 (transient-define-prefix majutsu-new ()
   "Internal transient for jj new operations."
