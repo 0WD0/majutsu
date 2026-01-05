@@ -308,9 +308,9 @@ workspace directories are not touched on disk."
      (defvar crm-separator)
      (list (completing-read-multiple "Forget workspace(s): " names nil t))))
   (when names
-    (when (and majutsu-confirm-critical-actions
-               (not (yes-or-no-p (format "Forget workspace(s) %s? "
-                                         (string-join names ", ")))))
+    (unless (majutsu-confirm 'workspace-forget
+                             (format "Forget workspace(s) %s? "
+                                     (string-join names ", ")))
       (user-error "Forget canceled"))
     (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
         (progn

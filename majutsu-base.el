@@ -39,8 +39,34 @@
   :group 'majutsu)
 
 (defcustom majutsu-confirm-critical-actions t
-  "If non-nil, prompt for confirmation before undo/redo/abandon operations."
+  "If non-nil, prompt for confirmation before critical operations."
   :type 'boolean
+  :group 'majutsu)
+
+(defconst majutsu--confirm-actions
+  '((const undo)
+    (const redo)
+    (const abandon)
+    (const rebase)
+    (const workspace-forget))
+  "Actions that may require confirmation.")
+
+(defcustom majutsu-no-confirm nil
+  "A list of symbols for actions Majutsu should not confirm, or t.
+
+This is modeled after Magit's `magit-no-confirm`.  If this is t,
+then no confirmation is required.  Otherwise, each symbol stands
+for a class of actions that would normally ask for confirmation."
+  :type `(choice (const :tag "Never require confirmation" t)
+                 (set   :tag "Require confirmation except for"
+                        ,@majutsu--confirm-actions))
+  :group 'majutsu)
+
+(defcustom majutsu-slow-confirm nil
+  "A list of actions that should use `yes-or-no-p' instead of `y-or-n-p'."
+  :type `(choice (const :tag "Use yes-or-no for all" t)
+                 (set   :tag "Use yes-or-no for"
+                        ,@majutsu--confirm-actions))
   :group 'majutsu)
 
 ;;; Section Classes
@@ -105,6 +131,24 @@ is appended."
   (let ((msg (apply #'format format-string args)))
     (majutsu--debug "User message: %s" msg)
     (message "%s" msg)))
+
+(defun majutsu-y-or-n-p (prompt &optional action)
+  "Ask PROMPT with y/n or yes/no depending on ACTION settings."
+  (if (or (eq majutsu-slow-confirm t)
+          (and action (member action majutsu-slow-confirm)))
+      (yes-or-no-p prompt)
+    (y-or-n-p prompt)))
+
+(defun majutsu-confirm (action prompt)
+  "Return non-nil if ACTION is confirmed.
+
+ACTION is a symbol such as `rebase' or `abandon'.  PROMPT should
+end with a question mark and space."
+  (cond
+   ((not majutsu-confirm-critical-actions) t)
+   ((eq majutsu-no-confirm t) t)
+   ((and action (memq action majutsu-no-confirm)) t)
+   (t (majutsu-y-or-n-p prompt action))))
 
 (defun majutsu-display-buffer (buffer &optional kind display-function)
   "Display BUFFER using a function chosen for KIND or DISPLAY-FUNCTION.

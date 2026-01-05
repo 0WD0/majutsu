@@ -23,8 +23,8 @@
   "Abandon the changeset at point."
   (interactive)
   (if-let* ((revset (magit-section-value-if 'jj-commit)))
-      (if (and majutsu-confirm-critical-actions
-               (not (yes-or-no-p (format "Abandon changeset %s? " revset))))
+      (if (not (majutsu-confirm 'abandon
+                                (format "Abandon changeset %s? " revset)))
           (message "Abandon canceled")
         (majutsu-run-jj "abandon" "-r" revset))
     (message "No changeset at point to abandon")))

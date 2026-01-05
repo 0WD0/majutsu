@@ -21,8 +21,7 @@
 (defun majutsu-undo ()
   "Undo the last change."
   (interactive)
-  (if (and majutsu-confirm-critical-actions
-           (not (yes-or-no-p "Undo the most recent change? ")))
+  (if (not (majutsu-confirm 'undo "Undo the most recent change? "))
       (message "Undo canceled")
     (let ((revset (magit-section-value-if 'jj-commit)))
       (when (zerop (majutsu-run-jj "undo"))
@@ -35,8 +34,7 @@
 (defun majutsu-redo ()
   "Redo the last undone change."
   (interactive)
-  (if (and majutsu-confirm-critical-actions
-           (not (yes-or-no-p "Redo the previously undone change? ")))
+  (if (not (majutsu-confirm 'redo "Redo the previously undone change? "))
       (message "Redo canceled")
     (let ((revset (magit-section-value-if 'jj-commit)))
       (when (zerop (majutsu-run-jj "redo"))
