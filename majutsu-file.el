@@ -84,7 +84,7 @@ Results are cached in `majutsu-file--list-cache`."
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
-  (format "*majutsu-blob: %s @%s*" path revset))
+  (format "%s@~%s~" path revset))
 
 (defun majutsu-file--root ()
   "Return repo root for current buffer."
@@ -315,9 +315,21 @@ DIFF must be a unified diff."
   "g" #'revert-buffer)
 
 (define-minor-mode majutsu-blob-mode
-  "Enable Majutsu features in blob buffers."
+  "Enable Majutsu features in blob buffers.
+
+When called directly from a file buffer, open the @ blob for that file."
   :lighter " MjBlob"
-  :keymap majutsu-blob-mode-map)
+  :keymap majutsu-blob-mode-map
+  (when (and majutsu-blob-mode
+             (not (and majutsu-buffer-blob-root
+                       majutsu-buffer-blob-path)))
+    (let ((file buffer-file-name))
+      (setq majutsu-blob-mode nil)
+      (if file
+          (let* ((root (majutsu-file--root))
+                 (path (majutsu-file--relative-path root file)))
+            (majutsu-find-file "@" path))
+        (user-error "Buffer is not visiting a file")))))
 
 ;;; _
 (provide 'majutsu-file)
