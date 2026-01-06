@@ -160,14 +160,18 @@ ROOT is the repository root."
       (set-buffer-modified-p nil)
       (goto-char (point-min)))))
 
+(defun majutsu-find-file--display (revset path display-fn)
+  "Display PATH from REVSET using DISPLAY-FN."
+  (let* ((root (majutsu-file--root))
+         (path (majutsu-file--relative-path root path))
+         (buffer (majutsu-find-file--ensure-buffer root revset path)))
+    (funcall display-fn buffer)))
+
 ;;;###autoload
 (defun majutsu-find-file (revset path)
   "View PATH from REVSET in a blob buffer."
   (interactive (majutsu-find-file-read-args "Find file"))
-  (let* ((root (majutsu-file--root))
-         (path (majutsu-file--relative-path root path))
-         (buffer (majutsu-find-file--ensure-buffer root revset path)))
-    (pop-to-buffer buffer)))
+  (majutsu-find-file--display revset path #'pop-to-buffer))
 
 ;;;###autoload
 (defun majutsu-find-file-at-point ()
@@ -180,16 +184,16 @@ ROOT is the repository root."
                    (majutsu-file--read-path revset root))))
     (majutsu-find-file revset path)))
 
-(defun majutsu-bury-or-kill-buffer (&optional bury-buffer)
-  "Bury the current buffer, or kill it if only shown in one window."
-  (interactive "P")
-  (if (or bury-buffer (cdr (get-buffer-window-list nil nil t)))
-      (bury-buffer)
-    (kill-buffer)))
+(defun majutsu-blob-quit ()
+  "Disable blob mode in the current buffer."
+  (interactive)
+  (when (bound-and-true-p majutsu-blob-mode)
+    (majutsu-blob-mode -1)
+    (message "Blob mode disabled")))
 
 (defun majutsu-file--revset-for-files (revset path direction)
   "Build a revset for PATH and DIRECTION relative to REVSET.
-DIRECTION should be either 'prev or 'next."
+DIRECTION should be either \='prev or \='next."
   (let* ((escaped (replace-regexp-in-string "'" "\\'" path))
          (file-set (format "files('%s')" escaped)))
     (pcase direction
@@ -222,7 +226,7 @@ DIRECTION should be either 'prev or 'next."
     (user-error "Not in a blob buffer"))
   (if-let* ((prev (majutsu-file-prev-change majutsu-buffer-blob-revision
                                             majutsu-buffer-blob-path)))
-      (majutsu-find-file prev majutsu-buffer-blob-path)
+      (majutsu-find-file--display prev majutsu-buffer-blob-path #'switch-to-buffer)
     (user-error "You have reached the beginning of time")))
 
 (defun majutsu-blob-next ()
@@ -232,14 +236,14 @@ DIRECTION should be either 'prev or 'next."
     (user-error "Not in a blob buffer"))
   (if-let* ((next (majutsu-file-next-change majutsu-buffer-blob-revision
                                             majutsu-buffer-blob-path)))
-      (majutsu-find-file next majutsu-buffer-blob-path)
+      (majutsu-find-file--display next majutsu-buffer-blob-path #'switch-to-buffer)
     (user-error "You have reached the end of time")))
 
 (defvar-keymap majutsu-blob-mode-map
   :doc "Keymap for `majutsu-blob-mode'."
   "p" #'majutsu-blob-previous
   "n" #'majutsu-blob-next
-  "q" #'majutsu-bury-or-kill-buffer
+  "q" #'majutsu-blob-quit
   "g" #'revert-buffer)
 
 (define-minor-mode majutsu-blob-mode
