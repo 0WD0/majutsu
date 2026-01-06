@@ -24,6 +24,7 @@
 (declare-function majutsu-toplevel "majutsu-jj" (&optional directory))
 (declare-function majutsu-jj-string "majutsu-process" (&rest args))
 (declare-function majutsu-diff--file-at-point "majutsu-diff" ())
+(declare-function majutsu-bury-or-kill-buffer "majutsu-file" (&optional bury-buffer))
 
 (defvar majutsu-find-file-hook nil
   "Hook run after creating a blob buffer.")
@@ -185,11 +186,19 @@ ROOT is the repository root."
     (majutsu-find-file revset path)))
 
 (defun majutsu-blob-quit ()
-  "Disable blob mode in the current buffer."
+  "Return to the worktree version of the current file."
   (interactive)
-  (when (bound-and-true-p majutsu-blob-mode)
-    (majutsu-blob-mode -1)
-    (message "Blob mode disabled")))
+  (unless (and (bound-and-true-p majutsu-blob-mode)
+               majutsu-buffer-blob-root
+               majutsu-buffer-blob-path)
+    (user-error "Not in a blob buffer"))
+  (let* ((blob (current-buffer))
+         (file (expand-file-name majutsu-buffer-blob-path
+                                 majutsu-buffer-blob-root)))
+    (find-file file)
+    (with-current-buffer blob
+      (majutsu-blob-mode -1)
+      (majutsu-bury-or-kill-buffer))))
 
 (defun majutsu-file--revset-for-files (revset path direction)
   "Build a revset for PATH and DIRECTION relative to REVSET.
@@ -234,7 +243,7 @@ DIFF must be a unified diff."
     (+ line offset)))
 
 (defun majutsu-file--map-line (root from-rev to-rev path line)
-  "Map LINE in FROM-REV to the corresponding line in TO-REV." 
+  "Map LINE in FROM-REV to the corresponding line in TO-REV."
   (let* ((default-directory root)
          (diff (majutsu-jj-string "diff" "--from" from-rev "--to" to-rev "--" path)))
     (if (string-empty-p diff)
@@ -242,7 +251,7 @@ DIFF must be a unified diff."
       (majutsu-file--diff-offset diff line))))
 
 (defun majutsu-file--goto-line-col (line col)
-  "Move point to LINE and COL in current buffer." 
+  "Move point to LINE and COL in current buffer."
   (widen)
   (goto-char (point-min))
   (forward-line (max 0 (1- line)))
