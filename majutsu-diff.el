@@ -26,6 +26,9 @@
 (require 'diff-mode)
 (require 'smerge-mode)
 
+(declare-function majutsu-find-file "majutsu-file" (revset path))
+(declare-function majutsu-find-file-at-point "majutsu-file" ())
+
 ;;; Options
 ;;;; Diff Mode
 
@@ -766,12 +769,69 @@ works with the simplified jj diff we render here."
   (when-let* ((file (majutsu-diff--file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
-;;;###autoload
-(defun majutsu-diff-visit-file ()
-  "Visit the file at point.
+(defun majutsu-diff--range-value (range prefix)
+  "Return the value in RANGE for argument starting with PREFIX." 
+  (when range
+    (when-let* ((arg (seq-find (lambda (item) (string-prefix-p prefix item)) range)))
+      (substring arg (length prefix)))))
 
-When point is on a hunk section, jump to the corresponding line in the
-file."
+(defun majutsu-diff--on-removed-line-p ()
+  "Return non-nil if point is on a removed diff line." 
+  (eq (char-after (line-beginning-position)) ?-))
+
+(defun majutsu-diff--default-revset ()
+  "Return the revset implied by the current diff buffer." 
+  (let* ((range majutsu-buffer-diff-range)
+         (removed (majutsu-diff--on-removed-line-p))
+         (from (majutsu-diff--range-value range "--from="))
+         (to (majutsu-diff--range-value range "--to="))
+         (revisions (majutsu-diff--range-value range "--revisions=")))
+    (cond
+     ((and range (equal (car range) "-r") (cadr range)) (cadr range))
+     (revisions revisions)
+     (from (if (and removed from) from (or to from)))
+     (t "@"))))
+
+(defun majutsu-diff--hunk-line (section goto-from)
+  "Return the line number in SECTION for GOTO-FROM side." 
+  (with-slots (content from-range to-range) section
+    (let ((start (car (if goto-from from-range to-range))))
+      (when start
+        (let ((line start)
+              (target (point)))
+          (save-excursion
+            (goto-char content)
+            (while (< (point) target)
+              (let ((ch (char-after (line-beginning-position))))
+                (cond
+                 ((eq ch ?+) (unless goto-from (setq line (1+ line))))
+                 ((eq ch ?-) (when goto-from (setq line (1+ line))))
+                 (t (setq line (1+ line)))))
+              (forward-line 1)))
+          line)))))
+
+(defun majutsu-diff--hunk-column (section goto-from)
+  "Return the column for SECTION based on GOTO-FROM side." 
+  (let ((bol (line-beginning-position)))
+    (if (or (< (point) (oref section content))
+            (and (not goto-from) (eq (char-after bol) ?-)))
+        0
+      (let ((col (current-column)))
+        (if (memq (char-after bol) '(?+ ?-))
+            (max 0 (1- col))
+          col)))))
+
+(defun majutsu-diff--goto-line-col (buffer line col)
+  "Move point in BUFFER to LINE and COL." 
+  (with-current-buffer buffer
+    (widen)
+    (goto-char (point-min))
+    (forward-line (max 0 (1- line)))
+    (move-to-column col)))
+
+;;;###autoload
+(defun majutsu-diff-visit-workspace-file ()
+  "Visit the workspace file at point, preserving diff line position." 
   (interactive)
   (let ((section (magit-current-section)))
     (cond
@@ -782,11 +842,34 @@ file."
      (t
       (user-error "No file at point")))))
 
+;;;###autoload
+(defun majutsu-diff-visit-file ()
+  "From a diff, visit the appropriate blob at point.
+
+If point is on an added or context line, visit the new/right side.
+If point is on a removed line, visit the old/left side."
+  (interactive)
+  (let* ((section (magit-current-section))
+         (file (majutsu-diff--file-at-point)))
+    (unless file
+      (user-error "No file at point"))
+    (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
+                           (majutsu-diff--on-removed-line-p)))
+           (revset (majutsu-diff--default-revset))
+           (line (and section (magit-section-match 'jj-hunk section)
+                      (majutsu-diff--hunk-line section goto-from)))
+           (col (and section (magit-section-match 'jj-hunk section)
+                     (majutsu-diff--hunk-column section goto-from)))
+           (buf (majutsu-find-file revset file)))
+      (when (and buf line col)
+        (majutsu-diff--goto-line-col buf line col)))))
+
 ;;; Section Keymaps
 
 (defvar-keymap majutsu-diff-section-map
   :doc "Keymap for diff sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-diff-visit-file)
+  "<remap> <majutsu-visit-thing>" #'majutsu-diff-visit-file
+  "C-j" #'majutsu-diff-visit-workspace-file)
 
 (defvar-keymap majutsu-file-section-map
   :doc "Keymap for `jj-file' sections."

@@ -211,7 +211,7 @@ ROOT is the repository root."
     (majutsu-find-file revset path)))
 
 (defun majutsu-blob-quit ()
-  "Return to the worktree version of the current file."
+  "Return to the workspace version of the current file."
   (interactive)
   (unless (and (bound-and-true-p majutsu-blob-mode)
                majutsu-buffer-blob-root

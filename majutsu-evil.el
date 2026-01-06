@@ -109,7 +109,8 @@ macro expansion until Evil is actually present."
     (kbd "Y") #'majutsu-duplicate-dwim)
 
   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
-    (kbd "g d") #'majutsu-jump-to-diffstat-or-diff)
+    (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
+    (kbd "C-<return>") #'majutsu-diff-visit-worktree-file)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-blob-mode-map
     (kbd "p") #'majutsu-blob-previous
