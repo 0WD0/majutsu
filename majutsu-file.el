@@ -201,6 +201,53 @@ DIRECTION should be either \='prev or \='next."
       ('next (format "roots(%s+::&%s)" revset file-set))
       (_ (user-error "Unknown direction")))))
 
+(defun majutsu-file--diff-offset (diff line)
+  "Return LINE offset after applying DIFF hunks.
+DIFF must be a unified diff."
+  (let ((offset 0))
+    (with-temp-buffer
+      (insert diff)
+      (goto-char (point-min))
+      (catch 'found
+        (while (re-search-forward
+                "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@.*\\n"
+                nil t)
+          (let* ((from-beg (string-to-number (match-string 1)))
+                 (from-len (if (match-string 2)
+                               (string-to-number (match-string 2))
+                             1))
+                 (to-len (if (match-string 4)
+                             (string-to-number (match-string 4))
+                           1)))
+            (if (<= from-beg line)
+                (if (< (+ from-beg from-len) line)
+                    (setq offset (+ offset (- to-len from-len)))
+                  (let ((rest (- line from-beg)))
+                    (while (> rest 0)
+                      (pcase (char-after)
+                        (?\s (setq rest (1- rest)))
+                        (?- (setq offset (1- offset))
+                            (setq rest (1- rest)))
+                        (?+ (setq offset (1+ offset))))
+                      (forward-line 1))))
+              (throw 'found nil))))))
+    (+ line offset)))
+
+(defun majutsu-file--map-line (root from-rev to-rev path line)
+  "Map LINE in FROM-REV to the corresponding line in TO-REV." 
+  (let* ((default-directory root)
+         (diff (majutsu-jj-string "diff" "--from" from-rev "--to" to-rev "--" path)))
+    (if (string-empty-p diff)
+        line
+      (majutsu-file--diff-offset diff line))))
+
+(defun majutsu-file--goto-line-col (line col)
+  "Move point to LINE and COL in current buffer." 
+  (widen)
+  (goto-char (point-min))
+  (forward-line (max 0 (1- line)))
+  (move-to-column col))
+
 (defun majutsu-file-prev-change (revset path)
   "Return the previous change-id modifying PATH before REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'prev))
@@ -224,20 +271,32 @@ DIRECTION should be either \='prev or \='next."
   (interactive)
   (unless (and majutsu-buffer-blob-revision majutsu-buffer-blob-path)
     (user-error "Not in a blob buffer"))
-  (if-let* ((prev (majutsu-file-prev-change majutsu-buffer-blob-revision
-                                            majutsu-buffer-blob-path)))
-      (majutsu-find-file--display prev majutsu-buffer-blob-path #'switch-to-buffer)
-    (user-error "You have reached the beginning of time")))
+  (let* ((root majutsu-buffer-blob-root)
+         (from-rev majutsu-buffer-blob-revision)
+         (path majutsu-buffer-blob-path)
+         (line (line-number-at-pos))
+         (col (current-column)))
+    (if-let* ((prev (majutsu-file-prev-change from-rev path)))
+        (let ((target-line (majutsu-file--map-line root from-rev prev path line)))
+          (majutsu-find-file--display prev path #'switch-to-buffer)
+          (majutsu-file--goto-line-col target-line col))
+      (user-error "You have reached the beginning of time"))))
 
 (defun majutsu-blob-next ()
   "Visit next blob that modified current file."
   (interactive)
   (unless (and majutsu-buffer-blob-revision majutsu-buffer-blob-path)
     (user-error "Not in a blob buffer"))
-  (if-let* ((next (majutsu-file-next-change majutsu-buffer-blob-revision
-                                            majutsu-buffer-blob-path)))
-      (majutsu-find-file--display next majutsu-buffer-blob-path #'switch-to-buffer)
-    (user-error "You have reached the end of time")))
+  (let* ((root majutsu-buffer-blob-root)
+         (from-rev majutsu-buffer-blob-revision)
+         (path majutsu-buffer-blob-path)
+         (line (line-number-at-pos))
+         (col (current-column)))
+    (if-let* ((next (majutsu-file-next-change from-rev path)))
+        (let ((target-line (majutsu-file--map-line root from-rev next path line)))
+          (majutsu-find-file--display next path #'switch-to-buffer)
+          (majutsu-file--goto-line-col target-line col))
+      (user-error "You have reached the end of time"))))
 
 (defvar-keymap majutsu-blob-mode-map
   :doc "Keymap for `majutsu-blob-mode'."
