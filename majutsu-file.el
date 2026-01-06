@@ -109,11 +109,37 @@ Results are cached in `majutsu-file--list-cache`."
       (setq default nil))
     (completing-read "Find file: " paths nil t nil nil default)))
 
+(defun majutsu-file--diff-range-value (range prefix)
+  "Return the value in RANGE for argument starting with PREFIX."
+  (when range
+    (when-let* ((arg (seq-find (lambda (item) (string-prefix-p prefix item)) range)))
+      (substring arg (length prefix)))))
+
+(defun majutsu-file--diff-revset ()
+  "Return the revset implied by the current diff buffer, if any."
+  (when (derived-mode-p 'majutsu-diff-mode)
+    (let* ((range majutsu-buffer-diff-range)
+           (removed (eq (char-after (line-beginning-position)) ?-))
+           (from (majutsu-file--diff-range-value range "--from="))
+           (to (majutsu-file--diff-range-value range "--to="))
+           (revisions (majutsu-file--diff-range-value range "--revisions=")))
+      (cond
+       ((and range (equal (car range) "-r") (cadr range)) (cadr range))
+       (revisions revisions)
+       (from (if (and removed from) from (or to from)))
+       (t "@")))))
+
+(defun majutsu-file--default-revset ()
+  "Return default revset for the current context."
+  (or (majutsu-file--diff-revset)
+      (when-let* ((value (magit-section-value-if 'jj-commit)))
+        (majutsu--normalize-id-value value))
+      "@"))
+
 (defun majutsu-find-file-read-args (prompt)
   "Read revset and file path for PROMPT."
   (let* ((root (majutsu-file--root))
-         (default-rev (or (magit-section-value-if 'jj-commit) "@"))
-         (revset (majutsu-read-revset prompt (majutsu--normalize-id-value default-rev)))
+         (revset (majutsu-read-revset prompt (majutsu-file--default-revset)))
          (path (or (majutsu-file--path-at-point root)
                    (majutsu-file--read-path revset root))))
     (list revset path)))
@@ -179,8 +205,7 @@ ROOT is the repository root."
   "View file at point from the relevant revision."
   (interactive)
   (let* ((root (majutsu-file--root))
-         (default-rev (or (magit-section-value-if 'jj-commit) "@"))
-         (revset (majutsu--normalize-id-value default-rev))
+         (revset (majutsu-file--default-revset))
          (path (or (majutsu-file--path-at-point root)
                    (majutsu-file--read-path revset root))))
     (majutsu-find-file revset path)))
