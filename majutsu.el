@@ -62,9 +62,10 @@ Instead of invoking this alias for `majutsu-log' using
     ("Z" "Workspaces" majutsu-workspace)
     ("G" "Git" majutsu-git-transient)]
    ["Diff & Fix"
-    ("D" "Diff menu" majutsu-diff)
-    ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
-    ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
+     ("D" "Diff menu" majutsu-diff)
+     ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
+     ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)
+     ("I" "Interactive patch" majutsu-interactive)]
    ["Exit"
     ("?" "Help" transient-help)
     ("q" "Quit" transient-quit-one)]])
@@ -76,6 +77,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)
   (require 'majutsu-git)
+  (require 'majutsu-interactive)
   (require 'majutsu-rebase)
   (require 'majutsu-restore)
   (require 'majutsu-squash)

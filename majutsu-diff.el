@@ -578,8 +578,9 @@ Assumes point is at the start of the diff output."
       (setq to-range (car (last ranges))))
     ;; Remove original header and insert a propertized one.
     (majutsu-diff--delete-line)
+    ;; Use (file . from-range) as unique hunk identity to avoid collisions.
     (magit-insert-section
-        (jj-hunk file nil
+        (jj-hunk (cons file from-range) nil
                  :combined combined
                  :from-range from-range
                  :from-ranges from-ranges
