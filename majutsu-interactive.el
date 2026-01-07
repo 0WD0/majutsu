@@ -96,11 +96,12 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
   (with-current-buffer (or buffer (current-buffer))
     (majutsu-interactive--has-selections-p)))
 
-(defun majutsu-interactive-build-patch-if-selected (&optional buffer)
-  "Return patch for BUFFER if there are selections, otherwise nil."
+(defun majutsu-interactive-build-patch-if-selected (&optional buffer invert)
+  "Return patch for BUFFER if there are selections, otherwise nil.
+When INVERT is non-nil, invert the selection within each hunk."
   (with-current-buffer (or buffer (current-buffer))
     (when (majutsu-interactive--has-selections-p)
-      (majutsu-interactive--build-patch))))
+      (majutsu-interactive--build-patch invert))))
 
 ;;; Selection Functions
 
@@ -160,31 +161,59 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
           (message "%s all hunks in file"
                    (if all-selected "Deselected" "Selected")))))))
 
+(defun majutsu-interactive--normalize-line-range (start end limit-start limit-end)
+  "Return a line-aligned range between START and END.
+The range is clamped to LIMIT-START and LIMIT-END."
+  (let* ((rbeg (max start limit-start))
+         (rend (min end limit-end)))
+    (when (< rbeg rend)
+      (save-excursion
+        (goto-char rbeg)
+        (setq rbeg (line-beginning-position))
+        (goto-char (max (1- rend) rbeg))
+        (setq rend (min limit-end (1+ (line-end-position))))))
+    (and rbeg rend (< rbeg rend) (cons rbeg rend))))
+
+(defun majutsu-interactive--ranges-merge (ranges)
+  "Return merged RANGES (list of cons)."
+  (let* ((sorted (sort (cl-copy-list ranges) (lambda (a b) (< (car a) (car b)))))
+         (result nil))
+    (dolist (range sorted)
+      (let ((prev (car result)))
+        (if (and prev (<= (car range) (cdr prev)))
+            (setcdr prev (max (cdr prev) (cdr range)))
+          (push (cons (car range) (cdr range)) result))))
+    (nreverse result)))
+
 (defun majutsu-interactive-toggle-region ()
   "Toggle selection of the region within the current hunk."
   (interactive)
   (unless (use-region-p)
     (user-error "No region active"))
-  (when-let* ((section (magit-current-section)))
-    (when (cl-typep section 'majutsu-hunk-section)
-      (let* ((hunk-id (majutsu-interactive--hunk-id section))
-             (rbeg (region-beginning))
-             (rend (region-end))
-             (hunk-content (oref section content))
-             (hunk-end (oref section end)))
-        ;; Clamp region to hunk body
-        (setq rbeg (max rbeg hunk-content))
-        (setq rend (min rend hunk-end))
-        (when (< rbeg rend)
-          (let ((current (majutsu-interactive--get-selection hunk-id)))
-            (if (and (consp current)
-                     (= (car current) rbeg)
-                     (= (cdr current) rend))
-                (majutsu-interactive--set-selection hunk-id nil)
-              (majutsu-interactive--set-selection hunk-id (cons rbeg rend))))
-          (majutsu-interactive--render-overlays)
-          (deactivate-mark)
-          (message "Region selection updated"))))))
+  (magit-section-case
+    (jj-hunk
+     (let* ((hunk-id (majutsu-interactive--hunk-id it))
+            (range (majutsu-interactive--normalize-line-range
+                    (region-beginning) (region-end)
+                    (oref it content) (oref it end)))
+            (current (majutsu-interactive--get-selection hunk-id)))
+       (unless range
+         (user-error "Region is outside hunk"))
+       (cond
+        ((eq current :all)
+         (majutsu-interactive--set-selection hunk-id (list range)))
+        ((consp current)
+         (let* ((ranges (if (and current (consp (car current))) current (list current)))
+                (ranges (if (member range ranges)
+                            (remove range ranges)
+                          (cons range ranges)))
+                (ranges (majutsu-interactive--ranges-merge ranges)))
+           (majutsu-interactive--set-selection hunk-id (and ranges ranges))))
+        (t
+         (majutsu-interactive--set-selection hunk-id (list range))))
+       (majutsu-interactive--render-overlays)
+       (deactivate-mark)
+       (message "Region selection updated")))))
 
 (defun majutsu-interactive-clear ()
   "Clear all selections."
@@ -237,24 +266,25 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
 (defun majutsu-interactive--render-overlays ()
   "Render overlays for current selections."
   (majutsu-interactive--clear-overlays)
-  (when majutsu-interactive--selections
-    (maphash
-     (lambda (hunk-id spec)
-       (when-let* ((section (majutsu-interactive--find-hunk-section hunk-id)))
-         (let* ((start (if (eq spec :all)
-                           (oref section start)
-                         (car spec)))
-                (end (if (eq spec :all)
-                         (oref section end)
-                       (cdr spec)))
-                (face (if (eq spec :all)
-                          'majutsu-interactive-selected-hunk
-                        'majutsu-interactive-selected-region))
-                (ov (make-overlay start end)))
-           (overlay-put ov 'face face)
-           (overlay-put ov 'evaporate t)
-           (push ov majutsu-interactive--overlays))))
-     majutsu-interactive--selections)))
+  (let ((selections majutsu-interactive--selections))
+    (when selections
+      (maphash
+       (lambda (hunk-id spec)
+         (when-let* ((section (majutsu-interactive--find-hunk-section hunk-id)))
+           (cond
+            ((eq spec :all)
+             (let ((ov (make-overlay (oref section start) (oref section end))))
+               (overlay-put ov 'face 'majutsu-interactive-selected-hunk)
+               (overlay-put ov 'evaporate t)
+               (push ov majutsu-interactive--overlays)))
+            ((consp spec)
+             (let ((ranges (if (and spec (consp (car spec))) spec (list spec))))
+               (dolist (range ranges)
+                 (let ((ov (make-overlay (car range) (cdr range))))
+                   (overlay-put ov 'face 'majutsu-interactive-selected-region)
+                   (overlay-put ov 'evaporate t)
+                   (push ov majutsu-interactive--overlays))))))))
+       selections))))
 
 (defun majutsu-interactive--find-hunk-section (hunk-id)
   "Find hunk section with HUNK-ID in current buffer."
@@ -283,78 +313,178 @@ Returns list of (FILE-SECTION HUNK-SECTION SPEC)."
        majutsu-interactive--selections))
     (nreverse result)))
 
+(defun majutsu-interactive--collect-hunks-by-file ()
+  "Return hash table of FILE-SECTION to list of HUNK-SECTIONS."
+  (let ((by-file (make-hash-table :test 'eq)))
+    (when magit-root-section
+      (magit-map-sections
+       (lambda (section)
+         (when (magit-section-match 'jj-hunk section)
+           (let ((file (oref section parent)))
+             (push section (gethash file by-file)))))
+       magit-root-section))
+    (maphash (lambda (file hunks)
+               (puthash file (nreverse hunks) by-file))
+             by-file)
+    by-file))
+
 (defun majutsu-interactive--hunk-header (section)
-  "Extract hunk header line from SECTION."
+  "Extract hunk header line from SECTION, including newline."
   (buffer-substring-no-properties
    (oref section start)
-   (1- (oref section content))))
+   (oref section content)))
 
-(defun majutsu-interactive--hunk-body-lines (section)
-  "Extract hunk body lines from SECTION as list of strings."
+(defun majutsu-interactive--parse-hunk-header (header)
+  "Parse unified diff HEADER into (OLD-START OLD-LEN NEW-START NEW-LEN SUFFIX).
+Return nil when HEADER is not a standard @@ header."
+  (let ((line (string-trim-right header)))
+    (when (string-match
+           "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@\\(.*\\)$"
+           line)
+      (list (string-to-number (match-string 1 line))
+            (string-to-number (or (match-string 2 line) "1"))
+            (string-to-number (match-string 3 line))
+            (string-to-number (or (match-string 4 line) "1"))
+            (or (match-string 5 line) "")))))
+
+(defun majutsu-interactive--format-hunk-range (start len)
+  "Format a hunk range from START and LEN."
+  (if (= len 1)
+      (format "%d" start)
+    (format "%d,%d" start len)))
+
+(defun majutsu-interactive--format-hunk-header (old-start old-len new-start new-len suffix)
+  "Format a unified diff hunk header."
+  (format "@@ -%s +%s @@%s\n"
+          (majutsu-interactive--format-hunk-range old-start old-len)
+          (majutsu-interactive--format-hunk-range new-start new-len)
+          (or suffix "")))
+
+(defun majutsu-interactive--line-selected-p (bol eol ranges)
+  "Return non-nil if [BOL,EOL] overlaps any RANGES."
+  (seq-some (lambda (range)
+              (and (< (car range) eol)
+                   (> (cdr range) bol)))
+            ranges))
+
+(defun majutsu-interactive--hunk-lines (section)
+  "Return hunk body lines from SECTION with positions and types.
+Each entry is (TEXT TYPE BOL EOL)."
   (let ((lines nil)
         (start (oref section content))
         (end (oref section end)))
     (save-excursion
       (goto-char start)
       (while (< (point) end)
-        (push (buffer-substring-no-properties
-               (line-beginning-position)
-               (min (1+ (line-end-position)) end))
-              lines)
+        (let* ((bol (line-beginning-position))
+               (eol (min (1+ (line-end-position)) end))
+               (text (buffer-substring-no-properties bol eol))
+               (type (pcase (and (> (length text) 0) (aref text 0))
+                       (?\s 'context)
+                       (?- 'removed)
+                       (?+ 'added)
+                       (?\\ 'meta)
+                       (_ 'meta))))
+          (push (list text type bol eol) lines))
         (forward-line 1)))
     (nreverse lines)))
 
-(defun majutsu-interactive--filter-hunk-lines (section spec)
-  "Filter hunk body lines in SECTION according to SPEC.
-SPEC is either `:all' or (BEG . END) region bounds.
-Returns filtered lines as a list of strings."
-  (if (eq spec :all)
-      (majutsu-interactive--hunk-body-lines section)
-    ;; Region-based filtering
-    (let ((lines nil)
-          (start (oref section content))
-          (end (oref section end))
-          (rbeg (car spec))
-          (rend (cdr spec)))
-      (save-excursion
-        (goto-char start)
-        (while (< (point) end)
-          (let* ((bol (line-beginning-position))
-                 (eol (line-end-position))
-                 (line-text (buffer-substring-no-properties bol (min (1+ eol) end)))
-                 (first-char (and (> (length line-text) 0) (aref line-text 0)))
-                 (in-region (and (>= eol rbeg) (<= bol rend))))
-            (cond
-             ;; Context lines: always keep
-             ((or (eq first-char ?\s) (eq first-char ?@))
-              (push line-text lines))
-             ;; In region: keep as-is
-             (in-region
-              (push line-text lines))))
-           ;; Outside region +/- lines: implicitly dropped
-          (forward-line 1)))
-      (nreverse lines))))
+(defun majutsu-interactive--build-hunk-patch (section spec &optional invert)
+  "Build a patch hunk for SECTION using SPEC and INVERT.
+SPEC is `:all' or list of (BEG . END) ranges.
+When INVERT is non-nil, invert selection for change lines.
+Return a hunk string or nil when no change lines remain."
+  (let* ((header (majutsu-interactive--hunk-header section))
+         (parsed (majutsu-interactive--parse-hunk-header header))
+         (lines (majutsu-interactive--hunk-lines section))
+         (ranges (cond
+                  ((eq spec :all) nil)
+                  ((consp spec) (if (and spec (consp (car spec))) spec (list spec)))
+                  (t nil)))
+         (selected-lines nil)
+         (old-skip 0)
+         (new-skip 0)
+         (old-len 0)
+         (new-len 0)
+         (has-change nil)
+         (started nil)
+         (prev-included-change nil))
+    (dolist (line lines)
+      (pcase-let ((`(,text ,type ,bol ,eol) line))
+        (let* ((selected (if ranges
+                             (majutsu-interactive--line-selected-p bol eol ranges)
+                           t))
+               (include-change (if invert (not selected) selected))
+               (converted-context (and (eq type 'removed) (not include-change)))
+               (include (pcase type
+                          ('context t)
+                          ('added include-change)
+                          ('removed (or include-change converted-context))
+                          ('meta prev-included-change)
+                          (_ nil)))
+               (old-inc (pcase type
+                          ('context 1)
+                          ('removed 1)
+                          (_ 0)))
+               (new-inc (pcase type
+                          ('context 1)
+                          ('added 1)
+                          (_ 0))))
+          (if include
+              (progn
+                (unless started
+                  (setq started t))
+                (when (and (memq type '(added removed)) include-change)
+                  (setq has-change t))
+                (setq prev-included-change (and (memq type '(added removed)) include-change))
+                (cond
+                 (converted-context
+                  (setq old-len (1+ old-len))
+                  (setq new-len (1+ new-len))
+                  (push (concat " " (substring text 1)) selected-lines))
+                 (t
+                  (setq old-len (+ old-len old-inc))
+                  (setq new-len (+ new-len new-inc))
+                  (push text selected-lines))))
+            (when (and (not started) (memq type '(context added removed)))
+              (setq old-skip (+ old-skip old-inc))
+              (setq new-skip (+ new-skip new-inc)))
+            (setq prev-included-change nil)))))
+    (when (and has-change selected-lines)
+      (let* ((body (mapconcat #'identity (nreverse selected-lines) ""))
+             (hunk-header
+              (if parsed
+                  (pcase-let ((`(,old-start ,_old-len ,new-start ,_new-len ,suffix) parsed))
+                    (majutsu-interactive--format-hunk-header
+                     (+ old-start old-skip)
+                     old-len
+                     (+ new-start new-skip)
+                     new-len
+                     suffix))
+                header)))
+        (concat hunk-header body)))))
 
-(defun majutsu-interactive--build-file-patch (file-section hunks-with-specs)
+(defun majutsu-interactive--build-file-patch (file-section hunks-with-specs &optional invert)
   "Build patch string for FILE-SECTION with HUNKS-WITH-SPECS.
-HUNKS-WITH-SPECS is list of (HUNK-SECTION SPEC)."
+HUNKS-WITH-SPECS is list of (HUNK-SECTION SPEC [INVERT]).
+When INVERT is non-nil, invert selected hunks by default."
   (let ((header (oref file-section header))
         (hunk-patches nil))
     (dolist (hs hunks-with-specs)
-      (let* ((hunk (car hs))
-             (spec (cadr hs))
-             (hunk-header (majutsu-interactive--hunk-header hunk))
-             (filtered-lines (majutsu-interactive--filter-hunk-lines hunk spec)))
-        (when filtered-lines
-          (push (concat hunk-header "\n"
-                        (mapconcat #'identity filtered-lines ""))
-                hunk-patches))))
+      (let* ((hunk (nth 0 hs))
+             (spec (nth 1 hs))
+             (hunk-invert (if (> (length hs) 2) (nth 2 hs) invert))
+             (hunk-patch (majutsu-interactive--build-hunk-patch hunk spec hunk-invert)))
+        (when hunk-patch
+          (push hunk-patch hunk-patches))))
     (when hunk-patches
       (concat header
               (mapconcat #'identity (nreverse hunk-patches) "")))))
 
-(defun majutsu-interactive--build-patch ()
+
+(defun majutsu-interactive--build-patch (&optional invert)
   "Build complete patch from current selections.
+When INVERT is non-nil, select non-matching change lines.
 Returns patch string or nil if no selections."
   (let* ((selected (majutsu-interactive--collect-selected-hunks))
          (by-file (make-hash-table :test 'eq)))
@@ -367,16 +497,38 @@ Returns patch string or nil if no selections."
             (spec (caddr item)))
         (push (list hunk spec) (gethash file by-file))))
     ;; Build patches per file
-    (let ((patches nil))
-      (maphash
-       (lambda (file hunks)
-         (when-let* ((patch (majutsu-interactive--build-file-patch
-                             file (nreverse hunks))))
-           (push patch patches)))
-       by-file)
+    (let* ((patches nil)
+           (all-hunks-by-file (and invert (majutsu-interactive--collect-hunks-by-file))))
+      (if invert
+          (maphash
+           (lambda (file all-hunks)
+             (let* ((selected (gethash file by-file))
+                    (spec-by-hunk (make-hash-table :test 'eq))
+                    (expanded nil))
+               (dolist (hs selected)
+                 (puthash (car hs) (cadr hs) spec-by-hunk))
+               ;; Keep all unselected hunks; invert only selected hunks.
+               (dolist (hunk all-hunks)
+                 (let ((spec (gethash hunk spec-by-hunk)))
+                   (if spec
+                       (push (list hunk spec t) expanded)
+                     (push (list hunk :all nil) expanded))))
+               (setq expanded (nreverse expanded))
+               (when-let* ((patch (majutsu-interactive--build-file-patch
+                                   file expanded invert)))
+                 (push patch patches))))
+           all-hunks-by-file)
+        (maphash
+         (lambda (file hunks)
+           (let ((hunks (nreverse hunks)))
+             (when-let* ((patch (majutsu-interactive--build-file-patch
+                                 file hunks invert)))
+               (push patch patches))))
+         by-file))
       (when patches
         (majutsu-interactive--fixup-patch
          (mapconcat #'identity (nreverse patches) ""))))))
+
 
 (defun majutsu-interactive--fixup-patch (patch)
   "Fix hunk header line counts in PATCH using diff-mode."
@@ -385,6 +537,28 @@ Returns patch string or nil if no selections."
     (diff-mode)
     (diff-fixup-modifs (point-min) (point-max))
     (buffer-string)))
+
+(defun majutsu-interactive--reverse-patch (patch)
+  "Reverse PATCH by swapping +/- lines and a/b paths."
+  (with-temp-buffer
+    (insert patch)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (cond
+       ;; Swap --- a/ and +++ b/
+       ((looking-at "^--- a/\\(.*\\)$")
+        (replace-match "+++ b/\\1"))
+       ((looking-at "^\\+\\+\\+ b/\\(.*\\)$")
+        (replace-match "--- a/\\1"))
+       ;; Swap - and + lines
+       ((looking-at "^-\\([^-]\\|$\\)")
+        (delete-char 1)
+        (insert "+"))
+       ((looking-at "^\\+\\([^+]\\|$\\)")
+        (delete-char 1)
+        (insert "-")))
+      (forward-line 1))
+    (majutsu-interactive--fixup-patch (buffer-string))))
 
 ;;; Tool Invocation
 
@@ -413,16 +587,9 @@ Returns patch string or nil if no selections."
       (insert "#!/bin/sh\n")
       (insert "# Majutsu applypatch helper\n")
       (insert "# Args: $1=left $2=right $3=patchfile\n")
-      (insert "LEFT=\"$1\"\n")
       (insert "RIGHT=\"$2\"\n")
       (insert "PATCH=\"$3\"\n")
-      ;; Strategy: copy LEFT to RIGHT, then apply patch
-      (insert "# Copy left to right first\n")
-      (insert "rm -rf \"$RIGHT\"/* 2>/dev/null || true\n")
-      (insert "rm -rf \"$RIGHT\"/.[!.]* 2>/dev/null || true\n")
-      (insert "if [ -n \"$(ls -A \"$LEFT\" 2>/dev/null)\" ]; then\n")
-      (insert "  cp -a \"$LEFT\"/. \"$RIGHT\"/\n")
-      (insert "fi\n")
+      ;; Apply patch to RIGHT as provided by jj
       (insert "cd \"$RIGHT\"\n")
       ;; Try git apply with --recount which recalculates line numbers
       (insert "git apply --recount --unidiff-zero -v \"$PATCH\" 2>&1 && exit 0\n")
@@ -471,9 +638,13 @@ Returns the revision string or nil."
 
 ;;; Pending Operation Flow
 
-(defun majutsu-interactive-run-with-patch (command args patch)
-  "Run jj COMMAND with ARGS, applying PATCH via custom tool."
-  (let* ((patch-file (majutsu-interactive--write-patch patch))
+(defun majutsu-interactive-run-with-patch (command args patch &optional reverse)
+  "Run jj COMMAND with ARGS, applying PATCH via custom tool.
+If REVERSE is non-nil, reverse the patch before applying."
+  (let* ((final-patch (if reverse
+                          (majutsu-interactive--reverse-patch patch)
+                        patch))
+         (patch-file (majutsu-interactive--write-patch final-patch))
          (tool-config (majutsu-interactive--build-tool-config patch-file))
          (full-args (append (list command)
                             args

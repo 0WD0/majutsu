@@ -21,7 +21,7 @@
 
 (declare-function majutsu-interactive--selection-buffer "majutsu-interactive" ())
 (declare-function majutsu-interactive--buffer-revision "majutsu-interactive" ())
-(declare-function majutsu-interactive-build-patch-if-selected "majutsu-interactive" (&optional buffer))
+(declare-function majutsu-interactive-build-patch-if-selected "majutsu-interactive" (&optional buffer invert))
 (declare-function majutsu-interactive-run-with-patch "majutsu-interactive" (command args patch))
 (declare-function majutsu-interactive-clear "majutsu-interactive" ())
 (declare-function majutsu-interactive-selection-available-p "majutsu-interactive" ())
@@ -75,7 +75,7 @@ In diff buffer on a file section, restore only that file."
   "Execute jj restore with ARGS from the transient."
   (interactive (list (transient-args 'majutsu-restore)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf t))
          (args (if patch
                    (seq-remove (lambda (arg)
                                  (or (string= arg "--interactive")
