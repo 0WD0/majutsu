@@ -134,12 +134,11 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
 (defun majutsu-interactive-toggle-file ()
   "Toggle selection of all hunks in the file at point."
   (interactive)
-  (when-let* ((section (magit-current-section)))
-    (let* ((file-section
-            (cond
-             ((magit-section-match 'jj-hunk section) (oref section parent))
-             ((magit-section-match 'jj-file section) section)))
-           (file (and file-section (oref file-section value))))
+  (let (file-section)
+    (magit-section-case
+      (jj-hunk (setq file-section (oref it parent)))
+      (jj-file (setq file-section it)))
+    (let ((file (and file-section (oref file-section value))))
       (when (and file-section (magit-section-match 'jj-file file-section))
         (unless (seq-some (lambda (child) (magit-section-match 'jj-hunk child))
                           (oref file-section children))
