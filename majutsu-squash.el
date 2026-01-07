@@ -26,6 +26,7 @@
 
 ;;; majutsu-squash
 
+;; FIXME: 这里的 --to 也应该收集。
 (defun majutsu-squash--default-args ()
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
@@ -36,28 +37,18 @@
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash)))
-  (let* ((keep (member "--keep" args))
+    (let* ((keep (member "--keep" args))
          (args (seq-remove (lambda (arg) (string= arg "--keep")) args))
          (selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf))
-         (default-args (majutsu-squash--default-args)))
-    (unless (seq-some (lambda (arg) (string-prefix-p "--from=" arg)) args)
-      (when default-args
-        (setq args (append default-args args)))
-      (unless (seq-some (lambda (arg) (string-prefix-p "--from=" arg)) args)
-        (if-let* ((rev (magit-section-value-if 'jj-commit)))
-            (push (format "--from=%s" rev) args)
-          (majutsu--message-with-log "No commit selected for squash")
-          (setq args nil))))
-    (when args
-      (when keep
-        (push "--keep-emptied" args))
-      (if patch
-          (progn
-            (majutsu-interactive-run-with-patch "squash" args patch)
-            (with-current-buffer selection-buf
-              (majutsu-interactive-clear)))
-        (majutsu-run-jj-with-editor (cons "squash" args))))))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
+    (when keep
+      (push "--keep-emptied" args))
+    (if patch
+        (progn
+          (majutsu-interactive-run-with-patch "squash" args patch)
+          (with-current-buffer selection-buf
+            (majutsu-interactive-clear)))
+      (majutsu-run-jj-with-editor (cons "squash" args)))))
 
 ;;;; Infix Commands
 
@@ -119,9 +110,10 @@
 (transient-define-prefix majutsu-squash ()
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
-  :transient-non-suffix t
+   :transient-non-suffix t
    [:description "JJ Squash"
-   ["Selection" :if-not majutsu-interactive-selection-available-p
+    ["Selection"
+
     (majutsu-squash:--from)
     (majutsu-squash:--into)
     (majutsu-squash:from)

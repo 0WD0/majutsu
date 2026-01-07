@@ -40,13 +40,12 @@
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
          (patch (majutsu-interactive-build-patch-if-selected selection-buf))
          (filesets majutsu-split--filesets)
-         (default-args (majutsu-split--default-args))
          (args (if patch
                    (seq-remove (lambda (arg)
                                  (or (string= arg "--interactive")
                                      (string-prefix-p "--tool=" arg)))
                                args)
-                 (append (or default-args '()) args filesets))))
+                 (append args filesets))))
     (if patch
         (progn
           (majutsu-interactive-run-with-patch "split" args patch)
@@ -188,7 +187,7 @@
   :man-page "jj-split"
   :transient-non-suffix t
    [:description "JJ Split"
-    ["Selection" :if-not majutsu-interactive-selection-available-p
+    ["Selection"
      (majutsu-split:--revision)
      (majutsu-split:--onto)
      (majutsu-split:--insert-after)

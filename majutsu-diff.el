@@ -21,6 +21,7 @@
 (require 'majutsu-config)
 (require 'majutsu-log)
 (require 'majutsu-selection)
+(require 'majutsu-section)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -718,13 +719,7 @@ works with the simplified jj diff we render here."
 
 (defun majutsu-diff--file-at-point ()
   "Return the file for the current diff/diffstat section, if any."
-  (when-let* ((section (magit-current-section)))
-    (cond
-     ((magit-section-match 'jj-hunk section)
-      (or (magit-section-parent-value section)
-          (oref section value)))
-     ((magit-section-match 'jj-file section)
-      (oref section value)))))
+  (majutsu-section-file-at-point))
 
 (defun majutsu-goto-diff-line ()
   "Jump to the line in the file corresponding to the diff line at point."
