@@ -790,7 +790,8 @@ file."
 
 (defvar-keymap majutsu-file-section-map
   :doc "Keymap for `jj-file' sections."
-  :parent majutsu-diff-section-map)
+  :parent majutsu-diff-section-map
+  "v" #'majutsu-find-file-at-point)
 
 (defvar-keymap majutsu-hunk-section-map
   :doc "Keymap for `jj-hunk' sections."
