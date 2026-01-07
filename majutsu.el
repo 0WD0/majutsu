@@ -77,6 +77,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-edit)
   (require 'majutsu-git)
   (require 'majutsu-interactive)
+  (require 'majutsu-file)
   (require 'majutsu-rebase)
   (require 'majutsu-restore)
   (require 'majutsu-split)
