@@ -109,8 +109,7 @@ macro expansion until Evil is actually present."
 
   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
     (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
-    (kbd "I") #'majutsu-interactive
-    (kbd "v") #'majutsu-find-file-at-point)
+    (kbd "I") #'majutsu-interactive)
 
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map

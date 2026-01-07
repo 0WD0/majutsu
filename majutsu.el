@@ -55,7 +55,8 @@ Instead of invoking this alias for `majutsu-log' using
     ("Y" "Duplicate" majutsu-duplicate-dwim)
     ("a" "Abandon" majutsu-abandon)
     ("d" "Describe" majutsu-describe)
-    ("s" "Squash" majutsu-squash)]
+    ("s" "Squash" majutsu-squash)
+    ("o" "Restore" majutsu-restore)]
    ["Advanced"
     ("r" "Rebase" majutsu-rebase)
     ("b" "Bookmarks" majutsu-bookmark)
