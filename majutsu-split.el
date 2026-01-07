@@ -38,7 +38,7 @@
   "Execute split with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-split)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf t t t))
          (filesets majutsu-split--filesets)
          (args (if patch
                    (seq-remove (lambda (arg)
@@ -48,7 +48,7 @@
                  (append args filesets))))
     (if patch
         (progn
-          (majutsu-interactive-run-with-patch "split" args patch)
+          (majutsu-interactive-run-with-patch "split" args patch t)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
       (majutsu-run-jj-with-editor (cons "split" args)))))

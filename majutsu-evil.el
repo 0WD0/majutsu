@@ -92,6 +92,7 @@ macro expansion until Evil is actually present."
     (kbd "C-r") #'majutsu-redo
     (kbd "x") #'majutsu-abandon
     (kbd "s") #'majutsu-squash
+    (kbd "S") #'majutsu-split
     (kbd "L") #'majutsu-log-transient
     (kbd "b") #'majutsu-bookmark
     (kbd "r") #'majutsu-rebase
