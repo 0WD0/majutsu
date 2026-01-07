@@ -65,7 +65,7 @@ In diff buffer on a file section, restore only that file."
   (let ((file (majutsu-file-at-point)))
     (if file
         (when (yes-or-no-p (format "Discard changes to %s? " file))
-          (majutsu-run-jj "restore" file))
+          (majutsu-run-jj "restore" (majutsu-jj-fileset-quote file)))
       (when (yes-or-no-p "Discard all working copy changes? ")
         (majutsu-run-jj "restore")))))
 

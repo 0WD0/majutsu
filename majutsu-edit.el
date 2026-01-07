@@ -38,11 +38,12 @@
 
 With prefix ARG, pass --ignore-immutable."
   (interactive "P")
-  (when-let* ((revset (magit-section-value-if 'jj-commit))
-              (args (append (list "edit" revset)
-                            (when arg (list "--ignore-immutable")))))
-    (when (zerop (apply #'majutsu-run-jj args))
-      (message "Now editing commit %s" revset))))
+  (if-let* ((revset (majutsu-revision-at-point))
+            (args (append (list "edit" revset)
+                          (when arg (list "--ignore-immutable")))))
+      (when (zerop (apply #'majutsu-run-jj args))
+        (message "Now editing commit %s" revset))
+    (user-error "No revision at point")))
 
 ;;; _
 (provide 'majutsu-edit)

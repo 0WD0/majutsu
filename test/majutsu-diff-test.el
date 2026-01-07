@@ -50,17 +50,19 @@
     (magit-section-mode)
     (let* ((inhibit-read-only t)
            (magit-section-inhibit-markers t)
-           (output (string-join
-                    '("foo | 1 +"
-                      "1 file changed, 1 insertion(+), 0 deletions(-)"
-                      "diff --git a/foo b/foo"
-                      "index 1234567..89abcde 100644"
-                      "--- a/foo"
-                      "+++ b/foo"
-                      "@@ -1 +1 @@"
-                      "-foo"
-                      "+bar")
-                    "\n")))
+           (output (propertize
+                    (string-join
+                     '("foo | 1 +"
+                       "1 file changed, 1 insertion(+), 0 deletions(-)"
+                       "diff --git a/foo b/foo"
+                       "index 1234567..89abcde 100644"
+                       "--- a/foo"
+                       "+++ b/foo"
+                       "@@ -1 +1 @@"
+                       "-foo"
+                       "+bar")
+                     "\n")
+                    'fontified nil)))
       (magit-insert-section (diffbuf)
         (magit-insert-section (diff-root)
           (insert output)
@@ -71,17 +73,23 @@
              (children (oref diff-root children))
              (diffstat (seq-find (lambda (sec) (eq (oref sec type) 'diffstat))
                                  children))
+             (diffstat-file (seq-find (lambda (sec)
+                                        (eq (oref sec type) 'jj-file))
+                                      (oref diffstat children)))
              (diff-file (seq-find (lambda (sec)
                                     (and (eq (oref sec type) 'jj-file)
                                          (equal (oref sec value) "foo")))
                                   children)))
         (should (eieio-object-p diffstat))
+        (should (eieio-object-p diffstat-file))
         (should (seq-find (lambda (sec)
                             (and (eq (oref sec type) 'jj-file)
                                  (equal (oref sec value) "foo")))
                           (oref diffstat children)))
         (should (eieio-object-p diff-file))
-        (should (oref diff-file content))))))
+        (should (oref diff-file content))
+        (should-not (text-properties-at 0 (oref diffstat-file value)))
+        (should-not (text-properties-at 0 (oref diff-file value)))))))
 
 (ert-deftest majutsu-diff-remembered-args-filters-only-formatting-options ()
   "Only diff formatting options should be remembered per buffer."

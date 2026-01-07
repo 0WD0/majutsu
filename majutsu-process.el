@@ -73,14 +73,6 @@ the heading of each process section."
   :type '(choice (const :tag "None" nil) string)
   :group 'majutsu-process)
 
-;;; Internal helpers
-
-(defun majutsu--process--apply-colors (output)
-  "Apply ANSI color filtering to OUTPUT when enabled."
-  (if (and output majutsu-process-apply-ansi-colors)
-      (ansi-color-apply output)
-    output))
-
 ;;; Process buffer
 
 (defclass majutsu-process-section (magit-section)

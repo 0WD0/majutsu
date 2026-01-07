@@ -142,29 +142,39 @@ This checks multiple sources in order:
 
 ;;; JJ
 
+(defmacro majutsu--with-no-color (&rest body)
+  "Execute BODY with `--color=never' in `majutsu-jj-global-arguments'.
+
+Replaces any existing `--color' flag so that jj produces plain text
+output.  Use this around commands whose output is consumed
+programmatically (paths, IDs, names, etc.)."
+  (declare (indent 0) (debug (body)))
+  `(let ((majutsu-jj-global-arguments
+          (cons "--color=never"
+                (seq-remove (lambda (arg)
+                              (string-prefix-p "--color" arg))
+                            majutsu-jj-global-arguments))))
+     ,@body))
+
 (defun majutsu-toplevel (&optional directory)
   "Return the workspace root for DIRECTORY or `default-directory'.
 
 This runs `jj workspace root' and returns a directory name (with a
 trailing slash) or nil if not inside a JJ workspace."
   (majutsu--with-safe-default-directory directory
-    (let* ((majutsu-jj-global-arguments
-            (cons "--color=never"
-                  (seq-remove (lambda (arg)
-                                (string-prefix-p "--color" arg))
-                              majutsu-jj-global-arguments)))
-           (args (majutsu-process-jj-arguments '("workspace" "root"))))
-      (with-temp-buffer
-        (let ((coding-system-for-read 'utf-8-unix)
-              (coding-system-for-write 'utf-8-unix)
-              (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
-          ;; `process-file' may return nil on success for some Emacs builds.
-          (when (null exit)
-            (setq exit 0))
-          (when (zerop exit)
-            (let ((out (string-trim (buffer-string))))
-              (unless (string-empty-p out)
-                (file-name-as-directory (expand-file-name out))))))))))
+    (majutsu--with-no-color
+      (let* ((args (majutsu-process-jj-arguments '("workspace" "root"))))
+        (with-temp-buffer
+          (let ((coding-system-for-read 'utf-8-unix)
+                (coding-system-for-write 'utf-8-unix)
+                (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+            ;; `process-file' may return nil on success for some Emacs builds.
+            (when (null exit)
+              (setq exit 0))
+            (when (zerop exit)
+              (let ((out (string-trim (buffer-string))))
+                (unless (string-empty-p out)
+                  (file-name-as-directory (expand-file-name out)))))))))))
 
 (defun majutsu--toplevel-safe (&optional directory)
   "Return the workspace root for DIRECTORY or signal an error."
@@ -209,6 +219,30 @@ to do the following.
       (when (and majutsu-show-command-output (not (string-empty-p result)))
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
+
+(defun majutsu-jj--escape-fileset-string (s)
+  "Escape S for a jj fileset string literal."
+  (unless (stringp s)
+    (user-error "majutsu-jj: expected string, got %S" s))
+  (apply #'concat
+         (mapcar (lambda (ch)
+                   (pcase ch
+                     (?\" "\\\"")
+                     (?\\ "\\\\")
+                     (?\t "\\t")
+                     (?\r "\\r")
+                     (?\n "\\n")
+                     (0 "\\0")
+                     (27 "\\e")
+                     (_
+                      (if (or (< ch 32) (= ch 127))
+                          (format "\\x%02X" ch)
+                        (string ch)))))
+                 (string-to-list s))))
+
+(defun majutsu-jj-fileset-quote (s)
+  "Return S as a jj fileset string literal."
+  (format "file:\"%s\"" (majutsu-jj--escape-fileset-string s)))
 
 (defun majutsu-jj-wash (washer keep-error &rest args)
   "Run jj with ARGS, insert output at point, then call WASHER.

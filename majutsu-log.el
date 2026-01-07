@@ -748,7 +748,7 @@ Assumes point is at the beginning of a commit line (a line containing
     (setq suffix-lines (nreverse suffix-lines))
     (delete-region bol delete-end)
     (goto-char bol)
-    (let* ((id (majutsu--normalize-id-value (plist-get entry :id)))
+    (let* ((id (substring-no-properties (plist-get entry :id)))
            (line-info (majutsu-log--format-entry-line entry compiled widths))
            (heading (plist-get line-info :line))
            (margin (plist-get line-info :margin))

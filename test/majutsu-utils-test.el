@@ -17,17 +17,6 @@
 (require 'ert)
 (require 'majutsu)
 
-(ert-deftest majutsu-utils-normalize-id-value ()
-  "Test ID normalization for various input types."
-  (should (equal (majutsu--normalize-id-value "abc") "abc"))
-  (should (equal (majutsu--normalize-id-value 'abc) "abc"))
-  (should (equal (majutsu--normalize-id-value 123) "123"))
-  (should (equal (majutsu--normalize-id-value nil) nil))
-  (let ((s "prop"))
-    (put-text-property 0 1 'face 'bold s)
-    (should (equal (majutsu--normalize-id-value s) "prop"))
-    (should-not (text-properties-at 0 (majutsu--normalize-id-value s)))))
-
 (ert-deftest majutsu-utils-diff-file-status ()
   "Test file status inference from diff lines."
   (should (equal (majutsu--diff-file-status '("new file mode 100644")) "new file"))

@@ -33,7 +33,7 @@ With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
       (call-interactively #'majutsu-new)
-    (let ((parent (magit-section-value-if 'jj-commit)))
+    (let ((parent (majutsu-revision-at-point)))
       (majutsu-new--run-command (if parent
                                     (list "new" parent)
                                   (list "new"))))))
@@ -42,15 +42,17 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-after ()
   "Create a new changeset with the commit at point as --after."
   (interactive)
-  (when-let* ((after (magit-section-value-if 'jj-commit)))
-    (majutsu-new--run-command (list "new" "--insert-after" after))))
+  (if-let* ((after (majutsu-revision-at-point)))
+      (majutsu-new--run-command (list "new" "--insert-after" after))
+    (user-error "No revision at point")))
 
 ;;;###autoload
 (defun majutsu-new-with-before ()
   "Create a new changeset with the commit at point as --before."
   (interactive)
-  (when-let* ((before (magit-section-value-if 'jj-commit)))
-    (majutsu-new--run-command (list "new" "--insert-before" before))))
+  (if-let* ((before (majutsu-revision-at-point)))
+      (majutsu-new--run-command (list "new" "--insert-before" before))
+    (user-error "No revision at point")))
 
 ;;; Options and Infixes
 

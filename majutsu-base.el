@@ -209,14 +209,6 @@ KIND (a symbol such as `log', `diff' or `message') via
     (or (get-buffer-window buffer t)
         (selected-window))))
 
-(defun majutsu--normalize-id-value (value)
-  "Normalize VALUE (string/symbol/number) into a plain string without
-text properties."
-  (cond
-   ((stringp value) (substring-no-properties value))
-   ((and value (not (stringp value))) (format "%s" value))
-   (t nil)))
-
 (defun majutsu--buffer-root (&optional buffer)
   "Return the cached root for BUFFER (default `current-buffer').
 
@@ -262,6 +254,26 @@ of the selected frame."
   "Signal a user error unless the current buffer derives from MODE."
   (unless (derived-mode-p mode)
     (user-error "Command is only valid in %s buffers" mode)))
+
+;;; Change at Point
+
+(defvar majutsu-buffer-blob-revision)
+
+(defun majutsu-revision-at-point ()
+  "Return the change-id at point.
+This checks multiple sources in order:
+1. Section value (jj-commit section)
+2. Blob buffer revision
+3. Diff buffer revision"
+  (or (magit-section-value-if 'jj-commit)
+      (and (bound-and-true-p majutsu-buffer-blob-revision)
+           majutsu-buffer-blob-revision)
+      (and (derived-mode-p 'majutsu-diff-mode)
+           (bound-and-true-p majutsu-buffer-diff-range)
+           (let ((range majutsu-buffer-diff-range))
+             (or (and (equal (car range) "-r") (cadr range))
+                 (when-let* ((arg (seq-find (lambda (item) (string-prefix-p "--revisions=" item)) range)))
+                   (substring arg (length "--revisions="))))))))
 
 ;;; _
 (provide 'majutsu-base)
