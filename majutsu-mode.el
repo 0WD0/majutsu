@@ -48,7 +48,8 @@
   "a"   'majutsu-abandon
   "k"   'majutsu-abandon
   "C-/" 'majutsu-undo
-  "C-?" 'majutsu-redo)
+  "C-?" 'majutsu-redo
+  "R"   'majutsu-restore)
 
 ;;; Visit
 
