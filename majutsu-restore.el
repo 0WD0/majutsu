@@ -68,7 +68,7 @@ In diff buffer on a file section, restore only that file."
   "Execute jj restore with ARGS from the transient."
   (interactive (list (transient-args 'majutsu-restore)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf t))
          (args (if patch
                    (seq-remove (lambda (arg)
                                  (or (string= arg "--interactive")
