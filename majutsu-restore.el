@@ -16,6 +16,7 @@
 
 (require 'majutsu)
 (require 'majutsu-selection)
+(require 'majutsu-interactive)
 
 (defclass majutsu-restore-option (majutsu-selection-option)
   ((selection-key :initarg :selection-key :initform nil)))
@@ -54,6 +55,18 @@
     (when-let* ((range majutsu-buffer-diff-range)
                 (to (seq-find (lambda (arg) (string-prefix-p "--to=" arg)) range)))
       (substring to 5))))
+
+(defun majutsu-restore--default-args ()
+  "Return default args from diff buffer context."
+  (with-current-buffer (majutsu-interactive--selection-buffer)
+    (when (derived-mode-p 'majutsu-diff-mode)
+      (let* ((from (majutsu-restore--default-from))
+             (to (majutsu-restore--default-to))
+             (rev (majutsu-interactive--buffer-revision)))
+        (delq nil
+              (list (and from (concat "--from=" from))
+                    (and to (concat "--to=" to))
+                    (and (not from) (not to) rev (concat "--changes-in=" rev))))))))
 
 (defun majutsu-restore--file-at-point ()
   "Get file at point in diff buffer."
@@ -95,15 +108,28 @@ In diff buffer on a file section, restore only that file."
                                        (string-prefix-p "--to=" arg)
                                        (string-prefix-p "--changes-in=" arg)))
                                  args))
-         (filesets majutsu-restore--filesets))
+         (filesets majutsu-restore--filesets)
+         (selection-buf (majutsu-interactive--selection-buffer))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
     (unless changes-in
-      (if-let* ((rev (magit-section-value-if 'jj-commit)))
-          (setq changes-in (format "--changes-in=%s" rev))
-        (user-error "No revision selected for --changes-in")))
-    (let* ((cmd-args (append (list changes-in) other-args filesets))
-           (exit (apply #'majutsu-run-jj "restore" cmd-args)))
-      (when (zerop exit)
-        (message "Restored (undid changes in revision)")))))
+      (when-let* ((rev (with-current-buffer selection-buf
+                         (majutsu-interactive--buffer-revision))))
+        (setq changes-in (format "--changes-in=%s" rev)))
+      (unless changes-in
+        (if-let* ((rev (magit-section-value-if 'jj-commit)))
+            (setq changes-in (format "--changes-in=%s" rev))
+          (user-error "No revision selected for --changes-in"))))
+    (if patch
+        (progn
+          (setq other-args (seq-remove (lambda (arg) (string= arg "--interactive")) other-args))
+          (majutsu-interactive-run-with-patch
+           "restore" (append (list changes-in) other-args filesets) patch)
+          (with-current-buffer selection-buf
+            (majutsu-interactive-clear)))
+      (let* ((cmd-args (append (list changes-in) other-args filesets))
+             (exit (apply #'majutsu-run-jj "restore" cmd-args)))
+        (when (zerop exit)
+          (message "Restored (undid changes in revision)"))))))
 
 ;;; Infix Commands
 
@@ -215,7 +241,7 @@ In diff buffer on a file section, restore only that file."
   :man-page "jj-restore"
   :transient-non-suffix t
   [:description majutsu-restore--description
-   ["Selection"
+   ["Selection" :if-not majutsu-interactive-selection-available-p
     (majutsu-restore:--from)
     (majutsu-restore:--to)
     (majutsu-restore:--changes-in)
@@ -223,6 +249,11 @@ In diff buffer on a file section, restore only that file."
     (majutsu-restore:to)
     (majutsu-restore:changes-in)
     ("x" "Clear selections" majutsu-restore-clear-selections :transient t)]
+   ["Patch Selection" :if majutsu-interactive-selection-available-p
+    (majutsu-interactive:select-hunk)
+    (majutsu-interactive:select-file)
+    (majutsu-interactive:select-region)
+    ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
    ["Paths"
     ("p" majutsu-restore--filesets-description majutsu-restore-set-filesets :transient t)]
    ["Options"
@@ -248,10 +279,12 @@ In diff buffer on a file section, restore only that file."
     (transient-setup
      'majutsu-restore nil nil
      :scope (majutsu-selection-session-begin)
-     :value (delq nil
-                  (list (and from (concat "--from=" from))
-                        (and to (concat "--to=" to)))))))
+     :value (or (majutsu-restore--default-args)
+                (delq nil
+                      (list (and from (concat "--from=" from))
+                            (and to (concat "--to=" to))))))))
 
 ;;; _
 (provide 'majutsu-restore)
 ;;; majutsu-restore.el ends here
+

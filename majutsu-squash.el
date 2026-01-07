@@ -16,6 +16,7 @@
 
 (require 'majutsu)
 (require 'majutsu-selection)
+(require 'majutsu-interactive)
 
 (defclass majutsu-squash-option (majutsu-selection-option)
   ((selection-key :initarg :selection-key :initform nil)))
@@ -25,20 +26,38 @@
 
 ;;; majutsu-squash
 
+(defun majutsu-squash--default-args ()
+  "Return default args from diff buffer context."
+  (with-current-buffer (majutsu-interactive--selection-buffer)
+    (when (derived-mode-p 'majutsu-diff-mode)
+      (when-let* ((rev (majutsu-interactive--buffer-revision)))
+        (list (concat "--from=" rev))))))
+
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash)))
   (let* ((keep (member "--keep" args))
-         (args (seq-remove (lambda (arg) (string= arg "--keep")) args)))
+         (args (seq-remove (lambda (arg) (string= arg "--keep")) args))
+         (selection-buf (majutsu-interactive--selection-buffer))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf))
+         (default-args (majutsu-squash--default-args)))
     (unless (seq-some (lambda (arg) (string-prefix-p "--from=" arg)) args)
-      (if-let ((rev (magit-section-value-if 'jj-commit)))
-          (push (format "--from=%s" rev) args)
-        (majutsu--message-with-log "No commit selected for squash")
-        (setq args nil)))
+      (when default-args
+        (setq args (append default-args args)))
+      (unless (seq-some (lambda (arg) (string-prefix-p "--from=" arg)) args)
+        (if-let* ((rev (magit-section-value-if 'jj-commit)))
+            (push (format "--from=%s" rev) args)
+          (majutsu--message-with-log "No commit selected for squash")
+          (setq args nil))))
     (when args
       (when keep
         (push "--keep-emptied" args))
-      (majutsu-run-jj-with-editor (cons "squash" args)))))
+      (if patch
+          (progn
+            (majutsu-interactive-run-with-patch "squash" args patch)
+            (with-current-buffer selection-buf
+              (majutsu-interactive-clear)))
+        (majutsu-run-jj-with-editor (cons "squash" args))))))
 
 ;;;; Infix Commands
 
@@ -101,13 +120,19 @@
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
   :transient-non-suffix t
-  [:description "JJ Squash"
-   ["Selection"
+   [:description "JJ Squash"
+   ["Selection" :if-not majutsu-interactive-selection-available-p
     (majutsu-squash:--from)
     (majutsu-squash:--into)
     (majutsu-squash:from)
     (majutsu-squash:into)
     ("c" "Clear selections" majutsu-squash-clear-selections :transient t)]
+   ["Patch Selection" :if majutsu-interactive-selection-available-p
+
+    (majutsu-interactive:select-hunk)
+    (majutsu-interactive:select-file)
+    (majutsu-interactive:select-region)
+    ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
    ["Options"
     ("-k" "Keep emptied commit" "--keep")
     (majutsu-transient-arg-ignore-immutable)]
@@ -118,7 +143,8 @@
   (transient-setup
    'majutsu-squash nil nil
    :scope
-   (majutsu-selection-session-begin)))
+   (majutsu-selection-session-begin)
+   :value (or (majutsu-squash--default-args) '())))
 
 ;;; _
 (provide 'majutsu-squash)
