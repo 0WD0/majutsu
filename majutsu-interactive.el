@@ -648,29 +648,6 @@ Returns patch string or nil if no selections."
      "--config" (format "merge-tools.majutsu-applypatch.edit-args=[\"$left\",\"$right\",%s]"
                         (prin1-to-string patch-file)))))
 
-(defun majutsu-interactive--buffer-revision ()
-  "Extract the revision from current diff buffer's range.
-Returns the revision string or nil."
-  (when (boundp 'majutsu-buffer-diff-range)
-    (let ((range majutsu-buffer-diff-range))
-      (cond
-       ;; --revisions=REV format
-       ((and range (stringp (car range))
-             (string-match "^--revisions?=\\(.+\\)$" (car range)))
-        (match-string 1 (car range)))
-       ;; --from=REV --to=REV format - use --to as the revision
-       ((and range (seq-some (lambda (arg)
-                               (string-match "^--to=\\(.+\\)$" arg))
-                             range))
-        (let ((to-arg (seq-find (lambda (arg)
-                                  (string-match "^--to=\\(.+\\)$" arg))
-                                range)))
-          (when (string-match "^--to=\\(.+\\)$" to-arg)
-            (match-string 1 to-arg))))
-       ;; -r REV format (list like ("-r" "REV"))
-       ((and range (equal (car range) "-r") (cadr range))
-        (cadr range))))))
-
 ;;; Pending Operation Flow
 
 (defun majutsu-interactive-run-with-patch (command args patch &optional reverse)
@@ -686,60 +663,6 @@ If REVERSE is non-nil, reverse the patch before applying."
                             (list "-i" "--tool" "majutsu-applypatch")
                             tool-config)))
     (majutsu-run-jj-with-editor full-args)))
-
-;;; Commands (initiate from diff buffer)
-
-;;;###autoload
-(defun majutsu-interactive-split ()
-  "Split selected changes into a new child revision."
-  (interactive)
-  (let ((patch (majutsu-interactive--build-patch t t t))
-        (rev (or (majutsu-interactive--buffer-revision)
-                 (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive-run-with-patch "split" (list "-r" rev) patch t)
-    (majutsu-interactive-clear)))
-
-;;;###autoload
-(defun majutsu-interactive-squash ()
-  "Squash selected changes into parent revision."
-  (interactive)
-  (let* ((patch (majutsu-interactive--build-patch t t t))
-         (from-rev (or (majutsu-interactive--buffer-revision)
-                       (user-error "Cannot determine revision from buffer")))
-         (into-rev (concat from-rev "-")))
-    (majutsu-interactive-run-with-patch
-     "squash" (list "--from" from-rev "--into" into-rev) patch t)
-    (majutsu-interactive-clear)))
-
-;;;###autoload
-(defun majutsu-interactive-restore ()
-  "Restore (undo) selected changes."
-  (interactive)
-  (let ((patch (majutsu-interactive--build-patch t t))
-        (rev (or (majutsu-interactive--buffer-revision)
-                 (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive-run-with-patch
-     "restore" (list "--changes-in" rev) patch)
-    (majutsu-interactive-clear)))
-
-;;; Keymaps
-
-(defvar majutsu-interactive-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "M-s") #'majutsu-interactive-toggle-hunk)
-    (define-key map (kbd "M-S") #'majutsu-interactive-toggle-file)
-    map)
-  "Keymap for `majutsu-interactive-mode'.")
-
-;;;###autoload
-(define-minor-mode majutsu-interactive-mode
-  "Minor mode for interactive partial patching in diff buffers."
-  :lighter " MjI"
-  :keymap majutsu-interactive-mode-map
-  (if majutsu-interactive-mode
-      (majutsu-interactive--ensure-selections)
-    (majutsu-interactive--clear-overlays)
-    (setq majutsu-interactive--selections nil)))
 
 ;;; _
 (provide 'majutsu-interactive)

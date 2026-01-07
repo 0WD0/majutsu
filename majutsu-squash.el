@@ -19,7 +19,6 @@
 (require 'majutsu-interactive)
 
 (declare-function majutsu-interactive--selection-buffer "majutsu-interactive" ())
-(declare-function majutsu-interactive--buffer-revision "majutsu-interactive" ())
 (declare-function majutsu-interactive-build-patch-if-selected "majutsu-interactive" (&optional buffer invert include-all-files context-on-added))
 (declare-function majutsu-interactive-run-with-patch "majutsu-interactive" (command args patch &optional reverse))
 (declare-function majutsu-interactive-clear "majutsu-interactive" ())

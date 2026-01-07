@@ -19,7 +19,6 @@
 (require 'majutsu-interactive)
 
 (declare-function majutsu-interactive--selection-buffer "majutsu-interactive" ())
-(declare-function majutsu-interactive--buffer-revision "majutsu-interactive" ())
 (declare-function majutsu-interactive-build-patch-if-selected "majutsu-interactive" (&optional buffer invert include-all-files context-on-added))
 (declare-function majutsu-interactive-run-with-patch "majutsu-interactive" (command args patch &optional reverse))
 (declare-function majutsu-interactive-clear "majutsu-interactive" ())
@@ -38,8 +37,10 @@
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
-      (when-let* ((rev (majutsu-interactive--buffer-revision)))
-        (list (concat "--revision=" rev))))))
+      (mapcar (##if (string-prefix-p "--revisions=" %)
+                    (concat "--revision=" (substring % 12))
+                    %)
+              majutsu-buffer-diff-range))))
 
 (defun majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."
@@ -193,19 +194,19 @@
   "Transient for jj split operations."
   :man-page "jj-split"
   :transient-non-suffix t
-   [:description "JJ Split"
-    ["Selection"
-     (majutsu-split:--revision)
-     (majutsu-split:--onto)
-     (majutsu-split:--insert-after)
-     (majutsu-split:--insert-before)
-     (majutsu-split:revision)
-     (majutsu-split:onto)
-     (majutsu-split:insert-after)
-     (majutsu-split:insert-before)
-     ("c" "Clear selections" majutsu-split-clear-selections :transient t)]
-    ["Patch Selection" :if majutsu-interactive-selection-available-p
-
+  [
+   :description "JJ Split"
+   ["Selection"
+    (majutsu-split:--revision)
+    (majutsu-split:--onto)
+    (majutsu-split:--insert-after)
+    (majutsu-split:--insert-before)
+    (majutsu-split:revision)
+    (majutsu-split:onto)
+    (majutsu-split:insert-after)
+    (majutsu-split:insert-before)
+    ("c" "Clear selections" majutsu-split-clear-selections :transient t)]
+   ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
