@@ -41,6 +41,18 @@
 
 ;;; Selection Model
 
+(defun majutsu-interactive--selection-buffer ()
+  "Return buffer to operate on for interactive selections."
+  (let ((buf (and (boundp 'transient--original-buffer)
+                  (buffer-live-p transient--original-buffer)
+                  transient--original-buffer)))
+    (or buf (current-buffer))))
+
+(defun majutsu-interactive-selection-available-p ()
+  "Return non-nil when interactive selection is available."
+  (with-current-buffer (majutsu-interactive--selection-buffer)
+    (derived-mode-p 'majutsu-diff-mode)))
+
 (defvar-local majutsu-interactive--selections nil
   "Hash table mapping hunk-id to selection spec.
 Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
@@ -78,6 +90,17 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
   "Return non-nil if there are any selections."
   (and majutsu-interactive--selections
        (> (hash-table-count majutsu-interactive--selections) 0)))
+
+(defun majutsu-interactive-has-selections-p (&optional buffer)
+  "Return non-nil if BUFFER has interactive selections."
+  (with-current-buffer (or buffer (current-buffer))
+    (majutsu-interactive--has-selections-p)))
+
+(defun majutsu-interactive-build-patch-if-selected (&optional buffer)
+  "Return patch for BUFFER if there are selections, otherwise nil."
+  (with-current-buffer (or buffer (current-buffer))
+    (when (majutsu-interactive--has-selections-p)
+      (majutsu-interactive--build-patch))))
 
 ;;; Selection Functions
 
@@ -149,6 +172,40 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
   (setq majutsu-interactive--selections nil)
   (majutsu-interactive--render-overlays)
   (message "Cleared all selections"))
+
+;;; Transient Selection Infixes
+
+(defun majutsu-interactive--call-in-selection-buffer (fn)
+  "Call FN in the selection buffer."
+  (with-current-buffer (majutsu-interactive--selection-buffer)
+    (funcall fn)))
+
+(transient-define-suffix majutsu-interactive:select-hunk ()
+  "Select hunk."
+  :key "H"
+  :description "Select hunk"
+  :if 'majutsu-interactive-selection-available-p
+  :transient t
+  (interactive)
+  (majutsu-interactive--call-in-selection-buffer #'majutsu-interactive-toggle-hunk))
+
+(transient-define-suffix majutsu-interactive:select-file ()
+  "Select file."
+  :key "F"
+  :description "Select file"
+  :if 'majutsu-interactive-selection-available-p
+  :transient t
+  (interactive)
+  (majutsu-interactive--call-in-selection-buffer #'majutsu-interactive-toggle-file))
+
+(transient-define-suffix majutsu-interactive:select-region ()
+  "Select region."
+  :key "R"
+  :description "Select region"
+  :if 'majutsu-interactive-selection-available-p
+  :transient t
+  (interactive)
+  (majutsu-interactive--call-in-selection-buffer #'majutsu-interactive-toggle-region))
 
 ;;; Overlay Rendering
 
@@ -394,7 +451,7 @@ Returns the revision string or nil."
 
 ;;; Pending Operation Flow
 
-(defun majutsu-interactive--run-with-patch (command args patch)
+(defun majutsu-interactive-run-with-patch (command args patch)
   "Run jj COMMAND with ARGS, applying PATCH via custom tool."
   (let* ((patch-file (majutsu-interactive--write-patch patch))
          (tool-config (majutsu-interactive--build-tool-config patch-file))
@@ -413,7 +470,7 @@ Returns the revision string or nil."
   (let ((patch (majutsu-interactive--build-patch))
         (rev (or (majutsu-interactive--buffer-revision)
                  (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive--run-with-patch "split" (list "-r" rev) patch)
+    (majutsu-interactive-run-with-patch "split" (list "-r" rev) patch)
     (majutsu-interactive-clear)))
 
 ;;;###autoload
@@ -424,7 +481,7 @@ Returns the revision string or nil."
          (from-rev (or (majutsu-interactive--buffer-revision)
                        (user-error "Cannot determine revision from buffer")))
          (into-rev (concat from-rev "-")))
-    (majutsu-interactive--run-with-patch
+    (majutsu-interactive-run-with-patch
      "squash" (list "--from" from-rev "--into" into-rev) patch)
     (majutsu-interactive-clear)))
 
@@ -435,37 +492,16 @@ Returns the revision string or nil."
   (let ((patch (majutsu-interactive--build-patch))
         (rev (or (majutsu-interactive--buffer-revision)
                  (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive--run-with-patch
+    (majutsu-interactive-run-with-patch
      "restore" (list "--changes-in" rev) patch)
     (majutsu-interactive-clear)))
-
-;;; Transient
-
-(transient-define-prefix majutsu-interactive ()
-  "Interactive partial patching for jj."
-  :transient-non-suffix t
-  ["Selection"
-   ("h" "Toggle hunk" majutsu-interactive-toggle-hunk :transient t)
-   ("f" "Toggle file" majutsu-interactive-toggle-file :transient t)
-   ("r" "Toggle region" majutsu-interactive-toggle-region :transient t)
-   ("c" "Clear all" majutsu-interactive-clear :transient t)]
-  ["Actions"
-   ("s" "Split selected" majutsu-interactive-split)
-   ("S" "Squash selected" majutsu-interactive-squash)
-   ("R" "Restore selected" majutsu-interactive-restore)]
-  ["Quit"
-   ("q" "Quit" transient-quit-one)])
 
 ;;; Keymaps
 
 (defvar majutsu-interactive-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-i") #'majutsu-interactive)
     (define-key map (kbd "M-s") #'majutsu-interactive-toggle-hunk)
     (define-key map (kbd "M-S") #'majutsu-interactive-toggle-file)
-    (define-key map (kbd "s") #'majutsu-interactive-split)
-    (define-key map (kbd "S") #'majutsu-interactive-squash)
-    (define-key map (kbd "R") #'majutsu-interactive-restore)
     map)
   "Keymap for `majutsu-interactive-mode'.")
 

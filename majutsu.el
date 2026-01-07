@@ -56,17 +56,17 @@ Instead of invoking this alias for `majutsu-log' using
     ("a" "Abandon" majutsu-abandon)
     ("d" "Describe" majutsu-describe)
     ("s" "Squash" majutsu-squash)
+    ("S" "Split" majutsu-split)
     ("o" "Restore" majutsu-restore)]
    ["Advanced"
     ("r" "Rebase" majutsu-rebase)
     ("b" "Bookmarks" majutsu-bookmark)
     ("Z" "Workspaces" majutsu-workspace)
     ("G" "Git" majutsu-git-transient)]
-   ["Diff & Fix"
+    ["Diff & Fix"
      ("D" "Diff menu" majutsu-diff)
      ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
-     ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)
-     ("I" "Interactive patch" majutsu-interactive)]
+     ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
    ["Exit"
     ("?" "Help" transient-help)
     ("q" "Quit" transient-quit-one)]])
@@ -81,6 +81,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-interactive)
   (require 'majutsu-rebase)
   (require 'majutsu-restore)
+  (require 'majutsu-split)
   (require 'majutsu-squash)
   (require 'majutsu-commit)
   (require 'majutsu-new)
