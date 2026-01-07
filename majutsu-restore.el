@@ -48,7 +48,7 @@
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
       (mapcar (##if (string-prefix-p "--revisions=" %)
-                    (concat "--changes-in=" (substring % 11))
+                    (concat "--changes-in=" (substring % 12))
                     %)
               majutsu-buffer-diff-range))))
 
@@ -67,37 +67,22 @@ In diff buffer on a file section, restore only that file."
 (defun majutsu-restore-execute (args)
   "Execute jj restore with ARGS from the transient."
   (interactive (list (transient-args 'majutsu-restore)))
-  (let* ((filesets majutsu-restore--filesets)
-         (cmd-args (append args filesets))
-         (exit (apply #'majutsu-run-jj "restore" cmd-args)))
-    (when (zerop exit)
-      (message "Restored successfully"))))
-
-(defun majutsu-restore-changes-in-execute (args)
-  "Execute jj restore --changes-in with ARGS."
-  (interactive (list (transient-args 'majutsu-restore)))
-  (let* ((changes-in (seq-find (lambda (arg) (string-prefix-p "--changes-in=" arg)) args))
-         (other-args (seq-remove (lambda (arg)
-                                   (or (string-prefix-p "--from=" arg)
-                                       (string-prefix-p "--to=" arg)
-                                       (string-prefix-p "--changes-in=" arg)))
-                                 args))
-         (filesets majutsu-restore--filesets)
-         (selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
-    (unless changes-in
-      (user-error "No revision selected for --changes-in"))
+  (let* ((selection-buf (majutsu-interactive--selection-buffer))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf))
+         (args (if patch
+                   (seq-remove (lambda (arg)
+                                 (or (string= arg "--interactive")
+                                     (string-prefix-p "--tool=" arg)))
+                               args)
+                 args)))
     (if patch
         (progn
-          (setq other-args (seq-remove (lambda (arg) (string= arg "--interactive")) other-args))
-          (majutsu-interactive-run-with-patch
-           "restore" (append (list changes-in) other-args filesets) patch)
+          (majutsu-interactive-run-with-patch "restore" args patch)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (let* ((cmd-args (append (list changes-in) other-args filesets))
-             (exit (apply #'majutsu-run-jj "restore" cmd-args)))
+      (let ((exit (apply #'majutsu-run-jj "restore" args)))
         (when (zerop exit)
-          (message "Restored (undid changes in revision)"))))))
+          (message "Restored successfully"))))))
 
 ;;; Infix Commands
 
@@ -207,11 +192,12 @@ In diff buffer on a file section, restore only that file."
 (transient-define-prefix majutsu-restore ()
   "Transient for jj restore operations."
   :man-page "jj-restore"
+  :incompatible '(("--from=" "--changes-in=")
+                  ("--to=" "--changes-in="))
   :transient-non-suffix t
   [
    :description majutsu-restore--description
    ["Selection"
-
     (majutsu-restore:--from)
     (majutsu-restore:--to)
     (majutsu-restore:--changes-in)
@@ -224,7 +210,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
-   ["Paths"
+   ["Paths" :if-not majutsu-interactive-selection-available-p
     ("p" majutsu-restore--filesets-description majutsu-restore-set-filesets :transient t)]
    ["Options"
     ("-i" "Interactive" "--interactive")
@@ -232,7 +218,6 @@ In diff buffer on a file section, restore only that file."
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("r" "Restore" majutsu-restore-execute)
-    ("u" "Undo changes-in" majutsu-restore-changes-in-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   ;; Initialize from context
