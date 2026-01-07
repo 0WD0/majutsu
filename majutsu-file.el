@@ -21,6 +21,7 @@
 (require 'majutsu-process)
 
 (declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
+(declare-function majutsu-annotate-addition "majutsu-annotate" (&optional revision))
 
 (defvar majutsu-find-file-hook nil
   "Hook run after creating a blob buffer.")
@@ -244,6 +245,36 @@ DIRECTION should be either \='prev or \='next."
       ('next (format "roots(%s+::&%s)" revset file-set))
       (_ (user-error "Unknown direction")))))
 
+(defun majutsu-file--commit-info (revset)
+  "Return commit info (description and age) for REVSET."
+  (let* ((output (majutsu-jj-string
+                  "log" "-r" revset "--no-graph" "-T"
+                  "description.first_line() ++ \"\\n\" ++ committer.timestamp()"))
+         (lines (split-string output "\n" t)))
+    (when (>= (length lines) 2)
+      (let* ((summary (car lines))
+             (timestamp (cadr lines))
+             (age (majutsu-file--format-age timestamp)))
+        (cons summary age)))))
+
+(defun majutsu-file--format-age (timestamp)
+  "Format TIMESTAMP as a human-readable age string."
+  ;; timestamp format: "2024-01-15 10:30:00.000 +08:00"
+  (when (string-match "^\\([0-9-]+\\) \\([0-9:]+\\)" timestamp)
+    (let* ((date-str (concat (match-string 1 timestamp) " "
+                             (match-string 2 timestamp)))
+           (time (date-to-time date-str))
+           (diff (time-subtract (current-time) time))
+           (seconds (float-time diff)))
+      (cond
+       ((< seconds 60) "just now")
+       ((< seconds 3600) (format "%d minutes ago" (/ seconds 60)))
+       ((< seconds 86400) (format "%d hours ago" (/ seconds 3600)))
+       ((< seconds 604800) (format "%d days ago" (/ seconds 86400)))
+       ((< seconds 2592000) (format "%d weeks ago" (/ seconds 604800)))
+       ((< seconds 31536000) (format "%d months ago" (/ seconds 2592000)))
+       (t (format "%d years ago" (/ seconds 31536000)))))))
+
 (defun majutsu-file--diff-offset (diff line)
   "Return LINE offset after applying DIFF hunks.
 DIFF must be a unified diff."
@@ -323,7 +354,8 @@ DIFF must be a unified diff."
     (if-let* ((prev (majutsu-file-prev-change from-rev path)))
         (let ((target-line (majutsu-file--map-line root from-rev prev path line)))
           (majutsu-find-file--display prev path #'switch-to-buffer)
-          (majutsu-file--goto-line-col target-line col))
+          (majutsu-file--goto-line-col target-line col)
+          (majutsu-blob--show-commit-info prev))
       (user-error "You have reached the beginning of time"))))
 
 (defun majutsu-blob-next ()
@@ -339,14 +371,22 @@ DIFF must be a unified diff."
     (if-let* ((next (majutsu-file-next-change from-rev path)))
         (let ((target-line (majutsu-file--map-line root from-rev next path line)))
           (majutsu-find-file--display next path #'switch-to-buffer)
-          (majutsu-file--goto-line-col target-line col))
+          (majutsu-file--goto-line-col target-line col)
+          (majutsu-blob--show-commit-info next))
       (user-error "You have reached the end of time"))))
+
+(defun majutsu-blob--show-commit-info (revset)
+  "Show commit info for REVSET in the echo area."
+  (when-let* ((info (majutsu-file--commit-info revset)))
+    (message "%s (%s)" (car info) (cdr info))))
 
 (defvar-keymap majutsu-blob-mode-map
   :doc "Keymap for `majutsu-blob-mode'."
   "p" #'majutsu-blob-previous
   "n" #'majutsu-blob-next
   "q" #'majutsu-blob-quit
+  "V" #'majutsu-blob-visit-file
+  "b" #'majutsu-annotate-addition
   "g" #'revert-buffer
   ;; RET visits the revision (edit)
   "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
