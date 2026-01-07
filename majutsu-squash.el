@@ -39,12 +39,8 @@
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash)))
-  (let* ((keep (member "--keep" args))
-         (args (seq-remove (lambda (arg) (string= arg "--keep")) args))
-         (selection-buf (majutsu-interactive--selection-buffer))
+  (let* ((selection-buf (majutsu-interactive--selection-buffer))
          (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
-    (when keep
-      (push "--keep-emptied" args))
     (if patch
         (progn
           (majutsu-interactive-run-with-patch "squash" args patch)
@@ -139,7 +135,7 @@
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
    ["Options"
-    ("-k" "Keep emptied commit" "--keep")
+    ("-k" "Keep emptied commit" "-k")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute squash" majutsu-squash-execute)
