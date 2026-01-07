@@ -116,15 +116,36 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
         (majutsu-interactive--render-overlays)
         (message "%s hunk" (if current "Deselected" "Selected"))))))
 
+(defun majutsu-interactive--file-section-with-hunks (file)
+  "Find a jj-file section for FILE that contains hunks."
+  (let (result)
+    (when (and file magit-root-section)
+      (magit-map-sections
+       (lambda (section)
+         (when (and (magit-section-match 'jj-file section)
+                    (equal (oref section value) file)
+                    (seq-some (lambda (child)
+                                (magit-section-match 'jj-hunk child))
+                              (oref section children)))
+           (setq result section)))
+       magit-root-section))
+    result))
+
 (defun majutsu-interactive-toggle-file ()
   "Toggle selection of all hunks in the file at point."
   (interactive)
   (when-let* ((section (magit-current-section)))
-    (let ((file-section
-           (cond
-            ((cl-typep section 'majutsu-file-section) section)
-            ((cl-typep section 'majutsu-hunk-section) (oref section parent)))))
-      (when (and file-section (cl-typep file-section 'majutsu-file-section))
+    (let* ((file-section
+            (cond
+             ((magit-section-match 'jj-hunk section) (oref section parent))
+             ((magit-section-match 'jj-file section) section)))
+           (file (and file-section (oref file-section value))))
+      (when (and file-section (magit-section-match 'jj-file file-section))
+        (unless (seq-some (lambda (child) (magit-section-match 'jj-hunk child))
+                          (oref file-section children))
+          (setq file-section (majutsu-interactive--file-section-with-hunks file)))
+        (unless file-section
+          (user-error "No hunks for file at point"))
         (let* ((hunks (oref file-section children))
                (all-selected (cl-every
                               (lambda (h)
@@ -132,7 +153,7 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
                                  (majutsu-interactive--hunk-id h)))
                               hunks)))
           (dolist (hunk hunks)
-            (when (cl-typep hunk 'majutsu-hunk-section)
+            (when (magit-section-match 'jj-hunk hunk)
               (majutsu-interactive--set-selection
                (majutsu-interactive--hunk-id hunk)
                (unless all-selected :all))))
