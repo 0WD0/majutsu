@@ -20,8 +20,8 @@
 
 (declare-function majutsu-interactive--selection-buffer "majutsu-interactive" ())
 (declare-function majutsu-interactive--buffer-revision "majutsu-interactive" ())
-(declare-function majutsu-interactive-build-patch-if-selected "majutsu-interactive" (&optional buffer invert))
-(declare-function majutsu-interactive-run-with-patch "majutsu-interactive" (command args patch))
+(declare-function majutsu-interactive-build-patch-if-selected "majutsu-interactive" (&optional buffer invert include-all-files context-on-added))
+(declare-function majutsu-interactive-run-with-patch "majutsu-interactive" (command args patch &optional reverse))
 (declare-function majutsu-interactive-clear "majutsu-interactive" ())
 (declare-function majutsu-interactive-selection-available-p "majutsu-interactive" ())
 
@@ -54,20 +54,17 @@ a jj-commit section, add --revision from that section."
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
-      (mapcar (##cond
-               ((string-prefix-p "--revisions=" %) (concat "--revision=" (substring % 12)))
-               ((string-prefix-p "--to=" %) (concat "--into=" (substring % 5)))
-               (t %))
+      (mapcar (##if (string-prefix-p "--revisions=" %) (concat "--revision=" (substring % 12)))
               majutsu-buffer-diff-range))))
 
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (majutsu-squash-arguments)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf t t t)))
     (if patch
         (progn
-          (majutsu-interactive-run-with-patch "squash" args patch)
+          (majutsu-interactive-run-with-patch "squash" args patch t)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
       (majutsu-run-jj-with-editor (cons "squash" args)))))
