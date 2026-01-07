@@ -18,6 +18,7 @@
 
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
+(declare-function majutsu-diff-visit-worktree-file "majutsu-diff" ())
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
