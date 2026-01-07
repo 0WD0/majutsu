@@ -29,14 +29,6 @@
   "Interactive partial patching for Majutsu."
   :group 'majutsu)
 
-(defcustom majutsu-interactive-applypatch-program "git"
-  "Program used to apply patches.
-Can be `git' (uses `git apply') or `patch'."
-  :type '(choice (const :tag "git apply" "git")
-                 (const :tag "patch" "patch")
-                 (string :tag "Custom"))
-  :group 'majutsu-interactive)
-
 (defface majutsu-interactive-selected-hunk
   '((t :background "#3a5f3a"))
   "Face for selected hunks."
@@ -81,6 +73,11 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
   (if spec
       (puthash hunk-id spec majutsu-interactive--selections)
     (remhash hunk-id majutsu-interactive--selections)))
+
+(defun majutsu-interactive--has-selections-p ()
+  "Return non-nil if there are any selections."
+  (and majutsu-interactive--selections
+       (> (hash-table-count majutsu-interactive--selections) 0)))
 
 ;;; Selection Functions
 
@@ -372,17 +369,6 @@ Returns patch string or nil if no selections."
      "--config" (format "merge-tools.majutsu-applypatch.edit-args=[\"$left\",\"$right\",%s]"
                         (prin1-to-string patch-file)))))
 
-(defun majutsu-interactive--run-jj-with-patch (command args patch)
-  "Run jj COMMAND with ARGS, applying PATCH via custom tool."
-  (let* ((patch-file (majutsu-interactive--write-patch patch))
-         (tool-config (majutsu-interactive--build-tool-config patch-file))
-         (full-args (append (list command)
-                            args
-                            (list "-i" "--tool" "majutsu-applypatch")
-                            tool-config)))
-    ;; Use with-editor since split/squash may prompt for commit message
-    (majutsu-run-jj-with-editor full-args)))
-
 (defun majutsu-interactive--buffer-revision ()
   "Extract the revision from current diff buffer's range.
 Returns the revision string or nil."
@@ -406,52 +392,51 @@ Returns the revision string or nil."
        ((and range (equal (car range) "-r") (cadr range))
         (cadr range))))))
 
-;;; Commands
+;;; Pending Operation Flow
+
+(defun majutsu-interactive--run-with-patch (command args patch)
+  "Run jj COMMAND with ARGS, applying PATCH via custom tool."
+  (let* ((patch-file (majutsu-interactive--write-patch patch))
+         (tool-config (majutsu-interactive--build-tool-config patch-file))
+         (full-args (append (list command)
+                            args
+                            (list "-i" "--tool" "majutsu-applypatch")
+                            tool-config)))
+    (majutsu-run-jj-with-editor full-args)))
+
+;;; Commands (initiate from diff buffer)
 
 ;;;###autoload
-(defun majutsu-interactive-split (&optional revision)
-  "Split selected changes from REVISION into a new child revision.
-If REVISION is nil, uses the revision from the current diff buffer."
+(defun majutsu-interactive-split ()
+  "Split selected changes into a new child revision."
   (interactive)
   (let ((patch (majutsu-interactive--build-patch))
-        (rev (or revision
-                 (majutsu-interactive--buffer-revision)
+        (rev (or (majutsu-interactive--buffer-revision)
                  (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive--run-jj-with-patch
-     "split"
-     (list "-r" rev)
-     patch)
+    (majutsu-interactive--run-with-patch "split" (list "-r" rev) patch)
     (majutsu-interactive-clear)))
 
 ;;;###autoload
-(defun majutsu-interactive-squash (&optional from into)
-  "Squash selected changes from FROM revision into INTO revision.
-If FROM is nil, uses the revision from the current diff buffer."
+(defun majutsu-interactive-squash ()
+  "Squash selected changes into parent revision."
   (interactive)
   (let* ((patch (majutsu-interactive--build-patch))
-         (from-rev (or from
-                       (majutsu-interactive--buffer-revision)
+         (from-rev (or (majutsu-interactive--buffer-revision)
                        (user-error "Cannot determine revision from buffer")))
-         (into-rev (or into (concat from-rev "-"))))
-    (majutsu-interactive--run-jj-with-patch
-     "squash"
-     (list "--from" from-rev "--into" into-rev)
-     patch)
+         (into-rev (concat from-rev "-")))
+    (majutsu-interactive--run-with-patch
+     "squash" (list "--from" from-rev "--into" into-rev) patch)
     (majutsu-interactive-clear)))
 
 ;;;###autoload
-(defun majutsu-interactive-restore (&optional revision)
-  "Restore (undo) selected changes from REVISION.
-If REVISION is nil, uses the revision from the current diff buffer."
+(defun majutsu-interactive-restore ()
+  "Restore (undo) selected changes."
   (interactive)
   (let ((patch (majutsu-interactive--build-patch))
-        (rev (or revision
-                 (majutsu-interactive--buffer-revision)
+        (rev (or (majutsu-interactive--buffer-revision)
                  (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive--run-jj-with-patch
-     "restore"
-     (list "--changes-in" rev)
-     patch)
+    (majutsu-interactive--run-with-patch
+     "restore" (list "--changes-in" rev) patch)
     (majutsu-interactive-clear)))
 
 ;;; Transient
@@ -478,6 +463,9 @@ If REVISION is nil, uses the revision from the current diff buffer."
     (define-key map (kbd "C-c C-i") #'majutsu-interactive)
     (define-key map (kbd "M-s") #'majutsu-interactive-toggle-hunk)
     (define-key map (kbd "M-S") #'majutsu-interactive-toggle-file)
+    (define-key map (kbd "s") #'majutsu-interactive-split)
+    (define-key map (kbd "S") #'majutsu-interactive-squash)
+    (define-key map (kbd "R") #'majutsu-interactive-restore)
     map)
   "Keymap for `majutsu-interactive-mode'.")
 
