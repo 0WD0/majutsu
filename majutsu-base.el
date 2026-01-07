@@ -263,6 +263,25 @@ of the selected frame."
   (unless (derived-mode-p mode)
     (user-error "Command is only valid in %s buffers" mode)))
 
+;;; Change at Point
+
+(defvar majutsu-buffer-blob-revision)
+
+(defun majutsu-revision-at-point ()
+  "Return the change-id at point.
+This checks multiple sources in order:
+1. Section value (jj-commit section)
+2. Blob buffer revision
+3. Diff buffer revision"
+  (or (magit-section-value-if 'jj-commit)
+      (and (bound-and-true-p majutsu-buffer-blob-revision)
+           majutsu-buffer-blob-revision)
+      (and (derived-mode-p 'majutsu-diff-mode)
+           (bound-and-true-p majutsu-buffer-diff-range)
+           (let ((range majutsu-buffer-diff-range))
+             (or (and (equal (car range) "-r") (cadr range))
+                 (cdr (assoc "--revisions=" range)))))))
+
 ;;; _
 (provide 'majutsu-base)
 ;;; majutsu-base.el ends here

@@ -134,7 +134,8 @@ Press ~d~ to open the Diff transient.
 
 *** Diff Buffer
 The diff buffer is highly interactive:
-- ~RET~ :: Visit the file in your workspace at the corresponding line.
+- ~RET~ :: Visit the appropriate version of the file at point. For working copy diffs, visits the actual file. For committed changes, visits the blob.
+- ~C-j~ / ~C-<return>~ :: Visit the workspace file, regardless of diff type. Note: when Evil mode is active, ~C-j~ may be overridden by Evil's section navigation; use ~C-<return>~ instead, which is unaffected.
 - ~+~ / ~-~ :: Increase or decrease the amount of context shown.
 - ~t~ :: Toggle word-level refinement.
 

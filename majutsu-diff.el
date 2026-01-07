@@ -21,6 +21,7 @@
 (require 'majutsu-config)
 (require 'majutsu-selection)
 (require 'majutsu-section)
+(require 'majutsu-file)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -724,31 +725,146 @@ works with the simplified jj diff we render here."
   (when-let* ((file (majutsu-diff--file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
-;;;###autoload
-(defun majutsu-diff-visit-file ()
-  "Visit the file at point.
+(defun majutsu-diff--range-value (range prefix)
+  "Return the value in RANGE for argument starting with PREFIX."
+  (when range
+    (when-let* ((arg (seq-find (lambda (item) (string-prefix-p prefix item)) range)))
+      (substring arg (length prefix)))))
 
-When point is on a hunk section, jump to the corresponding line in the
-file."
-  (interactive)
-  (let ((section (magit-current-section)))
+(defun majutsu-diff--on-removed-line-p ()
+  "Return non-nil if point is on a removed diff line."
+  (eq (char-after (line-beginning-position)) ?-))
+
+(defun majutsu-diff--default-revset ()
+  "Return the revset implied by the current diff buffer."
+  (let* ((range majutsu-buffer-diff-range)
+         (removed (majutsu-diff--on-removed-line-p))
+         (from (majutsu-diff--range-value range "--from="))
+         (to (majutsu-diff--range-value range "--to="))
+         (revisions (majutsu-diff--range-value range "--revisions=")))
     (cond
-     ((and section (magit-section-match 'jj-hunk section))
-      (majutsu-goto-diff-line))
-     ((majutsu-diff--file-at-point)
-      (majutsu-visit-file))
-     (t
-      (user-error "No file at point")))))
+     ((and range (equal (car range) "-r") (cadr range)) (cadr range))
+     (revisions revisions)
+     (from (if (and removed from) from (or to from)))
+     (t "@"))))
+
+(defun majutsu-diff--hunk-line (section goto-from)
+  "Return the line number in SECTION for GOTO-FROM side."
+  (with-slots (content from-range to-range) section
+    (let ((start (car (if goto-from from-range to-range))))
+      (when start
+        (let ((line start)
+              (target (point)))
+          (save-excursion
+            (goto-char content)
+            (while (< (point) target)
+              (let ((ch (char-after (line-beginning-position))))
+                (cond
+                 ((eq ch ?+) (unless goto-from (setq line (1+ line))))
+                 ((eq ch ?-) (when goto-from (setq line (1+ line))))
+                 (t (setq line (1+ line)))))
+              (forward-line 1)))
+          line)))))
+
+(defun majutsu-diff--hunk-column (section goto-from)
+  "Return the column for SECTION based on GOTO-FROM side."
+  (let ((bol (line-beginning-position)))
+    (if (or (< (point) (oref section content))
+            (and (not goto-from) (eq (char-after bol) ?-)))
+        0
+      (let ((col (current-column)))
+        (if (memq (char-after bol) '(?+ ?-))
+            (max 0 (1- col))
+          col)))))
+
+(defun majutsu-diff--goto-line-col (buffer line col)
+  "Move point in BUFFER to LINE and COL."
+  (with-current-buffer buffer
+    (widen)
+    (goto-char (point-min))
+    (forward-line (max 0 (1- line)))
+    (move-to-column col)))
+
+(defun majutsu-diff--visit-workspace-p ()
+  "Return non-nil if the current diff should visit the workspace file.
+This is true when diffing the working copy (@) on the new/right side."
+  (let* ((range majutsu-buffer-diff-range)
+         (to (majutsu-diff--range-value range "--to="))
+         (revisions (majutsu-diff--range-value range "--revisions=")))
+    (cond
+     ;; Explicit --to=@ means we're looking at working copy changes
+     ((equal to "@") t)
+     ;; No range specified defaults to -r @ (working copy)
+     ((null range) t)
+     ;; Single revision diff (-r @) shows working copy
+     ((and revisions (equal revisions "@")) t)
+     ;; Otherwise we're looking at committed changes
+     (t nil))))
+
+;;;###autoload
+(defun majutsu-diff-visit-file (&optional force-workspace)
+  "From a diff, visit the appropriate version of the file at point.
+
+If point is on an added or context line, visit the new/right side.
+If point is on a removed line, visit the old/left side.
+
+For diffs of the working copy (@), this visits the actual file in
+the workspace.  For diffs of committed changes, this visits the
+blob from the appropriate revision.
+
+With prefix argument FORCE-WORKSPACE, always visit the workspace file
+regardless of what the diff is about."
+  (interactive "P")
+  (let* ((section (magit-current-section))
+         (file (majutsu-diff--file-at-point)))
+    (unless file
+      (user-error "No file at point"))
+    (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
+                           (majutsu-diff--on-removed-line-p)))
+           (goto-workspace (or force-workspace
+                              (and (majutsu-diff--visit-workspace-p)
+                                   (not goto-from))))
+           (line (and section (magit-section-match 'jj-hunk section)
+                      (majutsu-diff--hunk-line section goto-from)))
+           (col (and section (magit-section-match 'jj-hunk section)
+                     (majutsu-diff--hunk-column section goto-from))))
+      (if goto-workspace
+          ;; Visit workspace file
+          (let ((full-path (expand-file-name file default-directory)))
+            (if (file-exists-p full-path)
+                (progn
+                  (find-file full-path)
+                  (when (and line col)
+                    (goto-char (point-min))
+                    (forward-line (1- line))
+                    (move-to-column col)))
+              (user-error "File does not exist in workspace: %s" file)))
+        ;; Visit blob
+        (let* ((revset (majutsu-diff--default-revset))
+               (buf (majutsu-find-file revset file)))
+          (when (and buf line col)
+            (majutsu-diff--goto-line-col buf line col)))))))
 
 ;;; Section Keymaps
 
 (defvar-keymap majutsu-diff-section-map
   :doc "Keymap for diff sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-diff-visit-file)
+  "<remap> <majutsu-visit-thing>" #'majutsu-diff-visit-file
+  "C-j" #'majutsu-diff-visit-workspace-file
+  "C-<return>" #'majutsu-diff-visit-workspace-file)
+
+;;;###autoload
+(defun majutsu-diff-visit-workspace-file ()
+  "From a diff, visit the workspace version of the file at point.
+Always visits the actual file in the working tree, regardless of
+what the diff is about."
+  (interactive)
+  (majutsu-diff-visit-file t))
 
 (defvar-keymap majutsu-file-section-map
   :doc "Keymap for `jj-file' sections."
-  :parent majutsu-diff-section-map)
+  :parent majutsu-diff-section-map
+  "v" #'majutsu-find-file-at-point)
 
 (defvar-keymap majutsu-hunk-section-map
   :doc "Keymap for `jj-hunk' sections."
