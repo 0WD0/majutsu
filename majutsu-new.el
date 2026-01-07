@@ -17,6 +17,9 @@
 (require 'majutsu)
 (require 'majutsu-selection)
 
+(defvar majutsu-buffer-blob-root)
+(defvar majutsu-buffer-blob-path)
+
 (defclass majutsu-new-option (majutsu-selection-option)
   ((selection-key :initarg :selection-key :initform nil)))
 
@@ -145,15 +148,25 @@ With prefix ARG, open the new transient for interactive selection."
   (message "Cleared all jj new selections"))
 
 (defun majutsu-new--run-command (args)
-  "Execute jj new with ARGS and refresh the log on success."
-  (let ((exit (apply #'majutsu-call-jj args)))
-    (if (zerop exit)
-        (progn
-          (message "Created new changeset")
-          (majutsu-log-refresh)
-          t)
-      (majutsu-refresh)
-      nil)))
+  "Execute jj new with ARGS and refresh the log on success.
+When called from a blob buffer, also visit the workspace file."
+  (let ((in-blob (and (bound-and-true-p majutsu-blob-mode)
+                      majutsu-buffer-blob-root
+                      majutsu-buffer-blob-path))
+        (blob-file (when (bound-and-true-p majutsu-blob-mode)
+                     (expand-file-name majutsu-buffer-blob-path
+                                       majutsu-buffer-blob-root))))
+    (let ((exit (apply #'majutsu-call-jj args)))
+      (if (zerop exit)
+          (progn
+            (message "Created new changeset")
+            (majutsu-log-refresh)
+            ;; Visit workspace file when in blob buffer
+            (when in-blob
+              (find-file blob-file))
+            t)
+        (majutsu-refresh)
+        nil))))
 
 (defun majutsu-new-arguments ()
   "Return the current new arguments.

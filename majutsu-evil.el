@@ -19,6 +19,8 @@
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
 (declare-function majutsu-diff-visit-workspace-file "majutsu-diff" ())
+(declare-function majutsu-blob-visit-file "majutsu-file" ())
+(declare-function majutsu-annotate-addition "majutsu-annotate" (&optional revision))
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
@@ -117,6 +119,8 @@ macro expansion until Evil is actually present."
     (kbd "p") #'majutsu-blob-previous
     (kbd "n") #'majutsu-blob-next
     (kbd "q") #'majutsu-blob-quit
+    (kbd "V") #'majutsu-blob-visit-file
+    (kbd "b") #'majutsu-annotate-addition
     ;; RET visits the revision (edit)
     (kbd "RET") #'majutsu-edit-changeset)
 
