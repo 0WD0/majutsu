@@ -82,10 +82,28 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
                     majutsu-diff-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
+(defun majutsu-evil--adjust-section-bindings ()
+  "Unbind C-j from section maps so Evil navigation takes precedence.
+This mirrors `evil-collection-magit-adjust-section-bindings'."
+  (when (boundp 'majutsu-diff-section-map)
+    (define-key majutsu-diff-section-map "\C-j" nil))
+  (when (boundp 'majutsu-file-section-map)
+    (define-key majutsu-file-section-map "\C-j" nil))
+  (when (boundp 'majutsu-hunk-section-map)
+    (define-key majutsu-hunk-section-map "\C-j" nil)))
+
 (defun majutsu-evil--define-mode-keys ()
   "Install Evil keybindings for Majutsu maps."
+  ;; Unbind C-j from section maps first.
+  (majutsu-evil--adjust-section-bindings)
   ;; Normal/visual/motion share the same bindings for navigation commands.
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
+    (kbd "C-j") #'magit-section-forward
+    (kbd "C-k") #'magit-section-backward
+    (kbd "g j") #'magit-section-forward-sibling
+    (kbd "g k") #'magit-section-backward-sibling
+    (kbd "]") #'magit-section-forward-sibling
+    (kbd "[") #'magit-section-backward-sibling
     (kbd "R") #'majutsu-restore
     (kbd "g r") #'majutsu-refresh
     (kbd "`") #'majutsu-process-buffer
@@ -114,7 +132,17 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
     (kbd "Y") #'majutsu-duplicate-dwim)
 
   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
-    (kbd "g d") #'majutsu-jump-to-diffstat-or-diff)
+    (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
+    (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
+
+  ;; majutsu-blob-mode is a minor mode, need hook + define-keys
+  (add-hook 'majutsu-blob-mode-hook #'evil-normalize-keymaps)
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-blob-mode-map
+    (kbd "p") #'majutsu-blob-previous
+    (kbd "n") #'majutsu-blob-next
+    (kbd "q") #'majutsu-blob-quit
+    ;; RET visits the revision (edit)
+    (kbd "RET") #'majutsu-edit-changeset)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
