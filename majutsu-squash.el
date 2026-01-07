@@ -26,18 +26,20 @@
 
 ;;; majutsu-squash
 
-;; FIXME: 这里的 --to 也应该收集。
 (defun majutsu-squash--default-args ()
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
-      (when-let* ((rev (majutsu-interactive--buffer-revision)))
-        (list (concat "--from=" rev))))))
+      (mapcar (##cond
+               ((string-prefix-p "--revisions=" %) (concat "--revision=" (substring % 12)))
+               ((string-prefix-p "--to=" %) (concat "--into=" (substring % 5)))
+               (t %))
+              majutsu-buffer-diff-range))))
 
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-squash)))
-    (let* ((keep (member "--keep" args))
+  (let* ((keep (member "--keep" args))
          (args (seq-remove (lambda (arg) (string= arg "--keep")) args))
          (selection-buf (majutsu-interactive--selection-buffer))
          (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
@@ -51,6 +53,17 @@
       (majutsu-run-jj-with-editor (cons "squash" args)))))
 
 ;;;; Infix Commands
+
+(transient-define-argument majutsu-squash:--revision ()
+  :description "Revision"
+  :class 'majutsu-squash-option
+  :selection-key 'revision
+  :selection-label "[REV]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-type 'single
+  :key "-r"
+  :argument "--revision="
+  :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-squash:--from ()
   :description "From"
@@ -98,7 +111,7 @@
   (when (consp transient--suffixes)
     (dolist (obj transient--suffixes)
       (when (and (cl-typep obj 'majutsu-squash-option)
-                 (memq (oref obj selection-key) '(from into)))
+                 (memq (oref obj selection-key) '(revision from into)))
         (transient-infix-set obj nil))))
   (when transient--prefix
     (transient--redisplay))
@@ -110,17 +123,17 @@
 (transient-define-prefix majutsu-squash ()
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
-   :transient-non-suffix t
-   [:description "JJ Squash"
-    ["Selection"
-
+  :transient-non-suffix t
+  [
+   :description "JJ Squash"
+   ["Selection"
+    (majutsu-squash:--revision)
     (majutsu-squash:--from)
     (majutsu-squash:--into)
     (majutsu-squash:from)
     (majutsu-squash:into)
     ("c" "Clear selections" majutsu-squash-clear-selections :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
-
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
