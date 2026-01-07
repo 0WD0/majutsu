@@ -26,6 +26,23 @@
 
 ;;; majutsu-squash
 
+(defun majutsu-squash-arguments ()
+  "Return the current squash arguments.
+If inside the transient, return transient args.
+Otherwise, if no --revision/--from/--into is set and point is on
+a jj-commit section, add --revision from that section."
+  (let ((args (if (eq transient-current-command 'majutsu-squash)
+                  (transient-args 'majutsu-squash)
+                '())))
+    (unless (cl-some (lambda (arg)
+                       (or (string-prefix-p "--revision=" arg)
+                           (string-prefix-p "--from=" arg)
+                           (string-prefix-p "--into=" arg)))
+                     args)
+      (when-let* ((rev (magit-section-value-if 'jj-commit)))
+        (push (concat "--revision=" rev) args)))
+    args))
+
 (defun majutsu-squash--default-args ()
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
@@ -38,7 +55,7 @@
 
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
-  (interactive (list (transient-args 'majutsu-squash)))
+  (interactive (list (majutsu-squash-arguments)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
          (patch (majutsu-interactive-build-patch-if-selected selection-buf)))
     (if patch
