@@ -25,6 +25,7 @@
 (declare-function majutsu-jj-string "majutsu-process" (&rest args))
 (declare-function majutsu-diff--file-at-point "majutsu-diff" ())
 (declare-function majutsu-bury-or-kill-buffer "majutsu-file" (&optional bury-buffer))
+(declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
 
 (defvar majutsu-find-file-hook nil
   "Hook run after creating a blob buffer.")
@@ -337,7 +338,9 @@ DIFF must be a unified diff."
   "p" #'majutsu-blob-previous
   "n" #'majutsu-blob-next
   "q" #'majutsu-blob-quit
-  "g" #'revert-buffer)
+  "g" #'revert-buffer
+  ;; RET visits the revision (edit)
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
 
 (define-minor-mode majutsu-blob-mode
   "Enable Majutsu features in blob buffers.

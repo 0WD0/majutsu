@@ -829,8 +829,8 @@ works with the simplified jj diff we render here."
     (forward-line (max 0 (1- line)))
     (move-to-column col)))
 
-(defun majutsu-diff--visit-worktree-p ()
-  "Return non-nil if the current diff should visit the worktree file.
+(defun majutsu-diff--visit-workspace-p ()
+  "Return non-nil if the current diff should visit the workspace file.
 This is true when diffing the working copy (@) on the new/right side."
   (let* ((range majutsu-buffer-diff-range)
          (to (majutsu-diff--range-value range "--to="))
@@ -846,17 +846,17 @@ This is true when diffing the working copy (@) on the new/right side."
      (t nil))))
 
 ;;;###autoload
-(defun majutsu-diff-visit-file (&optional force-worktree)
+(defun majutsu-diff-visit-file (&optional force-workspace)
   "From a diff, visit the appropriate version of the file at point.
 
 If point is on an added or context line, visit the new/right side.
 If point is on a removed line, visit the old/left side.
 
 For diffs of the working copy (@), this visits the actual file in
-the worktree.  For diffs of committed changes, this visits the
+the workspace.  For diffs of committed changes, this visits the
 blob from the appropriate revision.
 
-With prefix argument FORCE-WORKTREE, always visit the worktree file
+With prefix argument FORCE-WORKSPACE, always visit the workspace file
 regardless of what the diff is about."
   (interactive "P")
   (let* ((section (magit-current-section))
@@ -865,14 +865,14 @@ regardless of what the diff is about."
       (user-error "No file at point"))
     (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
                            (majutsu-diff--on-removed-line-p)))
-           (goto-worktree (or force-worktree
-                              (and (majutsu-diff--visit-worktree-p)
+           (goto-workspace (or force-workspace
+                              (and (majutsu-diff--visit-workspace-p)
                                    (not goto-from))))
            (line (and section (magit-section-match 'jj-hunk section)
                       (majutsu-diff--hunk-line section goto-from)))
            (col (and section (magit-section-match 'jj-hunk section)
                      (majutsu-diff--hunk-column section goto-from))))
-      (if goto-worktree
+      (if goto-workspace
           ;; Visit workspace file
           (let ((full-path (expand-file-name file default-directory)))
             (if (file-exists-p full-path)
@@ -882,7 +882,7 @@ regardless of what the diff is about."
                     (goto-char (point-min))
                     (forward-line (1- line))
                     (move-to-column col)))
-              (user-error "File does not exist in worktree: %s" file)))
+              (user-error "File does not exist in workspace: %s" file)))
         ;; Visit blob
         (let* ((revset (majutsu-diff--default-revset))
                (buf (majutsu-find-file revset file)))
@@ -894,12 +894,12 @@ regardless of what the diff is about."
 (defvar-keymap majutsu-diff-section-map
   :doc "Keymap for diff sections."
   "<remap> <majutsu-visit-thing>" #'majutsu-diff-visit-file
-  "C-j" #'majutsu-diff-visit-worktree-file
-  "C-<return>" #'majutsu-diff-visit-worktree-file)
+  "C-j" #'majutsu-diff-visit-workspace-file
+  "C-<return>" #'majutsu-diff-visit-workspace-file)
 
 ;;;###autoload
-(defun majutsu-diff-visit-worktree-file ()
-  "From a diff, visit the worktree version of the file at point.
+(defun majutsu-diff-visit-workspace-file ()
+  "From a diff, visit the workspace version of the file at point.
 Always visits the actual file in the working tree, regardless of
 what the diff is about."
   (interactive)

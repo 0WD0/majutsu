@@ -18,7 +18,7 @@
 
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
-(declare-function majutsu-diff-visit-worktree-file "majutsu-diff" ())
+(declare-function majutsu-diff-visit-workspace-file "majutsu-diff" ())
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
@@ -111,12 +111,14 @@ macro expansion until Evil is actually present."
 
   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
     (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
-    (kbd "C-<return>") #'majutsu-diff-visit-worktree-file)
+    (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-blob-mode-map
     (kbd "p") #'majutsu-blob-previous
     (kbd "n") #'majutsu-blob-next
-    (kbd "q") #'majutsu-blob-quit)
+    (kbd "q") #'majutsu-blob-quit
+    ;; RET visits the revision (edit)
+    (kbd "RET") #'majutsu-edit-changeset)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
