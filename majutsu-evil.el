@@ -16,6 +16,7 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-interactive "majutsu-interactive" ())
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
 
@@ -81,7 +82,7 @@ macro expansion until Evil is actually present."
   "Install Evil keybindings for Majutsu maps."
   ;; Normal/visual/motion share the same bindings for navigation commands.
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
-    (kbd "R") #'majutsu-refresh
+    (kbd "R") #'majutsu-restore
     (kbd "g r") #'majutsu-refresh
     (kbd "`") #'majutsu-process-buffer
     (kbd "c") #'majutsu-describe

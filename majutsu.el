@@ -47,8 +47,8 @@ Instead of invoking this alias for `majutsu-log' using
     ("c" "Commit" majutsu-commit)
     ("e" "Edit change" majutsu-edit-changeset)
     ("u" "Undo" majutsu-undo)
-    ("R" "Redo" majutsu-redo)
     ("l" "Log options" majutsu-log-transient)
+    ("C-?" "Redo" majutsu-redo)
     ("N" "New" majutsu-new-dwim)
     ("n" "New (transient)" majutsu-new)
     ("y" "Duplicate (transient)" majutsu-duplicate)
@@ -57,16 +57,16 @@ Instead of invoking this alias for `majutsu-log' using
     ("d" "Describe" majutsu-describe)
     ("s" "Squash" majutsu-squash)
     ("S" "Split" majutsu-split)
-    ("o" "Restore" majutsu-restore)]
+    ("R" "Restore" majutsu-restore)]
    ["Advanced"
     ("r" "Rebase" majutsu-rebase)
     ("b" "Bookmarks" majutsu-bookmark)
     ("Z" "Workspaces" majutsu-workspace)
     ("G" "Git" majutsu-git-transient)]
-    ["Diff & Fix"
-     ("D" "Diff menu" majutsu-diff)
-     ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
-     ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
+   ["Diff & Fix"
+    ("D" "Diff menu" majutsu-diff)
+    ("E" "DiffEdit (ediff)" majutsu-diffedit-emacs)
+    ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)]
    ["Exit"
     ("?" "Help" transient-help)
     ("q" "Quit" transient-quit-one)]])
