@@ -45,6 +45,13 @@ When ROOT is non-nil, traverse from that section, otherwise from
            root))
         best)))
 
+(defun majutsu-section-file-at-point ()
+  "Return file at point for jj diff sections."
+  (magit-section-case
+    (jj-hunk (or (magit-section-parent-value it)
+                 (oref it value)))
+    (jj-file (oref it value))))
+
 ;;; _
 (provide 'majutsu-section)
 ;;; majutsu-section.el ends here
