@@ -98,6 +98,42 @@ a jj-commit section, add --revision from that section."
   :argument "--into="
   :reader #'majutsu-diff--transient-read-revset)
 
+(transient-define-argument majutsu-squash:--onto ()
+  :description "Onto"
+  :class 'majutsu-squash-option
+  :selection-key 'onto
+  :selection-label "[ONTO]"
+  :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-type 'multi
+  :key "-o"
+  :argument "--onto="
+  :multi-value 'repeat
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-squash:--insert-after ()
+  :description "Insert after"
+  :class 'majutsu-squash-option
+  :selection-key 'after
+  :selection-label "[AFTER]"
+  :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-type 'multi
+  :key "-A"
+  :argument "--insert-after="
+  :multi-value 'repeat
+  :reader #'majutsu-diff--transient-read-revset)
+
+(transient-define-argument majutsu-squash:--insert-before ()
+  :description "Insert before"
+  :class 'majutsu-squash-option
+  :selection-key 'before
+  :selection-label "[BEFORE]"
+  :selection-face '(:background "dark sea green" :foreground "black")
+  :selection-type 'multi
+  :key "-B"
+  :argument "--insert-before="
+  :multi-value 'repeat
+  :reader #'majutsu-diff--transient-read-revset)
+
 (transient-define-argument majutsu-squash:from ()
   :description "From (toggle at point)"
   :class 'majutsu-squash--toggle-option
@@ -115,13 +151,40 @@ a jj-commit section, add --revision from that section."
   :key "t"
   :argument "--into=")
 
+(transient-define-argument majutsu-squash:onto ()
+  :description "Onto (toggle at point)"
+  :class 'majutsu-squash--toggle-option
+  :selection-key 'onto
+  :selection-type 'multi
+  :key "o"
+  :argument "--onto="
+  :multi-value 'repeat)
+
+(transient-define-argument majutsu-squash:insert-after ()
+  :description "Insert after (toggle at point)"
+  :class 'majutsu-squash--toggle-option
+  :selection-key 'after
+  :selection-type 'multi
+  :key "a"
+  :argument "--insert-after="
+  :multi-value 'repeat)
+
+(transient-define-argument majutsu-squash:insert-before ()
+  :description "Insert before (toggle at point)"
+  :class 'majutsu-squash--toggle-option
+  :selection-key 'before
+  :selection-type 'multi
+  :key "b"
+  :argument "--insert-before="
+  :multi-value 'repeat)
+
 (defun majutsu-squash-clear-selections ()
   "Clear all squash selections."
   (interactive)
   (when (consp transient--suffixes)
     (dolist (obj transient--suffixes)
       (when (and (cl-typep obj 'majutsu-squash-option)
-                 (memq (oref obj selection-key) '(revision from into)))
+                 (memq (oref obj selection-key) '(revision from into onto after before)))
         (transient-infix-set obj nil))))
   (when transient--prefix
     (transient--redisplay))
@@ -134,14 +197,23 @@ a jj-commit section, add --revision from that section."
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
   :transient-non-suffix t
+  :incompatible '(("--revision=" "--onto=")
+                  ("--revision=" "--insert-after=")
+                  ("--revision=" "--insert-before="))
   [
    :description "JJ Squash"
    ["Selection"
     (majutsu-squash:--revision)
     (majutsu-squash:--from)
     (majutsu-squash:--into)
+    (majutsu-squash:--onto)
+    (majutsu-squash:--insert-after)
+    (majutsu-squash:--insert-before)
     (majutsu-squash:from)
     (majutsu-squash:into)
+    (majutsu-squash:onto)
+    (majutsu-squash:insert-after)
+    (majutsu-squash:insert-before)
     ("c" "Clear selections" majutsu-squash-clear-selections :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
