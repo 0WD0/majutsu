@@ -40,6 +40,7 @@
   "C"   'majutsu-commit
   "N"   'majutsu-new-dwim
   "s"   'majutsu-squash
+  "S"   'majutsu-split
   "d"   'majutsu-diff
   "D"   'majutsu-diff-dwim
   "r"   'majutsu-rebase

@@ -693,10 +693,10 @@ If REVERSE is non-nil, reverse the patch before applying."
 (defun majutsu-interactive-split ()
   "Split selected changes into a new child revision."
   (interactive)
-  (let ((patch (majutsu-interactive--build-patch))
+  (let ((patch (majutsu-interactive--build-patch t t t))
         (rev (or (majutsu-interactive--buffer-revision)
                  (user-error "Cannot determine revision from buffer"))))
-    (majutsu-interactive-run-with-patch "split" (list "-r" rev) patch)
+    (majutsu-interactive-run-with-patch "split" (list "-r" rev) patch t)
     (majutsu-interactive-clear)))
 
 ;;;###autoload
