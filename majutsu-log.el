@@ -483,7 +483,7 @@ Also registers a variable watcher to invalidate the template cache."
   "Template for the flags column.")
 
 (majutsu-log-define-column git-head
-  [:if [:git_head] [:label "git_head" ""]]
+  [:if [:git_head] [:label "git_head" "(git_head)"]]
   "Template for the git-head column.")
 
 (majutsu-log-define-column signature
@@ -501,7 +501,7 @@ Also registers a variable watcher to invalidate the template cache."
 
 (majutsu-log-define-column empty
   [:if [:empty]
-      [:label "empty" "∅"]]
+      [:label "empty" "(empty)"]]
   "Template for the empty column.")
 
 (majutsu-log-define-column description
@@ -511,7 +511,7 @@ Also registers a variable watcher to invalidate the template cache."
      [:if [:empty] "empty"]
      [:label
       "description placeholder"
-      "□"]]]
+      "(no desc)"]]]
   "Template for the description column.")
 
 (majutsu-log-define-column author
