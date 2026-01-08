@@ -3,14 +3,73 @@
 
 * [Unreleased]
 
+** Release highlights
+
+- *Interactive Patching*: Select specific hunks, files, or regions within diff buffers for Split, Squash, and Restore operations. Provides Magit-style partial staging workflow for Jujutsu.
+- *Workspace Support*: Full ~jj workspace~ integration with list/add/forget/rename/visit commands.
+- *Split & Restore Transients*: New transients for ~jj split~ and ~jj restore~ with visual revision selection.
+
 ** Added
 
-- Added workspace support (~jj workspace~): list/add/forget/rename/visit and log integration via the ~Z~ menu.
+- Added ~majutsu-split~ transient (~S~) for splitting revisions with interactive hunk/region selection.
+- Added ~majutsu-restore~ transient (~R~) with ~--from~, ~--to~, and ~--changes-in~ support.
+- Added interactive patching in diff buffers for partial split/squash/restore operations (~majutsu-interactive.el~).
+- Added workspace support (~jj workspace~): list/add/forget/rename/visit and log integration via the ~Z~ / ~%~ menu (~majutsu-workspace.el~).
 - Added ~majutsu-workspace-search-directories~ to help ~Visit~ locate workspace directories on disk.
+- Added DWIM variants: ~majutsu-new-dwim~, ~majutsu-duplicate-dwim~, ~majutsu-diff-dwim~.
+- Added buffer lifecycle hooks: ~majutsu-create-buffer-hook~, ~majutsu-setup-buffer-hook~, ~majutsu-post-create-buffer-hook~, ~majutsu-refresh-buffer-hook~.
+- Added locked buffer support via ~majutsu-buffer-locked-p~ and ~majutsu-buffer-value~.
+- Added ~majutsu-display-functions~ for customizable buffer display per buffer kind.
+- Added ~majutsu-log-field-faces~ for customizable log field colors.
+- Added ~--stat~ and ~--git~ as default diff arguments.
+- Added ~-r~ (revision) argument support in squash transient.
+- Added ~-o~, ~-A~, ~-B~ (onto/after/before) support in squash transient.
+- Added split ~-r~, ~-b~, ~-s~ arguments in rebase transient.
+- Added ~majutsu-confirm~ for confirmation prompts.
 
 ** Changed
 
+- Renamed transient commands: removed ~-transient~ suffix (e.g., ~majutsu-squash-transient~ → ~majutsu-squash~, ~majutsu-rebase-transient~ → ~majutsu-rebase~).
+- Keybinding changes in dispatcher (~?~):
+  - ~C~ now runs ~majutsu-commit~ (was ~c~)
+  - ~c~ now runs ~majutsu-describe~ (was ~d~)
+  - ~C-?~ now runs ~majutsu-redo~ (was ~R~)
+  - ~N~ now runs ~majutsu-new-dwim~ (was ~majutsu-new~)
+  - ~n~ now runs ~majutsu-new~ (was ~majutsu-new-transient~)
+  - ~Y~ now runs ~majutsu-duplicate-dwim~ (was ~majutsu-duplicate~)
+  - ~y~ now runs ~majutsu-duplicate~ (was ~majutsu-duplicate-transient~)
+  - Added ~S~ for ~majutsu-split~
+  - Added ~R~ for ~majutsu-restore~
+  - Added ~Z~ for ~majutsu-workspace~
+- Evil keybinding changes:
+  - ~R~ now runs ~majutsu-restore~ (was ~majutsu-refresh~, use ~g r~ instead)
+  - ~O~ now runs ~majutsu-new-dwim~ in log mode (was ~majutsu-new~)
+  - ~o~ now runs ~majutsu-new~ transient
+  - ~*~ now runs ~majutsu-workspace~
+  - ~S~ now runs ~majutsu-split~
+- Refactored core modules:
+  - Extracted ~majutsu-jj.el~ for JJ executable and toplevel utilities.
+  - Extracted ~majutsu-jjdescription.el~ for description editing.
+  - Extracted ~majutsu-selection.el~ from ~majutsu-log.el~.
+  - Added ~majutsu-section.el~ for section utilities.
+  - Added ~majutsu-config.el~ for jj config access.
+- Renamed ~majutsu-run-jj~ to ~majutsu-jj-string~.
+- Use ~jj workspace root~ to get repository root instead of internal ~.jj~ inspection.
+- Selection sessions are now stored in transient scope instead of buffer-local.
+- Log template now uses ~join~ template function.
+- Updated bookmark transient for jj v0.37.0 compatibility.
+- Diff context control: ~0~ now resets to default (was ~=~ for set), reads default from ~jj config~.
+
 ** Fixed
+
+- Fixed diffstat truncated paths by resolving via diff headers.
+- Fixed diffstat binary file display (jj style).
+- Fixed bookmark list ~font-lock-mode~ not enabled.
+- Fixed log template unicode character issue on Windows.
+- Fixed jjdescription files excluded from recentf and better-jumper.
+- Fixed selection session end not working properly.
+- Fixed region toggle in selection.
+- Fixed path expand in git-init.
 
 * [0.4.0] - 2025-12-18
 
@@ -48,7 +107,7 @@
 - Basic ~majutsu-op-log~ implementation.
 - Added ~majutsu-hack-dir-local-variables~, ignore trailing whitespace in majutsu buffers.
 - ~majutsu-rebase-transient~ now can toggle source and destination argument type (~-b~ ~-r~ ~-s~ / ~-o~ ~-A~ ~-B~).
-- ~tpl-compile~ (main entry of ~majutsu-template~) add a optional ~self-type~ argument.
+- ~majutsu-tpl~ (main entry of ~majutsu-template~) add a optional ~self-type~ argument.
 - Bound ~majutsu-diff~ to ~d~.
 
 ** Changed

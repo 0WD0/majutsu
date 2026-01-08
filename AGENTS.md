@@ -50,6 +50,9 @@ This project uses [Eask](https://github.com/emacs-eask/eask) for development.
 - Link related issues/PRs and update `README.org` when behavior changes.
 
 ## Documentation
+- **Code changes require documentation updates.** When modifying commands, keybindings, or user-facing behavior, update the corresponding sections in:
+  - `docs/majutsu.org` – The main user manual (Texinfo-compatible Org format)
+  - `README.org` – Quick-start guide (keep minimal, link to manual for details)
 - Keep `README.org` usage/key binding sections in sync with UI changes.
 - Update `docs/` specs when refining workflows or template semantics; preserve bilingual context and add English summaries for new sections when possible.
 - Leverage `man jj-*` (e.g., `man jj-bookmark`) for upstream command docs when refining command integrations.

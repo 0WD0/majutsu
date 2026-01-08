@@ -1,270 +1,69 @@
-#+title: Majutsu (Jujutsu) for Emacs
+#+title: Majutsu - Emacs Interface for Jujutsu
 
-Majutsu provides a magit-inspired interface for [[https://github.com/martinvonz/jj][Jujutsu]], offering an efficient
-way to interact with JJ repositories from within Emacs.
+Majutsu provides a Magit-style interface for [[https://github.com/jj-vcs/jj][Jujutsu (jj)]], offering an
+efficient way to interact with JJ repositories from within Emacs.
 
-This project started as a fork of [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]] and was later renamed to
-Majutsu. The codebase has since been heavily refactored—with a Magit-style log
-UI, a new template DSL, and reworked window/message handling—so it is no longer
-drop-in compatible with the upstream package. The GitHub fork flag was removed
-to avoid implying compatibility; this is an independently maintained fork. Many
-thanks to the original authors for the initial codebase.
+[[file:docs/majutsu.org][Read the full manual]] for comprehensive documentation.
 
-* Features
-- *Magit-style log viewer* with collapsible sections and syntax highlighting
-- *Interactive rebase* with visual source/destination selection via transients
-- *Bookmark management* with create, abandon, forget, and track operations
-- *Commit and describe* with dedicated message buffers and window management
-- *Interactive diff viewing* with visual range selection and dedicated buffers
-- *Asynchronous jj jobs* for log/diff/fetch/push, so UI stays responsive
-- *Context-sensitive actions* via DWIM (Do What I Mean) Enter key behavior
-- *Git integration* with push/fetch operations and configurable options
-- *Workspace support* (~jj workspace~) with list/add/forget/visit commands (Magit-style ~Z~ menu)
-- *Log transient* to tweak revsets, limits, and path filters on the fly
-- *Revset Builder* for interactively constructing complex revset expressions
-- *Operation Log* viewer (~majutsu-op-log~) to inspect repo history
-- *Built-in conflict resolution* listing conflicted files and opening them in smerge-mode
-- *Composable templates* through the bundled ~majutsu-template~ DSL for JJ output
-- *Native Evil integration* with sensible defaults and keybindings
+* Quick Start
 
-* Requirements
-- Emacs 26.1 or later
-- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] (v0.36.0) installed and in PATH
-- [[https://magit.vc/][magit]] (for section management and UI components)
-- [[https://github.com/magit/transient][transient]] (usually bundled with magit)
-- [[https://github.com/magit/with-editor][with-editor]] (usually bundled with magit)
+** Installation
 
-* Release Highlights
-** 0.3.0 (2025-11-25)
-- Native Evil integration ships in-tree (~majutsu-evil.el~)
-- Asynchronous refresh for ~majutsu-log~, ~majutsu-diff~, ~majutsu-git-fetch~ and ~majutsu-git-push~
-- ~majutsu-op-log~ debuts for quickly auditing recent JJ commands
-- ~majutsu-rebase-transient~ exposes both source (~-b~ ~-r~ ~-s~) and destination (~-o~ ~-A~ ~-B~) toggles
-
-* Installation
-** Doom Emacs
 #+begin_src emacs-lisp
+;; Doom Emacs (packages.el)
 (package! majutsu :recipe (:host github :repo "0WD0/majutsu"))
-#+end_src
 
-** use-package with straight.el
-#+begin_src emacs-lisp
+;; use-package + straight.el
 (use-package majutsu
   :straight (:host github :repo "0WD0/majutsu"))
-#+end_src
 
-** use-package with built-in package-vc integration
-#+begin_src emacs-lisp
+;; use-package + package-vc (Emacs 29+)
 (use-package majutsu
   :vc (:url "https://github.com/0WD0/majutsu"))
 #+end_src
 
-** Manual
-Clone this repository and add it to your load path:
-#+begin_src emacs-lisp
-(add-to-list 'load-path "/path/to/majutsu")
-(require 'majutsu)
-#+end_src
+** Usage
 
-* Usage
-Start with ~M-x majutsu~ (alias of ~majutsu-log~) to open the main interface. Each
-project gets its own buffer (~*majutsu-log: project-name*~).
+1. Open a JJ repository: ~M-x majutsu~ (or ~majutsu-log~)
+2. Navigate: ~n~ / ~p~ to move between revisions
+3. Act: ~RET~ to visit, ~?~ for help
 
-** Key Bindings
-Majutsu derives from ~magit-section-mode~, so standard navigation keys (TAB,
-S-TAB, M-n/M-p, etc.) remain available. The lists below mirror the bindings in
-~majutsu-core.el~, ~majutsu-evil.el~, and ~majutsu-transient.el~.
+** Essential Keybindings
 
-*** Navigation
-- ~n~ / ~p~ - Move to the next/previous changeset in log buffers
-- ~RET~ - Run ~majutsu-visit-thing~ (visit file, edit revision, etc.)
-- ~.~ - Goto ~@~ (current) section
+| Key   | Action                    |
+|-------+---------------------------|
+| ~n~ / ~p~ | Next / previous revision  |
+| ~RET~   | Visit thing at point      |
+| ~.~     | Jump to working copy (~@~)  |
+| ~g~     | Refresh                   |
+| ~?~     | Show all commands         |
+| ~c~ / ~C~ | Describe / Commit         |
+| ~N~     | New change                |
+| ~s~     | Squash                    |
+| ~r~     | Rebase                    |
+| ~d~ / ~D~ | Diff transient / at point |
+| ~b~     | Bookmark menu             |
+| ~G~     | Git operations            |
+| ~Z~     | Workspace menu            |
+| ~k~     | Abandon                   |
+| ~C-/~   | Undo                      |
 
-*** Primary Commands (~majutsu-mode-map~)
-- ~g~ - Refresh the log (~majutsu-log-refresh~)
-- ~$~ - Show the per-repo process buffer (~majutsu-process-buffer~)
-- ~l~ - Open the log options transient
-- ~?~ - Open the Majutsu dispatcher (~majutsu-dispatch~)
-- ~C~ / ~c~ - Commit / describe the change at point
-- ~N~ - Create a new change at point (~C-u N~ opens the "new" transient)
-- ~s~ - Open the squash transient
-- ~d~ - Open the diff transient
-- ~D~ - Show diff of revision at point
-- ~r~ - Open the rebase transient
-- ~b~ - Open the bookmark transient
-- ~y~ - Open the duplicate transient
-- ~Y~ - Duplicate the change at point
-- ~G~ - Open the Git operations transient
-- ~Z~ / ~%~ - Open the workspace transient
-- ~k~ - Abandon the change at point
-- ~C-/~ / ~C-?~ - Undo / redo the last Majutsu action
+* Requirements
 
-*** Majutsu Dispatcher (~?~)
-Use the dispatcher when you forget a binding—it mirrors ~majutsu-dispatch~'s
-columns:
-- ~g~, ~c~, ~l~, ~N~, ~s~, ~r~, ~b~, ~G~, ~Z~, ~D~ — same commands as above
-- ~e~ - Edit the change at point (~majutsu-edit-changeset~)
-- ~u~ / ~R~ - Undo or redo
-- ~n~ - Open the fully interactive ~majutsu-new-transient~
-- ~Y~ / ~y~ - Run the simple duplicate or its transient
-- ~a~ / ~k~ - Abandon
-- ~d~ - Describe
-- ~E~ / ~M~ - Launch ~majutsu-diffedit-emacs~ or ~majutsu-diffedit-smerge~
-- ~?~ / ~q~ - Show transient help or quit the dispatcher
+- Emacs 29.0+
+- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.37.0+
+- [[https://magit.vc/][magit]], [[https://github.com/magit/transient][transient]], [[https://github.com/magit/with-editor][with-editor]]
 
-*** Log options (~l~)
-- ~r~ / ~R~ - Set or clear the revset filter
-- ~n~ / ~N~ - Set or clear the entry limit
-- ~v~ - Toggle reverse order
-- ~t~ - Toggle ~--no-graph~
-- ~a~ / ~A~ - Add or clear path filters
-- ~g~ - Apply the current options and refresh
-- ~0~ - Reset every option to defaults
+* Documentation
 
-*** New (~C-u N~ or dispatcher ~n~)
-- ~p~ - Toggle parent revisions
-- ~a~ / ~b~ - Toggle ~--after~ / ~--before~ constraints
-- ~c~ - Clear all selections
-- ~m~ - Set the initial commit message
-- ~e~ - Toggle ~--no-edit~
-- ~-I~ - Toggle ~--ignore-immutable~
-- ~n~ / ~RET~ - Create the new change with the current selections
-
-*** Duplicate (~y~)
-- ~y~ - Mark or unmark sources (defaults to the change at point or ~@~)
-- ~d~ - Toggle ~--onto~ parents
-- ~a~ / ~b~ - Toggle ~--after~ / ~--before~ parents
-- ~c~ - Clear selections
-- ~RET~ / ~p~ - Execute duplicate with the current selections
-
-*** Squash (~s~)
-- ~f~ - Select “from” revisions
-- ~t~ - Select the destination
-- ~c~ - Clear selections
-- ~-k~ - Keep emptied commits
-- ~-I~ - Toggle ~--ignore-immutable~
-- ~s~ - Execute squash (DWIMs when only sources are marked)
-- ~b~ / ~q~ - Bury or quit the transient
-
-*** Diff (~d~)
-- ~f~ / ~t~ - Select the ~--from~ / ~--to~ revisions
-- ~c~ - Clear selections
-- ~-s~ / ~-S~ - Add ~--stat~ / ~--summary~
-  Not support when ~--git~ is enabled.
-- ~d~ - Run the diff with the current selections
-
-*** Rebase (~r~)
-- ~s~ - Select the source revision
-- ~S~ - Cycle the source flag (~-s~, ~-b~, ~-r~)
-- ~d~ - Toggle destinations
-- ~D~ - Cycle the destination flag (~-o~, ~-A~, ~-B~)
-- ~c~ - Clear selections
-- ~-se~ - Toggle ~--skip-emptied~
-- ~-kd~ - Toggle ~--keep-divergent~
-- ~-I~ - Toggle ~--ignore-immutable~
-- ~r~ - Execute the rebase
-
-*** Bookmark (~b~)
-- ~l~ - List bookmarks
-- ~c~ - Create a bookmark
-- ~s~ - Set/update a bookmark to the current change
-- ~m~ / ~M~ - Move bookmarks (with or without ~--allow-backwards~)
-- ~r~ - Rename a bookmark
-- ~t~ / ~u~ - Track or untrack a remote bookmark
-- ~g~ - Fetch remote
-- ~d~ - Delete (propagate) a bookmark
-- ~f~ - Forget a local bookmark
-- ~-I~ - Toggle ~--ignore-immutable~
-
-*** Git (~G~)
-- ~p~ - Open the push transient (supports ~-R~ remote, ~-b~ bookmark, ~-a~, ~-t~, ~-D~, ~-n~,
-  ~-E~, ~-P~, ~-r~, ~-c~, ~-N~, ~-y~ switches plus ~p~ to execute)
-- ~f~ - Open the fetch transient (options ~-R~, ~-B~, ~-t~, ~-A~ plus ~f~ to execute)
-- ~o~ - Copy the Git root (~majutsu-git-root~)
-- ~r~ - Manage remotes (with ~-T~ fetch-tag policy and actions ~l~, ~a~, ~d~, ~r~, ~u~)
-- ~c~ - Open the clone transient (~-R~, ~-C~, ~-x~, ~-d~, ~-T~ options then ~c~ to run)
-  not recommended
-- ~i~ - Open the init transient (~-C~, ~-x~, ~-g~ options then ~i~ to run)
-  not recommended
-- ~e~ / ~m~ - Run ~jj git export~ / ~jj git import~
-  not nassesary
-
-*** Workspace (~Z~)
-- ~l~ - List workspaces in a dedicated buffer
-- ~v~ / ~RET~ - Visit a workspace (opens a Majutsu log buffer rooted at that workspace)
-- ~a~ - Add a workspace (~jj workspace add~) and then visit it
-- ~f~ - Forget workspaces (~jj workspace forget~)
-- ~n~ - Rename current workspace
-- ~u~ - Update stale working copy (~jj workspace update-stale~)
-
-If ~Visit~ can't auto-locate the workspace directory, customize
-~majutsu-workspace-search-directories~ to add parent directories to search.
-
-*** Message Buffers
-Majutsu relies on [[https://github.com/magit/with-editor][with-editor]] to populate commit/describe messages.
-When the edit buffer opens:
-- ~C-c C-c~ - Finish and execute
-- ~C-c C-k~ - Cancel
-
-* Evil integration
-
-- Toggle the integration entirely via ~M-x customize-group RET majutsu-evil RET~
-  or by setting ~majutsu-evil-enable-integration~ to ~nil~.
-- Change the default state (normal/motion/emacs/…) by customizing ~majutsu-evil-
-  initial-state~.
-
-** Default keybindings in evil-mode
-When ~majutsu-evil-setup~ runs it installs these bindings on Evil's normal/visual/
-motion states (and mirrors the ~RET~ binding onto ~majutsu-diff-mode-map~):
-
-- ~.~ → ~majutsu-log-goto-@~
-- ~R~ / ~g r~ → ~majutsu-log-refresh~
-- ~`~ → ~majutsu-process-buffer~
-- ~c~ → ~majutsu-describe~
-- ~C~ → ~majutsu-commit~
-- ~e~ → ~majutsu-edit-changeset~
-- ~u~ → ~majutsu-undo~
-- ~C-r~ → ~majutsu-redo~
-- ~o~ → ~majutsu-new-transient~
-- ~O~ → ~majutsu-new~
-- ~I~ → ~majutsu-new~ with ~--before~ current revision
-- ~A~ → ~majutsu-new~ with ~--after~ current revision
-- ~s~ → ~majutsu-squash-transient~
-- ~L~ → ~majutsu-log-transient~ (avoid conflict with moving right)
-- ~x~ → ~majutsu-abandon~
-- ~b~ → ~majutsu-bookmark-transient~
-- ~r~ → ~majutsu-rebase-transient~
-- ~Y~ → ~majutsu-duplicate-transient~
-- ~d~ → ~majutsu-diff-transient~
-- ~D~ → ~majutsu-diff~
-- ~*~ - ~majutsu-workspace-transient~
-- ~E~ → ~majutsu-diffedit-emacs~
-- ~M~ → ~majutsu-diffedit-smerge~
-- ~?~ → ~majutsu-dispatch~
-- ~RET~ → ~majutsu-visit-thing~
-
-When [[https://github.com/hlissner/evil-snipe][evil-snipe]] is present, Majutsu automatically calls ~turn-off-evil-snipe-mode~
-and ~turn-off-evil-snipe-override-mode~ on ~majutsu-mode-hook~ to avoid conflicting
-motions inside Majutsu buffers.
-
-* Template DSL
-Majutsu includes ~majutsu-template.el~, an embedded DSL for building JJ templates
-directly from Elisp.
-
-- Use ~tpl~ / ~tpl-compile~ to embed literal vectors at compile time.
-- Keyword sugar covers JJ built-ins plus helpers registered with ~majutsu-
-  template-defkeyword~ or methods declared with ~:keyword t~.
-- Usage patterns and safeguards live in =test/majutsu-template-test.el=.
+- [[file:docs/majutsu.org][User Manual]] - Complete guide to all features
+- [[file:NEWS.org][NEWS]] - Version history and changelog
 
 * Credits
-Majutsu began as a fork of [[https://github.com/bolivier/jj-mode.el][bolivier/jj-mode.el]] by Brandon Olivier and
-has since grown into an independent project.
 
-It stands on the shoulders of [[https://github.com/jj-vcs/jj][Jujutsu]] — the DVCS it wraps — and both
-depends on and draws interface inspiration from [[https://magit.vc/][Magit]] (sections,
-transients, with-editor). Thank you to both communities for the tools,
-ideas, and care that make this package possible.
+Majutsu began as a fork of [[https://github.com/bolivier/jj-mode.el][jj-mode.el]] by Brandon Olivier. It depends on
+and draws inspiration from [[https://magit.vc/][Magit]] and wraps the [[https://github.com/jj-vcs/jj][Jujutsu]] VCS.
 
 * Contributing
-Issues and pull requests welcome! This project aims to provide a solid JJ
-interface while maintaining magit-like usability patterns.
+
+Issues and pull requests welcome at https://github.com/0WD0/majutsu
