@@ -44,17 +44,17 @@ Instead of invoking this alias for `majutsu-log' using
    :class transient-columns
    ["Basic Operations"
     ("g" "Refresh log" majutsu-log-refresh)
-    ("c" "Commit" majutsu-commit)
+    ("C" "Commit" majutsu-commit)
     ("e" "Edit change" majutsu-edit-changeset)
     ("u" "Undo" majutsu-undo)
     ("l" "Log options" majutsu-log-transient)
     ("C-?" "Redo" majutsu-redo)
-    ("N" "New" majutsu-new-dwim)
-    ("n" "New (transient)" majutsu-new)
-    ("y" "Duplicate (transient)" majutsu-duplicate)
-    ("Y" "Duplicate" majutsu-duplicate-dwim)
+    ("N" "New at point" majutsu-new-dwim)
+    ("n" "New" majutsu-new)
+    ("y" "Duplicate" majutsu-duplicate)
+    ("Y" "Duplicate at point" majutsu-duplicate-dwim)
     ("a" "Abandon" majutsu-abandon)
-    ("d" "Describe" majutsu-describe)
+    ("c" "Describe" majutsu-describe)
     ("s" "Squash" majutsu-squash)
     ("S" "Split" majutsu-split)
     ("R" "Restore" majutsu-restore)]
