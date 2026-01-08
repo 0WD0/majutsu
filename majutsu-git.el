@@ -54,7 +54,7 @@ This calls `jj git remote list` and parses the first word of each line."
 (defun majutsu-git--read-remote (prompt)
   (let ((remotes (or (majutsu-git--remote-names (ignore-errors (majutsu--toplevel-safe)))
                      '("origin"))))
-    (completing-read prompt remotes nil t)))
+    (majutsu-completing-read prompt remotes nil t)))
 
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."

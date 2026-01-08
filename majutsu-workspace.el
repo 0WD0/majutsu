@@ -125,8 +125,8 @@ the workspaces for ROOT."
   (or (magit-section-value-if 'jj-workspace)
       (let* ((root (or root default-directory))
              (default (or default (majutsu-workspace-current-name root) ""))
-             (prompt (or prompt "Workspace: ")))
-        (completing-read prompt (majutsu-workspace--names root) nil t nil nil default))))
+             (prompt (or prompt "Workspace")))
+        (majutsu-completing-read prompt (majutsu-workspace--names root) nil t nil nil default))))
 
 (defun majutsu-workspace--read-root (name &optional root)
   "Return the workspace root directory for NAME.
@@ -303,10 +303,8 @@ directory."
 This stops tracking the workspaces' working-copy commits in the repo. The
 workspace directories are not touched on disk."
   (interactive
-   (let* ((names (majutsu-workspace--names))
-          (crm-separator (or (bound-and-true-p crm-separator) ", *")))
-     (defvar crm-separator)
-     (list (completing-read-multiple "Forget workspace(s): " names nil t))))
+   (let* ((names (majutsu-workspace--names)))
+     (list (majutsu-completing-read-multiple "Forget workspace(s)" names nil t))))
   (when names
     (unless (majutsu-confirm 'workspace-forget
                              (format "Forget workspace(s) %s? "
@@ -328,10 +326,10 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
    (let* ((root (majutsu--toplevel-safe))
           (parent (file-name-directory (directory-file-name root)))
           (destination (read-directory-name "Create workspace at: " parent nil nil))
-          (name (string-trim (read-string "Workspace name (empty = default): ")))
-          (revision (string-trim (read-string "Parent revset (-r, empty = default): ")))
-          (sparse (completing-read "Sparse patterns (copy/full/empty): "
-                                   '("copy" "full" "empty") nil t nil nil "copy")))
+          (name (string-trim (majutsu-read-string "Workspace name (empty = default)" nil nil "")))
+          (revision (string-trim (majutsu-read-string "Parent revset (-r, empty = default)" nil nil "")))
+          (sparse (majutsu-completing-read "Sparse patterns"
+                                           '("copy" "full" "empty") nil t nil nil "copy")))
      (list destination
            (unless (string-empty-p name) name)
            (unless (string-empty-p revision) revision)

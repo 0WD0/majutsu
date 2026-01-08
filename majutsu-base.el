@@ -150,6 +150,53 @@ end with a question mark and space."
    ((and action (memq action majutsu-no-confirm)) t)
    (t (majutsu-y-or-n-p prompt action))))
 
+;;; Completing Read
+
+(defun majutsu--make-completion-table (candidates &optional category)
+  "Wrap CANDIDATES in a completion table.
+When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
+  (let ((metadata `(metadata (display-sort-function . identity)
+                             ,@(and category `((category . ,category))))))
+    (lambda (string pred action)
+      (if (eq action 'metadata)
+          metadata
+        (complete-with-action action candidates string pred)))))
+
+(defun majutsu-completing-read (prompt collection &optional predicate require-match
+                                       initial-input hist def category)
+  "Read a choice with completion, preserving CATEGORY metadata.
+Like `completing-read' but uses `format-prompt' and supports CATEGORY
+for completion UI styling (icons, grouping)."
+  (let ((table (if category
+                   (majutsu--make-completion-table collection category)
+                 collection)))
+    (completing-read (format-prompt prompt def)
+                     table predicate require-match
+                     initial-input hist def)))
+
+(defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
+                                                initial-input hist def category)
+  "Read multiple choices with completion, preserving CATEGORY metadata.
+Like `completing-read-multiple' but uses `format-prompt' and supports CATEGORY."
+  (let ((table (if category
+                   (majutsu--make-completion-table collection category)
+                 collection)))
+    (completing-read-multiple (format-prompt prompt def)
+                              table predicate require-match
+                              initial-input hist def)))
+
+(defun majutsu-read-string (prompt &optional initial-input history default-value)
+  "Read a string from the minibuffer, prompting with PROMPT.
+Uses `format-prompt' for consistent formatting.  Empty input returns
+DEFAULT-VALUE if non-nil, otherwise signals an error."
+  (let ((val (read-string (format-prompt prompt default-value)
+                          initial-input history default-value)))
+    (if (string-empty-p val)
+        (if default-value
+            default-value
+          (user-error "Need non-empty input"))
+      val)))
+
 (defun majutsu-display-buffer (buffer &optional kind display-function)
   "Display BUFFER using a function chosen for KIND or DISPLAY-FUNCTION.
 If DISPLAY-FUNCTION is non-nil, call it directly.  Otherwise look up

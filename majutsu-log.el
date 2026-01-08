@@ -60,11 +60,7 @@ When a field is not present in this alist, it defaults to t."
 (defun majutsu-read-revset (prompt &optional default)
   "Prompt user with PROMPT to read a revision set string."
   (let ((default (or default (magit-section-value-if 'jj-commit) "@")))
-    (read-string
-     (if default
-         (format "%s (default %s): " prompt default)
-       (format "%s: " prompt))
-     nil nil default)))
+    (majutsu-read-string prompt nil nil default)))
 
 ;;; Log State
 

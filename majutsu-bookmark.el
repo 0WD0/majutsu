@@ -141,8 +141,9 @@ SCOPE controls what to return:
   "Delete a bookmark and propagate on next push."
   (interactive)
   (let* ((bookmarks (majutsu--get-bookmark-names))
-         (table (majutsu--completion-table-with-category bookmarks 'majutsu-bookmark))
-         (choice (and bookmarks (completing-read "Delete bookmark (propagates on push): " table nil t))))
+         (choice (and bookmarks (majutsu-completing-read
+                                 "Delete bookmark (propagates on push)" bookmarks
+                                 nil t nil nil nil 'majutsu-bookmark))))
     (if (not choice)
         (message "No bookmarks found")
       (when (zerop (majutsu-run-jj "bookmark" "delete" choice))
@@ -153,8 +154,9 @@ SCOPE controls what to return:
   "Forget a bookmark (local only, no deletion propagation)."
   (interactive)
   (let* ((bookmarks (majutsu--get-bookmark-names))
-         (table (majutsu--completion-table-with-category bookmarks 'majutsu-bookmark))
-         (choice (and bookmarks (completing-read "Forget bookmark: " table nil t))))
+         (choice (and bookmarks (majutsu-completing-read
+                                 "Forget bookmark" bookmarks
+                                 nil t nil nil nil 'majutsu-bookmark))))
     (if (not choice)
         (message "No bookmarks found")
       (when (zerop (majutsu-run-jj "bookmark" "forget" choice))
@@ -165,12 +167,12 @@ SCOPE controls what to return:
   "Track remote bookmark(s)."
   (interactive)
   (let* ((bookmark-patterns
-          (completing-read-multiple
-           "Track bookmark name(s)/pattern(s): "
+          (majutsu-completing-read-multiple
+           "Track bookmark name(s)/pattern(s)"
            (majutsu--bookmark-remote-name-candidates) nil nil))
          (remote-patterns
-          (completing-read-multiple
-           "Remote(s)/pattern(s) (empty = all): "
+          (majutsu-completing-read-multiple
+           "Remote(s)/pattern(s) (empty = all)"
            (majutsu--bookmark-git-remote-candidates) nil nil))
          (bookmark-patterns (seq-filter (lambda (s) (not (string-empty-p s)))
                                         bookmark-patterns))
@@ -208,14 +210,10 @@ With prefix ALL, include remote bookmarks."
 ;;;###autoload
 (defun majutsu-read-bookmarks (prompt &optional _init-input _history)
   "Return interactive arguments for bookmark move commands."
-  (let* ((bookmark (majutsu--get-bookmark-names))
-         (table (majutsu--completion-table-with-category bookmark 'majutsu-bookmark))
+  (let* ((bookmarks (majutsu--get-bookmark-names))
          (default (majutsu-bookmark-at-point)))
-    (completing-read-multiple
-     (if default
-         (format "%s (default %s): " prompt default)
-       (format "%s: " prompt))
-     table nil t nil nil default)))
+    (majutsu-completing-read-multiple
+     prompt bookmarks nil t nil nil default 'majutsu-bookmark)))
 
 (defun majutsu--bookmark-move (names commit &optional allow-backwards)
   "Internal helper to move bookmark(s) NAMES to COMMIT.
@@ -249,9 +247,10 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   "Rename bookmark OLD to NEW."
   (interactive
    (let* ((bookmarks (majutsu--get-bookmark-names))
-          (table (majutsu--completion-table-with-category bookmarks 'majutsu-bookmark))
-          (old (and bookmarks (completing-read "Rename bookmark: " table nil t)))
-          (new (read-string (format "New name for %s: " old))))
+          (old (and bookmarks (majutsu-completing-read
+                               "Rename bookmark" bookmarks
+                               nil t nil nil nil 'majutsu-bookmark)))
+          (new (majutsu-read-string (format "New name for %s" old))))
      (list old new)))
   (when (and (not (string-empty-p old)) (not (string-empty-p new)))
     (when (zerop (majutsu-run-jj "bookmark" "rename" old new))
@@ -262,10 +261,10 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   "Create or update bookmark NAME to point to COMMIT."
   (interactive
    (let* ((bookmarks (majutsu--get-bookmark-names))
-          (table (majutsu--completion-table-with-category bookmarks 'majutsu-bookmark))
-          (name (completing-read "Set bookmark: " table))
+          (name (majutsu-completing-read "Set bookmark" bookmarks
+                                         nil nil nil nil nil 'majutsu-bookmark))
           (at (or (magit-section-value-if 'jj-commit) "@"))
-          (rev (read-string (format "Target revision (default %s): " at) nil nil at)))
+          (rev (majutsu-read-string "Target revision" nil nil at)))
      (list name rev)))
   (when (zerop (majutsu-run-jj "bookmark" "set" name "-r" commit))
     (message "Set bookmark '%s' to %s" name commit)))
@@ -277,11 +276,11 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
 BOOKMARKS are bookmark name patterns (glob/exact/regex/substring).
 REMOTES are remote name patterns passed via repeated `--remote`."
   (interactive
-   (list (completing-read-multiple
-          "Untrack bookmark name(s)/pattern(s): "
+   (list (majutsu-completing-read-multiple
+          "Untrack bookmark name(s)/pattern(s)"
           (majutsu--bookmark-remote-name-candidates))
-         (completing-read-multiple
-          "Remote(s)/pattern(s) (empty = all): "
+         (majutsu-completing-read-multiple
+          "Remote(s)/pattern(s) (empty = all)"
           (majutsu--bookmark-git-remote-candidates))))
   (defvar crm-separator)
   (let* ((bookmarks (seq-filter (lambda (s) (not (string-empty-p s))) bookmarks))
@@ -296,25 +295,6 @@ REMOTES are remote name patterns passed via repeated `--remote`."
                  (if remotes
                      (format " (remote(s): %s)" (string-join remotes ", "))
                    ""))))))
-
-(defun majutsu--completion-table-with-category (candidates category)
-  "Wrap CANDIDATES with completion METADATA to set CATEGORY.
-This prevents third-party UIs (e.g., icons for `bookmark') from
-misclassifying Majutsu candidates."
-  (let ((metadata `(metadata (category . ,category))))
-    (cond
-     ((fboundp 'completion-table-with-metadata)
-      (completion-table-with-metadata candidates metadata))
-     ((functionp candidates)
-      (lambda (string pred action)
-        (if (eq action 'metadata)
-            metadata
-          (funcall candidates string pred action))))
-     (t
-      (lambda (string pred action)
-        (if (eq action 'metadata)
-            metadata
-          (complete-with-action action candidates string pred)))))))
 
 ;;; Bookmark Transient
 

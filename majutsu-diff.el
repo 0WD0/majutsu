@@ -917,7 +917,7 @@ file."
   (let* ((changed-files (majutsu--get-changed-files))
          (choice (if (= (length changed-files) 1)
                      (car changed-files)
-                   (completing-read "Edit file: " changed-files))))
+                   (majutsu-completing-read "Edit file" changed-files))))
     (when choice
       (majutsu-diffedit-with-ediff choice))))
 

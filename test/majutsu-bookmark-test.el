@@ -19,7 +19,7 @@
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/local-args ()
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-run-jj)
+    (cl-letf (((symbol-function 'majutsu-jj-string)
                (lambda (&rest args)
                  (setq seen-args args)
                  "main\nfeature\n")))
@@ -35,7 +35,7 @@
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/remote-args ()
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-run-jj)
+    (cl-letf (((symbol-function 'majutsu-jj-string)
                (lambda (&rest args)
                  (setq seen-args args)
                  "main@origin\ndev@upstream\n")))
@@ -48,7 +48,7 @@
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/remote-tracked-args ()
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-run-jj)
+    (cl-letf (((symbol-function 'majutsu-jj-string)
                (lambda (&rest args)
                  (setq seen-args args)
                  "main@origin\n")))
@@ -59,7 +59,7 @@
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/remote-untracked-args ()
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-run-jj)
+    (cl-letf (((symbol-function 'majutsu-jj-string)
                (lambda (&rest args)
                  (setq seen-args args)
                  "topic@origin\n")))
@@ -77,9 +77,9 @@
               ((symbol-function 'completing-read-multiple)
                (lambda (prompt _collection &rest _args)
                  (cond
-                  ((string-prefix-p "Track bookmark name(s)/pattern(s): " prompt)
+                  ((string-match-p "Track bookmark name" prompt)
                    '("main" "glob:\"feat*\""))
-                  ((string-prefix-p "Remote(s)/pattern(s) (empty = all): " prompt)
+                  ((string-match-p "Remote.*pattern" prompt)
                    '("origin" "upstream"))
                   (t nil))))
               ((symbol-function 'majutsu-call-jj)
