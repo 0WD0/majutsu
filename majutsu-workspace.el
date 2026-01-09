@@ -218,9 +218,13 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
         (insert "\n")))))
 
 ;;;###autoload
-(defun majutsu-log-insert-workspaces ()
-  "Insert a Workspaces section in the current log buffer."
-  (majutsu-workspace--insert-entries (majutsu-workspace-list-entries) nil))
+(defun majutsu-insert-workspaces ()
+  "Insert a Workspaces section.
+When there is only one workspace, nothing is inserted unless called
+from `majutsu-workspace-mode'."
+  (majutsu-workspace--insert-entries
+   (majutsu-workspace-list-entries)
+   (eq major-mode 'majutsu-workspace-mode)))
 
 ;;; Actions
 
@@ -361,6 +365,12 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
 
 ;;; Workspace list buffer
 
+(defcustom majutsu-workspace-sections-hook
+  (list #'majutsu-insert-workspaces)
+  "Hook run to insert sections in the workspace buffer."
+  :type 'hook
+  :group 'majutsu)
+
 (defvar-keymap majutsu-workspace-mode-map
   :doc "Keymap for `majutsu-workspace-mode'."
   :parent majutsu-mode-map)
@@ -375,7 +385,7 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
   "Refresh the workspace list buffer."
   (majutsu--assert-mode 'majutsu-workspace-mode)
   (magit-insert-section (workspace-list)
-    (majutsu-workspace--insert-entries (majutsu-workspace-list-entries) t)))
+    (run-hooks 'majutsu-workspace-sections-hook)))
 
 ;;; _
 (provide 'majutsu-workspace)

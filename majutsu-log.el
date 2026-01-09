@@ -22,7 +22,6 @@
 (require 'majutsu-template)
 (require 'majutsu-selection)
 (require 'majutsu-section)
-(require 'majutsu-workspace)
 (require 'json)
 
 (defcustom majutsu-log-field-faces
@@ -131,10 +130,11 @@ When SAVE is non-nil, also persist ARGS using `transient-values'."
 This is set by process runners (see `majutsu-process-buffer') and
 rendered by `majutsu-log-insert-error-header' on the next refresh.")
 
-(defcustom majutsu-log-sections-hook '(majutsu-log-insert-error-header
-                                       majutsu-log-insert-logs
-                                       majutsu-log-insert-status
-                                       majutsu-log-insert-workspaces)
+(defcustom majutsu-log-sections-hook
+  (list #'majutsu-log-insert-error-header
+        #'majutsu-log-insert-logs
+        #'majutsu-log-insert-status
+        #'majutsu-insert-workspaces)
   "Hook run to insert sections in the log buffer."
   :type 'hook
   :group 'majutsu)
