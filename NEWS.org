@@ -3,6 +3,14 @@
 
 * [Unreleased]
 
+** Added
+
+** Changed
+
+** Fixed
+
+* [0.5.0] - 2026-01-09
+
 ** Release highlights
 
 - *Interactive Patching*: Select specific hunks, files, or regions within diff buffers for Split, Squash, and Restore operations. Provides Magit-style partial staging workflow for Jujutsu.
