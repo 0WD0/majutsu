@@ -60,7 +60,8 @@
 (defun majutsu-selection--transient-setup-buffer ()
   "Render selection overlays when a transient menu is being setup."
   (let* ((session (transient-scope))
-         (buf (and session (majutsu-selection-session-buffer session))))
+         (buf (and (majutsu-selection-session-p session)
+                   (majutsu-selection-session-buffer session))))
     ;; Clean up old buffers
     (maphash (lambda (old-buf _)
                (unless (eq old-buf buf)
