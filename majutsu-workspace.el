@@ -26,10 +26,6 @@
 (require 'majutsu-process)
 (require 'majutsu-template)
 
-;; Avoid circular dependency: majutsu-log requires majutsu-workspace
-(declare-function majutsu-log "majutsu-log" ())
-(declare-function majutsu-log-refresh "majutsu-log" ())
-
 ;;; Templates
 
 (defconst majutsu-workspace--field-separator "\x1e"
@@ -240,8 +236,7 @@ workspace root automatically; if not found, prompt for it."
                   (file-name-as-directory (expand-file-name directory))
                 (majutsu-workspace--read-root (majutsu-workspace--read-name "Workspace: " root) root))))
     (let ((default-directory dir))
-      (if (fboundp 'majutsu-log)
-          (majutsu-log)
+      (if (majutsu-refresh)
         (dired dir)))))
 
 ;;; Commands

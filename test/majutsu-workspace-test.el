@@ -35,13 +35,17 @@
 
 (ert-deftest majutsu-workspace-visit/binds-default-directory ()
   "Ensure visiting another workspace let-binds `default-directory'."
-  (let (seen)
-    (cl-letf (((symbol-function 'majutsu-log)
-               (lambda ()
-                 (setq seen default-directory))))
-      (let ((default-directory "/tmp/old/"))
-        (majutsu-workspace-visit "/tmp/new/")))
-    (should (equal seen (file-name-as-directory (expand-file-name "/tmp/new/"))))))
+  (let ((new-dir (make-temp-file "majutsu-test-" t))
+        seen)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'majutsu-refresh)
+                     (lambda ()
+                       (setq seen default-directory))))
+            (let ((default-directory "/tmp/"))
+              (majutsu-workspace-visit new-dir)))
+          (should (equal seen (file-name-as-directory (expand-file-name new-dir)))))
+      (delete-directory new-dir t))))
 
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here
