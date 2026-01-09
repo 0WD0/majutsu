@@ -1150,13 +1150,13 @@ offer to create one using `jj git init`."
 (transient-define-argument majutsu-log:--reversed ()
   :description "Reverse order"
   :class 'transient-switch
-  :key "v"
+  :key "-v"
   :argument "--reversed")
 
 (transient-define-argument majutsu-log:--no-graph ()
   :description "Hide graph"
   :class 'transient-switch
-  :key "t"
+  :key "-G"
   :argument "--no-graph")
 
 ;;;###autoload

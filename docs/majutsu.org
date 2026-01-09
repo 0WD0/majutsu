@@ -115,9 +115,9 @@ Each revision in the log is a section. You can see the change ID, bookmarks, tag
 *** Log Options Transient
 Press ~l~ to open the log options. Here you can:
 - ~r~ :: Set a revset filter (e.g., =all()= or =mine()=).
-- ~n~ :: Limit the number of revisions shown.
-- ~v~ :: Toggle reverse order.
-- ~t~ :: Toggle the ASCII graph.
+- ~-n~ :: Limit the number of revisions shown.
+- ~-v~ :: Toggle reverse order.
+- ~-G~ :: Toggle the ASCII graph.
 - ~a~ :: Add a path filter to see only changes affecting certain files.
 
 *** Revset Builder
@@ -158,7 +158,7 @@ Transient options:
 Runs: =jj new -r REV=
 
 ** Describing Changes
-- ~d~ (~majutsu-describe~) :: Edit the description of the revision at point. Supports =--ignore-immutable= flag for immutable revisions.
+- ~c~ (~majutsu-describe~) :: Edit the description of the revision at point. Supports =--ignore-immutable= flag for immutable revisions.
 Runs: =jj describe -r REV=
 
 ** Committing
