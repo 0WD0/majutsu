@@ -1474,16 +1474,7 @@ Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
       (user-error "majutsu-template: unknown operator %S" op)))))
 
 ;;;###autoload
-(defmacro tpl (form)
-  "Expand a template program FORM (must be a vector literal) into the EDSL AST."
-  (unless (vectorp form)
-    (user-error "tpl: top-level form must be a vector, e.g., [:concat ...]"))
-  (let ((majutsu-template--allow-eval t))
-    (let ((node (majutsu-template--rewrite form)))
-      `(quote ,node))))
-
-;;;###autoload
-(defmacro tpl-compile (form &optional self-type)
+(defmacro majutsu-tpl (form &optional self-type)
   "Expand and compile FORM to a jj template string.
 Vector literals are compiled at macro-expansion time IF SELF-TYPE is provided
 as a constant.

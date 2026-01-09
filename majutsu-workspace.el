@@ -35,7 +35,7 @@ We use an ASCII record separator so parsing stays robust.")
 (defconst majutsu-workspace--list-template
   ;; NOTE: Don't use `separate()` here. We need stable field positions even
   ;; when some values are empty (e.g. the non-current marker).
-  (tpl-compile
+  (majutsu-tpl
    [:join "\x1e"
           [:if [:target :current_working_copy] "@"]
           [:name]
@@ -48,13 +48,13 @@ We use an ASCII record separator so parsing stays robust.")
   "Template used to render `jj workspace list` output for parsing.")
 
 (defconst majutsu-workspace--names-template
-  (tpl-compile
+  (majutsu-tpl
    [:concat [:name] "\n"]
    'WorkspaceRef)
   "Template that renders one workspace name per line.")
 
 (defconst majutsu-workspace--current-name-template
-  (tpl-compile
+  (majutsu-tpl
    [:concat
     [:if [:target :current_working_copy]
         [:name]]

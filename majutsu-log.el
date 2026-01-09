@@ -402,7 +402,7 @@ Returns a plist with :template, :columns, and :field-order."
          (templates (mapcar (lambda (c)
                               (majutsu-log--column-template (plist-get c :field)))
                             complete))
-         (compiled (tpl-compile `[,majutsu-log--field-separator
+         (compiled (majutsu-tpl `[,majutsu-log--field-separator
                                   ,(vconcat (list :join majutsu-log--field-separator) templates)
                                   "\n"])))
     (list :template compiled
@@ -822,7 +822,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 ;;; Log Navigation
 
 (defconst majutsu--show-id-template
-  (tpl-compile [:if [:or [:hidden] [:divergent]]
+  (majutsu-tpl [:if [:or [:hidden] [:divergent]]
                    [:commit_id :shortest 8]
                  [:change_id :shortest 8]]))
 

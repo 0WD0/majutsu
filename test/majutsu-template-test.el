@@ -60,92 +60,92 @@
   )
 
 (ert-deftest test-majutsu-template-compile-basic ()
-  (mt--is (tpl-compile [:concat [:str "Hello "] [:raw "self.author().name()"]])
+  (mt--is (majutsu-tpl [:concat [:str "Hello "] [:raw "self.author().name()"]])
           "concat(\"Hello \", self.author().name())")
   ;; Bare strings inside vector are treated as :str
-  (mt--is (tpl-compile [:concat "A" "B"]) "concat(\"A\", \"B\")")
+  (mt--is (majutsu-tpl [:concat "A" "B"]) "concat(\"A\", \"B\")")
   ;; Vector not starting with operator defaults to concat
-  (mt--is (tpl-compile ["A" "B"]) "concat(\"A\", \"B\")")
-  (mt--is (tpl-compile ["A" [:raw "self.commit_id()"]])
+  (mt--is (majutsu-tpl ["A" "B"]) "concat(\"A\", \"B\")")
+  (mt--is (majutsu-tpl ["A" [:raw "self.commit_id()"]])
           "concat(\"A\", self.commit_id())")
-  (mt--is (tpl-compile [:if [:raw "self.root()"] [:str "(root)"] [:raw "format_short_commit_id(self.commit_id())"]])
+  (mt--is (majutsu-tpl [:if [:raw "self.root()"] [:str "(root)"] [:raw "format_short_commit_id(self.commit_id())"]])
           "if(self.root(), \"(root)\", format_short_commit_id(self.commit_id()))")
-  (mt--is (tpl-compile [:if t "A" "B"]) "if(true, \"A\", \"B\")")
+  (mt--is (majutsu-tpl [:if t "A" "B"]) "if(true, \"A\", \"B\")")
   ;; Optional else
-  (mt--is (tpl-compile [:if t "A"]) "if(true, \"A\")")
-  (mt--is (tpl-compile [:separate [:str " "] [:label "immutable" [:str "immutable"]] [:label "conflict" [:str "conflict"]]])
+  (mt--is (majutsu-tpl [:if t "A"]) "if(true, \"A\")")
+  (mt--is (majutsu-tpl [:separate [:str " "] [:label "immutable" [:str "immutable"]] [:label "conflict" [:str "conflict"]]])
           "separate(\" \", label(\"immutable\", \"immutable\"), label(\"conflict\", \"conflict\"))")
-  (mt--is (tpl-compile [:raw (if t "ac" "wa")])
+  (mt--is (majutsu-tpl [:raw (if t "ac" "wa")])
           "ac")
   )
 
 (ert-deftest test-majutsu-template-compile-vector-required ()
-  (should-error (macroexpand-1 '(tpl (concat (str "A") (str "B")))) :type 'error)
-  (should-error (eval '(tpl-compile (concat (str "A") (str "B")))) :type 'error)
+  ;; Runtime error for non-vector forms
+  (should-error (eval '(majutsu-tpl (concat (str "A") (str "B")))) :type 'error)
   ;; Nested list is also rejected
-  (should-error (tpl-compile [:concat (str "A") [:str "B"]]) :type 'error))
+  (should-error (majutsu-tpl [:concat (str "A") [:str "B"]]) :type 'error))
 
 (ert-deftest test-majutsu-template-compile-numbers-booleans ()
-  (mt--is (tpl-compile [:call 'pad_end 8 [:str "abc"]])
+  (mt--is (majutsu-tpl [:call 'pad_end 8 [:str "abc"]])
           "pad_end(8, \"abc\")")
-  (mt--is (tpl-compile [:if t [:str "yes"] [:str "no"]])
+  (mt--is (majutsu-tpl [:if t [:str "yes"] [:str "no"]])
           "if(true, \"yes\", \"no\")")
-  (mt--is (tpl-compile [:if nil [:str "yes"] [:str "no"]])
+  (mt--is (majutsu-tpl [:if nil [:str "yes"] [:str "no"]])
           "if(false, \"yes\", \"no\")"))
 
 (ert-deftest test-majutsu-template-compile-map-join ()
-  (mt--is (tpl-compile [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
+  (mt--is (majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
           "self.bookmarks().map(|b| b.name())")
-  (mt--is (tpl-compile [:map-join [:str ", "] [:raw "self.bookmarks()"] b [:raw "b.name()"]])
+  (mt--is (majutsu-tpl [:map-join [:str ", "] [:raw "self.bookmarks()"] b [:raw "b.name()"]])
           "self.bookmarks().map(|b| b.name()).join(\", \")"))
 
 (ert-deftest test-majutsu-template-compile-filter-any-all ()
-  (mt--is (tpl-compile [:filter [:raw "parents"] c [:raw "c.mine()"]])
+  (mt--is (majutsu-tpl [:filter [:raw "parents"] c [:raw "c.mine()"]])
           "parents.filter(|c| c.mine())")
-  (mt--is (tpl-compile [:any [:raw "parents"] c [:raw "c.conflict()"]])
+  (mt--is (majutsu-tpl [:any [:raw "parents"] c [:raw "c.conflict()"]])
           "parents.any(|c| c.conflict())")
-  (mt--is (tpl-compile [:all [:raw "parents"] c [:raw "c.mine()"]])
+  (mt--is (majutsu-tpl [:all [:raw "parents"] c [:raw "c.mine()"]])
           "parents.all(|c| c.mine())"))
 
 (ert-deftest test-majutsu-template-compile-method-and-call ()
-  (mt--is (tpl-compile [:method [:raw "self" :Commit] :commit_id])
+  (mt--is (majutsu-tpl [:method [:raw "self" :Commit] :commit_id])
           "self.commit_id()")
-  (mt--is (tpl-compile [:method [:raw "self" :Commit] :diff "src"])
+  (mt--is (majutsu-tpl [:method [:raw "self" :Commit] :diff "src"])
           "self.diff(\"src\")")
-  (mt--is (tpl-compile [:method [:raw "self" :Commit] :parents :len])
+  (mt--is (majutsu-tpl [:method [:raw "self" :Commit] :parents :len])
           "self.parents().len()")
-  (mt--is (tpl-compile [:call 'coalesce [:str ""] [:str "X"]])
+  (mt--is (majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])
           "coalesce(\"\", \"X\")")
   ;; :call with symbol name and bare string arg
-  (mt--is (tpl-compile [:call 'json " "]) "json(\" \")")
+  (mt--is (majutsu-tpl [:call 'json " "]) "json(\" \")")
   ;; :call with raw arg
-  (mt--is (tpl-compile [:call 'json [:raw "test"]]) "json(test)")
-  (mt--is (tpl-compile [:call 'a 'b]) "a(b)")
-  (mt--is (tpl-compile [:call (if t 'a [:raw "hh"]) 'h]) "a(h)")
-  (mt--is (tpl-compile [:call (if t [:raw (if t "hh" "wa")] 'bbb) 'x])
+  (mt--is (majutsu-tpl [:call 'json [:raw "test"]]) "json(test)")
+  (mt--is (majutsu-tpl [:call 'a 'b]) "a(b)")
+  (mt--is (majutsu-tpl [:call (if t 'a [:raw "hh"]) 'h]) "a(h)")
+  (mt--is (majutsu-tpl [:call (if t [:raw (if t "hh" "wa")] 'bbb) 'x])
           "hh(x)")
   ;; dynamic decision in :call name
-  (mt--is (tpl-compile [:call (if t 'json 'coalesce) [:str "ok"]])
+  (mt--is (majutsu-tpl [:call (if t 'json 'coalesce) [:str "ok"]])
           "json(\"ok\")")
-  (mt--is (tpl-compile [:call (if nil 'json 'coalesce) [:str ""] [:str "x"]])
+  (mt--is (majutsu-tpl [:call (if nil 'json 'coalesce) [:str ""] [:str "x"]])
           "coalesce(\"\", \"x\")"))
 
 (ert-deftest test-majutsu-template-compile-operators ()
-  (mt--is (tpl-compile [:+ 1 2])
+  (mt--is (majutsu-tpl [:+ 1 2])
           "(1 + 2)")
-  (mt--is (tpl-compile [:and [:> 3 1] [:<= 2 2]])
+  (mt--is (majutsu-tpl [:and [:> 3 1] [:<= 2 2]])
           "((3 > 1) && (2 <= 2))")
-  (mt--is (tpl-compile [:concat-op [:str "a"] [:str "b"]])
+  (mt--is (majutsu-tpl [:concat-op [:str "a"] [:str "b"]])
           "(\"a\" ++ \"b\")")
-  (mt--is (tpl-compile [:++ "L" "R"])
+  (mt--is (majutsu-tpl [:++ "L" "R"])
           "(\"L\" ++ \"R\")")
-  (mt--is (tpl-compile [:not t])
+  (mt--is (majutsu-tpl [:not t])
           "(!true)")
-  (mt--is (tpl-compile [:neg 5])
+  (mt--is (majutsu-tpl [:neg 5])
           "(-5)"))
 
 (ert-deftest test-majutsu-template-compile-json-line-sample ()
-  (mt--is (tpl-compile [:concat
+  (mt--is (majutsu-tpl [:concat
                         [:str "{"]
                         [:str "\"root\":"]
                         [:raw "if(self.root(), true, false)"]
@@ -156,18 +156,18 @@
 
 (ert-deftest test-majutsu-template-string-escape ()
   ;; Quote and backslash
-  (mt--is (tpl-compile [:str "A \"B\" \\"]) "\"A \\\"B\\\" \\\\\"")
+  (mt--is (majutsu-tpl [:str "A \"B\" \\"]) "\"A \\\"B\\\" \\\\\"")
   ;; Newline, tab, carriage return
-  (mt--is (tpl-compile [:str "a\nb\tc\r"]) "\"a\\nb\\tc\\r\"")
+  (mt--is (majutsu-tpl [:str "a\nb\tc\r"]) "\"a\\nb\\tc\\r\"")
   ;; NUL and ESC
   (let ((s (concat "x" (string 0) "y" (string 27) "z")))
-    (mt--is (tpl-compile (vector :str s)) "\"x\\0y\\ez\""))
+    (mt--is (majutsu-tpl (vector :str s)) "\"x\\0y\\ez\""))
   ;; Other control: 0x01 -> \\x01, DEL -> \\x7F
   (let* ((s2 (concat (string 1) "-" (string 127)))
          (exp "\"\\x01-\\x7F\""))
-    (mt--is (tpl-compile (vector :str s2)) exp))
+    (mt--is (majutsu-tpl (vector :str s2)) exp))
   ;; Unicode stays verbatim
-  (mt--is (tpl-compile [:str "雪"]) "\"雪\""))
+  (mt--is (majutsu-tpl [:str "雪"]) "\"雪\""))
 
 (ert-deftest test-majutsu-template-defun-basic ()
   ;; Direct call produces AST and compiles
@@ -181,57 +181,57 @@
     (should (equal (majutsu-template-compile node)
                    "concat(\"ID\", \": \", \"\")")))
   ;; DSL sugar
-  (mt--is (tpl-compile [:test-helper [:str "ID"] [:str "X"]])
+  (mt--is (majutsu-tpl [:test-helper [:str "ID"] [:str "X"]])
           "concat(\"ID\", \": \", \"X\")")
-  (mt--is (tpl-compile [:call 'test-helper [:str "ID"] [:str "Y"]])
+  (mt--is (majutsu-tpl [:call 'test-helper [:str "ID"] [:str "Y"]])
           "concat(\"ID\", \": \", \"Y\")")
   ;; Dynamic helper selection in :call
-  (mt--is (tpl-compile [:call (if t 'test-helper 'json) [:str "ID"] [:str "Z"]])
+  (mt--is (majutsu-tpl [:call (if t 'test-helper 'json) [:str "ID"] [:str "Z"]])
           "concat(\"ID\", \": \", \"Z\")")
   ;; Dynamic helper selection in :call
-  (mt--is (tpl-compile [:call (if t 'test-helper [:raw "json"]) [:str "ID"] [:str "Z"]])
+  (mt--is (majutsu-tpl [:call (if t 'test-helper [:raw "json"]) [:str "ID"] [:str "Z"]])
           "concat(\"ID\", \": \", \"Z\")")
-  (mt--is (tpl-compile [:call (if t [:raw "json"] 'a) [:str "ID"]])
+  (mt--is (majutsu-tpl [:call (if t [:raw "json"] 'a) [:str "ID"]])
           "json(\"ID\")")
-  (mt--is (tpl-compile [:call (if t [:raw "json"] 'a) 'ID])
+  (mt--is (majutsu-tpl [:call (if t [:raw "json"] 'a) 'ID])
           "json(ID)")
   ;; Non-vector call name resolved at runtime
   (mt--is (majutsu-template-compile
            (majutsu-template-test-helper (majutsu-template-str "A")))
           "concat(\"A\", \": \", \"\")")
   ;; :raw expression evaluated to string
-  (mt--is (tpl-compile [:concat [:raw (if t "foo" "bar")]])
+  (mt--is (majutsu-tpl [:concat [:raw (if t "foo" "bar")]])
           "concat(foo)")
   ;; Embedded condition evaluated prior to rewrite
-  (mt--is (tpl-compile [:concat (if (> 2 1) [:str "T"] [:str "F"]) [:str "!"]])
+  (mt--is (majutsu-tpl [:concat (if (> 2 1) [:str "T"] [:str "F"]) [:str "!"]])
           "concat(\"T\", \"!\")")
   ;; Registry lookup via keyword/symbol
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
 
 (ert-deftest test-majutsu-template-builtin-flavor-auto-body ()
-  (mt--is (tpl-compile [:call 'test-builtin-wrapper [:str "L"]])
+  (mt--is (majutsu-tpl [:call 'test-builtin-wrapper [:str "L"]])
           "test-builtin-wrapper(\"L\")")
   ;; Optional argument present and multiple rest args.
-  (mt--is (tpl-compile [:call 'test-builtin-wrapper [:str "L"] [:str "R"] [:str "X"] [:str "Y"]])
+  (mt--is (majutsu-tpl [:call 'test-builtin-wrapper [:str "L"] [:str "R"] [:str "X"] [:str "Y"]])
           "test-builtin-wrapper(\"L\", \"R\", \"X\", \"Y\")"))
 
 (ert-deftest test-majutsu-template-map-like-flavor-auto-body ()
-  (mt--is (tpl-compile [:test-map-wrapper [:raw "xs"] 'item [:raw "item.value()"]])
+  (mt--is (majutsu-tpl [:test-map-wrapper [:raw "xs"] 'item [:raw "item.value()"]])
           "xs.test-map-wrapper(|item| item.value())"))
 
 (ert-deftest test-majutsu-template-call-dispatch ()
   ;; Built-in flavor should emit direct jj call.
-  (mt--is (tpl-compile [:call 'concat [:str "L"] [:str "R"]])
+  (mt--is (majutsu-tpl [:call 'concat [:str "L"] [:str "R"]])
           "concat(\"L\", \"R\")")
   ;; Custom helper keeps macro-generated body.
-  (mt--is (tpl-compile [:call 'test-helper [:str "ID"] [:str "V"]])
+  (mt--is (majutsu-tpl [:call 'test-helper [:str "ID"] [:str "V"]])
           "concat(\"ID\", \": \", \"V\")")
   ;; Falling back to raw name works for unknown helper.
-  (mt--is (tpl-compile [:call 'unknown [:str "X"]])
+  (mt--is (majutsu-tpl [:call 'unknown [:str "X"]])
           "unknown(\"X\")")
   ;; Lookup by string literal reuses existing metadata.
-  (mt--is (tpl-compile [:call "concat" [:str "P"] [:str "Q"]])
+  (mt--is (majutsu-tpl [:call "concat" [:str "P"] [:str "Q"]])
           "concat(\"P\", \"Q\")"))
 
 (ert-deftest test-majutsu-template-ast-basic-nodes ()
@@ -257,10 +257,10 @@
     (should (majutsu-template-node-p node))
     (should (equal (majutsu-template-compile node)
                    "concat(\"X\", \"Y\")")))
-  (should (equal (tpl-compile [:concat (if nil [:str "no"] [:str "yes"]) [:str "!"]])
+  (should (equal (majutsu-tpl [:concat (if nil [:str "no"] [:str "yes"]) [:str "!"]])
                  "concat(\"yes\", \"!\")"))
-  (mt--is (tpl-compile [:call '+ 3 4]) "(3 + 4)")
-  (mt--is (tpl-compile [:call '+ [:str "A"] [:str "B"]]) "(\"A\" + \"B\")"))
+  (mt--is (majutsu-tpl [:call '+ 3 4]) "(3 + 4)")
+  (mt--is (majutsu-tpl [:call '+ [:str "A"] [:str "B"]]) "(\"A\" + \"B\")"))
 
 (ert-deftest test-majutsu-template-raw-type-annotation ()
   (let ((node (majutsu-template-ast '[:raw "foo" :Template])))
@@ -269,7 +269,7 @@
     (should (equal (majutsu-template-node-value node) "foo"))
     (should (eq (majutsu-template-node-type node) 'Template))
     (should (equal (plist-get (majutsu-template-node-props node) :declared) 'Template)))
-  (should (equal (tpl-compile [:raw "foo" :Template]) "foo")))
+  (should (equal (majutsu-tpl [:raw "foo" :Template]) "foo")))
 
 (ert-deftest test-majutsu-template-builtin-type-registry ()
   (let ((commit (majutsu-template--lookup-type 'Commit))
@@ -338,19 +338,19 @@
                    "self.parents().map(|p| p.commit_id()).join(\", \")"))))
 
 (ert-deftest test-majutsu-template-self-keyword-basic ()
-  (mt--is (tpl-compile [:description] 'Commit)
+  (mt--is (majutsu-tpl [:description] 'Commit)
           "self.description()"))
 
 (ert-deftest test-majutsu-template-self-keyword-chain ()
-  (mt--is (tpl-compile [:parents :len] 'Commit)
+  (mt--is (majutsu-tpl [:parents :len] 'Commit)
           "self.parents().len()"))
 
 (ert-deftest test-majutsu-template-self-keyword-custom-defkeyword ()
-  (mt--is (tpl-compile [:test-commit-keyword] 'Commit)
+  (mt--is (majutsu-tpl [:test-commit-keyword] 'Commit)
           "self.test-commit-keyword()"))
 
 (ert-deftest test-majutsu-template-self-keyword-custom-defmethod-opt-in ()
-  (mt--is (tpl-compile [:test-commit-optflag] 'Commit)
+  (mt--is (majutsu-tpl [:test-commit-optflag] 'Commit)
           "self.test-commit-optflag()"))
 
 (ert-deftest test-majutsu-template-with-self-binding ()
@@ -379,11 +379,11 @@
                 :type 'error))
 
 (ert-deftest test-majutsu-template-self-nonkeyword-explicit-call ()
-  (mt--is (tpl-compile [:method [:raw "self" :Commit] :test-commit-flag])
+  (mt--is (majutsu-tpl [:method [:raw "self" :Commit] :test-commit-flag])
           "self.test-commit-flag()"))
 
 (ert-deftest test-majutsu-template-compile-with-explicit-self-type ()
-  (mt--is (tpl-compile [:user] 'Operation)
+  (mt--is (majutsu-tpl [:user] 'Operation)
           "self.user()")
   (mt--is (majutsu-template-compile '[:user] 'Operation)
           "self.user()"))

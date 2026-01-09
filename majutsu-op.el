@@ -50,7 +50,7 @@
    (description :initarg :description)))
 
 (defconst majutsu--op-log-template
-  (tpl-compile
+  (majutsu-tpl
    [:separate "\x1e"
               [:call 'id.short]
               [:user]
