@@ -1,7 +1,7 @@
 ;;; majutsu-process.el --- Process handling for majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025 Brandon Olivier
-;; Copyright (C) 2025 0WD0
+;; Copyright (C) 2025-2026 0WD0
 
 ;; Author: Brandon Olivier
 ;;         0WD0 <wd.1105848296@gmail.com>
