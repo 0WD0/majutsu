@@ -472,19 +472,28 @@ Return a hunk string or nil when no change lines remain."
                 header)))
         (concat hunk-header body)))))
 
+(defun majutsu-interactive--file-is-new-p (file-section)
+  "Return non-nil if FILE-SECTION represents a new file."
+  (let ((header (oref file-section header)))
+    (string-match-p "^--- /dev/null$" header)))
+
 (defun majutsu-interactive--build-file-patch (file-section hunks-with-specs &optional invert context-on-added)
   "Build patch string for FILE-SECTION with HUNKS-WITH-SPECS.
 HUNKS-WITH-SPECS is list of (HUNK-SECTION SPEC [INVERT]).
 When INVERT is non-nil, invert selected hunks by default.
-When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context."
+When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context.
+Note: context-on-added is disabled for new files (--- /dev/null)."
   (let ((header (oref file-section header))
-        (hunk-patches nil))
+        (hunk-patches nil)
+        ;; New files cannot have context lines, so disable context-on-added
+        (effective-context-on-added (and context-on-added
+                                         (not (majutsu-interactive--file-is-new-p file-section)))))
     (dolist (hs hunks-with-specs)
       (let* ((hunk (nth 0 hs))
              (spec (nth 1 hs))
              (hunk-invert (if (> (length hs) 2) (nth 2 hs) invert))
              (hunk-patch (majutsu-interactive--build-hunk-patch
-                          hunk spec hunk-invert context-on-added)))
+                          hunk spec hunk-invert effective-context-on-added)))
         (when hunk-patch
           (push hunk-patch hunk-patches))))
     (when hunk-patches
@@ -573,47 +582,6 @@ Returns patch string or nil if no selections."
     (diff-fixup-modifs (point-min) (point-max))
     (buffer-string)))
 
-(defun majutsu-interactive--reverse-patch (patch)
-  "Reverse PATCH by swapping +/- lines and a/b paths."
-  (with-temp-buffer
-    (insert patch)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (cond
-       ;; Handle file header pairs: swap content AND order
-       ;; Match --- line followed by +++ line
-       ((looking-at "^\\(--- \\(a/.*\\|/dev/null\\)\\)\n\\(\\+\\+\\+ \\(b/.*\\|/dev/null\\)\\)$")
-        (let* ((old-path (match-string 2))
-               (new-path (match-string 4))
-               ;; Swap: old becomes new, new becomes old
-               (reversed-old (if (string= new-path "/dev/null")
-                                 "--- /dev/null"
-                               (concat "--- a/" (substring new-path 2))))
-               (reversed-new (if (string= old-path "/dev/null")
-                                 "+++ /dev/null"
-                               (concat "+++ b/" (substring old-path 2)))))
-          (replace-match (concat reversed-old "\n" reversed-new)))
-        (forward-line 1))
-       ;; Swap new/deleted file mode markers
-       ((looking-at "^new file mode \\(.*\\)$")
-        (replace-match "deleted file mode \\1"))
-       ((looking-at "^deleted file mode \\(.*\\)$")
-        (replace-match "new file mode \\1"))
-       ;; Swap index lines when one side is /dev/null
-       ((looking-at "^index 0000000\\.\\.\\([0-9a-f]+\\)$")
-        (replace-match "index \\1..0000000"))
-       ((looking-at "^index \\([0-9a-f]+\\)\\.\\.0000000$")
-        (replace-match "index 0000000..\\1"))
-       ;; Swap - and + content lines
-       ((looking-at "^-")
-        (delete-char 1)
-        (insert "+"))
-       ((looking-at "^\\+")
-        (delete-char 1)
-        (insert "-")))
-      (forward-line 1))
-    (majutsu-interactive--fixup-patch (buffer-string))))
-
 ;;; Tool Invocation
 
 (defvar majutsu-interactive--temp-dir nil
@@ -634,16 +602,24 @@ Returns patch string or nil if no selections."
       (insert patch))
     file))
 
-(defun majutsu-interactive--write-applypatch-script ()
-  "Write the applypatch helper script and return its path."
+(defun majutsu-interactive--write-applypatch-script (reverse)
+  "Write the applypatch helper script and return its path.
+When REVERSE is non-nil, reset $right to $left state first, then apply patch."
   (let ((script (expand-file-name "applypatch.sh" (majutsu-interactive--temp-dir))))
     (with-temp-file script
       (insert "#!/bin/sh\n")
       (insert "# Majutsu applypatch helper\n")
       (insert "# Args: $1=left $2=right $3=patchfile\n")
+      (insert "LEFT=\"$1\"\n")
       (insert "RIGHT=\"$2\"\n")
       (insert "PATCH=\"$3\"\n")
-      ;; Apply patch to RIGHT as provided by jj
+      (when reverse
+        ;; For split/squash: reset $right to $left (parent) state first
+        ;; Then apply the patch containing remaining content
+        (insert "# Reset right to left state\n")
+        (insert "rm -rf \"$RIGHT\"/* 2>/dev/null\n")
+        (insert "rm -rf \"$RIGHT\"/.[!.]* 2>/dev/null\n")
+        (insert "cp -a \"$LEFT\"/. \"$RIGHT\"/ 2>/dev/null || true\n"))
       (insert "cd \"$RIGHT\"\n")
       ;; Try git apply with --recount which recalculates line numbers
       (insert "git apply --recount --unidiff-zero -v \"$PATCH\" 2>&1 && exit 0\n")
@@ -658,9 +634,10 @@ Returns patch string or nil if no selections."
     (set-file-modes script #o755)
     script))
 
-(defun majutsu-interactive--build-tool-config (patch-file)
-  "Build jj --config arguments for applypatch tool with PATCH-FILE."
-  (let ((script (majutsu-interactive--write-applypatch-script)))
+(defun majutsu-interactive--build-tool-config (patch-file reverse)
+  "Build jj --config arguments for applypatch tool with PATCH-FILE.
+When REVERSE is non-nil, the script will apply the patch in reverse."
+  (let ((script (majutsu-interactive--write-applypatch-script reverse)))
     (list
      "--config" (format "merge-tools.majutsu-applypatch.program=%s"
                         (shell-quote-argument script))
@@ -671,12 +648,9 @@ Returns patch string or nil if no selections."
 
 (defun majutsu-interactive-run-with-patch (command args patch &optional reverse)
   "Run jj COMMAND with ARGS, applying PATCH via custom tool.
-If REVERSE is non-nil, reverse the patch before applying."
-  (let* ((final-patch (if reverse
-                          (majutsu-interactive--reverse-patch patch)
-                        patch))
-         (patch-file (majutsu-interactive--write-patch final-patch))
-         (tool-config (majutsu-interactive--build-tool-config patch-file))
+If REVERSE is non-nil, apply the patch in reverse using git apply -R."
+  (let* ((patch-file (majutsu-interactive--write-patch patch))
+         (tool-config (majutsu-interactive--build-tool-config patch-file reverse))
          (full-args (append (list command)
                             args
                             (list "-i" "--tool" "majutsu-applypatch")

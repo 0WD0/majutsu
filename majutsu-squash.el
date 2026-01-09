@@ -54,9 +54,13 @@ a jj-commit section, add --revision from that section."
   "Execute squash with selections recorded in the transient."
   (interactive (list (majutsu-squash-arguments)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf t t t)))
+         ;; Generate patch for SELECTED content (invert=nil)
+         ;; This is what gets squashed into parent
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil)))
     (if patch
         (progn
+          ;; reverse=t means reset $right to $left, then apply patch forward
+          ;; Result: $right = selected content = what gets squashed
           (majutsu-interactive-run-with-patch "squash" args patch t)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
