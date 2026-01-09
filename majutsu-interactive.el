@@ -580,12 +580,31 @@ Returns patch string or nil if no selections."
     (goto-char (point-min))
     (while (not (eobp))
       (cond
-       ;; Swap --- a/ and +++ b/
-       ((looking-at "^--- a/\\(.*\\)$")
-        (replace-match "+++ b/\\1"))
-       ((looking-at "^\\+\\+\\+ b/\\(.*\\)$")
-        (replace-match "--- a/\\1"))
-       ;; Swap - and + lines (file headers already handled above)
+       ;; Handle file header pairs: swap content AND order
+       ;; Match --- line followed by +++ line
+       ((looking-at "^\\(--- \\(a/.*\\|/dev/null\\)\\)\n\\(\\+\\+\\+ \\(b/.*\\|/dev/null\\)\\)$")
+        (let* ((old-path (match-string 2))
+               (new-path (match-string 4))
+               ;; Swap: old becomes new, new becomes old
+               (reversed-old (if (string= new-path "/dev/null")
+                                 "--- /dev/null"
+                               (concat "--- a/" (substring new-path 2))))
+               (reversed-new (if (string= old-path "/dev/null")
+                                 "+++ /dev/null"
+                               (concat "+++ b/" (substring old-path 2)))))
+          (replace-match (concat reversed-old "\n" reversed-new)))
+        (forward-line 1))
+       ;; Swap new/deleted file mode markers
+       ((looking-at "^new file mode \\(.*\\)$")
+        (replace-match "deleted file mode \\1"))
+       ((looking-at "^deleted file mode \\(.*\\)$")
+        (replace-match "new file mode \\1"))
+       ;; Swap index lines when one side is /dev/null
+       ((looking-at "^index 0000000\\.\\.\\([0-9a-f]+\\)$")
+        (replace-match "index \\1..0000000"))
+       ((looking-at "^index \\([0-9a-f]+\\)\\.\\.0000000$")
+        (replace-match "index 0000000..\\1"))
+       ;; Swap - and + content lines
        ((looking-at "^-")
         (delete-char 1)
         (insert "+"))
