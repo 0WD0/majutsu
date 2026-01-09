@@ -1123,29 +1123,12 @@ offer to create one using `jj git init`."
       (transient--history-push obj)
       (majutsu-refresh))))
 
-(transient-define-argument majutsu-log:-n ()
-  :description (lambda ()
-                 (majutsu-log--value-desc
-                  "Limit"
-                  (majutsu-log--args-get-option
-                   (car (majutsu-log--get-value 'majutsu-log-mode 'direct))
-                   "-n")))
+(transient-define-argument majutsu-log:--limit ()
+  :description "Limit"
   :class 'transient-option
-  :shortarg "-n"
-  :argument "-n"
-  :reader (lambda (&rest _)
-            (pcase-let* ((`(,args ,_revsets ,_filesets)
-                          (majutsu-log--get-value 'majutsu-log-mode 'direct))
-                         (current (majutsu-log--args-get-option args "-n"))
-                         (input (string-trim
-                                 (read-from-minibuffer "Limit (empty to clear): "
-                                                       current))))
-              (cond
-               ((string-empty-p input)
-                nil)
-               ((string-match-p "\\`[0-9]+\\'" input)
-                input)
-               (t (user-error "Limit must be a positive integer"))))))
+  :key "-n"
+  :argument "--limit="
+  :reader #'transient-read-number-N+)
 
 (transient-define-argument majutsu-log:--reversed ()
   :description "Reverse order"
@@ -1174,7 +1157,7 @@ offer to create one using `jj git init`."
                      "Set revset"
                      (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
      :transient t)
-    (majutsu-log:-n)
+    (majutsu-log:--limit)
     (majutsu-log:--reversed)
     (majutsu-log:--no-graph)
     ("R" "Clear revset" majutsu-log-transient-clear-revisions
