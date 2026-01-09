@@ -41,5 +41,8 @@ GPATH
 .DS_Store
 Thumbs.db
 
+# 文档生成产物 (straight.el 会从 .texi 生成)
+docs/*.info
+docs/dir
 
 .env
