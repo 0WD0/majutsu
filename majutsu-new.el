@@ -74,7 +74,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-type 'multi
   :key "-r"
-  :argument "-r"
+  :argument ""
   :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
@@ -108,7 +108,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-key 'parent
   :selection-type 'multi
   :key "p"
-  :argument "-r"
+  :argument ""
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-new:after ()
