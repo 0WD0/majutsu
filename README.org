@@ -30,23 +30,28 @@ efficient way to interact with JJ repositories from within Emacs.
 
 ** Essential Keybindings
 
-| Key   | Action                    |
-|-------+---------------------------|
-| ~n~ / ~p~ | Next / previous revision  |
-| ~RET~   | Visit thing at point      |
-| ~.~     | Jump to working copy (~@~)  |
-| ~g~     | Refresh                   |
-| ~?~     | Show all commands         |
-| ~c~ / ~C~ | Describe / Commit         |
-| ~N~     | New change                |
-| ~s~     | Squash                    |
-| ~r~     | Rebase                    |
-| ~d~ / ~D~ | Diff transient / at point |
-| ~b~     | Bookmark menu             |
-| ~G~     | Git operations            |
-| ~Z~     | Workspace menu            |
-| ~k~     | Abandon                   |
-| ~C-/~   | Undo                      |
+| Key   | Action                   |
+|-------+--------------------------|
+| ~n~ / ~p~ | Next / previous revision |
+| ~RET~   | Visit thing at point     |
+| ~?~     | Show all commands        |
+| ~g~     | Refresh                  |
+| ~a~     | Abandon                  |
+| ~b~     | Bookmarks                |
+| ~c~     | Describe                 |
+| ~C~     | Commit                   |
+| ~d~     | Diff                     |
+| ~e~     | Edit change              |
+| ~G~     | Git                      |
+| ~o~     | New                      |
+| ~r~     | Rebase                   |
+| ~R~     | Restore                  |
+| ~s~     | Squash                   |
+| ~S~     | Split                    |
+| ~y~     | Duplicate                |
+| ~Z~     | Workspaces               |
+| ~C-/~   | Undo                     |
+| ~C-?~   | Rndo                     |
 
 * Requirements
 
