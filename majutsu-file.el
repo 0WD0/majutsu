@@ -238,6 +238,7 @@ displayed in a single window."
                                 majutsu-buffer-blob-root)))
     (find-file file)))
 
+;; TODO: move path condition to majutsu-file-*-change
 (defun majutsu-file--revset-for-files (revset path direction)
   "Build a revset for PATH and DIRECTION relative to REVSET.
 DIRECTION should be either \\='prev or \\='next."

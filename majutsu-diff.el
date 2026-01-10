@@ -1121,7 +1121,7 @@ With prefix STYLE, cycle between `all' and `t'."
   "0" #'majutsu-diff-default-context
   "j" #'majutsu-jump-to-diffstat-or-diff)
 
-(define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
+(define-derived-mode majutsu-diff-mode majutsu-mode "Majutsu Diff"
   "Major mode for viewing jj diffs."
   :group 'majutsu
   (setq-local line-number-mode nil)
