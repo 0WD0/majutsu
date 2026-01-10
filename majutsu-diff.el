@@ -198,8 +198,6 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 
 (defclass majutsu-diff--toggle-range-option (majutsu-selection-toggle-option) ())
 
-(defclass majutsu-diff--revisions-option (transient-option) ())
-
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
   (pcase-let ((`(,args ,range ,_filesets)
                (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
@@ -1121,7 +1119,7 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
-  :class 'majutsu-diff--revisions-option
+  :class 'transient-option
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
