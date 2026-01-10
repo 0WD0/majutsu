@@ -134,19 +134,6 @@ With prefix ARG, open the duplicate transient."
   :argument "--insert-before="
   :multi-value 'repeat)
 
-(defun majutsu-duplicate-clear-selections ()
-  "Clear duplicate selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-duplicate-option)
-                 (memq (oref obj selection-key) '(source onto after before)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared duplicate selections"))
-
 (transient-define-prefix majutsu-duplicate ()
   "Internal transient for jj duplicate."
   :man-page "jj-duplicate"
@@ -156,7 +143,7 @@ With prefix ARG, open the duplicate transient."
    ["Sources"
     (majutsu-duplicate:-r)
     (majutsu-duplicate:source)
-    ("c" "Clear selections" majutsu-duplicate-clear-selections
+    ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Placement"
     (majutsu-duplicate:--onto)
