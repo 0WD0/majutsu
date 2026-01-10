@@ -1083,7 +1083,8 @@ REVSET is passed to jj diff using `--revisions='."
   :man-page "jj-diff"
   :class 'majutsu-diff-prefix
   :incompatible '(("--revisions=" "--from=")
-                  ("--revisions=" "--to="))
+                  ("--revisions=" "--to=")
+                  ("--stat" "--summary"))
   :transient-non-suffix t
   [:description "JJ Diff"
    :class transient-columns
