@@ -25,27 +25,29 @@
 
 ;;; Duplicate
 
-(defun majutsu-duplicate-run-jj (args)
-  "Execute jj duplicate with ARGS."
-  (apply #'majutsu-run-jj "duplicate" args))
-
-(defun majutsu-duplicate-execute (args)
-  "Execute jj duplicate using transient selections."
-  (interactive (list (transient-args 'majutsu-duplicate)))
-  (majutsu-duplicate-run-jj args))
+(defun majutsu-duplicate-arguments ()
+  "Return the current duplicate arguments.
+If inside the transient, return transient args.
+Otherwise, if no -r is set, add -r from point (or region values, or @)."
+  (let ((args (if (eq transient-current-command 'majutsu-duplicate)
+                  (transient-args 'majutsu-duplicate)
+                '())))
+    (unless (cl-some (lambda (arg) (string-prefix-p "-r" arg)) args)
+      (let ((revsets (or (magit-region-values nil t)
+                         (and (magit-section-value-if 'jj-commit)
+                              (list (magit-section-value-if 'jj-commit)))
+                         (list "@"))))
+        (dolist (rev revsets)
+          (push (concat "-r" rev) args))))
+    args))
 
 ;;;###autoload
-(defun majutsu-duplicate-dwim (arg)
+(defun majutsu-duplicate-dwim ()
   "Duplicate the changeset at point.
 With prefix ARG, open the duplicate transient."
-  (interactive "P")
-  (if arg
-      (call-interactively #'majutsu-duplicate)
-    (let* ((revsets (or (magit-region-values nil t)
-                        (and (magit-section-value-if 'jj-commit)
-                             (list (magit-section-value-if 'jj-commit)))
-                        (list "@"))))
-      (majutsu-duplicate-run-jj revsets))))
+  (interactive)
+  (let ((args  (majutsu-duplicate-arguments)))
+    (majutsu-run-jj "duplicate" args)))
 
 ;;; Duplicate Transient
 (transient-define-argument majutsu-duplicate:-r ()
@@ -164,8 +166,8 @@ With prefix ARG, open the duplicate transient."
     (majutsu-duplicate:after)
     (majutsu-duplicate:before)]
    ["Actions"
-    ("y" "Duplicate changes" majutsu-duplicate-execute)
-    ("RET" "Duplicate changes" majutsu-duplicate-execute)
+    ("y" "Duplicate changes" majutsu-duplicate-dwim)
+    ("RET" "Duplicate changes" majutsu-duplicate-dwim)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   (transient-setup
