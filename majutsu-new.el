@@ -107,7 +107,7 @@ With prefix ARG, open the new transient for interactive selection."
   :class 'majutsu-new--toggle-option
   :selection-key 'parent
   :selection-type 'multi
-  :key "p"
+  :key "r"
   :argument "-r"
   :multi-value 'repeat)
 
@@ -153,10 +153,27 @@ With prefix ARG, open the new transient for interactive selection."
       (majutsu-refresh)
       nil)))
 
+(defun majutsu-new-arguments ()
+  "Return the current new arguments.
+If inside the transient, return transient args.
+Otherwise, if no -r/--insert-after=/--insert-before= is set and point is on
+a jj-commit section, add -r from that section."
+  (let ((args (if (eq transient-current-command 'majutsu-new)
+                  (transient-args 'majutsu-new)
+                '())))
+    (unless (cl-some (lambda (arg)
+                       (or (string-prefix-p "-r" arg)
+                           (string-prefix-p "--insert-after=" arg)
+                           (string-prefix-p "--insert-before=" arg)))
+                     args)
+      (when-let* ((rev (magit-section-value-if 'jj-commit)))
+        (push (concat "-r" rev) args)))
+    args))
+
 ;;;###autoload
 (defun majutsu-new-execute (args)
   "Execute jj new using the current transient selections."
-  (interactive (list (transient-args 'majutsu-new)))
+  (interactive (list (majutsu-new-arguments)))
   (majutsu-new--run-command (cons "new" args)))
 
 ;;; New Transient
@@ -212,7 +229,7 @@ With prefix ARG, open the new transient for interactive selection."
     (majutsu-new-infix-no-edit)
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("n" "Create new change" majutsu-new-execute
+    ("o" "Create new change" majutsu-new-execute
      :description (lambda ()
                     (format "Create new change (%s)"
                             (majutsu-new--action-summary))))
