@@ -185,10 +185,12 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 (defclass majutsu-diff-range-option (majutsu-selection-option) ())
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
-  (pcase-let ((`(,args ,range ,_filesets)
+  (pcase-let ((`(,args ,range ,filesets)
                (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
     (oset obj value
-          (append range args))))
+          (if filesets
+              `(("--" ,@filesets) ,@range ,@args)
+            (append range args)))))
 
 (cl-defmethod transient-prefix-value ((obj majutsu-diff-prefix))
   "Return (ARGS RANGE FILESETS) for the Majutsu diff transient.
@@ -199,14 +201,7 @@ list of filesets (path filters)."
   (let* ((raw (cl-call-next-method obj))
          (args (majutsu-diff--remembered-args raw))
          (range (majutsu-diff--extract-range-args raw))
-         (mode (or (oref obj major-mode) major-mode))
-         (filesets
-          (cond
-           ((buffer-live-p (majutsu-diff--transient-original-buffer))
-            (buffer-local-value 'majutsu-buffer-diff-filesets
-                                (majutsu-diff--transient-original-buffer)))
-           (t
-            (nth 2 (majutsu-diff--get-value mode 'direct))))))
+         (filesets (cdr (assoc "--" raw))))
     (list args range filesets)))
 
 (cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
@@ -794,8 +789,8 @@ regardless of what the diff is about."
     (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
                            (majutsu-diff--on-removed-line-p)))
            (goto-workspace (or force-workspace
-                              (and (majutsu-diff--visit-workspace-p)
-                                   (not goto-from))))
+                               (and (majutsu-diff--visit-workspace-p)
+                                    (not goto-from))))
            (line (and section (magit-section-match 'jj-hunk section)
                       (majutsu-diff--hunk-line section goto-from)))
            (col (and section (magit-section-match 'jj-hunk section)
@@ -1022,7 +1017,7 @@ With prefix STYLE, cycle between `all' and `t'."
   "0" #'majutsu-diff-default-context
   "j" #'majutsu-jump-to-diffstat-or-diff)
 
-(define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
+(define-derived-mode majutsu-diff-mode majutsu-mode "Majutsu Diff"
   "Major mode for viewing jj diffs."
   :group 'majutsu
   (setq-local line-number-mode nil)
@@ -1105,7 +1100,9 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:revisions)
     (majutsu-diff:from)
     (majutsu-diff:to)
-    ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
+   ["Paths"
+    (majutsu-diff:--)]
    ["Options"
     (majutsu-diff:--git)
     (majutsu-diff:--stat)
@@ -1149,6 +1146,15 @@ REVSET is passed to jj diff using `--revisions='."
   :key "-c"
   :argument "--context="
   :reader #'transient-read-number-N0)
+
+(transient-define-argument majutsu-diff:-- ()
+  :description "Limit to files"
+  :class 'transient-files
+  :key "--"
+  :argument "--"
+  :prompt "Limit to file,s: "
+  :reader #'majutsu-read-files
+  :multi-value t)
 
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"

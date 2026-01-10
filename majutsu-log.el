@@ -24,6 +24,8 @@
 (require 'majutsu-section)
 (require 'json)
 
+(declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
+
 (defcustom majutsu-log-field-faces
   '((bookmarks . magit-branch-local)
     (tags . magit-tag)
@@ -1050,26 +1052,6 @@ offer to create one using `jj git init`."
     (majutsu-log--set-value 'majutsu-log-mode args nil filesets))
   (majutsu-log-transient--redisplay))
 
-(defun majutsu-log-transient-add-path ()
-  "Add a fileset/path filter to the log view."
-  (interactive)
-  (let* ((input (string-trim (read-from-minibuffer "Add path/pattern: ")))
-         (paths (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
-    (when (and (not (string-empty-p input))
-               (not (member input paths)))
-      (pcase-let ((`(,args ,revsets ,_filesets)
-                   (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-        (majutsu-log--set-value 'majutsu-log-mode args revsets (append paths (list input))))
-      (majutsu-log-transient--redisplay))))
-
-(defun majutsu-log-transient-clear-paths ()
-  "Clear all path filters."
-  (interactive)
-  (pcase-let ((`(,args ,revsets ,_filesets)
-               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-    (majutsu-log--set-value 'majutsu-log-mode args revsets nil))
-  (majutsu-log-transient--redisplay))
-
 (defun majutsu-log-transient-reset ()
   "Reset log options to defaults."
   (interactive)
@@ -1090,14 +1072,6 @@ offer to create one using `jj git init`."
       (format "%s (%s)" label value)
     label))
 
-(defun majutsu-log--paths-desc ()
-  "Return description for path filters."
-  (let ((paths (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
-    (cond
-     ((null paths) "Add path filter")
-     ((= (length paths) 1) (format "Add path filter (%s)" (car paths)))
-     (t (format "Add path filter (%d paths)" (length paths))))))
-
 (defun majutsu-log-transient--redisplay ()
   "Redisplay the log transient, compatible with older transient versions."
   (if (fboundp 'transient-redisplay)
@@ -1114,28 +1088,34 @@ offer to create one using `jj git init`."
 
 ;;;; Prefix Methods
 
+(cl-defmethod transient-prefix-value ((obj majutsu-log-prefix))
+  "Return (args files) from transient value."
+  (let ((args (cl-call-next-method obj)))
+    (list (seq-filter #'atom args)
+          (cdr (assoc "--" args)))))
+
 (cl-defmethod transient-init-value ((obj majutsu-log-prefix))
-  (pcase-let ((`(,args ,_revsets ,_filesets)
+  (pcase-let ((`(,args ,_revsets ,filesets)
                (majutsu-log--get-value (oref obj major-mode) 'prefix)))
-    (oset obj value args)))
+    (oset obj value (if filesets `(("--" ,@filesets) ,@args) args))))
 
 (cl-defmethod transient-set-value ((obj majutsu-log-prefix))
   (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (args (transient-args (oref obj command))))
-    (pcase-let ((`(,_old-args ,revsets ,filesets)
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,files) (transient-args (oref obj command)))
+                (`(,_old-args ,revsets ,_filesets)
                  (majutsu-log--get-value mode 'direct)))
-      (majutsu-log--set-value mode args revsets filesets)
+      (majutsu-log--set-value mode args revsets files)
       (transient--history-push obj)
       (majutsu-refresh))))
 
 (cl-defmethod transient-save-value ((obj majutsu-log-prefix))
   (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (args (transient-args (oref obj command))))
-    (pcase-let ((`(,_old-args ,revsets ,filesets)
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,files) (transient-args (oref obj command)))
+                (`(,_old-args ,revsets ,_filesets)
                  (majutsu-log--get-value mode 'direct)))
-      (majutsu-log--set-value mode args revsets filesets t)
+      (majutsu-log--set-value mode args revsets files t)
       (transient--history-push obj)
       (majutsu-refresh))))
 
@@ -1157,6 +1137,15 @@ offer to create one using `jj git init`."
   :class 'transient-switch
   :key "-G"
   :argument "--no-graph")
+
+(transient-define-argument majutsu-log:-- ()
+  :description "Limit to filesets"
+  :class 'transient-files
+  :key "--"
+  :argument "--"
+  :prompt "Limit to filesets"
+  :reader #'majutsu-read-files
+  :multi-value t)
 
 ;;;###autoload
 (transient-define-prefix majutsu-log-transient ()
@@ -1181,12 +1170,7 @@ offer to create one using `jj git init`."
      :transient t)
     ]
    ["Paths"
-    ("a" "Add path filter" majutsu-log-transient-add-path
-     :description majutsu-log--paths-desc
-     :transient t)
-    ("A" "Clear path filters" majutsu-log-transient-clear-paths
-     :if (lambda () (caddr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-     :transient t)]
+    (majutsu-log:--)]
    ["Actions"
     ("g" "buffer" majutsu-log-transient)
     ("s" "buffer and set defaults" transient-set-and-exit)
@@ -1200,7 +1184,9 @@ offer to create one using `jj git init`."
    (t
     (unless (derived-mode-p 'majutsu-log-mode)
       (user-error "Not in a Majutsu log buffer"))
-    (setq-local majutsu-buffer-log-args (transient-args transient-current-command))
+    (pcase-let ((`(,args ,filesets) (transient-args transient-current-command)))
+      (setq-local majutsu-buffer-log-args args)
+      (setq-local majutsu-buffer-log-filesets filesets))
     (majutsu-refresh-buffer))))
 
 ;;; _

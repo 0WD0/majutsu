@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-file)
 (require 'majutsu-selection)
 (require 'majutsu-interactive)
 
@@ -23,9 +24,6 @@
 
 (defclass majutsu-split--toggle-option (majutsu-selection-toggle-option)
   ())
-
-(defvar-local majutsu-split--filesets nil
-  "Filesets for the current split operation.")
 
 (defun majutsu-split--default-args ()
   "Return default args from diff buffer context."
@@ -43,13 +41,12 @@
          ;; Generate patch for SELECTED content (invert=nil)
          ;; This is what goes into the first commit
          (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
-         (filesets majutsu-split--filesets)
          (args (if patch
                    (seq-remove (lambda (arg)
                                  (or (string= arg "--interactive")
                                      (string-prefix-p "--tool=" arg)))
                                args)
-                 (append args filesets))))
+                 args)))
     (if patch
         (progn
           ;; reverse=t means reset $right to $left, then apply patch forward
@@ -149,42 +146,14 @@
   :argument "--insert-before="
   :multi-value 'repeat)
 
-(defun majutsu-split-clear-selections ()
-  "Clear all split selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-split-option)
-                 (memq (oref obj selection-key) '(revision onto after before)))
-        (transient-infix-set obj nil))))
-  (setq majutsu-split--filesets nil)
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared all split selections"))
-
-(defun majutsu-split--read-filesets (prompt &optional initial)
-  "Read filesets with PROMPT and INITIAL value."
-  (let ((input (read-string prompt (or initial ""))))
-    (if (string-empty-p input)
-        nil
-      (split-string input))))
-
-(defun majutsu-split-set-filesets ()
-  "Set filesets for split."
-  (interactive)
-  (let* ((current (string-join (or majutsu-split--filesets '()) " "))
-         (new (majutsu-split--read-filesets "Filesets (space-separated): " current)))
-    (setq majutsu-split--filesets new)
-    (when transient--prefix
-      (transient--redisplay))
-    (message "Filesets: %s" (or (string-join new " ") "(all)"))))
-
-(defun majutsu-split--filesets-description ()
-  "Return description for filesets display."
-  (if majutsu-split--filesets
-      (format "Paths: %s" (string-join majutsu-split--filesets " "))
-    "Paths: (all)"))
+(transient-define-argument majutsu-split:-- ()
+  :description "Limit to files"
+  :class 'transient-files
+  :key "--"
+  :argument "--"
+  :prompt "Limit to file,s: "
+  :reader #'majutsu-read-files
+  :multi-value t)
 
 ;;;; Prefix
 
@@ -203,14 +172,14 @@
     (majutsu-split:onto)
     (majutsu-split:insert-after)
     (majutsu-split:insert-before)
-    ("c" "Clear selections" majutsu-split-clear-selections :transient t)]
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
    ["Paths" :if-not majutsu-interactive-selection-available-p
-    ("p" majutsu-split--filesets-description majutsu-split-set-filesets :transient t)]
+    (majutsu-split:--)]
    ["Options"
     ("-i" "Interactive" "--interactive")
     ("-p" "Parallel" "--parallel")

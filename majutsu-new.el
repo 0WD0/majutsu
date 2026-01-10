@@ -134,19 +134,6 @@ With prefix ARG, open the new transient for interactive selection."
   :argument "--insert-before="
   :multi-value 'repeat)
 
-(defun majutsu-new-clear-selections ()
-  "Clear all jj new selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-new-option)
-                 (memq (oref obj selection-key) '(parent after before)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared all jj new selections"))
-
 (defun majutsu-new--run-command (args)
   "Execute jj new with ARGS and refresh the log on success.
 When called from a blob buffer, also visit the workspace file."
@@ -230,7 +217,7 @@ a jj-commit section, add -r from that section."
     (majutsu-new:parent)
     (majutsu-new:after)
     (majutsu-new:before)
-    ("c" "Clear selections" majutsu-new-clear-selections
+    ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Options"
     (majutsu-new-infix-message)
