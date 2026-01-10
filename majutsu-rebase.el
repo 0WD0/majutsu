@@ -172,19 +172,6 @@ ARGS are passed from the transient."
   :argument "--insert-before="
   :multi-value 'repeat)
 
-(defun majutsu-rebase-clear-selections ()
-  "Clear all rebase selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-rebase-option)
-                 (memq (oref obj selection-key) '(source branch revisions onto after before)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared all rebase selections"))
-
 (transient-define-prefix majutsu-rebase ()
   "Internal transient for jj rebase operations."
   :man-page "jj-rebase"
@@ -210,7 +197,7 @@ ARGS are passed from the transient."
     (majutsu-rebase:onto)
     (majutsu-rebase:after)
     (majutsu-rebase:before)
-    ("c" "Clear selections" majutsu-rebase-clear-selections
+    ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Options"
     ("-ke" "Skip emptied" "--skip-emptied")
