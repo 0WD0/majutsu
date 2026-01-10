@@ -376,7 +376,7 @@ Jujutsu automatically exports/imports to the underlying Git repo, but you can tr
 Jujutsu supports multiple workspaces sharing the same repository storage. This is similar to Git worktrees but more integrated.
 
 ** Workspace Transient
-Press ~Z~ to manage workspaces.
+Press ~Z~ or ~%~ (Emacs) or ~*~ (Evil) to manage workspaces.
 - ~l~ :: List all workspaces.
 - ~v~ :: Visit a workspace (opens a new Majutsu log for that path).
 - ~a~ :: Add a new workspace.
