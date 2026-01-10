@@ -144,9 +144,9 @@ Jujutsu tracks every operation that modifies the repository. Press ~M-x majutsu-
 
 * Manipulating
 ** Creating Changes
-- ~N~ (Emacs), ~O~ (Evil log mode) :: Create a new change on top of the revision at point (DWIM).
-- ~n~ (Emacs), ~o~ (Evil) :: Open the New transient to specify options.
-- ~A~ (Emacs/Evil log mode) :: Create a new change after the revision at point.
+- ~O~ :: Create a new change on top of the revision at point (DWIM).
+- ~o~ :: Open the New transient to specify options.
+- ~A~ :: Create a new change after the revision at point.
 - ~B~ (Emacs), ~I~ (Evil log mode) :: Create a new change before the revision at point.
 
 Transient options:
