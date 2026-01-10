@@ -80,10 +80,23 @@ macro expansion until Evil is actually present."
                     majutsu-diff-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
+(defun majutsu-evil--adjust-section-bindings ()
+  "Unbind C-j from section maps so it can be used for section navigation.
+This mirrors `evil-collection-magit-adjust-section-bindings'."
+  (when (boundp 'majutsu-diff-section-map)
+    (define-key majutsu-diff-section-map "\C-j" nil))
+  (when (boundp 'majutsu-file-section-map)
+    (define-key majutsu-file-section-map "\C-j" nil))
+  (when (boundp 'majutsu-hunk-section-map)
+    (define-key majutsu-hunk-section-map "\C-j" nil)))
+
 (defun majutsu-evil--define-mode-keys ()
   "Install Evil keybindings for Majutsu maps."
   ;; Normal/visual/motion share the same bindings for navigation commands.
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
+    ;; Section navigation (like evil-collection-magit)
+    (kbd "C-j") #'magit-section-forward
+    (kbd "C-k") #'magit-section-backward
     (kbd "R") #'majutsu-restore
     (kbd "g r") #'majutsu-refresh
     (kbd "`") #'majutsu-process-buffer
@@ -138,7 +151,8 @@ Safe to call multiple times.  Set
   (interactive)
   (when (and (featurep 'evil) majutsu-evil-enable-integration)
     (majutsu-evil--set-initial-state)
-    (majutsu-evil--define-mode-keys)))
+    (majutsu-evil--define-mode-keys)
+    (majutsu-evil--adjust-section-bindings)))
 
 (with-eval-after-load 'evil
   (majutsu-evil-setup))
