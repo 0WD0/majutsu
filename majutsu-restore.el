@@ -141,20 +141,6 @@ In diff buffer on a file section, restore only that file."
   :key "c"
   :argument "--changes-in=")
 
-(defun majutsu-restore-clear-selections ()
-  "Clear all restore selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-restore-option)
-                 (memq (oref obj selection-key) '(from to changes-in)))
-        (transient-infix-set obj nil))))
-  (setq majutsu-restore--filesets nil)
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared all restore selections"))
-
 (transient-define-argument majutsu-restore:-- ()
   :description "Limit to files"
   :class 'transient-files
@@ -181,7 +167,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-restore:from)
     (majutsu-restore:to)
     (majutsu-restore:changes-in)
-    ("x" "Clear selections" majutsu-restore-clear-selections :transient t)]
+    ("x" "Clear selections" majutsu-selection-clear :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)

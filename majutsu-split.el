@@ -146,20 +146,6 @@
   :argument "--insert-before="
   :multi-value 'repeat)
 
-(defun majutsu-split-clear-selections ()
-  "Clear all split selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-split-option)
-                 (memq (oref obj selection-key) '(revision onto after before)))
-        (transient-infix-set obj nil))))
-  (setq majutsu-split--filesets nil)
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared all split selections"))
-
 (transient-define-argument majutsu-split:-- ()
   :description "Limit to files"
   :class 'transient-files
@@ -186,7 +172,7 @@
     (majutsu-split:onto)
     (majutsu-split:insert-after)
     (majutsu-split:insert-before)
-    ("c" "Clear selections" majutsu-split-clear-selections :transient t)]
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)

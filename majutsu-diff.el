@@ -1044,21 +1044,6 @@ what the diff is about."
 
 ;;; Diff Commands
 
-(defun majutsu-diff-clear-selections ()
-  "Clear all diff selections."
-  (interactive)
-  (majutsu-selection-clear 'from)
-  (majutsu-selection-clear 'to)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-diff--range-option)
-                 (memq (oref obj selection-key) '(from to)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (when (called-interactively-p 'interactive)
-    (message "Cleared diff selections")))
-
 (defun majutsu-diff-less-context (&optional count)
   "Decrease the context for diff hunks by COUNT lines."
   (interactive "p")
@@ -1210,7 +1195,7 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:--to)
     (majutsu-diff:from)
     (majutsu-diff:to)
-    ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Options"
     (majutsu-diff:--git)
     (majutsu-diff:--stat)
