@@ -164,8 +164,8 @@ With prefix ARG, open the duplicate transient."
     (majutsu-duplicate:after)
     (majutsu-duplicate:before)]
    ["Actions"
+    ("y" "Duplicate changes" majutsu-duplicate-execute)
     ("RET" "Duplicate changes" majutsu-duplicate-execute)
-    ("p" "Duplicate changes" majutsu-duplicate-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   (transient-setup
