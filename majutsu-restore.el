@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-file)
 (require 'majutsu-selection)
 (require 'majutsu-interactive)
 (require 'majutsu-section)
@@ -39,9 +40,6 @@
     (message "No changeset at point to abandon")))
 
 ;;; Restore
-
-(defvar-local majutsu-restore--filesets nil
-  "Filesets for the current restore operation.")
 
 (defun majutsu-restore--default-args ()
   "Return default args from diff buffer context."
@@ -68,7 +66,13 @@ In diff buffer on a file section, restore only that file."
   "Execute jj restore with ARGS from the transient."
   (interactive (list (transient-args 'majutsu-restore)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf t t)))
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf t t))
+         (args (if patch
+                   (seq-remove (lambda (arg)
+                                 (or (string= arg "--interactive")
+                                     (string-prefix-p "--tool=" arg)))
+                               args)
+                 args)))
     (if patch
         (progn
           (majutsu-interactive-run-with-patch "restore" args patch)
@@ -151,35 +155,14 @@ In diff buffer on a file section, restore only that file."
   (majutsu-selection-render)
   (message "Cleared all restore selections"))
 
-(defun majutsu-restore--read-filesets (prompt &optional initial)
-  "Read filesets with PROMPT and INITIAL value."
-  (let ((input (read-string prompt (or initial ""))))
-    (if (string-empty-p input)
-        nil
-      (split-string input))))
-
-(defun majutsu-restore-set-filesets ()
-  "Set filesets for restore."
-  (interactive)
-  (let* ((current (string-join (or majutsu-restore--filesets '()) " "))
-         (new (majutsu-restore--read-filesets "Filesets (space-separated): " current)))
-    (setq majutsu-restore--filesets new)
-    (when transient--prefix
-      (transient--redisplay))
-    (message "Filesets: %s" (or (string-join new " ") "(all)"))))
-
-(defun majutsu-restore--filesets-description ()
-  "Return description for filesets display."
-  (if majutsu-restore--filesets
-      (format "Paths: %s" (string-join majutsu-restore--filesets " "))
-    "Paths: (all)"))
-
-(defun majutsu-restore--description ()
-  "Return transient description with context info."
-  (let ((parts (list "JJ Restore")))
-    (when majutsu-restore--filesets
-      (push (format "paths: %s" (string-join majutsu-restore--filesets " ")) parts))
-    (string-join (nreverse parts) " | ")))
+(transient-define-argument majutsu-restore:-- ()
+  :description "Limit to files"
+  :class 'transient-files
+  :key "--"
+  :argument "--"
+  :prompt "Limit to file,s: "
+  :reader #'majutsu-read-files
+  :multi-value t)
 
 ;;; Prefix
 
@@ -190,7 +173,7 @@ In diff buffer on a file section, restore only that file."
                   ("--to=" "--changes-in="))
   :transient-non-suffix t
   [
-   :description majutsu-restore--description
+   :description "JJ Restore"
    ["Selection"
     (majutsu-restore:--from)
     (majutsu-restore:--to)
@@ -205,7 +188,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
    ["Paths" :if-not majutsu-interactive-selection-available-p
-    ("p" majutsu-restore--filesets-description majutsu-restore-set-filesets :transient t)]
+    (majutsu-restore:--)]
    ["Options"
     ;; TODO: Add --tool= option?
     ("-d" "Restore descendants" "--restore-descendants")
@@ -214,19 +197,19 @@ In diff buffer on a file section, restore only that file."
     ("r" "Restore" majutsu-restore-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
-  ;; Initialize from context
-  (let ((file (majutsu-section-file-at-point)))
-    ;; Set filesets from context
-    (setq majutsu-restore--filesets
-          (cond
-           (file (list file))
-           ((and (derived-mode-p 'majutsu-diff-mode) majutsu-buffer-diff-filesets)
-            majutsu-buffer-diff-filesets)
-           (t nil)))
+  (let* ((file (majutsu-section-file-at-point))
+         (files (cond
+                 (file (list file))
+                 ((and (derived-mode-p 'majutsu-diff-mode) majutsu-buffer-diff-filesets)
+                  majutsu-buffer-diff-filesets)))
+         (default-args (majutsu-restore--default-args))
+         (value (if files
+                    (append default-args (list (cons "--" files)))
+                  default-args)))
     (transient-setup
      'majutsu-restore nil nil
      :scope (majutsu-selection-session-begin)
-     :value (or (majutsu-restore--default-args) '()))))
+     :value value)))
 
 ;;; _
 (provide 'majutsu-restore)
