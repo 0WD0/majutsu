@@ -101,7 +101,7 @@ With prefix ARG, open the duplicate transient."
   :class 'majutsu-duplicate--toggle-option
   :selection-key 'source
   :selection-type 'multi
-  :key "s"
+  :key "r"
   :argument "-r"
   :multi-value 'repeat)
 
