@@ -35,15 +35,12 @@
   "c"   'majutsu-describe
   "C"   'majutsu-commit
   "o"   'majutsu-new
-  "O"   'majutsu-new-dwim
   "s"   'majutsu-squash
   "S"   'majutsu-split
   "d"   'majutsu-diff
-  "D"   'majutsu-diff-dwim
   "r"   'majutsu-rebase
   "b"   'majutsu-bookmark
   "y"   'majutsu-duplicate
-  "Y"   'majutsu-duplicate-dwim
   "G"   'majutsu-git-transient
   "Z"   'majutsu-workspace
   "%"   'majutsu-workspace

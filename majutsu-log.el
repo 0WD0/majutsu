@@ -906,6 +906,9 @@ Return non-nil when the section could be located."
   :parent majutsu-mode-map
   "n" 'majutsu-goto-next-changeset
   "p" 'majutsu-goto-prev-changeset
+  "O" 'majutsu-new-dwim
+  "D" 'majutsu-diff-dwim
+  "Y" 'majutsu-duplicate-dwim
   "B" 'majutsu-new-with-before
   "A" 'majutsu-new-with-after)
 
