@@ -18,6 +18,7 @@
 
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
+(declare-function evil-normalize-keymaps "evil-core" (&optional state))
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
@@ -50,22 +51,26 @@ When nil, Majutsu leaves Evil's state untouched."
 
 (defun majutsu-evil--define-keys (states keymap &rest bindings)
   "Define Evil BINDINGS for each state in STATES on KEYMAP.
-STATES can be a symbol or list.  KEYMAP can be a symbol or list of
-symbols/maps.  Mirrors `evil-collection-define-key' to defer any
-macro expansion until Evil is actually present."
+STATES can be a symbol or list.  KEYMAP should be a symbol.
+If KEYMAP is not yet bound, defer binding until it becomes available."
   (declare (indent 2))
   (when (and (featurep 'evil) (fboundp 'evil-define-key*))
-    (let* ((states (if (listp states) states (list states)))
-           (maps (if (listp keymap) keymap (list keymap))))
-      (dolist (state states)
-        (dolist (map maps)
-          (let ((mapobj (cond
-                         ((and (symbolp map) (boundp map)
-                               (keymapp (symbol-value map)))
-                          (symbol-value map))
-                         ((keymapp map) map))))
-            (when mapobj
-              (apply #'evil-define-key* state mapobj bindings))))))))
+    (let ((states (if (listp states) states (list states))))
+      (cond
+       ;; Keymap already available - bind immediately
+       ((and (symbolp keymap) (boundp keymap) (keymapp (symbol-value keymap)))
+        (dolist (state states)
+          (apply #'evil-define-key* state (symbol-value keymap) bindings)))
+       ;; Keymap not yet available - defer via after-load-functions
+       ((symbolp keymap)
+        (let* ((fname (format "majutsu-evil-define-key-in-%s" keymap))
+               (fun (make-symbol fname)))
+          (fset fun `(lambda (&rest _args)
+                       (when (and (boundp ',keymap) (keymapp (symbol-value ',keymap)))
+                         (remove-hook 'after-load-functions #',fun)
+                         (dolist (state ',states)
+                           (apply #'evil-define-key* state (symbol-value ',keymap) ',bindings)))))
+          (add-hook 'after-load-functions fun t)))))))
 
 (defun majutsu-evil--set-initial-state ()
   "Register initial Evil states for Majutsu modes."
