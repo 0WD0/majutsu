@@ -22,6 +22,7 @@
 (require 'majutsu-selection)
 (require 'majutsu-section)
 (require 'majutsu-file)
+(require 'majutsu-conflict)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -622,7 +623,7 @@ When SECTION is nil, walk all hunk sections."
                             (oref section end)
                             'diff-mode 'fine))))
     (cl-labels ((walk (node)
-                  (if (magit-section-match 'majutsu-hunk-section node)
+                  (if (magit-section-match 'jj-hunk node)
                       (majutsu-diff--update-hunk-refinement node t)
                     (dolist (child (oref node children))
                       (walk child)))))
@@ -669,10 +670,6 @@ works with the simplified jj diff we render here."
 
 ;;; Navigation
 
-(defun majutsu-diff--file-at-point ()
-  "Return the file for the current diff/diffstat section, if any."
-  (majutsu-section-file-at-point))
-
 (defun majutsu-goto-diff-line ()
   "Jump to the line in the file corresponding to the diff line at point."
   (interactive)
@@ -717,7 +714,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
-  (when-let* ((file (majutsu-diff--file-at-point)))
+  (when-let* ((file (majutsu-section-file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
 (defun majutsu-diff--range-value (range prefix)
@@ -811,7 +808,7 @@ With prefix argument FORCE-WORKSPACE, always visit the workspace file
 regardless of what the diff is about."
   (interactive "P")
   (let* ((section (magit-current-section))
-         (file (majutsu-diff--file-at-point)))
+         (file (majutsu-section-file-at-point)))
     (unless file
       (user-error "No file at point"))
     (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
@@ -856,14 +853,46 @@ what the diff is about."
   (interactive)
   (majutsu-diff-visit-file t))
 
+;;;###autoload
+(defun majutsu-diff-resolve-conflict ()
+  "Visit the workspace file and jump to its conflict markers.
+
+Enable `majutsu-conflict-mode' for JJ markers or `smerge-mode' for
+Git-style markers."
+  (interactive)
+  (let ((file (majutsu-section-file-at-point)))
+    (unless file
+      (user-error "No file at point"))
+    (majutsu-diff-visit-file t)
+    (majutsu-conflict-ensure-mode)
+    (cond
+     (majutsu-conflict-mode
+      (majutsu-conflict-goto-nearest)
+      (when diff-refine
+        (ignore-errors (majutsu-conflict-refine))))
+     (smerge-mode
+      (condition-case nil
+          (smerge-match-conflict)
+        (error
+         (smerge-next)))))
+    (message "Use C-c ^ commands to resolve conflicts.")))
+
 (defvar-keymap majutsu-file-section-map
   :doc "Keymap for `jj-file' sections."
   :parent majutsu-diff-section-map
   "v" #'majutsu-find-file-at-point)
 
+(defvar-keymap majutsu-hunk-section-conflict-map
+  :doc "Keymap bound to `smerge-command-prefix' in `majutsu-hunk-section-map'."
+  "RET" #'majutsu-diff-resolve-conflict)
+
 (defvar-keymap majutsu-hunk-section-map
   :doc "Keymap for `jj-hunk' sections."
   :parent majutsu-diff-section-map)
+
+(let ((key (key-description smerge-command-prefix)))
+  (when (key-valid-p key)
+    (keymap-set majutsu-hunk-section-map key majutsu-hunk-section-conflict-map)))
 
 ;;; Diff Edit
 
@@ -871,7 +900,7 @@ what the diff is about."
 (defun majutsu-diffedit-emacs ()
   "Emacs-based diffedit using built-in ediff."
   (interactive)
-  (let* ((file (majutsu-diff--file-at-point)))
+  (let* ((file (majutsu-section-file-at-point)))
     (if file
         (majutsu-diffedit-with-ediff file)
       (majutsu-diffedit-all))))
@@ -917,7 +946,7 @@ what the diff is about."
 (defun majutsu-diffedit-smerge ()
   "Emacs-based diffedit using smerge-mode (merge conflict style)."
   (interactive)
-  (let* ((file (majutsu-diff--file-at-point)))
+  (let* ((file (majutsu-section-file-at-point)))
     (if file
         (majutsu-diffedit-with-smerge file)
       (majutsu-diffedit-all))))
