@@ -49,6 +49,26 @@ When nil, Majutsu leaves Evil's state untouched."
           (symbol :tag "Custom state"))
   :group 'majutsu-evil)
 
+(defvar majutsu-conflict-evil-before-map
+  (let ((map (make-sparse-keymap)))
+    (dotimes (i 9)
+      (let ((n (1+ i)))
+        (define-key map (kbd (number-to-string n))
+                    (lambda () (interactive)
+                      (majutsu-conflict-keep-side n t)))))
+    map)
+  "Keymap for selecting the before state in JJ conflicts.")
+
+(defvar majutsu-conflict-evil-resolve-map
+  (let ((map (make-sparse-keymap)))
+    (dotimes (i 9)
+      (let ((n (1+ i)))
+        (define-key map (kbd (number-to-string n))
+                    (lambda () (interactive)
+                      (majutsu-conflict-keep-side n nil)))))
+    map)
+  "Keymap for JJ conflict actions under Evil.")
+
 (defun majutsu-evil--define-keys (states keymap &rest bindings)
   "Define Evil BINDINGS for each state in STATES on KEYMAP.
 STATES can be a symbol or list.  KEYMAP should be a symbol.
@@ -150,7 +170,19 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd ".") #'majutsu-log-goto-@
     (kbd "O") #'majutsu-new-dwim
     (kbd "I") #'majutsu-new-with-before
-    (kbd "A") #'majutsu-new-with-after))
+    (kbd "A") #'majutsu-new-with-after)
+
+  ;; majutsu-conflict-mode is a minor mode
+  (add-hook 'majutsu-conflict-mode-hook #'evil-normalize-keymaps)
+  (majutsu-evil--define-keys 'normal 'majutsu-conflict-mode-map
+    "gj" #'majutsu-conflict-next
+    "]]" #'majutsu-conflict-next
+    "gk" #'majutsu-conflict-prev
+    "[[" #'majutsu-conflict-prev
+    "gb" #'majutsu-conflict-keep-base
+    "gr" majutsu-conflict-evil-resolve-map
+    "gR" majutsu-conflict-evil-before-map
+    "ge" #'majutsu-conflict-refine))
 
 ;;;###autoload
 (defun majutsu-evil-setup ()
