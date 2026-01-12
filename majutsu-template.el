@@ -871,8 +871,6 @@ participate in keyword sugar."
      (local_bookmarks :returns List :keyword t)
      (remote_bookmarks :returns List :keyword t)
      (tags :returns List :keyword t)
-     (git_refs :returns List :keyword t)
-     (git_head :returns Boolean :keyword t)
      (divergent :returns Boolean :keyword t)
      (hidden :returns Boolean :keyword t)
      (change_offset :returns Integer :keyword t)
