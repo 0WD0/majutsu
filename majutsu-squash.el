@@ -19,7 +19,7 @@
 (require 'majutsu-interactive)
 
 (defclass majutsu-squash-option (majutsu-selection-option)
-  ((selection-key :initarg :selection-key :initform nil)))
+  ())
 
 (defclass majutsu-squash--toggle-option (majutsu-selection-toggle-option)
   ())

@@ -183,10 +183,7 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 
 ;;;; Infix Classes
 
-(defclass majutsu-diff--range-option (majutsu-selection-option)
-  ((selection-key :initarg :selection-key :initform nil)))
-
-(defclass majutsu-diff--toggle-range-option (majutsu-selection-toggle-option) ())
+(defclass majutsu-diff-range-option (majutsu-selection-option) ())
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
   (pcase-let ((`(,args ,range ,_filesets)
@@ -868,8 +865,8 @@ file."
   (majutsu-selection-clear 'to)
   (when (consp transient--suffixes)
     (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-diff--range-option)
-                 (memq (oref obj selection-key) '(from to)))
+      (when (and (cl-typep obj 'majutsu-diff-range-option)
+                 (memq (oref obj selection-key) '(revisions from to)))
         (transient-infix-set obj nil))))
   (when transient--prefix
     (transient--redisplay))
@@ -1010,6 +1007,7 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-r)
     (majutsu-diff:--from)
     (majutsu-diff:--to)
+    (majutsu-diff:revisions)
     (majutsu-diff:from)
     (majutsu-diff:to)
     ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
@@ -1059,15 +1057,30 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
-  :class 'transient-option
+  :class 'majutsu-diff-range-option
+  :selection-key 'revisions
+  :selection-label "[REVS]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-type 'multi
+  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
   :prompt "Revisions: ")
 
+(transient-define-argument majutsu-diff:revisions ()
+  :description "Revisions (toggle at point)"
+  :class 'majutsu-selection-toggle-option
+  :selection-key 'revisions
+  :selection-type 'multi
+  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :key "r"
+  :argument "--revisions="
+  :multi-value 'repeat)
+
 (transient-define-argument majutsu-diff:--from ()
   :description "From"
-  :class 'majutsu-diff--range-option
+  :class 'majutsu-diff-range-option
   :selection-key 'from
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
@@ -1079,7 +1092,7 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:--to ()
   :description "To"
-  :class 'majutsu-diff--range-option
+  :class 'majutsu-diff-range-option
   :selection-key 'to
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
@@ -1091,7 +1104,7 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:from ()
   :description "From (toggle at point)"
-  :class 'majutsu-diff--toggle-range-option
+  :class 'majutsu-selection-toggle-option
   :selection-key 'from
   :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
@@ -1100,7 +1113,7 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:to ()
   :description "To (toggle at point)"
-  :class 'majutsu-diff--toggle-range-option
+  :class 'majutsu-selection-toggle-option
   :selection-key 'to
   :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
