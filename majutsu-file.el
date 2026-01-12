@@ -109,7 +109,7 @@ LIST-FN defaults to `majutsu-file-list'."
 (defun majutsu-file--path-at-point (root)
   "Return path from context or nil."
   (or (magit-section-value-if 'jj-file)
-      (majutsu-diff--file-at-point)
+      (majutsu-section-file-at-point)
       (when-let* ((file buffer-file-name))
         (majutsu-file--relative-path root file))))
 
