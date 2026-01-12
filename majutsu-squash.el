@@ -107,7 +107,7 @@ a jj-commit section, add --revision from that section."
   :class 'majutsu-squash-option
   :selection-key 'onto
   :selection-label "[ONTO]"
-  :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-face '(:background "dark green" :foreground "white")
   :selection-type 'multi
   :key "-o"
   :argument "--onto="
@@ -119,7 +119,7 @@ a jj-commit section, add --revision from that section."
   :class 'majutsu-squash-option
   :selection-key 'after
   :selection-label "[AFTER]"
-  :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-face '(:background "dark blue" :foreground "white")
   :selection-type 'multi
   :key "-A"
   :argument "--insert-after="
@@ -131,7 +131,7 @@ a jj-commit section, add --revision from that section."
   :class 'majutsu-squash-option
   :selection-key 'before
   :selection-label "[BEFORE]"
-  :selection-face '(:background "dark sea green" :foreground "black")
+  :selection-face '(:background "dark magenta" :foreground "white")
   :selection-type 'multi
   :key "-B"
   :argument "--insert-before="

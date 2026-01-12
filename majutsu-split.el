@@ -66,7 +66,7 @@
   :class 'majutsu-split-option
   :selection-key 'revision
   :selection-label "[REV]"
-  :selection-face '(:background "dark orange" :foreground "black")
+  :selection-face '(:background "goldenrod" :foreground "black")
   :selection-type 'single
   :key "-r"
   :argument "--revision="
@@ -77,7 +77,7 @@
   :class 'majutsu-split-option
   :selection-key 'onto
   :selection-label "[ONTO]"
-  :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-face '(:background "dark green" :foreground "white")
   :selection-type 'multi
   :key "-o"
   :argument "--onto="
@@ -89,7 +89,7 @@
   :class 'majutsu-split-option
   :selection-key 'after
   :selection-label "[AFTER]"
-  :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-face '(:background "dark blue" :foreground "white")
   :selection-type 'multi
   :key "-A"
   :argument "--insert-after="
@@ -101,7 +101,7 @@
   :class 'majutsu-split-option
   :selection-key 'before
   :selection-label "[BEFORE]"
-  :selection-face '(:background "dark sea green" :foreground "black")
+  :selection-face '(:background "dark magenta" :foreground "white")
   :selection-type 'multi
   :key "-B"
   :argument "--insert-before="
