@@ -224,6 +224,24 @@ This is used to match buffers to repositories when refreshing."
   (with-current-buffer (or buffer (current-buffer))
     (and (boundp 'majutsu--default-directory) majutsu--default-directory)))
 
+(defun majutsu--get-mode-buffer (mode &optional selected)
+  "Get a buffer in MODE.
+
+If SELECTED is non-nil, then only consider buffers displayed in a window
+of the selected frame."
+  (let ((pred (if selected
+                  (lambda (buf)
+                    (and (eq (buffer-local-value 'major-mode buf) mode)
+                         (get-buffer-window buf)))
+                (lambda (buf)
+                  (eq (buffer-local-value 'major-mode buf) mode)))))
+    (or (and (not selected)
+             (seq-find (lambda (buf)
+                         (and (funcall pred buf)
+                              (get-buffer-window buf)))
+                       (buffer-list)))
+        (seq-find pred (buffer-list)))))
+
 (defun majutsu--find-mode-buffer (mode &optional root)
   "Return a live buffer in MODE for ROOT (or any repo when ROOT is nil)."
   (let ((root (or root (majutsu--buffer-root))))

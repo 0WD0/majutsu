@@ -135,24 +135,6 @@ Set to nil to always allow painting."
   (delete-region (line-beginning-position)
                  (min (point-max) (1+ (line-end-position)))))
 
-(defun majutsu--get-mode-buffer (mode &optional selected)
-  "Get a buffer in MODE.
-
-If SELECTED is non-nil, then only consider buffers displayed in a window
-of the selected frame."
-  (let ((pred (if selected
-                  (lambda (buf)
-                    (and (eq (buffer-local-value 'major-mode buf) mode)
-                         (get-buffer-window buf)))
-                (lambda (buf)
-                  (eq (buffer-local-value 'major-mode buf) mode)))))
-    (or (and (not selected)
-             (seq-find (lambda (buf)
-                         (and (funcall pred buf)
-                              (get-buffer-window buf)))
-                       (buffer-list)))
-        (seq-find pred (buffer-list)))))
-
 (defun majutsu-diff--remembered-args (args)
   "Return the subset of ARGS that should be remembered by diff buffers.
 
