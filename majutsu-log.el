@@ -262,6 +262,16 @@ Also registers a variable watcher to invalidate the template cache."
        (when (fboundp 'add-variable-watcher)
          (add-variable-watcher ',var-name #'majutsu-log--invalidate-template-cache)))))
 
+(majutsu-template-defun short-change-id ()
+  (:returns Template :flavor :custom :doc "Shortest unique change id.")
+  [:change_id :shortest 8])
+
+(majutsu-template-defun short-change-id-with-offset ()
+  (:returns Template :flavor :custom :doc "Shortest unique change id with offset.")
+  [[:short-change-id]
+   [:label "change_offset" "/"]
+   [:change_offset]])
+
 (majutsu-log-define-column id
   [:if [:or [:hidden] [:divergent]]
       [:commit_id :shortest 8]
@@ -269,14 +279,17 @@ Also registers a variable watcher to invalidate the template cache."
   "Template for the commit-id column.")
 
 (majutsu-log-define-column change-id
-  [:if [:hidden]
-      [:label "hidden"
-              [[:change_id :shortest 8]
-               " hidden"]]
-    [:label
-     [:if [:divergent] "divergent"]
-     [[:change_id :shortest 8]
-      [:if [:divergent] "??"]]]]
+  [:label
+   [:separate " "
+              [:if [:current_working_copy] "working_copy"]
+              [:if [:immutable] "immutable" "mutable"]
+              [:if [:conflict] "conflicted"]]
+   [:coalesce
+    [:if [:hidden]
+        [:label "hidden" [:short-change-id-with-offset]]]
+    [:if [:divergent]
+        [:label "divergent" [:short-change-id-with-offset]]]
+    [:short-change-id]]]
   "Template for the change-id column.")
 
 (majutsu-log-define-column commit-id
