@@ -1060,6 +1060,7 @@ REVSET is passed to jj diff using `--revisions='."
 ;;; Commands
 ;;;; Prefix Commands
 
+;;;###autoload
 (transient-define-prefix majutsu-diff ()
   "Internal transient for jj diff."
   :man-page "jj-diff"
