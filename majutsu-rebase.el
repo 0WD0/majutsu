@@ -51,7 +51,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-key 'source
   :selection-label "[SRC]"
-  :selection-face '(:background "dark green" :foreground "white")
+  :selection-face '(:background "goldenrod" :foreground "black")
   :selection-type 'multi
   :key "-s"
   :argument "--source="
@@ -87,7 +87,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-key 'onto
   :selection-label "[ONTO]"
-  :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-face '(:background "dark green" :foreground "white")
   :selection-type 'multi
   :key "-o"
   :argument "--onto="
