@@ -17,13 +17,8 @@
 (require 'subr-x)
 (require 'magit-section)
 (require 'majutsu-base)
-(require 'majutsu-diff)
-(require 'majutsu-log)
 (require 'majutsu-process)
 
-(declare-function majutsu-toplevel "majutsu-jj" (&optional directory))
-(declare-function majutsu-jj-string "majutsu-process" (&rest args))
-(declare-function majutsu-diff--file-at-point "majutsu-diff" ())
 (declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
 (declare-function majutsu-annotate-addition "majutsu-annotate" (&optional revision))
 
@@ -114,7 +109,7 @@ LIST-FN defaults to `majutsu-file-list'."
 (defun majutsu-file--path-at-point (root)
   "Return path from context or nil."
   (or (magit-section-value-if 'jj-file)
-      (majutsu-diff--file-at-point)
+      (majutsu-section-file-at-point)
       (when-let* ((file buffer-file-name))
         (majutsu-file--relative-path root file))))
 
