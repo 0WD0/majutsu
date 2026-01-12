@@ -18,11 +18,8 @@
 ;;; Code:
 
 (require 'majutsu-core)
-(require 'majutsu-process)
-(require 'majutsu-log)
 (require 'majutsu-diff)
 (require 'majutsu-jjdescription)
-(require 'majutsu-selection)
 
 ;;; Aliases
 
@@ -74,6 +71,7 @@ Instead of invoking this alias for `majutsu-log' using
 (provide 'majutsu)
 
 (cl-eval-when (load eval)
+  (require 'majutsu-log)
   (require 'majutsu-bookmark)
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)

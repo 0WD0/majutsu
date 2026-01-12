@@ -423,8 +423,4 @@ Add new entries here to extend display behavior for additional buffers."
 
 ;;; _
 (provide 'majutsu-mode)
-
-(with-eval-after-load 'evil
-  (require 'majutsu-evil nil t))
-
 ;;; majutsu-mode.el ends here
