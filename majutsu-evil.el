@@ -143,8 +143,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "d") #'majutsu-diff
     (kbd "D") #'majutsu-diff-dwim
     (kbd "*") #'majutsu-workspace
-    (kbd "E") #'majutsu-diffedit-emacs
-    (kbd "M") #'majutsu-diffedit-smerge
+    (kbd "E") #'majutsu-ediff
     (kbd "?") #'majutsu-dispatch
     (kbd "RET") #'majutsu-visit-thing)
 

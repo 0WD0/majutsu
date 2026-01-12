@@ -45,10 +45,9 @@ Instead of invoking this alias for `majutsu-log' using
     ("d" "Diff"              majutsu-diff)
     ("D" "Diff (dwim)"       majutsu-diff-dwim)
     ("e" "Edit change"       majutsu-edit-changeset)
-    ("E" "DiffEdit (ediff)"  majutsu-diffedit-emacs)]
+    ("E" "Ediff"             majutsu-ediff)]
    [("G" "Git"               majutsu-git-transient)
     ("l" "Log options"       majutsu-log-transient)
-    ("M" "DiffEdit (smerge)" majutsu-diffedit-smerge)
     ("o" "New"               majutsu-new)
     ("O" "New (dwim)"        majutsu-new-dwim)
     ("r" "Rebase"            majutsu-rebase)
@@ -73,6 +72,7 @@ Instead of invoking this alias for `majutsu-log' using
 
 (cl-eval-when (load eval)
   (require 'majutsu-log)
+  (require 'majutsu-ediff)
   (require 'majutsu-bookmark)
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)
