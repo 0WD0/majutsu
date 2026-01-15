@@ -10,7 +10,7 @@
 - `majutsu-commands.el` – Interactive commands.
 - `majutsu-template.el` – Embedded DSL for composing Jujutsu templates.
 - `majutsu-evil.el` – Native Evil-mode integration and keybindings.
-- `CHANGELOG.org` – Release notes and user-facing changes.
+- `NEWS.org` – Release notes and user-facing changes.
 - `Eask` – Dependency and build configuration.
 - `README.org` – Usage and installation notes.
 - `docs/` – Living design notes/specifications (primarily Chinese).
@@ -25,18 +25,6 @@ This project uses [Eask](https://github.com/emacs-eask/eask) for development.
 - Install dependencies: `eask install-deps`
 - Byte-compile: `eask compile`
 - Run tests: `eask test ert test/*.el`
-
-## Coding Style & Naming Conventions
-- Emacs Lisp, 2-space indentation; no tabs.
-- Prefix all symbols with `majutsu-`; private helpers may use `majutsu--`.
-- Interactive commands use `(interactive)` and concise, action-first docstrings.
-- User options via `defcustom` with appropriate `:type`.
-- Avoid `shell-command`; prefer `process-file`/`process-lines` and validate inputs.
-
-## Template DSL
-- Extend JJ helpers with `majutsu-template-def*` macros; register types via `majutsu-template-define-type` when introducing new concepts.
-- Update or add coverage in `test/majutsu-template-test.el` for new combinators, flavors, or sugar.
-- Keep runtime evaluation guarded by `majutsu-template--allow-eval`; default to pure transforms.
 
 ## Testing Guidelines
 - Use ERT; place tests in `test/` and name them like `test-majutsu-*`.
@@ -56,13 +44,6 @@ This project uses [Eask](https://github.com/emacs-eask/eask) for development.
 - Keep `README.org` usage/key binding sections in sync with UI changes.
 - Update `docs/` specs when refining workflows or template semantics; preserve bilingual context and add English summaries for new sections when possible.
 - Leverage `man jj-*` (e.g., `man jj-bookmark`) for upstream command docs when refining command integrations.
-
-## Release Checklist (v0.3.0+)
-- Bump the version header in `majutsu.el`, `Eask` and update `CHANGELOG.org` with dated entries.
-- Ensure `README.org` reflects real keymaps/transients after every binding change.
-- Run `eask install-deps`, `eask compile`, and `eask test ert test/*.el`; fix byte-compile warnings.
-- Regenerate or delete stale `.elc` artifacts if they no longer match their `.el` sources.
-- Smoke-test interactive flows: `majutsu-log`, `majutsu-diff`, dispatcher (`?`), and Evil bindings (if applicable).
 
 ## Agent-Specific Instructions
 - Keep changes minimal and focused; do not reformat unrelated code.
