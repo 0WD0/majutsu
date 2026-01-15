@@ -5,6 +5,8 @@
 
 ** Added
 
+- Prompt for passwords/passphrases in the minibuffer during jj operations, with auth-source support.
+
 ** Changed
 
 - Keybinding changes:

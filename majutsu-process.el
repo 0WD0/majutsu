@@ -16,13 +16,16 @@
 
 ;;; Code:
 
-(require 'magit) ; for magit-with-editor
 (require 'majutsu-base)
 (require 'majutsu-mode)
 (require 'majutsu-jj)
 (require 'ansi-color)
 (require 'subr-x)
 (require 'with-editor)
+
+(require 'magit-git) ; for magit-with-editor
+(require 'magit-section)
+(require 'magit-process) ; for prompt functions
 
 ;;; Customization
 
@@ -389,6 +392,11 @@ repository's log buffer (see `majutsu-refresh')."
         (delete-region (line-beginning-position) (point)))
       (insert (propertize string 'magit-section
                           (process-get proc 'section)))
+      (magit-process-yes-or-no-prompt proc string)
+      (magit-process-username-prompt proc string)
+      (magit-process-password-prompt proc string)
+      (run-hook-with-args-until-success 'magit-process-prompt-functions
+                                        proc string)
       (set-marker (process-mark proc) (point)))))
 
 (defun majutsu--process-sentinel (process _event)

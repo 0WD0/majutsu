@@ -1,6 +1,7 @@
 ;;; majutsu-process-test.el -*- lexical-binding: t; -*-
 
 (require 'ert)
+(require 'cl-lib)
 (require 'majutsu-process)
 
 (ert-deftest test-majutsu-process-error-summary-from-string/error ()
@@ -26,6 +27,20 @@
 
 (ert-deftest test-majutsu-process-error-summary-from-string/empty ()
   (should-not (majutsu--process-error-summary-from-string "")))
+
+(ert-deftest test-majutsu-process-filter/calls-magit-prompt ()
+  (let ((called nil))
+    (cl-letf (((symbol-function 'magit-process-password-prompt)
+               (lambda (_proc _string)
+                 (setq called 'password))))
+      (with-temp-buffer
+        (let ((proc (make-process :name "majutsu-test"
+                                  :buffer (current-buffer)
+                                  :command (list "cat"))))
+          (set-marker (process-mark proc) (point))
+          (majutsu--process-filter proc "Password: ")
+          (delete-process proc)))
+      (should (eq called 'password)))))
 
 ;;; majutsu-process-test.el ends here
 
