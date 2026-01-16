@@ -34,17 +34,20 @@
     (should (equal (plist-get (nth 1 entries) :desc) ""))))
 
 (ert-deftest majutsu-workspace-visit/binds-default-directory ()
-  "Ensure visiting another workspace let-binds `default-directory'."
+  "Ensure visiting another workspace updates buffer context."
   (let ((new-dir (make-temp-file "majutsu-test-" t))
-        seen)
+        seen-default
+        seen-root)
     (unwind-protect
         (progn
           (cl-letf (((symbol-function 'majutsu-refresh)
                      (lambda ()
-                       (setq seen default-directory))))
+                       (setq seen-default default-directory)
+                       (setq seen-root majutsu--default-directory))))
             (let ((default-directory "/tmp/"))
               (majutsu-workspace-visit new-dir)))
-          (should (equal seen (file-name-as-directory (expand-file-name new-dir)))))
+          (should (equal seen-default (file-name-as-directory (expand-file-name new-dir))))
+          (should (equal seen-root (file-name-as-directory (expand-file-name new-dir)))))
       (delete-directory new-dir t))))
 
 (provide 'majutsu-workspace-test)

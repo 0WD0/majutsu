@@ -239,9 +239,10 @@ workspace root automatically; if not found, prompt for it."
          (dir (if directory
                   (file-name-as-directory (expand-file-name directory))
                 (majutsu-workspace--read-root (majutsu-workspace--read-name "Workspace: " root) root))))
-    (let ((default-directory dir))
-      (if (majutsu-refresh)
-        (dired dir)))))
+    (setq default-directory dir)
+    (setq majutsu--default-directory dir)
+    (if (majutsu-refresh)
+      (dired dir))))
 
 ;;; Commands
 
