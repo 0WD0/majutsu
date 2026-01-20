@@ -87,8 +87,10 @@ Allows viewing the contents of a file at a specific revision. You can navigate t
 *** Process Buffer
 Shows the output of background =jj= commands. If a command fails, you can press ~$~ to inspect the error.
 
-*** Message Buffer
+*** JJ description Buffer
 Used for writing commit descriptions or other interactive input. It uses =with-editor= to ensure seamless integration with the Emacs environment.
+
+JJ descriptions buffers highlight metadata blocks and change summaries. You can customize ~majutsu-jjdescription-major-mode~, ~majutsu-jjdescription-comment-prefix~, ~majutsu-jjdescription-change-id-face~, and ~global-majutsu-jjdescription-mode~ to taste. JJ comment commands use ~JJ:~ as the comment prefix. ~JJ: ignore-rest~ marks the remainder of the buffer as comment. Other major modes are not thoroughly tested yet. Jujutsu currently does not support changing the comment prefix; the option is reserved for future compatibility.
 
 ** Sections
 Majutsu organizes information into collapsible sections. You can use ~TAB~ to toggle the visibility of a section (e.g., a revision's description in the log, or a file in a diff).
@@ -436,6 +438,12 @@ Once you resolve the conflicts in the buffer and save, Majutsu will refresh the 
 - ~majutsu-setup-buffer-hook~ :: Normal hook run after displaying the buffer.
 - ~majutsu-post-create-buffer-hook~ :: Normal hook run after the initial refresh.
 - ~majutsu-refresh-buffer-hook~ :: Normal hook run after refreshing.
+
+** Description Options
+- ~majutsu-jjdescription-major-mode~ :: Major mode used for editing JJ description buffers (default: ~text-mode~).
+- ~majutsu-jjdescription-comment-prefix~ :: Comment prefix used in JJ description buffers (default: ="JJ:"=).
+- ~majutsu-jjdescription-change-id-face~ :: Face used for JJ Change ID values.
+- ~global-majutsu-jjdescription-mode~ :: Global minor mode to enable JJ description buffer enhancements.
 
 ** Evil Integration
 - ~majutsu-evil-enable-integration~ :: Set to =nil= to disable automatic Evil bindings.

@@ -8,6 +8,11 @@
 - Prompt for passwords/passphrases in the minibuffer during jj operations, with auth-source support.
 - In ~majutus-diff~ transient:
   - Support ~--ignore-space-change~ and ~--ignore-all-space~ arguments.
+- Highlight JJ description buffers (summary, JJ comments, change list) using git-commit faces.
+  - Add global mode to manage JJ description setup hooks.
+  - Allow configuring JJ description major mode and Change ID face.
+  - Allow configurint JJ description comment prefix for comment commands.
+  - Highlight JJ ignore-rest and diffstat summary lines.
 
 ** Changed
 
