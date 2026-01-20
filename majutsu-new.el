@@ -202,13 +202,6 @@ a jj-commit section, add -r from that section."
         (concat "JJ New | " (string-join parts " | "))
       "JJ New")))
 
-(defun majutsu-new--action-summary ()
-  "Return a short summary string for the jj new execute action."
-  (let ((parts (majutsu-new--selection-summary)))
-    (if parts
-        (string-join parts " | ")
-      "Parents: @")))
-
 (transient-define-prefix majutsu-new ()
   "Internal transient for jj new operations."
   :man-page "jj-new"
@@ -230,13 +223,9 @@ a jj-commit section, add -r from that section."
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("o" "Create new change" majutsu-new-execute
-     :description (lambda ()
-                    (format "Create new change (%s)"
-                            (majutsu-new--action-summary))))
+     :description "Create new change")
     ("RET" "Create new change" majutsu-new-execute
-     :description (lambda ()
-                    (format "Create new change (%s)"
-                            (majutsu-new--action-summary))))
+     :description "Create new change")
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   (transient-setup
