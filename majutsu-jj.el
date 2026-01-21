@@ -20,6 +20,9 @@
 (require 'subr-x)
 
 (require 'with-editor)
+(require 'majutsu-base)
+
+(declare-function majutsu-jj-string "majutsu-process" (&rest args))
 
 ;;; Options
 
@@ -50,6 +53,13 @@ Also respect the value of `majutsu-with-editor-envvar'."
      (with-editor* majutsu-with-editor-envvar
        ,@body)))
 
+;;; Reading
+
+(defun majutsu-read-revset (prompt &optional default)
+  "Prompt user with PROMPT to read a revision set string."
+  (let ((default (or default (magit-section-value-if 'jj-commit) "@")))
+    (majutsu-read-string prompt nil nil default)))
+
 ;;; Safe default-directory
 
 (defun majutsu--safe-default-directory (&optional file)
@@ -72,6 +82,64 @@ until an accessible directory is found.  Return nil if none is found."
   (declare (indent 1) (debug (form body)))
   `(when-let* ((default-directory (majutsu--safe-default-directory ,file)))
      ,@body))
+
+;;; Change at Point
+
+(defvar majutsu-buffer-blob-revision)
+(defvar majutsu-buffer-diff-range)
+
+(defun majutsu-change-at-point ()
+  "Return the change-id at point.
+This checks multiple sources in order:
+1. Section value (jj-commit section)
+2. `jj-revision' thing-at-point
+3. Blob buffer revision
+4. Diff/revision buffer revision"
+  (or (magit-section-value-if 'jj-commit)
+      (magit-thing-at-point 'jj-revision t)
+      (and (bound-and-true-p majutsu-buffer-blob-revision)
+           majutsu-buffer-blob-revision)
+      (and (derived-mode-p 'majutsu-diff-mode)
+           (bound-and-true-p majutsu-buffer-diff-range)
+           (let ((range majutsu-buffer-diff-range))
+             (or (and (equal (car range) "-r") (cadr range))
+                 (cdr (assoc "--revisions=" range)))))))
+
+;; Register jj-revision as a thing-at-point type
+(put 'jj-revision 'bounds-of-thing-at-point
+     (lambda ()
+       (when (looking-at "[a-z]\\{1,12\\}")
+         (cons (match-beginning 0) (match-end 0)))))
+
+(put 'jj-revision 'thing-at-point
+     (lambda ()
+        (when-let* ((bounds (bounds-of-thing-at-point 'jj-revision)))
+          (buffer-substring-no-properties (car bounds) (cdr bounds)))))
+
+(defun majutsu-file-at-point ()
+  "Return file at point for jj diff sections."
+  (magit-section-case
+    (jj-hunk (or (magit-section-parent-value it)
+                 (oref it value)))
+    (jj-file (oref it value))))
+
+(defun majutsu-bookmarks-at-point (&optional bookmark-type)
+  "Return a list of bookmark names at point."
+  (let* ((rev (or (magit-section-value-if 'jj-commit) "@"))
+         (args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
+                         "-T" ,(pcase bookmark-type
+                                 ('remote "remote_bookmarks")
+                                 ('local "local_bookmarks")
+                                 (_ "bookmarks")))))
+         (output (apply #'majutsu-jj-string args))
+         (bookmarks (split-string output " " t)))
+    (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
+
+(defun majutsu-bookmark-at-point ()
+  "Return a comma-separated string of bookmark names at point."
+  (let ((bookmarks (majutsu-bookmarks-at-point)))
+    (when bookmarks
+      (string-join bookmarks ","))))
 
 ;;; Errors
 

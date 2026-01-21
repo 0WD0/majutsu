@@ -15,30 +15,12 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-jj)
 (require 'json)
 (require 'seq)
 (require 'subr-x)
 
 ;;; majutsu-bookmark
-
-(defun majutsu-bookmarks-at-point (&optional bookmark-type)
-  "Return a list of bookmark names at point."
-  (let* ((rev (or (magit-section-value-if 'jj-commit) "@"))
-         (args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
-                         "-T" ,(pcase bookmark-type
-                                 ('remote "remote_bookmarks")
-                                 ('local "local_bookmarks")
-                                 (_ "bookmarks")))))
-         (output (apply #'majutsu-jj-string args))
-         (bookmarks (split-string output " " t)))
-    (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
-
-(defun majutsu-bookmark-at-point ()
-  "Return a comma-separated string of bookmark names at point."
-  (let ((bookmarks (majutsu-bookmarks-at-point)))
-    (when bookmarks
-      (string-join bookmarks ","))))
-
 (defun majutsu--extract-bookmark-names (text)
   "Extract bookmark names from jj command output TEXT."
   (let ((names '())
