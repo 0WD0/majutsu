@@ -1079,7 +1079,9 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:--git)
     (majutsu-diff:--stat)
     (majutsu-diff:--summary)
-    (majutsu-diff:--context)]
+    (majutsu-diff:--context)
+    (majutsu-diff:-w)
+    (majutsu-diff:-b)]
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
@@ -1166,6 +1168,18 @@ REVSET is passed to jj diff using `--revisions='."
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "t"
   :argument "--to=")
+
+(transient-define-argument majutsu-diff:-b ()
+  :description "Ignore changes in amount of whitespace"
+  :class 'transient-switch
+  :key "-b"
+  :argument "--ignore-space-change")
+
+(transient-define-argument majutsu-diff:-w ()
+  :description "Ignore whitespace"
+  :class 'transient-switch
+  :key "-w"
+  :argument "--ignore-all-space")
 
 (defun majutsu-diff-save-arguments ()
   "Save current transient arguments as defaults."

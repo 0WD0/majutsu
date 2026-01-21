@@ -6,6 +6,8 @@
 ** Added
 
 - Prompt for passwords/passphrases in the minibuffer during jj operations, with auth-source support.
+- In ~majutus-diff~ transient:
+  - Support ~--ignore-space-change~ and ~--ignore-all-space~ arguments.
 
 ** Changed
 
