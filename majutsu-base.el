@@ -20,7 +20,6 @@
 (require 'eieio)
 (require 'magit-section)
 (require 'magit-mode)  ; for `majutsu-display-function'
-(require 'majutsu-jj)
 
 ;;; Options
 
@@ -262,38 +261,6 @@ of the selected frame."
   "Signal a user error unless the current buffer derives from MODE."
   (unless (derived-mode-p mode)
     (user-error "Command is only valid in %s buffers" mode)))
-
-;;; Change at Point
-
-(defvar majutsu-buffer-blob-revision)
-
-(defun majutsu-change-at-point ()
-  "Return the change-id at point.
-This checks multiple sources in order:
-1. Section value (jj-commit section)
-2. `jj-revision' thing-at-point
-3. Blob buffer revision
-4. Diff/revision buffer revision"
-  (or (magit-section-value-if 'jj-commit)
-      (magit-thing-at-point 'jj-revision t)
-      (and (bound-and-true-p majutsu-buffer-blob-revision)
-           majutsu-buffer-blob-revision)
-      (and (derived-mode-p 'majutsu-diff-mode)
-           (bound-and-true-p majutsu-buffer-diff-range)
-           (let ((range majutsu-buffer-diff-range))
-             (or (and (equal (car range) "-r") (cadr range))
-                 (cdr (assoc "--revisions=" range)))))))
-
-;; Register jj-revision as a thing-at-point type
-(put 'jj-revision 'bounds-of-thing-at-point
-     (lambda ()
-       (when (looking-at "[a-z]\\{1,12\\}")
-         (cons (match-beginning 0) (match-end 0)))))
-
-(put 'jj-revision 'thing-at-point
-     (lambda ()
-       (when-let* ((bounds (bounds-of-thing-at-point 'jj-revision)))
-         (buffer-substring-no-properties (car bounds) (cdr bounds)))))
 
 ;;; _
 (provide 'majutsu-base)

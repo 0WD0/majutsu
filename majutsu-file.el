@@ -17,6 +17,7 @@
 (require 'subr-x)
 (require 'magit-section)
 (require 'majutsu-base)
+(require 'majutsu-jj)
 (require 'majutsu-process)
 
 (declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
@@ -109,7 +110,7 @@ LIST-FN defaults to `majutsu-file-list'."
 (defun majutsu-file--path-at-point (root)
   "Return path from context or nil."
   (or (magit-section-value-if 'jj-file)
-      (majutsu-section-file-at-point)
+      (majutsu-file-at-point)
       (when-let* ((file buffer-file-name))
         (majutsu-file--relative-path root file))))
 

@@ -60,7 +60,7 @@
   "Restore working copy from parent (discard all changes).
 In diff buffer on a file section, restore only that file."
   (interactive)
-  (let ((file (majutsu-section-file-at-point)))
+  (let ((file (majutsu-file-at-point)))
     (if file
         (when (yes-or-no-p (format "Discard changes to %s? " file))
           (majutsu-run-jj "restore" file))
@@ -188,7 +188,7 @@ In diff buffer on a file section, restore only that file."
     ("r" "Restore" majutsu-restore-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
-  (let* ((file (majutsu-section-file-at-point))
+  (let* ((file (majutsu-file-at-point))
          (files (cond
                  (file (list file))
                  ((and (derived-mode-p 'majutsu-diff-mode) majutsu-buffer-diff-filesets)

@@ -714,7 +714,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
-  (when-let* ((file (majutsu-section-file-at-point)))
+  (when-let* ((file (majutsu-file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
 (defun majutsu-diff--range-value (range prefix)
@@ -808,7 +808,7 @@ With prefix argument FORCE-WORKSPACE, always visit the workspace file
 regardless of what the diff is about."
   (interactive "P")
   (let* ((section (magit-current-section))
-         (file (majutsu-section-file-at-point)))
+         (file (majutsu-file-at-point)))
     (unless file
       (user-error "No file at point"))
     (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
@@ -860,7 +860,7 @@ what the diff is about."
 Enable `majutsu-conflict-mode' for JJ markers or `smerge-mode' for
 Git-style markers."
   (interactive)
-  (let ((file (majutsu-section-file-at-point)))
+  (let ((file (majutsu-file-at-point)))
     (unless file
       (user-error "No file at point"))
     (majutsu-diff-visit-file t)
