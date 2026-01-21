@@ -654,10 +654,6 @@ works with the simplified jj diff we render here."
 
 ;;; Navigation
 
-(defun majutsu-diff--file-at-point ()
-  "Return the file for the current diff/diffstat section, if any."
-  (majutsu-section-file-at-point))
-
 (defun majutsu-goto-diff-line ()
   "Jump to the line in the file corresponding to the diff line at point."
   (interactive)
@@ -702,7 +698,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
-  (when-let* ((file (majutsu-diff--file-at-point)))
+  (when-let* ((file (majutsu-file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
 ;;;###autoload
@@ -716,7 +712,7 @@ file."
     (cond
      ((and section (magit-section-match 'jj-hunk section))
       (majutsu-goto-diff-line))
-     ((majutsu-diff--file-at-point)
+     ((majutsu-file-at-point)
       (majutsu-visit-file))
      (t
       (user-error "No file at point")))))
@@ -741,7 +737,7 @@ file."
 (defun majutsu-diffedit-emacs ()
   "Emacs-based diffedit using built-in ediff."
   (interactive)
-  (let* ((file (majutsu-diff--file-at-point)))
+  (let* ((file (majutsu-file-at-point)))
     (if file
         (majutsu-diffedit-with-ediff file)
       (majutsu-diffedit-all))))
@@ -787,7 +783,7 @@ file."
 (defun majutsu-diffedit-smerge ()
   "Emacs-based diffedit using smerge-mode (merge conflict style)."
   (interactive)
-  (let* ((file (majutsu-diff--file-at-point)))
+  (let* ((file (majutsu-file-at-point)))
     (if file
         (majutsu-diffedit-with-smerge file)
       (majutsu-diffedit-all))))

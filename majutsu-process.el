@@ -471,24 +471,6 @@ Process output goes into a new section in the buffer returned by
     (majutsu-refresh)
     exit))
 
-(defun majutsu-jj-string (&rest args)
-  "Run jj command with ARGS and return its output as a string."
-  (let* ((start-time (current-time))
-         (safe-args (majutsu-process-jj-arguments args))
-         result exit-code)
-    (majutsu--debug "Running command: %s %s" majutsu-jj-executable (string-join safe-args " "))
-    (with-temp-buffer
-      (let ((coding-system-for-read 'utf-8-unix)
-            (coding-system-for-write 'utf-8-unix))
-        (setq exit-code (apply #'process-file majutsu-jj-executable nil t nil safe-args)))
-      (setq result (majutsu--process--apply-colors (buffer-string)))
-      (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
-                      (float-time (time-subtract (current-time) start-time))
-                      exit-code)
-      (when (and majutsu-show-command-output (not (string-empty-p result)))
-        (majutsu--debug "Command output: %s" (string-trim result)))
-      result)))
-
 (defun majutsu-run-jj-with-editor (&rest args)
   "Run JJ ARGS using with-editor."
   (let* ((origin-window (selected-window))

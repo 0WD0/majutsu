@@ -20,7 +20,6 @@
 (require 'eieio)
 (require 'magit-section)
 (require 'magit-mode)  ; for `majutsu-display-function'
-(require 'majutsu-jj)
 
 ;;; Options
 

@@ -54,13 +54,6 @@ When a field is not present in this alist, it defaults to t."
   :doc "Keymap for `jj-commit' sections."
   "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
 
-;;; Utilities
-
-(defun majutsu-read-revset (prompt &optional default)
-  "Prompt user with PROMPT to read a revision set string."
-  (let ((default (or default (magit-section-value-if 'jj-commit) "@")))
-    (majutsu-read-string prompt nil nil default)))
-
 ;;; Log State
 
 (defun majutsu-log--get-value (mode &optional use-buffer-args)
