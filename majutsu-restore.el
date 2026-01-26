@@ -29,14 +29,19 @@
 
 ;;;###autoload
 (defun majutsu-abandon ()
-  "Abandon the changeset at point."
+  "Abandon the changeset at point or in region."
   (interactive)
-  (if-let* ((revset (magit-section-value-if 'jj-commit)))
-      (if (not (majutsu-confirm 'abandon
-                                (format "Abandon changeset %s? " revset)))
-          (message "Abandon canceled")
-        (majutsu-run-jj "abandon" "-r" revset))
-    (message "No changeset at point to abandon")))
+  (let ((revsets (or (magit-region-values 'jj-commit t)
+                     (when-let* ((rev (magit-section-value-if 'jj-commit)))
+                       (list rev)))))
+    (if (not revsets)
+        (message "No changeset at point to abandon")
+      (let ((prompt (if (= (length revsets) 1)
+                        (format "Abandon changeset %s? " (car revsets))
+                      (format "Abandon %d changesets? " (length revsets)))))
+        (if (not (majutsu-confirm 'abandon prompt))
+            (message "Abandon canceled")
+          (majutsu-run-jj "abandon" revsets))))))
 
 ;;; Restore
 

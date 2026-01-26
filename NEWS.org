@@ -21,6 +21,7 @@
   - ~D~ now runs ~majutsu-diff-dwim~ in log mode (was global).
   - ~Y~ now runs ~majutsu-duplicate-dwim~ in log mode (was global).
   - ~o~ now runs ~majutsu-new~ transient globally.
+- ~majutsu-abandon~ now respects active region selection to abandon multiple changesets at once.
 - In ~majutsu-new~ transient:
   - Parent revision key changed from ~p~ to ~r~.
   - Action key changed from ~n~ to ~o~.
