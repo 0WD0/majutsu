@@ -254,8 +254,8 @@ displayed in a single window."
 (defun majutsu-file--revset-for-files (revset path direction)
   "Build a revset for PATH and DIRECTION relative to REVSET.
 DIRECTION should be either \='prev or \='next."
-  (let* ((escaped (replace-regexp-in-string "'" "\\'" path))
-         (file-set (format "files('%s')" escaped)))
+  (let* ((escaped (replace-regexp-in-string "\"" "\\\"" path))
+         (file-set (format "files(\"%s\")" escaped)))
     (pcase direction
       ('prev (format "::%s-&%s" revset file-set))
       ('next (format "roots(%s+::&%s)" revset file-set))
