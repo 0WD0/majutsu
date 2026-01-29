@@ -93,7 +93,8 @@ LIST-FN defaults to `majutsu-file-list'."
 (defun majutsu-file--show (revset path root)
   "Return file contents for REVSET and PATH in ROOT as a string."
   (let ((default-directory root))
-    (majutsu-jj-string "file" "show" "-r" revset path)))
+    (majutsu-jj-string "file" "show" "-r" revset
+                       (majutsu-jj-fileset-quote path))))
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
@@ -254,8 +255,7 @@ displayed in a single window."
 (defun majutsu-file--revset-for-files (revset path direction)
   "Build a revset for PATH and DIRECTION relative to REVSET.
 DIRECTION should be either \='prev or \='next."
-  (let* ((escaped (replace-regexp-in-string "\"" "\\\"" path))
-         (file-set (format "files(\"%s\")" escaped)))
+  (let* ((file-set (format "files(%s)" (majutsu-jj-fileset-quote path))))
     (pcase direction
       ('prev (format "::%s-&%s" revset file-set))
       ('next (format "roots(%s+::&%s)" revset file-set))
@@ -326,7 +326,8 @@ DIFF must be a unified diff."
 (defun majutsu-file--map-line (root from-rev to-rev path line)
   "Map LINE in FROM-REV to the corresponding line in TO-REV."
   (let* ((default-directory root)
-         (diff (majutsu-jj-string "diff" "--from" from-rev "--to" to-rev "--" path)))
+         (diff (majutsu-jj-string "diff" "--from" from-rev "--to" to-rev "--"
+                                  (majutsu-jj-fileset-quote path))))
     (if (string-empty-p diff)
         line
       (majutsu-file--diff-offset diff line))))

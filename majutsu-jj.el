@@ -111,8 +111,8 @@ This checks multiple sources in order:
 
 (put 'jj-revision 'thing-at-point
      (lambda ()
-        (when-let* ((bounds (bounds-of-thing-at-point 'jj-revision)))
-          (buffer-substring-no-properties (car bounds) (cdr bounds)))))
+       (when-let* ((bounds (bounds-of-thing-at-point 'jj-revision)))
+         (buffer-substring-no-properties (car bounds) (cdr bounds)))))
 
 (defun majutsu-file-at-point ()
   "Return file at point for jj diff sections."
@@ -222,6 +222,30 @@ to do the following.
       (when (and majutsu-show-command-output (not (string-empty-p result)))
         (majutsu--debug "Command output: %s" (string-trim result)))
       result)))
+
+(defun majutsu-jj--escape-fileset-string (s)
+  "Escape S for a jj fileset string literal."
+  (unless (stringp s)
+    (user-error "majutsu-jj: expected string, got %S" s))
+  (apply #'concat
+         (mapcar (lambda (ch)
+                   (pcase ch
+                     (?\" "\\\"")
+                     (?\\ "\\\\")
+                     (?\t "\\t")
+                     (?\r "\\r")
+                     (?\n "\\n")
+                     (0 "\\0")
+                     (27 "\\e")
+                     (_
+                      (if (or (< ch 32) (= ch 127))
+                          (format "\\x%02X" ch)
+                        (string ch)))))
+                 (string-to-list s))))
+
+(defun majutsu-jj-fileset-quote (s)
+  "Return S as a jj fileset string literal."
+  (format "file:\"%s\"" (majutsu-jj--escape-fileset-string s)))
 
 (defun majutsu-jj-wash (washer keep-error &rest args)
   "Run jj with ARGS, insert output at point, then call WASHER.
