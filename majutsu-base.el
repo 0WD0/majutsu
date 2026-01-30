@@ -57,15 +57,15 @@ This is modeled after Magit's `magit-no-confirm`.  If this is t,
 then no confirmation is required.  Otherwise, each symbol stands
 for a class of actions that would normally ask for confirmation."
   :type `(choice (const :tag "Never require confirmation" t)
-                 (set   :tag "Require confirmation except for"
-                        ,@majutsu--confirm-actions))
+          (set   :tag "Require confirmation except for"
+                 ,@majutsu--confirm-actions))
   :group 'majutsu)
 
 (defcustom majutsu-slow-confirm nil
   "A list of actions that should use `yes-or-no-p' instead of `y-or-n-p'."
   :type `(choice (const :tag "Use yes-or-no for all" t)
-                 (set   :tag "Use yes-or-no for"
-                        ,@majutsu--confirm-actions))
+          (set   :tag "Use yes-or-no for"
+                 ,@majutsu--confirm-actions))
   :group 'majutsu)
 
 ;;; Section Classes
@@ -156,7 +156,7 @@ end with a question mark and space."
   "Wrap CANDIDATES in a completion table.
 When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
   (let ((metadata `(metadata (display-sort-function . identity)
-                             ,@(and category `((category . ,category))))))
+                    ,@(and category `((category . ,category))))))
     (lambda (string pred action)
       (if (eq action 'metadata)
           metadata
