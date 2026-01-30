@@ -54,8 +54,8 @@
 Uses `latest` and `exactly` to enforce a single target."
   (let* ((normalized (majutsu-file--normalize-revset revset))
          (result (string-trim
-                  (majutsu-jj-string "log" "-r" normalized
-                                     "-T" "change_id" "--no-graph" "--limit" "1"))))
+                  (ansi-color-apply (majutsu-jj-string "log" "-r" normalized
+                                                       "-T" "change_id" "--no-graph" "--limit" "1")))))
     ;; Return nil when revset yields no result.
     (unless (string-empty-p result)
       result)))
@@ -342,18 +342,18 @@ DIFF must be a unified diff."
 (defun majutsu-file-prev-change (revset path)
   "Return the previous change-id modifying PATH before REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'prev))
-         (result (string-trim
+         (result (ansi-color-apply (string-trim
                   (majutsu-jj-string "log" "-r" query "-G"
-                                     "--limit" "1" "-T" "change_id"))))
+                                     "--limit" "1" "-T" "change_id")))))
     (unless (string-empty-p result)
       result)))
 
 (defun majutsu-file-next-change (revset path)
   "Return the next change-id modifying PATH after REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'next))
-         (result (string-trim
+         (result (ansi-color-apply (string-trim
                   (majutsu-jj-string "log" "-r" query "-G" "--reversed"
-                                     "--limit" "1" "-T" "change_id"))))
+                                     "--limit" "1" "-T" "change_id")))))
     (unless (string-empty-p result)
       result)))
 
