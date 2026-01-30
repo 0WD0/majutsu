@@ -259,34 +259,25 @@ list of filesets (path filters)."
           ('nil majutsu-direct-use-buffer-arguments)
           ((or 'always 'selected 'current 'never)
            use-buffer-args)))
-  (cond
-   ((and (memq use-buffer-args '(always selected current))
-         (eq major-mode mode))
-    (list majutsu-buffer-diff-args
-          majutsu-buffer-diff-range
-          majutsu-buffer-diff-filesets))
-   ((and (memq use-buffer-args '(always selected))
-         (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
-           (list (buffer-local-value 'majutsu-buffer-diff-args buf)
-                 (buffer-local-value 'majutsu-buffer-diff-range buf)
-                 (buffer-local-value 'majutsu-buffer-diff-filesets buf)))))
-   ((plist-member (symbol-plist mode) 'majutsu-diff-current-arguments)
-    (list (get mode 'majutsu-diff-current-arguments)
-          (get mode 'majutsu-diff-current-range)
-          (get mode 'majutsu-diff-current-filesets)))
-   ((when-let* ((elt (assq (intern (format "majutsu-diff:%s" mode))
-                           transient-values)))
-      (list (cdr elt)
-            (get mode 'majutsu-diff-current-range)
-            (get mode 'majutsu-diff-current-filesets))))
-   (t
-    (list (get mode 'majutsu-diff-default-arguments) nil nil))))
-
-;; FIXME: 不应该存在
-(defun majutsu-diff--set-buffer-range (range)
-  "Set current buffer's diff RANGE arguments."
-  (setq-local majutsu-buffer-diff-range range)
-  (put 'majutsu-diff-mode 'majutsu-diff-current-range range))
+  (let* ((use-current (and (memq use-buffer-args '(always selected current))
+                           (eq major-mode mode)))
+         (args (cond
+                (use-current
+                 majutsu-buffer-diff-args)
+                ((and (memq use-buffer-args '(always selected))
+                      (when-let* ((buf (majutsu--get-mode-buffer
+                                        mode (eq use-buffer-args 'selected))))
+                        (buffer-local-value 'majutsu-buffer-diff-args buf))))
+                ((plist-member (symbol-plist mode) 'majutsu-diff-current-arguments)
+                 (get mode 'majutsu-diff-current-arguments))
+                ((when-let* ((elt (assq (intern (format "majutsu-diff:%s" mode))
+                                        transient-values)))
+                   (cdr elt)))
+                (t
+                 (get mode 'majutsu-diff-default-arguments))))
+         (range (and use-current majutsu-buffer-diff-range))
+         (filesets (and use-current majutsu-buffer-diff-filesets)))
+    (list args range filesets)))
 
 ;; FIXME: 不应该存在
 (defun majutsu-diff--set-buffer-args (args &optional _filesets _refresh)
@@ -1170,7 +1161,7 @@ REVSET is passed to jj diff using `--revisions='."
     (cond
      ((eq major-mode 'majutsu-diff-mode)
       (majutsu-diff--set-buffer-args args)
-      (majutsu-diff--set-buffer-range range)
+      (setq-local majutsu-buffer-diff-range range)
       (majutsu-diff-refresh-buffer))
      ((and (memq majutsu-prefix-use-buffer-arguments '(always selected))
            (when-let* ((buf (majutsu--get-mode-buffer
@@ -1178,7 +1169,7 @@ REVSET is passed to jj diff using `--revisions='."
                              (eq majutsu-prefix-use-buffer-arguments 'selected))))
              (with-current-buffer buf
                (majutsu-diff--set-buffer-args args)
-               (majutsu-diff--set-buffer-range range)
+               (setq-local majutsu-buffer-diff-range range)
                (majutsu-diff-refresh-buffer))
              t)))
      (t

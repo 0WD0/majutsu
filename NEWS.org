@@ -31,6 +31,9 @@
 
 ** Fixed
 
+- Diff DWIM now only inherits range/filesets from the current diff buffer,
+  and context adjustments (+/-/0) no longer update global defaults.
+
 * [0.5.0] - 2026-01-09
 
 ** Release highlights

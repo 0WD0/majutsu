@@ -103,6 +103,20 @@
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
+(ert-deftest majutsu-diff-set-buffer-args-does-not-update-defaults ()
+  "Updating diff args should not override global defaults."
+  (let ((saved (get 'majutsu-diff-mode 'majutsu-diff-current-arguments)))
+    (unwind-protect
+        (progn
+          (put 'majutsu-diff-mode 'majutsu-diff-current-arguments '("--stat"))
+          (with-temp-buffer
+            (majutsu-diff-mode)
+            (majutsu-diff--set-buffer-args '("--summary"))
+            (should (equal majutsu-buffer-diff-args '("--summary")))
+            (should (equal (get 'majutsu-diff-mode 'majutsu-diff-current-arguments)
+                           '("--stat")))))
+      (put 'majutsu-diff-mode 'majutsu-diff-current-arguments saved))))
+
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
   "When called from the transient, DWIM should use current transient args."
   (let ((transient-current-command 'majutsu-diff)
@@ -123,6 +137,55 @@
       (should (equal called-args '("--context=9" "--stat")))
       (should (equal called-files nil))
       (should (equal called-range '("--revisions=abc123"))))))
+
+(ert-deftest majutsu-diff-dwim-inherits-current-buffer-range ()
+  "DWIM should reuse range and filesets from the current diff buffer."
+  (let ((majutsu-direct-use-buffer-arguments 'current)
+        called-args
+        called-files
+        called-range)
+    (with-temp-buffer
+      (majutsu-diff-mode)
+      (setq-local majutsu-buffer-diff-args '("--stat"))
+      (setq-local majutsu-buffer-diff-range '("--from=main" "--to=dev"))
+      (setq-local majutsu-buffer-diff-filesets '("foo" "bar"))
+      (cl-letf (((symbol-function 'majutsu-diff-setup-buffer)
+                 (lambda (args range filesets &rest _)
+                   (setq called-args args
+                         called-files filesets
+                         called-range range)))
+                ((symbol-function 'majutsu-diff--dwim)
+                 (lambda () '(commit . "abc123"))))
+        (call-interactively #'majutsu-diff-dwim)
+        (should (equal called-args '("--stat")))
+        (should (equal called-range '("--from=main" "--to=dev")))
+        (should (equal called-files '("foo" "bar")))))))
+
+(ert-deftest majutsu-diff-dwim-does-not-inherit-range-from-other-buffer ()
+  "DWIM should not reuse range or filesets from other diff buffers."
+  (let ((majutsu-direct-use-buffer-arguments 'always)
+        called-files
+        called-range)
+    (let ((diff-buf (generate-new-buffer " *majutsu diff test*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer diff-buf
+              (majutsu-diff-mode)
+              (setq-local majutsu-buffer-diff-args '("--stat"))
+              (setq-local majutsu-buffer-diff-range '("--from=main" "--to=dev"))
+              (setq-local majutsu-buffer-diff-filesets '("foo" "bar")))
+            (with-temp-buffer
+              (cl-letf (((symbol-function 'majutsu-diff-setup-buffer)
+                         (lambda (_args range filesets &rest _)
+                           (setq called-range range
+                                 called-files filesets)))
+                        ((symbol-function 'majutsu-diff--dwim)
+                         (lambda () '(commit . "abc123"))))
+                (call-interactively #'majutsu-diff-dwim)
+                (should (equal called-range '("--revisions=abc123")))
+                (should (equal called-files nil)))))
+        (when (buffer-live-p diff-buf)
+          (kill-buffer diff-buf))))))
 
 (ert-deftest majutsu-diff-refine-hunk-default-disabled ()
   "Diff refinement should be disabled by default."
