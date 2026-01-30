@@ -28,6 +28,10 @@ efficient way to interact with JJ repositories from within Emacs.
 2. Navigate: ~n~ / ~p~ to move between revisions
 3. Act: ~RET~ to visit, ~?~ for help
 
+Majutsu uses Emacs' =display-buffer= system for window placement. Customize
+=majutsu-display-buffer-function= (Magit-style strategies) or
+=display-buffer-alist= to control where log, diff, and blob buffers appear.
+
 ** Essential Keybindings
 
 | Key   | Action                   |

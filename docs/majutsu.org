@@ -84,6 +84,10 @@ Displays changes between revisions or within the working copy. It supports Magit
 *** Blob Buffer
 Allows viewing the contents of a file at a specific revision. You can navigate through the file's history using ~n~ and ~p~ within the blob buffer.
 
+*** Buffer Display
+Majutsu uses Emacs' =display-buffer= system for showing log, diff, and blob buffers. This means window history is preserved and =quit-window= restores the previous view reliably. You can customize buffer placement via =majutsu-display-buffer-function= (Magit-style strategies) or standard =display-buffer= rules such as =display-buffer-alist=.
+The default quit behavior uses =majutsu-bury-buffer-function=, which mirrors Magit's window lifecycle handling.
+
 *** Process Buffer
 Shows the output of background =jj= commands. If a command fails, you can press ~$~ to inspect the error.
 
@@ -424,8 +428,10 @@ Once you resolve the conflicts in the buffer and save, Majutsu will refresh the 
 - ~majutsu-log-commit-columns~ :: Customize which columns are shown in the log (ID, author, date, etc.).
 - ~majutsu-log-field-faces~ :: Customize the colors used for different fields in the log.
 - ~majutsu-log-sections-hook~ :: Hook run to insert sections in the log buffer.
-- ~majutsu-default-display-function~ :: Fallback function used to display Majutsu buffers (default: =pop-to-buffer=).
-- ~majutsu-display-functions~ :: Alist mapping buffer kinds (=log=, =diff=, =process=, =message=) to display functions.
+- ~majutsu-display-buffer-function~ :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
+- ~majutsu-pre-display-buffer-hook~ :: Hook run before displaying a buffer.
+- ~majutsu-post-display-buffer-hook~ :: Hook run after displaying a buffer.
+- ~majutsu-bury-buffer-function~ :: Function used by ~q~ to bury/quit Majutsu buffers (default: =majutsu-mode-quit-window=; alternatives include =quit-window= and =majutsu-restore-window-configuration=).
 
 ** Diff Options
 - ~majutsu-diff-refine-hunk~ :: Whether to show word-granularity differences inside hunks. =nil= disables, =t= refines current hunk, ='all= refines all hunks.
