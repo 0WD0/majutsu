@@ -181,7 +181,24 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     "gb" #'majutsu-conflict-keep-base
     "gr" majutsu-conflict-evil-resolve-map
     "gR" majutsu-conflict-evil-before-map
-    "ge" #'majutsu-conflict-refine))
+    "ge" #'majutsu-conflict-refine)
+
+  ;; majutsu-annotate-mode bindings (like evil-collection-magit blame)
+  ;; q works even when not in read-only mode
+  (add-hook 'majutsu-annotate-mode-hook #'evil-normalize-keymaps)
+  (majutsu-evil--define-keys 'normal 'majutsu-annotate-mode-map
+    "q"    #'majutsu-annotate-quit)
+
+  ;; majutsu-annotate-read-only-mode bindings
+  ;; Navigation only when read-only (would conflict with editing otherwise)
+  (majutsu-evil--define-keys 'normal 'majutsu-annotate-read-only-mode-map
+    (kbd "C-j") #'majutsu-annotate-next-chunk
+    "gj"   #'majutsu-annotate-next-chunk
+    "gJ"   #'majutsu-annotate-next-chunk-same-commit
+    (kbd "C-k") #'majutsu-annotate-previous-chunk
+    "gk"   #'majutsu-annotate-previous-chunk
+    "gK"   #'majutsu-annotate-previous-chunk-same-commit
+    "q"    #'majutsu-annotate-quit))
 
 ;;;###autoload
 (defun majutsu-evil-setup ()
