@@ -180,6 +180,10 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
 
 ;;; UI: Workspaces section
 
+(defvar-keymap majutsu-workspace-section-map
+  :doc "Keymap for `jj-workspace' sections."
+  "<remap> <majutsu-visit-thing>" #'majutsu-workspace-visit)
+
 (defun majutsu-workspace--format-entry (entry name-width)
   "Format workspace ENTRY for insertion, padding name to NAME-WIDTH."
   (let* ((name (plist-get entry :name))
@@ -188,33 +192,93 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
          (commit-id (plist-get entry :commit-id))
          (desc (plist-get entry :desc))
          (name-face (if current 'magit-branch-current 'magit-branch-local))
-         (name-str (propertize name 'face name-face))
+         (name-str (propertize name 'font-lock-face name-face))
          (pad (make-string (max 0 (- name-width (string-width name))) ?\s))
          (marker (if current "@ " "  ")))
     (concat marker
             name-str pad
             " "
-            (propertize change-id 'face 'magit-hash)
+            (propertize change-id 'font-lock-face 'magit-hash)
             " "
-            (propertize commit-id 'face 'magit-hash)
+            (propertize commit-id 'font-lock-face 'magit-hash)
             (when (and desc (not (string-empty-p desc)))
               (concat " " desc)))))
 
-(defun majutsu-workspace--insert-entries (entries &optional show-single)
+(defun majutsu-workspace--insert-entries (entries &optional _show-single)
   "Insert workspace ENTRIES as magit sections.
-If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
-  (when (and entries (or show-single (length> entries 1)))
+_SHOW-SINGLE is ignored; filtering is handled by the caller."
+  (when entries
     (let* ((name-width (apply #'max 0 (mapcar (lambda (e)
                                                 (string-width (plist-get e :name)))
                                               entries))))
-      (magit-insert-section (workspaces)
+      (dolist (entry entries)
+        (let ((name (plist-get entry :name)))
+          (magit-insert-section (jj-workspace name t)
+            (magit-insert-heading
+              (majutsu-workspace--format-entry entry name-width))
+            (insert "\n")))))))
+
+(defun majutsu-workspace--parse-list-line (line)
+  "Parse a single workspace LINE into an entry plist or nil."
+  (let* ((fields (split-string line (regexp-quote majutsu-workspace--field-separator) nil))
+         (marker (nth 0 fields))
+         (name (nth 1 fields))
+         (change-id (nth 2 fields))
+         (commit-id (nth 3 fields))
+         (desc (nth 4 fields)))
+    (when (and name (not (string-empty-p name)))
+      (list :name name
+            :current (equal marker "@")
+            :change-id change-id
+            :commit-id commit-id
+            :desc (or desc "")))))
+
+(defun majutsu-workspace--list-entries-from-buffer ()
+  "Parse workspace entries from the current buffer."
+  (let (entries)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let* ((line (buffer-substring (line-beginning-position)
+                                       (line-end-position)))
+               (entry (majutsu-workspace--parse-list-line
+                       (string-trim (substring-no-properties line)))))
+          (when entry
+            (push entry entries)))
+        (forward-line 1)))
+    (nreverse entries)))
+
+(defun majutsu-workspace--wash-entry (name-width)
+  "Wash the workspace list entry at point.
+NAME-WIDTH is used to align columns."
+  (let* ((line (buffer-substring (line-beginning-position)
+                                 (line-end-position)))
+         (entry (majutsu-workspace--parse-list-line
+                 (string-trim (substring-no-properties line)))))
+    (delete-region (line-beginning-position) (min (point-max) (1+ (line-end-position))))
+    (when entry
+      (let ((name (plist-get entry :name)))
+        (magit-insert-section (jj-workspace name t)
+          (magit-insert-heading
+            (majutsu-workspace--format-entry entry name-width))
+          (insert "\n"))))
+    t))
+
+(defun majutsu-workspace--wash-list (show-single _args)
+  "Wash `jj workspace list' output into workspace sections.
+SHOW-SINGLE matches the behavior of `majutsu-insert-workspaces'."
+  (let* ((entries (majutsu-workspace--list-entries-from-buffer))
+         (visible (and entries (or show-single (length> entries 1)))))
+    (if (not visible)
+        (progn
+          (delete-region (point-min) (point-max))
+          (magit-cancel-section))
+      (let ((name-width (apply #'max 0 (mapcar (lambda (e)
+                                                 (string-width (plist-get e :name)))
+                                               entries))))
         (magit-insert-heading (if (length> entries 1) "Workspaces" "Workspace"))
-        (dolist (entry entries)
-          (let ((name (plist-get entry :name)))
-            (magit-insert-section (jj-workspace name t)
-              (magit-insert-heading
-                (majutsu-workspace--format-entry entry name-width))
-              (insert "\n"))))
+        (magit-wash-sequence (lambda ()
+                               (majutsu-workspace--wash-entry name-width)))
         (insert "\n")))))
 
 ;;;###autoload
@@ -222,9 +286,12 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
   "Insert a Workspaces section.
 When there is only one workspace, nothing is inserted unless called
 from `majutsu-workspace-mode'."
-  (majutsu-workspace--insert-entries
-   (majutsu-workspace-list-entries)
-   (eq major-mode 'majutsu-workspace-mode)))
+  (let ((show-single (eq major-mode 'majutsu-workspace-mode)))
+    (magit-insert-section (workspaces)
+      (majutsu-jj-wash (lambda (args)
+                         (majutsu-workspace--wash-list show-single args))
+          nil
+        "workspace" "list" "-T" majutsu-workspace--list-template))))
 
 ;;; Actions
 
@@ -242,7 +309,7 @@ workspace root automatically; if not found, prompt for it."
     (setq default-directory dir)
     (setq majutsu--default-directory dir)
     (if (majutsu-refresh)
-      (dired dir))))
+        (dired dir))))
 
 ;;; Commands
 

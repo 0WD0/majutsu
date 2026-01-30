@@ -104,7 +104,8 @@ for a class of actions that would normally ask for confirmation."
 
 ;; Workspace sections (`jj workspace list`)
 
-(defclass majutsu-workspace-section (magit-section) ())
+(defclass majutsu-workspace-section (magit-section)
+  ((keymap :initform 'majutsu-workspace-section-map)))
 
 (setf (alist-get 'jj-workspace magit--section-type-alist) 'majutsu-workspace-section)
 
