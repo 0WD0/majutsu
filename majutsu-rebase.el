@@ -202,7 +202,7 @@ ARGS are passed from the transient."
    ["Options"
     ("-ke" "Skip emptied" "--skip-emptied")
     ("-kd" "Keep divergent" "--keep-divergent")
-   (majutsu-transient-arg-ignore-immutable)]
+    (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("RET" "Execute rebase" majutsu-rebase-execute)
     ("q" "Quit" transient-quit-one)]]

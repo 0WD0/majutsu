@@ -343,8 +343,8 @@ DIFF must be a unified diff."
   "Return the previous change-id modifying PATH before REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'prev))
          (result (ansi-color-apply (string-trim
-                  (majutsu-jj-string "log" "-r" query "-G"
-                                     "--limit" "1" "-T" "change_id")))))
+                                    (majutsu-jj-string "log" "-r" query "-G"
+                                                       "--limit" "1" "-T" "change_id")))))
     (unless (string-empty-p result)
       result)))
 
@@ -352,8 +352,8 @@ DIFF must be a unified diff."
   "Return the next change-id modifying PATH after REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'next))
          (result (ansi-color-apply (string-trim
-                  (majutsu-jj-string "log" "-r" query "-G" "--reversed"
-                                     "--limit" "1" "-T" "change_id")))))
+                                    (majutsu-jj-string "log" "-r" query "-G" "--reversed"
+                                                       "--limit" "1" "-T" "change_id")))))
     (unless (string-empty-p result)
       result)))
 
