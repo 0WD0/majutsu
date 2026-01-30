@@ -31,6 +31,12 @@
   - Parent revision key changed from ~p~ to ~r~.
   - Action key changed from ~n~ to ~o~.
   - ~majutsu-new-execute~ now auto-fills ~-r~ from the commit at point when invoked outside the transient.
+- Buffer display now follows Magit’s display-buffer model:
+  - Replaced ~majutsu-display-functions~ with ~majutsu-display-buffer-function~ (traditional/same-window-except-diff/fullframe/topleft/fullcolumn).
+  - Added ~majutsu-pre-display-buffer-hook~ and ~majutsu-post-display-buffer-hook~.
+  - Added ~majutsu-bury-buffer-function~ with Magit-style window lifecycle handling and ~majutsu-mode-quit-window~.
+  - Updated ~q~ to use ~majutsu-mode-bury-buffer~ in Majutsu buffers and blob buffers.
+  - Switched JJ description buffers to use ~switch-to-buffer~ display behavior.
 
 ** Fixed
 

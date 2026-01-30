@@ -431,8 +431,10 @@ Once you resolve the conflicts in the buffer and save, Majutsu will refresh the 
 - ~majutsu-log-commit-columns~ :: Customize which columns are shown in the log (ID, author, date, etc.).
 - ~majutsu-log-field-faces~ :: Customize the colors used for different fields in the log.
 - ~majutsu-log-sections-hook~ :: Hook run to insert sections in the log buffer.
-- ~majutsu-default-display-function~ :: Fallback function used to display Majutsu buffers (default: =pop-to-buffer=).
-- ~majutsu-display-functions~ :: Alist mapping buffer kinds (=log=, =diff=, =process=, =message=) to display functions.
+- ~majutsu-display-buffer-function~ :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
+- ~majutsu-pre-display-buffer-hook~ :: Hook run before displaying a buffer.
+- ~majutsu-post-display-buffer-hook~ :: Hook run after displaying a buffer.
+- ~majutsu-bury-buffer-function~ :: Function used by ~q~ to bury/quit Majutsu buffers (default: =majutsu-mode-quit-window=; alternatives include =quit-window= and =majutsu-restore-window-configuration=).
 
 ** Diff Options
 - ~majutsu-diff-refine-hunk~ :: Whether to show word-granularity differences inside hunks. =nil= disables, =t= refines current hunk, ='all= refines all hunks.

@@ -19,7 +19,8 @@
 (require 'subr-x)
 (require 'eieio)
 (require 'magit-section)
-(require 'magit-mode)  ; for `majutsu-display-function'
+
+(declare-function majutsu-save-window-configuration "majutsu-mode" ())
 
 ;;; Options
 
@@ -31,6 +32,34 @@
   "Enable debug logging for jj operations."
   :type 'boolean
   :group 'majutsu)
+
+(defcustom majutsu-display-buffer-function #'majutsu-display-buffer-traditional
+  "The function used to display a Majutsu buffer.
+
+All Majutsu buffers (buffers whose major-modes derive from
+`majutsu-mode') are displayed using `majutsu-display-buffer',
+which in turn uses the function specified here."
+  :type '(radio (function-item majutsu-display-buffer-traditional)
+          (function-item majutsu-display-buffer-same-window-except-diff-v1)
+          (function-item majutsu-display-buffer-fullframe-log-v1)
+          (function-item majutsu-display-buffer-fullframe-log-topleft-v1)
+          (function-item majutsu-display-buffer-fullcolumn-most-v1)
+          (function-item display-buffer)
+          (function :tag "Custom function"))
+  :group 'majutsu)
+
+(defcustom majutsu-pre-display-buffer-hook (list #'majutsu-save-window-configuration)
+  "Hook run by `majutsu-display-buffer' before displaying the buffer."
+  :type 'hook
+  :group 'majutsu)
+
+(defcustom majutsu-post-display-buffer-hook (list #'majutsu-maybe-set-dedicated)
+  "Hook run by `majutsu-display-buffer' after displaying the buffer."
+  :type 'hook
+  :group 'majutsu)
+
+(defvar majutsu-display-buffer-noselect nil
+  "If non-nil, `majutsu-display-buffer' doesn't call `select-window'.")
 
 (defcustom majutsu-show-command-output t
   "Show jj command output in messages."
@@ -197,17 +226,150 @@ DEFAULT-VALUE if non-nil, otherwise signals an error."
           (user-error "Need non-empty input"))
       val)))
 
-(defun majutsu-display-buffer (buffer &optional kind display-function)
-  "Display BUFFER using a function chosen for KIND or DISPLAY-FUNCTION.
-If DISPLAY-FUNCTION is non-nil, call it directly.  Otherwise look up
-KIND (a symbol such as `log', `diff' or `message') via
-`majutsu-display-functions' and fall back to
-`majutsu-default-display-function' when no match is found."
-  (let* ((display-fn (or display-function
-                         (majutsu-display-function kind))))
-    (funcall display-fn buffer)
-    (or (get-buffer-window buffer t)
-        (selected-window))))
+(defun majutsu-display-buffer-traditional (buffer)
+  "Display BUFFER the way this has traditionally been done."
+  (display-buffer
+   buffer (if (and (derived-mode-p 'majutsu-mode)
+                   (not (memq (with-current-buffer buffer major-mode)
+                              '(majutsu-process-mode
+                                majutsu-diff-mode
+                                majutsu-log-mode))))
+              '(display-buffer-same-window)
+            nil)))
+
+(defun majutsu-display-buffer-same-window-except-diff-v1 (buffer)
+  "Display BUFFER in the selected window except for some modes.
+If a buffer's `major-mode' derives from `majutsu-diff-mode' or
+`majutsu-process-mode', display it in another window.  Display all
+other buffers in the selected window."
+  (display-buffer
+   buffer (if (with-current-buffer buffer
+                (derived-mode-p 'majutsu-diff-mode 'majutsu-process-mode))
+              '(nil (inhibit-same-window . t))
+            '(display-buffer-same-window))))
+
+(defun majutsu--display-buffer-fullframe (buffer alist)
+  (when-let* ((window (or (display-buffer-reuse-window buffer alist)
+                          (display-buffer-same-window buffer alist)
+                          (display-buffer-pop-up-window buffer alist)
+                          (display-buffer-use-some-window buffer alist))))
+    (delete-other-windows window)
+    window))
+
+(defun majutsu-display-buffer-fullframe-log-v1 (buffer)
+  "Display BUFFER, filling entire frame if BUFFER is a log buffer.
+Otherwise, behave like `majutsu-display-buffer-traditional'."
+  (if (eq (with-current-buffer buffer major-mode)
+          'majutsu-log-mode)
+      (display-buffer buffer '(majutsu--display-buffer-fullframe))
+    (majutsu-display-buffer-traditional buffer)))
+
+(defun majutsu--display-buffer-topleft (buffer alist)
+  (or (display-buffer-reuse-window buffer alist)
+      (when-let* ((window2 (display-buffer-pop-up-window buffer alist)))
+        (let ((window1 (get-buffer-window))
+              (buffer1 (current-buffer))
+              (buffer2 (window-buffer window2))
+              (w2-quit-restore (window-parameter window2 'quit-restore)))
+          (set-window-buffer window1 buffer2)
+          (set-window-buffer window2 buffer1)
+          (select-window window2)
+          ;; Swap some window state that `majutsu-mode-quit-window' and
+          ;; `quit-restore-window' inspect.
+          (set-window-prev-buffers window2 (cdr (window-prev-buffers window1)))
+          (set-window-prev-buffers window1 nil)
+          (set-window-parameter window2 'majutsu-dedicated
+                                (window-parameter window1 'majutsu-dedicated))
+          (set-window-parameter window1 'majutsu-dedicated t)
+          (set-window-parameter window1 'quit-restore
+                                (list 'window 'window
+                                      (nth 2 w2-quit-restore)
+                                      (nth 3 w2-quit-restore)))
+          (set-window-parameter window2 'quit-restore nil)
+          window1))))
+
+(defun majutsu-display-buffer-fullframe-log-topleft-v1 (buffer)
+  "Display BUFFER, filling entire frame if BUFFER is a log buffer.
+When BUFFER derives from `majutsu-diff-mode' or `majutsu-process-mode',
+try to display BUFFER to the top or left of the current buffer rather
+than to the bottom or right, as `majutsu-display-buffer-fullframe-log-v1'
+would.  Whether the split is made vertically or horizontally is determined
+by `split-window-preferred-function'."
+  (display-buffer
+   buffer
+   (cond ((eq (with-current-buffer buffer major-mode)
+              'majutsu-log-mode)
+          '(majutsu--display-buffer-fullframe))
+         ((with-current-buffer buffer
+            (derived-mode-p 'majutsu-diff-mode 'majutsu-process-mode))
+          '(majutsu--display-buffer-topleft))
+         ('(display-buffer-same-window)))))
+
+(defun majutsu--display-buffer-fullcolumn (buffer alist)
+  (when-let* ((window (or (display-buffer-reuse-window buffer alist)
+                          (display-buffer-same-window buffer alist)
+                          (display-buffer-below-selected buffer alist))))
+    (delete-other-windows-vertically window)
+    window))
+
+(defun majutsu-display-buffer-fullcolumn-most-v1 (buffer)
+  "Display BUFFER using the full column except in some cases.
+For most cases where BUFFER's `major-mode' derives from
+`majutsu-mode', display it in the selected window and grow that
+window to the full height of the frame, deleting other windows in
+that column as necessary.  However, display BUFFER in another
+window if BUFFER's mode derives from `majutsu-process-mode', or if
+BUFFER derives from `majutsu-diff-mode' while the current buffer
+derives from `majutsu-log-mode'."
+  (display-buffer
+   buffer
+   (cond ((and (or (bound-and-true-p majutsu-jjdescription-mode)
+                   (derived-mode-p 'majutsu-log-mode
+                                   'majutsu-op-log-mode))
+               (with-current-buffer buffer
+                 (derived-mode-p 'majutsu-diff-mode)))
+          nil)
+         ((with-current-buffer buffer
+            (derived-mode-p 'majutsu-process-mode))
+          nil)
+         ('(majutsu--display-buffer-fullcolumn)))))
+
+(defun majutsu-maybe-set-dedicated ()
+  "Mark the selected window as dedicated if appropriate.
+
+If a new window was created to display the buffer, then remember
+that fact.  That information is used by `majutsu-mode-quit-window',
+to determine whether the window should be deleted when its last
+Majutsu buffer is buried."
+  (let ((window (get-buffer-window (current-buffer))))
+    (when (and (window-live-p window)
+               (not (window-prev-buffers window)))
+      (set-window-parameter window 'majutsu-dedicated t))))
+
+(defun majutsu-display-buffer (buffer &optional display-function)
+  "Display BUFFER in some window and maybe select it.
+
+If optional DISPLAY-FUNCTION is non-nil, then use that to display
+the buffer.  Otherwise use `majutsu-display-buffer-function', which
+is the normal case.
+
+Then, unless `majutsu-display-buffer-noselect' is non-nil, select
+the window which was used to display the buffer.
+
+Also run the hooks `majutsu-pre-display-buffer-hook'
+and `majutsu-post-display-buffer-hook'."
+  (with-current-buffer buffer
+    (run-hooks 'majutsu-pre-display-buffer-hook))
+  (let ((window (funcall (or display-function majutsu-display-buffer-function)
+                         buffer)))
+    (unless majutsu-display-buffer-noselect
+      (let ((old-frame (selected-frame))
+            (new-frame (window-frame window)))
+        (select-window window)
+        (unless (eq old-frame new-frame)
+          (select-frame-set-input-focus new-frame)))))
+  (with-current-buffer buffer
+    (run-hooks 'majutsu-post-display-buffer-hook)))
 
 (defun majutsu--buffer-root (&optional buffer)
   "Return the cached root for BUFFER (default `current-buffer').

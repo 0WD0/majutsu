@@ -28,7 +28,7 @@
   :parent magit-section-mode-map
   "RET" 'majutsu-visit-thing
   "g"   'majutsu-refresh
-  "q"   'quit-window
+  "q"   'majutsu-mode-bury-buffer
   "$"   'majutsu-process-buffer
   "l"   'majutsu-log-transient
   "?"   'majutsu-dispatch
@@ -49,6 +49,84 @@
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo
   "R"   'majutsu-restore)
+
+;;; Window Management
+
+(defcustom majutsu-bury-buffer-function #'majutsu-mode-quit-window
+  "The function used to bury or kill the current Majutsu buffer."
+  :type '(radio (function-item quit-window)
+          (function-item majutsu-mode-quit-window)
+          (function-item majutsu-restore-window-configuration)
+          (function :tag "Function"))
+  :group 'majutsu)
+
+(defvar majutsu-inhibit-save-previous-winconf nil)
+
+(defvar-local majutsu-previous-window-configuration nil)
+(put 'majutsu-previous-window-configuration 'permanent-local t)
+
+(defun majutsu-save-window-configuration ()
+  "Save the current window configuration.
+
+Later, when the buffer is buried, it may be restored by
+`majutsu-restore-window-configuration'."
+  (cond (majutsu-inhibit-save-previous-winconf
+         (when (eq majutsu-inhibit-save-previous-winconf 'unset)
+           (setq majutsu-previous-window-configuration nil)))
+        ((not (get-buffer-window (current-buffer) (selected-frame)))
+         (setq majutsu-previous-window-configuration
+               (current-window-configuration)))))
+
+(defun majutsu-restore-window-configuration (&optional kill-buffer)
+  "Bury or kill the current buffer and restore previous window configuration."
+  (let ((winconf majutsu-previous-window-configuration)
+        (buffer (current-buffer))
+        (frame (selected-frame)))
+    (quit-window kill-buffer (selected-window))
+    (when (and winconf (equal frame (window-configuration-frame winconf)))
+      (set-window-configuration winconf)
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (setq majutsu-previous-window-configuration nil)))
+      (set-buffer (with-selected-window (selected-window)
+                    (current-buffer))))))
+
+(defun majutsu-mode-bury-buffer (&optional kill-buffer)
+  "Bury or kill the current buffer.
+
+Use `majutsu-bury-buffer-function' to bury the buffer when called
+without a prefix argument or to kill it when called with a single
+prefix argument.
+
+With two prefix arguments, always kill the current and all other
+Majutsu buffers, associated with this repository."
+  (interactive "P")
+  (if (>= (prefix-numeric-value kill-buffer) 16)
+      (mapc #'kill-buffer (majutsu-mode-get-buffers))
+    (funcall majutsu-bury-buffer-function kill-buffer)))
+
+(defun majutsu-mode-quit-window (kill-buffer)
+  "Quit the selected window and bury its buffer.
+
+This behaves similar to `quit-window', but when the window
+was originally created to display a Majutsu buffer and the
+current buffer is the last remaining Majutsu buffer that was
+ever displayed in the selected window, then delete that window."
+  (interactive "P")
+  (if (or (one-window-p)
+          (seq-find (pcase-lambda (`(,buffer))
+                      (and (not (eq buffer (current-buffer)))
+                           (buffer-live-p buffer)
+                           (or (not (window-parameter nil 'majutsu-dedicated))
+                               (with-current-buffer buffer
+                                 (derived-mode-p 'majutsu-mode
+                                                 'majutsu-process-mode)))))
+                    (window-prev-buffers)))
+      (quit-window kill-buffer)
+    (let ((window (selected-window)))
+      (quit-window kill-buffer)
+      (when (window-live-p window)
+        (delete-window window)))))
 
 ;;; Visit
 
@@ -76,6 +154,15 @@ This exists to prevent a let-bound `default-directory' from
 tricking buffer reuse logic into thinking a buffer belongs to a
 repository that it doesn't.")
 (put 'majutsu--default-directory 'permanent-local t)
+
+(defun majutsu-mode-get-buffers ()
+  "Return Majutsu buffers belonging to the current repository."
+  (let ((topdir (majutsu--toplevel-safe)))
+    (seq-filter (lambda (buf)
+                  (with-current-buffer buf
+                    (and (derived-mode-p 'majutsu-mode)
+                         (equal majutsu--default-directory topdir))))
+                (buffer-list))))
 
 (defvar-local majutsu-buffer-locked-p nil
   "Whether this buffer is locked to its `majutsu-buffer-value'.")
@@ -170,20 +257,10 @@ INITIAL-SECTION SELECT-SECTION &rest BINDINGS)"
                            args))
       ,@(nreverse kwargs))))
 
-(defun majutsu--mode-kind (mode)
-  "Infer display kind from MODE symbol name.
-
-For modes named like `majutsu-FOO-mode', return the symbol `FOO'."
-  (when (symbolp mode)
-    (let ((name (symbol-name mode)))
-      (when (string-match "\\`majutsu-\\(.*\\)-mode\\'" name)
-        (intern (match-string 1 name))))))
-
 (cl-defun majutsu-setup-buffer-internal
     (mode locked bindings
           &key buffer directory initial-section select-section)
   (let* ((topdir (majutsu--toplevel-safe directory))
-         (kind (majutsu--mode-kind mode))
          (value (and locked
                      (with-temp-buffer
                        (pcase-dolist (`(,var ,val) bindings)
@@ -207,7 +284,7 @@ For modes named like `majutsu-FOO-mode', return the symbol `FOO'."
         (set (make-local-variable var) val))
       (when created
         (run-hooks 'majutsu-create-buffer-hook)))
-    (majutsu-display-buffer buffer kind)
+    (majutsu-display-buffer buffer)
     (with-current-buffer buffer
       (run-hooks 'majutsu-setup-buffer-hook)
       (majutsu-refresh-buffer-internal created
@@ -388,38 +465,6 @@ When nil, jj's default range (\"-r @\") is used.")
   "Filesets filter for current diff buffer.")
 
 ;;; Display functions
-
-(defcustom majutsu-default-display-function #'pop-to-buffer
-  "Fallback function used to display Majutsu buffers.
-The function must accept one argument: the buffer to display."
-  :type '(choice
-          (function-item switch-to-buffer)
-          (function-item pop-to-buffer)
-          (function-item display-buffer)
-          (function :tag "Custom function"))
-  :group 'majutsu)
-
-(defcustom majutsu-display-functions
-  '((log . pop-to-buffer)
-    (op-log . pop-to-buffer)
-    (process . pop-to-buffer)
-    (diff . pop-to-buffer)
-    (message . pop-to-buffer))
-  "Alist mapping Majutsu buffer kinds to display functions.
-Each function must accept one argument: the buffer to display.
-Add new entries here to extend display behavior for additional buffers."
-  :type '(alist :key-type (symbol :tag "Buffer kind")
-          :value-type (choice
-                       (function-item switch-to-buffer)
-                       (function-item pop-to-buffer)
-                       (function-item display-buffer)
-                       (function :tag "Custom function")))
-  :group 'majutsu)
-
-(defun majutsu-display-function (kind)
-  "Return display function for KIND or the default fallback."
-  (or (alist-get kind majutsu-display-functions nil nil #'eq)
-      majutsu-default-display-function))
 
 ;;; _
 (provide 'majutsu-mode)

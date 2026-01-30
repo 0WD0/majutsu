@@ -1152,10 +1152,14 @@ Customize which columns are shown in the log (ID, author, date, etc.).
 Customize the colors used for different fields in the log.
 @item @code{majutsu-log-sections-hook}
 Hook run to insert sections in the log buffer.
-@item @code{majutsu-default-display-function}
-Fallback function used to display Majutsu buffers (default: @samp{pop-to-buffer}).
-@item @code{majutsu-display-functions}
-Alist mapping buffer kinds (@samp{log}, @samp{diff}, @samp{process}, @samp{message}) to display functions.
+@item @code{majutsu-display-buffer-function}
+Magit-style display strategy for Majutsu buffers (default: @samp{majutsu-display-buffer-traditional}).
+@item @code{majutsu-pre-display-buffer-hook}
+Hook run before displaying a Majutsu buffer.
+@item @code{majutsu-post-display-buffer-hook}
+Hook run after displaying a Majutsu buffer.
+@item @code{majutsu-bury-buffer-function}
+Function used by @kbd{q} to bury or quit Majutsu buffers (default: @samp{majutsu-mode-quit-window}).
 @end table
 
 @node Diff Options

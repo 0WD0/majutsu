@@ -63,7 +63,7 @@ Instead of invoking this alias for `majutsu-log' using
   ["Essential commands"
    :if-derived majutsu-mode
    [("g" "Refresh"           majutsu-refresh)
-    ("q" "Quit"              quit-window)]
+    ("q" "Quit"              majutsu-mode-bury-buffer)]
    [("?" "Help"              transient-help)
     ("$" "Process buffer"    majutsu-process-buffer)]
    [("C-x m"    "Show all key bindings"    describe-mode)]])

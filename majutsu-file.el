@@ -192,13 +192,14 @@ ROOT is the repository root."
   (let* ((root (majutsu-file--root))
          (path (majutsu-file--relative-path root path))
          (buffer (majutsu-find-file--ensure-buffer root revset path)))
-    (funcall display-fn buffer)))
+    (funcall display-fn buffer)
+    buffer))
 
 ;;;###autoload
 (defun majutsu-find-file (revset path)
   "View PATH from REVSET in a blob buffer."
   (interactive (majutsu-find-file-read-args "Find file"))
-  (majutsu-find-file--display revset path #'pop-to-buffer))
+  (majutsu-find-file--display revset path #'pop-to-buffer-same-window))
 
 ;;;###autoload
 (defun majutsu-find-file-at-point ()
@@ -218,13 +219,6 @@ displayed in a single window."
   (if (or bury-buffer (cdr (get-buffer-window-list nil nil t)))
       (bury-buffer)
     (kill-buffer)))
-
-(defun majutsu-blob-quit ()
-  "Bury or kill the current blob buffer."
-  (interactive)
-  (unless (bound-and-true-p majutsu-blob-mode)
-    (user-error "Not in a blob buffer"))
-  (majutsu-bury-or-kill-buffer))
 
 (defun majutsu-find-file--internal (rev file fn)
   "Visit FILE from REV using FN to display the buffer.
@@ -380,7 +374,7 @@ DIRECTION should be either \='prev or \='next."
   :doc "Keymap for `majutsu-blob-mode'."
   "p" #'majutsu-blob-previous
   "n" #'majutsu-blob-next
-  "q" #'majutsu-blob-quit
+  "q" #'majutsu-bury-or-kill-buffer
   "V" #'majutsu-blob-visit-file
   "b" #'majutsu-annotate-addition
   "g" #'revert-buffer

@@ -77,7 +77,7 @@ When nil, do not override whatever `auto-mode-alist' selects."
 (add-to-list 'with-editor-file-name-history-exclude majutsu-jjdescription-regexp)
 
 (add-to-list 'with-editor-server-window-alist
-             (cons majutsu-jjdescription-regexp (majutsu-display-function 'message)))
+             (cons majutsu-jjdescription-regexp #'switch-to-buffer))
 
 (add-hook 'with-editor-filter-visit-hook #'majutsu--with-editor--apply-visit)
 (add-hook 'server-visit-hook #'majutsu--with-editor--apply-visit)
@@ -488,7 +488,7 @@ when a JJ description file is opened."
       (with-selected-window window
         (switch-to-buffer buffer)))
      ((buffer-live-p buffer)
-      (majutsu-display-buffer buffer 'message))))
+      (majutsu-display-buffer buffer))))
   (remove-hook 'with-editor-post-finish-hook #'majutsu--with-editor--restore-context t)
   (remove-hook 'with-editor-post-cancel-hook #'majutsu--with-editor--restore-context t))
 

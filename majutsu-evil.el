@@ -160,7 +160,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-blob-mode-map
     (kbd "p") #'majutsu-blob-previous
     (kbd "n") #'majutsu-blob-next
-    (kbd "q") #'majutsu-blob-quit
+    (kbd "q") #'majutsu-bury-or-kill-buffer
     (kbd "b") #'majutsu-annotate-addition
     ;; RET visits the revision (edit)
     (kbd "RET") #'majutsu-edit-changeset)
