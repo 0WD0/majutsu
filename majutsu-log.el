@@ -806,13 +806,16 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 ;;; Log insert status
 
+(defun majutsu-log--wash-status (_args)
+  "Keep `jj status` output as-is in the current section."
+  (goto-char (point-max)))
+
+;; TODO: Enhance status output parsing to create sections per file and conflicts.
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
-  (let ((status-output (majutsu-jj-string "status")))
-    (when (and status-output (not (string-empty-p status-output)))
-      (magit-insert-section (status)
-        (magit-insert-heading "Working Copy Status")
-        (insert status-output)))))
+  (magit-insert-section (status)
+    (magit-insert-heading "Working Copy Status")
+    (majutsu-jj-wash #'majutsu-log--wash-status nil "status")))
 
 ;;; Log insert conflicts
 
