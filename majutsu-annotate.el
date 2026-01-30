@@ -442,6 +442,12 @@ Returns a list of `majutsu-annotate-chunk' structures."
 
 ;;; Commands
 
+(defun majutsu-annotate--file-exists-p (rev file)
+  "Check if FILE exists in REV."
+  (let ((output (ansi-color-apply (majutsu-jj-string "file" "list" "-r" rev file))))
+    ;; jj outputs "Warning: No matching entries..." when file doesn't exist
+    (not (string-prefix-p "Warning:" output))))
+
 ;;;###autoload
 (defun majutsu-annotate-addition (&optional revision)
   "Annotate the current file showing when each line was added.
@@ -456,12 +462,14 @@ that has a parent revision, then recursively annotate the parent."
   (if (and majutsu-annotate-mode
            (when-let* ((chunk (majutsu-annotate-chunk-at (point)))
                        (prev-rev (majutsu-annotate-chunk-prev-rev chunk)))
-             ;; Recursive blame - visit parent
+             ;; Recursive blame - visit parent and re-annotate
              (let ((style majutsu-annotate--style))
                (majutsu-annotate-visit-other-file)
                (setq-local majutsu-annotate--style style)
                (setq-local majutsu-annotate-recursive-p t)
                (redisplay)
+               ;; Now run annotation in the new buffer
+               (majutsu-annotate--run nil)
                t)))
       nil  ; Already handled recursive case
     (majutsu-annotate--run revision)))
@@ -515,6 +523,9 @@ that has a parent revision, then recursively annotate the parent."
     (let ((file (or (bound-and-true-p majutsu-buffer-blob-path)
                     (and buffer-file-name
                          (file-relative-name buffer-file-name (majutsu-toplevel))))))
+      ;; Check if file exists in parent revision
+      (unless (majutsu-annotate--file-exists-p prev-rev file)
+        (user-error "File does not exist in revision %s" prev-rev))
       (majutsu-find-file prev-rev file)
       ;; Jump to original line
       (goto-char (point-min))
