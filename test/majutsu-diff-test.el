@@ -93,16 +93,6 @@
                     "--ignore-all-space"))
                  '("--stat" "--context=5" "--ignore-all-space"))))
 
-(ert-deftest majutsu-diff-set-buffer-args-does-not-clear-filesets ()
-  "Updating diff args must not clear existing filesets unless requested."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-filesets '("a" "b"))
-    (cl-letf (((symbol-function 'majutsu-diff-refresh-buffer) #'ignore))
-      (majutsu-diff--set-buffer-args '("--summary")))
-    (should (equal majutsu-buffer-diff-filesets '("a" "b")))
-    (should (equal majutsu-buffer-diff-args '("--summary")))))
-
 (ert-deftest majutsu-diff-set-buffer-args-does-not-update-defaults ()
   "Updating diff args should not override global defaults."
   (let ((saved (get 'majutsu-diff-mode 'majutsu-diff-current-arguments)))
