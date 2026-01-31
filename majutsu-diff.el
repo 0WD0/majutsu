@@ -22,6 +22,7 @@
 (require 'majutsu-selection)
 (require 'majutsu-section)
 (require 'majutsu-file)
+(require 'majutsu-conflict)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -200,10 +201,12 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 (defclass majutsu-diff--toggle-range-option (majutsu-selection-toggle-option) ())
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
-  (pcase-let ((`(,args ,range ,_filesets)
+  (pcase-let ((`(,args ,range ,filesets)
                (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
     (oset obj value
-          (append range args))))
+          (if filesets
+              `(("--" ,@filesets) ,@range ,@args)
+            (append range args)))))
 
 (cl-defmethod transient-prefix-value ((obj majutsu-diff-prefix))
   "Return (ARGS RANGE FILESETS) for the Majutsu diff transient.
@@ -214,14 +217,7 @@ list of filesets (path filters)."
   (let* ((raw (cl-call-next-method obj))
          (args (majutsu-diff--remembered-args raw))
          (range (majutsu-diff--extract-range-args raw))
-         (mode (or (oref obj major-mode) major-mode))
-         (filesets
-          (cond
-           ((buffer-live-p (majutsu-diff--transient-original-buffer))
-            (buffer-local-value 'majutsu-buffer-diff-filesets
-                                (majutsu-diff--transient-original-buffer)))
-           (t
-            (nth 2 (majutsu-diff--get-value mode 'direct))))))
+         (filesets (cdr (assoc "--" raw))))
     (list args range filesets)))
 
 (cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
@@ -627,7 +623,7 @@ When SECTION is nil, walk all hunk sections."
                             (oref section end)
                             'diff-mode 'fine))))
     (cl-labels ((walk (node)
-                  (if (magit-section-match 'majutsu-hunk-section node)
+                  (if (magit-section-match 'jj-hunk node)
                       (majutsu-diff--update-hunk-refinement node t)
                     (dolist (child (oref node children))
                       (walk child)))))
@@ -674,10 +670,6 @@ works with the simplified jj diff we render here."
 
 ;;; Navigation
 
-(defun majutsu-diff--file-at-point ()
-  "Return the file for the current diff/diffstat section, if any."
-  (majutsu-section-file-at-point))
-
 (defun majutsu-goto-diff-line ()
   "Jump to the line in the file corresponding to the diff line at point."
   (interactive)
@@ -722,7 +714,7 @@ works with the simplified jj diff we render here."
 (defun majutsu-visit-file ()
   "Visit the file at point."
   (interactive)
-  (when-let* ((file (majutsu-diff--file-at-point)))
+  (when-let* ((file (majutsu-section-file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
 (defun majutsu-diff--range-value (range prefix)
@@ -816,14 +808,14 @@ With prefix argument FORCE-WORKSPACE, always visit the workspace file
 regardless of what the diff is about."
   (interactive "P")
   (let* ((section (magit-current-section))
-         (file (majutsu-diff--file-at-point)))
+         (file (majutsu-section-file-at-point)))
     (unless file
       (user-error "No file at point"))
     (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
                            (majutsu-diff--on-removed-line-p)))
            (goto-workspace (or force-workspace
-                              (and (majutsu-diff--visit-workspace-p)
-                                   (not goto-from))))
+                               (and (majutsu-diff--visit-workspace-p)
+                                    (not goto-from))))
            (line (and section (magit-section-match 'jj-hunk section)
                       (majutsu-diff--hunk-line section goto-from)))
            (col (and section (magit-section-match 'jj-hunk section)
@@ -861,159 +853,48 @@ what the diff is about."
   (interactive)
   (majutsu-diff-visit-file t))
 
+;;;###autoload
+(defun majutsu-diff-resolve-conflict ()
+  "Visit the workspace file and jump to its conflict markers.
+
+Enable `majutsu-conflict-mode' for JJ markers or `smerge-mode' for
+Git-style markers."
+  (interactive)
+  (let ((file (majutsu-section-file-at-point)))
+    (unless file
+      (user-error "No file at point"))
+    (majutsu-diff-visit-file t)
+    (majutsu-conflict-ensure-mode)
+    (cond
+     (majutsu-conflict-mode
+      (majutsu-conflict-goto-nearest)
+      (when diff-refine
+        (ignore-errors (majutsu-conflict-refine))))
+     (smerge-mode
+      (condition-case nil
+          (smerge-match-conflict)
+        (error
+         (smerge-next)))))
+    (message "Use C-c ^ commands to resolve conflicts.")))
+
 (defvar-keymap majutsu-file-section-map
   :doc "Keymap for `jj-file' sections."
   :parent majutsu-diff-section-map
   "v" #'majutsu-find-file-at-point)
 
+(defvar-keymap majutsu-hunk-section-conflict-map
+  :doc "Keymap bound to `smerge-command-prefix' in `majutsu-hunk-section-map'."
+  "RET" #'majutsu-diff-resolve-conflict)
+
 (defvar-keymap majutsu-hunk-section-map
   :doc "Keymap for `jj-hunk' sections."
   :parent majutsu-diff-section-map)
 
-;;; Diff Edit
-
-;;;###autoload
-(defun majutsu-diffedit-emacs ()
-  "Emacs-based diffedit using built-in ediff."
-  (interactive)
-  (let* ((file (majutsu-diff--file-at-point)))
-    (if file
-        (majutsu-diffedit-with-ediff file)
-      (majutsu-diffedit-all))))
-
-(defun majutsu-diffedit-with-ediff (file)
-  "Open ediff session for a specific file against parent."
-  (let* ((repo-root default-directory)
-         (full-file-path (expand-file-name file repo-root))
-         (file-ext (file-name-extension file))
-         (parent-temp-file (make-temp-file (format "majutsu-parent-%s" (file-name-nondirectory file))
-                                           nil (when file-ext (concat "." file-ext))))
-         (parent-content (let ((default-directory repo-root))
-                           (majutsu-jj-string "file" "show" "-r" "@-" file))))
-
-    ;; Write parent content to temp file
-    (with-temp-file parent-temp-file
-      (insert parent-content)
-      ;; Enable proper major mode for syntax highlighting
-      (when file-ext
-        (let ((mode (assoc-default (concat "." file-ext) auto-mode-alist 'string-match)))
-          (when mode
-            (funcall mode)))))
-
-    ;; Set up cleanup
-    (add-hook 'ediff-quit-hook
-              (lambda ()
-                (when (file-exists-p parent-temp-file)
-                  (delete-file parent-temp-file))
-                (majutsu-refresh))
-              nil t)
-
-    ;; Start ediff session
-    (ediff-files parent-temp-file full-file-path)
-    (message "Ediff: Left=Parent (@-), Right=Current (@). Edit right side, then 'q' to quit and save.")))
-
-(defvar-local majutsu-smerge-file nil
-  "File being merged in smerge session.")
-
-(defvar-local majutsu-smerge-repo-root nil
-  "Repository root for smerge session.")
-
-;;;###autoload
-(defun majutsu-diffedit-smerge ()
-  "Emacs-based diffedit using smerge-mode (merge conflict style)."
-  (interactive)
-  (let* ((file (majutsu-diff--file-at-point)))
-    (if file
-        (majutsu-diffedit-with-smerge file)
-      (majutsu-diffedit-all))))
-
-(defun majutsu-diffedit-with-smerge (file)
-  "Open smerge-mode session for a specific file."
-  (let* ((repo-root default-directory)
-         (full-file-path (expand-file-name file repo-root))
-         (parent-content (let ((default-directory repo-root))
-                           (majutsu-jj-string "file" "show" "-r" "@-" file)))
-         (current-content (if (file-exists-p full-file-path)
-                              (with-temp-buffer
-                                (insert-file-contents full-file-path)
-                                (buffer-string))
-                            ""))
-         (merge-buffer (get-buffer-create (format "*majutsu-smerge-%s*" (file-name-nondirectory file)))))
-
-    (with-current-buffer merge-buffer
-      (erase-buffer)
-
-      ;; Create merge-conflict format
-      (insert "<<<<<<< Parent (@-)\n")
-      (insert parent-content)
-      (unless (string-suffix-p "\n" parent-content)
-        (insert "\n"))
-      (insert "=======\n")
-      (insert current-content)
-      (unless (string-suffix-p "\n" current-content)
-        (insert "\n"))
-      (insert ">>>>>>> Current (@)\n")
-
-      ;; Enable smerge-mode
-      (smerge-mode 1)
-      (setq-local majutsu-smerge-file file)
-      (setq-local majutsu-smerge-repo-root repo-root)
-
-      ;; Add save hook
-      (add-hook 'after-save-hook 'majutsu-smerge-apply-changes nil t)
-
-      (goto-char (point-min)))
-
-    (switch-to-buffer-other-window merge-buffer)
-    (message "SMerge mode: Use C-c ^ commands to navigate/resolve conflicts, then save to apply.")))
-
-(defun majutsu-smerge-apply-changes ()
-  "Apply smerge changes to the original file."
-  (when (and (boundp 'majutsu-smerge-file) majutsu-smerge-file)
-    (let* ((file majutsu-smerge-file)
-           (repo-root majutsu-smerge-repo-root)
-           (full-file-path (expand-file-name file repo-root))
-           (content (buffer-string)))
-
-      ;; Only apply if no conflict markers remain
-      (unless (or (string-match "^<<<<<<<" content)
-                  (string-match "^=======" content)
-                  (string-match "^>>>>>>>" content))
-        (with-temp-file full-file-path
-          (insert content))
-        (majutsu-refresh)
-        (message "Changes applied to %s" file)))))
-
-(defun majutsu-diffedit-all ()
-  "Open diffedit interface for all changes."
-  (let* ((changed-files (majutsu--get-changed-files))
-         (choice (if (= (length changed-files) 1)
-                     (car changed-files)
-                   (majutsu-completing-read "Edit file" changed-files))))
-    (when choice
-      (majutsu-diffedit-with-ediff choice))))
-
-(defun majutsu--get-changed-files ()
-  "Get list of files with changes in working copy."
-  (let ((diff-output (majutsu-jj-string "diff" "--name-only")))
-    (split-string diff-output "\n" t)))
+(let ((key (key-description smerge-command-prefix)))
+  (when (key-valid-p key)
+    (keymap-set majutsu-hunk-section-map key majutsu-hunk-section-conflict-map)))
 
 ;;; Diff Commands
-
-(defun majutsu-diff-clear-selections ()
-  "Clear all diff selections."
-  (interactive)
-  (majutsu-selection-clear 'from)
-  (majutsu-selection-clear 'to)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-diff--range-option)
-                 (memq (oref obj selection-key) '(from to)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (when (called-interactively-p 'interactive)
-    (message "Cleared diff selections")))
 
 (defun majutsu-diff-less-context (&optional count)
   "Decrease the context for diff hunks by COUNT lines."
@@ -1065,7 +946,7 @@ With prefix STYLE, cycle between `all' and `t'."
   "0" #'majutsu-diff-default-context
   "j" #'majutsu-jump-to-diffstat-or-diff)
 
-(define-derived-mode majutsu-diff-mode majutsu-mode "JJ Diff"
+(define-derived-mode majutsu-diff-mode majutsu-mode "Majutsu Diff"
   "Major mode for viewing jj diffs."
   :group 'majutsu
   (setq-local line-number-mode nil)
@@ -1152,9 +1033,12 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-r)
     (majutsu-diff:--from)
     (majutsu-diff:--to)
+    (majutsu-diff:revisions)
     (majutsu-diff:from)
     (majutsu-diff:to)
-    ("c" "Clear selections" majutsu-diff-clear-selections :transient t)]
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
+   ["Paths"
+    (majutsu-diff:--)]
    ["Options"
     (majutsu-diff:--git)
     (majutsu-diff:--stat)
@@ -1199,6 +1083,15 @@ REVSET is passed to jj diff using `--revisions='."
   :argument "--context="
   :reader #'transient-read-number-N0)
 
+(transient-define-argument majutsu-diff:-- ()
+  :description "Limit to files"
+  :class 'transient-files
+  :key "--"
+  :argument "--"
+  :prompt "Limit to file,s: "
+  :reader #'majutsu-read-files
+  :multi-value t)
+
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
   :class 'transient-option
@@ -1206,6 +1099,18 @@ REVSET is passed to jj diff using `--revisions='."
   :argument "--revisions="
   :multi-value 'repeat
   :prompt "Revisions: ")
+
+(transient-define-argument majutsu-diff:revisions ()
+  :description "Revisions (toggle at point)"
+  :class 'majutsu-diff--toggle-range-option
+  :selection-key 'revisions
+  :selection-label "[REVS]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-type 'multi
+  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :key "r"
+  :argument "--revisions="
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-diff:--from ()
   :description "From"

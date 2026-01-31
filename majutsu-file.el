@@ -73,6 +73,22 @@ Results are cached in `majutsu-file--list-cache`."
         (push (cons cache-key paths) majutsu-file--list-cache)
         paths))))
 
+(defun majutsu-file-list (&optional revset)
+  "Return list of file paths for REVSET (default \"@\")."
+  (majutsu-file--list (or revset "@") (majutsu-file--root)))
+
+(defun majutsu-read-files (prompt initial-input history &optional list-fn)
+  "Read multiple files with completion.
+PROMPT, INITIAL-INPUT, HISTORY are standard reader args.
+LIST-FN defaults to `majutsu-file-list'."
+  (let ((root (majutsu-file--root)))
+    (majutsu-completing-read-multiple
+     prompt
+     (funcall (or list-fn #'majutsu-file-list))
+     nil nil
+     (or initial-input (majutsu-file--path-at-point root))
+     history)))
+
 (defun majutsu-file--show (revset path root)
   "Return file contents for REVSET and PATH in ROOT as a string."
   (let ((default-directory root))
@@ -93,7 +109,7 @@ Results are cached in `majutsu-file--list-cache`."
 (defun majutsu-file--path-at-point (root)
   "Return path from context or nil."
   (or (magit-section-value-if 'jj-file)
-      (majutsu-diff--file-at-point)
+      (majutsu-section-file-at-point)
       (when-let* ((file buffer-file-name))
         (majutsu-file--relative-path root file))))
 
@@ -233,6 +249,7 @@ displayed in a single window."
                                 majutsu-buffer-blob-root)))
     (find-file file)))
 
+;; TODO: move path condition to majutsu-file-*-change
 (defun majutsu-file--revset-for-files (revset path direction)
   "Build a revset for PATH and DIRECTION relative to REVSET.
 DIRECTION should be either \='prev or \='next."

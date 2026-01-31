@@ -79,6 +79,16 @@ a jj-commit section, add --revision from that section."
   :argument "--revision="
   :reader #'majutsu-diff--transient-read-revset)
 
+(transient-define-argument majutsu-squash:revision ()
+  :description "Revision (toggle at point)"
+  :class 'majutsu-squash--toggle-option
+  :selection-key 'revision
+  :selection-label "[REV]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-type 'single
+  :key "r"
+  :argument "--revision=")
+
 (transient-define-argument majutsu-squash:--from ()
   :description "From"
   :class 'majutsu-squash-option
@@ -190,19 +200,6 @@ a jj-commit section, add --revision from that section."
   :argument "--insert-before="
   :multi-value 'repeat)
 
-(defun majutsu-squash-clear-selections ()
-  "Clear all squash selections."
-  (interactive)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-squash-option)
-                 (memq (oref obj selection-key) '(revision from into onto after before)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (majutsu-selection-render)
-  (message "Cleared all squash selections"))
-
 ;;;; Prefix
 
 (transient-define-prefix majutsu-squash ()
@@ -221,12 +218,13 @@ a jj-commit section, add --revision from that section."
     (majutsu-squash:--onto)
     (majutsu-squash:--insert-after)
     (majutsu-squash:--insert-before)
+    (majutsu-squash:revision)
     (majutsu-squash:from)
     (majutsu-squash:into)
     (majutsu-squash:onto)
     (majutsu-squash:insert-after)
     (majutsu-squash:insert-before)
-    ("c" "Clear selections" majutsu-squash-clear-selections :transient t)]
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
