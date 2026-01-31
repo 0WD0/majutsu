@@ -465,11 +465,7 @@ Process output goes into a new section in the buffer returned by
 
 (defun majutsu-run-jj-with-editor (&rest args)
   "Run JJ ARGS using with-editor."
-  (let* ((origin-window (selected-window))
-         (origin-buffer (current-buffer))
-         (visit-hook (majutsu--with-editor--visit-hook origin-window origin-buffer)))
-    (majutsu--with-editor--queue-visit visit-hook)
-    (majutsu-with-editor (apply #'majutsu-run-jj-async args))))
+  (majutsu-with-editor (apply #'majutsu-run-jj-async args)))
 
 ;;; _
 (provide 'majutsu-process)

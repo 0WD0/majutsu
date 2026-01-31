@@ -65,6 +65,7 @@
   "Summary line should use `git-commit-summary`."
   (with-temp-buffer
     (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
     (majutsu-jjdescription-setup)
     (font-lock-ensure)
@@ -75,6 +76,7 @@
   "Summary highlighting should move to the new first line."
   (with-temp-buffer
     (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert "Initial summary\n\nJJ: note\n")
     (majutsu-jjdescription-setup)
     (font-lock-ensure)
@@ -92,6 +94,7 @@
   "JJ comment lines should be highlighted with comment faces."
   (with-temp-buffer
     (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
     (majutsu-jjdescription-setup)
     (font-lock-ensure)
@@ -118,6 +121,7 @@
   "Text after ignore-rest should be highlighted as comment."
   (with-temp-buffer
     (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
     (majutsu-jjdescription-setup)
     (font-lock-ensure)
@@ -130,6 +134,7 @@
   "Summary highlighting should not appear after ignore-rest."
   (with-temp-buffer
     (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert "JJ: ignore-rest\nAfter should be comment\n")
     (majutsu-jjdescription-setup)
     (font-lock-ensure)
@@ -144,6 +149,7 @@
   "Ignore-rest prefix stays comment while directive is keyword."
   (with-temp-buffer
     (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
     (majutsu-jjdescription-setup)
     (font-lock-ensure)
