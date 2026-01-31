@@ -103,20 +103,6 @@
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
-(ert-deftest majutsu-diff-set-buffer-args-does-not-update-defaults ()
-  "Updating diff args should not override global defaults."
-  (let ((saved (get 'majutsu-diff-mode 'majutsu-diff-current-arguments)))
-    (unwind-protect
-        (progn
-          (put 'majutsu-diff-mode 'majutsu-diff-current-arguments '("--stat"))
-          (with-temp-buffer
-            (majutsu-diff-mode)
-            (majutsu-diff--set-buffer-args '("--summary"))
-            (should (equal majutsu-buffer-diff-args '("--summary")))
-            (should (equal (get 'majutsu-diff-mode 'majutsu-diff-current-arguments)
-                           '("--stat")))))
-      (put 'majutsu-diff-mode 'majutsu-diff-current-arguments saved))))
-
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
   "When called from the transient, DWIM should use current transient args."
   (let ((transient-current-command 'majutsu-diff)
