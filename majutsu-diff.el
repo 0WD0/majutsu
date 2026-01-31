@@ -36,13 +36,14 @@
   :group 'majutsu-diff
   :type 'hook)
 
-(defcustom majutsu-diff-refine-hunk t
+(defcustom majutsu-diff-refine-hunk nil
   "Whether to show word-granularity differences inside hunks.
 
 `nil'  Never show refinement.
 `all'  Refine all hunks immediately.
-`t'    Refine the current hunk when it becomes selected; keep the
-       overlays until the buffer is refreshed."
+`t'    Refine each hunk once it becomes the current section and keep the
+       refinement when another section is selected.  This variant exists
+       for performance reasons."
   :group 'majutsu
   :type '(choice (const :tag "No refinement" nil)
           (const :tag "Immediately refine all hunks" all)
@@ -92,7 +93,6 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
 
-(defvar-local majutsu-diff--last-refined-section nil)
 (defvar-local majutsu-diff--paint-whitespace-enabled t)
 (defvar-local majutsu-diff--inserted-bytes 0)
 
@@ -643,12 +643,7 @@ When SECTION is nil, walk all hunk sections."
 
 (cl-defmethod magit-section--refine ((section majutsu-hunk-section))
   (when (eq majutsu-diff-refine-hunk t)
-    ;; Clear previous refined hunk when moving focus.
-    (when (and majutsu-diff--last-refined-section
-               (not (eq majutsu-diff--last-refined-section section)))
-      (majutsu-diff--update-hunk-refinement majutsu-diff--last-refined-section t))
-    (majutsu-diff--update-hunk-refinement section)
-    (setq majutsu-diff--last-refined-section section)))
+    (majutsu-diff--update-hunk-refinement section)))
 
 (cl-defmethod magit-section-paint ((section majutsu-hunk-section) highlight)
   "Paint a hunk so focus highlighting behaves like Magit.
@@ -684,15 +679,6 @@ works with the simplified jj diff we render here."
                              'font-lock-face face))
         (forward-line))))
   (oset section painted (if highlight 'highlight 'plain)))
-
-(defun majutsu-diff--maybe-clear-refinement ()
-  "When leaving a hunk in `t' mode, drop old refinement overlays."
-  (when (and (eq majutsu-diff-refine-hunk t)
-             majutsu-diff--last-refined-section
-             (not (magit-section-match 'majutsu-hunk-section
-                                       (magit-current-section))))
-    (majutsu-diff--update-hunk-refinement majutsu-diff--last-refined-section t)
-    (setq majutsu-diff--last-refined-section nil)))
 
 ;;; Navigation
 
@@ -961,19 +947,7 @@ With prefix STYLE, cycle between `all' and `t'."
               (if style
                   (if (eq majutsu-diff-refine-hunk 'all) t 'all)
                 (not majutsu-diff-refine-hunk)))
-  (pcase majutsu-diff-refine-hunk
-    ('all
-     (setq majutsu-diff--last-refined-section nil)
-     (majutsu-diff--update-hunk-refinement))
-    ('t
-     (majutsu-diff--maybe-clear-refinement)
-     (let ((cur (magit-current-section)))
-       (when (magit-section-match 'majutsu-hunk-section cur)
-         (majutsu-diff--update-hunk-refinement cur)
-         (setq majutsu-diff--last-refined-section cur))))
-    (_
-     (majutsu-diff--update-hunk-refinement nil t)
-     (setq majutsu-diff--last-refined-section nil))))
+  (majutsu-diff--update-hunk-refinement))
 
 (defvar-keymap majutsu-diff-mode-map
   :doc "Keymap for `majutsu-diff-mode'."
@@ -992,8 +966,7 @@ With prefix STYLE, cycle between `all' and `t'."
   ;; `font-lock-face' properties applied during the washing process.
   ;; We set this to enable JIT Lock, which renders our `font-lock-face' properties.
   (setq-local font-lock-defaults '(diff-font-lock-keywords t))
-  (setq-local font-lock-multiline t)
-  (add-hook 'post-command-hook #'majutsu-diff--maybe-clear-refinement nil t))
+  (setq-local font-lock-multiline t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-diff-mode))
   (list majutsu-buffer-diff-args

@@ -124,6 +124,34 @@
       (should (equal called-files nil))
       (should (equal called-range '("--revisions=abc123"))))))
 
+(ert-deftest majutsu-diff-refine-hunk-default-disabled ()
+  "Diff refinement should be disabled by default."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (should-not majutsu-diff-refine-hunk)))
+
+(ert-deftest majutsu-diff-toggle-refine-hunk-updates ()
+  "Toggling refinement should update local state and trigger refresh."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (let ((calls 0))
+      (cl-letf (((symbol-function 'majutsu-diff--update-hunk-refinement)
+                 (lambda (&rest _)
+                   (setq calls (1+ calls)))))
+        (should-not majutsu-diff-refine-hunk)
+        (majutsu-diff-toggle-refine-hunk nil)
+        (should (eq majutsu-diff-refine-hunk t))
+        (should (= calls 1))
+        (majutsu-diff-toggle-refine-hunk t)
+        (should (eq majutsu-diff-refine-hunk 'all))
+        (should (= calls 2))
+        (majutsu-diff-toggle-refine-hunk t)
+        (should (eq majutsu-diff-refine-hunk t))
+        (should (= calls 3))
+        (majutsu-diff-toggle-refine-hunk nil)
+        (should-not majutsu-diff-refine-hunk)
+        (should (= calls 4))))))
+
 (provide 'majutsu-diff-test)
 
 ;;; majutsu-diff-test.el ends here
