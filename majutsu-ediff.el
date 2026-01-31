@@ -382,7 +382,10 @@ Blocks until user finishes editing and quits ediff."
 
 (transient-define-argument majutsu-ediff:-r ()
   :description "Revisions"
-  :class 'transient-option
+  :class 'majutsu-selection-option
+  :selection-label "[REVS]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
@@ -390,23 +393,16 @@ Blocks until user finishes editing and quits ediff."
 
 (transient-define-argument majutsu-ediff:revisions ()
   :description "Revisions (toggle at point)"
-  :class 'majutsu-diff--toggle-range-option
-  :selection-key 'revisions
-  :selection-label "[REVS]"
-  :selection-face '(:background "goldenrod" :foreground "black")
-  :selection-type 'multi
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :class 'majutsu-selection-toggle-option
   :key "r"
   :argument "--revisions="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-ediff:--from ()
   :description "From"
-  :class 'majutsu-diff--range-option
-  :selection-key 'from
+  :class 'majutsu-selection-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-f"
   :argument "--from="
@@ -414,11 +410,9 @@ Blocks until user finishes editing and quits ediff."
 
 (transient-define-argument majutsu-ediff:--to ()
   :description "To"
-  :class 'majutsu-diff--range-option
-  :selection-key 'to
+  :class 'majutsu-selection-option
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-t"
   :argument "--to="
@@ -426,19 +420,13 @@ Blocks until user finishes editing and quits ediff."
 
 (transient-define-argument majutsu-ediff:from ()
   :description "From (toggle at point)"
-  :class 'majutsu-diff--toggle-range-option
-  :selection-key 'from
-  :selection-type 'single
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :class 'majutsu-selection-toggle-option
   :key "f"
   :argument "--from=")
 
 (transient-define-argument majutsu-ediff:to ()
   :description "To (toggle at point)"
-  :class 'majutsu-diff--toggle-range-option
-  :selection-key 'to
-  :selection-type 'single
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :class 'majutsu-selection-toggle-option
   :key "t"
   :argument "--to=")
 

@@ -20,7 +20,7 @@
 (require 'majutsu-interactive)
 
 (defclass majutsu-split-option (majutsu-selection-option)
-  ((selection-key :initarg :selection-key :initform nil)))
+  ())
 
 (defclass majutsu-split--toggle-option (majutsu-selection-toggle-option)
   ())
@@ -61,10 +61,8 @@
 (transient-define-argument majutsu-split:--revision ()
   :description "Revision"
   :class 'majutsu-split-option
-  :selection-key 'revision
   :selection-label "[REV]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :selection-type 'single
   :key "-r"
   :argument "--revision="
   :reader #'majutsu-diff--transient-read-revset)
@@ -72,10 +70,8 @@
 (transient-define-argument majutsu-split:--onto ()
   :description "Onto"
   :class 'majutsu-split-option
-  :selection-key 'onto
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
-  :selection-type 'multi
   :key "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -84,10 +80,8 @@
 (transient-define-argument majutsu-split:--insert-after ()
   :description "Insert after"
   :class 'majutsu-split-option
-  :selection-key 'after
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :selection-type 'multi
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -96,10 +90,8 @@
 (transient-define-argument majutsu-split:--insert-before ()
   :description "Insert before"
   :class 'majutsu-split-option
-  :selection-key 'before
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :selection-type 'multi
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
@@ -114,16 +106,12 @@
 (transient-define-argument majutsu-split:revision ()
   :description "Revision (toggle at point)"
   :class 'majutsu-split--toggle-option
-  :selection-key 'revision
-  :selection-type 'single
   :key "r"
   :argument "--revision=")
 
 (transient-define-argument majutsu-split:onto ()
   :description "Onto (toggle at point)"
   :class 'majutsu-split--toggle-option
-  :selection-key 'onto
-  :selection-type 'multi
   :key "o"
   :argument "--onto="
   :multi-value 'repeat)
@@ -131,8 +119,6 @@
 (transient-define-argument majutsu-split:insert-after ()
   :description "Insert after (toggle at point)"
   :class 'majutsu-split--toggle-option
-  :selection-key 'after
-  :selection-type 'multi
   :key "a"
   :argument "--insert-after="
   :multi-value 'repeat)
@@ -140,8 +126,6 @@
 (transient-define-argument majutsu-split:insert-before ()
   :description "Insert before (toggle at point)"
   :class 'majutsu-split--toggle-option
-  :selection-key 'before
-  :selection-type 'multi
   :key "b"
   :argument "--insert-before="
   :multi-value 'repeat)

@@ -21,7 +21,7 @@
 (defvar majutsu-buffer-blob-path)
 
 (defclass majutsu-new-option (majutsu-selection-option)
-  ((selection-key :initarg :selection-key :initform nil)))
+  ())
 
 (defclass majutsu-new--toggle-option (majutsu-selection-toggle-option)
   ())
@@ -74,10 +74,8 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new:-r ()
   :description "Parent"
   :class 'majutsu-new-option
-  :selection-key 'parent
   :selection-label "[PARENT]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :selection-type 'multi
   :key "-r"
   :argument "-r"
   :multi-value 'repeat
@@ -86,10 +84,8 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new:--after ()
   :description "After"
   :class 'majutsu-new-option
-  :selection-key 'after
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :selection-type 'multi
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -98,10 +94,8 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new:--before ()
   :description "Before"
   :class 'majutsu-new-option
-  :selection-key 'before
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :selection-type 'multi
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
@@ -110,8 +104,6 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new:parent ()
   :description "Parent (toggle at point)"
   :class 'majutsu-new--toggle-option
-  :selection-key 'parent
-  :selection-type 'multi
   :key "r"
   :argument "-r"
   :multi-value 'repeat)
@@ -119,8 +111,6 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new:after ()
   :description "After (toggle at point)"
   :class 'majutsu-new--toggle-option
-  :selection-key 'after
-  :selection-type 'multi
   :key "a"
   :argument "--insert-after="
   :multi-value 'repeat)
@@ -128,8 +118,6 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new:before ()
   :description "Before (toggle at point)"
   :class 'majutsu-new--toggle-option
-  :selection-key 'before
-  :selection-type 'multi
   :key "b"
   :argument "--insert-before="
   :multi-value 'repeat)
@@ -183,15 +171,15 @@ a jj-commit section, add -r from that section."
 (defun majutsu-new--selection-summary ()
   "Return a list summarizing the current jj new selections."
   (let (parts)
-    (when-let* ((values (majutsu-selection-values 'parent)))
+    (when-let* ((values (majutsu-selection-values "-r")))
       (push (format "Parents: %s"
                     (string-join values ", "))
             parts))
-    (when-let* ((values (majutsu-selection-values 'after)))
+    (when-let* ((values (majutsu-selection-values "--insert-after=")))
       (push (format "After: %s"
                     (string-join values ", "))
             parts))
-    (when-let* ((values (majutsu-selection-values 'before)))
+    (when-let* ((values (majutsu-selection-values "--insert-before=")))
       (push (format "Before: %s"
                     (string-join values ", "))
             parts))

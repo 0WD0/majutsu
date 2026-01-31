@@ -21,7 +21,7 @@
 (require 'majutsu-section)
 
 (defclass majutsu-restore-option (majutsu-selection-option)
-  ((selection-key :initarg :selection-key :initform nil)))
+  ())
 
 (defclass majutsu-restore--toggle-option (majutsu-selection-toggle-option)
   ())
@@ -92,10 +92,8 @@ In diff buffer on a file section, restore only that file."
 (transient-define-argument majutsu-restore:--from ()
   :description "From"
   :class 'majutsu-restore-option
-  :selection-key 'from
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :selection-type 'single
   :key "-f"
   :argument "--from="
   :reader #'majutsu-diff--transient-read-revset)
@@ -103,10 +101,8 @@ In diff buffer on a file section, restore only that file."
 (transient-define-argument majutsu-restore:--to ()
   :description "To"
   :class 'majutsu-restore-option
-  :selection-key 'to
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :selection-type 'single
   :key "-t"
   :argument "--to="
   :reader #'majutsu-diff--transient-read-revset)
@@ -114,10 +110,8 @@ In diff buffer on a file section, restore only that file."
 (transient-define-argument majutsu-restore:--changes-in ()
   :description "Changes in"
   :class 'majutsu-restore-option
-  :selection-key 'changes-in
   :selection-label "[CHANGES-IN]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :selection-type 'single
   :key "-c"
   :argument "--changes-in="
   :reader #'majutsu-diff--transient-read-revset)
@@ -125,24 +119,18 @@ In diff buffer on a file section, restore only that file."
 (transient-define-argument majutsu-restore:from ()
   :description "From (toggle at point)"
   :class 'majutsu-restore--toggle-option
-  :selection-key 'from
-  :selection-type 'single
   :key "f"
   :argument "--from=")
 
 (transient-define-argument majutsu-restore:to ()
   :description "To (toggle at point)"
   :class 'majutsu-restore--toggle-option
-  :selection-key 'to
-  :selection-type 'single
   :key "t"
   :argument "--to=")
 
 (transient-define-argument majutsu-restore:changes-in ()
   :description "Changes-in (toggle at point)"
   :class 'majutsu-restore--toggle-option
-  :selection-key 'changes-in
-  :selection-type 'single
   :key "c"
   :argument "--changes-in=")
 

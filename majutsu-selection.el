@@ -18,12 +18,12 @@
 (require 'transient)
 
 (defclass majutsu-selection-option (transient-option)
-  ((selection-key   :initarg :selection-key   :initform nil)
-   (selection-label :initarg :selection-label :initform nil)
+  ((selection-label :initarg :selection-label :initform nil)
    (selection-face  :initarg :selection-face  :initform nil)
-   (selection-type  :initarg :selection-type  :initform 'multi)
-   (locate-fn       :initarg :locate-fn       :initform nil)
-   (targets-fn      :initarg :targets-fn      :initform nil))
+   (locate-fn       :initarg :locate-fn       :initform nil
+                    :documentation "Resolve a selected value to a section or (START . END) range.")
+   (targets-fn      :initarg :targets-fn      :initform nil
+                    :documentation "Return the value(s) to select from point/region when toggling."))
   "Base class for options that control majutsu selection categories.")
 
 (cl-defstruct (majutsu-selection-session
@@ -111,18 +111,58 @@ Arguments are ignored for backward compatibility."
    :buffer (current-buffer)
    :overlays (make-hash-table :test 'equal)))
 
-(defun majutsu-selection--find-option (key)
+(defun majutsu-selection--selection-id (obj)
+  "Return selection category identifier for OBJ."
+  (when (slot-boundp obj 'argument)
+    (oref obj argument)))
+
+(defun majutsu-selection--options-for (id)
+  "Return selection options with selection category ID."
+  (when (and id (boundp 'transient--suffixes))
+    (seq-filter (lambda (obj)
+                  (and (cl-typep obj 'majutsu-selection-option)
+                       (equal (majutsu-selection--selection-id obj) id)))
+                transient--suffixes)))
+
+(defun majutsu-selection--resolve-slot (obj slot)
+  "Return SLOT value for OBJ or another option in the same group."
+  (or (eieio-oref obj slot)
+      (when-let* ((id (majutsu-selection--selection-id obj))
+                  (options (majutsu-selection--options-for id)))
+        (seq-some (lambda (other)
+                    (and (not (eq other obj))
+                         (eieio-oref other slot)))
+                  options))))
+
+(defun majutsu-selection--selection-multi-p (obj)
+  "Return non-nil when OBJ's selection category is multi-value."
+  (or (oref obj multi-value)
+      (when-let* ((id (majutsu-selection--selection-id obj))
+                  (options (majutsu-selection--options-for id)))
+        (seq-some (lambda (other)
+                    (oref other multi-value))
+                  options))))
+
+(defun majutsu-selection--resolve-locate-fn (obj)
+  "Return locate function for OBJ's selection category."
+  (majutsu-selection--resolve-slot obj 'locate-fn))
+
+(defun majutsu-selection--resolve-targets-fn (obj)
+  "Return targets function for OBJ's selection category."
+  (majutsu-selection--resolve-slot obj 'targets-fn))
+
+(defun majutsu-selection--find-option (id)
   (when (boundp 'transient--suffixes)
     (seq-find (lambda (obj)
                 (and (cl-typep obj 'majutsu-selection-option)
-                     (eq (oref obj selection-key) key)))
+                     (equal (majutsu-selection--selection-id obj) id)))
               transient--suffixes)))
 
-(defun majutsu-selection--toggle-current (current values type)
+(defun majutsu-selection--toggle-current (current values multi)
   (setq values (ensure-list values))
   (unless values
     (user-error "No selection target at point"))
-  (if (eq type 'single)
+  (if (not multi)
       (let ((new (car values))
             (old (if (listp current) (car current) current)))
         (if (equal old new) nil new))
@@ -134,15 +174,15 @@ Arguments are ignored for backward compatibility."
                       (append current (list id)))))
     current))
 
-(defun majutsu-selection-values (key)
-  "Return selected values for category KEY."
-  (when-let* ((obj (majutsu-selection--find-option key)))
+(defun majutsu-selection-values (id)
+  "Return selected values for category ID."
+  (when-let* ((obj (majutsu-selection--find-option id)))
     (let ((val (oref obj value)))
       (if (listp val) val (list val)))))
 
-(defun majutsu-selection-count (key)
-  "Return number of selected values for category KEY."
-  (length (majutsu-selection-values key)))
+(defun majutsu-selection-count (id)
+  "Return number of selected values for category ID."
+  (length (majutsu-selection-values id)))
 
 (defun majutsu-selection--overlay-range (section)
   (let ((start (oref section start))
@@ -202,46 +242,51 @@ Arguments are ignored for backward compatibility."
                      (remhash id overlays)))
                  overlays)
         (maphash (lambda (id data)
-                   (majutsu-selection--render-overlay
-                    session id (car data) (oref (cdr data) locate-fn)))
-                 active-ids)))))
+                   (let* ((obj (cdr data))
+                          (locate-fn (or (majutsu-selection--resolve-locate-fn obj)
+                                         #'majutsu-selection--locate-default)))
+                     (majutsu-selection--render-overlay
+                      session id (car data) locate-fn)))
+                  active-ids)))))
 
-(defun majutsu-selection-clear (&optional key)
+(defun majutsu-selection-clear (&optional id)
   "Clear selections.
-If KEY is non-nil, clear only that selection category."
+If ID is non-nil, clear only that selection category."
   (interactive)
   (when (boundp 'transient--suffixes)
     (dolist (obj transient--suffixes)
       (when (and (cl-typep obj 'majutsu-selection-option)
-                 (or (null key)
-                     (eq (oref obj selection-key) key)))
+                 (or (null id)
+                     (equal (majutsu-selection--selection-id obj) id)))
         (oset obj value nil)))
     (majutsu-selection-render)))
 
-(defun majutsu-selection-toggle (key &optional values)
-  "Toggle selected values in category KEY.
+(defun majutsu-selection-toggle (id &optional values)
+  "Toggle selected values in category ID.
 VALUES defaults to the target(s) at point."
   (interactive)
   (let* ((session (or (transient-scope) (user-error "No active selection session")))
-         (obj (majutsu-selection--find-option key)))
+         (obj (majutsu-selection--find-option id)))
     (unless obj
-      (user-error "No selection option for key: %S" key))
+      (user-error "No selection option for id: %S" id))
     (unless values
       (majutsu-selection--with-session-buffer session
-        (let ((fn (or (oref obj targets-fn) #'majutsu-selection--targets-default)))
+        (let ((fn (or (majutsu-selection--resolve-targets-fn obj)
+                      #'majutsu-selection--targets-default)))
           (setq values (funcall fn)))))
     (let ((current (majutsu-selection--toggle-current
-                    (oref obj value) values (oref obj selection-type))))
+                    (oref obj value) values
+                    (majutsu-selection--selection-multi-p obj))))
       (transient-infix-set obj current))))
 
-(defun majutsu-selection-select (key &optional values)
-  "Select a single value in category KEY.
-KEY must be a `single' selection category."
+(defun majutsu-selection-select (id &optional values)
+  "Select a single value in category ID.
+ID must be a single selection category."
   (interactive)
-  (let* ((obj (majutsu-selection--find-option key)))
-    (unless (and obj (eq (oref obj selection-type) 'single))
-      (user-error "Category %S is not single-select" key))
-    (majutsu-selection-toggle key values)))
+  (let* ((obj (majutsu-selection--find-option id)))
+    (unless (and obj (not (majutsu-selection--selection-multi-p obj)))
+      (user-error "Category %S is not single-select" id))
+    (majutsu-selection-toggle id values)))
 
 (defvar majutsu-selection--infix-syncing nil
   "Prevent infinite recursion when syncing selection options.")
@@ -255,25 +300,21 @@ KEY must be a `single' selection category."
   (when (and (not majutsu-selection--infix-syncing)
              (boundp 'transient--suffixes)
              (consp transient--suffixes)
-             (slot-boundp obj 'argument)
-             (slot-boundp obj 'selection-key))
+             (slot-boundp obj 'argument))
     (let ((majutsu-selection--infix-syncing t)
-          (argument (oref obj argument))
-          (selection-key (oref obj selection-key)))
+          (argument (oref obj argument)))
       (dolist (other transient--suffixes)
         (when (and (not (eq other obj))
                    (cl-typep other 'majutsu-selection-option)
                    (slot-boundp other 'argument)
-                   (slot-boundp other 'selection-key)
-                   (equal (oref other argument) argument)
-                   (eq (oref other selection-key) selection-key))
+                   (equal (oref other argument) argument))
           (transient-infix-set other value)))))
   (majutsu-selection-render))
 
 ;; TODO: 应该有更加准确的处理方式
 (cl-defmethod transient-infix-read :around ((obj majutsu-selection-option))
   (let ((value (cl-call-next-method)))
-    (if (oref obj multi-value)
+    (if (majutsu-selection--selection-multi-p obj)
         (ensure-list value)
       value)))
 
@@ -282,10 +323,11 @@ KEY must be a `single' selection category."
                                 (buffer-live-p transient--original-buffer)
                                 transient--original-buffer)
                            (current-buffer))
-    (let* ((fn (or (oref obj targets-fn) #'majutsu-selection--targets-default))
+    (let* ((fn (or (majutsu-selection--resolve-targets-fn obj)
+                   #'majutsu-selection--targets-default))
            (values (funcall fn)))
       (majutsu-selection--toggle-current
-       (oref obj value) values (oref obj selection-type)))))
+       (oref obj value) values (majutsu-selection--selection-multi-p obj)))))
 
 (cl-defmethod transient-infix-value ((_obj majutsu-selection-toggle-option))
   nil)

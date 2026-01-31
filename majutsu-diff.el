@@ -1113,10 +1113,8 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
   :class 'majutsu-diff-range-option
-  :selection-key 'revisions
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :selection-type 'multi
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-r"
   :argument "--revisions="
@@ -1126,9 +1124,6 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:revisions ()
   :description "Revisions (toggle at point)"
   :class 'majutsu-selection-toggle-option
-  :selection-key 'revisions
-  :selection-type 'multi
-  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "r"
   :argument "--revisions="
   :multi-value 'repeat)
@@ -1136,10 +1131,8 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:--from ()
   :description "From"
   :class 'majutsu-diff-range-option
-  :selection-key 'from
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-f"
   :argument "--from="
@@ -1148,10 +1141,8 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:--to ()
   :description "To"
   :class 'majutsu-diff-range-option
-  :selection-key 'to
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "-t"
   :argument "--to="
@@ -1160,17 +1151,12 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:from ()
   :description "From (toggle at point)"
   :class 'majutsu-selection-toggle-option
-  :selection-key 'from
-  :selection-type 'single
-  :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "f"
   :argument "--from=")
 
 (transient-define-argument majutsu-diff:to ()
   :description "To (toggle at point)"
   :class 'majutsu-selection-toggle-option
-  :selection-key 'to
-  :selection-type 'single
   :locate-fn (##majutsu-section-find % 'jj-commit)
   :key "t"
   :argument "--to=")
