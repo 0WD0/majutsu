@@ -46,6 +46,7 @@
   "%"   'majutsu-workspace
   "a"   'majutsu-absorb
   "k"   'majutsu-abandon
+  ">"   'majutsu-sparse
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo
   "R"   'majutsu-restore)

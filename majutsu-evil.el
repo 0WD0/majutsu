@@ -145,6 +145,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "*") #'majutsu-workspace
     (kbd "E") #'majutsu-ediff
     (kbd "?") #'majutsu-dispatch
+    (kbd ">") #'majutsu-sparse
     (kbd "RET") #'majutsu-visit-thing)
 
   (majutsu-evil--define-keys 'normal 'majutsu-mode-map

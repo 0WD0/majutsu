@@ -76,6 +76,9 @@ When nil, do not override whatever `auto-mode-alist' selects."
 
 (add-to-list 'with-editor-file-name-history-exclude majutsu-jjdescription-regexp)
 
+(add-to-list 'with-editor-server-window-alist
+             (cons majutsu-jjdescription-regexp #'switch-to-buffer))
+
 ;;; Font-Lock Support
 
 (defconst majutsu-jjdescription--heading-labels

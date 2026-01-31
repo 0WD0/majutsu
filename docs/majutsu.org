@@ -230,6 +230,10 @@ Runs: =jj split -r REV=
 - ~-d~ :: Restore descendants as well.
 Runs: =jj restore --from REV= or =jj restore --changes-in REV=
 
+** Sparse Working Copy
+- ~>~ (~majutsu-sparse~) :: Open the sparse working copy transient (set, add, remove, list, edit).
+- Editing patterns opens a temporary =.jjsparse= buffer; lines starting with ~JJ:~ are comments and are ignored by Jujutsu.
+
 ** Interactive Patching
 Majutsu provides Magit-style partial hunk selection for Jujutsu operations. This allows you to select specific hunks, files, or even regions within hunks to include in Split, Squash, or Restore operations.
 
