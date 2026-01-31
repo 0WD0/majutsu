@@ -17,6 +17,8 @@
 (require 'ert)
 (require 'majutsu-template)
 
+(defvar mt--runtime-tmp nil)
+
 (defmacro mt--is (form expected)
   `(let ((got ,form))
      (should (stringp got))
@@ -261,6 +263,12 @@
                  "concat(\"yes\", \"!\")"))
   (mt--is (majutsu-tpl [:call '+ 3 4]) "(3 + 4)")
   (mt--is (majutsu-tpl [:call '+ [:str "A"] [:str "B"]]) "(\"A\" + \"B\")"))
+
+(ert-deftest test-majutsu-template-runtime-var-eval ()
+  (let* ((mt--runtime-tmp 1)
+         (s [:concat (if (> 2 mt--runtime-tmp) [:str "T"] [:str "F"]) [:str "!"]])
+         (mt--runtime-tmp 3))
+    (mt--is (majutsu-tpl s) "concat(\"F\", \"!\")")))
 
 (ert-deftest test-majutsu-template-raw-type-annotation ()
   (let ((node (majutsu-template-ast '[:raw "foo" :Template])))

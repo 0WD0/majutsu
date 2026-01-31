@@ -479,8 +479,8 @@ Example comparison:
 *** Vectors and Concatenation
 Vectors without a leading keyword are implicitly concatenated:
 #+begin_src emacs-lisp
-(majutsu-tpl ["A" "B"])           ; => concat("A", "B")
-(majutsu-tpl [:concat "A" "B"])   ; => concat("A", "B")  (explicit)
+(majutsu-tpl ["A" "B"])           ; => "concat(\"A\", \"B\")"
+(majutsu-tpl [:concat "A" "B"])   ; => "concat(\"A\", \"B\")"
 #+end_src
 
 Bare strings inside vectors are automatically treated as string literals (=:str=).
@@ -494,19 +494,19 @@ Use =:str= for explicit string literals with proper escaping:
 *** Raw Injection
 Use =:raw= to inject template code directly without escaping:
 #+begin_src emacs-lisp
-(majutsu-tpl [:raw "self.commit_id().short()"])  ; => self.commit_id().short()
+(majutsu-tpl [:raw "self.commit_id().short()"])  ; => "self.commit_id().short()"
 #+end_src
 
 Symbols passed to =:call= are treated as raw identifiers:
 #+begin_src emacs-lisp
-(majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => coalesce("", "X")
+(majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => "coalesce(\"\", \"X\")"
 #+end_src
 
 *** Booleans and Numbers
 Elisp =t= and =nil= map to =true= and =false=. Numbers pass through directly:
 #+begin_src emacs-lisp
-(majutsu-tpl [:if t "yes" "no"])      ; => if(true, "yes", "no")
-(majutsu-tpl [:call 'pad_end 8 "x"])  ; => pad_end(8, "x")
+(majutsu-tpl [:if t "yes" "no"])      ; => "if(true, \"yes\", \"no\")"
+(majutsu-tpl [:call 'pad_end 8 "x"])  ; => "pad_end(8, \"x\")"
 #+end_src
 
 ** Method Calls
@@ -514,62 +514,65 @@ Elisp =t= and =nil= map to =true= and =false=. Numbers pass through directly:
 Use =:method= to call methods on objects. Methods can be chained:
 #+begin_src emacs-lisp
 (majutsu-tpl [:method [:raw "self" :Commit] :commit_id])
-; => self.commit_id()
+; => "self.commit_id()"
 
 (majutsu-tpl [:method [:raw "self" :Commit] :parents :len])
-; => self.parents().len()
+; => "self.parents().len()"
 
 (majutsu-tpl [:method [:raw "self" :Commit] :diff "src"])
-; => self.diff("src")
+; => "self.diff(\"src\")"
 #+end_src
 
 *** Self-Type Context
 When a self-type is provided, bare keywords become method calls on =self=:
 #+begin_src emacs-lisp
-(majutsu-tpl [:description] 'Commit)      ; => self.description()
-(majutsu-tpl [:parents :len] 'Commit)     ; => self.parents().len()
+(majutsu-tpl [:description] 'Commit)      ; => "self.description()"
+(majutsu-tpl [:parents :len] 'Commit)     ; => "self.parents().len()"
 #+end_src
 
 ** List Operations
 List methods (=map=, =filter=, =any=, =all=) use a special syntax with a binding variable:
 #+begin_src emacs-lisp
 (majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
-; => self.bookmarks().map(|b| b.name())
+; => "self.bookmarks().map(|b| b.name())"
 
 (majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
-; => self.parents().map(|p| p.commit_id()).join(", ")
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 
 (majutsu-tpl [:filter [:raw "parents"] c [:raw "c.mine()"]])
-; => parents.filter(|c| c.mine())
+; => "parents.filter(|c| c.mine())"
 
 (majutsu-tpl [:any [:raw "parents"] c [:raw "c.conflict()"]])
-; => parents.any(|c| c.conflict())
+; => "parents.any(|c| c.conflict())"
 #+end_src
 
 ** Operators
 Arithmetic and logical operators are supported:
 #+begin_src emacs-lisp
-(majutsu-tpl [:+ 1 2])              ; => (1 + 2)
-(majutsu-tpl [:and [:> 3 1] [:<= 2 2]])  ; => ((3 > 1) && (2 <= 2))
-(majutsu-tpl [:not t])              ; => (!true)
-(majutsu-tpl [:++ "L" "R"])         ; => ("L" ++ "R")  (string concat operator)
+(majutsu-tpl [:+ 1 2])              ; => "(1 + 2)"
+(majutsu-tpl [:and [:> 3 1] [:<= 2 2]])  ; => "((3 > 1) && (2 <= 2))"
+(majutsu-tpl [:not t])              ; => "(!true)"
+(majutsu-tpl [:++ "L" "R"])         ; => "(\"L\" ++ \"R\")"
 #+end_src
 
 ** Conditional and Control Flow
 #+begin_src emacs-lisp
 (majutsu-tpl [:if [:raw "self.root()"] "(root)" [:raw "self.commit_id()"]])
-; => if(self.root(), "(root)", self.commit_id())
+; => "if(self.root(), \"(root)\", self.commit_id())"
 
 (majutsu-tpl [:separate " " [:label "a" "A"] [:label "b" "B"]])
-; => separate(" ", label("a", "A"), label("b", "B"))
+; => "separate(\" \", label(\"a\", \"A\"), label(\"b\", \"B\"))"
 #+end_src
 
 ** Elisp Embedding
-Elisp expressions are evaluated at compile time:
+Elisp expressions are evaluated when the template is compiled.
 #+begin_src emacs-lisp
-(majutsu-tpl [:raw (if t "foo" "bar")])  ; => foo
-(majutsu-tpl [:concat (if (> 2 1) [:str "T"] [:str "F"]) [:str "!"]])
-; => concat("T", "!")
+(let* ((tmp 1)
+       (s1 `[:concat ,(if (> 2 tmp) [:str "T"] [:str "F"]) [:str "!"]])
+       (s2 [:concat (if (> 2 tmp) [:str "T"] [:str "F"]) [:str "!"]])
+       (tmp 3))
+  (concat (majutsu-tpl s1) (majutsu-tpl s2)))
+; => "concat(\"T\", \"!\")concat(\"F\", \"!\")"
 #+end_src
 
 ** Defining Custom Functions
@@ -580,7 +583,7 @@ Use =majutsu-template-defun= to define reusable template functions:
   `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
 (majutsu-tpl [:my-helper [:str "ID"] [:str "VAL"]])
-; => concat("ID", ": ", "VAL")
+; => "concat(\"ID\", \": \", \"VAL\")"
 #+end_src
 
 ** Type System

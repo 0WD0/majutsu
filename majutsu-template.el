@@ -1491,8 +1491,8 @@ dynamic bindings of `majutsu-template-default-self-type'."
     `(let ((majutsu-template--allow-eval t))
        (majutsu-template-compile ,form ,self-type)))
    (t
-    `(let ((majutsu-template--allow-eval nil))
-       (majutsu-template-compile (majutsu-template--normalize ,form) ,self-type)))))
+    `(let ((majutsu-template--allow-eval t))
+       (majutsu-template-compile ,form ,self-type)))))
 
 ;;; _
 (provide 'majutsu-template)
