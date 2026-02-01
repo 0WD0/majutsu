@@ -43,6 +43,13 @@
   "Normalize REVSET to a single revision using jj revset functions."
   (format "exactly(latest(%s), 1)" revset))
 
+(defun majutsu-file--short-id (id)
+  "Return a shortened version of change ID or commit ID.
+Takes first 8 characters, or full string if shorter."
+  (if (> (length id) 8)
+      (substring id 0 8)
+    id))
+
 (defun majutsu-file--resolve-single-rev (revset)
   "Resolve REVSET to a single revision string.
 Uses `latest` and `exactly` to enforce a single target."
@@ -165,7 +172,7 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
       ;; Visit blob from revision
       (let* ((resolved (or (majutsu-file--resolve-single-rev rev)
                            (user-error "Revset does not resolve to a single revision")))
-             (short-rev (majutsu--short-change-id resolved))
+             (short-rev (majutsu-file--short-id resolved))
              (buf-name (majutsu-file--buffer-name short-rev file-rel))
              (buffer (get-buffer-create buf-name)))
         (with-current-buffer buffer
