@@ -150,9 +150,7 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
   "Read file to compare between FROM and TO."
   (let* ((root (majutsu-file--root))
          (default-directory root)
-         (changed (split-string
-                   (majutsu-jj-string "diff" "--from" from "--to" to "--name-only")
-                   "\n" t)))
+         (changed (majutsu-jj-lines "diff" "--from" from "--to" to "--name-only")))
     (if (= (length changed) 1)
         (car changed)
       (completing-read
@@ -162,8 +160,7 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
 (defun majutsu-ediff--list-conflicted-files (&optional rev)
   "Return list of conflicted files at REV (default @)."
   (let* ((default-directory (majutsu-file--root))
-         (output (majutsu-jj-string "resolve" "--list" "-r" (or rev "@")))
-         (lines (seq-remove #'string-empty-p (split-string output "\n"))))
+         (lines (majutsu-jj-lines "resolve" "--list" "-r" (or rev "@"))))
     ;; Parse "filename    N-sided conflict" format
     (mapcar (lambda (line)
               (if (string-match "^\\([^ \t]+\\)" line)

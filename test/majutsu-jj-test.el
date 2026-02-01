@@ -27,4 +27,101 @@
          (expected "file:\"a\\\"b\\\\c\\n\""))
     (should (equal (majutsu-jj-fileset-quote input) expected))))
 
+;; Tests for majutsu-jj-string (new behavior - returns first line only)
+
+(ert-deftest majutsu-jj-string/returns-first-line ()
+  "majutsu-jj-string should return only the first line of output."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert "first line\nsecond line\nthird line") 0)))
+    (should (equal (majutsu-jj-string "log" "-r" "@") "first line"))))
+
+(ert-deftest majutsu-jj-string/returns-nil-for-empty-output ()
+  "majutsu-jj-string should return nil when there is no output."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args) 0)))
+    (should (null (majutsu-jj-string "log" "-r" "@")))))
+
+(ert-deftest majutsu-jj-string/returns-empty-string-for-newline-start ()
+  "majutsu-jj-string should return empty string if output starts with newline."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert "\nsecond line") 0)))
+    (should (equal (majutsu-jj-string "log" "-r" "@") ""))))
+
+
+
+;; Tests for majutsu-jj-lines
+
+(ert-deftest majutsu-jj-lines/splits-output-into-lines ()
+  "majutsu-jj-lines should split output into a list of lines."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert "line1\nline2\nline3") 0)))
+    (should (equal (majutsu-jj-lines "log" "-r" "@")
+                   '("line1" "line2" "line3")))))
+
+(ert-deftest majutsu-jj-lines/omits-empty-lines ()
+  "majutsu-jj-lines should omit empty lines from result."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert "line1\n\nline2\n\n") 0)))
+    (should (equal (majutsu-jj-lines "log" "-r" "@")
+                   '("line1" "line2")))))
+
+;; Tests for majutsu-jj-items
+
+(ert-deftest majutsu-jj-items/splits-by-null-bytes ()
+  "majutsu-jj-items should split output by null bytes."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert "item1\0item2\0item3") 0)))
+    (should (equal (majutsu-jj-items "file" "list" "-z")
+                   '("item1" "item2" "item3")))))
+
+(ert-deftest majutsu-jj-items/omits-empty-items ()
+  "majutsu-jj-items should omit empty items from result."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert "item1\0\0item2\0") 0)))
+    (should (equal (majutsu-jj-items "file" "list" "-z")
+                   '("item1" "item2")))))
+
+;; Tests for majutsu-jj-insert
+
+(ert-deftest majutsu-jj-insert/inserts-output-at-point ()
+  "majutsu-jj-insert should insert output at point and return exit code."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (return-error &rest _args)
+               (insert "output text") 0)))
+    (with-temp-buffer
+      (should (equal (majutsu-jj-insert "log" "-r" "@") 0))
+      (should (equal (buffer-string) "output text")))))
+
+;; Tests for majutsu--jj-insert error handling
+
+(ert-deftest majutsu--jj-insert/returns-exit-code-on-success ()
+  "majutsu--jj-insert should return 0 on success when return-error is nil."
+  (cl-letf (((symbol-function 'process-file)
+             (lambda (_program _infile _destination _display &rest _args) 0)))
+    (with-temp-buffer
+      (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0)))))
+
+(ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
+  "majutsu--jj-insert should return error message when return-error is t and command fails."
+  (cl-letf (((symbol-function 'process-file)
+             (lambda (_program _infile _destination _display &rest _args)
+               ;; Simulate error by writing to stderr file
+               1))
+            ((symbol-function 'make-temp-file)
+             (lambda (_prefix) "/tmp/test-err"))
+            ((symbol-function 'insert-file-contents)
+             (lambda (file) (insert "Error: something went wrong")))
+            ((symbol-function 'delete-file)
+             (lambda (_file) nil)))
+    (with-temp-buffer
+      (let ((result (majutsu--jj-insert t "log" "-r" "invalid")))
+        (should (stringp result))
+        (should (string-match-p "something went wrong" result))))))
+
 (provide 'majutsu-jj-test)

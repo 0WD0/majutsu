@@ -444,7 +444,7 @@ Returns a list of `majutsu-annotate-chunk' structures."
 
 (defun majutsu-annotate--file-exists-p (rev file)
   "Check if FILE exists in REV."
-  (let ((output (ansi-color-apply (majutsu-jj-string "file" "list" "-r" rev file))))
+  (let ((output (majutsu-jj-string "file" "list" "-r" rev file)))
     ;; jj outputs "Warning: No matching entries..." when file doesn't exist
     (not (string-prefix-p "Warning:" output))))
 
@@ -494,11 +494,13 @@ that has a parent revision, then recursively annotate the parent."
                   "@"))
          (default-directory root))
     (message "Annotating...")
-    (let ((output (ansi-color-apply (majutsu-jj-string
-                                     "file" "annotate"
-                                     "-r" rev
-                                     "-T" majutsu-annotate--template
-                                     file))))
+    (let ((output (with-temp-buffer
+                    (majutsu--with-no-color
+                      (majutsu-jj-insert "file" "annotate"
+                                         "-r" rev
+                                         "-T" majutsu-annotate--template
+                                         file))
+                    (buffer-string))))
       (when (string-empty-p output)
         (user-error "No annotation output"))
       (unless majutsu-annotate-mode

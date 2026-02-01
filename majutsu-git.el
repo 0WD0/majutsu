@@ -43,13 +43,12 @@
 This calls `jj git remote list` and parses the first word of each line."
   (let ((default-directory (or directory default-directory)))
     (condition-case _
-        (let* ((out (majutsu-jj-string "git" "remote" "list"))
-               (lines (split-string (or out "") "\n" t)))
-          (delete-dups
-           (delq nil
-                 (mapcar (lambda (line)
-                           (car (split-string line "[ :\t]+" t)))
-                         lines))))
+        (let* ((lines (or (majutsu-jj-lines "git" "remote" "list") '()))
+               (names (delq nil
+                            (mapcar (lambda (line)
+                                      (car (split-string line "[ :\t]+" t)))
+                                    lines))))
+          (delete-dups names))
       (error nil))))
 
 (defun majutsu-git--read-remote (prompt)
@@ -218,7 +217,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (defun majutsu-git-root ()
   "Show the underlying Git directory of the current repository."
   (interactive)
-  (let* ((dir (string-trim (majutsu-jj-string "git" "root"))))
+  (let* ((dir (string-trim (or (car (majutsu-jj-lines "git" "root")) ""))))
     (if (string-empty-p dir)
         (message "No underlying Git directory found")
       (kill-new dir)

@@ -21,11 +21,13 @@
 (require 'majutsu-config)
 (require 'majutsu-selection)
 (require 'majutsu-section)
-(require 'majutsu-file)
 (require 'majutsu-conflict)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
+
+(declare-function majutsu-find-file "majutsu-file" (revset path))
+(declare-function majutsu-find-file-at-point "majutsu-file" ())
 
 ;;; Options
 ;;;; Diff Mode
@@ -89,6 +91,51 @@ otherwise fall back to the current buffer's `tab-width'."
   '((t :inherit font-lock-constant-face :foreground "#81c8be"))
   "Face for the (binary) label in diffstat entries."
   :group 'majutsu)
+
+;;; Line Offset Calculation
+
+(defun majutsu-diff--offset-in-buffer (line)
+  "Return LINE offset after applying diff hunks in current buffer.
+Assumes current buffer contains a unified diff."
+  (let ((offset 0))
+    (goto-char (point-min))
+    (catch 'found
+      (while (re-search-forward
+              "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@.*\\n"
+              nil t)
+        (let* ((from-beg (string-to-number (match-string 1)))
+               (from-len (if (match-string 2)
+                             (string-to-number (match-string 2))
+                           1))
+               (to-len (if (match-string 4)
+                           (string-to-number (match-string 4))
+                         1)))
+          (if (<= from-beg line)
+              (if (<= (+ from-beg from-len) line)
+                  (setq offset (+ offset (- to-len from-len)))
+                (let ((rest (- line from-beg)))
+                  (while (> rest 0)
+                    (pcase (char-after)
+                      (?\s (setq rest (1- rest)))
+                      (?- (setq offset (1- offset))
+                          (setq rest (1- rest)))
+                      (?+ (setq offset (1+ offset))))
+                    (forward-line 1))))
+            (throw 'found nil)))))
+    (+ line offset)))
+
+(defun majutsu-diff-visit--offset (root file from-rev to-rev line)
+  "Compute line offset for FILE between FROM-REV and TO-REV.
+ROOT is the repository root.  Returns the adjusted line number."
+  (let ((default-directory root))
+    (with-temp-buffer
+      (majutsu-jj-insert "diff" "--from" from-rev "--to" to-rev "--"
+                         (majutsu-jj-fileset-quote file))
+      (if (= (point-min) (point-max))
+          line
+        (majutsu-diff--offset-in-buffer line)))))
+
+;;;
 
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
@@ -718,21 +765,25 @@ works with the simplified jj diff we render here."
 
 (defun majutsu-diff--hunk-line (section goto-from)
   "Return the line number in SECTION for GOTO-FROM side."
-  (with-slots (content from-range to-range) section
-    (let ((start (car (if goto-from from-range to-range))))
-      (when start
-        (let ((line start)
-              (target (point)))
-          (save-excursion
-            (goto-char content)
-            (while (< (point) target)
-              (let ((ch (char-after (line-beginning-position))))
-                (cond
-                 ((eq ch ?+) (unless goto-from (setq line (1+ line))))
-                 ((eq ch ?-) (when goto-from (setq line (1+ line))))
-                 (t (setq line (1+ line)))))
-              (forward-line 1)))
-          line)))))
+  (save-excursion
+    (goto-char (line-beginning-position))
+    (with-slots (content from-range to-range) section
+      (when (or from-range to-range)
+        (when (< (point) content)
+          (goto-char content)
+          (re-search-forward "^[-+]"))
+        (+ (car (if goto-from from-range to-range))
+           (let ((target (point))
+                 (offset 0))
+             (goto-char content)
+             (while (< (point) target)
+               (let ((ch (char-after)))
+                 (cond
+                  ((eq ch ?+) (unless goto-from (cl-incf offset)))
+                  ((eq ch ?-) (when goto-from (cl-incf offset)))
+                  (t (cl-incf offset))))
+               (forward-line))
+             offset))))))
 
 (defun majutsu-diff--hunk-column (section goto-from)
   "Return the column for SECTION based on GOTO-FROM side."
@@ -740,10 +791,8 @@ works with the simplified jj diff we render here."
     (if (or (< (point) (oref section content))
             (and (not goto-from) (eq (char-after bol) ?-)))
         0
-      (let ((col (current-column)))
-        (if (memq (char-after bol) '(?+ ?-))
-            (max 0 (1- col))
-          col)))))
+      ;; All hunk content lines have a 1-char prefix (+, -, or space)
+      (max 0 (1- (current-column))))))
 
 (defun majutsu-diff--goto-line-col (buffer line col)
   "Move point in BUFFER to LINE and COL."

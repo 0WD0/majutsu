@@ -40,17 +40,6 @@ Splits at the last \"@\"."
         (cons (match-string 1 ref) (match-string 2 ref))
       (cons ref nil))))
 
-(defun majutsu--bookmark--json-lines (text)
-  "Parse TEXT as newline-separated JSON values.
-
-Return a list of successfully parsed values."
-  (let ((values nil))
-    (dolist (line (split-string text "\n" t))
-      (condition-case nil
-          (push (json-parse-string line) values)
-        (error nil)))
-    (nreverse values)))
-
 (defun majutsu--bookmark--remote-args (remotes)
   "Build repeated `--remote <REMOTE>` args from REMOTES."
   (apply #'append
@@ -61,14 +50,18 @@ Return a list of successfully parsed values."
   "Return remote bookmark names for completion (unique, plain strings)."
   (let* ((template "if(remote && present, json(name) ++ \"\\n\", \"\")")
          (args '("bookmark" "list" "--quiet" "--all-remotes" "-T"))
-         (names (majutsu--bookmark--json-lines
-                 (apply #'majutsu-jj-string (append args (list template))))))
+         (lines (majutsu-jj-lines args template))
+         (names (delq nil
+                      (mapcar (lambda (line)
+                                (condition-case nil
+                                    (json-parse-string line)
+                                  (error nil)))
+                              lines))))
     (delete-dups (seq-filter #'stringp names))))
 
 (defun majutsu--bookmark-git-remote-candidates ()
   "Return Git remote names for completion."
-  (let* ((out (majutsu-jj-string "git" "remote" "list"))
-         (lines (split-string out "\n" t))
+  (let* ((lines (majutsu-jj-lines "git" "remote" "list"))
          (names (delq nil
                       (mapcar (lambda (line)
                                 (unless (string-match-p "\\`\\(Error\\|error\\|fatal\\):" line)
@@ -107,7 +100,7 @@ SCOPE controls what to return:
                          ('remote-tracked '("--tracked"))
                          (_ nil))
                        (list "-T" template)))
-         (names (split-string (apply #'majutsu-jj-string args) "\n" t)))
+         (names (majutsu-jj-lines args)))
     (delete-dups names)))
 
 ;;;###autoload

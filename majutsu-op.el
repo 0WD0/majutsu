@@ -68,9 +68,10 @@
       majutsu-op-log--cached-entries
     (with-current-buffer (or buf (current-buffer))
       (let* ((args (list "op" "log" "--no-graph" "-T" majutsu--op-log-template))
-             (output (or log-output (apply #'majutsu-jj-string args))))
-        (when (and output (not (string-empty-p output)))
-          (let ((lines (split-string output "\n" t))
+(lines (or (and log-output (split-string log-output "\n" t))
+               (apply #'majutsu-jj-lines args))))
+    (when lines
+      (let ((lines lines)
                 (entries '()))
             (dolist (line lines)
               (seq-let (id user time desc) (split-string line "\x1e")

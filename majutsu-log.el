@@ -823,11 +823,11 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 (defun majutsu-log-insert-conflicts ()
   "Insert conflicted files section."
-  (let ((output (majutsu-jj-string "resolve" "--list")))
-    (when (and output (not (string-empty-p output)))
+  (let ((lines (majutsu-jj-lines "resolve" "--list")))
+    (when lines
       (magit-insert-section (conflict)
         (magit-insert-heading "Unresolved Conflicts")
-        (dolist (line (split-string output "\n" t))
+        (dolist (line lines)
           (let ((file (string-trim line)))
             (magit-insert-section (jj-file file)
               (magit-insert-heading (propertize file 'face 'error))

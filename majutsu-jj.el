@@ -116,8 +116,8 @@ This checks multiple sources in order:
                                  ('remote "remote_bookmarks")
                                  ('local "local_bookmarks")
                                  (_ "bookmarks")))))
-         (output (apply #'majutsu-jj-string args))
-         (bookmarks (split-string output " " t)))
+         (lines (apply #'majutsu-jj-lines args))
+         (bookmarks (split-string (string-join lines "\n") " " t)))
     (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
 
 (defun majutsu-bookmark-at-point ()
@@ -202,23 +202,86 @@ to do the following.
   (setq args (seq-remove #'null (flatten-tree args)))
   (append (seq-remove #'null majutsu-jj-global-arguments) args))
 
-(defun majutsu-jj-string (&rest args)
-  "Run jj command with ARGS and return its output as a string."
+(defun majutsu--jj-insert (return-error &rest args)
+  "Run jj with ARGS and insert output at point.
+
+If RETURN-ERROR is nil, return the exit code.  If RETURN-ERROR is
+non-nil, return the error message if the command fails, or the
+exit code if there is no error output.  When RETURN-ERROR is
+`full', return the full stderr output on error.
+
+This is the low-level worker for `majutsu-jj-insert' and similar
+functions."
+  (setq args (majutsu-process-jj-arguments args))
   (let* ((start-time (current-time))
-         (safe-args (majutsu-process-jj-arguments args))
-         result exit-code)
-    (majutsu--debug "Running command: %s %s" majutsu-jj-executable (string-join safe-args " "))
+         (coding-system-for-read 'utf-8-unix)
+         (coding-system-for-write 'utf-8-unix)
+         (err-file (and return-error
+                        (make-temp-file "majutsu-jj-err")))
+         exit-code)
+    (majutsu--debug "Running command: %s %s" majutsu-jj-executable (string-join args " "))
+    (setq exit-code (apply #'process-file majutsu-jj-executable nil
+                           (list t err-file) nil args))
+    ;; process-file may return nil on success for some Emacs builds.
+    (when (null exit-code)
+      (setq exit-code 0))
+    (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
+                    (float-time (time-subtract (current-time) start-time))
+                    exit-code)
+    (when (and majutsu-show-command-output (> (point-max) (point-min)))
+      (majutsu--debug "Command output: %s"
+                      (string-trim (buffer-substring (point-min) (point-max)))))
+    (prog1 (if (and err-file (not (zerop exit-code)))
+               (with-temp-buffer
+                 (insert-file-contents err-file)
+                 (if (eq return-error 'full)
+                     (buffer-string)
+                   (let ((line (car (split-string (buffer-string) "\n" t))))
+                     (or line exit-code))))
+             exit-code)
+      (when err-file (ignore-errors (delete-file err-file))))))
+
+(defun majutsu-jj-insert (&rest args)
+  "Run jj with ARGS and insert output at point.
+
+Return the exit code of the command."
+  (apply #'majutsu--jj-insert nil args))
+
+(defun majutsu-jj-lines (&rest args)
+  "Run jj with ARGS and return output as a list of lines.
+
+Color output is disabled so that return values are plain text.
+Empty lines are omitted from the result.  If the command fails,
+return nil or partial output depending on what was produced."
+  (majutsu--with-no-color
     (with-temp-buffer
-      (let ((coding-system-for-read 'utf-8-unix)
-            (coding-system-for-write 'utf-8-unix))
-        (setq exit-code (apply #'process-file majutsu-jj-executable nil t nil safe-args)))
-      (setq result (buffer-string))
-      (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
-                      (float-time (time-subtract (current-time) start-time))
-                      exit-code)
-      (when (and majutsu-show-command-output (not (string-empty-p result)))
-        (majutsu--debug "Command output: %s" (string-trim result)))
-      result)))
+      (apply #'majutsu-jj-insert args)
+      (split-string (buffer-string) "\n" t))))
+
+(defun majutsu-jj-items (&rest args)
+  "Run jj with ARGS and return output split by null bytes.
+
+Color output is disabled so that return values are plain text.
+This is useful for commands that use -z/--null flag.
+Empty items are omitted from the result."
+  (majutsu--with-no-color
+    (with-temp-buffer
+      (apply #'majutsu-jj-insert args)
+      (split-string (buffer-string) "\0" t))))
+
+(defun majutsu-jj-string (&rest args)
+  "Run jj command with ARGS and return the first line of output.
+
+Color output is disabled so that the return value is plain text.
+If there is no output, return nil.  If the output begins with a
+newline, return an empty string.  This function aligns with
+`magit-git-string' behavior."
+  (majutsu--with-no-color
+    (with-temp-buffer
+      (apply #'majutsu--jj-insert nil args)
+      (unless (bobp)
+        (goto-char (point-min))
+        (buffer-substring-no-properties (point) (line-end-position))))))
 
 (defun majutsu-jj--escape-fileset-string (s)
   "Escape S for a jj fileset string literal."

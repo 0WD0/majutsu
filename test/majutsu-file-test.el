@@ -21,4 +21,14 @@
   (should (equal (majutsu-file--revset-for-files "rev" "test'file" 'prev)
                  "::rev-&files(file:\"test'file\")")))
 
+(ert-deftest majutsu-file-prev-change/handles-nil-output ()
+  "Return nil when jj output is nil."
+  (cl-letf (((symbol-function 'majutsu-jj-string) (lambda (&rest _args) nil)))
+    (should-not (majutsu-file-prev-change "rev" "path"))))
+
+(ert-deftest majutsu-file-next-change/handles-nil-output ()
+  "Return nil when jj output is nil."
+  (cl-letf (((symbol-function 'majutsu-jj-string) (lambda (&rest _args) nil)))
+    (should-not (majutsu-file-next-change "rev" "path"))))
+
 (provide 'majutsu-file-test)

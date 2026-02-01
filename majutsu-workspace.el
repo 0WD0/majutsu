@@ -109,20 +109,22 @@ Each entry contains:
   "Return workspace entries for DIRECTORY (defaults to current repo root).
 Entries are parsed from `jj workspace list -T ...`."
   (let* ((default-directory (or directory default-directory))
-         (output (majutsu-jj-string "workspace" "list" "-T" majutsu-workspace--list-template)))
+         (output (with-temp-buffer
+                   (majutsu-jj-insert "workspace" "list" "-T" majutsu-workspace--list-template)
+                   (buffer-string))))
     (majutsu-workspace-parse-list-output output)))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
   (let* ((default-directory (or directory default-directory))
-         (output (majutsu-jj-string "workspace" "list" "-T" majutsu-workspace--names-template)))
-    (delete-dups (split-string output "\n" t))))
+         (lines (majutsu-jj-lines "workspace" "list" "-T" majutsu-workspace--names-template)))
+    (delete-dups lines)))
 
 (defun majutsu-workspace-current-name (&optional directory)
   "Return current workspace name for DIRECTORY, or nil if it can't be determined."
   (let* ((default-directory (or directory default-directory))
-         (output (majutsu-jj-string "workspace" "list" "-T" majutsu-workspace--current-name-template)))
-    (car (split-string output "\n" t))))
+         (lines (majutsu-jj-lines "workspace" "list" "-T" majutsu-workspace--current-name-template)))
+    (car lines)))
 
 ;;; Interactive helpers
 

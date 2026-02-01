@@ -15,13 +15,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
-(require 'magit-section)
-(require 'majutsu-base)
-(require 'majutsu-jj)
-(require 'majutsu-process)
-
-(declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
-(declare-function majutsu-annotate-addition "majutsu-annotate" (&optional revision))
+(require 'majutsu)
 
 (defvar majutsu-find-file-hook nil
   "Hook run after creating a blob buffer.")
@@ -70,9 +64,7 @@ Results are cached in `majutsu-file--list-cache`."
     (if cached
         (cdr cached)
       (let* ((default-directory root)
-             (output (majutsu-jj-string "file" "list" "-r" normalized))
-             (paths (seq-remove #'string-empty-p (split-string output "\n"))))
-        (push (cons cache-key paths) majutsu-file--list-cache)
+             (paths (majutsu-jj-lines "file" "list" "-r" normalized)))
         paths))))
 
 (defun majutsu-file-list (&optional revset)
@@ -90,12 +82,6 @@ LIST-FN defaults to `majutsu-file-list'."
      nil nil
      (or initial-input (majutsu-file--path-at-point root))
      history)))
-
-(defun majutsu-file--show (revset path root)
-  "Return file contents for REVSET and PATH in ROOT as a string."
-  (let ((default-directory root))
-    (majutsu-jj-string "file" "show" "-r" revset
-                       (majutsu-jj-fileset-quote path))))
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
@@ -187,10 +173,9 @@ ROOT is the repository root."
     (let* ((inhibit-read-only t)
            (root majutsu-buffer-blob-root)
            (revset (majutsu-file--normalize-revset majutsu-buffer-blob-revset))
-           (path majutsu-buffer-blob-path)
-           (content (majutsu-file--show revset path root)))
+           (path majutsu-buffer-blob-path))
       (erase-buffer)
-      (insert content)
+      (majutsu-jj-insert "file" "show" "-r" revset (majutsu-jj-fileset-quote path))
       (let ((buffer-file-name (expand-file-name path root))
             (after-change-major-mode-hook
              (seq-difference after-change-major-mode-hook
@@ -241,16 +226,52 @@ displayed in a single window."
     (user-error "Not in a blob buffer"))
   (majutsu-bury-or-kill-buffer))
 
+(defun majutsu-find-file--internal (rev file fn)
+  "Visit FILE from REV using FN to display the buffer.
+REV is a revset, or nil to visit the file directly from the filesystem.
+Preserves line/column position when jumping between revisions."
+  (let* ((root (majutsu-file--root))
+         (rel-file (majutsu-file--relative-path root file))
+         (visited-file (when majutsu-buffer-blob-path
+                         majutsu-buffer-blob-path))
+         (from-rev majutsu-buffer-blob-revision)
+         line col buf)
+    ;; Capture position if visiting same file
+    (when (and visited-file (equal visited-file rel-file))
+      (setq line (line-number-at-pos))
+      (setq col (current-column))
+      ;; Adjust line when jumping to different revision
+      (when (and line from-rev)
+        (let ((to-rev (or rev "@")))
+          (unless (equal from-rev to-rev)
+            (setq line (majutsu-diff-visit--offset root rel-file from-rev to-rev line))))))
+    ;; Get or create buffer
+    (if rev
+        (setq buf (majutsu-find-file--ensure-buffer root rev rel-file))
+      ;; nil rev means visit filesystem file directly
+      (let ((abs-file (expand-file-name rel-file root)))
+        (unless (file-exists-p abs-file)
+          (user-error "File no longer exists: %s" abs-file))
+        (setq buf (find-file-noselect abs-file))))
+    ;; Display and position
+    (funcall fn buf)
+    (when line
+      (with-current-buffer buf
+        (majutsu-file--goto-line-col line (or col 0))))
+    buf))
+
 (defun majutsu-blob-visit-file ()
-  "Visit the workspace version of the current blob's file."
+  "Visit the workspace version of the current blob's file.
+Preserves line/column position from the blob buffer."
   (interactive)
   (unless (and (bound-and-true-p majutsu-blob-mode)
                majutsu-buffer-blob-root
                majutsu-buffer-blob-path)
     (user-error "Not in a blob buffer"))
-  (let ((file (expand-file-name majutsu-buffer-blob-path
-                                majutsu-buffer-blob-root)))
-    (find-file file)))
+  ;; Pass nil as rev to visit filesystem file directly
+  (majutsu-find-file--internal nil
+                               majutsu-buffer-blob-path
+                               #'pop-to-buffer-same-window))
 
 ;; TODO: move path condition to majutsu-file-*-change
 (defun majutsu-file--revset-for-files (revset path direction)
@@ -264,10 +285,9 @@ DIRECTION should be either \='prev or \='next."
 
 (defun majutsu-file--commit-info (revset)
   "Return commit info (description and age) for REVSET."
-  (let* ((output (majutsu-jj-string
-                  "log" "-r" revset "--no-graph" "-T"
-                  "description.first_line() ++ \"\\n\" ++ committer.timestamp()"))
-         (lines (split-string output "\n" t)))
+  (let* ((lines (majutsu-jj-lines
+                 "log" "-r" revset "--no-graph" "-T"
+                 "description.first_line() ++ \"\\n\" ++ committer.timestamp()")))
     (when (>= (length lines) 2)
       (let* ((summary (car lines))
              (timestamp (cadr lines))
@@ -292,47 +312,6 @@ DIRECTION should be either \='prev or \='next."
        ((< seconds 31536000) (format "%d months ago" (/ seconds 2592000)))
        (t (format "%d years ago" (/ seconds 31536000)))))))
 
-(defun majutsu-file--diff-offset (diff line)
-  "Return LINE offset after applying DIFF hunks.
-DIFF must be a unified diff."
-  (let ((offset 0))
-    (with-temp-buffer
-      (insert diff)
-      (goto-char (point-min))
-      (catch 'found
-        (while (re-search-forward
-                "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@.*\\n"
-                nil t)
-          (let* ((from-beg (string-to-number (match-string 1)))
-                 (from-len (if (match-string 2)
-                               (string-to-number (match-string 2))
-                             1))
-                 (to-len (if (match-string 4)
-                             (string-to-number (match-string 4))
-                           1)))
-            (if (<= from-beg line)
-                (if (<= (+ from-beg from-len) line)
-                    (setq offset (+ offset (- to-len from-len)))
-                  (let ((rest (- line from-beg)))
-                    (while (> rest 0)
-                      (pcase (char-after)
-                        (?\s (setq rest (1- rest)))
-                        (?- (setq offset (1- offset))
-                            (setq rest (1- rest)))
-                        (?+ (setq offset (1+ offset))))
-                      (forward-line 1))))
-              (throw 'found nil))))))
-    (+ line offset)))
-
-(defun majutsu-file--map-line (root from-rev to-rev path line)
-  "Map LINE in FROM-REV to the corresponding line in TO-REV."
-  (let* ((default-directory root)
-         (diff (majutsu-jj-string "diff" "--from" from-rev "--to" to-rev "--"
-                                  (majutsu-jj-fileset-quote path))))
-    (if (string-empty-p diff)
-        line
-      (majutsu-file--diff-offset diff line))))
-
 (defun majutsu-file--goto-line-col (line col)
   "Move point to LINE and COL in current buffer."
   (widen)
@@ -343,19 +322,19 @@ DIFF must be a unified diff."
 (defun majutsu-file-prev-change (revset path)
   "Return the previous change-id modifying PATH before REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'prev))
-         (result (string-trim
-                  (majutsu-jj-string "log" "-r" query "-G"
-                                     "--limit" "1" "-T" "change_id"))))
-    (unless (string-empty-p result)
+         (raw (majutsu-jj-string "log" "-r" query "-G"
+                                 "--limit" "1" "-T" "change_id"))
+         (result (and raw (string-trim raw))))
+    (when (and (stringp result) (not (string-empty-p result)))
       result)))
 
 (defun majutsu-file-next-change (revset path)
   "Return the next change-id modifying PATH after REVSET."
   (let* ((query (majutsu-file--revset-for-files revset path 'next))
-         (result (string-trim
-                  (majutsu-jj-string "log" "-r" query "-G" "--reversed"
-                                     "--limit" "1" "-T" "change_id"))))
-    (unless (string-empty-p result)
+         (raw (majutsu-jj-string "log" "-r" query "-G" "--reversed"
+                                 "--limit" "1" "-T" "change_id"))
+         (result (and raw (string-trim raw))))
+    (when (and (stringp result) (not (string-empty-p result)))
       result)))
 
 (defun majutsu-blob-previous ()
@@ -369,8 +348,8 @@ DIFF must be a unified diff."
          (line (line-number-at-pos))
          (col (current-column)))
     (if-let* ((prev (majutsu-file-prev-change from-rev path)))
-        (let ((target-line (majutsu-file--map-line root from-rev prev path line)))
-          (majutsu-find-file--display prev path #'switch-to-buffer)
+        (let ((target-line (majutsu-diff-visit--offset root path from-rev prev line)))
+          (majutsu-find-file prev path)
           (majutsu-file--goto-line-col target-line col)
           (majutsu-blob--show-commit-info prev))
       (user-error "You have reached the beginning of time"))))
@@ -386,8 +365,8 @@ DIFF must be a unified diff."
          (line (line-number-at-pos))
          (col (current-column)))
     (if-let* ((next (majutsu-file-next-change from-rev path)))
-        (let ((target-line (majutsu-file--map-line root from-rev next path line)))
-          (majutsu-find-file--display next path #'switch-to-buffer)
+        (let ((target-line (majutsu-diff-visit--offset root path from-rev next line)))
+          (majutsu-find-file next path)
           (majutsu-file--goto-line-col target-line col)
           (majutsu-blob--show-commit-info next))
       (user-error "You have reached the end of time"))))
