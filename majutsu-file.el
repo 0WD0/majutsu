@@ -281,30 +281,11 @@ DIRECTION should be either \='prev or \='next."
   "Return commit info (description and age) for REVSET."
   (let* ((lines (majutsu-jj-lines
                  "log" "-r" revset "--no-graph" "-T"
-                 "description.first_line() ++ \"\\n\" ++ committer.timestamp()")))
+                 "coalesce(description.first_line(), \"(no desc)\") ++ \"\\n\" ++ committer.timestamp().ago()")))
     (when (>= (length lines) 2)
       (let* ((summary (car lines))
-             (timestamp (cadr lines))
-             (age (majutsu-file--format-age timestamp)))
-        (cons summary age)))))
-
-(defun majutsu-file--format-age (timestamp)
-  "Format TIMESTAMP as a human-readable age string."
-  ;; timestamp format: "2024-01-15 10:30:00.000 +08:00"
-  (when (string-match "^\\([0-9-]+\\) \\([0-9:]+\\)" timestamp)
-    (let* ((date-str (concat (match-string 1 timestamp) " "
-                             (match-string 2 timestamp)))
-           (time (date-to-time date-str))
-           (diff (time-subtract (current-time) time))
-           (seconds (float-time diff)))
-      (cond
-       ((< seconds 60) "just now")
-       ((< seconds 3600) (format "%d minutes ago" (/ seconds 60)))
-       ((< seconds 86400) (format "%d hours ago" (/ seconds 3600)))
-       ((< seconds 604800) (format "%d days ago" (/ seconds 86400)))
-       ((< seconds 2592000) (format "%d weeks ago" (/ seconds 604800)))
-       ((< seconds 31536000) (format "%d months ago" (/ seconds 2592000)))
-       (t (format "%d years ago" (/ seconds 31536000)))))))
+             (timestamp (cadr lines)))
+        (cons summary timestamp)))))
 
 (defun majutsu-file--goto-line-col (line col)
   "Move point to LINE and COL in current buffer."
