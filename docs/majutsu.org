@@ -128,10 +128,34 @@ While you can type revsets manually, Majutsu's selection system allows you to bu
 ** Diffing
 *** Diff Transient
 Press ~d~ to open the Diff transient.
+- ~r~ :: Select revisions to diff (=--revisions=). Can specify multiple revisions or a revset like =B::D=.
 - ~f~ / ~t~ :: Select the =--from= and =--to= revisions.
 - ~-g~ :: Toggle Git-style diff output.
 - ~-W~ :: Toggle color-words diff output.
 - ~-S~ :: Toggle summary output.
+
+**** Understanding =--revisions=
+The =--revisions= argument accepts any revset that forms a /contiguous/ set of commits. "Contiguous" means no gaps in the DAG, but *forks and merges are allowed*.
+
+Examples:
+- =-r @= :: Changes in the working copy commit (default).
+- =-r @-= :: Changes in the parent of the working copy.
+- =-r B::D= :: Total changes from B through D.
+- =-r 'A | B'= :: Valid only if A and B form a contiguous set; gaps produce an error.
+
+When visiting a file from such a diff:
+- On an *added* or *context* line: visits =heads(revisions)=.
+- On a *removed* line: visits =roots(revisions)-= (the parents of roots).
+
+*Note*: When the revset has multiple heads or roots, the target revision for file visits may be ambiguous. For example, in an X-shaped history:
+#+begin_example
+  D   E       <- two heads
+   \ /
+    C
+   / \
+  A   B       <- two roots
+#+end_example
+If you diff =-r A::D | B::E=, there are two heads (D, E) and two roots (A, B). The diff shows changes from the /merged/ parents to the /merged/ heads. If D and E modify the same lines, the diff will show conflict markers. When visiting files, Majutsu picks one of the heads/roots, which may not be the specific commit where the displayed change originated. For precise navigation, use =--from= / =--to= with single revisions instead.
 
 *** Diff Buffer
 The diff buffer is highly interactive:
