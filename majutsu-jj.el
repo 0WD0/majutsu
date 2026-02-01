@@ -101,6 +101,88 @@ This checks multiple sources in order:
              (or (and (equal (car range) "-r") (cadr range))
                  (cdr (assoc "--revisions=" range)))))))
 
+(defvar majutsu-revision-faces
+  '(majutsu-log-revision-face
+    majutsu-log-change-id-face
+    majutsu-log-commit-id-face
+    majutsu-log-bookmark-face
+    majutsu-log-tag-face)
+  "Faces used for JJ revision identifiers in Majutsu buffers.")
+
+(defun majutsu-jj-revision-p (rev)
+  "Return non-nil if REV names an existing JJ revision.
+Uses `jj log -r REV -G -T self.contained_in(\"REV\")' to verify."
+  (when (and rev (not (string-empty-p rev)))
+    (let ((output (majutsu-jj-string "log" "-r" rev "-G" "-T" (majutsu-tpl `[:method 'self :contained_in ,rev]))))
+      (string= output "true"))))
+
+(put 'jj-revision 'thing-at-point #'majutsu-thingatpt--jj-revision)
+(defun majutsu-thingatpt--jj-revision (&optional disallow)
+  "Return the JJ revision at point, or nil if none is found.
+Optional DISALLOW is a string of characters that should not appear
+in the revision identifier (used for recursive refinement)."
+  ;; Support change IDs, commit IDs, and references (bookmarks, tags, etc.)
+  (and-let* ((bounds
+              (let ((c (concat "\s\n\t~^:?*[\\|()<>@" disallow)))
+                (cl-letf
+                    (((get 'jj-revision 'beginning-op)
+                      (lambda ()
+                        (if (re-search-backward (format "[%s]" c) nil t)
+                            (forward-char)
+                          (goto-char (point-min)))))
+                     ((get 'jj-revision 'end-op)
+                      (lambda ()
+                        (re-search-forward (format "\\=[^%s]*" c) nil t))))
+                  (bounds-of-thing-at-point 'jj-revision))))
+             (string (buffer-substring-no-properties (car bounds) (cdr bounds)))
+             ;; References are allowed to contain most punctuation,
+             ;; but if those appear at edges, they're likely delimiters.
+             (string (thread-first string
+                                   (string-trim-left  "[(</\"'")
+                                   (string-trim-right "[])>\"'.,;:!]"))))
+    (let (disallow)
+      ;; Handle ranges (x..y) and special syntax
+      (when (or (string-match-p "\\.\\." string)
+                (string-match-p "/\\." string))
+        (setq disallow (concat disallow ".")))
+      ;; Handle change offset syntax (xyz/0, xyz/1)
+      (when (and (string-match-p "/[0-9]" string)
+                 (not (string-match-p "@" string)))
+        ;; Keep the slash for change offset, but disallow further slashes
+        (setq disallow (concat disallow "/")))
+      ;; Handle remote references (name@remote)
+      (when (and (string-match-p "@" string)
+                 (not (string-equal string "@")))
+        ;; Allow one @ for remote refs, but not more
+        (unless (string-match-p "^@[a-zA-Z]" string)
+          (setq disallow (concat disallow "@"))))
+      (if disallow
+          ;; Recurse with additional restrictions
+          (majutsu-thingatpt--jj-revision disallow)
+        ;; Final validation
+        (and (not (string-match-p "^[\s\t\n]*$" string))
+             (or
+              ;; Check if it looks like a change ID (k-z range letters)
+              ;; Change IDs use k-z instead of 0-9a-f; default display is lowercase
+              (and (>= (length string) 1)
+                   (string-match-p "^[k-z]+$" string)
+                   ;; Shortest unique prefix can be as short as 1 char
+                   (majutsu-jj-revision-p string))
+              ;; Check if it looks like a commit ID (hex)
+              (and (>= (length string) 4)
+                   (string-match-p "^[0-9a-fA-F]+$" string)
+                   (majutsu-jj-revision-p string))
+              ;; Check if it's @ (working copy)
+              (string-equal string "@")
+              ;; Check if it's a bookmark/tag with proper face
+              (and (member (get-text-property (point) 'face)
+                           majutsu-revision-faces)
+                   (majutsu-jj-revision-p string))
+              ;; Fallback: try to validate any non-empty string
+              (and (>= (length string) 1)
+                   (majutsu-jj-revision-p string)))
+             string)))))
+
 (defun majutsu-file-at-point ()
   "Return file at point for jj diff sections."
   (magit-section-case
