@@ -66,6 +66,10 @@
   "^\\(=\\{7,\\}\\)$"
   "Regexp matching Git-style separator marker.")
 
+(defconst majutsu-conflict-label-re
+  "^\\([[:alnum:]]+\\) \\([[:xdigit:]]+\\) \"\\([^\"]+\\)\"\\(?: ([^)]*)\\)?$"
+  "Regexp matching JJ conflict label metadata.")
+
 ;;; Data Structures
 
 (cl-defstruct (majutsu-conflict (:constructor majutsu-conflict--create))
@@ -77,6 +81,143 @@
   removes      ; list of (label . content) for bases
   adds         ; list of (label . content) for sides
   base)        ; (label . content) for the snapshot base in jj-diff
+
+(defun majutsu-conflict-parse-label (label)
+  "Parse JJ LABEL string into a plist.
+Return a plist with :change-id, :commit-id, and :description keys.
+Return nil for nil or empty LABEL, or when LABEL does not match."
+  (when (and (stringp label)
+             (not (string= label ""))
+             (string-match majutsu-conflict-label-re label))
+    (list :change-id (match-string 1 label)
+          :commit-id (match-string 2 label)
+          :description (match-string 3 label))))
+
+(defun majutsu-conflict-label-change-id (label)
+  "Return the change-id from LABEL, or nil when unavailable."
+  (plist-get (majutsu-conflict-parse-label label) :change-id))
+
+(defun majutsu-conflict-label-commit-id (label)
+  "Return the commit-id from LABEL, or nil when unavailable."
+  (plist-get (majutsu-conflict-parse-label label) :commit-id))
+
+(defun majutsu-conflict-label-description (label)
+  "Return the description from LABEL, or nil when unavailable."
+  (plist-get (majutsu-conflict-parse-label label) :description))
+
+(defun majutsu-conflict-revision-at-point ()
+  "Return conflict metadata at point as a plist.
+Returns a plist with :change-id, :commit-id, and :side (add/remove/base),
+or nil when point is not inside a labeled section."
+  (let ((conflict (majutsu-conflict-at-point)))
+    (when conflict
+      (let ((pos (point))
+            (begin (majutsu-conflict-begin-pos conflict))
+            (end (majutsu-conflict-end-pos conflict))
+            (style (majutsu-conflict-style conflict)))
+        (save-excursion
+          (goto-char begin)
+          (let ((done nil)
+                (state nil)
+                (add-count 0)
+                (current-label nil)
+                (diff-remove-label nil)
+                (diff-add-label nil)
+                (base-label nil)
+                (side nil)
+                (label nil))
+            (while (and (not done) (< (point) end))
+              (let* ((line-beg (line-beginning-position))
+                     (line-end (line-end-position))
+                     (line (buffer-substring-no-properties line-beg line-end))
+                     (on-line (and (<= line-beg pos) (<= pos line-end))))
+                (cond
+                 ((string-match majutsu-conflict-end-re line)
+                  (setq state nil)
+                  (when on-line
+                    (setq done t)))
+                 ((string-match majutsu-conflict-diff-re line)
+                  (setq state 'diff
+                        diff-remove-label (match-string 2 line)
+                        diff-add-label nil)
+                  (when on-line
+                    (setq side 'remove
+                          label diff-remove-label
+                          done t)))
+                 ((string-match majutsu-conflict-begin-re line)
+                  (when (eq style 'git)
+                    (setq state 'remove
+                          current-label (match-string 2 line))
+                    (when on-line
+                      (setq side 'remove
+                            label current-label
+                            done t))))
+                 ((string-match majutsu-conflict-note-re line)
+                  (when (eq state 'diff)
+                    (setq diff-add-label (match-string 2 line)))
+                  (when on-line
+                    (setq side 'add
+                          label diff-add-label
+                          done t)))
+                 ((string-match majutsu-conflict-remove-re line)
+                  (setq state 'remove
+                        current-label (match-string 2 line))
+                  (when on-line
+                    (setq side 'remove
+                          label current-label
+                          done t)))
+                 ((string-match majutsu-conflict-add-re line)
+                  (cl-incf add-count)
+                  (setq state (if (or (eq style 'jj-diff)
+                                      (and (eq style 'jj-snapshot) (= add-count 1)))
+                                  'base
+                                'add)
+                        current-label (match-string 2 line))
+                  (when on-line
+                    (setq side state
+                          label current-label
+                          done t)))
+                 ((string-match majutsu-conflict-git-ancestor-re line)
+                  (setq state 'base
+                        base-label (match-string 2 line)
+                        current-label base-label)
+                  (when on-line
+                    (setq side 'base
+                          label base-label
+                          done t)))
+                 ((string-match majutsu-conflict-git-separator-re line)
+                  (setq state 'add)
+                  (when on-line
+                    (setq side 'add
+                          label nil
+                          done t)))
+                 (t
+                  (when on-line
+                    (cond
+                     ((eq state 'diff)
+                      (cond
+                       ((string-prefix-p "-" line)
+                        (setq side 'remove
+                              label diff-remove-label))
+                       ((string-prefix-p "+" line)
+                        (setq side 'add
+                              label diff-add-label))))
+                     ((eq state 'remove)
+                      (setq side 'remove
+                            label current-label))
+                     ((eq state 'add)
+                      (setq side 'add
+                            label current-label))
+                     ((eq state 'base)
+                      (setq side 'base
+                            label current-label)))
+                    (setq done t))))
+                (forward-line 1)))
+            (let ((parsed (majutsu-conflict-parse-label label)))
+              (when (and parsed side)
+                (list :change-id (plist-get parsed :change-id)
+                      :commit-id (plist-get parsed :commit-id)
+                      :side side)))))))))
 
 ;;; Style Detection
 

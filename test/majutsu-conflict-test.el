@@ -112,6 +112,32 @@ ORANGE
 
 ;;; Tests
 
+(ert-deftest majutsu-conflict-label-parsing-test ()
+  "Test parsing conflict label metadata."
+  (let ((label "vpxusssl 38d49363 \"merge base\"")
+        (label-with-suffix "tlwwkqxk d121763d \"commit A\" (no terminating newline)")
+        (malformed "vpxusssl 38d49363"))
+    (should (equal (majutsu-conflict-parse-label label)
+                   '(:change-id "vpxusssl"
+                     :commit-id "38d49363"
+                     :description "merge base")))
+    (should (equal (majutsu-conflict-parse-label label-with-suffix)
+                   '(:change-id "tlwwkqxk"
+                     :commit-id "d121763d"
+                     :description "commit A")))
+    (should-not (majutsu-conflict-parse-label nil))
+    (should-not (majutsu-conflict-parse-label ""))
+    (should-not (majutsu-conflict-parse-label malformed))
+    (should (equal (majutsu-conflict-label-change-id label) "vpxusssl"))
+    (should (equal (majutsu-conflict-label-commit-id label) "38d49363"))
+    (should (equal (majutsu-conflict-label-description label) "merge base"))
+    (should (equal (majutsu-conflict-label-change-id label-with-suffix) "tlwwkqxk"))
+    (should (equal (majutsu-conflict-label-commit-id label-with-suffix) "d121763d"))
+    (should (equal (majutsu-conflict-label-description label-with-suffix) "commit A"))
+    (should-not (majutsu-conflict-label-change-id nil))
+    (should-not (majutsu-conflict-label-commit-id nil))
+    (should-not (majutsu-conflict-label-description nil))))
+
 (ert-deftest majutsu-conflict-test-parse-jj-diff ()
   "Test parsing JJ diff-style conflict."
   (with-temp-buffer
