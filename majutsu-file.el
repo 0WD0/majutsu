@@ -145,25 +145,44 @@ LIST-FN defaults to `majutsu-file-list'."
                    (majutsu-file--read-path revset root))))
     (list revset path)))
 
-(defun majutsu-find-file--ensure-buffer (root revset path &optional revert)
-  "Return a buffer visiting PATH from REVSET.
-ROOT is the repository root."
-  (let* ((buf-name (majutsu-file--buffer-name revset path))
-         (buffer (get-buffer-create buf-name))
-         (resolved (or (majutsu-file--resolve-single-rev revset)
-                       (user-error "Revset does not resolve to a single revision"))))
-    (with-current-buffer buffer
-      (when (or revert
-                (not majutsu-buffer-blob-path))
-        (setq majutsu-buffer-blob-root root)
-        (setq majutsu-buffer-blob-revset revset)
-        (setq majutsu-buffer-blob-revision resolved)
-        (setq majutsu-buffer-blob-path path)
-        (setq default-directory root)
-        (setq-local revert-buffer-function #'majutsu-file-revert-buffer)
-        (majutsu-file-revert-buffer nil t)
-        (run-hooks 'majutsu-find-file-hook)))
-    buffer))
+(defun majutsu-find-file-noselect (rev file &optional revert)
+  "Read FILE from REV into a buffer and return the buffer.
+REV is a revset, or nil to visit the file directly from the filesystem.
+FILE must be relative to the top directory of the repository.
+Non-nil REVERT means to revert the buffer.  If `ask-revert', then
+only after asking.  A non-nil value for REVERT is ignored if REV is nil."
+  (let* ((root (majutsu-file--root))
+         (absolute (file-name-absolute-p file))
+         (file-abs (if absolute file (expand-file-name file root)))
+         (file-rel (if absolute (file-relative-name file root) file))
+         (defdir (file-name-directory file-abs)))
+    (if (null rev)
+        ;; Visit filesystem file directly
+        (progn
+          (unless (file-exists-p file-abs)
+            (user-error "File no longer exists: %s" file-abs))
+          (find-file-noselect file-abs))
+      ;; Visit blob from revision
+      (let* ((buf-name (majutsu-file--buffer-name rev file-rel))
+             (buffer (get-buffer-create buf-name))
+             (resolved (or (majutsu-file--resolve-single-rev rev)
+                           (user-error "Revset does not resolve to a single revision"))))
+        (with-current-buffer buffer
+          (when (or revert
+                    (eq revert 'ask-revert)
+                    (not majutsu-buffer-blob-path))
+            (when (or (not (eq revert 'ask-revert))
+                      (y-or-n-p (format "%s already exists; revert it? "
+                                        (buffer-name))))
+              (setq majutsu-buffer-blob-root root)
+              (setq majutsu-buffer-blob-revset rev)
+              (setq majutsu-buffer-blob-revision resolved)
+              (setq majutsu-buffer-blob-path file-rel)
+              (setq default-directory (if (file-exists-p defdir) defdir root))
+              (setq-local revert-buffer-function #'majutsu-file-revert-buffer)
+              (majutsu-file-revert-buffer nil t)
+              (run-hooks 'majutsu-find-file-hook))))
+        buffer))))
 
 (defun majutsu-file-revert-buffer (_ignore-auto noconfirm)
   "Revert the current blob buffer content."
@@ -191,7 +210,7 @@ ROOT is the repository root."
   "Display PATH from REVSET using DISPLAY-FN."
   (let* ((root (majutsu-file--root))
          (path (majutsu-file--relative-path root path))
-         (buffer (majutsu-find-file--ensure-buffer root revset path)))
+         (buffer (majutsu-find-file-noselect revset path)))
     (funcall display-fn buffer)
     buffer))
 
@@ -239,14 +258,8 @@ Preserves line/column position when jumping between revisions."
         (let ((to-rev (or rev "@")))
           (unless (equal from-rev to-rev)
             (setq line (majutsu-diff-visit--offset root rel-file from-rev to-rev line))))))
-    ;; Get or create buffer
-    (if rev
-        (setq buf (majutsu-find-file--ensure-buffer root rev rel-file))
-      ;; nil rev means visit filesystem file directly
-      (let ((abs-file (expand-file-name rel-file root)))
-        (unless (file-exists-p abs-file)
-          (user-error "File no longer exists: %s" abs-file))
-        (setq buf (find-file-noselect abs-file))))
+    ;; Get or create buffer using majutsu-find-file-noselect
+    (setq buf (majutsu-find-file-noselect rev rel-file))
     ;; Display and position
     (funcall fn buf)
     (when line

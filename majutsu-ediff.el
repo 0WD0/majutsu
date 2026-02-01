@@ -121,8 +121,7 @@ If FILE is non-nil, perform a merge with result written to FILE."
 
 (defun majutsu-ediff--find-file-noselect (rev file)
   "Return buffer visiting FILE from REV."
-  (let ((root (majutsu-file--root)))
-    (majutsu-find-file--ensure-buffer root rev file)))
+  (majutsu-find-file-noselect rev file))
 
 (defun majutsu-ediff--parse-diff-range (range)
   "Parse RANGE into (from . to) cons.
