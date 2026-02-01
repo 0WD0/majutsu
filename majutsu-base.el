@@ -280,7 +280,8 @@ This checks multiple sources in order:
            (bound-and-true-p majutsu-buffer-diff-range)
            (let ((range majutsu-buffer-diff-range))
              (or (and (equal (car range) "-r") (cadr range))
-                 (cdr (assoc "--revisions=" range)))))))
+                 (when-let* ((arg (seq-find (lambda (item) (string-prefix-p "--revisions=" item)) range)))
+                   (substring arg (length "--revisions="))))))))
 
 ;;; _
 (provide 'majutsu-base)
