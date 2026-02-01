@@ -750,18 +750,33 @@ works with the simplified jj diff we render here."
   "Return non-nil if point is on a removed diff line."
   (eq (char-after (line-beginning-position)) ?-))
 
-(defun majutsu-diff--default-revset ()
-  "Return the revset implied by the current diff buffer."
+(defun majutsu-diff--revisions ()
+  "Return (FROM-REV . TO-REV) for the current diff buffer.
+FROM-REV is the old/left side, TO-REV is the new/right side."
   (let* ((range majutsu-buffer-diff-range)
-         (removed (majutsu-diff--on-removed-line-p))
          (from (majutsu-diff--range-value range "--from="))
          (to (majutsu-diff--range-value range "--to="))
          (revisions (majutsu-diff--range-value range "--revisions=")))
     (cond
-     ((and range (equal (car range) "-r") (cadr range)) (cadr range))
-     (revisions revisions)
-     (from (if (and removed from) from (or to from)))
-     (t "@"))))
+     ;; -r REV: diff of a single revision's changes
+     ((and range (equal (car range) "-r") (cadr range))
+      (let ((rev (cadr range)))
+        (cons (concat rev "-") rev)))
+     ;; --revisions=REV: same as -r
+     (revisions
+      (cons (concat revisions "-") revisions))
+     ;; --from=X --to=Y: explicit range
+     ((or from to)
+      (cons (or from "@-") (or to "@")))
+     ;; Default: working copy changes (parent to @)
+     (t (cons "@-" "@")))))
+
+(defun majutsu-diff--default-revset ()
+  "Return the revset implied by the current diff buffer.
+If on a removed line, return the from-rev; otherwise return the to-rev."
+  (let* ((revs (majutsu-diff--revisions))
+         (removed (majutsu-diff--on-removed-line-p)))
+    (if removed (car revs) (cdr revs))))
 
 (defun majutsu-diff--hunk-line (section goto-from)
   "Return the line number in SECTION for GOTO-FROM side."
@@ -836,8 +851,10 @@ regardless of what the diff is about."
          (file (majutsu-file-at-point)))
     (unless file
       (user-error "No file at point"))
-    (let* ((goto-from (and section (magit-section-match 'jj-hunk section)
+    (let* ((revs (majutsu-diff--revisions))
+           (goto-from (and section (magit-section-match 'jj-hunk section)
                            (majutsu-diff--on-removed-line-p)))
+           (target-rev (if goto-from (car revs) (cdr revs)))
            (goto-workspace (or force-workspace
                                (and (majutsu-diff--visit-workspace-p)
                                     (not goto-from))))
@@ -856,9 +873,8 @@ regardless of what the diff is about."
                     (forward-line (1- line))
                     (move-to-column col)))
               (user-error "File does not exist in workspace: %s" file)))
-        ;; Visit blob
-        (let* ((revset (majutsu-diff--default-revset))
-               (buf (majutsu-find-file revset file)))
+        ;; Visit blob from appropriate revision
+        (let ((buf (majutsu-find-file target-rev file)))
           (when (and buf line col)
             (majutsu-diff--goto-line-col buf line col)))))))
 
