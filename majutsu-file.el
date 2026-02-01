@@ -163,10 +163,11 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
             (user-error "File no longer exists: %s" file-abs))
           (find-file-noselect file-abs))
       ;; Visit blob from revision
-      (let* ((buf-name (majutsu-file--buffer-name rev file-rel))
-             (buffer (get-buffer-create buf-name))
-             (resolved (or (majutsu-file--resolve-single-rev rev)
-                           (user-error "Revset does not resolve to a single revision"))))
+      (let* ((resolved (or (majutsu-file--resolve-single-rev rev)
+                           (user-error "Revset does not resolve to a single revision")))
+             (short-rev (majutsu--short-change-id resolved))
+             (buf-name (majutsu-file--buffer-name short-rev file-rel))
+             (buffer (get-buffer-create buf-name)))
         (with-current-buffer buffer
           (when (or revert
                     (eq revert 'ask-revert)
