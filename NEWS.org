@@ -10,6 +10,9 @@
   - Add toggle-option for ~-r~.
 - In ~majutus-diff~ transient:
   - Support ~--ignore-space-change~ (~-b~) and ~--ignore-all-space~ (~-w~) arguments.
+- In ~majutsu-diff~ buffers:
+  - Add ~--color-words~ backend with ~-W~ toggle in the diff transient.
+  - Add a shadow cursor for refined color-words hunks (uses ~smerge-refine-shadow-cursor~).
 - Highlight JJ description buffers (summary, JJ comments, change list) using git-commit faces.
   - Add global mode to manage JJ description setup hooks.
   - Allow configuring JJ description major mode and Change ID face.

@@ -28,6 +28,12 @@
 
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-find-file-at-point "majutsu-file" ())
+(declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
+(declare-function majutsu-color-words-wash-diffs "majutsu-color-words" (args))
+(declare-function majutsu-color-words--collect-change-spans "majutsu-color-words" (beg end))
+(declare-function majutsu-color-words--collect-debug-change-spans "majutsu-color-words" (beg end))
+(declare-function majutsu-color-words--collect-debug-token-spans "majutsu-color-words" (beg end))
+(declare-function majutsu-color-words--group-change-pairs "majutsu-color-words" (spans))
 
 ;;; Options
 ;;;; Diff Mode
@@ -90,6 +96,18 @@ otherwise fall back to the current buffer's `tab-width'."
 (defface majutsu-diffstat-binary
   '((t :inherit font-lock-constant-face :foreground "#81c8be"))
   "Face for the (binary) label in diffstat entries."
+  :group 'majutsu)
+
+(defface majutsu-diff-color-words-focus
+  '((((class color) (background light))
+     :extend t
+     :background "grey95")
+    (((class color) (background dark))
+     :extend t
+     :background "grey20"))
+  "Background-only face for the focused hunk in color-words diffs.
+This face intentionally omits `:foreground' so that per-word ANSI
+colors (red/green) show through unaffected."
   :group 'majutsu)
 
 ;;; Line Offset Calculation
@@ -155,6 +173,55 @@ ROOT is the repository root.  Returns the adjusted line number."
   "Arguments that are considered jj diff \"Diff Formatting Options\".
 
 These are the only arguments that are remembered per diff buffer.")
+
+(defvar-local majutsu-diff-backend 'git
+  "Backend used to render the current diff buffer.")
+
+(defun majutsu-diff--backend-from-args (args)
+  "Return diff backend inferred from ARGS."
+  (if (member "--color-words" args)
+      'color-words
+    'git))
+
+(defun majutsu-diff--sync-backend (&optional args)
+  "Sync `majutsu-diff-backend' from ARGS or current buffer args.
+Return the resulting backend symbol."
+  (setq-local majutsu-diff-backend
+              (majutsu-diff--backend-from-args
+               (or args majutsu-buffer-diff-args)))
+  (when (eq majutsu-diff-backend 'color-words)
+    (require 'majutsu-color-words))
+  majutsu-diff-backend)
+
+(defun majutsu-diff--backend-uses-ansi-p (backend)
+  "Return non-nil when BACKEND should be ANSI-processed by process layer.
+Color-words keeps raw debug output for marker parsing and applies ANSI later."
+  (not (eq backend 'color-words)))
+
+(defun majutsu-diff--set-left-margin (width)
+  "Set left margin WIDTH for the current buffer's windows."
+  (setq-local left-margin-width width)
+  (dolist (window (get-buffer-window-list (current-buffer) nil t))
+    (set-window-margins window width (cdr (window-margins window)))))
+
+(defun majutsu-diff--backend-washer (backend)
+  "Return the wash function for BACKEND."
+  (if (eq backend 'color-words)
+      #'majutsu-color-words-wash-diffs
+    #'majutsu-diff-wash-diffs))
+
+(defun majutsu-diff--color-words-line-info ()
+  "Return color-words line info at point, or nil if unavailable."
+  (when (eq (majutsu-diff--sync-backend) 'color-words)
+    (majutsu-color-words-line-info-at-point)))
+
+(defun majutsu-diff--color-words-column (info)
+  "Return column offset into content based on INFO plist.
+The inline line-number columns are hidden via the `invisible' text
+property, so `current-column' already returns the visual column
+which corresponds directly to the source file column."
+  (when (plist-get info :content-column)
+    (current-column)))
 
 (defcustom majutsu-diff-whitespace-max-chars 12000
   "Skip whitespace painting for hunks larger than this many chars.
@@ -314,6 +381,7 @@ list of filesets (path filters)."
   (setq-local majutsu-buffer-diff-args
               (or (majutsu-diff--remembered-args args)
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
+  (majutsu-diff--sync-backend majutsu-buffer-diff-args)
   (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
 
 (defun majutsu-diff-arguments (&optional mode)
@@ -433,11 +501,12 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
   (let* ((args (append (list "diff")
                        majutsu-buffer-diff-args
                        majutsu-buffer-diff-range
-                       majutsu-buffer-diff-filesets)))
+                       majutsu-buffer-diff-filesets))
+         (backend (majutsu-diff--sync-backend args))
+         (washer (majutsu-diff--backend-washer backend)))
     (magit-insert-section (diff-root)
       (magit-insert-heading (format "jj %s" (string-join args " ")))
-      (majutsu-jj-wash
-          #'majutsu-diff-wash-diffs 'wash-anyway args))))
+      (majutsu-jj-wash washer 'wash-anyway args))))
 
 ;;; Diff wash
 
@@ -470,7 +539,7 @@ first \"diff --git\" header."
               (setq sep (concat (match-string 0 file) sep))
               (setq file (substring file 0 (match-beginning 0))))
             (setq file (string-trim-right file))
-            (magit-insert-section (jj-file (pop files))
+            (magit-insert-section (jj-file (or (pop files) file))
               (insert (magit-format-file 'stat file 'magit-filename))
               (insert sep)
               (cond
@@ -623,22 +692,24 @@ When SECTION is nil, walk all hunk sections."
                      (eq section (magit-current-section)))
           ((or `(all nil ,_) '(t nil t))
            (oset section refined t)
-           (save-excursion
-             (goto-char (oref section start))
-             ;; `diff-refine-hunk' cannot handle combined hunks.
-             (unless (looking-at "@@@")
-               (let ((len (- (oref section end) (oref section start))))
-                 (if (and majutsu-diff-refine-max-chars
-                          (> len majutsu-diff-refine-max-chars))
-                     (progn
-                       (oset section refined nil)
-                       (remove-overlays (oref section start)
-                                        (oref section end)
-                                        'diff-mode 'fine))
-                   (let ((smerge-refine-ignore-whitespace
-                          majutsu-diff-refine-ignore-whitespace)
-                         (write-region-inhibit-fsync t))
-                     (diff-refine-hunk)))))))
+           (if (eq majutsu-diff-backend 'color-words)
+               (majutsu-diff--color-words-refine-hunk section)
+             (save-excursion
+               (goto-char (oref section start))
+               ;; `diff-refine-hunk' cannot handle combined hunks.
+               (unless (looking-at "@@@")
+                 (let ((len (- (oref section end) (oref section start))))
+                   (if (and majutsu-diff-refine-max-chars
+                            (> len majutsu-diff-refine-max-chars))
+                       (progn
+                         (oset section refined nil)
+                         (remove-overlays (oref section start)
+                                          (oref section end)
+                                          'diff-mode 'fine))
+                     (let ((smerge-refine-ignore-whitespace
+                            majutsu-diff-refine-ignore-whitespace)
+                           (write-region-inhibit-fsync t))
+                       (diff-refine-hunk))))))))
           ((and (guard allow-remove)
                 (or `(nil t ,_) '(t t nil)))
            (oset section refined nil)
@@ -652,43 +723,298 @@ When SECTION is nil, walk all hunk sections."
                       (walk child)))))
       (walk magit-root-section))))
 
+(defun majutsu-diff--color-words--overlay-at (pos predicate)
+  "Return overlay at POS satisfying PREDICATE, or nil."
+  (let ((ols (overlays-at pos)))
+    (while (and ols (not (funcall predicate (car ols))))
+      (pop ols))
+    (car ols)))
+
+(defun majutsu-diff--color-words--region-overlay-at (pos)
+  "Return region overlay at POS (or just before)."
+  (let ((pred (lambda (ov) (overlay-get ov 'smerge--refine-region))))
+    (or (majutsu-diff--color-words--overlay-at pos pred)
+        (when (> pos (point-min))
+          (majutsu-diff--color-words--overlay-at (1- pos) pred)))))
+
+(defun majutsu-diff--color-words--span-stream-length (spans)
+  "Return total length of SPANS stream."
+  (let ((len 0))
+    (dolist (span spans)
+      (setq len (+ len (- (cdr span) (car span)))))
+    len))
+
+(defun majutsu-diff--color-words--span-stream-offset (pos spans)
+  "Return POS offset in SPANS stream.
+Counts only SPANS before POS.  If POS is inside a span, include the
+partial offset.  Return nil when SPANS is nil." 
+  (when spans
+    (let ((offset 0))
+      (cl-block nil
+        (dolist (span spans)
+          (let ((s (car span))
+                (e (cdr span)))
+            (cond
+             ((<= pos s)
+              (cl-return offset))
+             ((< pos e)
+              (setq offset (+ offset (- pos s)))
+              (cl-return offset))
+             (t
+              (setq offset (+ offset (- e s)))))))
+        offset))))
+
+(defun majutsu-diff--color-words--span-stream-pos (offset spans)
+  "Return buffer position for OFFSET into SPANS stream." 
+  (let* ((total (majutsu-diff--color-words--span-stream-length spans))
+         (remaining (max 0 (min offset (max 0 (1- total))))))
+    (or
+     (cl-block nil
+       (dolist (span spans)
+         (let* ((s (car span))
+                (e (cdr span))
+                (len (- e s)))
+           (when (< remaining len)
+             (cl-return (+ s remaining)))
+           (setq remaining (- remaining len)))))
+     (when spans
+       (max (caar (last spans)) (1- (cdar (last spans))))))))
+
+(defun majutsu-diff--color-words--token-anchors (token-spans non-token-spans)
+  "Return alist mapping non-token offsets to TOKEN-SPANS.
+Each entry is (OFFSET . (SPAN...)) with SPAN = (START . END) in buffer order."
+  (let (anchors)
+    (dolist (span token-spans)
+      (let* ((start (car span))
+             (offset (or (majutsu-diff--color-words--span-stream-offset
+                          start non-token-spans)
+                         0))
+             (cell (assoc offset anchors)))
+        (if cell
+            (setcdr cell (cons span (cdr cell)))
+          (push (cons offset (list span)) anchors))))
+    (dolist (cell anchors)
+      (setcdr cell (nreverse (cdr cell))))
+    (nreverse anchors)))
+
+(defun majutsu-diff--color-words-shadow-pos (cursor)
+  "Compute shadow cursor position for color-words geometry at CURSOR.
+Return buffer position, or nil if no mapping is possible.
+
+Map using non-token offsets to align shared context.  When CURSOR sits
+inside a token span, prefer a token span anchored at the same offset on
+the other side; otherwise fall back to the non-token stream." 
+  (let ((region-ov (majutsu-diff--color-words--region-overlay-at cursor)))
+    (when region-ov
+      (let* ((region-other (overlay-get region-ov 'majutsu-color-words-region-other))
+             (from-spans (overlay-get region-ov 'majutsu-color-words-non-token))
+             (to-spans (and region-other
+                            (overlay-get region-other 'majutsu-color-words-non-token)))
+             (from-tokens (overlay-get region-ov 'majutsu-color-words-token-anchors))
+             (to-tokens (and region-other
+                             (overlay-get region-other 'majutsu-color-words-token-anchors)))
+             (offset (or (majutsu-diff--color-words--span-stream-offset
+                          cursor from-spans)
+                         (and from-tokens 0)))
+             (scaled (cond
+                      ((and to-spans offset)
+                       (min offset (1- (majutsu-diff--color-words--span-stream-length
+                                        to-spans))))
+                      (offset offset))))
+        (when (and offset scaled)
+          (let* ((from-bucket (cdr (assoc offset from-tokens)))
+                 (to-bucket (cdr (assoc scaled to-tokens)))
+                 (token-hit (and from-bucket
+                                 (seq-find (lambda (span)
+                                             (and (<= (car span) cursor)
+                                                  (< cursor (cdr span))))
+                                           from-bucket))))
+            (cond
+             ((and token-hit to-bucket)
+              (car (car to-bucket)))
+             (to-spans
+              (majutsu-diff--color-words--span-stream-pos scaled to-spans)))))))))
+
+(defun majutsu-diff--color-words-shadow-cursor (window _oldpos dir)
+  "Shadow cursor callback for color-words diffs.
+Unlike `smerge--refine-shadow-cursor', this maps through inline pairs
+and falls back to region mapping for shared context."
+  (let ((ol (window-parameter window 'smerge--refine-shadow-cursor)))
+    (if (not (and (bound-and-true-p smerge-refine-shadow-cursor)
+                  (memq dir '(entered moved))))
+        (when ol (delete-overlay ol))
+      (with-current-buffer (window-buffer window)
+        (let ((other-beg (ignore-errors
+                           (majutsu-diff--color-words-shadow-pos
+                            (window-point window)))))
+          (if (not other-beg)
+              (when ol (delete-overlay ol))
+            (let ((other-end (min (point-max) (1+ other-beg))))
+              ;; Handle wide chars (TAB/LF) — show as pseudo-space.
+              (when (memq (char-after other-beg) '(?\n ?\t))
+                (setq other-end other-beg))
+              (if ol (move-overlay ol other-beg other-end)
+                (setq ol (make-overlay other-beg other-end nil t nil))
+                (setf (window-parameter window 'smerge--refine-shadow-cursor)
+                      ol)
+                (overlay-put ol 'window window)
+                (overlay-put ol 'face 'smerge-refine-shadow-cursor))
+              (overlay-put ol 'before-string
+                           (when (= other-beg other-end)
+                             (propertize
+                              " " 'face 'smerge-refine-shadow-cursor))))))))))
+
+(defun majutsu-diff--color-words-refine-hunk (section)
+  "Apply word-level refinement to a color-words SECTION.
+Walk the hunk body to find colored word spans (identified by debug
+labels when available, otherwise ANSI-derived `font-lock-face') and
+create three kinds of overlays:
+
+1. `smerge--refine-region' overlays covering the full extent of each
+   removed/added block.  These carry `cursor-sensor-functions' with
+   `majutsu-diff--color-words-shadow-cursor' (NOT the smerge version,
+   which assumes separated geometry).
+
+2. `diff-mode fine' overlays on non-token spans, cross-linked via
+   `smerge--refine-other' as anchors for precise shadow-cursor mapping.
+
+3. Token overlays on underlined spans with `diff-refine-removed'/
+   `diff-refine-added' faces.  When available, token spans come from
+   jj `--color=debug' labels (exactly matching jj's inline tokenization);
+   otherwise fall back to ANSI face spans.
+
+This trusts jj's own word-level diff: underlined = unique to one
+side, non-underlined colored = shared context within a change."
+  (require 'majutsu-color-words)
+  (require 'smerge-mode)
+  (let* ((beg (oref section content))
+         (end (oref section end))
+         ;; Prefer debug-labeled spans when available; otherwise use ANSI faces.
+         (debug-spans (majutsu-color-words--collect-debug-change-spans beg end))
+         (ansi-spans (majutsu-color-words--collect-change-spans beg end))
+         (change-spans (or debug-spans ansi-spans))
+         (region-pairs (majutsu-color-words--group-change-pairs change-spans))
+         ;; For token overlays, prefer explicit debug token labels because
+         ;; they mirror jj's rendered token stream exactly.
+         (debug-token-spans (majutsu-color-words--collect-debug-token-spans beg end))
+         (token-pairs (if debug-token-spans
+                          (majutsu-color-words--group-change-pairs debug-token-spans)
+                        region-pairs)))
+
+    (dolist (pair region-pairs)
+      (pcase-let ((`(,rbeg ,rend ,abeg ,aend ,r-ul ,a-ul ,r-non ,a-non) pair))
+        ;; 1. Region overlays for shadow cursor activation.
+        (let (r-region a-region)
+          (when rbeg
+            (setq r-region (make-overlay rbeg rend nil 'front-advance))
+            (overlay-put r-region 'evaporate t)
+            (overlay-put r-region 'diff-mode 'fine)
+            (overlay-put r-region 'smerge--refine-region t)
+            (overlay-put r-region 'majutsu-color-words-non-token r-non)
+            (overlay-put r-region 'majutsu-color-words-token-anchors
+                         (majutsu-diff--color-words--token-anchors r-ul r-non))
+            (overlay-put r-region 'cursor-sensor-functions
+                         '(majutsu-diff--color-words-shadow-cursor)))
+          (when abeg
+            (setq a-region (make-overlay abeg aend nil 'front-advance))
+            (overlay-put a-region 'evaporate t)
+            (overlay-put a-region 'diff-mode 'fine)
+            (overlay-put a-region 'smerge--refine-region t)
+            (overlay-put a-region 'majutsu-color-words-non-token a-non)
+            (overlay-put a-region 'majutsu-color-words-token-anchors
+                         (majutsu-diff--color-words--token-anchors a-ul a-non))
+            (overlay-put a-region 'cursor-sensor-functions
+                         '(majutsu-diff--color-words-shadow-cursor)))
+          (when (and r-region a-region)
+            (overlay-put r-region 'majutsu-color-words-region-other a-region)
+            (overlay-put a-region 'majutsu-color-words-region-other r-region)))))
+
+    (dolist (pair token-pairs)
+      (pcase-let ((`(,_rbeg ,_rend ,_abeg ,_aend ,r-ul ,a-ul ,_r-non ,_a-non) pair))
+        ;; 2. Token overlays on underlined spans — visual refinement only.
+        (dolist (span r-ul)
+          (let ((ol (make-overlay (car span) (cdr span))))
+            (overlay-put ol 'diff-mode 'fine)
+            (overlay-put ol 'evaporate t)
+            (overlay-put ol 'face 'diff-refine-removed)
+            (overlay-put ol 'majutsu-color-words-token t)))
+        (dolist (span a-ul)
+          (let ((ol (make-overlay (car span) (cdr span))))
+            (overlay-put ol 'diff-mode 'fine)
+            (overlay-put ol 'evaporate t)
+            (overlay-put ol 'face 'diff-refine-added)
+            (overlay-put ol 'majutsu-color-words-token t)))))
+    ;; Enable cursor-sensor-mode for shadow cursor.
+    (when (bound-and-true-p smerge-refine-shadow-cursor)
+      (cursor-sensor-mode 1))))
+
 (cl-defmethod magit-section--refine ((section majutsu-hunk-section))
+  ;; For both backends, delegate to the unified refinement handler.
+  ;; Color-words uses `majutsu-diff--color-words-refine-hunk' internally;
+  ;; the git backend uses `diff-refine-hunk'.
   (when (eq majutsu-diff-refine-hunk t)
     (majutsu-diff--update-hunk-refinement section)))
+
+(defun majutsu-diff--color-words-paint (section highlight)
+  "Apply or remove a focus background overlay for a color-words SECTION.
+When HIGHLIGHT is non-nil, create a single overlay with
+`magit-diff-context-highlight' covering the hunk body; otherwise
+remove it.  A single low-priority overlay is used so that per-word
+ANSI `font-lock-face' foreground colors show through."
+  (let ((start (oref section start))
+        (end   (oref section end)))
+    (dolist (ov (overlays-in start end))
+      (when (overlay-get ov 'majutsu-color-words-highlight)
+        (delete-overlay ov)))
+    (when highlight
+      (save-excursion
+        (goto-char start)
+        (forward-line)                  ; skip hunk heading
+        (let ((ov (make-overlay (point) end nil t)))
+          (overlay-put ov 'majutsu-color-words-highlight t)
+          (overlay-put ov 'face 'majutsu-diff-color-words-focus)
+          (overlay-put ov 'evaporate t)
+          (overlay-put ov 'priority -1))))))
 
 (cl-defmethod magit-section-paint ((section majutsu-hunk-section) highlight)
   "Paint a hunk so focus highlighting behaves like Magit.
 
 This mirrors `magit-section-paint' for `magit-hunk-section' but
-works with the simplified jj diff we render here."
-  (let* ((highlight-body (if (boundp 'magit-diff-highlight-hunk-body)
-                             magit-diff-highlight-hunk-body
-                           t))
-         (do-highlight (and highlight highlight-body))
-         (end (oref section end)))
-    (save-excursion
-      ;; Skip the hunk header.
-      (goto-char (oref section start))
-      (forward-line)
-      (while (< (point) end)
-        (let* ((line-start (point))
-               (line-end (line-end-position))
-               (face (cond
-                      ((looking-at "^\\+")
-                       (if do-highlight
-                           'magit-diff-added-highlight
-                         'magit-diff-added))
-                      ((looking-at "^-")
-                       (if do-highlight
-                           'magit-diff-removed-highlight
-                         'magit-diff-removed))
-                      (t
-                       (if do-highlight
-                           'magit-diff-context-highlight
-                         'magit-diff-context)))))
-          (put-text-property line-start (1+ line-end)
-                             'font-lock-face face))
-        (forward-line))))
+works with the simplified jj diff we render here.
+
+For the color-words backend, overlays with low priority are used
+so that per-word ANSI `font-lock-face' foreground colors show
+through while the background changes to indicate focus."
+  (if (eq majutsu-diff-backend 'color-words)
+      (majutsu-diff--color-words-paint section highlight)
+    (let* ((highlight-body (if (boundp 'magit-diff-highlight-hunk-body)
+                               magit-diff-highlight-hunk-body
+                             t))
+           (do-highlight (and highlight highlight-body))
+           (end (oref section end)))
+      (save-excursion
+        ;; Skip the hunk header.
+        (goto-char (oref section start))
+        (forward-line)
+        (while (< (point) end)
+          (let* ((line-start (point))
+                 (line-end (line-end-position))
+                 (face (cond
+                        ((looking-at "^\\+")
+                         (if do-highlight
+                             'magit-diff-added-highlight
+                           'magit-diff-added))
+                        ((looking-at "^-")
+                         (if do-highlight
+                             'magit-diff-removed-highlight
+                           'magit-diff-removed))
+                        (t
+                         (if do-highlight
+                             'magit-diff-context-highlight
+                           'magit-diff-context)))))
+            (put-text-property line-start (1+ line-end)
+                               'font-lock-face face))
+          (forward-line)))))
   (oset section painted (if highlight 'highlight 'plain)))
 
 ;;; Navigation
@@ -748,7 +1074,10 @@ works with the simplified jj diff we render here."
 
 (defun majutsu-diff--on-removed-line-p ()
   "Return non-nil if point is on a removed diff line."
-  (eq (char-after (line-beginning-position)) ?-))
+  (if-let* ((info (majutsu-diff--color-words-line-info)))
+      (and (plist-get info :from-line)
+           (not (plist-get info :to-line)))
+    (eq (char-after (line-beginning-position)) ?-)))
 
 (defun majutsu-diff--revisions ()
   "Return (FROM-REV . TO-REV) for the current diff buffer.
@@ -848,20 +1177,33 @@ With prefix argument FORCE-WORKSPACE, always visit the workspace file
 regardless of what the diff is about."
   (interactive "P")
   (let* ((section (magit-current-section))
-         (file (majutsu-file-at-point)))
+         (file (majutsu-file-at-point))
+         (backend (majutsu-diff--sync-backend))
+         (line-info (and (eq backend 'color-words)
+                         (majutsu-diff--color-words-line-info))))
     (unless file
       (user-error "No file at point"))
     (let* ((revs (majutsu-diff--revisions))
-           (goto-from (and section (magit-section-match 'jj-hunk section)
-                           (majutsu-diff--on-removed-line-p)))
+           (goto-from (if line-info
+                          (and (plist-get line-info :from-line)
+                               (not (plist-get line-info :to-line)))
+                        (and section (magit-section-match 'jj-hunk section)
+                             (majutsu-diff--on-removed-line-p))))
            (target-rev (if goto-from (car revs) (cdr revs)))
            (goto-workspace (or force-workspace
                                (and (majutsu-diff--visit-workspace-p)
                                     (not goto-from))))
-           (line (and section (magit-section-match 'jj-hunk section)
-                      (majutsu-diff--hunk-line section goto-from)))
-           (col (and section (magit-section-match 'jj-hunk section)
-                     (majutsu-diff--hunk-column section goto-from))))
+           (line (cond
+                  (line-info
+                   (or (and goto-from (plist-get line-info :from-line))
+                       (plist-get line-info :to-line)
+                       (plist-get line-info :from-line)))
+                  ((and section (magit-section-match 'jj-hunk section))
+                   (majutsu-diff--hunk-line section goto-from))))
+           (col (cond
+                 (line-info (majutsu-diff--color-words-column line-info))
+                 ((and section (magit-section-match 'jj-hunk section))
+                  (majutsu-diff--hunk-column section goto-from)))))
       (if goto-workspace
           ;; Visit workspace file
           (let ((full-path (expand-file-name file default-directory)))
@@ -1002,17 +1344,32 @@ With prefix STYLE, cycle between `all' and `t'."
         majutsu-buffer-diff-range
         majutsu-buffer-diff-filesets))
 
-(defun majutsu-diff-refresh-buffer (&optional _ignore-auto _noconfirm)
+(defun majutsu-diff-refresh-buffer ()
   "Refresh the current diff buffer."
   (interactive)
   (when majutsu-buffer-diff-args
-    ;; Avoid ANSI; let our painting run lazily.
-    (majutsu--with-no-color
-      (let ((majutsu-process-apply-ansi-colors nil))
-        (magit-insert-section (diffbuf)
-          (magit-run-section-hook 'majutsu-diff-sections-hook))
-        (when (eq majutsu-diff-refine-hunk 'all)
-          (majutsu-diff--update-hunk-refinement))))))
+    (let* ((backend (majutsu-diff--sync-backend))
+           (majutsu-jj-global-arguments
+            (cons (if (eq backend 'color-words) "--color=debug" "--color=never")
+                  (seq-remove (lambda (arg) (string-prefix-p "--color" arg))
+                              majutsu-jj-global-arguments)))
+           (majutsu-process-apply-ansi-colors
+            (majutsu-diff--backend-uses-ansi-p backend)))
+      (if (eq backend 'color-words)
+          (progn
+            ;; No diff-mode keywords — ANSI faces via `font-lock-face'
+            ;; provide all coloring.  Font-lock must stay enabled so the
+            ;; display engine honours `font-lock-face' text properties.
+            (setq-local font-lock-defaults '(nil t))
+            (font-lock-mode 1))
+        (setq-local font-lock-defaults '(diff-font-lock-keywords t))
+        (font-lock-mode 1))
+      (unless (eq backend 'color-words)
+        (majutsu-diff--set-left-margin 0))
+      (magit-insert-section (diffbuf)
+        (magit-run-section-hook 'majutsu-diff-sections-hook))
+      (when (eq majutsu-diff-refine-hunk 'all)
+        (majutsu-diff--update-hunk-refinement)))))
 
 ;;;###autoload
 (defun majutsu-diff-dwim (&optional args range filesets)
@@ -1044,10 +1401,13 @@ REVSET is passed to jj diff using `--revisions='."
 
 (defun majutsu-diff-setup-buffer (args range filesets &optional locked)
   "Display a diff buffer configured by ARGS, RANGE and FILESETS."
-  (majutsu-setup-buffer #'majutsu-diff-mode locked
-    (majutsu-buffer-diff-args args)
-    (majutsu-buffer-diff-range range)
-    (majutsu-buffer-diff-filesets filesets)))
+  (let ((buffer (majutsu-setup-buffer #'majutsu-diff-mode locked
+                  (majutsu-buffer-diff-args args)
+                  (majutsu-buffer-diff-range range)
+                  (majutsu-buffer-diff-filesets filesets))))
+    (with-current-buffer buffer
+      (majutsu-diff--sync-backend majutsu-buffer-diff-args))
+    buffer))
 
 ;;; Commands
 ;;;; Prefix Commands
@@ -1059,7 +1419,8 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'majutsu-diff-prefix
   :incompatible '(("--revisions=" "--from=")
                   ("--revisions=" "--to=")
-                  ("--stat" "--summary"))
+                  ("--stat" "--summary")
+                  ("--git" "--color-words"))
   :transient-non-suffix t
   [:description "JJ Diff"
    :class transient-columns
@@ -1074,6 +1435,7 @@ REVSET is passed to jj diff using `--revisions='."
    ["Paths"
     (majutsu-diff:--)]
    ["Options"
+    (majutsu-diff:--color-words)
     (majutsu-diff:--git)
     (majutsu-diff:--stat)
     (majutsu-diff:--summary)
@@ -1097,6 +1459,12 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'transient-switch
   :key "-g"
   :argument "--git")
+
+(transient-define-argument majutsu-diff:--color-words ()
+  :description "Show color-words diff"
+  :class 'transient-switch
+  :key "-W"
+  :argument "--color-words")
 
 (transient-define-argument majutsu-diff:--stat ()
   :description "Show stats"

@@ -130,6 +130,7 @@ While you can type revsets manually, Majutsu's selection system allows you to bu
 Press ~d~ to open the Diff transient.
 - ~f~ / ~t~ :: Select the =--from= and =--to= revisions.
 - ~-g~ :: Toggle Git-style diff output.
+- ~-W~ :: Toggle color-words diff output.
 - ~-S~ :: Toggle summary output.
 
 *** Diff Buffer
@@ -138,6 +139,11 @@ The diff buffer is highly interactive:
 - ~C-j~ / ~C-<return>~ :: Visit the workspace file, regardless of diff type. Note: when Evil mode is active, ~C-j~ may be overridden by Evil's section navigation; use ~C-<return>~ instead, which is unaffected.
 - ~+~ / ~-~ :: Increase or decrease the amount of context shown.
 - ~t~ :: Toggle word-level refinement.
+
+When =--color-words= is enabled, Majutsu renders the old/new line numbers in
+the left margin and uses "..." lines to split hunks.
+With refinement enabled, color-words hunks also show a shadow cursor on the
+paired side (controlled by =smerge-refine-shadow-cursor=).
 
 ** Process Buffer
 Press ~$~ (Emacs) or ~`~ (Evil) to see the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output like remote fetches.
