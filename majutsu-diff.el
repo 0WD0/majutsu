@@ -88,8 +88,6 @@ otherwise fall back to the current buffer's `tab-width'."
   "Face for the (binary) label in diffstat entries."
   :group 'majutsu)
 
-;;;
-
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
 
@@ -857,21 +855,6 @@ file."
     (split-string diff-output "\n" t)))
 
 ;;; Diff Commands
-
-(defun majutsu-diff-clear-selections ()
-  "Clear all diff selections."
-  (interactive)
-  (majutsu-selection-clear 'from)
-  (majutsu-selection-clear 'to)
-  (when (consp transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (cl-typep obj 'majutsu-diff-range-option)
-                 (memq (oref obj selection-key) '(revisions from to)))
-        (transient-infix-set obj nil))))
-  (when transient--prefix
-    (transient--redisplay))
-  (when (called-interactively-p 'interactive)
-    (message "Cleared diff selections")))
 
 (defun majutsu-diff-less-context (&optional count)
   "Decrease the context for diff hunks by COUNT lines."
