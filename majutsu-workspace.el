@@ -12,14 +12,13 @@
 ;; This library provides helpers and UI for `jj workspace` commands, inspired
 ;; by Magit's worktree support.
 ;;
-;; NOTE: Jujutsu's `workspace list` template context is `WorkspaceRef`.  The
-;; documented methods are `.name()` and `.target()`, so Majutsu queries workspace
-;; data using `jj workspace list -T ...` and does not inspect `.jj/` internals.
+;; Majutsu queries workspace data using `jj workspace list -T ...' and resolves
+;; workspace root paths via `jj workspace root --name' (available since jj
+;; v0.38.0).  No `.jj/' internals are inspected.
 
 ;;; Code:
 
 (require 'cl-lib)
-(require 'seq)
 (require 'subr-x)
 
 (require 'majutsu-mode)
@@ -142,56 +141,40 @@ the workspaces for ROOT."
 (defun majutsu-workspace--read-root (name &optional root)
   "Return the workspace root directory for NAME.
 
-If it can't be located automatically, prompt for it."
+Uses `jj workspace root --name' to resolve the path.  If that fails
+\(e.g. workspace created before jj v0.38.0), tries a sibling directory
+of ROOT whose name matches NAME.  Falls back to prompting the user."
   (let* ((root (file-name-as-directory (or root default-directory)))
-         (dir (or (majutsu-workspace--locate-root name root)
+         (dir (or (majutsu-workspace--root-for-name name)
+                  (majutsu-workspace--sibling-root name root)
                   (read-directory-name (format "Workspace root for %s: " name)
                                        (file-name-directory (directory-file-name root))
                                        nil t))))
-    (setq dir (file-name-as-directory (expand-file-name dir)))
-    (let ((actual (and (majutsu-toplevel dir)
-                       (majutsu-workspace-current-name dir))))
-      (when (and actual (not (equal actual name)))
-        (message "Warning: selected directory is workspace '%s' (expected '%s')" actual name)))
-    dir))
+    (file-name-as-directory (expand-file-name dir))))
 
 ;;; Workspace root discovery
 
-(defcustom majutsu-workspace-search-directories nil
-  "Directories to search when locating workspace roots.
+(defun majutsu-workspace--root-for-name (name)
+  "Return the workspace root directory for NAME, or nil.
 
-Majutsu cannot derive workspace root paths from `jj workspace list` (its
-template context is `WorkspaceRef`, which only exposes name + target).
-When visiting a workspace by name, Majutsu can try to find a matching
-directory by checking subdirectories of each entry in this list.
+This calls `jj workspace root --name NAME' (available since jj v0.38.0)
+and returns a directory name with a trailing slash."
+  (let ((line (car (majutsu-jj-lines "workspace" "root" "--name" name))))
+    (when (and line (not (string-empty-p line)))
+      (file-name-as-directory (expand-file-name line)))))
 
-If nil, fall back to searching the parent directory of the current workspace."
-  :type '(repeat directory)
-  :group 'majutsu)
+(defun majutsu-workspace--sibling-root (name root)
+  "Return a sibling directory of ROOT named NAME if it is a matching workspace.
 
-(defun majutsu-workspace--candidate-search-dirs (root)
-  "Return directories to search for workspace roots, based on ROOT."
-  (or majutsu-workspace-search-directories
-      (list (file-name-directory (directory-file-name root)))))
-
-(defun majutsu-workspace--locate-root (workspace-name &optional root)
-  "Try to locate WORKSPACE-NAME on disk and return its root directory, or nil.
-
-This uses `jj` itself to verify candidates (no `.jj/` inspection)."
-  (let* ((root (file-name-as-directory (or root default-directory)))
-         (search-dirs (majutsu-workspace--candidate-search-dirs root)))
-    (or
-     ;; Current workspace is trivial.
-     (and (equal workspace-name (majutsu-workspace-current-name root))
-          root)
-     (seq-some
-      (lambda (dir)
-        (let* ((candidate (file-name-as-directory (expand-file-name workspace-name dir))))
-          (when (file-directory-p candidate)
-            (when (and (majutsu-toplevel candidate)
-                       (equal (majutsu-workspace-current-name candidate) workspace-name))
-              candidate))))
-      search-dirs))))
+Checks whether a directory named NAME exists alongside ROOT and
+is itself a jj workspace whose current workspace name equals NAME.
+Returns the directory path or nil."
+  (let* ((parent (file-name-directory (directory-file-name root)))
+         (candidate (file-name-as-directory (expand-file-name name parent))))
+    (when (and (file-directory-p candidate)
+               (majutsu-toplevel candidate)
+               (equal (majutsu-workspace-current-name candidate) name))
+      candidate)))
 
 ;;; UI: Workspaces section
 

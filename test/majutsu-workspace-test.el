@@ -165,5 +165,71 @@
         ;; Buffer should be empty after cancel (or root placeholder).
         (should (member (buffer-string) '("" "(empty)\n")))))))
 
+;;; Root-for-name tests
+
+(ert-deftest majutsu-workspace--root-for-name/returns-directory ()
+  "Test that root-for-name returns a directory path from jj output."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _args) '("/home/user/repo-secondary"))))
+    (should (equal (majutsu-workspace--root-for-name "secondary")
+                   "/home/user/repo-secondary/"))))
+
+(ert-deftest majutsu-workspace--root-for-name/returns-nil-on-error ()
+  "Test that root-for-name returns nil when jj fails (no output)."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _args) nil)))
+    (should (null (majutsu-workspace--root-for-name "nonexistent")))))
+
+(ert-deftest majutsu-workspace--read-root/uses-jj-workspace-root ()
+  "Test that read-root delegates to jj workspace root --name."
+  (cl-letf (((symbol-function 'majutsu-workspace--root-for-name)
+             (lambda (name)
+               (when (equal name "secondary") "/tmp/secondary/"))))
+    (should (equal (majutsu-workspace--read-root "secondary")
+                   "/tmp/secondary/"))))
+
+(ert-deftest majutsu-workspace--sibling-root/finds-matching-sibling ()
+  "Test that sibling-root finds a sibling dir that is the named workspace."
+  (let* ((parent (make-temp-file "majutsu-test-" t))
+         (root (file-name-as-directory (expand-file-name "main" parent)))
+         (sibling (file-name-as-directory (expand-file-name "feature" parent))))
+    (unwind-protect
+        (progn
+          (make-directory root t)
+          (make-directory sibling t)
+          (cl-letf (((symbol-function 'majutsu-toplevel)
+                     (lambda (&optional dir) dir))
+                    ((symbol-function 'majutsu-workspace-current-name)
+                     (lambda (&optional dir)
+                       (when (string= (file-name-as-directory dir) sibling)
+                         "feature"))))
+            (should (equal (majutsu-workspace--sibling-root "feature" root)
+                           sibling))))
+      (delete-directory parent t))))
+
+(ert-deftest majutsu-workspace--sibling-root/returns-nil-when-no-match ()
+  "Test that sibling-root returns nil when no matching sibling exists."
+  (let* ((parent (make-temp-file "majutsu-test-" t))
+         (root (file-name-as-directory (expand-file-name "main" parent))))
+    (unwind-protect
+        (progn
+          (make-directory root t)
+          (cl-letf (((symbol-function 'majutsu-toplevel)
+                     (lambda (&optional _dir) nil))
+                    ((symbol-function 'majutsu-workspace-current-name)
+                     (lambda (&optional _dir) nil)))
+            (should (null (majutsu-workspace--sibling-root "nonexistent" root)))))
+      (delete-directory parent t))))
+
+(ert-deftest majutsu-workspace--read-root/falls-back-to-sibling ()
+  "Test that read-root uses sibling-root when root-for-name fails."
+  (cl-letf (((symbol-function 'majutsu-workspace--root-for-name)
+             (lambda (_name) nil))
+            ((symbol-function 'majutsu-workspace--sibling-root)
+             (lambda (name _root)
+               (when (equal name "feature") "/tmp/feature/"))))
+    (should (equal (majutsu-workspace--read-root "feature")
+                   "/tmp/feature/"))))
+
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here
