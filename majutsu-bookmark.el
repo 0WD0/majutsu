@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-mode)
 (require 'majutsu-jj)
 (require 'json)
 (require 'seq)
@@ -172,22 +173,67 @@ SCOPE controls what to return:
                      (format " (remote(s): %s)" (string-join remote-patterns ", "))
                    ""))))))
 
+(defvar-local majutsu-bookmark--list-all nil
+  "Non-nil when the bookmark list includes remote bookmarks.")
+
 ;;;###autoload
 (defun majutsu-bookmark-list (&optional all)
-  "List bookmarks in a temporary buffer.
+  "List bookmarks in a dedicated buffer.
 With prefix ALL, include remote bookmarks."
   (interactive "P")
-  (let* ((args (append '("bookmark" "list" "--quiet") (and all '("--all-remotes"))))
-         (output (apply #'majutsu-jj-string args))
-         (buf (get-buffer-create "*Majutsu Bookmarks*")))
-    (with-current-buffer buf
-      (setq buffer-read-only nil)
-      (erase-buffer)
-      (font-lock-mode 1)
-      (insert output)
-      (goto-char (point-min))
-      (view-mode 1))
-    (majutsu-display-buffer buf 'log)))
+  (majutsu-setup-buffer #'majutsu-bookmark-list-mode nil
+    :buffer "*Majutsu Bookmarks*"
+    (majutsu-bookmark--list-all (and all t))))
+
+(defun majutsu-bookmark--list-args ()
+  "Return arguments for `jj bookmark list'."
+  (append '("bookmark" "list" "--quiet")
+          (and majutsu-bookmark--list-all '("--all-remotes"))))
+
+(defun majutsu-bookmark--line-name (line)
+  "Return the bookmark name parsed from LINE."
+  (let* ((raw (string-trim (substring-no-properties line)))
+         (token (car (split-string raw "[ \t]+" t))))
+    (when token
+      (string-remove-suffix ":" token))))
+
+(defun majutsu-bookmark--wash-list (_args)
+  "Wash `jj bookmark list' output into bookmark sections."
+  (let ((count 0))
+    (magit-wash-sequence
+     (lambda ()
+       (let* ((line (buffer-substring (line-beginning-position)
+                                      (line-end-position)))
+              (trimmed (string-trim (substring-no-properties line)))
+              (name (and (not (string-empty-p trimmed))
+                         (majutsu-bookmark--line-name line))))
+         (delete-region (line-beginning-position)
+                        (min (point-max) (1+ (line-end-position))))
+         (when name
+           (setq count (1+ count))
+           (magit-insert-section (jj-bookmark name t)
+             (magit-insert-heading line)))
+         t)))
+    (if (zerop count)
+        (magit-cancel-section)
+      (insert "\n"))))
+
+(defun majutsu-bookmark-list-refresh-buffer ()
+  "Refresh the bookmark list buffer."
+  (majutsu--assert-mode 'majutsu-bookmark-list-mode)
+  (magit-insert-section (bookmark-list)
+    (majutsu-jj-wash #'majutsu-bookmark--wash-list nil
+      (majutsu-bookmark--list-args))))
+
+(defvar-keymap majutsu-bookmark-list-mode-map
+  :doc "Keymap for `majutsu-bookmark-list-mode'."
+  :parent majutsu-mode-map)
+
+(define-derived-mode majutsu-bookmark-list-mode majutsu-mode "Majutsu Bookmarks"
+  "Major mode for viewing jj bookmarks."
+  :group 'majutsu
+  (setq-local line-number-mode nil)
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
 
 ;;;###autoload
 (defun majutsu-read-bookmarks (prompt &optional _init-input _history)
