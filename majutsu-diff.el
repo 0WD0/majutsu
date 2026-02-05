@@ -93,9 +93,6 @@ otherwise fall back to the current buffer's `tab-width'."
 (defvar majutsu-diff--tab-width-cache nil
   "Alist mapping file names to cached tab widths.")
 
-(defvar-local majutsu-diff--paint-whitespace-enabled t)
-(defvar-local majutsu-diff--inserted-bytes 0)
-
 (defconst majutsu-diff--formatting-args
   '("--stat"
     "--summary"
@@ -118,13 +115,6 @@ Set to nil to always paint whitespace inside hunks."
   :group 'majutsu
   :type '(choice (const :tag "No limit" nil)
           (integer :tag "Max characters")))
-
-(defcustom majutsu-diff-whitespace-max-bytes 800000
-  "Disable whitespace painting when a diff exceeds this many bytes.
-Set to nil to always allow painting."
-  :group 'majutsu
-  :type '(choice (const :tag "No limit" nil)
-          (integer :tag "Max bytes")))
 
 (put 'majutsu-diff-mode 'majutsu-diff-default-arguments
      '("--git" "--stat"))
@@ -357,8 +347,7 @@ section or a child thereof."
 
 (defun majutsu-diff--paint-hunk-whitespace (start end file)
   "Paint tabs and trailing whitespace between START and END for FILE."
-  (when (and majutsu-diff--paint-whitespace-enabled
-             majutsu-diff-paint-whitespace
+  (when (and majutsu-diff-paint-whitespace
              (or (not majutsu-diff-whitespace-max-chars)
                  (<= (- end start) majutsu-diff-whitespace-max-chars)))
     (let ((tabw (majutsu-diff--tab-width file)))
@@ -400,24 +389,16 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
       (goto-char (point-min))
       (majutsu-diff-wash-diffs args))))
 
-(defun majutsu-insert-diff (&optional args heading)
-  "Insert a diff section and wash it, Magit-style.
-
-When ARGS is non-nil, use it as diff formatting args; otherwise use the
-current buffer's `majutsu-buffer-diff-args'.  HEADING, when non-nil,
-replaces the default heading."
-  (let* ((args (or args majutsu-buffer-diff-args))
-         (cmd-args (append (list "diff")
-                           args
-                           majutsu-buffer-diff-range
-                           majutsu-buffer-diff-filesets)))
+(defun majutsu-insert-diff ()
+  "Insert a diff section and wash it."
+  (let* ((args (append (list "diff")
+                       majutsu-buffer-diff-args
+                       majutsu-buffer-diff-range
+                       majutsu-buffer-diff-filesets)))
     (magit-insert-section (diff-root)
-      (magit-insert-heading
-        (or heading
-            (format "jj diff %s" (string-join args " "))))
-      (insert "\n")
-      (majutsu-diff--wash-with-state
-          #'majutsu-diff-wash-diffs 'wash-anyway cmd-args))))
+      (magit-insert-heading (format "jj %s" (string-join args " ")))
+      (majutsu-jj-wash
+          #'majutsu-diff-wash-diffs 'wash-anyway args))))
 
 ;;; Diff wash
 
@@ -571,7 +552,7 @@ Assumes point is at the start of the diff output."
                          ((eq (char-after bol) ?-) 'magit-diff-removed)
                          (t 'magit-diff-context))))
               (put-text-property bol (point) 'font-lock-face face))))
-        (when majutsu-diff--paint-whitespace-enabled
+        (when majutsu-diff-paint-whitespace
           (majutsu-diff--paint-hunk-whitespace body-start (point) file))))))
 
 (defun majutsu-diff--line-matching-p (regexp lines)
@@ -975,9 +956,6 @@ With prefix STYLE, cycle between `all' and `t'."
                                 (string-prefix-p "--color" arg))
                               majutsu-jj-global-arguments)))
            (majutsu-process-apply-ansi-colors nil))
-      (setq-local majutsu-diff--paint-whitespace-enabled
-                  (or (not majutsu-diff-whitespace-max-bytes)
-                      (< (buffer-size) majutsu-diff-whitespace-max-bytes)))
       (magit-insert-section (diffbuf)
         (magit-run-section-hook 'majutsu-diff-sections-hook))
       (when (eq majutsu-diff-refine-hunk 'all)
@@ -1174,20 +1152,6 @@ REVSET is passed to jj diff using `--revisions='."
              t)))
      (t
       (user-error "No majutsu diff buffer found to refresh")))))
-
-(defun majutsu-diff--wash-with-state (washer keep-error &rest args)
-  "Wrap `majutsu-jj-wash' to also track diff buffer bookkeeping.
-Sets `majutsu-diff--inserted-bytes' and whitespace painting flag
-after the wash finishes.  KEEP-ERROR and ARGS are forwarded unchanged."
-  (declare (indent 2))
-  (let ((before-size (buffer-size)))
-    (prog1
-        (apply #'majutsu-jj-wash washer keep-error args)
-      (let ((bytes (- (buffer-size) before-size)))
-        (setq-local majutsu-diff--inserted-bytes bytes)
-        (setq-local majutsu-diff--paint-whitespace-enabled
-                    (or (not majutsu-diff-whitespace-max-bytes)
-                        (<= bytes majutsu-diff-whitespace-max-bytes)))))))
 
 ;;; _
 (provide 'majutsu-diff)
