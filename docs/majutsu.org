@@ -380,7 +380,7 @@ Jujutsu supports multiple workspaces sharing the same repository storage. This i
 ** Workspace Transient
 Press ~Z~ or ~%~ (Emacs) or ~*~ (Evil) to manage workspaces.
 - ~l~ :: List all workspaces.
-- ~v~ :: Visit a workspace (opens a new Majutsu log for that path).
+- ~v~ :: Visit a workspace (only changes default-directory, and refresh majutsu buffers).
 - ~a~ :: Add a new workspace.
 - ~f~ :: Forget a workspace.
 - ~u~ :: Update a stale workspace.

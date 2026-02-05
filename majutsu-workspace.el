@@ -28,22 +28,35 @@
 
 ;;; Templates
 
-(defconst majutsu-workspace--field-separator "\x1e"
+(defconst majutsu-workspace--field-separator (string 30)
   "Separator inserted between template fields for parsing.
 We use an ASCII record separator so parsing stays robust.")
 
+(defconst majutsu-workspace--line-regexp
+  (concat "^\\([@]\\)?"                          ; 1: current marker (@ or nil)
+          (regexp-quote majutsu-workspace--field-separator)
+          "\\([^[:cntrl:]]+\\)"                  ; 2: name
+          (regexp-quote majutsu-workspace--field-separator)
+          "\\([a-z0-9]+\\)"                      ; 3: change-id
+          (regexp-quote majutsu-workspace--field-separator)
+          "\\([0-9a-f]+\\)"                      ; 4: commit-id
+          (regexp-quote majutsu-workspace--field-separator)
+          "\\(.*\\)"                             ; 5: description
+          "$")
+  "Regexp to match a workspace list line.
+Matches the current marker (optional), name, change-id, commit-id,
+and description.")
+
 (defconst majutsu-workspace--list-template
-  ;; NOTE: Don't use `separate()` here. We need stable field positions even
-  ;; when some values are empty (e.g. the non-current marker).
   (majutsu-tpl
-   [:join "\x1e"
-          [:if [:target :current_working_copy] "@"]
-          [:name]
-          [:target :change_id :shortest 8]
-          [:target :commit_id :shortest 8]
-          [:if [:target :description]
-              [:method [:target :description] :first_line]]
-          "\n"]
+   [[:join "\x1e"
+           [:if [:target :current_working_copy] "@"]
+           [:name]
+           [:target :change_id :shortest 8]
+           [:target :commit_id :shortest 8]
+           [:if [:target :description]
+               [:method [:target :description] :first_line]]]
+    "\n"]
    'WorkspaceRef)
   "Template used to render `jj workspace list` output for parsing.")
 
@@ -180,6 +193,10 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
 
 ;;; UI: Workspaces section
 
+(defvar-keymap majutsu-workspace-section-map
+  :doc "Keymap for `jj-workspace' sections."
+  "<remap> <majutsu-visit-thing>" #'majutsu-workspace-visit)
+
 (defun majutsu-workspace--format-entry (entry name-width)
   "Format workspace ENTRY for insertion, padding name to NAME-WIDTH."
   (let* ((name (plist-get entry :name))
@@ -188,33 +205,84 @@ This uses `jj` itself to verify candidates (no `.jj/` inspection)."
          (commit-id (plist-get entry :commit-id))
          (desc (plist-get entry :desc))
          (name-face (if current 'magit-branch-current 'magit-branch-local))
-         (name-str (propertize name 'face name-face))
+         (name-str (propertize name 'font-lock-face name-face))
          (pad (make-string (max 0 (- name-width (string-width name))) ?\s))
          (marker (if current "@ " "  ")))
     (concat marker
             name-str pad
             " "
-            (propertize change-id 'face 'magit-hash)
+            (propertize change-id 'font-lock-face 'magit-hash)
             " "
-            (propertize commit-id 'face 'magit-hash)
+            (propertize commit-id 'font-lock-face 'magit-hash)
             (when (and desc (not (string-empty-p desc)))
               (concat " " desc)))))
 
-(defun majutsu-workspace--insert-entries (entries &optional show-single)
+(defun majutsu-workspace--insert-entries (entries &optional _show-single)
   "Insert workspace ENTRIES as magit sections.
-If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
-  (when (and entries (or show-single (length> entries 1)))
+_SHOW-SINGLE is ignored; filtering is handled by the caller."
+  (when entries
     (let* ((name-width (apply #'max 0 (mapcar (lambda (e)
                                                 (string-width (plist-get e :name)))
                                               entries))))
-      (magit-insert-section (workspaces)
+      (dolist (entry entries)
+        (let ((name (plist-get entry :name)))
+          (magit-insert-section (jj-workspace name t)
+            (magit-insert-heading
+              (majutsu-workspace--format-entry entry name-width))))))))
+
+(defun majutsu-workspace--wash-entry (name-width)
+  "Wash the workspace list entry at point.
+NAME-WIDTH is used to align columns.
+This function follows the Magit wash pattern: uses `looking-at' to match
+the current line, deletes it, and inserts a formatted section."
+  (when (looking-at majutsu-workspace--line-regexp)
+    (let* ((marker (match-string 1))
+           (name (match-string 2))
+           (change-id (match-string 3))
+           (commit-id (match-string 4))
+           (desc (match-string 5))
+           (entry (list :name name
+                        :current (equal marker "@")
+                        :change-id change-id
+                        :commit-id commit-id
+                        :desc (or desc ""))))
+      (delete-region (line-beginning-position) (min (point-max) (1+ (line-end-position))))
+      (magit-insert-section (jj-workspace name t)
+        (magit-insert-heading
+          (majutsu-workspace--format-entry entry name-width)))
+      t)))
+
+(defun majutsu-workspace--wash-list (show-single _args)
+  "Wash `jj workspace list' output into workspace sections.
+SHOW-SINGLE matches the behavior of `majutsu-insert-workspaces'.
+
+This follows the Magit wash pattern:
+1. First pass: scan buffer to count entries and compute column widths
+2. Second pass: use `magit-wash-sequence' with `majutsu-workspace--wash-entry'
+   to transform each line into a magit section."
+  (let* ((entries nil)
+         (max-name-width 0))
+    ;; First pass: collect entries and compute max name width
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when (looking-at majutsu-workspace--line-regexp)
+          (let ((name (match-string 2)))
+            (when name
+              (push name entries)
+              (setq max-name-width (max max-name-width (string-width name))))))
+        (forward-line 1)))
+    ;; Determine visibility
+    (let ((visible (and entries (or show-single (length> entries 1)))))
+      (if (not visible)
+          (progn
+            (delete-region (point-min) (point-max))
+            (magit-cancel-section))
+        ;; Second pass: wash sequence
+        (goto-char (point-min))
         (magit-insert-heading (if (length> entries 1) "Workspaces" "Workspace"))
-        (dolist (entry entries)
-          (let ((name (plist-get entry :name)))
-            (magit-insert-section (jj-workspace name t)
-              (magit-insert-heading
-                (majutsu-workspace--format-entry entry name-width))
-              (insert "\n"))))
+        (magit-wash-sequence (lambda ()
+                               (majutsu-workspace--wash-entry max-name-width)))
         (insert "\n")))))
 
 ;;;###autoload
@@ -222,9 +290,12 @@ If SHOW-SINGLE is nil, insert nothing when there is only one workspace."
   "Insert a Workspaces section.
 When there is only one workspace, nothing is inserted unless called
 from `majutsu-workspace-mode'."
-  (majutsu-workspace--insert-entries
-   (majutsu-workspace-list-entries)
-   (eq major-mode 'majutsu-workspace-mode)))
+  (let ((show-single (eq major-mode 'majutsu-workspace-mode)))
+    (magit-insert-section (workspaces)
+      (majutsu-jj-wash (lambda (args)
+                         (majutsu-workspace--wash-list show-single args))
+          nil
+        "workspace" "list" "-T" majutsu-workspace--list-template))))
 
 ;;; Actions
 
@@ -242,7 +313,7 @@ workspace root automatically; if not found, prompt for it."
     (setq default-directory dir)
     (setq majutsu--default-directory dir)
     (if (majutsu-refresh)
-      (dired dir))))
+        (dired dir))))
 
 ;;; Commands
 
