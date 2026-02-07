@@ -30,6 +30,7 @@
 (declare-function majutsu-find-file-at-point "majutsu-file" ())
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
 (declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
+(declare-function majutsu-color-words-column-at-point "majutsu-color-words" (goto-from &optional pos info))
 (declare-function majutsu-color-words-wash-diffs "majutsu-color-words" (args))
 (declare-function majutsu-color-words--collect-change-spans "majutsu-color-words" (beg end))
 (declare-function majutsu-color-words--collect-debug-change-spans "majutsu-color-words" (beg end))
@@ -216,13 +217,13 @@ Color-words keeps raw debug output for marker parsing and applies ANSI later."
   (when (eq (majutsu-diff--sync-backend) 'color-words)
     (majutsu-color-words-line-info-at-point)))
 
-(defun majutsu-diff--color-words-column (info)
-  "Return column offset into content based on INFO plist.
-The inline line-number columns are hidden via the `invisible' text
-property, so `current-column' already returns the visual column
-which corresponds directly to the source file column."
+(defun majutsu-diff--color-words-column (info goto-from)
+  "Return source column for INFO on GOTO-FROM side.
+Color-words may split one source line into multiple rendered lines, so this
+uses side-affine accumulation from related lines instead of raw
+`current-column'."
   (when (plist-get info :content-column)
-    (current-column)))
+    (majutsu-color-words-column-at-point goto-from nil info)))
 
 (defcustom majutsu-diff-whitespace-max-chars 12000
   "Skip whitespace painting for hunks larger than this many chars.
@@ -1211,10 +1212,10 @@ regardless of what the diff is about."
                        (plist-get line-info :from-line)))
                   ((and section (magit-section-match 'jj-hunk section))
                    (majutsu-diff--hunk-line section goto-from))))
-           (col (cond
-                 (line-info (majutsu-diff--color-words-column line-info))
-                 ((and section (magit-section-match 'jj-hunk section))
-                  (majutsu-diff--hunk-column section goto-from)))))
+            (col (cond
+                  (line-info (majutsu-diff--color-words-column line-info goto-from))
+                  ((and section (magit-section-match 'jj-hunk section))
+                   (majutsu-diff--hunk-column section goto-from)))))
       (if goto-workspace
           ;; Visit workspace file
           (let ((full-path (expand-file-name file default-directory)))

@@ -334,24 +334,96 @@ colored block."
   (save-excursion
     (goto-char pos)
     (let* ((bol (line-beginning-position))
-           (eol (line-end-position)))
-      (or (majutsu-color-words--side-at-pos pos)
-          (and (> pos bol)
-               (majutsu-color-words--side-at-pos (1- pos)))
-          (let ((found nil))
-            (goto-char pos)
-            (while (and (not found) (< (point) eol))
-              (setq found (majutsu-color-words--side-at-pos (point)))
-              (unless found
-                (forward-char 1)))
-            found)
-          (let ((found nil))
-            (goto-char (max bol (1- pos)))
-            (while (and (not found) (> (point) bol))
-              (setq found (majutsu-color-words--side-at-pos (point)))
-              (unless found
-                (backward-char 1)))
-            found)))))
+           (eol (line-end-position))
+           (raw-side (get-text-property pos 'majutsu-color-words-debug-side)))
+      (cond
+       ((eq raw-side 'removed) 'removed)
+       ((eq raw-side 'added) 'added)
+       ;; Explicit neutral payload (`<<diff::...>>`/context wrappers) should
+       ;; not inherit nearby token side.
+       ((eq raw-side 'both) nil)
+       (t
+        (or (majutsu-color-words--side-at-pos pos)
+            (and (> pos bol)
+                 (majutsu-color-words--side-at-pos (1- pos)))
+            (let ((found nil))
+              (goto-char pos)
+              (while (and (not found) (< (point) eol))
+                (setq found (majutsu-color-words--side-at-pos (point)))
+                (unless found
+                  (forward-char 1)))
+              found)
+            (let ((found nil))
+              (goto-char (max bol (1- pos)))
+              (while (and (not found) (> (point) bol))
+                (setq found (majutsu-color-words--side-at-pos (point)))
+                (unless found
+                  (backward-char 1)))
+              found)))))))
+
+(defun majutsu-color-words--line-number-for-side (info goto-from)
+  "Return INFO line number for GOTO-FROM side.
+When GOTO-FROM is non-nil, use `:from-line'; otherwise use `:to-line'."
+  (if goto-from
+      (plist-get info :from-line)
+    (plist-get info :to-line)))
+
+(defun majutsu-color-words--char-belongs-to-side-p (pos goto-from)
+  "Return non-nil when char at POS contributes to GOTO-FROM side column.
+For old-side navigation, removed+context chars are counted.
+For new-side navigation, added+context chars are counted."
+  (and (not (majutsu-color-words--inline-invisible-p pos))
+       (not (memq (char-after pos) '(?\n ?\r)))
+       (let ((side (get-text-property pos 'majutsu-color-words-debug-side)))
+         (cond
+          ((eq side 'removed) goto-from)
+          ((eq side 'added) (not goto-from))
+          ((eq side 'both) t)
+          (t
+           (pcase (car-safe (majutsu-color-words--face-type
+                             (get-text-property pos 'font-lock-face)))
+             ('removed goto-from)
+             ('added (not goto-from))
+             (_ t)))))))
+
+(defun majutsu-color-words-column-at-point (goto-from &optional pos info)
+  "Return source column for POS on GOTO-FROM side.
+For color-words lines that represent one source line across multiple
+rendered lines, this counts side-affine chars from preceding matching lines
+before POS.
+
+INFO is optional line info plist from `majutsu-color-words-line-info-at-point'."
+  (setq pos (or pos (point)))
+  (save-excursion
+    (goto-char pos)
+    (let* ((info (or info (majutsu-color-words-line-info-at-point)))
+           (line-num (and info
+                          (majutsu-color-words--line-number-for-side
+                           info goto-from))))
+      (if (not line-num)
+          (current-column)
+        (let ((scan-start (line-beginning-position))
+              (continue t))
+          ;; Walk upward while lines map to the same source line on this side.
+          (while continue
+            (goto-char scan-start)
+            (if (= (line-beginning-position) (point-min))
+                (setq continue nil)
+              (forward-line -1)
+              (let ((prev-info (majutsu-color-words-line-info-at-point)))
+                (if (and prev-info
+                         (equal (majutsu-color-words--line-number-for-side
+                                 prev-info goto-from)
+                                line-num))
+                    (setq scan-start (line-beginning-position))
+                  (setq continue nil)))))
+          (let ((count 0))
+            (goto-char scan-start)
+            (while (< (point) pos)
+              (when (majutsu-color-words--char-belongs-to-side-p (point) goto-from)
+                (setq count (1+ count)))
+              (forward-char 1))
+            count))))))
 
 (defun majutsu-color-words--store-line-info (info)
   "Store INFO plist on the current line as text properties."

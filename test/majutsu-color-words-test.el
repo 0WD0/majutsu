@@ -73,6 +73,55 @@
     (goto-char 6)
     (should (eq (majutsu-color-words-side-at-point) 'added))))
 
+(ert-deftest majutsu-color-words-side-at-point-keeps-neutral-payload-neutral ()
+  "Neutral debug payload should not inherit removed/added side from neighbors."
+  (with-temp-buffer
+    (insert "A-B")
+    (put-text-property 1 2 'majutsu-color-words-debug-side 'added)
+    (put-text-property 2 3 'majutsu-color-words-debug-side 'removed)
+    (put-text-property 3 4 'majutsu-color-words-debug-side 'both)
+    (goto-char 3)
+    (should-not (majutsu-color-words-side-at-point))))
+
+(ert-deftest majutsu-color-words-column-at-point-accumulates-affine-chars ()
+  "Column mapping should accumulate side-affine chars across split lines."
+  (with-temp-buffer
+    ;; Simulate one logical source line split across multiple rendered lines.
+    (insert "zz\nabCD\nXYef\n")
+    (let* ((line0-beg (point-min))
+           (line0-end (progn (goto-char line0-beg) (line-end-position)))
+           (line1-beg (progn (goto-char line0-end) (forward-char 1) (point)))
+           (line1-end (progn (goto-char line1-beg) (line-end-position)))
+           (line2-beg (progn (goto-char line1-end) (forward-char 1) (point)))
+           (line2-end (progn (goto-char line2-beg) (line-end-position))))
+      ;; Different logical line above; must not be counted.
+      (put-text-property line0-beg line0-end
+                         'majutsu-color-words-line-info
+                         '(:from-line 9 :to-line 19 :content-column 0))
+      ;; These two lines represent the same logical source line.
+      (put-text-property line1-beg line1-end
+                         'majutsu-color-words-line-info
+                         '(:from-line 10 :to-line 20 :content-column 0))
+      (put-text-property line2-beg line2-end
+                         'majutsu-color-words-line-info
+                         '(:from-line 10 :to-line 20 :content-column 0))
+      ;; line1: context + removed
+      (put-text-property line1-beg (+ line1-beg 2)
+                         'majutsu-color-words-debug-side 'both)
+      (put-text-property (+ line1-beg 2) line1-end
+                         'majutsu-color-words-debug-side 'removed)
+      ;; line2: context + added
+      (put-text-property line2-beg (+ line2-beg 2)
+                         'majutsu-color-words-debug-side 'both)
+      (put-text-property (+ line2-beg 2) line2-end
+                         'majutsu-color-words-debug-side 'added)
+      ;; Point before final "f": previous chars on this logical line are
+      ;; line1(abCD) + line2(XYe). Old-side counts removed+context = 6.
+      ;; New-side counts added+context = 5.
+      (goto-char (+ line2-beg 3))
+      (should (= (majutsu-color-words-column-at-point t) 6))
+      (should (= (majutsu-color-words-column-at-point nil) 5)))))
+
 (ert-deftest majutsu-color-words-wash-diffs-creates-hunks-and-margins ()
   "Color-words washer should split hunks and hide inline columns."
   (with-temp-buffer

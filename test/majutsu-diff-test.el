@@ -228,6 +228,19 @@
     (should (majutsu-diff--color-words-goto-from '(:from-line 10)))
     (should-not (majutsu-diff--color-words-goto-from '(:from-line 10 :to-line 12)))))
 
+(ert-deftest majutsu-diff-color-words-column-uses-side-aware-helper ()
+  "Color-words column helper should receive side selection."
+  (let ((info '(:content-column 4))
+        called)
+    (cl-letf (((symbol-function 'majutsu-color-words-column-at-point)
+               (lambda (goto-from &optional _pos _info)
+                 (setq called goto-from)
+                 17)))
+      (should (= (majutsu-diff--color-words-column info t) 17))
+      (should called)
+      (should (= (majutsu-diff--color-words-column info nil) 17))
+      (should-not called))))
+
 (provide 'majutsu-diff-test)
 
 ;;; majutsu-diff-test.el ends here
