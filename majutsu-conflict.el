@@ -70,6 +70,10 @@
   "^\\([[:alnum:]]+\\) \\([[:xdigit:]]+\\) \"\\([^\"]+\\)\"\\(?: ([^)]*)\\)?$"
   "Regexp matching JJ conflict label metadata.")
 
+(defconst majutsu-conflict--marker-chars
+  '(?< ?> ?+ ?- ?% ?\\ ?| ?=)
+  "Characters used to form conflict marker lines.")
+
 ;;; Data Structures
 
 (cl-defstruct (majutsu-conflict (:constructor majutsu-conflict--create))
@@ -80,7 +84,7 @@
   style        ; 'jj-diff, 'jj-snapshot, or 'git
   removes      ; list of (label . content) for bases
   adds         ; list of (label . content) for sides
-  base)        ; (label . content) for the snapshot base in jj-diff
+  base)        ; (label . content) for the snapshot base side
 
 (defun majutsu-conflict-parse-label (label)
   "Parse JJ LABEL string into a plist.
@@ -104,6 +108,70 @@ Return nil for nil or empty LABEL, or when LABEL does not match."
 (defun majutsu-conflict-label-description (label)
   "Return the description from LABEL, or nil when unavailable."
   (plist-get (majutsu-conflict-parse-label label) :description))
+
+(defun majutsu-conflict--parse-marker-line (line expected-len)
+  "Parse LINE as a conflict marker of at least EXPECTED-LEN.
+Return plist with :char, :len and :label keys, or nil if LINE is not a marker."
+  (when (and (stringp line)
+             (> (length line) 0)
+             (memq (aref line 0) majutsu-conflict--marker-chars))
+    (let* ((char (aref line 0))
+           (line-len (length line))
+           (idx 1))
+      (while (and (< idx line-len)
+                  (= (aref line idx) char))
+        (setq idx (1+ idx)))
+      (when (>= idx expected-len)
+        (if (= idx line-len)
+            (list :char char :len idx :label nil)
+          (let ((next (aref line idx)))
+            (when (memq next '(?\s ?\t))
+              (let* ((suffix (substring line idx))
+                     (label (replace-regexp-in-string "\\`[ \t]+" "" suffix)))
+                (list :char char
+                      :len idx
+                      :label (unless (string-match-p "\\`[ \t]*\\'" label)
+                               label))))))))))
+
+(defun majutsu-conflict--marker-kind (char)
+  "Return semantic marker kind for marker CHAR."
+  (pcase char
+    (?< 'begin)
+    (?> 'end)
+    (?+ 'add)
+    (?- 'remove)
+    (?% 'diff)
+    (?\\ 'note)
+    (?| 'git-ancestor)
+    (?= 'git-separator)
+    (_ nil)))
+
+(defun majutsu-conflict--line-marker (line expected-len)
+  "Return marker information for LINE with EXPECTED-LEN.
+The return value is a cons cell of the form (KIND . LABEL), or nil."
+  (when-let* ((parsed (majutsu-conflict--parse-marker-line line expected-len))
+              (kind (majutsu-conflict--marker-kind (plist-get parsed :char))))
+    (cons kind (plist-get parsed :label))))
+
+(defun majutsu-conflict--line-marker-at-point (expected-len)
+  "Return marker information for current line using EXPECTED-LEN."
+  (majutsu-conflict--line-marker
+   (buffer-substring-no-properties
+    (line-beginning-position)
+    (line-end-position))
+   expected-len))
+
+(defun majutsu-conflict--normalize-diff-remove-label (label)
+  "Strip JJ diff prefix from remove LABEL."
+  (if (and label (string-match "\\`diff from:[ \t]*\\(.*\\)\\'" label))
+      (match-string 1 label)
+    label))
+
+(defun majutsu-conflict--normalize-diff-add-label (label)
+  "Strip JJ diff prefix from add LABEL."
+  (if (and label (string-match "\\`to:[ \t]*\\(.*\\)\\'" label))
+      (match-string 1 label)
+    label))
 
 (defun majutsu-conflict-revision-at-point ()
   "Return conflict metadata at point as a plist.
@@ -221,161 +289,127 @@ or nil when point is not inside a labeled section."
 
 ;;; Style Detection
 
-(defun majutsu-conflict--detect-style (hunk-start)
+(defun majutsu-conflict--detect-style (hunk-start marker-len)
   "Detect conflict style from first line after HUNK-START.
 Returns \='jj-diff, \='jj-snapshot, or \='git."
   (save-excursion
     (goto-char hunk-start)
     (forward-line 1)
-    (cond
-     ((looking-at majutsu-conflict-diff-re) 'jj-diff)
-     ((looking-at majutsu-conflict-remove-re) 'jj-snapshot)
-     ((looking-at majutsu-conflict-add-re) 'jj-snapshot)
-     ((looking-at majutsu-conflict-git-ancestor-re) 'git)
-     ;; Default to git (content starts directly)
-     (t 'git))))
+    (let* ((line (buffer-substring-no-properties
+                  (line-beginning-position)
+                  (line-end-position)))
+           (marker (majutsu-conflict--line-marker line marker-len)))
+      (pcase (car-safe marker)
+        ('diff 'jj-diff)
+        ((or 'remove 'add) 'jj-snapshot)
+        ('git-ancestor 'git)
+        ;; Default to git (content starts directly)
+        (_ 'git)))))
 
 ;;; JJ-Style Parser
 
-(defun majutsu-conflict--parse-jj-hunk (begin end _marker-len)
+(defun majutsu-conflict--parse-jj-hunk (begin end marker-len)
   "Parse JJ-style conflict hunk between BEGIN and END.
-_MARKER-LEN is the expected marker length (unused, for API consistency).
+MARKER-LEN is the expected marker length.
 Returns (STYLE REMOVES ADDS BASE) or nil if invalid.
-BASE is the snapshot (rebase destination).
-ADDS contains the \"to\" sides, REMOVES contains the \"from\" sides."
+BASE is the snapshot term shown as a standalone +++++++ section."
   (save-excursion
     (goto-char begin)
     (forward-line 1)  ; skip <<<<<<< line
     (let ((state 'unknown)
+          (style 'jj-snapshot)
+          (seen-diff nil)
           (removes nil)
           (adds nil)
-          (base nil)
-          (current-remove "")
-          (current-add "")
-          (current-remove-label nil)
-          (current-add-label nil)
-          (style 'jj-snapshot)
-          (in-diff nil)       ; track if current add is from diff
-          (seen-remove nil))  ; track if we've seen a remove (for jj-snapshot base detection)
-      (while (< (point) end)
-        (let ((line (buffer-substring-no-properties
-                     (line-beginning-position)
-                     (line-end-position))))
-          (cond
-           ;; End marker - stop
-           ((string-match majutsu-conflict-end-re line)
-            (goto-char end))
-
-           ;; Diff marker
-           ((string-match majutsu-conflict-diff-re line)
-            ;; Save previous state
-            (when (eq state 'remove)
-              (push (cons current-remove-label current-remove) removes))
-            (when (eq state 'add)
-              (if in-diff
-                  (push (cons current-add-label current-add) adds)
-                (setq base (cons current-add-label current-add))))
-            (when (eq state 'diff)
-              (push (cons current-remove-label current-remove) removes)
-              (push (cons current-add-label current-add) adds))
-            ;; Start new diff pair
-            (setq state 'diff
-                  style 'jj-diff
-                  in-diff t
-                  current-remove ""
-                  current-add ""
-                  current-remove-label (match-string 2 line)
-                  current-add-label nil))
-
-           ;; Note marker (label continuation for diff)
-           ((string-match majutsu-conflict-note-re line)
-            (when (and (eq state 'diff) (null current-add-label))
-              (setq current-add-label (match-string 2 line))))
-
-           ;; Remove marker
-           ((string-match majutsu-conflict-remove-re line)
-            ;; Save previous
-            (when (eq state 'remove)
-              (push (cons current-remove-label current-remove) removes))
-            (when (eq state 'add)
-              (if (or in-diff seen-remove)
-                  (push (cons current-add-label current-add) adds)
-                (setq base (cons current-add-label current-add))))
-            (when (eq state 'diff)
-              (push (cons current-remove-label current-remove) removes)
-              (push (cons current-add-label current-add) adds))
-            ;; Start new remove
-            (setq state 'remove
-                  in-diff nil
-                  seen-remove t
-                  current-remove ""
-                  current-remove-label (match-string 2 line)))
-
-           ;; Add marker
-           ((string-match majutsu-conflict-add-re line)
-            ;; Save previous
-            (when (eq state 'remove)
-              (push (cons current-remove-label current-remove) removes))
-            (when (eq state 'add)
-              (if (or in-diff seen-remove)
-                  (push (cons current-add-label current-add) adds)
-                (setq base (cons current-add-label current-add))))
-            (when (eq state 'diff)
-              (push (cons current-remove-label current-remove) removes)
-              (push (cons current-add-label current-add) adds))
-            ;; Start new add (snapshot, not from diff)
-            (setq state 'add
-                  in-diff nil
-                  current-add ""
-                  current-add-label (match-string 2 line)))
-
-           ;; Content line
-           (t
-            (let ((content (concat line "\n")))
-              (pcase state
+          (current-remove nil)
+          (current-add nil)
+          (snapshot-cell nil)
+          (done nil))
+      (catch 'invalid
+        (cl-labels
+            ((append-cell (cell text)
+               (setcdr cell (concat (cdr cell) text))))
+          (while (and (not done) (< (point) end))
+            (let* ((line (buffer-substring-no-properties
+                          (line-beginning-position)
+                          (line-end-position)))
+                   (marker (majutsu-conflict--line-marker line marker-len))
+                   (kind (car-safe marker))
+                   (label (cdr-safe marker)))
+              (pcase kind
+                ('end
+                 (setq done t))
                 ('diff
-                 (cond
-                  ((string-prefix-p "-" line)
-                   (setq current-remove
-                         (concat current-remove (substring line 1) "\n")))
-                  ((string-prefix-p "+" line)
-                   (setq current-add
-                         (concat current-add (substring line 1) "\n")))
-                  ((string-prefix-p " " line)
-                   (let ((rest (substring line 1)))
-                     (setq current-remove (concat current-remove rest "\n"))
-                     (setq current-add (concat current-add rest "\n"))))
-                  ((string= line "")
-                   (setq current-remove (concat current-remove "\n"))
-                   (setq current-add (concat current-add "\n")))))
+                 (setq style 'jj-diff
+                       seen-diff t
+                       state 'diff)
+                 (push (cons (majutsu-conflict--normalize-diff-remove-label label) "") removes)
+                 (push (cons nil "") adds)
+                 (setq current-remove (car removes)
+                       current-add (car adds)))
                 ('remove
-                 (setq current-remove (concat current-remove content)))
+                 (setq state 'remove)
+                 (push (cons label "") removes)
+                 (setq current-remove (car removes)))
                 ('add
-                 (setq current-add (concat current-add content))))))))
-        (forward-line 1))
-
-      ;; Save final state
-      (pcase state
-        ('diff
-         (push (cons current-remove-label current-remove) removes)
-         (push (cons current-add-label current-add) adds))
-        ('remove
-         (push (cons current-remove-label current-remove) removes))
-        ('add
-         (if (or in-diff seen-remove)
-             (push (cons current-add-label current-add) adds)
-           (setq base (cons current-add-label current-add)))))
-
-      ;; Validate: adds.len == removes.len, and base exists
-      (if (and base (= (length adds) (length removes)))
-          (list style (nreverse removes) (nreverse adds) base)
-        nil))))
+                 (setq state 'add)
+                 (push (cons label "") adds)
+                 (setq current-add (car adds))
+                 (when (and (null snapshot-cell)
+                            (or seen-diff
+                                (and (null removes)
+                                     (= (length adds) 1))))
+                   (setq snapshot-cell current-add)))
+                ('note
+                 (when (and (eq state 'diff)
+                            current-add
+                            (null (car current-add)))
+                   (setcar current-add
+                           (majutsu-conflict--normalize-diff-add-label label))))
+                (_
+                 (pcase state
+                   ('diff
+                    (cond
+                     ((string-prefix-p "-" line)
+                      (append-cell current-remove (concat (substring line 1) "\n")))
+                     ((string-prefix-p "+" line)
+                      (append-cell current-add (concat (substring line 1) "\n")))
+                     ((string-prefix-p " " line)
+                      (let ((rest (concat (substring line 1) "\n")))
+                        (append-cell current-remove rest)
+                        (append-cell current-add rest)))
+                     ((string= line "")
+                      (append-cell current-remove "\n")
+                      (append-cell current-add "\n"))
+                     (t
+                      (throw 'invalid nil))))
+                   ('remove
+                    (append-cell current-remove (concat line "\n")))
+                   ('add
+                    (append-cell current-add (concat line "\n")))
+                   (_
+                    (throw 'invalid nil))))))
+            (unless done
+              (forward-line 1))))
+        (let* ((removes (nreverse removes))
+               (all-adds (nreverse adds))
+               (base nil)
+               (side-adds nil))
+          (dolist (cell all-adds)
+            (if (eq cell snapshot-cell)
+                (setq base cell)
+              (push cell side-adds)))
+          (setq side-adds (nreverse side-adds))
+          (if (and base
+                   (= (length side-adds) (length removes)))
+              (list style removes side-adds base)
+            nil))))))
 
 ;;; Git-Style Parser
 
-(defun majutsu-conflict--parse-git-hunk (begin end _marker-len)
+(defun majutsu-conflict--parse-git-hunk (begin end marker-len)
   "Parse Git-style conflict hunk between BEGIN and END.
-_MARKER-LEN is the expected marker length (unused, for API consistency).
+MARKER-LEN is the expected marker length.
 Returns (\='git REMOVES ADDS) or nil if invalid."
   (save-excursion
     (goto-char begin)
@@ -385,54 +419,57 @@ Returns (\='git REMOVES ADDS) or nil if invalid."
           (base "")
           (right "")
           (left-label nil)
-          (base-label nil))
+          (base-label nil)
+          (right-label nil)
+          (done nil))
       ;; Get left label from <<<<<<< line
       (save-excursion
         (goto-char begin)
-        (when (looking-at majutsu-conflict-begin-re)
-          (setq left-label (match-string 2))))
+        (let* ((line (buffer-substring-no-properties
+                      (line-beginning-position)
+                      (line-end-position)))
+               (marker (majutsu-conflict--line-marker line marker-len)))
+          (when (eq (car-safe marker) 'begin)
+            (setq left-label (cdr marker)))))
 
-      (while (< (point) end)
-        (let ((line (buffer-substring-no-properties
-                     (line-beginning-position)
-                     (line-end-position))))
-          (cond
-           ;; End marker
-           ((string-match majutsu-conflict-end-re line)
-            (goto-char end))
+      (catch 'invalid
+        (while (and (not done) (< (point) end))
+          (let* ((line (buffer-substring-no-properties
+                        (line-beginning-position)
+                        (line-end-position)))
+                 (marker (majutsu-conflict--line-marker line marker-len))
+                 (kind (car-safe marker))
+                 (label (cdr-safe marker)))
+            (cond
+             ((eq kind 'end)
+              (setq right-label label
+                    done t))
+             ((eq kind 'git-ancestor)
+              (if (eq state 'left)
+                  (setq state 'base
+                        base-label label)
+                (throw 'invalid nil)))
+             ((eq kind 'git-separator)
+              (if (eq state 'base)
+                  (setq state 'right)
+                (throw 'invalid nil)))
+             (t
+              (let ((content (concat line "\n")))
+                (pcase state
+                  ('left (setq left (concat left content)))
+                  ('base (setq base (concat base content)))
+                  ('right (setq right (concat right content)))
+                  (_ (throw 'invalid nil)))))))
+          (unless done
+            (forward-line 1)))
 
-           ;; Ancestor marker (||||||| base)
-           ((string-match majutsu-conflict-git-ancestor-re line)
-            (if (eq state 'left)
-                (progn
-                  (setq state 'base)
-                  (setq base-label (match-string 2 line)))
-              ;; Invalid: base must come after left
-              (setq state 'invalid)))
-
-           ;; Separator (=======)
-           ((string-match majutsu-conflict-git-separator-re line)
-            (if (eq state 'base)
-                (setq state 'right)
-              ;; Invalid: right must come after base
-              (setq state 'invalid)))
-
-           ;; Content
-           (t
-            (let ((content (concat line "\n")))
-              (pcase state
-                ('left (setq left (concat left content)))
-                ('base (setq base (concat base content)))
-                ('right (setq right (concat right content))))))))
-        (forward-line 1))
-
-      ;; Validate: must end in right state
-      (if (eq state 'right)
-          (list 'git
-                (list (cons base-label base))
-                (list (cons left-label left)
-                      (cons nil right)))
-        nil))))
+        ;; Validate: must have reached right side before end marker
+        (if (eq state 'right)
+            (let ((removes (list (cons base-label base)))
+                  (adds (list (cons left-label left)
+                              (cons right-label right))))
+              (list 'git removes adds (car removes)))
+          nil)))))
 
 ;;; Main Parser
 
@@ -448,8 +485,12 @@ Returns list of `majutsu-conflict' structs."
                (end-re (format "^>\\{%d,\\}\\(?: .*\\)?$" marker-len)))
           ;; Find matching end marker
           (when (re-search-forward end-re nil t)
-            (let* ((end (match-end 0))
-                   (style (majutsu-conflict--detect-style begin))
+            (let* ((match-end (match-end 0))
+                   (end (if (and (< match-end (point-max))
+                                 (eq (char-after match-end) ?\n))
+                            (1+ match-end)
+                          match-end))
+                   (style (majutsu-conflict--detect-style begin marker-len))
                    (parsed (if (eq style 'git)
                                (majutsu-conflict--parse-git-hunk begin end marker-len)
                              (majutsu-conflict--parse-jj-hunk begin end marker-len))))
@@ -525,13 +566,8 @@ Prefer the current conflict when point is inside one."
 
 (defun majutsu-conflict-keep-side (n &optional before)
   "Keep side N (1-indexed) of the conflict at point.
-With prefix arg (BEFORE non-nil), keep the \"from\" state (before diff).
-Without prefix, keep the \"to\" state (after diff).
-
-In jj diff-style conflicts:
-- adds[0] = base (rebase destination)
-- adds[N] = diff N's \"to\" state
-- removes[N-1] = diff N's \"from\" state"
+With prefix arg (BEFORE non-nil), keep remove term N.
+Without prefix, keep add term N (jj side #N)."
   (interactive "p\nP")
   (let ((conflict (majutsu-conflict-at-point)))
     (unless conflict
@@ -540,20 +576,18 @@ In jj diff-style conflicts:
            (removes (majutsu-conflict-removes conflict))
            (content (if before
                         (cdr (nth (1- n) removes))
-                      (cdr (nth n adds)))))
+                      (cdr (nth (1- n) adds)))))
       (unless content
         (user-error "No side %d%s" n (if before " (before)" "")))
       (majutsu-conflict-resolve-with conflict content))))
 
 (defun majutsu-conflict-keep-base ()
-  "Keep the base (rebase destination) of the conflict at point.
-In jj diff-style conflicts, this is the snapshot (not from diff blocks)."
+  "Keep the snapshot base of the conflict at point."
   (interactive)
   (let ((conflict (majutsu-conflict-at-point)))
     (unless conflict
       (user-error "No conflict at point"))
     (let ((base (or (majutsu-conflict-base conflict)
-                    ;; For jj-snapshot, base is the first add
                     (car (majutsu-conflict-adds conflict)))))
       (unless base
         (user-error "No base in this conflict"))
@@ -581,6 +615,9 @@ In jj diff-style conflicts, this is the snapshot (not from diff blocks)."
 
 (defvar-local majutsu-conflict--add-count 0
   "Count of ++++++ sections seen in current conflict.")
+
+(defvar-local majutsu-conflict--marker-len nil
+  "Current conflict marker length used by font-lock state machine.")
 
 (defvar majutsu-conflict-mode-map
   (let ((map (make-sparse-keymap)))
@@ -692,7 +729,7 @@ Sets match-data with group 0 = entire conflict."
       (let* ((begin (match-beginning 0))
              (marker-len (length (match-string 1)))
              (end-re (format "^>\\{%d,\\}\\(?: .*\\)?$" marker-len))
-             (style (majutsu-conflict--detect-style begin)))
+             (style (majutsu-conflict--detect-style begin marker-len)))
         (when (and (memq style '(jj-diff jj-snapshot))
                    (re-search-forward end-re limit t))
           (set-match-data (list begin (match-end 0)))
@@ -705,50 +742,50 @@ Sets match-data with group 0 = entire conflict."
   "Match any line within JJ conflict.  Font-lock ANCHORED-MATCHER.
 Sets match-data and updates state variables."
   (when (< (point) limit)
-    (let ((line-beg (line-beginning-position))
-          (line-end (line-end-position)))
+    (let* ((line-beg (line-beginning-position))
+           (line-end (line-end-position))
+           (line (buffer-substring-no-properties line-beg line-end))
+           (expected-len (or majutsu-conflict--marker-len
+                             majutsu-conflict-min-marker-len))
+           (parsed (majutsu-conflict--parse-marker-line line expected-len))
+           (kind (and parsed
+                      (majutsu-conflict--marker-kind (plist-get parsed :char)))))
       (cond
        ;; Marker line
-       ((looking-at "^\\([<>+%\\-]\\{7,\\}\\)\\(?: .*\\)?$")
-        (let ((char (char-after (match-beginning 1))))
-          (cond
-           ((= char ?<)
-            ;; Detect style from next line
-            (setq majutsu-conflict--in-diff nil
-                  majutsu-conflict--in-add nil
-                  majutsu-conflict--in-remove nil
-                  majutsu-conflict--add-count 0)
-            (save-excursion
-              (forward-line 1)
-              (setq majutsu-conflict--style
-                    (cond
-                     ((looking-at majutsu-conflict-diff-re) 'jj-diff)
-                     ((or (looking-at majutsu-conflict-add-re)
-                          (looking-at majutsu-conflict-remove-re))
-                      'jj-snapshot)
-                     (t nil)))))
-           ((= char ?>)
-            (setq majutsu-conflict--in-diff nil
-                  majutsu-conflict--in-add nil
-                  majutsu-conflict--in-remove nil))
-           ((= char ?%)
-            (setq majutsu-conflict--in-diff t
-                  majutsu-conflict--in-add nil
-                  majutsu-conflict--in-remove nil))
-           ((= char ?+)
-            (setq majutsu-conflict--in-diff nil
-                  majutsu-conflict--in-add t
-                  majutsu-conflict--in-remove nil)
-            (cl-incf majutsu-conflict--add-count))
-           ((= char ?-)
-            (setq majutsu-conflict--in-diff nil
-                  majutsu-conflict--in-add nil
-                  majutsu-conflict--in-remove t))))
+       ((memq kind '(begin end diff add remove))
+        (pcase kind
+          ('begin
+           ;; Detect style from first body line using this conflict's marker length.
+           (setq majutsu-conflict--marker-len (plist-get parsed :len)
+                 majutsu-conflict--in-diff nil
+                 majutsu-conflict--in-add nil
+                 majutsu-conflict--in-remove nil
+                 majutsu-conflict--add-count 0)
+           (setq majutsu-conflict--style
+                 (majutsu-conflict--detect-style line-beg majutsu-conflict--marker-len)))
+          ('end
+           (setq majutsu-conflict--in-diff nil
+                 majutsu-conflict--in-add nil
+                 majutsu-conflict--in-remove nil
+                 majutsu-conflict--marker-len nil))
+          ('diff
+           (setq majutsu-conflict--in-diff t
+                 majutsu-conflict--in-add nil
+                 majutsu-conflict--in-remove nil))
+          ('add
+           (setq majutsu-conflict--in-diff nil
+                 majutsu-conflict--in-add t
+                 majutsu-conflict--in-remove nil)
+           (cl-incf majutsu-conflict--add-count))
+          ('remove
+           (setq majutsu-conflict--in-diff nil
+                 majutsu-conflict--in-add nil
+                 majutsu-conflict--in-remove t)))
         (set-match-data (list line-beg (min (1+ line-end) (point-max))))
         (goto-char (min (1+ line-end) (point-max)))
         t)
        ;; Note marker
-       ((looking-at majutsu-conflict-note-re)
+       ((eq kind 'note)
         (set-match-data (list line-beg (min (1+ line-end) (point-max))))
         (goto-char (min (1+ line-end) (point-max)))
         t)
@@ -762,35 +799,36 @@ Sets match-data and updates state variables."
   "Return face for current line based on state and content."
   (save-excursion
     (goto-char (match-beginning 0))
-    (cond
-     ;; Marker lines
-     ((looking-at "^[<>+%\\-]\\{7,\\}")
-      'majutsu-conflict-marker-face)
-     ((looking-at majutsu-conflict-note-re)
-      'majutsu-conflict-marker-face)
-     ;; JJ diff style content
-     (majutsu-conflict--in-diff
+    (let ((marker (majutsu-conflict--line-marker-at-point
+                   (or majutsu-conflict--marker-len
+                       majutsu-conflict-min-marker-len))))
       (cond
-       ((looking-at "^\\+") 'majutsu-conflict-added-face)
-       ((looking-at "^-") 'majutsu-conflict-removed-face)
-       ((looking-at "^ ") 'majutsu-conflict-context-face)
-       (t nil)))
-     ;; In ++++++ section
-     (majutsu-conflict--in-add
-      (cond
-       ;; In jj-diff, ++++++ is always the base
-       ((eq majutsu-conflict--style 'jj-diff)
-        'majutsu-conflict-base-face)
-       ;; In jj-snapshot, first ++++++ (count=1) is base
-       ((= majutsu-conflict--add-count 1)
-        'majutsu-conflict-base-face)
-       (t
-        ;; Subsequent ++++++ sections are "to" sides
-        'majutsu-conflict-added-face)))
-     ;; In ------ section ("from" side in snapshot style)
-     (majutsu-conflict--in-remove
-      'majutsu-conflict-removed-face)
-     (t nil))))
+       ;; Marker lines
+       ((memq (car-safe marker) '(begin end add remove diff note))
+        'majutsu-conflict-marker-face)
+       ;; JJ diff style content
+       (majutsu-conflict--in-diff
+        (cond
+         ((looking-at "^\\+") 'majutsu-conflict-added-face)
+         ((looking-at "^-") 'majutsu-conflict-removed-face)
+         ((looking-at "^ ") 'majutsu-conflict-context-face)
+         (t nil)))
+       ;; In ++++++ section
+       (majutsu-conflict--in-add
+        (cond
+         ;; In jj-diff, ++++++ is always the base
+         ((eq majutsu-conflict--style 'jj-diff)
+          'majutsu-conflict-base-face)
+         ;; In jj-snapshot, first ++++++ (count=1) is base
+         ((= majutsu-conflict--add-count 1)
+          'majutsu-conflict-base-face)
+         (t
+          ;; Subsequent ++++++ sections are "to" sides
+          'majutsu-conflict-added-face)))
+       ;; In ------ section ("from" side in snapshot style)
+       (majutsu-conflict--in-remove
+        'majutsu-conflict-removed-face)
+       (t nil)))))
 
 (defconst majutsu-conflict-font-lock-keywords
   `((majutsu-conflict--find-conflict
@@ -800,7 +838,8 @@ Sets match-data and updates state variables."
         (setq majutsu-conflict--in-diff nil
               majutsu-conflict--in-add nil
               majutsu-conflict--in-remove nil
-              majutsu-conflict--add-count 0)
+              majutsu-conflict--add-count 0
+              majutsu-conflict--marker-len nil)
         (goto-char (match-beginning 0))
         (match-end 0))  ; Return conflict end position as limit
       nil
@@ -875,48 +914,67 @@ REMOVE-BEG/REMOVE-END and ADD-BEG/ADD-END are content-only ranges (no +/-)."
         (flush)))))
 
 (defun majutsu-conflict--refine-diffs ()
-  "Add word-level refinement to JJ diff sections." 
-  (save-excursion
-    (goto-char (point-min))
-    (while (re-search-forward majutsu-conflict-diff-re nil t)
-      ;; Skip to content (past note marker if present)
-      (forward-line 1)
-      (when (looking-at majutsu-conflict-note-re)
-        (forward-line 1))
-      (let ((content-start (point)))
-        (while (and (not (eobp))
-                    (not (looking-at "^[<>+%\\|-]\\{7,\\}")))
-          (forward-line 1))
-        (let ((content-end (point)))
-          (when (> content-end content-start)
-            (majutsu-conflict--refine-diff-region content-start content-end)))))))
+  "Add word-level refinement to JJ diff sections."
+  (dolist (conflict (majutsu-conflict-parse-buffer))
+    (when (eq (majutsu-conflict-style conflict) 'jj-diff)
+      (save-excursion
+        (let ((end (majutsu-conflict-end-pos conflict))
+              (marker-len (majutsu-conflict-marker-len conflict)))
+          (goto-char (majutsu-conflict-begin-pos conflict))
+          (forward-line 1)
+          (while (< (point) end)
+            (pcase (car-safe (majutsu-conflict--line-marker-at-point marker-len))
+              ('diff
+               ;; Skip marker line and optional note line.
+               (forward-line 1)
+               (when (and (< (point) end)
+                          (eq (car-safe (majutsu-conflict--line-marker-at-point marker-len))
+                              'note))
+                 (forward-line 1))
+               (let ((content-start (point)))
+                 (while (and (< (point) end)
+                             (not (majutsu-conflict--line-marker-at-point marker-len)))
+                   (forward-line 1))
+                 (let ((content-end (point)))
+                   (when (> content-end content-start)
+                     (majutsu-conflict--refine-diff-region content-start content-end)))))
+              (_
+               (forward-line 1)))))))))
 
 (defun majutsu-conflict--refine-snapshots ()
   "Add word-level refinement to JJ snapshot-style conflicts.
 Compares each ------- section with the following +++++++ section."
-  (save-excursion
-    (goto-char (point-min))
-    (while (re-search-forward majutsu-conflict-remove-re nil t)
-      (forward-line 1)
-      (let ((remove-start (point)))
-        ;; Find end of remove section
-        (while (and (not (eobp))
-                    (not (looking-at "^[<>+%\\-]\\{7,\\}")))
-          (forward-line 1))
-        (let ((remove-end (point)))
-          ;; Check if next marker is +++++++
-          (when (looking-at majutsu-conflict-add-re)
-            (forward-line 1)
-            (let ((add-start (point)))
-              ;; Find end of add section
-              (while (and (not (eobp))
-                          (not (looking-at "^[<>+%\\-]\\{7,\\}")))
-                (forward-line 1))
-              (let ((add-end (point)))
-                (when (and (< remove-start remove-end)
-                           (< add-start add-end))
-                  (majutsu-conflict--refine-pair
-                   remove-start remove-end add-start add-end))))))))))
+  (dolist (conflict (majutsu-conflict-parse-buffer))
+    (when (eq (majutsu-conflict-style conflict) 'jj-snapshot)
+      (save-excursion
+        (let ((end (majutsu-conflict-end-pos conflict))
+              (marker-len (majutsu-conflict-marker-len conflict)))
+          (goto-char (majutsu-conflict-begin-pos conflict))
+          (forward-line 1)
+          (while (< (point) end)
+            (if (eq (car-safe (majutsu-conflict--line-marker-at-point marker-len))
+                    'remove)
+                (progn
+                  (forward-line 1)
+                  (let ((remove-start (point)))
+                    (while (and (< (point) end)
+                                (not (majutsu-conflict--line-marker-at-point marker-len)))
+                      (forward-line 1))
+                    (let ((remove-end (point)))
+                      (when (and (< (point) end)
+                                 (eq (car-safe (majutsu-conflict--line-marker-at-point marker-len))
+                                     'add))
+                        (forward-line 1)
+                        (let ((add-start (point)))
+                          (while (and (< (point) end)
+                                      (not (majutsu-conflict--line-marker-at-point marker-len)))
+                            (forward-line 1))
+                          (let ((add-end (point)))
+                            (when (and (< remove-start remove-end)
+                                       (< add-start add-end))
+                              (majutsu-conflict--refine-pair
+                               remove-start remove-end add-start add-end))))))))
+              (forward-line 1))))))))
 
 (defun majutsu-conflict--fontify-region (beg end)
   "Force font-lock to fontify BEG to END."
@@ -1004,7 +1062,10 @@ Provides highlighting and navigation for conflict regions."
     (goto-char (point-min))
     (let (styles)
       (while (re-search-forward majutsu-conflict-begin-re nil t)
-        (push (majutsu-conflict--detect-style (match-beginning 0)) styles))
+        (push (majutsu-conflict--detect-style
+               (match-beginning 0)
+               (length (match-string 1)))
+              styles))
       styles)))
 
 ;;;###autoload

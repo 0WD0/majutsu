@@ -500,12 +500,13 @@ You can enter conflict handling from multiple places:
 
 =majutsu-conflict= auto-detects marker styles:
 - JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable =majutsu-conflict-mode=.
+- JJ long conflict markers (e.g., 15-char marker runs) are treated the same as normal markers.
 - Git-style markers (=|||||||= / =======) only -> enable =smerge-mode=.
 
 ** majutsu-conflict-mode Commands
 Default key prefix is ~C-c ^~:
 - ~n~ / ~p~ :: Jump to next/previous conflict.
-- ~b~ :: Keep conflict base (rebase destination).
+- ~b~ :: Keep conflict base (snapshot / rebase destination section).
 - ~1..9~ :: Keep side N ("after" side in JJ diff blocks).
 - ~M-1..M-9~ :: Keep side N "before" variant.
 - ~R~ :: Refine conflict regions with word-level highlighting.
