@@ -16,6 +16,7 @@ dist/
 archive/
 
 # 依赖与构建工具目录
+.log/
 .cask/
 .eask/
 .eldev/
