@@ -36,13 +36,14 @@ efficient way to interact with JJ repositories from within Emacs.
 | ~RET~   | Visit thing at point     |
 | ~?~     | Show all commands        |
 | ~g~     | Refresh                  |
-| ~a~     | Abandon                  |
+| ~a~     | Absorb                   |
 | ~b~     | Bookmarks                |
 | ~c~     | Describe                 |
 | ~C~     | Commit                   |
 | ~d~     | Diff                     |
 | ~e~     | Edit change              |
 | ~G~     | Git                      |
+| ~k~     | Abandon                  |
 | ~o~     | New                      |
 | ~r~     | Rebase                   |
 | ~R~     | Restore                  |

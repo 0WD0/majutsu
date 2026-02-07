@@ -15,10 +15,13 @@
   - Allow configuring JJ description major mode and Change ID face.
   - Allow configurint JJ description comment prefix for comment commands.
   - Highlight JJ ignore-rest and diffstat summary lines.
+- Add ~majutsu-absorb~ transient for =jj absorb= with =--from= / =--into= plus fileset limiting.
 
 ** Changed
 
 - Keybinding changes:
+  - ~a~ now runs ~majutsu-absorb~ in Emacs and Evil Majutsu buffers.
+  - Emacs ~k~ remains ~majutsu-abandon~; Evil keeps ~x~ for abandon.
   - ~O~ now runs ~majutsu-new-dwim~ in log mode (was ~N~ globally).
   - ~D~ now runs ~majutsu-diff-dwim~ in log mode (was global).
   - ~Y~ now runs ~majutsu-duplicate-dwim~ in log mode (was global).

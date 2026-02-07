@@ -44,7 +44,7 @@
   "G"   'majutsu-git-transient
   "Z"   'majutsu-workspace
   "%"   'majutsu-workspace
-  "a"   'majutsu-abandon
+  "a"   'majutsu-absorb
   "k"   'majutsu-abandon
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo

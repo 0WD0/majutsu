@@ -99,7 +99,7 @@ Majutsu organizes information into collapsible sections. You can use ~TAB~ to to
 Commands in Majutsu are grouped into "transient" menus. These popups allow you to select options and flags before executing a command. For example, pressing ~r~ opens the Rebase transient.
 
 ** Visual Selection System
-For commands like Rebase or Squash, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
+For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
 
 ** Completion and Confirmation
 Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Destructive operations like ~abandon~ or ~undo~ will prompt for confirmation.
@@ -182,6 +182,13 @@ Runs: =jj edit REV=
 - ~-m~ :: Set a message for the result.
 Runs: =jj squash --from SRC --into DEST=
 
+** Absorbing
+- ~a~ (Emacs/Evil), or ~?~ then ~A~ (~majutsu-absorb~) :: Open the Absorb transient.
+- ~-f~ :: Source revision (=--from=, default =@=).
+- ~-t~ :: Destination revset filter (=--into=, default =mutable()=).
+- ~--~ :: Limit absorb to specific filesets.
+Runs: =jj absorb --from REV --into REVSET [FILESETS...]=
+
 ** Rebasing
 - ~r~ (~majutsu-rebase~) :: Open the Rebase transient. This is one of Majutsu's most powerful features, allowing you to visually select sources and destinations.
 - ~-s~ :: Rebase a specific revision.
@@ -198,7 +205,7 @@ Runs: =jj rebase -s SRC -o DEST=
 Runs: =jj duplicate -r REV=
 
 ** Abandoning
-- ~a~ or ~k~ (Emacs), ~x~ (Evil) :: Abandon the revision at point. Its changes are lost, and its descendants are rebased.
+- ~k~ (Emacs), ~x~ (Evil) :: Abandon the revision at point. Its changes are lost, and its descendants are rebased.
 Runs: =jj abandon -r REV=
 
 ** Undo and Redo

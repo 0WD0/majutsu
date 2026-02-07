@@ -113,6 +113,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "e") #'majutsu-edit-changeset
     (kbd "u") #'majutsu-undo
     (kbd "C-r") #'majutsu-redo
+    (kbd "a") #'majutsu-absorb
     (kbd "x") #'majutsu-abandon
     (kbd "s") #'majutsu-squash
     (kbd "S") #'majutsu-split

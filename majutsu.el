@@ -55,6 +55,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("R" "Restore"           majutsu-restore)]
    [("s" "Squash"            majutsu-squash)
     ("S" "Split"             majutsu-split)
+    ("A" "Absorb"            majutsu-absorb)
     ("y" "Duplicate"         majutsu-duplicate)
     ("Y" "Duplicate (dwim)"  majutsu-duplicate-dwim)
     ("Z" "Workspaces"        majutsu-workspace)
@@ -81,6 +82,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-annotate)
   (require 'majutsu-rebase)
   (require 'majutsu-restore)
+  (require 'majutsu-absorb)
   (require 'majutsu-split)
   (require 'majutsu-squash)
   (require 'majutsu-commit)
