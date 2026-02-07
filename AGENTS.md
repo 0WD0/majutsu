@@ -1,30 +1,11 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `majutsu.el` – Entry point and keymaps.
-- `majutsu-core.el` – Core utilities and configuration.
-- `majutsu-process.el` – Asynchronous process handling.
-- `majutsu-log.el` – Log view and parsing.
-- `majutsu-transient.el` – Transient menus and state.
-- `majutsu-diff.el` - Diff related.
-- `majutsu-commands.el` – Interactive commands.
-- `majutsu-template.el` – Embedded DSL for composing Jujutsu templates.
-- `majutsu-evil.el` – Native Evil-mode integration and keybindings.
-- `NEWS.org` – Release notes and user-facing changes.
-- `Eask` – Dependency and build configuration.
-- `README.org` – Usage and installation notes.
-- `docs/` – Living design notes/specifications (primarily Chinese).
-- `LICENSE` – Project license.
-- `test/` – ERT tests.
-
-Keep modules small and cohesive.
-
 ## Build, Test, and Development Commands
 This project uses [Eask](https://github.com/emacs-eask/eask) for development.
 
-- Install dependencies: `eask install-deps`
-- Byte-compile: `eask compile`
-- Run tests: `eask test ert test/*.el`
+- Install dependencies: `eask --allow-error install-deps`
+- Byte-compile: `eask --allow-error compile`
+- Run tests: `eask --allow-error test ert test/*.el`
 
 ## Testing Guidelines
 - Use ERT; place tests in `test/` and name them like `test-majutsu-*`.
@@ -40,9 +21,7 @@ This project uses [Eask](https://github.com/emacs-eask/eask) for development.
 ## Documentation
 - **Code changes require documentation updates.** When modifying commands, keybindings, or user-facing behavior, update the corresponding sections in:
   - `docs/majutsu.org` – The main user manual (Texinfo-compatible Org format)
-  - `README.org` – Quick-start guide (keep minimal, link to manual for details)
-- Keep `README.org` usage/key binding sections in sync with UI changes.
-- Update `docs/` specs when refining workflows or template semantics; preserve bilingual context and add English summaries for new sections when possible.
+  - `README.org` – Quick-start guide (keep minimal)
 - Leverage `man jj-*` (e.g., `man jj-bookmark`) for upstream command docs when refining command integrations.
 
 ## Agent-Specific Instructions
@@ -51,7 +30,7 @@ This project uses [Eask](https://github.com/emacs-eask/eask) for development.
 
 ## Version Control Workflow with Jujutsu (jj)
 
-This project uses [Jujutsu](https://github.com/martinvonz/jj) for version control. AI agents should interact directly with the `jj` CLI.
+This project uses [Jujutsu](https://github.com/jj-vcs/jj) for version control. AI agents should interact directly with the `jj` CLI.
 
 ### Basic jj Commands
 

@@ -161,6 +161,7 @@ If you diff =-r A::D | B::E=, there are two heads (D, E) and two roots (A, B). T
 The diff buffer is highly interactive:
 - ~RET~ :: Visit the appropriate version of the file at point. For working copy diffs, visits the actual file. For committed changes, visits the blob.
 - ~C-j~ / ~C-<return>~ :: Visit the workspace file, regardless of diff type. Note: when Evil mode is active, ~C-j~ may be overridden by Evil's section navigation; use ~C-<return>~ instead, which is unaffected.
+- ~v~ (on a file section) :: Open a blob buffer for that file using the current diff context.
 - ~+~ / ~-~ :: Increase or decrease the amount of context shown.
 - ~t~ :: Toggle word-level refinement.
 
@@ -168,6 +169,50 @@ When =--color-words= is enabled, Majutsu renders the old/new line numbers in
 the left margin and uses "..." lines to split hunks.
 With refinement enabled, color-words hunks also show a shadow cursor on the
 paired side (controlled by =smerge-refine-shadow-cursor=).
+Navigation (=RET= / =C-j=) still respects the side at point by using stored
+line/column metadata from the color-words backend.
+
+** File and Blob Inspection
+Majutsu's file inspector is implemented by =majutsu-file= and can be used both
+from command prompts and directly from sections in log/diff buffers.
+
+- ~M-x majutsu-find-file~ :: Prompt for revset + path and open that file as a blob.
+- ~M-x majutsu-find-file-at-point~ :: Open the file at point using section context.
+
+Blob buffers are read-only snapshots with history-aware navigation:
+- ~p~ / ~n~ :: Jump to previous/next revision that touched this file (while preserving cursor position as much as possible).
+- ~V~ :: Jump to the workspace version of the same file.
+- ~b~ :: Start annotate for the current blob.
+- ~g~ :: Revert/reload the current blob content.
+
+** Annotate (Blame)
+Majutsu annotate is implemented by =majutsu-annotate= and uses
+=jj file annotate= under the hood.
+
+- Entry: run ~b~ (~majutsu-annotate-addition~) from a blob/file buffer.
+- Recursive trace: running ~b~ again on an annotated chunk jumps to its parent
+  revision (when available) and re-annotates there.
+- Styles: press ~c~ to cycle heading/highlight/line styles
+  (=majutsu-annotate-styles=).
+- Navigation: ~n~ / ~p~ for next/previous chunk, ~N~ / ~P~ for next/previous
+  chunk from the same commit.
+- Inspection: ~RET~ shows the chunk's revision diff, ~M-w~ copies the chunk
+  change-id, and ~SPC~ / ~S-SPC~ scroll the diff window if it is already open.
+
+** Ediff and Diffedit
+Press ~E~ in dispatcher to open =majutsu-ediff= transient.
+
+- Selection: choose revisions via =--revisions= or =--from= / =--to= (with
+  point-toggle variants). In diff buffers, current range is used as default.
+- ~e~ (=majutsu-ediff-dwim=) :: Compare based on context (hunk/file/commit/whole
+  buffer).
+- ~E~ (=majutsu-ediff-edit=) :: Run =jj diffedit= with Emacs as
+  =ui.diff-editor=, using Ediff directories as the editing UI.
+- ~m~ (=majutsu-ediff-resolve=) :: Resolve conflicted files. Git-style 2-way
+  conflicts use =smerge-ediff=; JJ-style or multi-side conflicts fall back to
+  =majutsu-conflict= workflow.
+- ~M~ (=majutsu-ediff-resolve-with-conflict=) :: Open the file and enter the
+  conflict-mode workflow directly.
 
 ** Process Buffer
 Press ~$~ (Emacs) or ~`~ (Evil) to see the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output like remote fetches.
@@ -263,6 +308,17 @@ Runs: =jj restore --from REV= or =jj restore --changes-in REV=
 ** Sparse Working Copy
 - ~>~ (~majutsu-sparse~) :: Open the sparse working copy transient (set, add, remove, list, edit).
 - Editing patterns opens a temporary =.jjsparse= buffer; lines starting with ~JJ:~ are comments and are ignored by Jujutsu.
+
+Sparse transient actions:
+- ~l~ :: List current sparse patterns in =*Majutsu Sparse*= buffer.
+- ~s~ / ~S~ :: Set patterns (append / replace with clear first).
+- ~a~ / ~r~ :: Add or remove patterns incrementally.
+- ~e~ :: Edit patterns via =jj sparse edit= (with =majutsu-jjsparse-mode=).
+- ~R~ :: Reset to all files (=jj sparse reset=).
+
+Notes:
+- Pattern completion includes current directories/files from =@=.
+- Default "all files" state is represented by single pattern =.=.
 
 ** Interactive Patching
 Majutsu provides Magit-style partial hunk selection for Jujutsu operations. This allows you to select specific hunks, files, or even regions within hunks to include in Split, Squash, or Restore operations.
@@ -436,11 +492,29 @@ If Majutsu cannot find a workspace on disk, it will prompt you. You can configur
 ** Detecting Conflicts
 JJ marks conflicts in the log with a "conflict" label. Expanding the revision will show which files are conflicted.
 
-** Diffedit Workflows
-Majutsu provides specialized tools for resolving conflicts or performing precise edits:
-- ~E~ :: Launch =ediff= on the conflicted file.
-- ~M~ :: Launch =smerge-mode= on the conflicted file.
-Once you resolve the conflicts in the buffer and save, Majutsu will refresh the status.
+** Entering Conflict Mode
+You can enter conflict handling from multiple places:
+- In a diff hunk, use ~C-c ^ RET~ (=majutsu-diff-resolve-conflict=).
+- In Ediff transient, use ~m~ (auto strategy) or ~M~ (force conflict workflow).
+- Manually, run ~M-x majutsu-conflict-ensure-mode~ in a file with conflict markers.
+
+=majutsu-conflict= auto-detects marker styles:
+- JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable =majutsu-conflict-mode=.
+- Git-style markers (=|||||||= / =======) only -> enable =smerge-mode=.
+
+** majutsu-conflict-mode Commands
+Default key prefix is ~C-c ^~:
+- ~n~ / ~p~ :: Jump to next/previous conflict.
+- ~b~ :: Keep conflict base (rebase destination).
+- ~1..9~ :: Keep side N ("after" side in JJ diff blocks).
+- ~M-1..M-9~ :: Keep side N "before" variant.
+- ~R~ :: Refine conflict regions with word-level highlighting.
+
+In Evil integration:
+- ~]]~ / ~[[~ or ~gj~ / ~gk~ :: Next/previous conflict.
+- ~gb~ :: Keep base.
+- ~gr~ and ~gR~ :: Resolve "after" / "before" side maps.
+- ~ge~ :: Refine.
 
 * Customizing
 ** Essential Settings

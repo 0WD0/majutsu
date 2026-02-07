@@ -11,8 +11,21 @@
 - In ~majutus-diff~ transient:
   - Support ~--ignore-space-change~ (~-b~) and ~--ignore-all-space~ (~-w~) arguments.
 - In ~majutsu-diff~ buffers:
-  - Add ~--color-words~ backend with ~-W~ toggle in the diff transient.
+  - Add ~majutsu-color-words~ backend with ~-W~ toggle in the diff transient.
+  - Add color-words line/column-aware navigation for ~RET~ / ~C-j~ visits.
   - Add a shadow cursor for refined color-words hunks (uses ~smerge-refine-shadow-cursor~).
+- Add ~majutsu-file~ blob inspection workflow:
+  - Add ~majutsu-find-file~ / ~majutsu-find-file-at-point~ for revision-aware file viewing.
+  - Add blob buffer history navigation (~p~ / ~n~) and workspace jump (~V~).
+- Add ~majutsu-annotate~ workflow with chunk navigation, style cycling, and recursive parent tracing.
+- Add ~majutsu-ediff~ transient:
+  - Add context-aware compare (~majutsu-ediff-dwim~).
+  - Add =jj diffedit= integration using Emacs/Ediff as diff editor.
+  - Add conflict resolve entrypoints (~m~ / ~M~).
+- Add ~majutsu-sparse~ transient and list buffer for =jj sparse= pattern management.
+- Add ~majutsu-conflict~ parser/minor-mode for JJ conflict markers:
+  - Add conflict navigation, keep-side commands, and word-level refine.
+  - Auto-select =majutsu-conflict-mode= vs =smerge-mode= based on marker style.
 - Highlight JJ description buffers (summary, JJ comments, change list) using git-commit faces.
   - Add global mode to manage JJ description setup hooks.
   - Allow configuring JJ description major mode and Change ID face.
