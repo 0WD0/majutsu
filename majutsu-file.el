@@ -155,14 +155,17 @@ LIST-FN defaults to `majutsu-file-list'."
 (defun majutsu-find-file-noselect (rev file &optional revert)
   "Read FILE from REV into a buffer and return the buffer.
 REV is a revset, or nil to visit the file directly from the filesystem.
-FILE must be relative to the top directory of the repository.
+FILE may be absolute, or relative to the repository root.
 Non-nil REVERT means to revert the buffer.  If `ask-revert', then
 only after asking.  A non-nil value for REVERT is ignored if REV is nil."
   (let* ((root (majutsu-file--root))
-         (absolute (file-name-absolute-p file))
-         (file-abs (if absolute file (expand-file-name file root)))
-         (file-rel (if absolute (file-relative-name file root) file))
+         (file-abs (if (file-name-absolute-p file)
+                       file
+                     (expand-file-name file root)))
+         (file-rel (file-relative-name file-abs root))
          (defdir (file-name-directory file-abs)))
+    (when (and rev (not (file-in-directory-p file-abs root)))
+      (user-error "File is outside repository: %s" file))
     (if (null rev)
         ;; Visit filesystem file directly
         (progn
@@ -198,12 +201,12 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
             (not (buffer-modified-p))
             (y-or-n-p "Revert blob buffer? "))
     (let* ((inhibit-read-only t)
-           (root majutsu-buffer-blob-root)
+           (default-directory majutsu-buffer-blob-root)
            (revset (majutsu-file--normalize-revset majutsu-buffer-blob-revset))
            (path majutsu-buffer-blob-path))
       (erase-buffer)
       (majutsu-jj-insert "file" "show" "-r" revset (majutsu-jj-fileset-quote path))
-      (let ((buffer-file-name (expand-file-name path root))
+      (let ((buffer-file-name (expand-file-name path default-directory))
             (after-change-major-mode-hook
              (seq-difference after-change-major-mode-hook
                              '(global-diff-hl-mode-enable-in-buffer
