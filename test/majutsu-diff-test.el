@@ -209,6 +209,25 @@
         (should-not majutsu-diff-refine-hunk)
         (should (= calls 4))))))
 
+(ert-deftest majutsu-diff-color-words-goto-from-uses-removed-block ()
+  "For shared color-words lines, removed block should target old side."
+  (cl-letf (((symbol-function 'majutsu-color-words-side-at-point)
+             (lambda (&optional _pos) 'removed)))
+    (should (majutsu-diff--color-words-goto-from '(:from-line 10 :to-line 12)))))
+
+(ert-deftest majutsu-diff-color-words-goto-from-uses-added-block ()
+  "For shared color-words lines, added block should target new side."
+  (cl-letf (((symbol-function 'majutsu-color-words-side-at-point)
+             (lambda (&optional _pos) 'added)))
+    (should-not (majutsu-diff--color-words-goto-from '(:from-line 10 :to-line 12)))))
+
+(ert-deftest majutsu-diff-color-words-goto-from-falls-back-to-line-shape ()
+  "When side cannot be inferred, keep line-shape fallback behavior."
+  (cl-letf (((symbol-function 'majutsu-color-words-side-at-point)
+             (lambda (&optional _pos) nil)))
+    (should (majutsu-diff--color-words-goto-from '(:from-line 10)))
+    (should-not (majutsu-diff--color-words-goto-from '(:from-line 10 :to-line 12)))))
+
 (provide 'majutsu-diff-test)
 
 ;;; majutsu-diff-test.el ends here

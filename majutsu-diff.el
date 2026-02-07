@@ -29,6 +29,7 @@
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-find-file-at-point "majutsu-file" ())
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
+(declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
 (declare-function majutsu-color-words-wash-diffs "majutsu-color-words" (args))
 (declare-function majutsu-color-words--collect-change-spans "majutsu-color-words" (beg end))
 (declare-function majutsu-color-words--collect-debug-change-spans "majutsu-color-words" (beg end))
@@ -1075,9 +1076,20 @@ through while the background changes to indicate focus."
 (defun majutsu-diff--on-removed-line-p ()
   "Return non-nil if point is on a removed diff line."
   (if-let* ((info (majutsu-diff--color-words-line-info)))
-      (and (plist-get info :from-line)
-           (not (plist-get info :to-line)))
+      (majutsu-diff--color-words-goto-from info)
     (eq (char-after (line-beginning-position)) ?-)))
+
+(defun majutsu-diff--color-words-goto-from (info)
+  "Return non-nil when color-words navigation should target the old side.
+INFO is the plist from `majutsu-color-words-line-info-at-point'."
+  (let ((side (majutsu-color-words-side-at-point)))
+    (cond
+     ((eq side 'removed) t)
+     ((eq side 'added) nil)
+     (t
+      ;; If the line itself is side-specific, keep old behavior.
+      (and (plist-get info :from-line)
+           (not (plist-get info :to-line)))))))
 
 (defun majutsu-diff--revisions ()
   "Return (FROM-REV . TO-REV) for the current diff buffer.
@@ -1185,10 +1197,9 @@ regardless of what the diff is about."
       (user-error "No file at point"))
     (let* ((revs (majutsu-diff--revisions))
            (goto-from (if line-info
-                          (and (plist-get line-info :from-line)
-                               (not (plist-get line-info :to-line)))
-                        (and section (magit-section-match 'jj-hunk section)
-                             (majutsu-diff--on-removed-line-p))))
+                           (majutsu-diff--color-words-goto-from line-info)
+                         (and section (magit-section-match 'jj-hunk section)
+                              (majutsu-diff--on-removed-line-p))))
            (target-rev (if goto-from (car revs) (cdr revs)))
            (goto-workspace (or force-workspace
                                (and (majutsu-diff--visit-workspace-p)

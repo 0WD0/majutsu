@@ -62,6 +62,17 @@
       (should (equal (plist-get info :to-line) 3))
       (should (numberp (plist-get info :content-column))))))
 
+(ert-deftest majutsu-color-words-side-at-point-prefers-current-block ()
+  "`majutsu-color-words-side-at-point' should follow block under point."
+  (with-temp-buffer
+    (insert "old new")
+    (put-text-property 1 4 'majutsu-color-words-debug-side 'removed)
+    (put-text-property 5 8 'majutsu-color-words-debug-side 'added)
+    (goto-char 2)
+    (should (eq (majutsu-color-words-side-at-point) 'removed))
+    (goto-char 6)
+    (should (eq (majutsu-color-words-side-at-point) 'added))))
+
 (ert-deftest majutsu-color-words-wash-diffs-creates-hunks-and-margins ()
   "Color-words washer should split hunks and hide inline columns."
   (with-temp-buffer

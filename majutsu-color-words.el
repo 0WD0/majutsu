@@ -314,6 +314,45 @@ Return a list of (TYPE UNDERLINED-P START END) where TYPE is `removed' or
         info
       (majutsu-color-words--line-info-from-text))))
 
+(defun majutsu-color-words--side-at-pos (pos)
+  "Return change side at POS as `removed', `added', or nil."
+  (let ((side (get-text-property pos 'majutsu-color-words-debug-side)))
+    (cond
+     ((memq side '(removed added)) side)
+     ((eq side 'both) nil)
+     (t (car-safe (majutsu-color-words--face-type
+                   (get-text-property pos 'font-lock-face)))))))
+
+(defun majutsu-color-words-side-at-point (&optional pos)
+  "Return color-words change side at POS.
+Return `removed' or `added' when point is in such a block, else nil.
+
+When POS is on a neutral boundary (for example hidden line-number columns
+or shared context text), scan nearby text on the same line for the nearest
+colored block."
+  (setq pos (or pos (point)))
+  (save-excursion
+    (goto-char pos)
+    (let* ((bol (line-beginning-position))
+           (eol (line-end-position)))
+      (or (majutsu-color-words--side-at-pos pos)
+          (and (> pos bol)
+               (majutsu-color-words--side-at-pos (1- pos)))
+          (let ((found nil))
+            (goto-char pos)
+            (while (and (not found) (< (point) eol))
+              (setq found (majutsu-color-words--side-at-pos (point)))
+              (unless found
+                (forward-char 1)))
+            found)
+          (let ((found nil))
+            (goto-char (max bol (1- pos)))
+            (while (and (not found) (> (point) bol))
+              (setq found (majutsu-color-words--side-at-pos (point)))
+              (unless found
+                (backward-char 1)))
+            found)))))
+
 (defun majutsu-color-words--store-line-info (info)
   "Store INFO plist on the current line as text properties."
   (let ((bol (line-beginning-position))
