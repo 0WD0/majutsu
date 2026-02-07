@@ -214,19 +214,11 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
       (set-buffer-modified-p nil)
       (goto-char (point-min)))))
 
-(defun majutsu-find-file--display (revset path display-fn)
-  "Display PATH from REVSET using DISPLAY-FN."
-  (let* ((root (majutsu-file--root))
-         (path (majutsu-file--relative-path root path))
-         (buffer (majutsu-find-file-noselect revset path)))
-    (funcall display-fn buffer)
-    buffer))
-
 ;;;###autoload
 (defun majutsu-find-file (revset path)
   "View PATH from REVSET in a blob buffer."
   (interactive (majutsu-find-file-read-args "Find file"))
-  (majutsu-find-file--display revset path #'pop-to-buffer-same-window))
+  (majutsu-find-file--internal revset path #'pop-to-buffer-same-window))
 
 ;;;###autoload
 (defun majutsu-find-file-at-point ()
