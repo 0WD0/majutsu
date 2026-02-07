@@ -444,9 +444,11 @@ Returns a list of `majutsu-annotate-chunk' structures."
 
 (defun majutsu-annotate--file-exists-p (rev file)
   "Check if FILE exists in REV."
-  (let ((output (majutsu-jj-string "file" "list" "-r" rev file)))
-    ;; jj outputs "Warning: No matching entries..." when file doesn't exist
-    (not (string-prefix-p "Warning:" output))))
+  (let ((lines (majutsu-jj-lines "file" "list" "-r" rev
+                                 (majutsu-jj-fileset-quote file))))
+    ;; Use exact path matching; plain path args can behave like prefix patterns.
+    (and (= (length lines) 1)
+         (equal (car lines) file))))
 
 ;;;###autoload
 (defun majutsu-annotate-addition (&optional revision)
