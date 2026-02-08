@@ -47,7 +47,6 @@ efficient way to interact with JJ repositories from within Emacs.
 | ~e~     | Edit change              |
 | ~G~     | Git                      |
 | ~k~     | Abandon                  |
-| ~m~     | Resolve conflicts        |
 | ~o~     | New                      |
 | ~r~     | Rebase                   |
 | ~R~     | Restore                  |

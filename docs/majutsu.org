@@ -228,16 +228,24 @@ Press ~E~ in dispatcher to open =majutsu-ediff= transient.
 - ~E~ (=majutsu-ediff-edit=) :: Run =jj diffedit= with Emacs as
   =ui.diff-editor=. If no file is at point, Majutsu prompts for a changed file,
   then launches a two-sided Ediff session for that single file (left/right
-  temp files). Edit and save as needed, then quit Ediff to return control to
-  =jj diffedit=. When =majutsu-edit-finish-on-save= is non-nil, saving can
-  finish the with-editor session automatically.
+  temp files). Edit the right-side temp file and quit Ediff to return control
+  to =jj diffedit=. When =majutsu-edit-finish-on-save= is non-nil, saving a
+  diffedit temp file can finish the with-editor session automatically.
 
-Conflict resolution is now a separate command:
-- ~m~ in dispatcher (=majutsu-ediff-resolve=) :: Resolve conflicted files.
-  Uses =jj resolve= with 3-way Ediff (merge tool: =$left=, =$base=, =$right=)
-  for 2-sided conflicts, and falls back to =jj diffedit= for conflicts with
-  more than 2 sides.
-  In a =jj-commit= section, conflicted files are listed for that revision.
+Resolve entry points:
+- Ediff transient: ~m~ (=majutsu-ediff-resolve=),
+  ~M~ (=majutsu-ediff-resolve-with-conflict=).
+- Direct commands: =M-x majutsu-ediff-resolve=,
+  =M-x majutsu-ediff-resolve-with-conflict=.
+
+- ~m~ (=majutsu-ediff-resolve=) :: Resolve conflicted files.
+  In a =jj-commit= section, it lists conflicted files for that revision;
+  otherwise it uses working copy =@=. Uses =jj resolve= with 3-way Ediff
+  (merge tool: =$left=, =$base=, =$right=) for up-to-2-sided conflicts, and
+  falls back to =jj diffedit= for conflicts with more than 2 sides.
+- ~M~ (=majutsu-ediff-resolve-with-conflict=) :: Open the resolve target
+  buffer (working-copy file or revision blob), enable
+  =majutsu-conflict-mode=, and jump to the first conflict.
 
 ** Process Buffer
 Press ~$~ (Emacs) or ~`~ (Evil) to see the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output like remote fetches.
@@ -523,7 +531,6 @@ JJ marks conflicts in the log with a "conflict" label. Expanding the revision wi
 
 ** Entering Conflict Mode
 You can enter conflict handling from multiple places:
-- In dispatcher, use ~m~ (=majutsu-ediff-resolve=) for auto resolve flow.
 - In a diff hunk, use ~C-c ^ RET~ (=majutsu-diff-resolve-conflict=).
 - In Ediff transient, use ~m~ (auto strategy) or ~M~ (force conflict workflow).
   ~M~ opens the working-copy file (or a revision blob buffer for non-working-copy
