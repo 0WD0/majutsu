@@ -155,11 +155,13 @@
             (insert "old")
             (cl-letf (((symbol-function 'save-buffer)
                        (lambda (&optional _arg)
-                         (setq saved-content (buffer-substring-no-properties (point-min) (point-max))))))
+                         (setq saved-content
+                               (buffer-substring-no-properties (point-min)
+                                                               (point-max))))))
               (majutsu-blob-edit--apply-pending)
               (should (equal saved-content "abcdef"))
               (should (null majutsu-blob-edit--pending-edits))
-              (should (= (current-column) 2))))))
+              (should (= (current-column) 2)))))
       (delete-directory root t))))
 
 (ert-deftest majutsu-blob-edit-exit/no-changes-disables-mode ()

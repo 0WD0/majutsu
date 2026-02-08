@@ -174,7 +174,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     [remap evil-write] #'majutsu-blob-edit-finish)
   (majutsu-evil--define-keys 'normal 'majutsu-blob-edit-mode-map
     "ZZ" #'majutsu-blob-edit-finish
-    "ZQ" #'majutsu-blob-edit-abort)
+    "ZQ" #'majutsu-blob-edit-abort
+    (kbd "<escape>") #'majutsu-blob-edit-exit)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
