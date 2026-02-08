@@ -51,6 +51,9 @@
 (defvar-local majutsu-blob-edit--original-content nil
   "Original blob content snapshot before entering editable mode.")
 
+(defvar-local majutsu-blob-edit--original-point nil
+  "Point position snapshot before entering editable blob mode.")
+
 (defcustom majutsu-blob-edit-cursor-type 'hollow
   "Cursor type used while `majutsu-blob-edit-mode' is active."
   :group 'majutsu
@@ -179,7 +182,18 @@ Edits are applied to the revision through jj diffedit when saving."
   (interactive)
   (unless majutsu-blob-edit-mode
     (user-error "Blob editable mode is not active"))
-  (save-buffer))
+  (if (majutsu-blob-edit--changed-p)
+      (progn
+        ;; `save-buffer' skips write hooks if modified flag is nil.
+        ;; In editable blob buffers this can happen after undo-like edits,
+        ;; so force the modified flag when content differs from snapshot.
+        (unless (buffer-modified-p)
+          (set-buffer-modified-p t))
+        (save-buffer))
+    (majutsu-blob-edit-mode -1)
+    (set-buffer-modified-p nil)
+    (setq buffer-undo-list nil)
+    (message "(No changes need to be saved)")))
 
 (defun majutsu-blob-edit--changed-p ()
   "Return non-nil when blob edit buffer content differs from snapshot."
@@ -207,9 +221,11 @@ If there are unsaved changes, prompt to save or abort, like `wdired-exit'."
   (interactive)
   (unless majutsu-blob-edit-mode
     (user-error "Blob editable mode is not active"))
-  (let ((inhibit-read-only t))
+  (let ((inhibit-read-only t)
+        (restore-point (or majutsu-blob-edit--original-point (point-min))))
     (erase-buffer)
     (insert (or majutsu-blob-edit--original-content ""))
+    (goto-char (min restore-point (point-max)))
     (set-buffer-modified-p nil))
   (majutsu-blob-edit-mode -1)
   (message "Blob edits aborted"))
@@ -223,6 +239,7 @@ Saving in this mode applies changes through `jj diffedit'."
       (progn
         (setq-local majutsu-blob-edit--original-content
                     (buffer-substring-no-properties (point-min) (point-max)))
+        (setq-local majutsu-blob-edit--original-point (point))
         (setq-local majutsu-blob-edit--saved-blob-mode-enabled
                     (bound-and-true-p majutsu-blob-mode))
         (when majutsu-blob-edit--saved-blob-mode-enabled

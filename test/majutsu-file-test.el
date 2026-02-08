@@ -442,6 +442,45 @@
     (should-not majutsu-blob-edit-mode)
     (should majutsu-blob-mode)))
 
+(ert-deftest majutsu-blob-edit-finish/no-changes-disables-mode ()
+  "Finish should leave editable mode when no changes exist."
+  (with-temp-buffer
+    (insert "stable")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (majutsu-blob-mode 1)
+    (majutsu-blob-edit-mode 1)
+    (majutsu-blob-edit-finish)
+    (should-not majutsu-blob-edit-mode)
+    (should majutsu-blob-mode)))
+
+(ert-deftest majutsu-blob-edit-finish/changed-with-cleared-modified-applies ()
+  "Finish should still apply when content changed but modified flag is nil."
+  (let (seen-content)
+    (with-temp-buffer
+      (insert "before")
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revset "@")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (majutsu-blob-mode 1)
+      (majutsu-blob-edit-mode 1)
+      (erase-buffer)
+      (insert "after")
+      (set-buffer-modified-p nil)
+      (cl-letf (((symbol-function 'majutsu-blob-edit--apply-diffedit)
+                 (lambda (content)
+                   (setq seen-content content)
+                   0))
+                ((symbol-function 'majutsu-file--resolve-single-rev-info)
+                 (lambda (_revset)
+                   '(:change-id "new-change" :commit-id "new-commit"))))
+        (majutsu-blob-edit-finish)
+        (should (equal seen-content "after"))
+        (should-not majutsu-blob-edit-mode)
+        (should majutsu-blob-mode)))))
+
 (ert-deftest majutsu-blob-edit-exit/uses-content-delta-not-modified-flag ()
   "Exit should still treat content deltas as changes when modified flag is nil."
   (let (finished aborted)
@@ -503,6 +542,29 @@
         (majutsu-blob-edit-exit)
         (should aborted)
         (should-not finished)))))
+
+(ert-deftest majutsu-blob-edit-exit/decline-save-restores-entry-point ()
+  "Declining save on exit should restore original content and point."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\n")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (majutsu-blob-mode 1)
+    (goto-char (point-min))
+    (forward-line 1)
+    (move-to-column 1)
+    (let ((entry-point (point))
+          (original (buffer-string)))
+      (majutsu-blob-edit-mode 1)
+      (goto-char (point-max))
+      (insert "changed")
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+        (majutsu-blob-edit-exit))
+      (should-not majutsu-blob-edit-mode)
+      (should majutsu-blob-mode)
+      (should (equal (buffer-string) original))
+      (should (= (point) entry-point)))))
 
 (ert-deftest majutsu-blob-mode-map-uses-editable-entry ()
   "Blob key `e` should enter editable blob mode."
