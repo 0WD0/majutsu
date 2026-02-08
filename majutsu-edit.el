@@ -22,10 +22,6 @@
 (require 'server)
 
 (declare-function majutsu-goto-diff-line "majutsu-diff")
-(declare-function majutsu-jj--editor-command-config "majutsu-jj" (key target &optional editor-command))
-(declare-function majutsu-jj--parse-diff-range "majutsu-jj" (range))
-(declare-function majutsu-jj-read-diff-file "majutsu-jj" (from to))
-(declare-function majutsu-visit-file "majutsu-file")
 (declare-function majutsu-workspace-visit "majutsu-workspace")
 
 ;;; Edit
@@ -171,20 +167,6 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
               (majutsu-edit--diffedit-editor-target file))))
         ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
         (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))))
-
-;;;###autoload
-(defun majutsu-ediff-edit (args)
-  "Edit the right side of a diff using jj diffedit with Emacs as diff-editor.
-ARGS are transient arguments."
-  (interactive
-   (list (when (eq transient-current-command 'majutsu-ediff)
-           (transient-args 'majutsu-ediff))))
-  (let* ((range (majutsu-edit--edit-range args))
-         (from (car range))
-         (to (cdr range))
-         (file (majutsu-edit--read-diffedit-file from to))
-         (jj-args (majutsu-edit--build-diffedit-args from to file)))
-    (majutsu-edit--run-diffedit jj-args file)))
 
 ;;; _
 (provide 'majutsu-edit)
