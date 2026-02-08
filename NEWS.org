@@ -5,6 +5,14 @@
 
 ** Added
 
+** Changed
+
+** Fixed
+
+* [0.6.0] - 2026-02-09
+
+** Added
+
 - Prompt for passwords/passphrases in the minibuffer during jj operations, with auth-source support.
 - In ~majutsu-squash~ transient:
   - Add toggle-option for ~-r~.

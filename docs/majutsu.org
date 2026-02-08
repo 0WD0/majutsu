@@ -4,7 +4,7 @@
 #+texinfo_dir_category: Emacs
 #+texinfo_dir_title: Majutsu: (majutsu).
 #+texinfo_dir_desc: Using Jujutsu from Emacs with Majutsu.
-#+subtitle: for version 0.5.0
+#+subtitle: for version 0.6.0
 #+options: broken-links:mark
 
 Majutsu is a Magit-inspired Emacs interface for the Jujutsu (jj) version control system. It provides a powerful, interactive log viewer and a comprehensive set of commands for manipulating revision history with the efficiency and comfort Emacs users expect.
