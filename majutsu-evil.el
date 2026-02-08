@@ -221,6 +221,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "C-k") #'majutsu-annotate-previous-chunk
     "gk"   #'majutsu-annotate-previous-chunk
     "gK"   #'majutsu-annotate-previous-chunk-same-commit
+    "c"    #'majutsu-annotate-cycle-style
     "q"    #'majutsu-annotate-quit))
 
 ;;;###autoload
