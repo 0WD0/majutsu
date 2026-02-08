@@ -48,6 +48,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("l" "Log options"       majutsu-log-transient)
     ("o" "New"               majutsu-new)
     ("O" "New (dwim)"        majutsu-new-dwim)
+    ("m" "Resolve conflicts" majutsu-ediff-resolve)
     ("r" "Rebase"            majutsu-rebase)
     ("R" "Restore"           majutsu-restore)]
    [("s" "Squash"            majutsu-squash)

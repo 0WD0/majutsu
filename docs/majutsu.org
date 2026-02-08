@@ -207,12 +207,15 @@ Press ~E~ in dispatcher to open =majutsu-ediff= transient.
 - ~e~ (=majutsu-ediff-dwim=) :: Compare based on context (hunk/file/commit/whole
   buffer).
 - ~E~ (=majutsu-ediff-edit=) :: Run =jj diffedit= with Emacs as
-  =ui.diff-editor=, using Ediff directories as the editing UI.
-- ~m~ (=majutsu-ediff-resolve=) :: Resolve conflicted files. Git-style 2-way
-  conflicts use =smerge-ediff=; JJ-style or multi-side conflicts fall back to
-  =majutsu-conflict= workflow.
-- ~M~ (=majutsu-ediff-resolve-with-conflict=) :: Open the file and enter the
-  conflict-mode workflow directly.
+  =ui.diff-editor=. If no file is at point, Majutsu prompts for a changed file
+  and opens the right-side temp file for manual edit. Press ~C-c C-c~ to finish
+  (or ~C-c C-k~ to abort).
+
+Conflict resolution is now a separate command:
+- ~m~ in dispatcher (=majutsu-ediff-resolve=) :: Resolve conflicted files.
+  Uses =jj resolve= (with-editor based file editing) for 2-sided conflicts, and falls
+  back to =jj diffedit= for conflicts with more than 2 sides.
+  In a =jj-commit= section, conflicted files are listed for that revision.
 
 ** Process Buffer
 Press ~$~ (Emacs) or ~`~ (Evil) to see the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output like remote fetches.

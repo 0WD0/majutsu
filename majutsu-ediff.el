@@ -21,7 +21,6 @@
 (require 'majutsu-jj)
 (require 'majutsu-process)
 (require 'majutsu-file)
-(require 'majutsu-conflict)
 
 (declare-function majutsu-diff-visit-file "majutsu-diff" (&optional force-workspace))
 
@@ -178,6 +177,20 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
      (t
       (completing-read "Resolve conflicts in: " files nil t)))))
 
+(defun majutsu-ediff--resolve-revision-at-point ()
+  "Return commit revision at point for resolve DWIM, or nil.
+Only commit sections are considered for DWIM resolve flow."
+  (when-let* ((rev (magit-section-value-if 'jj-commit)))
+    (substring-no-properties rev)))
+
+(defun majutsu-ediff--resolve-file-dwim (&optional file)
+  "Return conflicted FILE for resolve workflow.
+If FILE is nil and point is on a commit section, prompt conflicts in that
+revision; otherwise prompt from working copy conflicts."
+  (or file
+      (majutsu-ediff--read-conflicted-file
+       (majutsu-ediff--resolve-revision-at-point))))
+
 ;;; Commands
 
 ;;;###autoload
@@ -212,6 +225,123 @@ If FILE is nil, prompt for one."
        (transient-args 'majutsu-ediff)
      majutsu-buffer-diff-range)))
 
+(defun majutsu-ediff--edit-range (args)
+  "Return (FROM . TO) range for diffedit from ARGS or context."
+  (or (majutsu-ediff--parse-diff-range args)
+      (and (derived-mode-p 'majutsu-diff-mode)
+           (majutsu-ediff--parse-diff-range majutsu-buffer-diff-range))
+      (cons "@-" "@")))
+
+(defun majutsu-ediff--build-diffedit-args (from to file)
+  "Build `jj diffedit' arguments for FROM, TO and FILE."
+  (append (cond
+           ((and from to)
+            (list "--from" from "--to" to))
+           (to
+            (list "-r" to))
+           (from
+            (list "-r" from))
+           (t
+            (list "-r" "@")))
+          (when file
+            (list "--" file))))
+
+(defun majutsu-ediff--toml-escape (value)
+  "Escape VALUE for use inside a TOML basic string."
+  (let ((escaped (replace-regexp-in-string "\\\\" "\\\\\\\\" value t t)))
+    (replace-regexp-in-string "\"" "\\\\\"" escaped t t)))
+
+(defun majutsu-ediff--toml-array-config (key values)
+  "Build KEY=[...] TOML config from string VALUES."
+  (format "%s=[%s]"
+          key
+          (mapconcat (lambda (value)
+                       (format "\"%s\"" (majutsu-ediff--toml-escape value)))
+                     values
+                     ", ")))
+
+(defun majutsu-ediff--editor-command-from-env ()
+  "Return with-editor command words from `majutsu-with-editor-envvar'."
+  (let ((raw (getenv majutsu-with-editor-envvar)))
+    (unless (and raw (not (equal raw "")))
+      (user-error "Missing %s in process environment" majutsu-with-editor-envvar))
+    (condition-case err
+        (let ((words (split-string-shell-command raw)))
+          (unless words
+            (user-error "%s is empty" majutsu-with-editor-envvar))
+          words)
+      (error
+       (user-error "Failed to parse %s: %s"
+                   majutsu-with-editor-envvar
+                   (error-message-string err))))))
+
+(defun majutsu-ediff--editor-command-config (key target &optional editor-command)
+  "Build KEY config command string editing TARGET.
+EDITOR-COMMAND defaults to the command parsed from with-editor environment."
+  (majutsu-ediff--toml-array-config
+   key
+   (append (or editor-command (majutsu-ediff--editor-command-from-env))
+           (list target))))
+
+(defun majutsu-ediff--diffedit-editor-target (file)
+  "Return right-side target path expression for FILE in diffedit temp tree."
+  (concat "$right/" file))
+
+(defun majutsu-ediff--conflict-side-count (rev file)
+  "Return the sidedness for FILE conflict at REV.
+When sidedness cannot be parsed, return 0."
+  (let* ((default-directory (majutsu-file--root))
+         (line (car (majutsu-jj-lines "resolve" "--list" "-r" rev "--" file))))
+    (if (and line
+             (string-match "[ \t]+\\([0-9]+\\)-sided conflict\\'" line))
+        (string-to-number (match-string 1 line))
+      0)))
+
+(defun majutsu-ediff--build-resolve-args (rev file merge-editor-config)
+  "Build `jj resolve' arguments for REV and FILE.
+MERGE-EDITOR-CONFIG is a `ui.merge-editor=[...]' TOML config string."
+  (append
+   (list
+    "resolve"
+    "--config"
+    merge-editor-config
+    "-r" (or rev "@"))
+   (when file
+     (list "--" file))))
+
+(defun majutsu-ediff--run-resolve (rev file)
+  "Run `jj resolve` for REV and FILE with with-editor merge-editor config."
+  (majutsu-with-editor
+    (let* ((merge-editor-cmd
+            (majutsu-ediff--editor-command-config "ui.merge-editor" "$output"))
+           (args (majutsu-ediff--build-resolve-args rev file merge-editor-cmd)))
+      ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
+      (apply #'majutsu-run-jj-async args))))
+
+(defun majutsu-ediff--directory-common-files (left right)
+  "Return common relative file paths between LEFT and RIGHT directories."
+  (let* ((left (file-name-as-directory (expand-file-name left)))
+         (right (file-name-as-directory (expand-file-name right)))
+         (files nil))
+    (dolist (abs (directory-files-recursively right ".*" nil t))
+      (when (file-regular-p abs)
+        (let ((rel (file-relative-name abs right)))
+          (when (and (not (string= rel "JJ-INSTRUCTIONS"))
+                     (file-exists-p (expand-file-name rel left)))
+            (push rel files)))))
+    (sort files #'string<)))
+
+(defun majutsu-ediff--read-directory-file (left right)
+  "Read a single common file path between LEFT and RIGHT directories."
+  (let ((files (majutsu-ediff--directory-common-files left right)))
+    (cond
+     ((null files)
+      (user-error "No common editable files between %s and %s" left right))
+     ((= (length files) 1)
+      (car files))
+     (t
+      (completing-read "Diffedit file: " files nil t)))))
+
 ;;;###autoload
 (defun majutsu-ediff-dwim ()
   "Context-aware Ediff based on current section."
@@ -242,101 +372,78 @@ If FILE is nil, prompt for one."
 
 ;;;###autoload
 (defun majutsu-ediff-resolve (&optional file)
-  "Resolve conflicts in FILE using Ediff.
-For conflicts with more than 2 sides, fall back to `majutsu-conflict'."
+  "Resolve FILE conflicts using `jj resolve' with Emacs as merge editor.
+If FILE is nil, DWIM selects from conflicted files at point revision (commit
+section) or the working copy."
   (interactive)
-  (let* ((file (or file
-                   (majutsu-file-at-point)
-                   (majutsu-ediff--read-conflicted-file)))
-         (full-path (expand-file-name file (majutsu-file--root))))
-    (unless (file-exists-p full-path)
-      (user-error "File does not exist: %s" file))
-    (find-file full-path)
-    (let ((conflicts (majutsu-conflict-parse-buffer)))
-      (cond
-       ((null conflicts)
-        (user-error "No conflicts in %s" file))
-       ;; Check if any conflict has more than 2 sides
-       ((cl-some (lambda (c)
-                   (> (+ (length (majutsu-conflict-adds c))
-                         (length (majutsu-conflict-removes c)))
-                      3))  ; base + 2 sides = 3
-                 conflicts)
-        (message "Conflict has more than 2 sides, using majutsu-conflict")
-        (majutsu-conflict-ensure-mode)
-        (majutsu-conflict-goto-nearest))
-       ;; Git-style conflicts: use smerge-ediff
-       ((majutsu-conflict--git-style-only-p)
-        (smerge-ediff))
-       ;; JJ-style with 2 sides: use majutsu-conflict for now
-       ;; (ediff 3-way merge requires extracting base/left/right content)
-       (t
-        (majutsu-conflict-ensure-mode)
-        (majutsu-conflict-goto-nearest)
-        (message "Use C-c ^ commands to resolve conflicts"))))))
+  (let* ((rev (or (majutsu-ediff--resolve-revision-at-point) "@"))
+         (file (majutsu-ediff--resolve-file-dwim file))
+         (sides (majutsu-ediff--conflict-side-count rev file)))
+    (if (> sides 2)
+        (progn
+          (message "%s has %d sides; using diffedit fallback" file sides)
+          (majutsu-ediff--run-diffedit
+           (majutsu-ediff--build-diffedit-args nil rev file)
+           file))
+      (majutsu-ediff--run-resolve rev file))))
 
 ;;;###autoload
 (defun majutsu-ediff-resolve-with-conflict ()
-  "Resolve conflicts using `majutsu-conflict-mode'."
+  "Backward-compatible alias for `majutsu-ediff-resolve'."
   (interactive)
-  (let* ((file (or (majutsu-file-at-point)
-                   (majutsu-ediff--read-conflicted-file)))
-         (full-path (expand-file-name file (majutsu-file--root))))
-    (find-file full-path)
-    (majutsu-conflict-ensure-mode)
-    (majutsu-conflict-goto-nearest)))
+  (majutsu-ediff-resolve))
 
 ;;;###autoload
 (defun majutsu-ediff-edit (args)
   "Edit the right side of a diff using jj diffedit with Emacs as diff-editor.
 ARGS are transient arguments."
-  (interactive (list (transient-args 'majutsu-ediff)))
-  (let* ((range (majutsu-ediff--parse-diff-range args))
+  (interactive
+   (list (when (eq transient-current-command 'majutsu-ediff)
+           (transient-args 'majutsu-ediff))))
+  (let* ((range (majutsu-ediff--edit-range args))
          (from (car range))
          (to (cdr range))
-         (jj-args (cond
-                   ((and from to)
-                    (list "--from" from "--to" to))
-                   (to
-                    (list "-r" to))
-                   (from
-                    (list "-r" from))
-                   (t
-                    (list "-r" "@")))))
-    (majutsu-ediff--run-diffedit jj-args)))
+         (file (or (majutsu-file-at-point)
+                   (majutsu-ediff--read-file from to)))
+         (jj-args (majutsu-ediff--build-diffedit-args from to file)))
+    (majutsu-ediff--run-diffedit jj-args file)))
 
-(defun majutsu-ediff--run-diffedit (jj-args)
-  "Run jj diffedit with JJ-ARGS using Emacs ediff as the diff editor."
-  (let* ((emacsclient (or (executable-find "emacsclient")
-                          (error "Cannot find emacsclient")))
-         (server-name (or server-name "server"))
-         ;; Build the diff-editor command - use TOML array syntax for proper quoting
-         (diff-editor-cmd (format "ui.diff-editor=[\"%s\", \"-s\", \"%s\", \"--eval\", \"(majutsu-ediff-directories \\\"$left\\\" \\\"$right\\\")\"]"
-                                  emacsclient server-name)))
-    ;; Use async to avoid blocking Emacs while jj waits for emacsclient
-    (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))
+(defun majutsu-ediff--run-diffedit (jj-args &optional file)
+  "Run jj diffedit with JJ-ARGS editing FILE through with-editor."
+  (setq file (or file (cadr (member "--" jj-args))))
+  (unless file
+    (user-error "Diffedit requires a file target"))
+  (majutsu-with-editor
+    (let ((diff-editor-cmd
+           (majutsu-ediff--editor-command-config
+            "ui.diff-editor"
+            (majutsu-ediff--diffedit-editor-target file))))
+      ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
+      (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args))))
 
 ;;;###autoload
 (defun majutsu-ediff-directories (left right)
-  "Compare LEFT and RIGHT directories using ediff.
-This is called by jj diffedit when using Emacs as the diff editor.
-Blocks until user finishes editing and quits ediff."
+  "Edit one file from LEFT/RIGHT diffedit directories.
+This is called by jj diffedit when using Emacs as the diff editor and blocks
+until the user completes manual editing." 
   (interactive "DLeft directory: \nDRight directory: ")
-  (let ((left (expand-file-name left))
-        (right (expand-file-name right)))
-    ;; Set up quit hook to exit recursive-edit
-    (add-hook 'ediff-quit-hook #'majutsu-ediff--exit-recursive-edit)
-    (unwind-protect
-        (progn
-          (ediff-directories left right nil)
-          ;; Block until user quits ediff
-          (recursive-edit))
-      (remove-hook 'ediff-quit-hook #'majutsu-ediff--exit-recursive-edit))))
+  (let* ((left (expand-file-name left))
+         (right (expand-file-name right))
+         (file (majutsu-ediff--read-directory-file left right))
+         (right-file (expand-file-name file right)))
+    (find-file right-file)
+    (message "Edit %s and finish with with-editor (C-c C-c)" (abbreviate-file-name right-file))))
 
-(defun majutsu-ediff--exit-recursive-edit ()
-  "Exit recursive edit when ediff quits."
-  (when (> (recursion-depth) 0)
-    (exit-recursive-edit)))
+;;;###autoload
+(defun majutsu-ediff-merge-files (left base right output)
+  "Resolve a 3-way merge with Ediff and write result to OUTPUT.
+Called by `jj resolve` merge editor command via emacsclient."
+  (interactive "fLeft file: \nfBase file: \nfRight file: \nFOutput file: ")
+  (let ((left (expand-file-name left))
+        (base (expand-file-name base))
+        (right (expand-file-name right))
+        (output (expand-file-name output)))
+    (ediff-merge-files-with-ancestor left right base nil output)))
 
 ;;; Transient
 

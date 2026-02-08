@@ -599,5 +599,27 @@ apricot
     (should smerge-mode)
     (should-not majutsu-conflict-mode)))
 
+(ert-deftest majutsu-conflict-test-ensure-mode-jj-disables-smerge ()
+  "JJ conflicts should disable smerge-mode when conflict mode is enabled."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (fundamental-mode)
+    (smerge-mode 1)
+    (should smerge-mode)
+    (majutsu-conflict-ensure-mode)
+    (should majutsu-conflict-mode)
+    (should-not smerge-mode)))
+
+(ert-deftest majutsu-conflict-test-ensure-mode-git-disables-conflict-mode ()
+  "Git conflicts should disable majutsu-conflict-mode when switching to smerge."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--git)
+    (fundamental-mode)
+    (majutsu-conflict-mode 1)
+    (should majutsu-conflict-mode)
+    (majutsu-conflict-ensure-mode)
+    (should smerge-mode)
+    (should-not majutsu-conflict-mode)))
+
 (provide 'majutsu-conflict-test)
 ;;; majutsu-conflict-test.el ends here

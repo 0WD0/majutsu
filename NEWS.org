@@ -59,6 +59,17 @@
 - Diff DWIM now only inherits range/filesets from the current diff buffer,
   and context adjustments (+/-/0) no longer update global defaults.
 - ~majutsu-tpl~ now evaluates embedded Elisp in templates at runtime.
+- ~majutsu-conflict~ now chooses ~majutsu-conflict-mode~ and ~smerge-mode~
+  mutually exclusively when auto-detecting conflict marker style.
+- ~majutsu-ediff-resolve~ now runs ~jj resolve~ via with-editor integration for
+  2-sided conflicts, and falls back to ~jj diffedit~ for 3+ sided conflicts.
+  It also has commit-section DWIM behavior for conflicted file selection.
+- ~majutsu-ediff-resolve-with-conflict~ now delegates to
+  ~majutsu-ediff-resolve~ for backward compatibility.
+- ~majutsu-ediff~ transient no longer mixes resolve actions with range-based
+  compare/diffedit arguments; resolve is exposed from dispatcher (~m~).
+- ~majutsu-ediff-edit~ now supports non-diff-buffer entry by prompting for a
+  changed file and opening the right-side temp file for manual editing.
 
 * [0.5.0] - 2026-01-09
 

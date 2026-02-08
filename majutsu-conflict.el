@@ -1124,8 +1124,14 @@ markers are present, enable `smerge-mode'."
                                (eq style 'git))
                              styles)))
     (cond
-     (jj-style (majutsu-conflict-mode 1))
-     (git-style (smerge-mode 1)))))
+     (jj-style
+      (when (bound-and-true-p smerge-mode)
+        (smerge-mode -1))
+      (majutsu-conflict-mode 1))
+     (git-style
+      (when (bound-and-true-p majutsu-conflict-mode)
+        (majutsu-conflict-mode -1))
+      (smerge-mode 1)))))
 
 ;;;###autoload
 (defun majutsu-conflict-check-enable ()

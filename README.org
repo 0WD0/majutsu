@@ -41,9 +41,11 @@ efficient way to interact with JJ repositories from within Emacs.
 | ~c~     | Describe                 |
 | ~C~     | Commit                   |
 | ~d~     | Diff                     |
+| ~E~     | Ediff                    |
 | ~e~     | Edit change              |
 | ~G~     | Git                      |
 | ~k~     | Abandon                  |
+| ~m~     | Resolve conflicts        |
 | ~o~     | New                      |
 | ~r~     | Rebase                   |
 | ~R~     | Restore                  |
