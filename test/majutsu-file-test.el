@@ -100,6 +100,25 @@
       (delete-directory root t)
       (delete-file outside))))
 
+(ert-deftest majutsu-find-file-read-args/always-prompts-for-path ()
+  "Find-file args should always call path reader with context default."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-file--root)
+               (lambda () "/tmp/repo"))
+              ((symbol-function 'majutsu-file--default-revset)
+               (lambda () "@"))
+              ((symbol-function 'majutsu-read-revset)
+               (lambda (_prompt _default) "chosen-rev"))
+              ((symbol-function 'majutsu-file--path-at-point)
+               (lambda (_root) "src/at-point.el"))
+              ((symbol-function 'majutsu-file--read-path)
+               (lambda (revset root default)
+                 (setq seen (list revset root default))
+                 "picked.el")))
+      (should (equal (majutsu-find-file-read-args "Find file")
+                     '("chosen-rev" "picked.el")))
+      (should (equal seen '("chosen-rev" "/tmp/repo" "src/at-point.el"))))))
+
 (ert-deftest majutsu-file-revert-buffer/noop-when-revision-unchanged ()
   "Revert should be a no-op when change-id and commit-id are unchanged."
   (let (called)

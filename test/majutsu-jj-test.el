@@ -124,4 +124,34 @@
         (should (stringp result))
         (should (string-match-p "something went wrong" result))))))
 
+(ert-deftest majutsu-jj-revset-candidates/includes-workspaces-bookmarks-tags ()
+  "Revset candidates should include common refs and deduplicate values." 
+  (cl-letf (((symbol-function 'majutsu-jj--safe-lines)
+             (lambda (&rest args)
+               (pcase args
+                 (`("workspace" "list" "-T" "name ++ \"\\n\"") '("ws-a" "ws-b"))
+                 (`("bookmark" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main" "feature"))
+                 (`("tag" "list" "--quiet" "-T" "name ++ \"\\n\"") '("v1.0" "main"))
+                 (_ nil)))))
+    (should (equal (majutsu-jj-revset-candidates "main")
+                   '("main" "@" "@-" "@+" "ws-a@" "ws-b@" "feature" "v1.0")))))
+
+(ert-deftest majutsu-read-revset/uses-completion-and-allows-free-form ()
+  "Revset reader should call completion with require-match=nil." 
+  (let (seen-require-match seen-default seen-category seen-history)
+    (cl-letf (((symbol-function 'majutsu-jj-revset-candidates)
+               (lambda (_default) '("@" "main")))
+              ((symbol-function 'majutsu-completing-read)
+               (lambda (_prompt _collection _predicate require-match _initial hist def category)
+                 (setq seen-require-match require-match
+                       seen-history hist
+                       seen-default def
+                       seen-category category)
+                 "main")))
+      (should (equal (majutsu-read-revset "Rev" "@") "main"))
+      (should (null seen-require-match))
+      (should (eq seen-history 'majutsu-read-revset-history))
+      (should (equal seen-default "@"))
+      (should (eq seen-category 'majutsu-revision)))))
+
 (provide 'majutsu-jj-test)

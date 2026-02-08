@@ -344,10 +344,11 @@ LIST-FN defaults to `majutsu-file-list'."
       (when-let* ((file buffer-file-name))
         (majutsu-file--relative-path root file))))
 
-(defun majutsu-file--read-path (revset root)
-  "Prompt for a file path from REVSET."
+(defun majutsu-file--read-path (revset root &optional default)
+  "Prompt for a file path from REVSET.
+DEFAULT is the initial file choice when present in REVSET file list."
   (let* ((paths (majutsu-file--list revset root))
-         (default (majutsu-file--path-at-point root)))
+         (default (or default (majutsu-file--path-at-point root))))
     (when (and default (not (member default paths)))
       (setq default nil))
     (completing-read "Find file: " paths nil t nil nil default)))
@@ -383,8 +384,8 @@ LIST-FN defaults to `majutsu-file-list'."
   "Read revset and file path for PROMPT."
   (let* ((root (majutsu-file--root))
          (revset (majutsu-read-revset prompt (majutsu-file--default-revset)))
-         (path (or (majutsu-file--path-at-point root)
-                   (majutsu-file--read-path revset root))))
+         (default-path (majutsu-file--path-at-point root))
+         (path (majutsu-file--read-path revset root default-path)))
     (list revset path)))
 
 (defun majutsu-find-file-noselect (rev file &optional revert)

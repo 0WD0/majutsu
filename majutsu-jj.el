@@ -90,10 +90,49 @@ If TARGET is nil, return config for EDITOR-COMMAND as-is."
 
 ;;; Reading
 
+(defvar majutsu-read-revset-history nil
+  "Minibuffer history for `majutsu-read-revset'.")
+
+(defun majutsu-jj--safe-lines (&rest args)
+  "Return `majutsu-jj-lines' for ARGS, or nil on command failure."
+  (condition-case nil
+      (apply #'majutsu-jj-lines args)
+    (error nil)))
+
+(defun majutsu-jj-revset-candidates (&optional default)
+  "Return completion candidates for revset prompts.
+Candidates include pseudo revisions and repository references such as
+workspace working-copy refs (`<workspace>@`), bookmarks, and tags.
+DEFAULT, when non-nil, is inserted first so users can accept it quickly."
+  (let* ((workspaces (mapcar (lambda (name) (concat name "@"))
+                             (majutsu-jj--safe-lines "workspace" "list" "-T" "name ++ \"\\n\"")))
+         (bookmarks (majutsu-jj--safe-lines "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
+         (tags (majutsu-jj--safe-lines "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
+         (raw (append (list "@" "@-" "@+")
+                      workspaces
+                      bookmarks
+                      tags
+                      (when default (list default))))
+         (clean (seq-filter (lambda (s) (and (stringp s) (not (string-empty-p s)))) raw)))
+    (if (and default (not (string-empty-p default)))
+        (cons default (delete default (delete-dups clean)))
+      (delete-dups clean))))
+
 (defun majutsu-read-revset (prompt &optional default)
-  "Prompt user with PROMPT to read a revision set string."
-  (let ((default (or default (magit-section-value-if 'jj-commit) "@")))
-    (majutsu-read-string prompt nil nil default)))
+  "Prompt user with PROMPT to read a revision set string.
+Completion candidates include workspaces, bookmarks, and tags, while
+still allowing free-form revset expressions."
+  (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
+         (value (majutsu-completing-read
+                 prompt
+                 (majutsu-jj-revset-candidates default)
+                 nil nil nil
+                 'majutsu-read-revset-history
+                 default
+                 'majutsu-revision)))
+    (if (string-empty-p value)
+        (user-error "Need non-empty input")
+      value)))
 
 (defun majutsu-jj--parse-diff-range (range)
   "Parse RANGE into (from . to) cons.
