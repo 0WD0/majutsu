@@ -116,6 +116,19 @@
    ">>>>>>> conflict 1 of 1 ends")
   "JJ diff-style conflict whose end marker has no terminating newline.")
 
+(defconst majutsu-conflict-test--jj-diff-absorbed-label
+  (concat
+   "<<<<<<< conflict 1 of 1\n"
+   "%%%%%%% diff from: absorbed changes (from kuvzpzvz d13eb0ec)\n"
+   (make-string 7 ?\\)
+   "        to: ntwvtmtl a368d22d \"fix(color-words): avoid wrong-side jump on neutral debug payload\" (rebase destination)\n"
+   "-old\n"
+   "+new\n"
+   "+++++++ uyymumuy ac4c1162 \"fix: align majutsu-conflict side selection with jj semantics and long markers\" (rebased revision)\n"
+   "base\n"
+   ">>>>>>> conflict 1 of 1 ends\n")
+  "JJ diff-style conflict containing absorb label format.")
+
 
 (defconst majutsu-conflict-test--jj-snapshot
   "<<<<<<< conflict 1 of 1
@@ -158,6 +171,7 @@ ORANGE
   "Test parsing conflict label metadata."
   (let ((label "vpxusssl 38d49363 \"merge base\"")
         (label-with-suffix "tlwwkqxk d121763d \"commit A\" (no terminating newline)")
+        (absorbed-label "absorbed changes (from kuvzpzvz d13eb0ec)")
         (malformed "vpxusssl 38d49363"))
     (should (equal (majutsu-conflict-parse-label label)
                    '(:change-id "vpxusssl"
@@ -167,6 +181,10 @@ ORANGE
                    '(:change-id "tlwwkqxk"
                      :commit-id "d121763d"
                      :description "commit A")))
+    (should (equal (majutsu-conflict-parse-label absorbed-label)
+                   '(:change-id "kuvzpzvz"
+                     :commit-id "d13eb0ec"
+                     :description "absorbed changes")))
     (should-not (majutsu-conflict-parse-label nil))
     (should-not (majutsu-conflict-parse-label ""))
     (should-not (majutsu-conflict-parse-label malformed))
@@ -176,6 +194,9 @@ ORANGE
     (should (equal (majutsu-conflict-label-change-id label-with-suffix) "tlwwkqxk"))
     (should (equal (majutsu-conflict-label-commit-id label-with-suffix) "d121763d"))
     (should (equal (majutsu-conflict-label-description label-with-suffix) "commit A"))
+    (should (equal (majutsu-conflict-label-change-id absorbed-label) "kuvzpzvz"))
+    (should (equal (majutsu-conflict-label-commit-id absorbed-label) "d13eb0ec"))
+    (should (equal (majutsu-conflict-label-description absorbed-label) "absorbed changes"))
     (should-not (majutsu-conflict-label-change-id nil))
     (should-not (majutsu-conflict-label-commit-id nil))
     (should-not (majutsu-conflict-label-description nil))))
@@ -255,6 +276,30 @@ ORANGE
         (should (equal base "grapefruit"))
         (should (equal remove1 "grape"))
         (should (equal add1 "grape\n"))))))
+
+(ert-deftest majutsu-conflict-test-revision-at-point-absorbed-label ()
+  "Test revision metadata extraction for absorb conflict labels."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-absorbed-label)
+    (goto-char (point-min))
+
+    ;; Absorb diff marker should resolve to absorbed source change/commit.
+    (search-forward "absorbed changes")
+    (beginning-of-line)
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "kuvzpzvz"))
+      (should (equal (plist-get rev :commit-id) "d13eb0ec"))
+      (should (eq (plist-get rev :side) 'remove)))
+
+    ;; Added side should resolve to the "to:" label metadata.
+    (search-forward "+new")
+    (beginning-of-line)
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "ntwvtmtl"))
+      (should (equal (plist-get rev :commit-id) "a368d22d"))
+      (should (eq (plist-get rev :side) 'add)))))
 
 (ert-deftest majutsu-conflict-test-keep-side-indexing ()
   "Test keep-side maps N to jj add term N."

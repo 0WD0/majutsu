@@ -70,6 +70,10 @@
   "^\\([[:alnum:]]+\\) \\([[:xdigit:]]+\\) \"\\([^\"]+\\)\"\\(?: ([^)]*)\\)?$"
   "Regexp matching JJ conflict label metadata.")
 
+(defconst majutsu-conflict-label-absorbed-re
+  "^absorbed changes (from \\([[:alnum:]]+\\) \\([[:xdigit:]]+\\))$"
+  "Regexp matching JJ absorb conflict label metadata.")
+
 (defconst majutsu-conflict--marker-chars
   '(?< ?> ?+ ?- ?% ?\\ ?| ?=)
   "Characters used to form conflict marker lines.")
@@ -91,11 +95,16 @@
 Return a plist with :change-id, :commit-id, and :description keys.
 Return nil for nil or empty LABEL, or when LABEL does not match."
   (when (and (stringp label)
-             (not (string= label ""))
-             (string-match majutsu-conflict-label-re label))
-    (list :change-id (match-string 1 label)
-          :commit-id (match-string 2 label)
-          :description (match-string 3 label))))
+             (not (string= label "")))
+    (cond
+     ((string-match majutsu-conflict-label-re label)
+      (list :change-id (match-string 1 label)
+            :commit-id (match-string 2 label)
+            :description (match-string 3 label)))
+     ((string-match majutsu-conflict-label-absorbed-re label)
+      (list :change-id (match-string 1 label)
+            :commit-id (match-string 2 label)
+            :description "absorbed changes")))))
 
 (defun majutsu-conflict-label-change-id (label)
   "Return the change-id from LABEL, or nil when unavailable."
@@ -163,15 +172,17 @@ The return value is a cons cell of the form (KIND . LABEL), or nil."
 
 (defun majutsu-conflict--normalize-diff-remove-label (label)
   "Strip JJ diff prefix from remove LABEL."
-  (if (and label (string-match "\\`diff from:[ \t]*\\(.*\\)\\'" label))
-      (match-string 1 label)
-    label))
+  (let ((label (and label (replace-regexp-in-string "\\`[ \t]+" "" label))))
+    (if (and label (string-match "\\`diff from:[ \t]*\\(.*\\)\\'" label))
+        (match-string 1 label)
+      label)))
 
 (defun majutsu-conflict--normalize-diff-add-label (label)
   "Strip JJ diff prefix from add LABEL."
-  (if (and label (string-match "\\`to:[ \t]*\\(.*\\)\\'" label))
-      (match-string 1 label)
-    label))
+  (let ((label (and label (replace-regexp-in-string "\\`[ \t]+" "" label))))
+    (if (and label (string-match "\\`to:[ \t]*\\(.*\\)\\'" label))
+        (match-string 1 label)
+      label)))
 
 (defun majutsu-conflict--strip-one-ending-eol (content)
   "Strip one trailing line ending from CONTENT.
@@ -228,7 +239,9 @@ or nil when point is not inside a labeled section."
                     (setq done t)))
                  ((string-match majutsu-conflict-diff-re line)
                   (setq state 'diff
-                        diff-remove-label (match-string 2 line)
+                        diff-remove-label
+                        (majutsu-conflict--normalize-diff-remove-label
+                         (match-string 2 line))
                         diff-add-label nil)
                   (when on-line
                     (setq side 'remove
@@ -244,7 +257,9 @@ or nil when point is not inside a labeled section."
                             done t))))
                  ((string-match majutsu-conflict-note-re line)
                   (when (eq state 'diff)
-                    (setq diff-add-label (match-string 2 line)))
+                    (setq diff-add-label
+                          (majutsu-conflict--normalize-diff-add-label
+                           (match-string 2 line))))
                   (when on-line
                     (setq side 'add
                           label diff-add-label
