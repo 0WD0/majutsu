@@ -27,7 +27,7 @@ efficient way to interact with JJ repositories from within Emacs.
 1. Open a JJ repository: ~M-x majutsu~ (or ~majutsu-log~)
 2. Navigate: ~n~ / ~p~ to move between revisions
 3. Act: ~RET~ to visit, ~?~ for help
-4. In blob buffers, press ~e~ to edit that revision (via =jj diffedit=)
+4. In blob buffers, press ~e~ to enter editable mode; save applies via =jj diffedit=
 
 ** Essential Keybindings
 

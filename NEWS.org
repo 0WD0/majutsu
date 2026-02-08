@@ -55,6 +55,10 @@
   - Updated ~q~ to use ~majutsu-mode-bury-buffer~ in Majutsu buffers and blob buffers.
   - Switched JJ description buffers to use ~switch-to-buffer~ display behavior.
 - Diffedit buffers now finish on save by default (see ~majutsu-edit-finish-on-save~).
+- Blob buffers now use a wdired-style editable mode:
+  - ~e~ (or ~C-x C-q~) enters editable blob mode.
+  - Saving applies changes through ~jj diffedit~ and exits edit mode.
+  - In Evil normal state, ~i~ enters editable blob mode and switches to insert.
 
 ** Fixed
 

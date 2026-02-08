@@ -99,4 +99,71 @@
       (delete-directory root t)
       (delete-file outside))))
 
+(ert-deftest majutsu-blob-edit-start/enables-editable-mode ()
+  "Starting blob edit mode should make blob buffer writable."
+  (with-temp-buffer
+    (insert "old")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (majutsu-blob-mode 1)
+    (setq buffer-read-only t)
+    (majutsu-blob-edit-start)
+    (should majutsu-blob-edit-mode)
+    (should-not buffer-read-only)
+    (should (equal majutsu-blob-edit--original-content "old"))))
+
+(ert-deftest majutsu-blob-edit-write-contents/calls-diffedit ()
+  "Editable blob save should queue pending content and invoke diffedit."
+  (let ((majutsu-blob-edit--pending-edits nil)
+        called)
+    (with-temp-buffer
+      (insert "before")
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (majutsu-blob-mode 1)
+      (majutsu-blob-edit-mode 1)
+      (erase-buffer)
+      (insert "after")
+      (cl-letf (((symbol-function 'majutsu-ediff-edit)
+                 (lambda (&optional args)
+                   (setq called args))))
+        (should (majutsu-blob-edit--write-contents))
+        (should (equal called nil))
+        (should-not majutsu-blob-edit-mode)
+        (should (equal (plist-get (car majutsu-blob-edit--pending-edits) :file)
+                       "src/a.el"))))))
+
+(ert-deftest majutsu-blob-edit-apply-pending/writes-right-side-buffer ()
+  "Applying pending blob edits should replace opened right-side content."
+  (let* ((root (make-temp-file "majutsu-diffedit-" t))
+         (right-file (expand-file-name "right/src/a.el" root))
+         (saved-content nil)
+         (majutsu-blob-edit--pending-edits
+          (list (list :file "src/a.el"
+                      :line 1
+                      :column 2
+                      :content "abcdef"))))
+    (unwind-protect
+        (progn
+          (write-region "" nil (expand-file-name "JJ-INSTRUCTIONS" root) nil 'silent)
+          (make-directory (file-name-directory right-file) t)
+          (write-region "old" nil right-file nil 'silent)
+          (with-current-buffer (find-file-noselect right-file)
+            (cl-letf (((symbol-function 'save-buffer)
+                       (lambda (&optional _arg)
+                         (setq saved-content (buffer-substring-no-properties (point-min) (point-max))))))
+              (majutsu-blob-edit--apply-pending)
+              (should (equal saved-content "abcdef"))
+              (should (null majutsu-blob-edit--pending-edits))
+              (should (= (current-column) 2)))
+            (kill-buffer (current-buffer))))
+      (delete-directory root t))))
+
+(ert-deftest majutsu-blob-mode-map-uses-editable-entry ()
+  "Blob key `e` should enter editable blob mode."
+  (should (eq (lookup-key majutsu-blob-mode-map (kbd "e"))
+              #'majutsu-blob-edit-start)))
+
 (provide 'majutsu-file-test)

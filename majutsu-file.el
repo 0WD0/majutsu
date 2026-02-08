@@ -17,6 +17,8 @@
 (require 'subr-x)
 (require 'majutsu)
 
+(declare-function majutsu-ediff-edit "majutsu-edit" (args))
+
 (defvar majutsu-find-file-hook nil
   "Hook run after creating a blob buffer.")
 
@@ -37,7 +39,143 @@
 (put 'majutsu-buffer-blob-path 'permanent-local t)
 (put 'majutsu-buffer-blob-root 'permanent-local t)
 
+(defvar majutsu-blob-edit--pending-edits nil
+  "Pending blob edits waiting for jj diffedit right-side file open.")
+
+(defvar-local majutsu-blob-edit--original-content nil
+  "Original blob content snapshot before entering editable mode.")
+
 (add-hook 'majutsu-find-file-hook #'majutsu-blob-mode)
+
+(defun majutsu-blob-edit--diffedit-root (file)
+  "Return diffedit root directory for FILE, or nil if none.
+Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
+  (when file
+    (locate-dominating-file (file-name-directory file) "JJ-INSTRUCTIONS")))
+
+(defun majutsu-blob-edit--right-relative-file (file)
+  "Return FILE path relative to diffedit right directory, or nil."
+  (when-let* ((root (majutsu-blob-edit--diffedit-root file))
+              (right (file-name-as-directory (expand-file-name "right" root))))
+    (when (file-in-directory-p file right)
+      (file-relative-name file right))))
+
+(defun majutsu-blob-edit--pending-match (rel-file)
+  "Return first pending blob edit matching REL-FILE."
+  (cl-find-if (lambda (pending)
+                (equal rel-file (plist-get pending :file)))
+              majutsu-blob-edit--pending-edits))
+
+(defun majutsu-blob-edit--apply-pending ()
+  "Apply pending blob edits into jj diffedit right-side buffer.
+When a matching right-side temp file opens, replace its content with the
+pending blob edit, restore point, and save to finish with-editor."
+  (when-let* ((file buffer-file-name)
+              (rel-file (majutsu-blob-edit--right-relative-file file))
+              (pending (majutsu-blob-edit--pending-match rel-file)))
+    (setq majutsu-blob-edit--pending-edits
+          (delq pending majutsu-blob-edit--pending-edits))
+    (let ((line (or (plist-get pending :line) 1))
+          (column (or (plist-get pending :column) 0))
+          (content (or (plist-get pending :content) ""))
+          (inhibit-read-only t))
+      (erase-buffer)
+      (insert content)
+      (majutsu-file--goto-line-col line column)
+      (save-buffer)
+      (bury-buffer))))
+
+(add-hook 'find-file-hook #'majutsu-blob-edit--apply-pending t)
+
+(defvar-keymap majutsu-blob-edit-mode-map
+  :doc "Keymap for `majutsu-blob-edit-mode'."
+  "C-c C-c" #'majutsu-blob-edit-finish
+  "C-c C-k" #'majutsu-blob-edit-abort)
+
+(defun majutsu-blob-edit--write-contents ()
+  "Apply blob edits through `jj diffedit` and finish save.
+This function is used from `write-contents-functions' in editable blob mode."
+  (if (not majutsu-blob-edit-mode)
+      nil
+    (unless (and majutsu-buffer-blob-root
+                 majutsu-buffer-blob-path
+                 majutsu-buffer-blob-revision)
+      (user-error "Missing blob context for editable save"))
+    (let ((current (buffer-substring-no-properties (point-min) (point-max))))
+      (if (equal current majutsu-blob-edit--original-content)
+          (progn
+            (set-buffer-modified-p nil)
+            (majutsu-blob-edit-mode -1)
+            t)
+        (unless (fboundp 'majutsu-ediff-edit)
+          (require 'majutsu-edit))
+        (unless (fboundp 'majutsu-ediff-edit)
+          (user-error "majutsu-ediff-edit is unavailable"))
+        (let ((pending (list :file majutsu-buffer-blob-path
+                             :line (line-number-at-pos)
+                             :column (current-column)
+                             :content current)))
+          (push pending majutsu-blob-edit--pending-edits)
+          (condition-case err
+              (progn
+                (majutsu-ediff-edit nil)
+                (setq majutsu-blob-edit--original-content current)
+                (set-buffer-modified-p nil)
+                (majutsu-blob-edit-mode -1)
+                (message "Applying blob edits via jj diffedit...")
+                t)
+            (error
+             (setq majutsu-blob-edit--pending-edits
+                   (delq pending majutsu-blob-edit--pending-edits))
+             (signal (car err) (cdr err)))))))))
+
+(defun majutsu-blob-edit-start ()
+  "Enter editable blob mode.
+Edits are applied to the revision through jj diffedit when saving."
+  (interactive)
+  (unless (and (bound-and-true-p majutsu-blob-mode)
+               majutsu-buffer-blob-root
+               majutsu-buffer-blob-path
+               majutsu-buffer-blob-revision)
+    (user-error "Not in a blob buffer"))
+  (unless majutsu-blob-edit-mode
+    (majutsu-blob-edit-mode 1))
+  (when (fboundp 'evil-insert-state)
+    (evil-insert-state)))
+
+(defun majutsu-blob-edit-finish ()
+  "Save and apply editable blob changes."
+  (interactive)
+  (unless majutsu-blob-edit-mode
+    (user-error "Blob editable mode is not active"))
+  (save-buffer))
+
+(defun majutsu-blob-edit-abort ()
+  "Abort editable blob changes and restore snapshot."
+  (interactive)
+  (unless majutsu-blob-edit-mode
+    (user-error "Blob editable mode is not active"))
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (insert (or majutsu-blob-edit--original-content ""))
+    (set-buffer-modified-p nil))
+  (majutsu-blob-edit-mode -1)
+  (message "Blob edits aborted"))
+
+(define-minor-mode majutsu-blob-edit-mode
+  "Minor mode for editable blob buffers.
+Saving in this mode applies changes through `jj diffedit'."
+  :lighter " BlobEdit"
+  :keymap majutsu-blob-edit-mode-map
+  (if majutsu-blob-edit-mode
+      (progn
+        (setq-local majutsu-blob-edit--original-content
+                    (buffer-substring-no-properties (point-min) (point-max)))
+        (setq buffer-read-only nil)
+        (add-hook 'write-contents-functions #'majutsu-blob-edit--write-contents nil t)
+        (message "Editable blob mode enabled. Save to apply; C-c C-k to abort."))
+    (remove-hook 'write-contents-functions #'majutsu-blob-edit--write-contents t)
+    (setq buffer-read-only t)))
 
 (defun majutsu-file--normalize-revset (revset)
   "Normalize REVSET to a single revision using jj revset functions."
@@ -374,7 +512,8 @@ DIRECTION should be either \='prev or \='next."
   "q" #'majutsu-bury-or-kill-buffer
   "V" #'majutsu-blob-visit-file
   "b" #'majutsu-annotate-addition
-  "e" #'majutsu-ediff-edit
+  "C-x C-q" #'majutsu-blob-edit-start
+  "e" #'majutsu-blob-edit-start
   "g" #'revert-buffer
   ;; RET visits the revision (edit)
   "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
