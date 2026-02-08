@@ -1,4 +1,4 @@
-;;; majutsu-duplicate.el -*- lexical-binding: t; -*-
+;;; majutsu-duplicate.el --- Duplicate command for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

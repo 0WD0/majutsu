@@ -1,4 +1,10 @@
-;;; majutsu-process-test.el -*- lexical-binding: t; -*-
+;;; majutsu-process-test.el --- Tests for majutsu-process  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Tests for process helpers and filters.
+
+;;; Code:
 
 (require 'ert)
 (require 'cl-lib)

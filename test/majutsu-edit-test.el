@@ -1,4 +1,4 @@
-;;; majutsu-edit-test.el --- Tests for majutsu-edit -*- lexical-binding: t; -*-
+;;; majutsu-edit-test.el --- Tests for majutsu-edit  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 

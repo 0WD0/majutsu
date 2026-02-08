@@ -1,4 +1,4 @@
-;;; majutsu-bookmark.el -*- lexical-binding: t; -*-
+;;; majutsu-bookmark.el --- Bookmark commands for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

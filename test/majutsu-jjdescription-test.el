@@ -1,10 +1,9 @@
-;;; majutsu-jjdescription-test.el --- Tests for jjdescription font-lock -*- lexical-binding: t; -*-
+;;; majutsu-jjdescription-test.el --- Tests for jjdescription font-lock  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 0WD0
 
 ;; Author: 0WD0 <wd.1105848296@gmail.com>
 ;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
-;; Version: 1.0.0
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 

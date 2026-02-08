@@ -1,4 +1,4 @@
-;;; majutsu-conflict-test.el --- Tests for majutsu-conflict -*- lexical-binding: t; -*-
+;;; majutsu-conflict-test.el --- Tests for majutsu-conflict  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 

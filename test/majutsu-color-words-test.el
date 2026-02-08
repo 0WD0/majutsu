@@ -1,4 +1,4 @@
-;;; test-majutsu-color-words.el --- Tests for color-words backend  -*- lexical-binding: t; -*-
+;;; majutsu-color-words-test.el --- Tests for color-words backend  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 0WD0
 

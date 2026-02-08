@@ -1,4 +1,10 @@
-;;; majutsu-bookmark-test.el -*- lexical-binding: t; -*-
+;;; majutsu-bookmark-test.el --- Tests for bookmark helpers  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Tests for bookmark parsing and transient argument behavior.
+
+;;; Code:
 
 (require 'ert)
 (require 'cl-lib)

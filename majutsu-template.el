@@ -1,4 +1,4 @@
-;;; majutsu-template.el -*- lexical-binding: t; -*-
+;;; majutsu-template.el --- Embedded DSL for jj template  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

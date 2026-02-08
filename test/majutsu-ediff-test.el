@@ -1,4 +1,4 @@
-;;; majutsu-ediff-test.el --- Tests for majutsu-ediff -*- lexical-binding: t; -*-
+;;; majutsu-ediff-test.el --- Tests for majutsu-ediff  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 

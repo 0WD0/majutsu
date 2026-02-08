@@ -1,4 +1,4 @@
-;;; majutsu-git.el -*- lexical-binding: t; -*-
+;;; majutsu-git.el --- Git integration commands for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

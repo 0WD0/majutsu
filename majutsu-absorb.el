@@ -1,4 +1,4 @@
-;;; majutsu-absorb.el -*- lexical-binding: t; -*-
+;;; majutsu-absorb.el --- Absorb transient for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 0WD0
 

@@ -1,4 +1,4 @@
-;; -*- lexical-binding: t; -*-
+;;; majutsu-annotate-test.el --- Tests for annotate helpers  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 0WD0
 

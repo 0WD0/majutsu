@@ -1,10 +1,9 @@
 ;;; majutsu-utils-test.el --- Tests for majutsu utility functions  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 0WD0
+;; Copyright (C) 2025-2026 0WD0
 
 ;; Author: 0WD0 <1105848296@qq.com>
 ;; Maintainer: 0WD0 <1105848296@qq.com>
-;; Version: 1.0.0
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 

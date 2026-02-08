@@ -1,4 +1,4 @@
-;;; majutsu-commit.el -*- lexical-binding: t; -*-
+;;; majutsu-commit.el --- Commit command for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

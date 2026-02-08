@@ -1,4 +1,4 @@
-;;; majutsu-new.el -*- lexical-binding: t; -*-
+;;; majutsu-new.el --- Create new changes for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

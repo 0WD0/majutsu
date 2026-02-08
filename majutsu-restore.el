@@ -1,4 +1,4 @@
-;;; majutsu-restore.el -*- lexical-binding: t; -*-
+;;; majutsu-restore.el --- Restore transient for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

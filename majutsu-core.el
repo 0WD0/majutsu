@@ -1,4 +1,4 @@
-;;; majutsu-core.el --- Core aggregation for Majutsu -*- lexical-binding: t; -*-
+;;; majutsu-core.el --- Core aggregation for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

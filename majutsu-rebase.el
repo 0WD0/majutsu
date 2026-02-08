@@ -1,4 +1,4 @@
-;;; majutsu-rebase.el -*- lexical-binding: t; -*-
+;;; majutsu-rebase.el --- Rebase transient for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

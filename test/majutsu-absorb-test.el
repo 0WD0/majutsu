@@ -1,5 +1,11 @@
 ;;; majutsu-absorb-test.el --- Tests for absorb transient  -*- lexical-binding: t; -*-
 
+;;; Commentary:
+
+;; Tests for absorb argument parsing and command assembly.
+
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu-absorb)

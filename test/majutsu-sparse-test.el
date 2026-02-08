@@ -1,6 +1,6 @@
-;;; majutsu-sparse-test.el --- Tests for .jjsparse editing -*- lexical-binding: t; -*-
+;;; majutsu-sparse-test.el --- Tests for .jjsparse editing  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 0WD0
+;; Copyright (C) 2025-2026 0WD0
 
 ;; Author: 0WD0 <wd.1105848296@gmail.com>
 ;; Maintainer: 0WD0 <wd.1105848296@gmail.com>

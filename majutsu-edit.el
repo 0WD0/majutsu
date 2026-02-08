@@ -1,4 +1,4 @@
-;;; majutsu-edit.el -*- lexical-binding: t; -*-
+;;; majutsu-edit.el --- Edit and diffedit helpers for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

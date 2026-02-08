@@ -1,5 +1,11 @@
 ;;; majutsu-selection-test.el --- Tests for selection  -*- lexical-binding: t; -*-
 
+;;; Commentary:
+
+;; Tests for selection overlays and option helpers.
+
+;;; Code:
+
 (require 'ert)
 (require 'majutsu-selection)
 (require 'transient)

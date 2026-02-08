@@ -1,6 +1,6 @@
-;;; majutsu-workspace-test.el --- Tests for majutsu workspace helpers  -*- lexical-binding: t; -*-
+;;; majutsu-workspace-test.el --- Tests for majutsu-workspace helpers  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 0WD0
+;; Copyright (C) 2025-2026 0WD0
 
 ;; Author: 0WD0 <1105848296@qq.com>
 ;; Maintainer: 0WD0 <1105848296@qq.com>

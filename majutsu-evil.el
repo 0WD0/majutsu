@@ -1,4 +1,4 @@
-;;; majutsu-evil.el --- Evil bindings for Majutsu -*- lexical-binding: t; -*-
+;;; majutsu-evil.el --- Evil bindings for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

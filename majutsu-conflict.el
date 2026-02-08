@@ -1,4 +1,4 @@
-;;; majutsu-conflict.el --- Conflict marker parsing for Majutsu -*- lexical-binding: t; -*-
+;;; majutsu-conflict.el --- Conflict marker parsing for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

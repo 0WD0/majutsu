@@ -1,4 +1,4 @@
-;;; majutsu-split.el -*- lexical-binding: t; -*-
+;;; majutsu-split.el --- Split transient for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 0WD0
 

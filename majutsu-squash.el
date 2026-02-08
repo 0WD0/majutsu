@@ -1,4 +1,4 @@
-;;; majutsu-squash.el -*- lexical-binding: t; -*-
+;;; majutsu-squash.el --- Squash transient for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 

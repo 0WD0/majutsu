@@ -1,4 +1,4 @@
-;;; majutsu-sparse.el --- Sparse checkout support for Majutsu -*- lexical-binding: t; -*-
+;;; majutsu-sparse.el --- Sparse checkout support for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 0WD0
 
