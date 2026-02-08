@@ -1,0 +1,47 @@
+* Third-Party Notices
+
+This file documents upstream projects and source files that Majutsu code is
+adapted from.
+
+Primary project license: =GNU GPL v3 or later= (see =LICENSE=).
+
+This file is an attribution/traceability index and companion notice file.
+
+** Legacy MIT Notice
+
+Majutsu was previously distributed under MIT terms.
+
+- Legacy MIT notice text is retained in =LICENSE-MIT=.
+- Keep this legacy notice so prior MIT notice obligations remain satisfied
+  for historical code and past distributions.
+
+** Magit
+
+- Upstream project: https://github.com/magit/magit
+- Upstream commit used for references: =c800f79c2061621fde847f6a53129eca0e8da728=
+- Upstream copyright: The Magit Project Contributors
+
+*** Adapted mappings
+
+- =lisp/magit-base.el= -> =majutsu-base.el=
+- =lisp/magit-mode.el= -> =majutsu-mode.el=
+- =lisp/magit-process.el= -> =majutsu-process.el=
+- =lisp/magit-git.el= -> =majutsu-jj.el=
+- =lisp/magit-diff.el= -> =majutsu-diff.el=
+- =lisp/magit-ediff.el= -> =majutsu-ediff.el=
+- =lisp/magit-blame.el= -> =majutsu-annotate.el=
+- =lisp/magit-files.el= -> =majutsu-file.el=
+- =lisp/magit-sparse-checkout.el= -> =majutsu-sparse.el=
+- =lisp/magit-worktree.el= -> =majutsu-workspace.el=
+
+** GNU Emacs (ediff/smerge)
+
+- Upstream project: GNU Emacs
+- Upstream commit used for references: =b37711a25f78a915a10245a6330c3b2b4434b2e5=
+- Upstream copyright: Free Software Foundation, Inc.
+
+*** Adapted mappings
+
+- =lisp/vc/smerge-mode.el= -> =majutsu-diff.el=
+- =lisp/vc/smerge-mode.el= -> =majutsu-conflict.el=
+- =lisp/vc/ediff-util.el= -> =majutsu-ediff.el=

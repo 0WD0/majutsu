@@ -9,6 +9,8 @@
 ;; Version: 0.5.0
 ;; Package-Requires: ((emacs "29.1") (transient "0.5.0") (magit "3.3.0"))
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Majutsu is an interface to the Jujutsu (jj) version control system

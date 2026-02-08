@@ -7,6 +7,13 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Portions of sparse-checkout UI flow are adapted from:
+;; - Magit `lisp/magit-sparse-checkout.el`
+;;   (commit c800f79c2061621fde847f6a53129eca0e8da728)
+;;   Copyright (C) 2008-2026 The Magit Project Contributors
+
 ;;; Commentary:
 
 ;; This library provides an interface to the `jj sparse' command.
@@ -31,7 +38,6 @@
            "editor-" (+ (in "0-9A-Za-z"))
            ".jjsparse" string-end))
   "Regexp matching temporary jj sparse files created for editing.")
-
 
 ;; Exclude .jjsparse files from various tracking lists
 (with-eval-after-load 'recentf

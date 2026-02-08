@@ -9,6 +9,12 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Portions of process buffer orchestration are adapted from:
+;; - Magit `lisp/magit-process.el` (commit c800f79c2061621fde847f6a53129eca0e8da728)
+;;   Copyright (C) 2008-2026 The Magit Project Contributors
+
 ;;; Commentary:
 
 ;; This library runs jj commands synchronously and asynchronously,

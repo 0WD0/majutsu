@@ -1,5 +1,7 @@
 ;;; majutsu-ediff-test.el --- Tests for majutsu-ediff  -*- lexical-binding: t; -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for ediff integration.

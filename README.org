@@ -68,6 +68,13 @@ efficient way to interact with JJ repositories from within Emacs.
 
 - [[file:docs/majutsu.org][User Manual]] - Complete guide to all features
 - [[file:NEWS.org][NEWS]] - Version history and changelog
+- [[file:THIRD_PARTY_NOTICES.org][Third-Party Notices]] - Upstream adaptation and attribution map
+- [[file:LICENSE-MIT][Legacy MIT Notice]] - Retained MIT attribution text for pre-GPL code
+
+* License
+
+- Current: [[file:LICENSE][GNU GPL v3 or later]]
+- Historical notice: [[file:LICENSE-MIT][MIT notice text]] retained for pre-GPL distributions
 
 * Credits
 

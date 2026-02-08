@@ -9,6 +9,8 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; This library builds the Majutsu log buffer: compiles jj templates,

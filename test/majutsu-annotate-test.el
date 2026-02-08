@@ -6,6 +6,8 @@
 ;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
 ;; Keywords: tools, vc
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for annotate navigation helpers.

@@ -7,6 +7,8 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; This library provides a diff backend for jj's native color-words output.

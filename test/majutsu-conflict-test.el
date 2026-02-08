@@ -1,5 +1,7 @@
 ;;; majutsu-conflict-test.el --- Tests for majutsu-conflict  -*- lexical-binding: t; -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for conflict marker parsing.

@@ -7,6 +7,14 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Portions of Ediff orchestration are adapted from:
+;; - Magit `lisp/magit-ediff.el` (commit c800f79c2061621fde847f6a53129eca0e8da728)
+;;   Copyright (C) 2008-2026 The Magit Project Contributors
+;; - GNU Emacs `lisp/vc/ediff-util.el` (commit b37711a25f78a915a10245a6330c3b2b4434b2e5)
+;;   Copyright (C) 1994-2026 Free Software Foundation, Inc.
+
 ;;; Commentary:
 
 ;; This library provides Ediff support for Majutsu.

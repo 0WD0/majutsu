@@ -1,5 +1,7 @@
 ;;; majutsu-process-test.el --- Tests for majutsu-process  -*- lexical-binding: t; -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for process helpers and filters.

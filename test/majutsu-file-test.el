@@ -1,10 +1,13 @@
 ;;; majutsu-file-test.el --- Tests for majutsu-file helpers  -*- lexical-binding: t; -*-
+
 ;; Copyright (C) 2026 0WD0
 
 ;; Author: 0WD0 <1105848296@qq.com>
 ;; Maintainer: 0WD0 <1105848296@qq.com>
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
+
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
 

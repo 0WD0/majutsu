@@ -1,5 +1,7 @@
 ;;; majutsu-edit-test.el --- Tests for majutsu-edit  -*- lexical-binding: t; -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for edit and diffedit helpers.

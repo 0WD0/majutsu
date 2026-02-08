@@ -9,6 +9,14 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Portions of diff washing/highlighting behavior are adapted from:
+;; - Magit `lisp/magit-diff.el` (commit c800f79c2061621fde847f6a53129eca0e8da728)
+;;   Copyright (C) 2008-2026 The Magit Project Contributors
+;; - GNU Emacs `lisp/vc/smerge-mode.el` (commit b37711a25f78a915a10245a6330c3b2b4434b2e5)
+;;   Copyright (C) 1999-2026 Free Software Foundation, Inc.
+
 ;;; Commentary:
 
 ;; This library implements jj diff buffers and related transients,

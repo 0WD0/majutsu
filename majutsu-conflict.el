@@ -7,6 +7,12 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Portions of conflict refinement/navigation behavior are adapted from:
+;; - GNU Emacs `lisp/vc/smerge-mode.el` (commit b37711a25f78a915a10245a6330c3b2b4434b2e5)
+;;   Copyright (C) 1999-2026 Free Software Foundation, Inc.
+
 ;;; Commentary:
 
 ;; This library parses jj conflict markers.  It supports all three styles:

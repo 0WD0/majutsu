@@ -1,5 +1,7 @@
 ;;; majutsu-absorb-test.el --- Tests for absorb transient  -*- lexical-binding: t; -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for absorb argument parsing and command assembly.

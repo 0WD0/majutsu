@@ -7,6 +7,12 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Portions of annotate/blame overlays are adapted from:
+;; - Magit `lisp/magit-blame.el` (commit c800f79c2061621fde847f6a53129eca0e8da728)
+;;   Copyright (C) 2008-2026 The Magit Project Contributors
+
 ;;; Commentary:
 
 ;; Annotates each line in file-visiting buffer with information from

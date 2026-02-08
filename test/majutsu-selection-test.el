@@ -1,5 +1,7 @@
 ;;; majutsu-selection-test.el --- Tests for selection  -*- lexical-binding: t; -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Tests for selection overlays and option helpers.
