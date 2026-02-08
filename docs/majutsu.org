@@ -531,7 +531,6 @@ JJ marks conflicts in the log with a "conflict" label. Expanding the revision wi
 
 ** Entering Conflict Mode
 You can enter conflict handling from multiple places:
-- In a diff hunk, use ~C-c ^ RET~ (=majutsu-diff-resolve-conflict=).
 - In Ediff transient, use ~m~ (auto strategy) or ~M~ (force conflict workflow).
   ~M~ opens the working-copy file (or a revision blob buffer for non-working-copy
   revisions), enables =majutsu-conflict-mode=, and jumps to the first conflict.
