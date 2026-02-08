@@ -113,10 +113,86 @@
     (should-not buffer-read-only)
     (should (equal majutsu-blob-edit--original-content "old"))))
 
-(ert-deftest majutsu-blob-edit-write-contents/calls-diffedit ()
-  "Editable blob save should queue pending content and invoke diffedit."
-  (let ((majutsu-blob-edit--pending-edits nil)
-        called)
+(ert-deftest majutsu-blob-edit-start/does-not-force-evil-insert-state ()
+  "Starting blob edit mode from Evil binding should stay in normal state."
+  (let (insert-called)
+    (with-temp-buffer
+      (insert "old")
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (majutsu-blob-mode 1)
+      (cl-letf (((symbol-function 'evil-insert-state)
+                 (lambda () (setq insert-called t))))
+        (majutsu-blob-edit-start)
+        (should majutsu-blob-edit-mode)
+        (should-not insert-called)))))
+
+(ert-deftest majutsu-blob-edit-mode/toggles-cursor-type ()
+  "Editable mode should switch cursor type and restore it on exit."
+  (with-temp-buffer
+    (insert "old")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (setq-local cursor-type 'box)
+    (let ((majutsu-blob-edit-cursor-type 'bar))
+      (majutsu-blob-edit-mode 1)
+      (should (eq cursor-type 'bar))
+      (majutsu-blob-edit-mode -1)
+      (should (eq cursor-type 'box)))))
+
+(ert-deftest majutsu-blob-edit-mode/toggles-evil-normal-cursor ()
+  "Editable mode should mirror Dirvish-style Evil cursor changes."
+  (with-temp-buffer
+    (insert "old")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (setq-local cursor-type '(box . 4))
+    (setq-local evil-local-mode t)
+    (setq-local evil-normal-state-cursor '(box . 4))
+    (let ((majutsu-blob-edit-cursor-type 'hollow))
+      (majutsu-blob-edit-mode 1)
+      (should (eq cursor-type 'hollow))
+      (should (eq evil-normal-state-cursor 'hollow))
+      (majutsu-blob-edit-mode -1)
+      (should (equal cursor-type '(box . 4)))
+      (should (equal evil-normal-state-cursor '(box . 4))))))
+
+(ert-deftest majutsu-blob-edit-apply-diffedit/noninteractive-copies-content ()
+  "Blob apply should run non-interactive diffedit via cp editor command."
+  (let (editor-command editor-target run-args copied)
+    (with-temp-buffer
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (cl-letf (((symbol-function 'majutsu-jj--editor-command-config)
+                 (lambda (_key target &optional command)
+                   (setq editor-target target)
+                   (setq editor-command command)
+                   "CFG"))
+                ((symbol-function 'majutsu-run-jj)
+                 (lambda (&rest args)
+                   (setq run-args args)
+                   (setq copied
+                         (with-temp-buffer
+                           (insert-file-contents (cadr editor-command))
+                           (buffer-string)))
+                   0)))
+        (should (zerop (majutsu-blob-edit--apply-diffedit "after")))))
+    (should (equal editor-target "$right/src/a.el"))
+    (should (equal (car editor-command) "cp"))
+    (should (equal copied "after"))
+    (should-not (file-exists-p (cadr editor-command)))
+    (should (equal run-args
+                   '("diffedit" "--config" "CFG"
+                     "--from" "rev-" "--to" "rev"
+                     "--" "src/a.el")))))
+
+(ert-deftest majutsu-blob-edit-write-contents/calls-diffedit-apply ()
+  "Editable blob save should apply edits via non-interactive diffedit helper."
+  (let (seen-content)
     (with-temp-buffer
       (insert "before")
       (setq-local majutsu-buffer-blob-root "/tmp")
@@ -126,43 +202,13 @@
       (majutsu-blob-edit-mode 1)
       (erase-buffer)
       (insert "after")
-      (cl-letf (((symbol-function 'majutsu-ediff-edit)
-                 (lambda (&optional args)
-                   (setq called args))))
+      (cl-letf (((symbol-function 'majutsu-blob-edit--apply-diffedit)
+                 (lambda (content)
+                   (setq seen-content content)
+                   0)))
         (should (majutsu-blob-edit--write-contents))
-        (should (equal called nil))
-        (should-not majutsu-blob-edit-mode)
-        (should (equal (plist-get (car majutsu-blob-edit--pending-edits) :file)
-                       "src/a.el"))))))
-
-(ert-deftest majutsu-blob-edit-apply-pending/writes-right-side-buffer ()
-  "Applying pending blob edits should replace opened right-side content."
-  (let* ((root (make-temp-file "majutsu-diffedit-" t))
-         (right-file (expand-file-name "right/src/a.el" root))
-         (saved-content nil)
-         (majutsu-blob-edit--pending-edits
-          (list (list :file "src/a.el"
-                      :line 1
-                      :column 2
-                      :content "abcdef"))))
-    (unwind-protect
-        (progn
-          (write-region "" nil (expand-file-name "JJ-INSTRUCTIONS" root) nil 'silent)
-          (make-directory (file-name-directory right-file) t)
-          (write-region "old" nil right-file nil 'silent)
-          (with-temp-buffer
-            (setq buffer-file-name right-file)
-            (insert "old")
-            (cl-letf (((symbol-function 'save-buffer)
-                       (lambda (&optional _arg)
-                         (setq saved-content
-                               (buffer-substring-no-properties (point-min)
-                                                               (point-max))))))
-              (majutsu-blob-edit--apply-pending)
-              (should (equal saved-content "abcdef"))
-              (should (null majutsu-blob-edit--pending-edits))
-              (should (= (current-column) 2)))))
-      (delete-directory root t))))
+        (should (equal seen-content "after"))
+        (should-not majutsu-blob-edit-mode)))))
 
 (ert-deftest majutsu-blob-edit-exit/no-changes-disables-mode ()
   "Exit should just leave editable mode when there are no changes."
@@ -176,6 +222,28 @@
     (set-buffer-modified-p nil)
     (majutsu-blob-edit-exit)
     (should-not majutsu-blob-edit-mode)))
+
+(ert-deftest majutsu-blob-edit-exit/uses-content-delta-not-modified-flag ()
+  "Exit should still treat content deltas as changes when modified flag is nil."
+  (let (finished aborted)
+    (with-temp-buffer
+      (insert "stable")
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (majutsu-blob-mode 1)
+      (majutsu-blob-edit-mode 1)
+      (insert "!")
+      ;; Simulate a stale/cleared modified flag.
+      (set-buffer-modified-p nil)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'majutsu-blob-edit-finish)
+                 (lambda () (setq finished t)))
+                ((symbol-function 'majutsu-blob-edit-abort)
+                 (lambda () (setq aborted t))))
+        (majutsu-blob-edit-exit)
+        (should finished)
+        (should-not aborted)))))
 
 (ert-deftest majutsu-blob-edit-exit/modified-can-finish ()
   "Exit should finish when user confirms save."

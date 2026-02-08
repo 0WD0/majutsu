@@ -42,5 +42,52 @@
           (delete-process proc)))
       (should (eq called 'password)))))
 
-;;; majutsu-process-test.el ends here
+(ert-deftest majutsu-process-test-start-jj-binds-root-cwd ()
+  "`majutsu-start-jj' should run from repo root."
+  (let ((default-directory "/repo/sub/")
+        seen-root)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-start-process)
+               (lambda (&rest _args)
+                  (setq seen-root default-directory)
+                  'dummy-process)))
+      (should (eq (majutsu-start-jj '("status")) 'dummy-process))
+      (should (equal seen-root "/repo/")))))
 
+(ert-deftest majutsu-process-test-call-jj-runs-at-root ()
+  "`majutsu-call-jj' should execute jj in repo root.
+The process section should use root as command directory."
+  (let ((default-directory "/repo/sub/")
+        seen-process-cwd
+        seen-finish-root
+        seen-prefix-pwd)
+    (with-temp-buffer
+      (let ((process-buf (current-buffer)))
+        (setq default-directory "/repo/")
+        (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+                   (lambda (&optional _directory) "/repo/"))
+                  ((symbol-function 'majutsu-process-jj-arguments)
+                   (lambda (args) args))
+                  ((symbol-function 'majutsu-process-buffer)
+                   (lambda (&optional _nodisplay)
+                     process-buf))
+                  ((symbol-function 'majutsu--process-insert-section)
+                   (lambda (pwd _program _args &optional _err _errlog _face)
+                     (setq seen-prefix-pwd pwd)
+                     (insert "\n")
+                     'dummy-section))
+                  ((symbol-function 'process-file)
+                   (lambda (&rest _args)
+                     (setq seen-process-cwd default-directory)
+                     0))
+                  ((symbol-function 'majutsu-process-finish)
+                   (lambda (exit _process-buf _command-buf default-dir _section)
+                     (setq seen-finish-root default-dir)
+                     exit)))
+          (should (= 0 (majutsu-call-jj "status"))))))
+    (should (equal seen-prefix-pwd "/repo/"))
+    (should (equal seen-process-cwd "/repo/"))
+    (should (equal seen-finish-root "/repo/"))))
+
+;;; majutsu-process-test.el ends here

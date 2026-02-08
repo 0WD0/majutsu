@@ -128,6 +128,16 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
   "Return right-side target path expression for FILE in diffedit temp tree."
   (concat "$right/" file))
 
+(defun majutsu-edit--replace-diffedit-file-arg (jj-args file)
+  "Return JJ-ARGS with FILE as the diffedit path after `--'."
+  (let ((args (copy-sequence jj-args)))
+    (if-let* ((sep (member "--" args)))
+        (if (cdr sep)
+            (setcar (cdr sep) file)
+          (setcdr sep (list file)))
+      (setq args (append args (list "--" file))))
+    args))
+
 (defun majutsu-edit--file-at-point ()
   "Return file at point, including blob buffers."
   (or (and (bound-and-true-p majutsu-blob-mode)
@@ -144,13 +154,23 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
   (setq file (or file (cadr (member "--" jj-args))))
   (unless file
     (user-error "Diffedit requires a file target"))
-  (majutsu-with-editor
-    (let ((diff-editor-cmd
-           (majutsu-jj--editor-command-config
-            "ui.diff-editor"
-            (majutsu-edit--diffedit-editor-target file))))
-      ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
-      (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args))))
+  (let* ((root (majutsu--toplevel-safe default-directory))
+         (default-directory root)
+         (file (if (file-name-absolute-p file)
+                   (let* ((abs-root (file-name-as-directory (expand-file-name root)))
+                          (abs-file (expand-file-name file)))
+                     (if (string-prefix-p abs-root abs-file)
+                         (file-relative-name abs-file abs-root)
+                       (user-error "Diffedit target outside repository: %s" file)))
+                 file))
+         (jj-args (majutsu-edit--replace-diffedit-file-arg jj-args file)))
+    (majutsu-with-editor
+      (let ((diff-editor-cmd
+             (majutsu-jj--editor-command-config
+              "ui.diff-editor"
+              (majutsu-edit--diffedit-editor-target file))))
+        ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
+        (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))))
 
 ;;;###autoload
 (defun majutsu-ediff-edit (args)

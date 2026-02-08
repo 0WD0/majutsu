@@ -185,8 +185,9 @@ Blob buffers are read-only snapshots with history-aware navigation:
 - ~b~ :: Start annotate for the current blob.
 - ~g~ :: Revert/reload the current blob content.
 - ~e~ / ~C-x C-q~ :: Enter editable blob mode (wdired-style). Save to apply through =jj diffedit= and update the revision.
-  In Evil normal state, ~i~ also enters editable blob mode and switches to insert.
+  In Evil normal state, ~i~ enters editable blob mode and stays in normal state.
   In editable mode, ~C-x C-q~ runs ~majutsu-blob-edit-exit~ (prompting to save or abort when modified).
+  Editable mode also changes cursor visuals (see ~majutsu-blob-edit-cursor-type~); with Evil, normal-state cursor is updated too.
 
 ** Annotate (Blame)
 Majutsu annotate is implemented by =majutsu-annotate= and uses

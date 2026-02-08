@@ -98,9 +98,9 @@ If that buffer doesn't exist yet, then create it.  Non-interactively
 return the buffer and unless optional NODISPLAY is non-nil also display
 it."
   (interactive)
-  (let* ((root (if (derived-mode-p 'majutsu-mode)
-                   default-directory
-                 (majutsu--toplevel-safe)))
+  (let* ((root (or (majutsu--buffer-root)
+                   (majutsu-toplevel default-directory)
+                   (majutsu--toplevel-safe default-directory)))
          (name (format "*majutsu-process: %s*"
                        (abbreviate-file-name (directory-file-name root))))
          (buffer (or (majutsu--find-mode-buffer 'majutsu-process-mode root)
@@ -416,6 +416,7 @@ SUCCESS-MSG is displayed on exit code 0.  When FINISH-CALLBACK is
 non-nil, call it as (FINISH-CALLBACK PROCESS EXIT-CODE) after the
 process terminates."
   (let* ((args (majutsu-process-jj-arguments args))
+         (default-directory (majutsu--toplevel-safe default-directory))
          (process (apply #'majutsu-start-process majutsu-jj-executable nil args)))
     (when success-msg
       (process-put process 'success-msg success-msg))
@@ -432,17 +433,18 @@ Process output goes into a new section in the buffer returned by
 Unlike `majutsu-start-jj', this does not implicitly refresh any Majutsu
 buffers.  Call `majutsu-refresh' explicitly when desired."
   (let* ((args (majutsu-process-jj-arguments args))
+         (default-directory (majutsu--toplevel-safe default-directory))
          (pwd default-directory)
          (process-buf (let ((default-directory pwd))
                         (majutsu-process-buffer t)))
-         (root (with-current-buffer process-buf default-directory)))
+         (process-root (with-current-buffer process-buf default-directory)))
     (pcase-let* ((section
                   (with-current-buffer process-buf
                     (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
                       (backward-char 1))))
                  (inhibit-read-only t)
                  (exit (apply #'process-file majutsu-jj-executable nil process-buf nil args)))
-      (setq exit (majutsu-process-finish exit process-buf (current-buffer) root section))
+      (setq exit (majutsu-process-finish exit process-buf (current-buffer) process-root section))
       exit)))
 
 (defun majutsu-run-jj-async (&rest args)

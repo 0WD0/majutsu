@@ -19,6 +19,7 @@
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
 (declare-function evil-normalize-keymaps "evil-core" (&optional state))
+(declare-function evil-insert-state "evil-states" (&optional count vcount skip-hook))
 
 (eval-when-compile
   ;; Silence byte-compile when Evil isn't installed at build time.
@@ -92,6 +93,13 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
                            (apply #'evil-define-key* state (symbol-value ',keymap) ',bindings)))))
           (add-hook 'after-load-functions fun t)))))))
 
+(defun majutsu-evil-blob-insert-dwim ()
+  "Enter blob editable mode, or insert state when already editing."
+  (interactive)
+  (if (bound-and-true-p majutsu-blob-edit-mode)
+      (evil-insert-state)
+    (majutsu-blob-edit-start)))
+
 (defun majutsu-evil--set-initial-state ()
   "Register initial Evil states for Majutsu modes."
   (when (and majutsu-evil-initial-state
@@ -164,9 +172,12 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "q") #'majutsu-bury-or-kill-buffer
     (kbd "b") #'majutsu-annotate-addition
     (kbd "e") #'majutsu-blob-edit-start
-    (kbd "i") #'majutsu-blob-edit-start
+    (kbd "i") #'majutsu-evil-blob-insert-dwim
     ;; RET visits the revision (edit)
     (kbd "RET") #'majutsu-edit-changeset)
+
+  (majutsu-evil--define-keys 'normal 'majutsu-blob-mode-map
+    (kbd "g r") #'revert-buffer)
 
   ;; Editable blob mode mirrors wdired-like finish/abort flow.
   (add-hook 'majutsu-blob-edit-mode-hook #'evil-normalize-keymaps)
