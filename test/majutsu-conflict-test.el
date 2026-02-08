@@ -104,6 +104,18 @@
    ">>>>>>> conflict 1 of 1 ends\n")
   "JJ diff-style conflict where snapshot base appears before diffs.")
 
+(defconst majutsu-conflict-test--jj-diff-no-terminating-newline
+  (concat
+   "<<<<<<< conflict 1 of 1\n"
+   "+++++++ tlwwkqxk d121763d \"commit A\" (no terminating newline)\n"
+   "grapefruit\n"
+   "%%%%%%% diff from: qwpqssno fe561d93 \"merge base\" (no terminating newline)\n"
+   (make-string 7 ?\\) "        to: poxkmrxy c735fe02 \"commit B\"\n"
+   " grape\n"
+   "+\n"
+   ">>>>>>> conflict 1 of 1 ends")
+  "JJ diff-style conflict whose end marker has no terminating newline.")
+
 
 (defconst majutsu-conflict-test--jj-snapshot
   "<<<<<<< conflict 1 of 1
@@ -230,6 +242,20 @@ ORANGE
         (should (= 1 (length adds)))
         (should (string-match-p "===========\n" (cdr (majutsu-conflict-base c))))))))
 
+(ert-deftest majutsu-conflict-test-parse-no-terminating-newline ()
+  "Test parsing jj conflict with end marker missing terminating newline."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (let ((conflicts (majutsu-conflict-parse-buffer)))
+      (should (= 1 (length conflicts)))
+      (let* ((c (car conflicts))
+             (base (cdr (majutsu-conflict-base c)))
+             (add1 (cdr (car (majutsu-conflict-adds c))))
+             (remove1 (cdr (car (majutsu-conflict-removes c)))))
+        (should (equal base "grapefruit"))
+        (should (equal remove1 "grape"))
+        (should (equal add1 "grape\n"))))))
+
 (ert-deftest majutsu-conflict-test-keep-side-indexing ()
   "Test keep-side maps N to jj add term N."
   (with-temp-buffer
@@ -269,6 +295,30 @@ ORANGE
     (majutsu-conflict-keep-base)
     (should (equal (buffer-string)
                    "some text before\nAPPLE\nGRAPE\nORANGE\nsome text after\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-base-no-terminating-newline ()
+  "Test keep-base preserves no-terminating-newline content."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-base)
+    (should (equal (buffer-string) "grapefruit"))))
+
+(ert-deftest majutsu-conflict-test-keep-side-no-terminating-newline ()
+  "Test keep-side/keep-before preserve newline asymmetry from jj markers."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 1 nil)
+    (should (equal (buffer-string) "grape\n")))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 1 t)
+    (should (equal (buffer-string) "grape"))))
 
 (ert-deftest majutsu-conflict-test-at-point ()
   "Test finding conflict at point."

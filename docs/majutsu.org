@@ -501,6 +501,7 @@ You can enter conflict handling from multiple places:
 =majutsu-conflict= auto-detects marker styles:
 - JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable =majutsu-conflict-mode=.
 - JJ long conflict markers (e.g., 15-char marker runs) are treated the same as normal markers.
+- JJ conflicts with missing terminating newline markers are parsed with jj's newline-compensation semantics.
 - Git-style markers (=|||||||= / =======) only -> enable =smerge-mode=.
 
 ** majutsu-conflict-mode Commands

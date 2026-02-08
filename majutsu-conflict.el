@@ -173,6 +173,28 @@ The return value is a cons cell of the form (KIND . LABEL), or nil."
       (match-string 1 label)
     label))
 
+(defun majutsu-conflict--strip-one-ending-eol (content)
+  "Strip one trailing line ending from CONTENT.
+If CONTENT ends with LF, drop it. If it ends with CRLF, drop both."
+  (if (and (stringp content)
+           (> (length content) 0)
+           (eq (aref content (1- (length content))) ?\n))
+      (let ((without-lf (substring content 0 -1)))
+        (if (and (> (length without-lf) 0)
+                 (eq (aref without-lf (1- (length without-lf))) ?\r))
+            (substring without-lf 0 -1)
+          without-lf))
+    content))
+
+(defun majutsu-conflict--drop-synthetic-ending-eol (parsed)
+  "Undo JJ's synthetic trailing EOL when end marker has no EOL.
+PARSED is (STYLE REMOVES ADDS BASE)."
+  (let ((terms (append (cadr parsed) (caddr parsed) (list (cadddr parsed)))))
+    (dolist (cell terms)
+      (when (consp cell)
+        (setcdr cell (majutsu-conflict--strip-one-ending-eol (cdr cell))))))
+  parsed)
+
 (defun majutsu-conflict-revision-at-point ()
   "Return conflict metadata at point as a plist.
 Returns a plist with :change-id, :commit-id, and :side (add/remove/base),
@@ -486,14 +508,19 @@ Returns list of `majutsu-conflict' structs."
           ;; Find matching end marker
           (when (re-search-forward end-re nil t)
             (let* ((match-end (match-end 0))
-                   (end (if (and (< match-end (point-max))
-                                 (eq (char-after match-end) ?\n))
+                   (marker-has-eol (and (< match-end (point-max))
+                                        (eq (char-after match-end) ?\n)))
+                   (end (if marker-has-eol
                             (1+ match-end)
                           match-end))
                    (style (majutsu-conflict--detect-style begin marker-len))
                    (parsed (if (eq style 'git)
                                (majutsu-conflict--parse-git-hunk begin end marker-len)
                              (majutsu-conflict--parse-jj-hunk begin end marker-len))))
+              (when (and parsed (not marker-has-eol))
+                ;; jj compensates missing trailing newlines by omitting EOL on the
+                ;; end marker; strip one synthetic trailing EOL from each term.
+                (setq parsed (majutsu-conflict--drop-synthetic-ending-eol parsed)))
               (when parsed
                 (push (majutsu-conflict--create
                        :begin-pos begin
