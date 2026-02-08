@@ -150,20 +150,79 @@
           (write-region "" nil (expand-file-name "JJ-INSTRUCTIONS" root) nil 'silent)
           (make-directory (file-name-directory right-file) t)
           (write-region "old" nil right-file nil 'silent)
-          (with-current-buffer (find-file-noselect right-file)
+          (with-temp-buffer
+            (setq buffer-file-name right-file)
+            (insert "old")
             (cl-letf (((symbol-function 'save-buffer)
                        (lambda (&optional _arg)
                          (setq saved-content (buffer-substring-no-properties (point-min) (point-max))))))
               (majutsu-blob-edit--apply-pending)
               (should (equal saved-content "abcdef"))
               (should (null majutsu-blob-edit--pending-edits))
-              (should (= (current-column) 2)))
-            (kill-buffer (current-buffer))))
+              (should (= (current-column) 2))))))
       (delete-directory root t))))
+
+(ert-deftest majutsu-blob-edit-exit/no-changes-disables-mode ()
+  "Exit should just leave editable mode when there are no changes."
+  (with-temp-buffer
+    (insert "stable")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (majutsu-blob-mode 1)
+    (majutsu-blob-edit-mode 1)
+    (set-buffer-modified-p nil)
+    (majutsu-blob-edit-exit)
+    (should-not majutsu-blob-edit-mode)))
+
+(ert-deftest majutsu-blob-edit-exit/modified-can-finish ()
+  "Exit should finish when user confirms save."
+  (let (finished aborted)
+    (with-temp-buffer
+      (insert "stable")
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (majutsu-blob-mode 1)
+      (majutsu-blob-edit-mode 1)
+      (insert "!")
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'majutsu-blob-edit-finish)
+                 (lambda () (setq finished t)))
+                ((symbol-function 'majutsu-blob-edit-abort)
+                 (lambda () (setq aborted t))))
+        (majutsu-blob-edit-exit)
+        (should finished)
+        (should-not aborted)))))
+
+(ert-deftest majutsu-blob-edit-exit/modified-can-abort ()
+  "Exit should abort when user declines save."
+  (let (finished aborted)
+    (with-temp-buffer
+      (insert "stable")
+      (setq-local majutsu-buffer-blob-root "/tmp")
+      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-revision "rev")
+      (majutsu-blob-mode 1)
+      (majutsu-blob-edit-mode 1)
+      (insert "!")
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
+                ((symbol-function 'majutsu-blob-edit-finish)
+                 (lambda () (setq finished t)))
+                ((symbol-function 'majutsu-blob-edit-abort)
+                 (lambda () (setq aborted t))))
+        (majutsu-blob-edit-exit)
+        (should aborted)
+        (should-not finished)))))
 
 (ert-deftest majutsu-blob-mode-map-uses-editable-entry ()
   "Blob key `e` should enter editable blob mode."
   (should (eq (lookup-key majutsu-blob-mode-map (kbd "e"))
               #'majutsu-blob-edit-start)))
+
+(ert-deftest majutsu-blob-edit-mode-map-has-exit ()
+  "Editable blob mode should bind C-x C-q to exit command."
+  (should (eq (lookup-key majutsu-blob-edit-mode-map (kbd "C-x C-q"))
+              #'majutsu-blob-edit-exit)))
 
 (provide 'majutsu-file-test)

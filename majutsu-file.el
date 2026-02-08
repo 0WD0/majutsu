@@ -83,12 +83,13 @@ pending blob edit, restore point, and save to finish with-editor."
       (insert content)
       (majutsu-file--goto-line-col line column)
       (save-buffer)
-      (bury-buffer))))
-
-(add-hook 'find-file-hook #'majutsu-blob-edit--apply-pending t)
+      (bury-buffer))
+    (unless majutsu-blob-edit--pending-edits
+      (remove-hook 'find-file-hook #'majutsu-blob-edit--apply-pending))))
 
 (defvar-keymap majutsu-blob-edit-mode-map
   :doc "Keymap for `majutsu-blob-edit-mode'."
+  "C-x C-q" #'majutsu-blob-edit-exit
   "C-c C-c" #'majutsu-blob-edit-finish
   "C-c C-k" #'majutsu-blob-edit-abort)
 
@@ -116,6 +117,7 @@ This function is used from `write-contents-functions' in editable blob mode."
                              :column (current-column)
                              :content current)))
           (push pending majutsu-blob-edit--pending-edits)
+          (add-hook 'find-file-hook #'majutsu-blob-edit--apply-pending t)
           (condition-case err
               (progn
                 (majutsu-ediff-edit nil)
@@ -127,6 +129,8 @@ This function is used from `write-contents-functions' in editable blob mode."
             (error
              (setq majutsu-blob-edit--pending-edits
                    (delq pending majutsu-blob-edit--pending-edits))
+             (unless majutsu-blob-edit--pending-edits
+               (remove-hook 'find-file-hook #'majutsu-blob-edit--apply-pending))
              (signal (car err) (cdr err)))))))))
 
 (defun majutsu-blob-edit-start ()
@@ -149,6 +153,22 @@ Edits are applied to the revision through jj diffedit when saving."
   (unless majutsu-blob-edit-mode
     (user-error "Blob editable mode is not active"))
   (save-buffer))
+
+(defun majutsu-blob-edit-exit ()
+  "Exit editable blob mode.
+If there are unsaved changes, prompt to save or abort, like `wdired-exit'."
+  (interactive)
+  (unless majutsu-blob-edit-mode
+    (user-error "Blob editable mode is not active"))
+  (if (buffer-modified-p)
+      (if (y-or-n-p (format "Buffer %s modified; save changes? "
+                            (current-buffer)))
+          (majutsu-blob-edit-finish)
+        (majutsu-blob-edit-abort))
+    (majutsu-blob-edit-mode -1)
+    (set-buffer-modified-p nil)
+    (setq buffer-undo-list nil)
+    (message "(No changes need to be saved)")))
 
 (defun majutsu-blob-edit-abort ()
   "Abort editable blob changes and restore snapshot."
@@ -173,7 +193,7 @@ Saving in this mode applies changes through `jj diffedit'."
                     (buffer-substring-no-properties (point-min) (point-max)))
         (setq buffer-read-only nil)
         (add-hook 'write-contents-functions #'majutsu-blob-edit--write-contents nil t)
-        (message "Editable blob mode enabled. Save to apply; C-c C-k to abort."))
+        (message "Editable blob mode enabled. Save to apply; C-x C-q to exit; C-c C-k to abort."))
     (remove-hook 'write-contents-functions #'majutsu-blob-edit--write-contents t)
     (setq buffer-read-only t)))
 

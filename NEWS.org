@@ -58,6 +58,7 @@
 - Blob buffers now use a wdired-style editable mode:
   - ~e~ (or ~C-x C-q~) enters editable blob mode.
   - Saving applies changes through ~jj diffedit~ and exits edit mode.
+  - ~majutsu-blob-edit-exit~ (~C-x C-q~ in editable mode) mirrors wdired exit behavior.
   - In Evil normal state, ~i~ enters editable blob mode and switches to insert.
 
 ** Fixed
