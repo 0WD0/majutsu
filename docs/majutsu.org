@@ -185,10 +185,18 @@ Blob buffers are read-only snapshots with history-aware navigation:
 - ~C-c m~ :: Open the current blob in Magit's blob viewer.
 - ~b~ :: Start annotate for the current blob.
 - ~g~ :: Revert/reload the current blob content.
-- ~e~ / ~C-x C-q~ :: Enter editable blob mode (wdired-style). Save to apply through =jj diffedit= and update the revision.
-  In Evil normal state, ~i~ enters editable blob mode and stays in normal state.
-  In editable mode, ~C-x C-q~ runs ~majutsu-blob-edit-exit~ (prompting to save or abort when modified).
-  Editable mode also changes cursor visuals (see ~majutsu-blob-edit-cursor-type~); with Evil, normal-state cursor is updated too.
+- ~e~ / ~C-x C-q~ :: Enter editable blob mode (wdired-style).
+  - Blob navigation keys are disabled while editing, so blob-mode bindings do not interfere with text edits.
+  - Save (or ~C-c C-c~) applies changes through non-interactive =jj diffedit= and exits edit mode.
+    Majutsu copies current buffer text into the diffedit right side and finishes automatically, without opening the right-side temp file buffer.
+  - In editable mode, ~C-x C-q~ runs ~majutsu-blob-edit-exit~:
+    - If modified, it prompts to save or abort.
+    - Save applies via diffedit; abort restores original content and cursor position.
+    - If unchanged, it exits immediately.
+  - In Evil:
+    - In blob mode, ~i~ enters editable blob mode and stays in normal state.
+    - In editable mode, ~i~ enters insert state.
+  - Editable mode also changes cursor visuals (see ~majutsu-blob-edit-cursor-type~); with Evil, normal-state cursor is updated too.
 
 ** Annotate (Blame)
 Majutsu annotate is implemented by =majutsu-annotate= and uses
