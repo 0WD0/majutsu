@@ -21,7 +21,6 @@
 (require 'majutsu-process)
 (require 'majutsu-template)
 (require 'majutsu-selection)
-(require 'majutsu-section)
 (require 'json)
 
 (declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
@@ -875,7 +874,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 Return non-nil when the section could be located."
   (when-let* ((id (and id (string-trim id)))
               (_(not (string-empty-p id)))
-              (section (majutsu-section-find id 'jj-commit)))
+              (section (majutsu-selection-find-section id 'jj-commit)))
     (magit-section-goto section)
     (goto-char (oref section start))
     t))

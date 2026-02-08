@@ -18,7 +18,6 @@
 (require 'majutsu-file)
 (require 'majutsu-selection)
 (require 'majutsu-interactive)
-(require 'majutsu-section)
 
 (defclass majutsu-restore-option (majutsu-selection-option)
   ())

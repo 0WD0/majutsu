@@ -23,6 +23,7 @@
 (require 'majutsu-process)
 (require 'majutsu-file)
 (require 'majutsu-conflict)
+(require 'majutsu-selection)
 
 (declare-function majutsu-diff-visit-file "majutsu-diff" (&optional force-workspace))
 
@@ -457,7 +458,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :class 'majutsu-selection-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
@@ -475,7 +476,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :class 'majutsu-selection-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-f"
   :argument "--from="
   :reader #'majutsu-ediff--transient-read-revset)
@@ -485,7 +486,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :class 'majutsu-selection-option
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-t"
   :argument "--to="
   :reader #'majutsu-ediff--transient-read-revset)

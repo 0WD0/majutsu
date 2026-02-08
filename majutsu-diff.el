@@ -20,7 +20,6 @@
 (require 'majutsu-process)
 (require 'majutsu-config)
 (require 'majutsu-selection)
-(require 'majutsu-section)
 (require 'majutsu-conflict)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
@@ -1511,7 +1510,7 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'majutsu-diff-range-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
@@ -1529,7 +1528,7 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'majutsu-diff-range-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-f"
   :argument "--from="
   :reader #'majutsu-diff--transient-read-revset)
@@ -1539,7 +1538,7 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'majutsu-diff-range-option
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-t"
   :argument "--to="
   :reader #'majutsu-diff--transient-read-revset)
@@ -1553,7 +1552,7 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:to ()
   :description "To (toggle at point)"
   :class 'majutsu-selection-toggle-option
-  :locate-fn (##majutsu-section-find % 'jj-commit)
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "t"
   :argument "--to=")
 

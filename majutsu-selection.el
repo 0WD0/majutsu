@@ -103,6 +103,39 @@
     (magit-get-section
      (append `((,type . ,value)) (magit-section-ident parent)))))
 
+(defun majutsu-selection-find-section (value &optional type root)
+  "Return the closest section matching VALUE.
+
+When ROOT is non-nil, traverse from that section, otherwise from
+`magit-root-section'.  TYPE defaults to the current section's type.
+Exact matches are preferred; otherwise choose the nearest prefix match."
+  (let* ((root (or root magit-root-section))
+         (anchor (or (and-let* ((cur (magit-current-section)))
+                       (oref cur start))
+                     (point)))
+         (type (or type
+                   (when-let* ((cur (magit-current-section)))
+                     (oref cur type))))
+         (exact (and root value type
+                     (magit-get-section
+                      (append `((,type . ,value)) (magit-section-ident root)))))
+         best
+         best-dist)
+    (or exact
+        (progn
+          (magit-map-sections
+           (##let ((id (magit-section-value-if type %)))
+                  (when (and id (stringp id)
+                             (or (string-prefix-p id value)
+                                 (string-prefix-p value id)))
+                    (let* ((pos (oref % start))
+                           (dist (abs (- pos anchor))))
+                      (when (or (null best-dist) (< dist best-dist))
+                        (setq best %)
+                        (setq best-dist dist)))))
+           root))
+        best)))
+
 (defun majutsu-selection-session-begin ()
   "Create a transient selection session for the current buffer.
 
