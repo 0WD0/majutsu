@@ -15,6 +15,7 @@
 ;;; Code:
 
 (require 'ansi-color)
+(require 'cl-lib)
 (require 'magit-section)
 (require 'seq)
 (require 'subr-x)
@@ -93,43 +94,97 @@ If TARGET is nil, return config for EDITOR-COMMAND as-is."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
+(defconst majutsu-jj--revset-source-order
+  '(pseudo workspace bookmark tag)
+  "Source display order for revset completion metadata.")
+
 (defun majutsu-jj--safe-lines (&rest args)
   "Return `majutsu-jj-lines' for ARGS, or nil on command failure."
   (condition-case nil
       (apply #'majutsu-jj-lines args)
     (error nil)))
 
+(defun majutsu-jj--add-revset-source (table candidate source)
+  "Record SOURCE for CANDIDATE in hash TABLE."
+  (when (and (stringp candidate) (not (string-empty-p candidate)))
+    (let* ((current (gethash candidate table))
+           (next (if (memq source current)
+                     current
+                   (append current (list source)))))
+      (puthash candidate next table))))
+
+(defun majutsu-jj--revset-source-label (source)
+  "Return display label for completion SOURCE."
+  (pcase source
+    ('pseudo "pseudo")
+    ('workspace "workspace")
+    ('bookmark "bookmark")
+    ('tag "tag")
+    (_ (symbol-name source))))
+
+(defun majutsu-jj--revset-annotation-function (sources)
+  "Return annotation function from candidate SOURCES table."
+  (lambda (candidate)
+    (when-let* ((kinds (gethash candidate sources)))
+      (let* ((ordered (seq-filter (lambda (k) (memq k kinds)) majutsu-jj--revset-source-order))
+             (extra (seq-remove (lambda (k) (memq k majutsu-jj--revset-source-order)) kinds))
+             (labels (mapcar #'majutsu-jj--revset-source-label (append ordered extra))))
+        (format "  [%s]" (string-join labels ","))))))
+
+(defun majutsu-jj-revset-candidate-data (&optional default)
+  "Return revset completion data.
+The return value is a plist with keys :candidates and :sources."
+  (let* ((sources (make-hash-table :test #'equal))
+         (ordered nil)
+         (workspaces (majutsu-jj--safe-lines "workspace" "list" "-T" "name ++ \"\\n\""))
+         (bookmarks (majutsu-jj--safe-lines "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
+         (tags (majutsu-jj--safe-lines "tag" "list" "--quiet" "-T" "name ++ \"\\n\"")))
+    (cl-labels ((add (candidate source)
+                  (when (and (stringp candidate) (not (string-empty-p candidate)))
+                    (unless (gethash candidate sources)
+                      (setq ordered (append ordered (list candidate))))
+                    (majutsu-jj--add-revset-source sources candidate source))))
+      (dolist (pseudo '("@" "@-" "@+"))
+        (add pseudo 'pseudo))
+      (dolist (name workspaces)
+        (add (concat name "@") 'workspace))
+      (dolist (name bookmarks)
+        (add name 'bookmark))
+      (dolist (name tags)
+        (add name 'tag)))
+    (let ((candidates (if (and default (not (string-empty-p default)))
+                          (cons default (delete default ordered))
+                        ordered)))
+      (list :candidates candidates
+            :sources sources))))
+
 (defun majutsu-jj-revset-candidates (&optional default)
   "Return completion candidates for revset prompts.
 Candidates include pseudo revisions and repository references such as
 workspace working-copy refs (`<workspace>@`), bookmarks, and tags.
 DEFAULT, when non-nil, is inserted first so users can accept it quickly."
-  (let* ((workspaces (mapcar (lambda (name) (concat name "@"))
-                             (majutsu-jj--safe-lines "workspace" "list" "-T" "name ++ \"\\n\"")))
-         (bookmarks (majutsu-jj--safe-lines "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
-         (tags (majutsu-jj--safe-lines "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
-         (raw (append (list "@" "@-" "@+")
-                      workspaces
-                      bookmarks
-                      tags
-                      (when default (list default))))
-         (clean (seq-filter (lambda (s) (and (stringp s) (not (string-empty-p s)))) raw)))
-    (if (and default (not (string-empty-p default)))
-        (cons default (delete default (delete-dups clean)))
-      (delete-dups clean))))
+  (plist-get (majutsu-jj-revset-candidate-data default) :candidates))
 
 (defun majutsu-read-revset (prompt &optional default)
   "Prompt user with PROMPT to read a revision set string.
 Completion candidates include workspaces, bookmarks, and tags, while
 still allowing free-form revset expressions."
   (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
-         (value (majutsu-completing-read
-                 prompt
-                 (majutsu-jj-revset-candidates default)
-                 nil nil nil
-                 'majutsu-read-revset-history
-                 default
-                 'majutsu-revision)))
+         (data (majutsu-jj-revset-candidate-data default))
+         (candidates (plist-get data :candidates))
+         (sources (plist-get data :sources))
+         (annotation (majutsu-jj--revset-annotation-function sources))
+         (table (lambda (string pred action)
+                  (if (eq action 'metadata)
+                      `(metadata
+                        (display-sort-function . identity)
+                        (category . majutsu-revision)
+                        (annotation-function . ,annotation))
+                    (complete-with-action action candidates string pred))))
+         (value (completing-read (format-prompt prompt default)
+                                 table nil nil nil
+                                 'majutsu-read-revset-history
+                                 default)))
     (if (string-empty-p value)
         (user-error "Need non-empty input")
       value)))
