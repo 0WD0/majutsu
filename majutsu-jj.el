@@ -51,12 +51,88 @@ Also respect the value of `majutsu-with-editor-envvar'."
      (with-editor* majutsu-with-editor-envvar
        ,@body)))
 
+(defun majutsu-jj--toml-escape (value)
+  "Escape VALUE for use inside a TOML basic string."
+  (let ((escaped (replace-regexp-in-string "\\\\" "\\\\\\\\" value t t)))
+    (replace-regexp-in-string "\"" "\\\"" escaped t t)))
+
+(defun majutsu-jj--toml-array-config (key values)
+  "Build KEY=[...] TOML config from string VALUES."
+  (format "%s=[%s]"
+          key
+          (mapconcat (lambda (value)
+                       (format "\"%s\"" (majutsu-jj--toml-escape value)))
+                     values
+                     ", ")))
+
+(defun majutsu-jj--editor-command-from-env ()
+  "Return with-editor command words from `majutsu-with-editor-envvar'."
+  (let ((raw (getenv majutsu-with-editor-envvar)))
+    (unless (and raw (not (equal raw "")))
+      (user-error "Missing %s in process environment" majutsu-with-editor-envvar))
+    (condition-case err
+        (let ((words (split-string-shell-command raw)))
+          (unless words
+            (user-error "%s is empty" majutsu-with-editor-envvar))
+          words)
+      (error
+       (user-error "Failed to parse %s: %s"
+                   majutsu-with-editor-envvar
+                   (error-message-string err))))))
+
+(defun majutsu-jj--editor-command-config (key target &optional editor-command)
+  "Build KEY config command string editing TARGET.
+EDITOR-COMMAND defaults to the command parsed from with-editor environment.
+If TARGET is nil, return config for EDITOR-COMMAND as-is."
+  (let ((command (append (or editor-command (majutsu-jj--editor-command-from-env))
+                         (when target (list target)))))
+    (majutsu-jj--toml-array-config key command)))
+
 ;;; Reading
 
 (defun majutsu-read-revset (prompt &optional default)
   "Prompt user with PROMPT to read a revision set string."
   (let ((default (or default (magit-section-value-if 'jj-commit) "@")))
     (majutsu-read-string prompt nil nil default)))
+
+(defun majutsu-jj--parse-diff-range (range)
+  "Parse RANGE into (from . to) cons.
+RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
+  (when range
+    (let ((from nil) (to nil) (revisions nil))
+      (dolist (arg range)
+        (cond
+         ((string-prefix-p "--from=" arg)
+          (setq from (substring arg 7)))
+         ((string-prefix-p "--to=" arg)
+          (setq to (substring arg 5)))
+         ((string-prefix-p "--revisions=" arg)
+          (setq revisions (substring arg 12)))
+         ((string-prefix-p "-r" arg)
+          (setq revisions (substring arg 2)))))
+      (cond
+       (revisions (cons (concat revisions "-") revisions))
+       ((and from to) (cons from to))
+       (from (cons from "@"))
+       (to (cons "@-" to))
+       (t (cons "@-" "@"))))))
+
+(defun majutsu-jj-read-diff-file (from to)
+  "Read file to compare between FROM and TO revisions."
+  (unless (and from to)
+    (user-error "Expected both from/to, got %S and %S" from to))
+  (let* ((root (majutsu--toplevel-safe))
+         (default-directory root)
+         (changed (majutsu-jj-lines "diff" "--from" from "--to" to "--name-only")))
+    (cond
+     ((null changed)
+      (user-error "No files changed between %s and %s" from to))
+     ((= (length changed) 1)
+      (car changed))
+     (t
+      (completing-read
+       (format "File to compare between %s and %s: " from to)
+       changed nil t)))))
 
 ;;; Safe default-directory
 

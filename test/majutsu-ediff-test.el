@@ -26,59 +26,59 @@
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-revisions ()
   "Test parsing --revisions= format."
-  (let ((result (majutsu-ediff--parse-diff-range '("--revisions=abc"))))
+  (let ((result (majutsu-jj--parse-diff-range '("--revisions=abc"))))
     (should (equal (car result) "abc-"))
     (should (equal (cdr result) "abc"))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-from-to ()
   "Test parsing --from/--to format."
-  (let ((result (majutsu-ediff--parse-diff-range '("--from=foo" "--to=bar"))))
+  (let ((result (majutsu-jj--parse-diff-range '("--from=foo" "--to=bar"))))
     (should (equal (car result) "foo"))
     (should (equal (cdr result) "bar"))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-from-only ()
   "Test parsing --from only."
-  (let ((result (majutsu-ediff--parse-diff-range '("--from=foo"))))
+  (let ((result (majutsu-jj--parse-diff-range '("--from=foo"))))
     (should (equal (car result) "foo"))
     (should (equal (cdr result) "@"))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-to-only ()
   "Test parsing --to only."
-  (let ((result (majutsu-ediff--parse-diff-range '("--to=bar"))))
+  (let ((result (majutsu-jj--parse-diff-range '("--to=bar"))))
     (should (equal (car result) "@-"))
     (should (equal (cdr result) "bar"))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-nil ()
   "Test parsing nil range."
-  (let ((result (majutsu-ediff--parse-diff-range nil)))
+  (let ((result (majutsu-jj--parse-diff-range nil)))
     (should (null result))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-empty ()
   "Test parsing empty range."
-  (let ((result (majutsu-ediff--parse-diff-range '())))
+  (let ((result (majutsu-jj--parse-diff-range '())))
     (should (null result))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-short-r ()
   "Test parsing -r format."
-  (let ((result (majutsu-ediff--parse-diff-range '("-rxyz"))))
+  (let ((result (majutsu-jj--parse-diff-range '("-rxyz"))))
     (should (equal (car result) "xyz-"))
     (should (equal (cdr result) "xyz"))))
 
 (ert-deftest majutsu-ediff-test-edit-range-default-fallback ()
   "When no args/context are available, diffedit range defaults to @-..@."
   (with-temp-buffer
-    (let ((range (majutsu-ediff--edit-range nil)))
+    (let ((range (majutsu-edit--edit-range nil)))
       (should (equal (car range) "@-"))
       (should (equal (cdr range) "@")))))
 
 (ert-deftest majutsu-ediff-test-build-diffedit-args-with-file ()
   "Diffedit args should include a fileset path when file is selected."
-  (should (equal (majutsu-ediff--build-diffedit-args "foo" "bar" "src/x.el")
+  (should (equal (majutsu-edit--build-diffedit-args "foo" "bar" "src/x.el")
                  '("--from" "foo" "--to" "bar" "--" "src/x.el"))))
 
 (ert-deftest majutsu-ediff-test-editor-command-config ()
   "Editor command config should use explicit command words."
-  (let ((config (majutsu-ediff--editor-command-config
+  (let ((config (majutsu-jj--editor-command-config
                  "ui.diff-editor"
                  "$right/docs/majutsu.org"
                  '("emacsclient" "--socket-name=/tmp/editor.sock"))))
@@ -95,13 +95,29 @@
          (process-environment
           (cons "JJ_EDITOR='emacsclient' --socket-name='/tmp/editor.sock'"
                 process-environment)))
-    (should (equal (majutsu-ediff--editor-command-from-env)
+    (should (equal (majutsu-jj--editor-command-from-env)
                    '("emacsclient" "--socket-name=/tmp/editor.sock")))))
 
 (ert-deftest majutsu-ediff-test-diffedit-editor-target ()
   "Diffedit target should point into right side temp tree."
-  (should (equal (majutsu-ediff--diffedit-editor-target "src/one.el")
+  (should (equal (majutsu-edit--diffedit-editor-target "src/one.el")
                  "$right/src/one.el")))
+
+(ert-deftest majutsu-ediff-test-merge-editor-config ()
+  "Merge editor config should evaluate 3-way Ediff."
+  (let* ((majutsu-with-editor-envvar "JJ_EDITOR")
+         (process-environment
+          (cons "JJ_EDITOR=emacsclient --socket-name=/tmp/editor.sock"
+                process-environment))
+         (config (majutsu-ediff--merge-editor-config)))
+    (should (string-prefix-p "ui.merge-editor=[" config))
+    (should (string-match-p "emacsclient" config))
+    (should (string-match-p "--eval" config))
+    (should (string-match-p "majutsu-ediff-merge-files" config))
+    (should (string-match-p "\\$left" config))
+    (should (string-match-p "\\$base" config))
+    (should (string-match-p "\\$right" config))
+    (should (string-match-p "\\$output" config))))
 
 (ert-deftest majutsu-ediff-test-build-resolve-args ()
   "Resolve args should include rev, file and merge editor config."
@@ -208,7 +224,7 @@
                (lambda (&optional _file) "conflicted.txt"))
               ((symbol-function 'majutsu-ediff--conflict-side-count)
                (lambda (_rev _file) 4))
-              ((symbol-function 'majutsu-ediff--run-diffedit)
+              ((symbol-function 'majutsu-edit--run-diffedit)
                (lambda (args file)
                  (setq captured (list args file)))))
       (majutsu-ediff-resolve)
@@ -219,14 +235,14 @@
   "Diffedit should prompt for file when none at point."
   (let (captured)
     (with-temp-buffer
-      (cl-letf (((symbol-function 'majutsu-file-at-point)
+      (cl-letf (((symbol-function 'majutsu-edit--file-at-point)
                  (lambda () nil))
-                ((symbol-function 'majutsu-ediff--read-file)
+                ((symbol-function 'majutsu-jj-read-diff-file)
                  (lambda (from to)
                    (should (equal from "@-"))
                    (should (equal to "@"))
                    "docs/majutsu.org"))
-                ((symbol-function 'majutsu-ediff--run-diffedit)
+                ((symbol-function 'majutsu-edit--run-diffedit)
                  (lambda (args file)
                    (setq captured (list args file)))))
         (majutsu-ediff-edit nil)
@@ -238,12 +254,12 @@
   "Diffedit should use file at point and skip file prompt."
   (let (captured)
     (with-temp-buffer
-      (cl-letf (((symbol-function 'majutsu-file-at-point)
+      (cl-letf (((symbol-function 'majutsu-edit--file-at-point)
                  (lambda () "src/one.el"))
-                ((symbol-function 'majutsu-ediff--read-file)
+                ((symbol-function 'majutsu-jj-read-diff-file)
                  (lambda (&rest _)
                    (ert-fail "should not prompt when file at point exists")))
-                ((symbol-function 'majutsu-ediff--run-diffedit)
+                ((symbol-function 'majutsu-edit--run-diffedit)
                  (lambda (args file)
                    (setq captured (list args file)))))
         (majutsu-ediff-edit '("--from=main" "--to=@"))

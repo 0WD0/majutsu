@@ -17,6 +17,7 @@
 - Add ~majutsu-file~ blob inspection workflow:
   - Add ~majutsu-find-file~ / ~majutsu-find-file-at-point~ for revision-aware file viewing.
   - Add blob buffer history navigation (~p~ / ~n~) and workspace jump (~V~).
+  - Add ~e~ to edit a blob's revision via =jj diffedit= (no =jj edit=).
 - Add ~majutsu-annotate~ workflow with chunk navigation, style cycling, and recursive parent tracing.
 - Add ~majutsu-ediff~ transient:
   - Add context-aware compare (~majutsu-ediff-dwim~).
@@ -53,6 +54,7 @@
   - Added ~majutsu-bury-buffer-function~ with Magit-style window lifecycle handling and ~majutsu-mode-quit-window~.
   - Updated ~q~ to use ~majutsu-mode-bury-buffer~ in Majutsu buffers and blob buffers.
   - Switched JJ description buffers to use ~switch-to-buffer~ display behavior.
+- Diffedit buffers now finish on save by default (see ~majutsu-edit-finish-on-save~).
 
 ** Fixed
 
@@ -61,8 +63,8 @@
 - ~majutsu-tpl~ now evaluates embedded Elisp in templates at runtime.
 - ~majutsu-conflict~ now chooses ~majutsu-conflict-mode~ and ~smerge-mode~
   mutually exclusively when auto-detecting conflict marker style.
-- ~majutsu-ediff-resolve~ now runs ~jj resolve~ via with-editor integration for
-  2-sided conflicts, and falls back to ~jj diffedit~ for 3+ sided conflicts.
+- ~majutsu-ediff-resolve~ now runs ~jj resolve~ with 3-way Ediff for 2-sided
+  conflicts, and falls back to ~jj diffedit~ for 3+ sided conflicts.
   It also has commit-section DWIM behavior for conflicted file selection.
 - ~majutsu-ediff-resolve-with-conflict~ now delegates to
   ~majutsu-ediff-resolve~ for backward compatibility.
@@ -70,6 +72,7 @@
   compare/diffedit arguments; resolve is exposed from dispatcher (~m~).
 - ~majutsu-ediff-edit~ now supports non-diff-buffer entry by prompting for a
   changed file and opening the right-side temp file for manual editing.
+  Saving finishes the diffedit session by default.
 
 * [0.5.0] - 2026-01-09
 

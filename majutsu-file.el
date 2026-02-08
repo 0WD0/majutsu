@@ -374,6 +374,7 @@ DIRECTION should be either \='prev or \='next."
   "q" #'majutsu-bury-or-kill-buffer
   "V" #'majutsu-blob-visit-file
   "b" #'majutsu-annotate-addition
+  "e" #'majutsu-ediff-edit
   "g" #'revert-buffer
   ;; RET visits the revision (edit)
   "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)

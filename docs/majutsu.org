@@ -184,6 +184,7 @@ Blob buffers are read-only snapshots with history-aware navigation:
 - ~V~ :: Jump to the workspace version of the same file.
 - ~b~ :: Start annotate for the current blob.
 - ~g~ :: Revert/reload the current blob content.
+- ~e~ :: Edit this revision's file with =jj diffedit= (no =jj edit=). Saving finishes the session and updates the revision.
 
 ** Annotate (Blame)
 Majutsu annotate is implemented by =majutsu-annotate= and uses
@@ -208,13 +209,15 @@ Press ~E~ in dispatcher to open =majutsu-ediff= transient.
   buffer).
 - ~E~ (=majutsu-ediff-edit=) :: Run =jj diffedit= with Emacs as
   =ui.diff-editor=. If no file is at point, Majutsu prompts for a changed file
-  and opens the right-side temp file for manual edit. Press ~C-c C-c~ to finish
-  (or ~C-c C-k~ to abort).
+  and opens the right-side temp file for manual edit. Saving finishes the
+  session and updates the revision (use ~C-c C-k~ to abort). Set
+  =majutsu-edit-finish-on-save= to nil to require ~C-c C-c~ instead.
 
 Conflict resolution is now a separate command:
 - ~m~ in dispatcher (=majutsu-ediff-resolve=) :: Resolve conflicted files.
-  Uses =jj resolve= (with-editor based file editing) for 2-sided conflicts, and falls
-  back to =jj diffedit= for conflicts with more than 2 sides.
+  Uses =jj resolve= with 3-way Ediff (merge tool: =$left=, =$base=, =$right=)
+  for 2-sided conflicts, and falls back to =jj diffedit= for conflicts with
+  more than 2 sides.
   In a =jj-commit= section, conflicted files are listed for that revision.
 
 ** Process Buffer

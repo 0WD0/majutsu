@@ -163,6 +163,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "n") #'majutsu-blob-next
     (kbd "q") #'majutsu-bury-or-kill-buffer
     (kbd "b") #'majutsu-annotate-addition
+    (kbd "e") #'majutsu-ediff-edit
     ;; RET visits the revision (edit)
     (kbd "RET") #'majutsu-edit-changeset)
 
