@@ -14,7 +14,7 @@
 @finalout
 @titlepage
 @title Majutsu User Manual
-@subtitle for version 0.5.0
+@subtitle for version 0.6.0
 @author 0WD0
 @end titlepage
 
@@ -83,12 +83,15 @@ Buffers and Modes
 * Diff Buffer::
 * Blob Buffer::
 * Process Buffer::
-* Message Buffer::
+* JJ description Buffer::
 
 Inspecting
 
 * Log Buffer: Log Buffer (1). 
 * Diffing::
+* File and Blob Inspection::
+* Annotate (Blame)::
+* Ediff and Diffedit::
 * Process Buffer: Process Buffer (1). 
 * Operation Log (Experimental)::
 
@@ -110,12 +113,14 @@ Manipulating
 * Committing::
 * Editing Changes::
 * Squashing::
+* Absorbing::
 * Rebasing::
 * Duplicating::
 * Abandoning::
 * Undo and Redo::
 * Splitting::
 * Restoring::
+* Sparse Working Copy::
 * Interactive Patching::
 
 Interactive Patching
@@ -153,7 +158,8 @@ Workspaces
 Conflict Resolution
 
 * Detecting Conflicts::
-* Diffedit Workflows::
+* Entering Conflict Mode::
+* majutsu-conflict-mode Commands::
 
 Customizing
 
@@ -163,6 +169,7 @@ Customizing
 * Display Options::
 * Diff Options::
 * Buffer Hooks::
+* Description Options::
 * Evil Integration::
 * Workspace Options::
 
@@ -343,7 +350,7 @@ Majutsu uses several specialized buffer types to provide a rich interface.
 * Diff Buffer::
 * Blob Buffer::
 * Process Buffer::
-* Message Buffer::
+* JJ description Buffer::
 @end menu
 
 @node Log Buffer
@@ -366,10 +373,12 @@ Allows viewing the contents of a file at a specific revision. You can navigate t
 
 Shows the output of background @samp{jj} commands. If a command fails, you can press @code{$} to inspect the error.
 
-@node Message Buffer
-@subsection Message Buffer
+@node JJ description Buffer
+@subsection JJ description Buffer
 
 Used for writing commit descriptions or other interactive input. It uses @samp{with-editor} to ensure seamless integration with the Emacs environment.
+
+JJ descriptions buffers highlight metadata blocks and change summaries. You can customize @code{majutsu-jjdescription-major-mode}, @code{majutsu-jjdescription-comment-prefix}, @code{majutsu-jjdescription-change-id-face}, and @code{global-majutsu-jjdescription-mode} to taste. JJ comment commands use @code{JJ:} as the comment prefix. @code{JJ: ignore-rest} marks the remainder of the buffer as comment. Other major modes are not thoroughly tested yet. Jujutsu currently does not support changing the comment prefix; the option is reserved for future compatibility.
 
 @node Sections
 @section Sections
@@ -384,12 +393,12 @@ Commands in Majutsu are grouped into "transient" menus. These popups allow you t
 @node Visual Selection System
 @section Visual Selection System
 
-For commands like Rebase or Squash, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
+For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
 
 @node Completion and Confirmation
 @section Completion and Confirmation
 
-Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Destructive operations like @code{abandon} or @code{undo} will prompt for confirmation.
+Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Revset completion candidates are annotated with source labels (pseudo/workspace/bookmark/tag) to make ambiguous names easier to identify. Destructive operations like @code{abandon} or @code{undo} will prompt for confirmation.
 
 @node Running JJ
 @section Running JJ
@@ -402,6 +411,9 @@ Majutsu runs @samp{jj} commands asynchronously whenever possible to keep the Ema
 @menu
 * Log Buffer: Log Buffer (1). 
 * Diffing::
+* File and Blob Inspection::
+* Annotate (Blame)::
+* Ediff and Diffedit::
 * Process Buffer: Process Buffer (1). 
 * Operation Log (Experimental)::
 @end menu
@@ -429,11 +441,11 @@ Press @code{l} to open the log options. Here you can:
 @table @asis
 @item @code{r}
 Set a revset filter (e.g., @samp{all()} or @samp{mine()}).
-@item @code{n}
+@item @code{-n}
 Limit the number of revisions shown.
-@item @code{v}
+@item @code{-v}
 Toggle reverse order.
-@item @code{t}
+@item @code{-G}
 Toggle the ASCII graph.
 @item @code{a}
 Add a path filter to see only changes affecting certain files.
@@ -457,13 +469,63 @@ While you can type revsets manually, Majutsu's selection system allows you to bu
 
 Press @code{d} to open the Diff transient.
 @table @asis
+@item @code{r}
+Select revisions to diff (@samp{--revisions}). Can specify multiple revisions or a revset like @samp{B::D}.
 @item @code{f} / @code{t}
 Select the @samp{--from} and @samp{--to} revisions.
+@item @code{--}
+Limit diff to selected files/filesets.
 @item @code{-g}
 Toggle Git-style diff output.
+@item @code{-W}
+Toggle color-words diff output.
 @item @code{-S}
+Toggle stat output.
+@item @code{-s}
 Toggle summary output.
+@item @code{-c}
+Set context line count.
+@item @code{-b} / @code{-w}
+Ignore whitespace amount / ignore all whitespace.
 @end table
+
+@enumerate
+@item
+@anchor{Understanding @samp{--revisions}}Understanding @samp{--revisions}
+
+
+The @samp{--revisions} argument accepts any revset that forms a @emph{contiguous} set of commits. "Contiguous" means no gaps in the DAG, but @strong{forks and merges are allowed}.
+
+Examples:
+@table @asis
+@item @samp{-r @@}
+Changes in the working copy commit (default).
+@item @samp{-r @@-}
+Changes in the parent of the working copy.
+@item @samp{-r B::D}
+Total changes from B through D@.
+@item @samp{-r 'A | B'}
+Valid only if A and B form a contiguous set; gaps produce an error.
+@end table
+
+When visiting a file from such a diff:
+@itemize
+@item
+On an @strong{added} or @strong{context} line: visits @samp{heads(revisions)}.
+@item
+On a @strong{removed} line: visits @samp{roots(revisions)-} (the parents of roots).
+@end itemize
+
+@strong{Note}: When the revset has multiple heads or roots, the target revision for file visits may be ambiguous. For example, in an X-shaped history:
+@example
+D   E       <- two heads
+ \ /
+  C
+ / \
+A   B       <- two roots
+@end example
+If you diff @samp{-r A::D | B::E}, there are two heads (D, E) and two roots (A, B). The diff shows changes from the @emph{merged} parents to the @emph{merged} heads. If D and E modify the same lines, the diff will show conflict markers. When visiting files, Majutsu picks one of the heads/roots, which may not be the specific commit where the displayed change originated. For precise navigation, use @samp{--from} / @samp{--to} with single revisions instead.
+@end enumerate
 
 @node Diff Buffer (1)
 @subsection Diff Buffer
@@ -471,11 +533,134 @@ Toggle summary output.
 The diff buffer is highly interactive:
 @table @asis
 @item @code{RET}
-Visit the file in your workspace at the corresponding line.
+Visit the appropriate version of the file at point. For working copy diffs, visits the actual file. For committed changes, visits the blob.
+@item @code{C-j} / @code{C-<return>}
+Visit the workspace file, regardless of diff type. Note: when Evil mode is active, @code{C-j} may be overridden by Evil's section navigation; use @code{C-<return>} instead, which is unaffected.
+@item @code{v} (on a file section)
+Open a blob buffer for that file using the current diff context.
 @item @code{+} / @code{-}
 Increase or decrease the amount of context shown.
 @item @code{t}
 Toggle word-level refinement.
+@end table
+
+When @samp{--color-words} is enabled, Majutsu renders the old/new line numbers in
+the left margin and uses "@dots{}" lines to split hunks.
+With refinement enabled, color-words hunks also show a shadow cursor on the
+paired side (controlled by @samp{smerge-refine-shadow-cursor}).
+Navigation (@samp{RET} / @samp{C-j}) still respects the side at point by using stored
+line/column metadata from the color-words backend.
+
+@node File and Blob Inspection
+@section File and Blob Inspection
+
+Majutsu's file inspector is implemented by @samp{majutsu-file} and can be used both
+from command prompts and directly from sections in log/diff buffers.
+
+@table @asis
+@item @code{M-x majutsu-find-file}
+Prompt for revset + path and open that file as a blob.
+@item @code{M-x majutsu-find-file-at-point}
+Open the file at point using section context.
+@end table
+
+Blob buffers are read-only snapshots with history-aware navigation:
+@table @asis
+@item @code{p} / @code{n}
+Jump to previous/next revision that touched this file (while preserving cursor position as much as possible).
+@item @code{V}
+Jump to the workspace version of the same file.
+@item @code{C-c m}
+Open the current blob in Magit's blob viewer.
+@item @code{b}
+Start annotate for the current blob.
+@item @code{g}
+Revert/reload the current blob content.
+@item @code{e} / @code{C-x C-q}
+Enter editable blob mode (wdired-style).
+@itemize
+@item
+Blob navigation keys are disabled while editing, so blob-mode bindings do not interfere with text edits.
+@item
+Save (or @code{C-c C-c}) applies changes through non-interactive @samp{jj diffedit} and exits edit mode.
+Majutsu copies current buffer text into the diffedit right side and finishes automatically, without opening the right-side temp file buffer.
+@item
+In editable mode, @code{C-x C-q} runs @code{majutsu-blob-edit-exit}:
+@itemize
+@item
+If modified, it prompts to save or abort.
+@item
+Save applies via diffedit; abort restores original content and cursor position.
+@item
+If unchanged, it exits immediately.
+@end itemize
+@item
+In Evil:
+@itemize
+@item
+In blob mode, @code{i} enters editable blob mode and stays in normal state.
+@item
+In editable mode, @code{i} enters insert state.
+@end itemize
+@item
+Editable mode also changes cursor visuals (see @code{majutsu-blob-edit-cursor-type}); with Evil, normal-state cursor is updated too.
+@end itemize
+@end table
+
+@node Annotate (Blame)
+@section Annotate (Blame)
+
+Majutsu annotate is implemented by @samp{majutsu-annotate} and uses
+@samp{jj file annotate} under the hood.
+
+@itemize
+@item
+Entry: run @code{b} (@code{majutsu-annotate-addition}) from a blob/file buffer.
+@item
+Recursive trace: currently only forward recursive annotate is supported.
+Running @code{b} again on an annotated chunk jumps to its parent revision (when
+available) and re-annotates there.
+@item
+Styles: @code{majutsu-annotate-cycle-style} is available. In default
+read-only annotate bindings, press @code{c} to cycle heading/highlight/line styles
+(@samp{majutsu-annotate-styles}).
+@item
+Navigation: @code{n} / @code{p} for next/previous chunk, @code{N} / @code{P} for next/previous
+chunk from the same commit.
+@item
+Inspection: @code{RET} shows the chunk's revision diff, @code{M-w} copies the chunk
+change-id, and @code{SPC} / @code{S-SPC} scroll the diff window if it is already open.
+@end itemize
+
+@node Ediff and Diffedit
+@section Ediff and Diffedit
+
+Press @code{E} in dispatcher to open @samp{majutsu-ediff} transient.
+
+@itemize
+@item
+Selection: choose revisions via @samp{--revisions} or @samp{--from} / @samp{--to} (with
+point-toggle variants). In diff buffers, current range is used as default.
+@item @code{e} (@samp{majutsu-ediff-dwim})
+Compare based on context (hunk/file/commit/whole
+buffer).
+@item @code{E} (@samp{majutsu-ediff-edit})
+Run @samp{jj diffedit} with Emacs as
+@samp{ui.diff-editor}. If no file is at point, Majutsu prompts for a changed file,
+then launches a two-sided Ediff session for that single file (left/right
+temp files). Edit and save as needed, then quit Ediff to return control to
+@samp{jj diffedit}. When @samp{majutsu-edit-finish-on-save} is non-nil, saving can
+finish the with-editor session automatically.
+@end itemize
+
+Conflict resolution is now a separate command:
+@table @asis
+@item @code{m} in dispatcher (@samp{majutsu-ediff-resolve})
+Resolve conflicted files.
+Uses @samp{jj resolve} with 3-way Ediff (merge tool: @samp{$left}, @samp{$base}, @samp{$right})
+for 2-sided conflicts, and falls back to @samp{jj diffedit} for conflicts with
+more than 2 sides.
+In a @samp{jj-commit} section, conflicted files are listed for that revision.
 @end table
 
 @node Process Buffer (1)
@@ -497,12 +682,14 @@ Jujutsu tracks every operation that modifies the repository. Press @code{M-x maj
 * Committing::
 * Editing Changes::
 * Squashing::
+* Absorbing::
 * Rebasing::
 * Duplicating::
 * Abandoning::
 * Undo and Redo::
 * Splitting::
 * Restoring::
+* Sparse Working Copy::
 * Interactive Patching::
 @end menu
 
@@ -510,11 +697,11 @@ Jujutsu tracks every operation that modifies the repository. Press @code{M-x maj
 @section Creating Changes
 
 @table @asis
-@item @code{N} (Emacs), @code{O} (Evil log mode)
+@item @code{O}
 Create a new change on top of the revision at point (DWIM).
-@item @code{n} (Emacs), @code{o} (Evil)
+@item @code{o}
 Open the New transient to specify options.
-@item @code{A} (Emacs/Evil log mode)
+@item @code{A}
 Create a new change after the revision at point.
 @item @code{B} (Emacs), @code{I} (Evil log mode)
 Create a new change before the revision at point.
@@ -539,7 +726,7 @@ Runs: @samp{jj new -r REV}
 @section Describing Changes
 
 @table @asis
-@item @code{d} (@code{majutsu-describe})
+@item @code{c} (@code{majutsu-describe})
 Edit the description of the revision at point. Supports @samp{--ignore-immutable} flag for immutable revisions.
 @end table
 Runs: @samp{jj describe -r REV}
@@ -583,6 +770,21 @@ Set a message for the result.
 @end table
 Runs: @samp{jj squash --from SRC --into DEST}
 
+@node Absorbing
+@section Absorbing
+
+@table @asis
+@item @code{a} (Emacs/Evil), or @code{?} then @code{A} (@code{majutsu-absorb})
+Open the Absorb transient.
+@item @code{-f}
+Source revision (@samp{--from}, default @samp{@@}).
+@item @code{-t}
+Destination revset filter (@samp{--into}, default @samp{mutable()}).
+@item @code{--}
+Limit absorb to specific filesets.
+@end table
+Runs: @samp{jj absorb --from REV --into REVSET [FILESETS...]}
+
 @node Rebasing
 @section Rebasing
 
@@ -619,8 +821,9 @@ Runs: @samp{jj duplicate -r REV}
 @section Abandoning
 
 @table @asis
-@item @code{a} or @code{k} (Emacs), @code{x} (Evil)
+@item @code{k} (Emacs), @code{x} (Evil)
 Abandon the revision at point. Its changes are lost, and its descendants are rebased.
+With an active region selection, Majutsu abandons all selected revisions.
 @end table
 Runs: @samp{jj abandon -r REV}
 
@@ -651,8 +854,10 @@ Insert after/before constraints.
 Set a message for the first part.
 @item @code{-p}
 Parallel split mode.
+@item @code{--}
+Limit split to selected files/filesets.
 @end table
-Runs: @samp{jj split -r REV}
+Runs: @samp{jj split -r REV [FILESETS...]}
 
 @node Restoring
 @section Restoring
@@ -668,8 +873,42 @@ Restore to a specific revision (@samp{--to}).
 Undo changes introduced by a revision (@samp{--changes-in}).
 @item @code{-d}
 Restore descendants as well.
+@item @code{--}
+Limit restore to selected files/filesets.
 @end table
-Runs: @samp{jj restore --from REV} or @samp{jj restore --changes-in REV}
+Runs: @samp{jj restore --from REV [FILESETS...]} or @samp{jj restore --changes-in REV [FILESETS...]}
+
+@node Sparse Working Copy
+@section Sparse Working Copy
+
+@table @asis
+@item @code{>} (@code{majutsu-sparse})
+Open the sparse working copy transient (set, add, remove, list, edit).
+@item
+Editing patterns opens a temporary @samp{.jjsparse} buffer; lines starting with @code{JJ:} are comments and are ignored by Jujutsu.
+@end table
+
+Sparse transient actions:
+@table @asis
+@item @code{l}
+List current sparse patterns in @samp{*Majutsu Sparse*} buffer.
+@item @code{s} / @code{S}
+Set patterns (append / replace with clear first).
+@item @code{a} / @code{r}
+Add or remove patterns incrementally.
+@item @code{e}
+Edit patterns via @samp{jj sparse edit} (with @samp{majutsu-jjsparse-mode}).
+@item @code{R}
+Reset to all files (@samp{jj sparse reset}).
+@end table
+
+Notes:
+@itemize
+@item
+Pattern completion includes current directories/files from @samp{@@}.
+@item
+Default "all files" state is represented by single pattern @samp{.}.
+@end itemize
 
 @node Interactive Patching
 @section Interactive Patching
@@ -909,6 +1148,8 @@ Create a new bookmark at point.
 Set (move) an existing bookmark to point to the current revision.
 @item @code{m}
 Move a bookmark.
+@item @code{M}
+Move bookmark(s) with @samp{--allow-backwards}.
 @item @code{r}
 Rename a bookmark.
 @item @code{d}
@@ -1038,12 +1279,12 @@ Jujutsu supports multiple workspaces sharing the same repository storage. This i
 @node Workspace Transient
 @section Workspace Transient
 
-Press @code{Z} to manage workspaces.
+Press @code{Z} or @code{%} (Emacs) or @code{*} (Evil) to manage workspaces.
 @table @asis
 @item @code{l}
 List all workspaces.
 @item @code{v}
-Visit a workspace (opens a new Majutsu log for that path).
+Visit a workspace (only changes default-directory, and refresh majutsu buffers).
 @item @code{a}
 Add a new workspace.
 @item @code{f}
@@ -1066,7 +1307,8 @@ If Majutsu cannot find a workspace on disk, it will prompt you. You can configur
 
 @menu
 * Detecting Conflicts::
-* Diffedit Workflows::
+* Entering Conflict Mode::
+* majutsu-conflict-mode Commands::
 @end menu
 
 @node Detecting Conflicts
@@ -1074,17 +1316,63 @@ If Majutsu cannot find a workspace on disk, it will prompt you. You can configur
 
 JJ marks conflicts in the log with a "conflict" label. Expanding the revision will show which files are conflicted.
 
-@node Diffedit Workflows
-@section Diffedit Workflows
+@node Entering Conflict Mode
+@section Entering Conflict Mode
 
-Majutsu provides specialized tools for resolving conflicts or performing precise edits:
+You can enter conflict handling from multiple places:
+@itemize
+@item
+In dispatcher, use @code{m} (@samp{majutsu-ediff-resolve}) for auto resolve flow.
+@item
+In a diff hunk, use @code{C-c ^ RET} (@samp{majutsu-diff-resolve-conflict}).
+@item
+In Ediff transient, use @code{m} (auto strategy) or @code{M} (force conflict workflow).
+@code{M} opens the working-copy file (or a revision blob buffer for non-working-copy
+revisions), enables @samp{majutsu-conflict-mode}, and jumps to the first conflict.
+@item
+Manually, run @code{M-x majutsu-conflict-ensure-mode} in a file with conflict markers.
+@end itemize
+
+@samp{majutsu-conflict} auto-detects marker styles:
+@itemize
+@item
+JJ conflict markers (@samp{%%%%%%%} / @samp{+++++++} / @samp{-------} ) -> enable @samp{majutsu-conflict-mode}.
+@item
+JJ long conflict markers (e.g., 15-char marker runs) are treated the same as normal markers.
+@item
+JJ conflicts with missing terminating newline markers are parsed with jj's newline-compensation semantics.
+@item
+Git-style markers (@samp{|||||||} / @samp{=====}) only -> enable @samp{smerge-mode}.
+@end itemize
+
+@node majutsu-conflict-mode Commands
+@section majutsu-conflict-mode Commands
+
+Default key prefix is @code{C-c ^}:
 @table @asis
-@item @code{E}
-Launch @samp{ediff} on the conflicted file.
-@item @code{M}
-Launch @samp{smerge-mode} on the conflicted file.
+@item @code{n} / @code{p}
+Jump to next/previous conflict.
+@item @code{b}
+Keep conflict base (snapshot / rebase destination section).
+@item @code{1..9}
+Keep side N ("after" side in JJ diff blocks).
+@item @code{M-1..M-9}
+Keep side N "before" variant.
+@item @code{R}
+Refine conflict regions with word-level highlighting.
 @end table
-Once you resolve the conflicts in the buffer and save, Majutsu will refresh the status.
+
+In Evil integration:
+@table @asis
+@item @code{]]} / @code{[[} or @code{gj} / @code{gk}
+Next/previous conflict.
+@item @code{gb}
+Keep base.
+@item @code{gr} and @code{gR}
+Resolve "after" / "before" side maps.
+@item @code{ge}
+Refine.
+@end table
 
 @node Customizing
 @chapter Customizing
@@ -1096,6 +1384,7 @@ Once you resolve the conflicts in the buffer and save, Majutsu will refresh the 
 * Display Options::
 * Diff Options::
 * Buffer Hooks::
+* Description Options::
 * Evil Integration::
 * Workspace Options::
 @end menu
@@ -1153,13 +1442,13 @@ Customize the colors used for different fields in the log.
 @item @code{majutsu-log-sections-hook}
 Hook run to insert sections in the log buffer.
 @item @code{majutsu-display-buffer-function}
-Magit-style display strategy for Majutsu buffers (default: @samp{majutsu-display-buffer-traditional}).
+Magit-style display strategy (default: @samp{majutsu-display-buffer-traditional}; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
 @item @code{majutsu-pre-display-buffer-hook}
-Hook run before displaying a Majutsu buffer.
+Hook run before displaying a buffer.
 @item @code{majutsu-post-display-buffer-hook}
-Hook run after displaying a Majutsu buffer.
+Hook run after displaying a buffer.
 @item @code{majutsu-bury-buffer-function}
-Function used by @kbd{q} to bury or quit Majutsu buffers (default: @samp{majutsu-mode-quit-window}).
+Function used by @code{q} to bury/quit Majutsu buffers (default: @samp{majutsu-mode-quit-window}; alternatives include @samp{quit-window} and @samp{majutsu-restore-window-configuration}).
 @end table
 
 @node Diff Options
@@ -1190,6 +1479,20 @@ Normal hook run after displaying the buffer.
 Normal hook run after the initial refresh.
 @item @code{majutsu-refresh-buffer-hook}
 Normal hook run after refreshing.
+@end table
+
+@node Description Options
+@section Description Options
+
+@table @asis
+@item @code{majutsu-jjdescription-major-mode}
+Major mode used for editing JJ description buffers (default: @code{text-mode}).
+@item @code{majutsu-jjdescription-comment-prefix}
+Comment prefix used in JJ description buffers (default: @samp{"JJ:"}).
+@item @code{majutsu-jjdescription-change-id-face}
+Face used for JJ Change ID values.
+@item @code{global-majutsu-jjdescription-mode}
+Global minor mode to enable JJ description buffer enhancements.
 @end table
 
 @node Evil Integration
@@ -1276,8 +1579,8 @@ Example comparison:
 
 Vectors without a leading keyword are implicitly concatenated:
 @lisp
-(majutsu-tpl ["A" "B"])           ; => concat("A", "B")
-(majutsu-tpl [:concat "A" "B"])   ; => concat("A", "B")  (explicit)
+(majutsu-tpl ["A" "B"])           ; => "concat(\"A\", \"B\")"
+(majutsu-tpl [:concat "A" "B"])   ; => "concat(\"A\", \"B\")"
 @end lisp
 
 Bare strings inside vectors are automatically treated as string literals (@samp{:str}).
@@ -1295,12 +1598,12 @@ Use @samp{:str} for explicit string literals with proper escaping:
 
 Use @samp{:raw} to inject template code directly without escaping:
 @lisp
-(majutsu-tpl [:raw "self.commit_id().short()"])  ; => self.commit_id().short()
+(majutsu-tpl [:raw "self.commit_id().short()"])  ; => "self.commit_id().short()"
 @end lisp
 
 Symbols passed to @samp{:call} are treated as raw identifiers:
 @lisp
-(majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => coalesce("", "X")
+(majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => "coalesce(\"\", \"X\")"
 @end lisp
 
 @node Booleans and Numbers
@@ -1308,8 +1611,8 @@ Symbols passed to @samp{:call} are treated as raw identifiers:
 
 Elisp @samp{t} and @samp{nil} map to @samp{true} and @samp{false}. Numbers pass through directly:
 @lisp
-(majutsu-tpl [:if t "yes" "no"])      ; => if(true, "yes", "no")
-(majutsu-tpl [:call 'pad_end 8 "x"])  ; => pad_end(8, "x")
+(majutsu-tpl [:if t "yes" "no"])      ; => "if(true, \"yes\", \"no\")"
+(majutsu-tpl [:call 'pad_end 8 "x"])  ; => "pad_end(8, \"x\")"
 @end lisp
 
 @node Method Calls
@@ -1326,13 +1629,13 @@ Elisp @samp{t} and @samp{nil} map to @samp{true} and @samp{false}. Numbers pass 
 Use @samp{:method} to call methods on objects. Methods can be chained:
 @lisp
 (majutsu-tpl [:method [:raw "self" :Commit] :commit_id])
-; => self.commit_id()
+; => "self.commit_id()"
 
 (majutsu-tpl [:method [:raw "self" :Commit] :parents :len])
-; => self.parents().len()
+; => "self.parents().len()"
 
 (majutsu-tpl [:method [:raw "self" :Commit] :diff "src"])
-; => self.diff("src")
+; => "self.diff(\"src\")"
 @end lisp
 
 @node Self-Type Context
@@ -1340,8 +1643,8 @@ Use @samp{:method} to call methods on objects. Methods can be chained:
 
 When a self-type is provided, bare keywords become method calls on @samp{self}:
 @lisp
-(majutsu-tpl [:description] 'Commit)      ; => self.description()
-(majutsu-tpl [:parents :len] 'Commit)     ; => self.parents().len()
+(majutsu-tpl [:description] 'Commit)      ; => "self.description()"
+(majutsu-tpl [:parents :len] 'Commit)     ; => "self.parents().len()"
 @end lisp
 
 @node List Operations
@@ -1350,16 +1653,16 @@ When a self-type is provided, bare keywords become method calls on @samp{self}:
 List methods (@samp{map}, @samp{filter}, @samp{any}, @samp{all}) use a special syntax with a binding variable:
 @lisp
 (majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
-; => self.bookmarks().map(|b| b.name())
+; => "self.bookmarks().map(|b| b.name())"
 
 (majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
-; => self.parents().map(|p| p.commit_id()).join(", ")
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 
 (majutsu-tpl [:filter [:raw "parents"] c [:raw "c.mine()"]])
-; => parents.filter(|c| c.mine())
+; => "parents.filter(|c| c.mine())"
 
 (majutsu-tpl [:any [:raw "parents"] c [:raw "c.conflict()"]])
-; => parents.any(|c| c.conflict())
+; => "parents.any(|c| c.conflict())"
 @end lisp
 
 @node Operators
@@ -1367,10 +1670,10 @@ List methods (@samp{map}, @samp{filter}, @samp{any}, @samp{all}) use a special s
 
 Arithmetic and logical operators are supported:
 @lisp
-(majutsu-tpl [:+ 1 2])              ; => (1 + 2)
-(majutsu-tpl [:and [:> 3 1] [:<= 2 2]])  ; => ((3 > 1) && (2 <= 2))
-(majutsu-tpl [:not t])              ; => (!true)
-(majutsu-tpl [:++ "L" "R"])         ; => ("L" ++ "R")  (string concat operator)
+(majutsu-tpl [:+ 1 2])              ; => "(1 + 2)"
+(majutsu-tpl [:and [:> 3 1] [:<= 2 2]])  ; => "((3 > 1) && (2 <= 2))"
+(majutsu-tpl [:not t])              ; => "(!true)"
+(majutsu-tpl [:++ "L" "R"])         ; => "(\"L\" ++ \"R\")"
 @end lisp
 
 @node Conditional and Control Flow
@@ -1378,20 +1681,23 @@ Arithmetic and logical operators are supported:
 
 @lisp
 (majutsu-tpl [:if [:raw "self.root()"] "(root)" [:raw "self.commit_id()"]])
-; => if(self.root(), "(root)", self.commit_id())
+; => "if(self.root(), \"(root)\", self.commit_id())"
 
 (majutsu-tpl [:separate " " [:label "a" "A"] [:label "b" "B"]])
-; => separate(" ", label("a", "A"), label("b", "B"))
+; => "separate(\" \", label(\"a\", \"A\"), label(\"b\", \"B\"))"
 @end lisp
 
 @node Elisp Embedding
 @section Elisp Embedding
 
-Elisp expressions are evaluated at compile time:
+Elisp expressions are evaluated when the template is compiled.
 @lisp
-(majutsu-tpl [:raw (if t "foo" "bar")])  ; => foo
-(majutsu-tpl [:concat (if (> 2 1) [:str "T"] [:str "F"]) [:str "!"]])
-; => concat("T", "!")
+(let* ((tmp 1)
+       (s1 `[:concat ,(if (> 2 tmp) [:str "T"] [:str "F"]) [:str "!"]])
+       (s2 [:concat (if (> 2 tmp) [:str "T"] [:str "F"]) [:str "!"]])
+       (tmp 3))
+  (concat (majutsu-tpl s1) (majutsu-tpl s2)))
+; => "concat(\"T\", \"!\")concat(\"F\", \"!\")"
 @end lisp
 
 @node Defining Custom Functions
@@ -1404,7 +1710,7 @@ Use @samp{majutsu-template-defun} to define reusable template functions:
   `[:concat ,label [:str ": "] ,(or value [:str ""])])
 
 (majutsu-tpl [:my-helper [:str "ID"] [:str "VAL"]])
-; => concat("ID", ": ", "VAL")
+; => "concat(\"ID\", \": \", \"VAL\")"
 @end lisp
 
 @node Type System

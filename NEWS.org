@@ -6,10 +6,12 @@
 ** Added
 
 - Prompt for passwords/passphrases in the minibuffer during jj operations, with auth-source support.
-- In ~majutsu-squah~ transient:
+- In ~majutsu-squash~ transient:
   - Add toggle-option for ~-r~.
-- In ~majutus-diff~ transient:
+- In ~majutsu-diff~ transient:
   - Support ~--ignore-space-change~ (~-b~) and ~--ignore-all-space~ (~-w~) arguments.
+  - Add fileset limiting via ~--~.
+- Revset completion candidates now show source labels (pseudo/workspace/bookmark/tag).
 - In ~majutsu-diff~ buffers:
   - Add ~majutsu-color-words~ backend with ~-W~ toggle in the diff transient.
   - Add color-words line/column-aware navigation for ~RET~ / ~C-j~ visits.
@@ -18,8 +20,9 @@
   - Add ~majutsu-find-file~ / ~majutsu-find-file-at-point~ for revision-aware file viewing.
   - Add blob buffer history navigation (~p~ / ~n~) and workspace jump (~V~).
   - Add ~e~ to edit a blob's revision via =jj diffedit= (no =jj edit=).
-- Add ~majutsu-annotate~ workflow with chunk navigation, style cycling, and recursive parent tracing.
-- Add ~majutsu-blob-visit-magit~ to open blob buffers in Magit.
+- Add ~majutsu-annotate~ workflow with chunk navigation, style cycling, and
+  forward recursive tracing toward parent revisions.
+- Add ~majutsu-blob-visit-magit~ to open magit blob buffers in majutsu blob buffers.
 - Add ~majutsu-ediff~ transient:
   - Add context-aware compare (~majutsu-ediff-dwim~).
   - Add =jj diffedit= integration using Emacs/Ediff as diff editor.
@@ -31,9 +34,11 @@
 - Highlight JJ description buffers (summary, JJ comments, change list) using git-commit faces.
   - Add global mode to manage JJ description setup hooks.
   - Allow configuring JJ description major mode and Change ID face.
-  - Allow configurint JJ description comment prefix for comment commands.
+  - Allow configuring JJ description comment prefix for comment commands.
   - Highlight JJ ignore-rest and diffstat summary lines.
 - Add ~majutsu-absorb~ transient for =jj absorb= with =--from= / =--into= plus fileset limiting.
+- Workspace root detection now uses =jj workspace root --name= to leverage
+  newer jj workspace-name-aware root resolution behavior.
 
 ** Changed
 
@@ -68,18 +73,6 @@
 - Diff DWIM now only inherits range/filesets from the current diff buffer,
   and context adjustments (+/-/0) no longer update global defaults.
 - ~majutsu-tpl~ now evaluates embedded Elisp in templates at runtime.
-- ~majutsu-conflict~ now chooses ~majutsu-conflict-mode~ and ~smerge-mode~
-  mutually exclusively when auto-detecting conflict marker style.
-- ~majutsu-ediff-resolve~ now runs ~jj resolve~ with 3-way Ediff for 2-sided
-  conflicts, and falls back to ~jj diffedit~ for 3+ sided conflicts.
-  It also has commit-section DWIM behavior for conflicted file selection.
-- ~majutsu-ediff-resolve-with-conflict~ now delegates to
-  ~majutsu-ediff-resolve~ for backward compatibility.
-- ~majutsu-ediff~ transient no longer mixes resolve actions with range-based
-  compare/diffedit arguments; resolve is exposed from dispatcher (~m~).
-- ~majutsu-ediff-edit~ now supports non-diff-buffer entry by prompting for a
-  changed file and opening the right-side temp file for manual editing.
-  Saving finishes the diffedit session by default.
 
 * [0.5.0] - 2026-01-09
 

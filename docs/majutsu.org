@@ -102,7 +102,7 @@ Commands in Majutsu are grouped into "transient" menus. These popups allow you t
 For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
 
 ** Completion and Confirmation
-Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Destructive operations like ~abandon~ or ~undo~ will prompt for confirmation.
+Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Revset completion candidates are annotated with source labels (pseudo/workspace/bookmark/tag) to make ambiguous names easier to identify. Destructive operations like ~abandon~ or ~undo~ will prompt for confirmation.
 
 ** Running JJ
 Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI responsive. Large log graphs or remote operations won't freeze your editor.
@@ -130,9 +130,13 @@ While you can type revsets manually, Majutsu's selection system allows you to bu
 Press ~d~ to open the Diff transient.
 - ~r~ :: Select revisions to diff (=--revisions=). Can specify multiple revisions or a revset like =B::D=.
 - ~f~ / ~t~ :: Select the =--from= and =--to= revisions.
+- ~--~ :: Limit diff to selected files/filesets.
 - ~-g~ :: Toggle Git-style diff output.
 - ~-W~ :: Toggle color-words diff output.
-- ~-S~ :: Toggle summary output.
+- ~-S~ :: Toggle stat output.
+- ~-s~ :: Toggle summary output.
+- ~-c~ :: Set context line count.
+- ~-b~ / ~-w~ :: Ignore whitespace amount / ignore all whitespace.
 
 **** Understanding =--revisions=
 The =--revisions= argument accepts any revset that forms a /contiguous/ set of commits. "Contiguous" means no gaps in the DAG, but *forks and merges are allowed*.
@@ -203,9 +207,11 @@ Majutsu annotate is implemented by =majutsu-annotate= and uses
 =jj file annotate= under the hood.
 
 - Entry: run ~b~ (~majutsu-annotate-addition~) from a blob/file buffer.
-- Recursive trace: running ~b~ again on an annotated chunk jumps to its parent
-  revision (when available) and re-annotates there.
-- Styles: press ~c~ to cycle heading/highlight/line styles
+- Recursive trace: currently only forward recursive annotate is supported.
+  Running ~b~ again on an annotated chunk jumps to its parent revision (when
+  available) and re-annotates there.
+- Styles: ~majutsu-annotate-cycle-style~ is available. In default
+  read-only annotate bindings, press ~c~ to cycle heading/highlight/line styles
   (=majutsu-annotate-styles=).
 - Navigation: ~n~ / ~p~ for next/previous chunk, ~N~ / ~P~ for next/previous
   chunk from the same commit.
@@ -220,10 +226,11 @@ Press ~E~ in dispatcher to open =majutsu-ediff= transient.
 - ~e~ (=majutsu-ediff-dwim=) :: Compare based on context (hunk/file/commit/whole
   buffer).
 - ~E~ (=majutsu-ediff-edit=) :: Run =jj diffedit= with Emacs as
-  =ui.diff-editor=. If no file is at point, Majutsu prompts for a changed file
-  and opens the right-side temp file for manual edit. Saving finishes the
-  session and updates the revision (use ~C-c C-k~ to abort). Set
-  =majutsu-edit-finish-on-save= to nil to require ~C-c C-c~ instead.
+  =ui.diff-editor=. If no file is at point, Majutsu prompts for a changed file,
+  then launches a two-sided Ediff session for that single file (left/right
+  temp files). Edit and save as needed, then quit Ediff to return control to
+  =jj diffedit=. When =majutsu-edit-finish-on-save= is non-nil, saving can
+  finish the with-editor session automatically.
 
 Conflict resolution is now a separate command:
 - ~m~ in dispatcher (=majutsu-ediff-resolve=) :: Resolve conflicted files.
@@ -299,6 +306,7 @@ Runs: =jj duplicate -r REV=
 
 ** Abandoning
 - ~k~ (Emacs), ~x~ (Evil) :: Abandon the revision at point. Its changes are lost, and its descendants are rebased.
+  With an active region selection, Majutsu abandons all selected revisions.
 Runs: =jj abandon -r REV=
 
 ** Undo and Redo
@@ -313,7 +321,8 @@ Runs: =jj undo= or =jj redo=
 - ~-A~ / ~-B~ :: Insert after/before constraints.
 - ~-m~ :: Set a message for the first part.
 - ~-p~ :: Parallel split mode.
-Runs: =jj split -r REV=
+- ~--~ :: Limit split to selected files/filesets.
+Runs: =jj split -r REV [FILESETS...]=
 
 ** Restoring
 - ~R~ (~majutsu-restore~) :: Open the Restore transient for undoing changes.
@@ -321,7 +330,8 @@ Runs: =jj split -r REV=
 - ~-t~ :: Restore to a specific revision (=--to=).
 - ~-c~ :: Undo changes introduced by a revision (=--changes-in=).
 - ~-d~ :: Restore descendants as well.
-Runs: =jj restore --from REV= or =jj restore --changes-in REV=
+- ~--~ :: Limit restore to selected files/filesets.
+Runs: =jj restore --from REV [FILESETS...]= or =jj restore --changes-in REV [FILESETS...]=
 
 ** Sparse Working Copy
 - ~>~ (~majutsu-sparse~) :: Open the sparse working copy transient (set, add, remove, list, edit).
@@ -442,6 +452,7 @@ Press ~b~ to manage bookmarks.
 - ~c~ :: Create a new bookmark at point.
 - ~s~ :: Set (move) an existing bookmark to point to the current revision.
 - ~m~ :: Move a bookmark.
+- ~M~ :: Move bookmark(s) with =--allow-backwards=.
 - ~r~ :: Rename a bookmark.
 - ~d~ :: Delete a bookmark (this deletion propagates to remotes).
 - ~f~ :: Forget a bookmark (removes local tracking without affecting remotes).
@@ -512,8 +523,11 @@ JJ marks conflicts in the log with a "conflict" label. Expanding the revision wi
 
 ** Entering Conflict Mode
 You can enter conflict handling from multiple places:
+- In dispatcher, use ~m~ (=majutsu-ediff-resolve=) for auto resolve flow.
 - In a diff hunk, use ~C-c ^ RET~ (=majutsu-diff-resolve-conflict=).
 - In Ediff transient, use ~m~ (auto strategy) or ~M~ (force conflict workflow).
+  ~M~ opens the working-copy file (or a revision blob buffer for non-working-copy
+  revisions), enables =majutsu-conflict-mode=, and jumps to the first conflict.
 - Manually, run ~M-x majutsu-conflict-ensure-mode~ in a file with conflict markers.
 
 =majutsu-conflict= auto-detects marker styles:
