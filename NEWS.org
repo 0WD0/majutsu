@@ -19,6 +19,7 @@
   - Add blob buffer history navigation (~p~ / ~n~) and workspace jump (~V~).
   - Add ~e~ to edit a blob's revision via =jj diffedit= (no =jj edit=).
 - Add ~majutsu-annotate~ workflow with chunk navigation, style cycling, and recursive parent tracing.
+- Add ~majutsu-blob-visit-magit~ to open blob buffers in Magit.
 - Add ~majutsu-ediff~ transient:
   - Add context-aware compare (~majutsu-ediff-dwim~).
   - Add =jj diffedit= integration using Emacs/Ediff as diff editor.

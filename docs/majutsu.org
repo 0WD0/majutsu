@@ -182,6 +182,7 @@ from command prompts and directly from sections in log/diff buffers.
 Blob buffers are read-only snapshots with history-aware navigation:
 - ~p~ / ~n~ :: Jump to previous/next revision that touched this file (while preserving cursor position as much as possible).
 - ~V~ :: Jump to the workspace version of the same file.
+- ~C-c m~ :: Open the current blob in Magit's blob viewer.
 - ~b~ :: Start annotate for the current blob.
 - ~g~ :: Revert/reload the current blob content.
 - ~e~ / ~C-x C-q~ :: Enter editable blob mode (wdired-style). Save to apply through =jj diffedit= and update the revision.

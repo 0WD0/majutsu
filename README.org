@@ -28,6 +28,7 @@ efficient way to interact with JJ repositories from within Emacs.
 2. Navigate: ~n~ / ~p~ to move between revisions
 3. Act: ~RET~ to visit, ~?~ for help
 4. In blob buffers, press ~e~ to enter editable mode; save applies via =jj diffedit= (~i~ in Evil also enters editable mode)
+5. In blob buffers, press ~b~ to annotate; ~C-c m~ opens the blob in Magit
 
 ** Essential Keybindings
 
