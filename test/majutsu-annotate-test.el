@@ -53,5 +53,17 @@
         (should-error (majutsu-annotate-visit-other-file) :type 'user-error)
         (should-not find-file-called)))))
 
+(ert-deftest majutsu-annotate-show-commit/calls-diff-revset-with-change-id ()
+  "Show-commit should open the diff for the current chunk's change-id."
+  (let ((chunk (make-majutsu-annotate-chunk :orig-rev "abc123"))
+        called-args)
+    (cl-letf (((symbol-function 'majutsu-annotate-current-chunk)
+               (lambda () chunk))
+              ((symbol-function 'majutsu-diff-revset)
+               (lambda (&rest args)
+                 (setq called-args args))))
+      (majutsu-annotate-show-commit)
+      (should (equal called-args '("abc123"))))))
+
 (provide 'majutsu-annotate-test)
 ;;; majutsu-annotate-test.el ends here

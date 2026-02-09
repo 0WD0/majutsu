@@ -1388,10 +1388,12 @@ REVSET is passed to jj diff using `--revisions='."
 
 (defun majutsu-diff-setup-buffer (args range filesets &optional locked)
   "Display a diff buffer configured by ARGS, RANGE and FILESETS."
-  (let ((buffer (majutsu-setup-buffer #'majutsu-diff-mode locked
-                  (majutsu-buffer-diff-args args)
-                  (majutsu-buffer-diff-range range)
-                  (majutsu-buffer-diff-filesets filesets))))
+  (let* ((args (or (majutsu-diff--remembered-args args)
+                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
+         (buffer (majutsu-setup-buffer #'majutsu-diff-mode locked
+                   (majutsu-buffer-diff-args args)
+                   (majutsu-buffer-diff-range range)
+                   (majutsu-buffer-diff-filesets filesets))))
     (with-current-buffer buffer
       (majutsu-diff--sync-backend majutsu-buffer-diff-args))
     buffer))

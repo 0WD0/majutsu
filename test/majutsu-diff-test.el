@@ -112,6 +112,26 @@
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
+(ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
+  "`majutsu-diff-revset' should use default formatting args when ARGS is nil."
+  (let (captured-args
+        captured-range)
+    (cl-letf (((symbol-function 'majutsu-setup-buffer-internal)
+               (lambda (_mode _locked bindings &rest _kwargs)
+                 (setq captured-args (cadr (assq 'majutsu-buffer-diff-args bindings))
+                       captured-range (cadr (assq 'majutsu-buffer-diff-range bindings)))
+                 (let ((buffer (generate-new-buffer " *majutsu diff revset*")))
+                   (with-current-buffer buffer
+                     (setq-local majutsu-buffer-diff-args captured-args))
+                   buffer))))
+      (let ((buffer (majutsu-diff-revset "abc123")))
+        (unwind-protect
+            (progn
+              (should (equal captured-args '("--git" "--stat")))
+              (should (equal captured-range '("--revisions=abc123"))))
+          (when (buffer-live-p buffer)
+            (kill-buffer buffer)))))))
+
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
   "When called from the transient, DWIM should use current transient args."
   (let ((transient-current-command 'majutsu-diff)
