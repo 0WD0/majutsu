@@ -1205,9 +1205,9 @@ regardless of what the diff is about."
       (user-error "No file at point"))
     (let* ((revs (majutsu-diff--revisions))
            (goto-from (if line-info
-                           (majutsu-diff--color-words-goto-from line-info)
-                         (and section (magit-section-match 'jj-hunk section)
-                              (majutsu-diff--on-removed-line-p))))
+                          (majutsu-diff--color-words-goto-from line-info)
+                        (and section (magit-section-match 'jj-hunk section)
+                             (majutsu-diff--on-removed-line-p))))
            (target-rev (if goto-from (car revs) (cdr revs)))
            (goto-workspace (or force-workspace
                                (and (majutsu-diff--visit-workspace-p)
@@ -1219,10 +1219,10 @@ regardless of what the diff is about."
                        (plist-get line-info :from-line)))
                   ((and section (magit-section-match 'jj-hunk section))
                    (majutsu-diff--hunk-line section goto-from))))
-            (col (cond
-                  (line-info (majutsu-diff--color-words-column line-info goto-from))
-                  ((and section (magit-section-match 'jj-hunk section))
-                   (majutsu-diff--hunk-column section goto-from)))))
+           (col (cond
+                 (line-info (majutsu-diff--color-words-column line-info goto-from))
+                 ((and section (magit-section-match 'jj-hunk section))
+                  (majutsu-diff--hunk-column section goto-from)))))
       (if goto-workspace
           ;; Visit workspace file
           (let ((full-path (expand-file-name file default-directory)))
