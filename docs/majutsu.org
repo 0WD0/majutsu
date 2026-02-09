@@ -65,7 +65,7 @@ Clone the repository and add it to your =load-path=:
 If you use Evil mode, Majutsu includes a native integration that provides sensible Vim-like keybindings. It is enabled by default if Evil is detected. You can customize this via =M-x customize-group RET majutsu-evil RET=.
 
 * Getting Started
-To begin using Majutsu, navigate to a directory within a Jujutsu repository and run ~M-x majutsu~ (or its alias ~majutsu-log~).
+To begin using Majutsu, navigate to a directory within a Jujutsu repository and run ~M-x majutsu-log~ (or its alias ~majutsu~).
 
 If the directory is not a repository, Majutsu will offer to initialize one using =jj git init=. Once the log buffer opens, you will see a graphical representation of your revision history, similar to Magit's log but with Jujutsu's unique features like hidden and divergent revisions clearly marked.
 
@@ -120,7 +120,7 @@ Press ~l~ to open the log options. Here you can:
 - ~-n~ :: Limit the number of revisions shown.
 - ~-v~ :: Toggle reverse order.
 - ~-G~ :: Toggle the ASCII graph.
-- ~a~ :: Add a path filter to see only changes affecting certain files.
+- ~--~ :: Add fileset/path filters to limit the log to matching files.
 
 *** Revset Builder
 While you can type revsets manually, Majutsu's selection system allows you to build them interactively. Commands that require a revset will often default to the revision at point or your current selection.
@@ -163,7 +163,7 @@ If you diff =-r A::D | B::E=, there are two heads (D, E) and two roots (A, B). T
 
 *** Diff Buffer
 The diff buffer is highly interactive:
-- ~RET~ :: Visit the appropriate version of the file at point. For working copy diffs, visits the actual file. For committed changes, visits the blob.
+- ~RET~ :: Visit the appropriate version of the file at point. For working copy diffs, added/context lines visit the workspace file while removed lines visit the parent-side blob. For committed changes, it visits the blob at the corresponding side.
 - ~C-j~ / ~C-<return>~ :: Visit the workspace file, regardless of diff type. Note: when Evil mode is active, ~C-j~ may be overridden by Evil's section navigation; use ~C-<return>~ instead, which is unaffected.
 - ~v~ (on a file section) :: Open a blob buffer for that file using the current diff context.
 - ~+~ / ~-~ :: Increase or decrease the amount of context shown.
@@ -287,7 +287,7 @@ Runs: =jj edit REV=
 - ~-t~ :: Destination revision (=--into=).
 - ~-o~ :: Onto destination.
 - ~-A~ / ~-B~ :: Insert after/before constraints.
-- ~-m~ :: Set a message for the result.
+- ~-k~ :: Keep commits that become empty after squashing.
 Runs: =jj squash --from SRC --into DEST=
 
 ** Absorbing
@@ -474,20 +474,21 @@ Press ~b~ to manage bookmarks.
 Press ~G~ to access Git-specific commands. Jujutsu can interact directly with Git remotes.
 
 ** Pushing
-- ~p~ :: Open the Push transient. You can push specific bookmarks or all tracked bookmarks.
-- ~-a~ :: Push all tracked bookmarks.
+- ~p~ :: Open the Push transient. You can push bookmarks, revisions, or changes.
+- ~-a~ :: Push all bookmarks.
+- ~-t~ :: Push tracked bookmarks only.
 - ~-b~ :: Push specific bookmark(s).
 - ~-c~ :: Push a specific change.
 - ~-r~ :: Push specific revision(s).
-- ~--allow-new~ :: Allow creating new remote bookmarks.
-- ~--dry-run~ :: Show what would be pushed without pushing.
+- ~-y~ :: Show what would be pushed without pushing (=--dry-run=).
 Runs: =jj git push=
 
 ** Fetching
 - ~f~ :: Open the Fetch transient to pull changes from a remote.
-- ~-b~ :: Fetch specific bookmark(s).
-- ~-r~ :: Fetch from specific remote.
-- ~--all-remotes~ :: Fetch from all remotes.
+- ~-R~ :: Fetch from a specific remote.
+- ~-B~ :: Fetch a specific branch.
+- ~-t~ :: Fetch only tracked bookmarks.
+- ~-A~ :: Fetch from all remotes.
 Runs: =jj git fetch=
 
 ** Remotes
