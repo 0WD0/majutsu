@@ -609,8 +609,9 @@ In Evil integration:
 - ~majutsu-jj-environment~ :: Extra =KEY=VALUE= entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by =majutsu-process=.
 
 ** Display Options
-- ~majutsu-log-commit-columns~ :: Customize which columns are shown in the log (ID, author, date, etc.).
-- ~majutsu-log-field-faces~ :: Customize the colors used for different fields in the log.
+- ~majutsu-log-commit-columns~ :: Ordered log field layout. Each entry supports ~:field~, ~:module~, ~:face~, and optional ~:post~. Modules are ~heading~, ~body~, ~right-margin~, ~metadata~.
+- ~majutsu-log-field-faces~ :: Fallback face policy when a ~majutsu-log-commit-columns~ entry omits ~:face~.
+- ~majutsu-log-template-<field>~ variables :: ~heading~ is the only module with physical newlines. For other modules, use ="\x1f"= inside a field template where you want a rendered newline after parsing.
 - ~majutsu-log-sections-hook~ :: Hook run to insert sections in the log buffer.
 - ~majutsu-display-buffer-function~ :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
 - ~majutsu-pre-display-buffer-hook~ :: Hook run before displaying a buffer.
