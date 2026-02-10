@@ -876,6 +876,17 @@ Returns entry plist and moves point past the consumed entry, or nil."
                  (concat (make-string left ?\s) txt (make-string right ?\s))))
       (_ (concat txt (make-string pad ?\s))))))
 
+(defun majutsu-log--concat-heading-parts (parts)
+  "Concatenate heading PARTS without adding spaces after newlines."
+  (let ((out ""))
+    (dolist (part parts out)
+      (unless (string-empty-p part)
+        (let ((need-space
+               (and (> (length out) 0)
+                    (not (eq (aref out (1- (length out))) ?\n))
+                    (not (eq (aref part 0) ?\n)))))
+          (setq out (concat out (if need-space " " "") part)))))))
+
 (defun majutsu-log--render-heading-lines (entry compiled)
   "Render ENTRY heading module as visible lines with graph prefixes."
   (let* ((columns (majutsu-log--module-columns compiled 'heading))
@@ -888,7 +899,7 @@ Returns entry plist and moves point past the consumed entry, or nil."
         (unless (string-empty-p value)
           (push value parts))))
     (setq parts (nreverse parts))
-    (let* ((content (if parts (string-join parts " ") ""))
+    (let* ((content (if parts (majutsu-log--concat-heading-parts parts) ""))
            (content-lines (split-string content "\n" nil))
            (prefixes (or (plist-get entry :heading-prefixes) (list "")))
            (last-prefix (or (car (last prefixes)) ""))
