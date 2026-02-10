@@ -163,20 +163,105 @@
 
 (ert-deftest majutsu-ediff-test-diffedit-file-launches-ediff-session ()
   "Directory editor entry should start an Ediff file session."
-  (let (called-left called-right entered-recursive)
+  (let (called-left called-right startup-hooks entered-recursive)
     (cl-letf (((symbol-function 'majutsu-ediff--read-directory-file)
                (lambda (_left _right) "foo.txt"))
               ((symbol-function 'ediff-files)
-               (lambda (left right)
-                 (setq called-left left)
-                 (setq called-right right)))
+               (lambda (left right &optional hooks)
+                  (setq called-left left)
+                  (setq called-right right)
+                  (setq startup-hooks hooks)))
               ((symbol-function 'recursive-edit)
-               (lambda ()
-                 (setq entered-recursive t))))
+                (lambda ()
+                  (setq entered-recursive t))))
       (majutsu-ediff-diffedit-file "/tmp/left" "/tmp/right")
       (should (equal called-left (expand-file-name "foo.txt" "/tmp/left")))
       (should (equal called-right (expand-file-name "foo.txt" "/tmp/right")))
+      (should (= (length startup-hooks) 1))
       (should entered-recursive))))
+
+(ert-deftest majutsu-ediff-test-diffedit-file-installs-local-quit-hooks ()
+  "Diffedit startup hook should install local quit hooks.
+The recursive-edit exit hook must run from `ediff-after-quit-hook-internal'
+instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
+  (let (startup-hooks)
+    (cl-letf (((symbol-function 'majutsu-ediff--read-directory-file)
+               (lambda (_left _right) "foo.txt"))
+              ((symbol-function 'ediff-files)
+               (lambda (_left _right &optional hooks)
+                 (setq startup-hooks hooks)))
+              ((symbol-function 'recursive-edit)
+               (lambda () nil)))
+      (majutsu-ediff-diffedit-file "/tmp/left" "/tmp/right")
+      (should (= (length startup-hooks) 1))
+      (with-temp-buffer
+        (let ((ediff-quit-hook nil)
+              (ediff-after-quit-hook-internal nil)
+              (default-quit-count (length (default-value 'ediff-quit-hook))))
+          (funcall (car startup-hooks))
+          (should (consp ediff-quit-hook))
+          (should (> (length ediff-quit-hook) default-quit-count))
+          (should-not (memq #'majutsu-ediff--exit-recursive-edit
+                            ediff-quit-hook))
+          (should (memq #'majutsu-ediff--exit-recursive-edit
+                        ediff-after-quit-hook-internal)))))))
+
+(ert-deftest majutsu-ediff-test-cleanup-diffedit-variant-buffers ()
+  "Diffedit helper should save and kill session-created variant buffers."
+  (let ((left (make-temp-file "majutsu-ediff-left"))
+        (right (make-temp-file "majutsu-ediff-right"))
+        left-buf right-buf)
+    (unwind-protect
+        (progn
+          (setq left-buf (find-file-noselect left))
+          (setq right-buf (find-file-noselect right))
+          (with-current-buffer right-buf
+            (erase-buffer)
+            (insert "edited"))
+          (majutsu-ediff--cleanup-diffedit-variant-buffers
+           left right nil nil)
+          (should-not (buffer-live-p left-buf))
+          (should-not (buffer-live-p right-buf))
+          (with-temp-buffer
+            (insert-file-contents right)
+            (should (equal (buffer-string) "edited"))))
+      (when (buffer-live-p left-buf)
+        (kill-buffer left-buf))
+      (when (buffer-live-p right-buf)
+        (kill-buffer right-buf))
+      (delete-file left)
+      (delete-file right))))
+
+(ert-deftest majutsu-ediff-test-cleanup-diffedit-variant-buffers-bypasses-kill-guard ()
+  "Diffedit cleanup should ignore kill-buffer query guards.
+This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
+  (let ((left (make-temp-file "majutsu-ediff-left"))
+        (right (make-temp-file "majutsu-ediff-right"))
+        left-buf right-buf)
+    (unwind-protect
+        (progn
+          (setq left-buf (find-file-noselect left))
+          (setq right-buf (find-file-noselect right))
+          (with-current-buffer left-buf
+            (add-hook 'kill-buffer-query-functions
+                      (lambda ()
+                        (user-error "kill guard"))
+                      nil t))
+          (with-current-buffer right-buf
+            (add-hook 'kill-buffer-query-functions
+                      (lambda ()
+                        (user-error "kill guard"))
+                      nil t))
+          (majutsu-ediff--cleanup-diffedit-variant-buffers
+           left right nil nil)
+          (should-not (buffer-live-p left-buf))
+          (should-not (buffer-live-p right-buf)))
+      (when (buffer-live-p left-buf)
+        (kill-buffer left-buf))
+      (when (buffer-live-p right-buf)
+        (kill-buffer right-buf))
+      (delete-file left)
+      (delete-file right))))
 
 (ert-deftest majutsu-ediff-test-resolve-file-dwim-uses-commit-revision ()
   "Resolve DWIM should query conflicted files at commit section revision."

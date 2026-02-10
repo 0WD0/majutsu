@@ -37,6 +37,8 @@
 
 (defvar majutsu-buffer-diff-range)
 
+(defvar ediff-after-quit-hook-internal)
+
 ;;; Options
 
 (defgroup majutsu-ediff nil
@@ -116,6 +118,10 @@ If FILE is non-nil, perform a merge with result written to FILE."
     (ediff-kill-buffer-carefully ediff-fine-diff-buffer)
     (ediff-kill-buffer-carefully ediff-tmp-buffer)
     (ediff-kill-buffer-carefully ediff-error-buffer)
+    (ediff-kill-buffer-carefully ediff-msg-buffer)
+    (ediff-kill-buffer-carefully ediff-debug-buffer)
+    (when (boundp 'ediff-patch-diagnostics)
+      (ediff-kill-buffer-carefully ediff-patch-diagnostics))
     (ediff-kill-buffer-carefully ctl)))
 
 (defun majutsu-ediff-restore-previous-winconf ()
@@ -289,6 +295,49 @@ MERGE-EDITOR-CONFIG is a `ui.merge-editor=[...]' TOML config string."
         ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
         (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))))
 
+(defun majutsu-ediff--cleanup-diffedit-variant-buffers
+    (left-file right-file left-existing right-existing)
+  "Persist and close diffedit variant buffers created for this session."
+  (cl-labels ((force-kill (buffer)
+                (when (buffer-live-p buffer)
+                  (with-current-buffer buffer
+                    ;; with-editor installs a kill guard that raises a user-error.
+                    ;; Diffedit cleanup runs after the edit session has already
+                    ;; finished, so bypass query hooks to avoid aborting quit flow.
+                    (let ((kill-buffer-query-functions nil))
+                      (kill-buffer buffer))))))
+    (let* ((left-buffer (get-file-buffer left-file))
+           (right-buffer (get-file-buffer right-file)))
+      (when (and (buffer-live-p right-buffer)
+                 (not right-existing))
+        (with-current-buffer right-buffer
+          (when (and (buffer-file-name)
+                     (buffer-modified-p)
+                     (file-writable-p (buffer-file-name)))
+            (save-buffer)))
+        (force-kill right-buffer))
+      (when (and (buffer-live-p left-buffer)
+                 (not left-existing))
+        (force-kill left-buffer)))))
+
+(defun majutsu-ediff--setup-diffedit-quit-hooks
+    (winconf left-file right-file left-existing right-existing)
+  "Install local quit hooks for a diffedit Ediff session.
+WINCONF is the window configuration saved before launching Ediff."
+  (add-hook 'ediff-quit-hook
+            (lambda ()
+              (let ((majutsu-ediff-previous-winconf winconf))
+                (run-hooks 'majutsu-ediff-quit-hook)))
+            t t)
+  (add-hook 'ediff-after-quit-hook-internal
+            (lambda ()
+              (majutsu-ediff--cleanup-diffedit-variant-buffers
+               left-file right-file left-existing right-existing))
+            t t)
+  ;; Exit recursive edit only after Ediff has completed its quit cleanup.
+  (add-hook 'ediff-after-quit-hook-internal
+            #'majutsu-ediff--exit-recursive-edit t t))
+
 (defun majutsu-ediff--directory-common-files (left right)
   "Return common relative file paths between LEFT and RIGHT directories."
   (let* ((left (file-name-as-directory (expand-file-name left)))
@@ -396,13 +445,15 @@ Blocks until user finishes editing and quits Ediff."
          (right (expand-file-name right))
          (file (majutsu-ediff--read-directory-file left right))
          (left-file (expand-file-name file left))
-         (right-file (expand-file-name file right)))
-    (add-hook 'ediff-quit-hook #'majutsu-ediff--exit-recursive-edit)
-    (unwind-protect
-        (progn
-          (ediff-files left-file right-file)
-          (recursive-edit))
-      (remove-hook 'ediff-quit-hook #'majutsu-ediff--exit-recursive-edit))))
+         (right-file (expand-file-name file right))
+         (left-existing (get-file-buffer left-file))
+         (right-existing (get-file-buffer right-file))
+         (winconf (current-window-configuration)))
+    (ediff-files left-file right-file
+                 (list (lambda ()
+                         (majutsu-ediff--setup-diffedit-quit-hooks
+                          winconf left-file right-file left-existing right-existing))))
+    (recursive-edit)))
 
 (defun majutsu-ediff--exit-recursive-edit ()
   "Exit recursive edit when Ediff quits."
