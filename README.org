@@ -55,11 +55,11 @@ efficient way to interact with JJ repositories from within Emacs.
 | ~y~     | Duplicate                |
 | ~Z~     | Workspaces               |
 | ~C-/~   | Undo                     |
-| ~C-?~   | Rndo                     |
+| ~C-?~   | Redo                     |
 
 * Requirements
 
-- Emacs 29.0+
+- Emacs 29.1+
 - [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.37.0+
 - [[https://magit.vc/][magit]], [[https://github.com/magit/transient][transient]], [[https://github.com/magit/with-editor][with-editor]]
 
