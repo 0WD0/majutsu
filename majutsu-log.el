@@ -786,6 +786,19 @@ Returns entry plist and moves point past the consumed entry, or nil."
                            entry 'right-margin (plist-get tail-payloads :right-margin) compiled))
               (setq entry (majutsu-log--record-module-fields
                            entry 'metadata (plist-get tail-payloads :metadata) compiled))
+              (let ((suffix-lines nil))
+                ;; Preserve graph continuation lines between the current entry's
+                ;; end marker and the next entry start marker. These lines stay
+                ;; visible as part of the current section heading area.
+                (while (and (not (eobp))
+                            (let ((next-bol (line-beginning-position))
+                                  (next-eol (line-end-position)))
+                              (not (majutsu-log--line-token-position
+                                    majutsu-log--entry-start-token next-bol next-eol))))
+                  (push (buffer-substring (line-beginning-position) (line-end-position))
+                        suffix-lines)
+                  (forward-line 1))
+                (setq entry (plist-put entry :suffix-lines (nreverse suffix-lines))))
               entry)))))))
 
 (defun majutsu-log--parse-entries-in-buffer (compiled)
@@ -977,6 +990,7 @@ disappear again."
   (let* ((id (majutsu-log--entry-id entry))
          (heading-lines (majutsu-log--render-heading-lines entry compiled))
          (heading (majutsu-log--join-lines heading-lines))
+         (suffix-lines (plist-get entry :suffix-lines))
          (margin (majutsu-log--render-right-margin entry compiled widths))
          (body (majutsu-log--render-body entry compiled))
          (has-body (and (stringp body)
@@ -986,6 +1000,9 @@ disappear again."
       (insert "\n")
       (when margin
         (majutsu-log--make-margin-overlay margin))
+      (dolist (suffix-line suffix-lines)
+        (insert suffix-line)
+        (insert "\n"))
       (when has-body
         (magit-insert-heading)
         (let ((indented (majutsu--indent-string body (or (plist-get entry :indent) 0))))
