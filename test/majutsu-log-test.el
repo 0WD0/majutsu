@@ -125,6 +125,30 @@
     (should (equal (plist-get entry :timestamp) "1h"))
     (should (equal (plist-get entry :heading-prefixes) '("" "")))))
 
+(ert-deftest majutsu-log-parse-entry-preserves-between-entry-lines ()
+  "Lines between E of one entry and S of next entry stay with previous entry."
+  (let* ((compiled (majutsu-log-test--base-compiled))
+         (raw (concat
+               "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
+               majutsu-log--entry-body-token
+               majutsu-log--entry-right-token
+               majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
+               majutsu-log--entry-end-token "\n"
+               "│ carry-line\n"
+               "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
+               majutsu-log--entry-body-token
+               majutsu-log--entry-right-token
+               majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
+               majutsu-log--entry-end-token "\n"))
+         (entries (majutsu-log-test--parse-entries compiled raw))
+         (first (nth 0 entries))
+         (second (nth 1 entries)))
+    (should (= 2 (length entries)))
+    (should (equal (plist-get first :id) "id-1"))
+    (should (equal (plist-get second :id) "id-2"))
+    (should (equal (plist-get first :suffix-lines) '("│ carry-line")))
+    (should (null (plist-get second :suffix-lines)))))
+
 (ert-deftest majutsu-log-postprocessor-runs-per-field ()
   "Field-level :post handlers should run after parsing."
   (let* ((compiled
