@@ -112,7 +112,7 @@ Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI
 The log buffer is the heart of Majutsu. It displays the history graph using a custom template DSL that mirrors the =jj log= output but adds interactivity.
 
 *** Log Display
-Each revision in the log is a section. You can see the change ID, bookmarks, tags, and the first line of the description. Collapsed by default, you can expand a revision to see its full description.
+Each revision in the log is a section. The visible heading content is produced by fields assigned to the ~heading~ module in ~majutsu-log-commit-columns~ (for example, change ID, bookmarks, tags, and description). Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
 
 *** Log Options Transient
 Press ~l~ to open the log options. Here you can:
@@ -124,6 +124,117 @@ Press ~l~ to open the log options. Here you can:
 
 *** Revset Builder
 While you can type revsets manually, Majutsu's selection system allows you to build them interactively. Commands that require a revset will often default to the revision at point or your current selection.
+
+*** Log Output Protocol (Sequential Markers)
+Majutsu's log parser uses an ordered marker protocol embedded in jj template output:
+
+- Entry start: =\x1dS=
+- Body start: =\x1dB=
+- Right-margin start: =\x1dR=
+- Metadata start: =\x1dM=
+- Entry end: =\x1dE=
+
+Within each module payload, fields are separated by =\x1e=.
+
+Protocol control bytes are reserved:
+
+- =\x1d= for module markers
+- =\x1e= for field boundaries
+- =\x1f= for encoded logical newlines
+
+Avoid emitting these bytes literally in user templates unless intentionally participating in the protocol.
+
+Newline rules:
+
+- *heading module*: may contain real physical newlines.
+- *body/right-margin/metadata modules*: stay in the tail payload; encode logical newlines as =\x1f= and decode them in postprocessing.
+
+Parsing is strictly sequential and positional (not key/value based):
+
+1. Detect =\x1dS= and lock the entry indent column.
+2. Collect heading lines until =\x1dB= is found.
+3. Parse =B -> R -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
+4. Keep lines between current entry =E= and next entry =S= attached to the current section heading area (graph continuation lines).
+
+*** ~majutsu-log-commit-columns~ Schema
+Each item in ~majutsu-log-commit-columns~ is a plist:
+
+- ~:field~ :: Field symbol mapped to a ~majutsu-log-template-<field>~ variable.
+- ~:module~ :: One of ~heading~, ~body~, ~right-margin~, ~metadata~.
+- ~:face~ :: Highlight policy for that field.
+- ~:post~ :: Optional postprocessor function (or function list).
+
+Only these keys are used by the current parser/renderer.
+Majutsu ensures metadata field ~id~ is always available for stable section identity even if omitted from user configuration.
+
+**** Module Semantics
+- ~heading~ :: Visible section heading content (can span physical lines).
+- ~body~ :: Foldable section body.
+- ~right-margin~ :: Rendered into right margin overlays.
+- ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.
+
+**** Face Policy (~:face~)
+- ~t~ :: Preserve jj-provided text properties/highlighting.
+- ~nil~ :: Strip text properties (plain string).
+- ~FACE-SYMBOL~ :: Repaint field using that face.
+
+If ~:face~ is omitted, Majutsu falls back to ~majutsu-log-field-faces~.
+
+**** Postprocessing (~:post~)
+~:post~ can be:
+
+- A function symbol
+- A list of functions (applied left-to-right)
+- Omitted (uses default postprocessors)
+
+Function contract:
+
+#+begin_src emacs-lisp
+(fn VALUE &optional CTX) => NEW-VALUE
+#+end_src
+
+~CTX~ includes at least ~:field~ and ~:module~.
+
+Default behavior includes decoding =\x1f= into =\n=.
+
+*** Configuration Examples
+**** Minimal layout
+#+begin_src emacs-lisp
+(setq majutsu-log-commit-columns
+      '((:field change-id   :module heading      :face t)
+        (:field description :module heading      :face t)
+        (:field long-desc   :module body         :face t)
+        (:field timestamp   :module right-margin :face magit-log-date)
+        (:field author      :module right-margin :face magit-log-author)
+        (:field id          :module metadata     :face nil)
+        (:field commit-id   :module metadata     :face nil)
+        (:field flags       :module metadata     :face nil)))
+#+end_src
+
+**** Keep heading multiline + encoded body multiline
+#+begin_src emacs-lisp
+;; heading field can emit real newlines directly
+(setq majutsu-log-template-description
+      [:concat [:change_id] "\n" [:description]])
+
+;; non-heading field should encode line breaks as \x1f
+(setq majutsu-log-template-long-desc
+      [:description :lines :skip 1 :join "\x1f"])
+#+end_src
+
+**** Custom postprocessor
+#+begin_src emacs-lisp
+(defun my-log-trim (value &optional _ctx)
+  (if (stringp value) (string-trim-right value) value))
+
+(setq majutsu-log-commit-columns
+      '((:field description :module heading :face t :post my-log-trim)
+        (:field id :module metadata :face nil)))
+#+end_src
+
+*** Migration Notes
+Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
+Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~.
 
 ** Diffing
 *** Diff Transient
@@ -609,9 +720,9 @@ In Evil integration:
 - ~majutsu-jj-environment~ :: Extra =KEY=VALUE= entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by =majutsu-process=.
 
 ** Display Options
-- ~majutsu-log-commit-columns~ :: Ordered log field layout. Each entry supports ~:field~, ~:module~, ~:face~, and optional ~:post~. Modules are ~heading~, ~body~, ~right-margin~, ~metadata~.
+- ~majutsu-log-commit-columns~ :: Ordered log field layout for log rendering. For protocol details, module semantics, and schema examples, see /Inspecting -> Log Buffer/.
 - ~majutsu-log-field-faces~ :: Fallback face policy when a ~majutsu-log-commit-columns~ entry omits ~:face~.
-- ~majutsu-log-template-<field>~ variables :: ~heading~ is the only module with physical newlines. For other modules, use ="\x1f"= inside a field template where you want a rendered newline after parsing.
+- ~majutsu-log-template-<field>~ variables :: Template forms consumed by log fields. For newline and control-character rules, see /Inspecting -> Log Buffer/.
 - ~majutsu-log-sections-hook~ :: Hook run to insert sections in the log buffer.
 - ~majutsu-display-buffer-function~ :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
 - ~majutsu-pre-display-buffer-hook~ :: Hook run before displaying a buffer.
