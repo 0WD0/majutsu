@@ -17,6 +17,7 @@
 
 (require 'ert)
 (require 'majutsu-file)
+(require 'majutsu-annotate)
 
 (ert-deftest majutsu-file-revset-for-files-quotes-path ()
   "Paths with single quotes should be fileset-quoted."
@@ -387,6 +388,22 @@
       (majutsu-blob-edit-mode -1)
       (should (equal cursor-type '(box . 4)))
       (should (equal evil-normal-state-cursor '(box . 4))))))
+
+(ert-deftest majutsu-blob-edit-mode/disables-annotate-read-only-mode ()
+  "Editable mode should disable annotate's read-only keymap while editing."
+  (with-temp-buffer
+    (insert "old")
+    (setq-local majutsu-buffer-blob-root "/tmp")
+    (setq-local majutsu-buffer-blob-path "src/a.el")
+    (setq-local majutsu-buffer-blob-revision "rev")
+    (majutsu-blob-mode 1)
+    (majutsu-annotate-mode 1)
+    (should majutsu-annotate-read-only-mode)
+    (majutsu-blob-edit-mode 1)
+    (should-not majutsu-annotate-read-only-mode)
+    (majutsu-blob-edit-mode -1)
+    (should majutsu-annotate-read-only-mode)
+    (majutsu-annotate-mode -1)))
 
 (ert-deftest majutsu-blob-edit-apply-diffedit/noninteractive-copies-content ()
   "Blob apply should run non-interactive diffedit via cp editor command."

@@ -252,7 +252,9 @@ Saving in this mode applies changes through `jj diffedit'."
           (majutsu-blob-mode -1))
         (majutsu-blob-edit--save-cursor-state)
         (majutsu-blob-edit--set-cursor-hint majutsu-blob-edit-cursor-type)
-        (setq buffer-read-only nil)
+        ;; Use `read-only-mode' so read-only hooks (e.g. annotate keymap sync)
+        ;; stay in sync with editable blob mode state.
+        (read-only-mode -1)
         (add-hook 'write-contents-functions #'majutsu-blob-edit--write-contents nil t)
         (message "Editable blob mode enabled. Save to apply; C-x C-q to exit; C-c C-k to abort."))
     (remove-hook 'write-contents-functions #'majutsu-blob-edit--write-contents t)
@@ -260,7 +262,7 @@ Saving in this mode applies changes through `jj diffedit'."
     (when majutsu-blob-edit--saved-blob-mode-enabled
       (majutsu-blob-mode 1)
       (setq-local majutsu-blob-edit--saved-blob-mode-enabled nil))
-    (setq buffer-read-only t)))
+    (read-only-mode 1)))
 
 (defun majutsu-file--normalize-revset (revset)
   "Normalize REVSET to a single revision using jj revset functions."
