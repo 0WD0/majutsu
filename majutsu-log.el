@@ -353,7 +353,7 @@ Also registers a variable watcher to invalidate the template cache."
   "Template for the timestamp column.")
 
 (majutsu-log-define-column long-desc
-  [:json [:description :trim_end]]
+  [:json [:stringify [:description :lines :skip 1 :join "\n"]]]
   "Template for the long-desc column.
 Note: This must return a valid JSON string (usually via :json)
 to be parsed correctly.")
@@ -481,7 +481,7 @@ Returns a plist with :template, :columns, and :field-order."
      (setq value (string-remove-suffix " ago" value))
      (setq entry (plist-put entry :timestamp value)))
     ('long-desc
-     (setq entry (plist-put entry :long-desc (string-join (cdr (string-lines (majutsu-log--parse-json-safe value))) "\n"))))
+     (setq entry (plist-put entry :long-desc (majutsu-log--parse-json-safe value))))
     ('flags
      (setq entry (majutsu-log--apply-flags entry value)))
     ('git-head
