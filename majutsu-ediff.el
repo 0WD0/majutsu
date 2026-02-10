@@ -448,8 +448,8 @@ Called by `jj resolve` merge editor command via emacsclient."
     (majutsu-ediff:to)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
-    ("e" "Dwim" majutsu-ediff-dwim)
-    ("E" "Edit (modify right)" majutsu-ediff-edit)]
+    ("e" "Ediff (blob)" majutsu-ediff-dwim)
+    ("E" "Ediff (diffedit)" majutsu-ediff-edit)]
    ["Resolve"
     ("m" "Resolve (ediff)" majutsu-ediff-resolve)
     ("M" "Resolve (conflict)" majutsu-ediff-resolve-with-conflict)]]
