@@ -768,6 +768,7 @@ Templates can be used with these jj commands:
 | op log         | Operation            |
 | op show        | Operation            |
 | workspace list | WorkspaceRef         |
+| config list    | ConfigValue          |
 
 * Extending Majutsu
 ** Module Architecture
