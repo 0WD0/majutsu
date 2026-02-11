@@ -281,8 +281,8 @@ Return nil when REVSET does not resolve to a single revision.
 The returned plist contains :change-id and :commit-id."
   (let* ((normalized (majutsu-file--normalize-revset revset))
          (lines (majutsu-jj-lines "log" "-r" normalized
-                                 "-T" "change_id ++ \"\\n\" ++ commit_id"
-                                 "--no-graph" "--limit" "1"))
+                                  "-T" "change_id ++ \"\\n\" ++ commit_id"
+                                  "--no-graph" "--limit" "1"))
          (change-id (string-trim (or (car lines) "")))
          (commit-id (string-trim (or (cadr lines) ""))))
     (unless (string-empty-p change-id)
@@ -482,18 +482,18 @@ If revision metadata moved, preserve location heuristically:
              (old-commit majutsu-buffer-blob-commit-id)
              (rev-info (or (majutsu-file--resolve-single-rev-info majutsu-buffer-blob-revset)
                            (user-error "Revset no longer resolves to a single revision")))
-              (new-change (plist-get rev-info :change-id))
-              (new-commit (plist-get rev-info :commit-id))
-              (target-line line)
-              (target-col col)
-              (reload-needed t))
+             (new-change (plist-get rev-info :change-id))
+             (new-commit (plist-get rev-info :commit-id))
+             (target-line line)
+             (target-col col)
+             (reload-needed t))
         (cond
          ((and (equal old-change new-change)
                majutsu-buffer-blob-content-hash
                (equal old-commit new-commit)
                (not modified))
-           ;; Nothing changed remotely and nothing changed locally.
-           (setq reload-needed nil))
+          ;; Nothing changed remotely and nothing changed locally.
+          (setq reload-needed nil))
          ((and old-change old-commit
                (equal old-change new-change)
                new-commit)
