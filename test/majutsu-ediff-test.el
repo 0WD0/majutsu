@@ -306,14 +306,15 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
             (should exit-ran)
             (should (window-configuration-p captured-winconf))))))))
 
-(ert-deftest majutsu-ediff-test-quit-merge-session-saves-output ()
-  "Merge quit hook should always persist output file."
+(ert-deftest majutsu-ediff-test-quit-merge-session-saves-output-when-edited ()
+  "Merge quit hook should persist output file when merge was edited."
   (let ((merge-buffer (generate-new-buffer " *majutsu-merge*"))
         (written nil)
         (killed nil))
     (unwind-protect
         (with-temp-buffer
           (let ((ediff-buffer-C merge-buffer))
+            (setq-local majutsu-ediff--merge-user-edited t)
             (setq-local ediff-merge-store-file "/tmp/output_test.txt")
             (with-current-buffer merge-buffer
               (setq-local ediff-merge-store-file nil)
@@ -332,6 +333,32 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
                             (buffer-modified-p))))))
       (kill-buffer merge-buffer))))
 
+(ert-deftest majutsu-ediff-test-quit-merge-session-skips-save-without-edits ()
+  "Merge quit hook should not persist output file if merge was untouched."
+  (let ((merge-buffer (generate-new-buffer " *majutsu-merge*"))
+        (written nil)
+        (killed nil))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((ediff-buffer-C merge-buffer))
+            (setq-local majutsu-ediff--merge-user-edited nil)
+            (setq-local ediff-merge-store-file "/tmp/output_test.txt")
+            (with-current-buffer merge-buffer
+              (setq buffer-file-name "/tmp/output_test.txt")
+              (set-buffer-modified-p t))
+            (cl-letf (((symbol-function 'write-region)
+                       (lambda (&rest _)
+                         (setq written t)))
+                      ((symbol-function 'ediff-kill-buffer-carefully)
+                       (lambda (_)
+                         (setq killed t))))
+              (majutsu-ediff--quit-merge-session)
+              (should-not written)
+              (should killed)
+              (should-not (with-current-buffer merge-buffer
+                            (buffer-modified-p))))))
+      (kill-buffer merge-buffer))))
+
 (ert-deftest majutsu-ediff-test-quit-merge-session-skips-save-without-output-file ()
   "Merge quit hook should skip save when no output file is configured."
   (let ((merge-buffer (generate-new-buffer " *majutsu-merge*"))
@@ -340,6 +367,7 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
     (unwind-protect
         (with-temp-buffer
           (let ((ediff-buffer-C merge-buffer))
+            (setq-local majutsu-ediff--merge-user-edited t)
             (setq-local ediff-merge-store-file nil)
             (with-current-buffer merge-buffer
               (setq buffer-file-name "/tmp/output_test.txt")
