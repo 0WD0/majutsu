@@ -49,7 +49,9 @@ This calls `jj git remote list` and parses the first word of each line."
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."
   (if (and (stringp arg) (string-prefix-p prefix arg))
-      (concat prefix (expand-file-name (substring arg (length prefix))))
+      (concat prefix
+              (majutsu-convert-filename-for-jj
+               (expand-file-name (substring arg (length prefix)))))
     arg))
 
 (transient-define-suffix majutsu-git-push (args)
@@ -170,7 +172,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                      ;; If user picks current dir, treat as empty and let jj default
                      (let ((dd (directory-file-name d)))
                        (if (string= dd (directory-file-name default-directory)) nil dd)))))
-         (cmd-args (append '("clone") args (list source) (and dest (list dest)))))
+         (dest-arg (and dest (majutsu-convert-filename-for-jj dest)))
+         (cmd-args (append '("clone") args (list source) (and dest-arg (list dest-arg)))))
     (majutsu--message-with-log "Cloning repository...")
     (majutsu-git--start cmd-args "Clone completed")))
 
@@ -183,7 +186,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
          (args (mapcar (lambda (arg)
                          (majutsu-git--expand-option-arg arg "--git-repo="))
                        args))
-         (cmd-args (append '("init") args (list dest))))
+         (cmd-args (append '("init") args (list (majutsu-convert-filename-for-jj dest)))))
     (majutsu--message-with-log "Initializing repository...")
     (majutsu-git--start cmd-args "Init completed")))
 
@@ -204,8 +207,10 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (defun majutsu-git-root ()
   "Show the underlying Git directory of the current repository."
   (interactive)
-  (let* ((dir (string-trim (or (car (majutsu-jj-lines "git" "root")) ""))))
-    (if (string-empty-p dir)
+  (let* ((raw (string-trim (or (car (majutsu-jj-lines "git" "root")) "")))
+         (dir (unless (string-empty-p raw)
+                (majutsu-jj-expand-filename-from-jj raw default-directory))))
+    (if (or (null dir) (string-empty-p dir))
         (message "No underlying Git directory found")
       (kill-new dir)
       (message "Git root: %s (copied)" dir))))
