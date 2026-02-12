@@ -396,7 +396,8 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
     (when (ediff-buffer-live-p ediff-buffer-C)
       (when (and edited-p
                  (stringp store-file)
-                 (> (length store-file) 0))
+                 (> (length store-file) 0)
+                 (majutsu-ediff--confirm-save-merge store-file))
         (ediff-with-current-buffer ediff-buffer-C
           ;; `ediff-merge-store-file' is local to the control buffer, so keep
           ;; a stable copy before switching to buffer C.
@@ -405,6 +406,10 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
         ;; Avoid save prompts during cleanup. Output is already persisted above.
         (set-buffer-modified-p nil))
       (ediff-kill-buffer-carefully ediff-buffer-C))))
+
+(defun majutsu-ediff--confirm-save-merge (store-file)
+  "Return non-nil when merge result should be saved to STORE-FILE."
+  (yes-or-no-p (format "Conflict resolution finished; save %s? " store-file)))
 
 (defun majutsu-ediff--merge-marker-length (marker-length)
   "Return normalized conflict MARKER-LENGTH for Ediff merge sessions."

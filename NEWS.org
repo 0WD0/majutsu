@@ -11,7 +11,8 @@
 
 - Prevent =majutsu-ediff-resolve= from auto-resolving conflicts on no-op quit,
   and preserve partial conflict resolution by using git-style conflict markers
-  that jj can parse as still-unresolved regions.
+  that jj can parse as still-unresolved regions. Edited merge sessions now ask
+  whether to save on quit, so users can discard edits intentionally.
 
 * [0.6.0] - 2026-02-09
 

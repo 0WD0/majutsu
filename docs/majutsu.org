@@ -244,9 +244,10 @@ Resolve entry points:
   (merge tool: =$left=, =$base=, =$right=) for up-to-2-sided conflicts, and
   falls back to =jj diffedit= for conflicts with more than 2 sides.
   In this flow, quitting Ediff without editing leaves jj's output unchanged,
-  so the conflict stays unresolved. When only part of a conflict is resolved,
-  remaining regions are written with git-style conflict markers so jj keeps
-  unresolved regions unresolved.
+  so the conflict stays unresolved. If you edited and quit, Majutsu asks whether
+  to save the resolved result; choosing no discards edits and keeps conflicts.
+  When only part of a conflict is resolved, remaining regions are written with
+  git-style conflict markers so jj keeps unresolved regions unresolved.
 - ~M~ (=majutsu-ediff-resolve-with-conflict=) :: Open the resolve target
   buffer (working-copy file or revision blob), enable
   =majutsu-conflict-mode=, and jump to the first conflict.
