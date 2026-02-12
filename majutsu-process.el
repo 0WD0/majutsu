@@ -421,9 +421,10 @@ Return the process object.
 SUCCESS-MSG is displayed on exit code 0.  When FINISH-CALLBACK is
 non-nil, call it as (FINISH-CALLBACK PROCESS EXIT-CODE) after the
 process terminates."
-  (let* ((args (majutsu-process-jj-arguments args))
-         (default-directory (majutsu--toplevel-safe default-directory))
-         (process (apply #'majutsu-start-process majutsu-jj-executable nil args)))
+  (let* ((default-directory (majutsu--toplevel-safe default-directory))
+         (jj (majutsu-jj--executable))
+         (args (majutsu-process-jj-arguments args))
+         (process (apply #'majutsu-start-process jj nil args)))
     (when success-msg
       (process-put process 'success-msg success-msg))
     (when finish-callback
@@ -438,18 +439,19 @@ Process output goes into a new section in the buffer returned by
 
 Unlike `majutsu-start-jj', this does not implicitly refresh any Majutsu
 buffers.  Call `majutsu-refresh' explicitly when desired."
-  (let* ((args (majutsu-process-jj-arguments args))
-         (default-directory (majutsu--toplevel-safe default-directory))
+  (let* ((default-directory (majutsu--toplevel-safe default-directory))
+         (jj (majutsu-jj--executable))
+         (args (majutsu-process-jj-arguments args))
          (pwd default-directory)
          (process-buf (let ((default-directory pwd))
                         (majutsu-process-buffer t)))
          (process-root (with-current-buffer process-buf default-directory)))
     (pcase-let* ((section
                   (with-current-buffer process-buf
-                    (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
+                    (prog1 (majutsu--process-insert-section pwd jj args nil nil)
                       (backward-char 1))))
                  (inhibit-read-only t)
-                 (exit (apply #'process-file majutsu-jj-executable nil process-buf nil args)))
+                 (exit (apply #'process-file jj nil process-buf nil args)))
       (setq exit (majutsu-process-finish exit process-buf (current-buffer) process-root section))
       exit)))
 
@@ -458,7 +460,7 @@ buffers.  Call `majutsu-refresh' explicitly when desired."
 ARGS is flattened before being passed to jj."
   (let ((flat (flatten-tree args)))
     (majutsu--message-with-log "Running %s %s"
-                               majutsu-jj-executable
+                               (majutsu-jj--executable)
                                (string-join flat " ")))
   (majutsu-start-jj args))
 
