@@ -111,25 +111,34 @@
          (process-environment
           (cons "JJ_EDITOR=emacsclient --socket-name=/tmp/editor.sock"
                 process-environment))
-         (config (majutsu-ediff--merge-editor-config)))
-    (should (string-prefix-p "ui.merge-editor=[" config))
-    (should (string-match-p "emacsclient" config))
-    (should (string-match-p "--eval" config))
-    (should (string-match-p "majutsu-ediff-merge-files" config))
-    (should (string-match-p "\\$left" config))
-    (should (string-match-p "\\$base" config))
-    (should (string-match-p "\\$right" config))
-    (should (string-match-p "\\$output" config))))
+         (configs (majutsu-ediff--merge-editor-config))
+         (all (mapconcat #'identity configs "\n")))
+    (should (= (length configs) 5))
+    (should (string-match-p "ui.merge-editor=\"majutsu_ediff_merge\"" all))
+    (should (string-match-p "merge-tools.majutsu_ediff_merge.program=\"emacsclient\"" all))
+    (should (string-match-p "merge-tools.majutsu_ediff_merge.merge-args=\\[" all))
+    (should (string-match-p "--socket-name=/tmp/editor.sock" all))
+    (should (string-match-p "--eval" all))
+    (should (string-match-p "majutsu-ediff-merge-files" all))
+    (should (string-match-p "\\$left" all))
+    (should (string-match-p "\\$base" all))
+    (should (string-match-p "\\$right" all))
+    (should (string-match-p "\\$output" all))
+    (should (string-match-p "\\$marker_length" all))
+    (should (string-match-p "merge-tools.majutsu_ediff_merge.merge-tool-edits-conflict-markers=true" all))
+    (should (string-match-p "merge-tools.majutsu_ediff_merge.conflict-marker-style=\"git\"" all))))
 
 (ert-deftest majutsu-ediff-test-build-resolve-args ()
-  "Resolve args should include rev, file and merge editor config."
+  "Resolve args should include rev, file and all merge editor configs."
   (should (equal (majutsu-ediff--build-resolve-args
                   "abc123"
                   "f.txt"
-                  "ui.merge-editor=[\"emacsclient\",\"...\"]")
+                  '("cfg-a" "cfg-b"))
                  '("resolve"
                    "--config"
-                   "ui.merge-editor=[\"emacsclient\",\"...\"]"
+                   "cfg-a"
+                   "--config"
+                   "cfg-b"
                    "-r" "abc123"
                    "--" "f.txt"))))
 
@@ -205,6 +214,148 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
                             ediff-quit-hook))
           (should (memq #'majutsu-ediff--exit-recursive-edit
                         ediff-after-quit-hook-internal)))))))
+
+(ert-deftest majutsu-ediff-test-merge-files-launches-ediff-session ()
+  "Merge callback should launch Ediff merge session and enter recursive edit."
+  (let (called-left called-right called-base startup-hooks called-output entered-recursive)
+    (cl-letf (((symbol-function 'ediff-merge-files-with-ancestor)
+               (lambda (left right base &optional hooks output)
+                 (setq called-left left)
+                 (setq called-right right)
+                 (setq called-base base)
+                 (setq startup-hooks hooks)
+                 (setq called-output output)))
+              ((symbol-function 'recursive-edit)
+               (lambda ()
+                 (setq entered-recursive t))))
+      (majutsu-ediff-merge-files "/tmp/left" "/tmp/base" "/tmp/right" "/tmp/output")
+      (should (equal called-left (expand-file-name "/tmp/left")))
+      (should (equal called-right (expand-file-name "/tmp/right")))
+      (should (equal called-base (expand-file-name "/tmp/base")))
+      (should (equal called-output (expand-file-name "/tmp/output")))
+      (should (= (length startup-hooks) 1))
+      (should (functionp (car startup-hooks)))
+      (should entered-recursive))))
+
+(ert-deftest majutsu-ediff-test-merge-files-uses-git-markers-with-marker-length ()
+  "Merge callback should configure git-style marker pattern from jj marker length."
+  (let (captured-default captured-pattern)
+    (cl-letf (((symbol-function 'ediff-merge-files-with-ancestor)
+               (lambda (_left _right _base &optional _hooks _output)
+                 (setq captured-default ediff-default-variant)
+                 (setq captured-pattern ediff-combination-pattern)))
+              ((symbol-function 'recursive-edit)
+               (lambda () nil)))
+      (majutsu-ediff-merge-files "/tmp/left" "/tmp/base" "/tmp/right" "/tmp/output" "11")
+      (should (eq captured-default 'combined))
+      (should (equal captured-pattern
+                     (list (make-string 11 ?<)
+                           'A
+                           (make-string 11 ?|)
+                           'Ancestor
+                           (make-string 11 ?=)
+                           'B
+                           (make-string 11 ?>)))))))
+
+(ert-deftest majutsu-ediff-test-merge-marker-length-normalization ()
+  "Marker length helper should normalize invalid values to at least 7."
+  (should (= 7 (majutsu-ediff--merge-marker-length nil)))
+  (should (= 7 (majutsu-ediff--merge-marker-length "")))
+  (should (= 7 (majutsu-ediff--merge-marker-length "0")))
+  (should (= 7 (majutsu-ediff--merge-marker-length "-3")))
+  (should (= 7 (majutsu-ediff--merge-marker-length "6")))
+  (should (= 9 (majutsu-ediff--merge-marker-length "9")))
+  (should (= 12 (majutsu-ediff--merge-marker-length 12))))
+
+(ert-deftest majutsu-ediff-test-merge-files-installs-local-quit-hooks ()
+  "Merge callback startup hook should install local quit hooks."
+  (let (startup-hooks)
+    (let ((quit-ran nil)
+          (exit-ran nil)
+          (captured-winconf nil))
+      (cl-letf (((symbol-function 'ediff-merge-files-with-ancestor)
+                 (lambda (_left _right _base &optional hooks _output)
+                   (setq startup-hooks hooks)))
+                ((symbol-function 'recursive-edit)
+                 (lambda () nil))
+                ((symbol-function 'run-hooks)
+                 (lambda (&rest hooks)
+                   (if (memq 'majutsu-ediff-quit-hook hooks)
+                       (progn
+                         (setq quit-ran t)
+                         (setq captured-winconf majutsu-ediff-previous-winconf)))))
+                ((symbol-function 'majutsu-ediff--exit-recursive-edit)
+                 (lambda ()
+                   (setq exit-ran t))))
+        (majutsu-ediff-merge-files "/tmp/left" "/tmp/base" "/tmp/right" "/tmp/output")
+        (with-temp-buffer
+          (let ((default-quit-count (length (default-value 'ediff-quit-hook))))
+            (setq-local ediff-quit-hook
+                        (copy-sequence (default-value 'ediff-quit-hook)))
+            (setq-local ediff-after-quit-hook-internal nil)
+            (funcall (car startup-hooks))
+            (should (consp ediff-quit-hook))
+            (should (> (length ediff-quit-hook) default-quit-count))
+            (should (equal ediff-quit-merge-hook
+                           '(majutsu-ediff--quit-merge-session)))
+            (should (memq #'majutsu-ediff--exit-recursive-edit
+                          ediff-after-quit-hook-internal))
+            (funcall (car (last ediff-quit-hook)))
+            (funcall (car (last ediff-after-quit-hook-internal)))
+            (should quit-ran)
+            (should exit-ran)
+            (should (window-configuration-p captured-winconf))))))))
+
+(ert-deftest majutsu-ediff-test-quit-merge-session-saves-output ()
+  "Merge quit hook should always persist output file."
+  (let ((merge-buffer (generate-new-buffer " *majutsu-merge*"))
+        (written nil)
+        (killed nil))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((ediff-buffer-C merge-buffer))
+            (setq-local ediff-merge-store-file "/tmp/output_test.txt")
+            (with-current-buffer merge-buffer
+              (setq-local ediff-merge-store-file nil)
+              (setq buffer-file-name "/tmp/output_test.txt")
+              (set-buffer-modified-p t))
+            (cl-letf (((symbol-function 'write-region)
+                       (lambda (_start _end filename &optional _append _visit _lockname _mustbenew)
+                         (setq written filename)))
+                      ((symbol-function 'ediff-kill-buffer-carefully)
+                       (lambda (_)
+                         (setq killed t))))
+              (majutsu-ediff--quit-merge-session)
+              (should (equal written "/tmp/output_test.txt"))
+              (should killed)
+              (should-not (with-current-buffer merge-buffer
+                            (buffer-modified-p))))))
+      (kill-buffer merge-buffer))))
+
+(ert-deftest majutsu-ediff-test-quit-merge-session-skips-save-without-output-file ()
+  "Merge quit hook should skip save when no output file is configured."
+  (let ((merge-buffer (generate-new-buffer " *majutsu-merge*"))
+        (written nil)
+        (killed nil))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((ediff-buffer-C merge-buffer))
+            (setq-local ediff-merge-store-file nil)
+            (with-current-buffer merge-buffer
+              (setq buffer-file-name "/tmp/output_test.txt")
+              (set-buffer-modified-p t))
+            (cl-letf (((symbol-function 'write-region)
+                       (lambda (&rest _)
+                         (setq written t)))
+                      ((symbol-function 'ediff-kill-buffer-carefully)
+                       (lambda (_)
+                         (setq killed t))))
+              (majutsu-ediff--quit-merge-session)
+              (should-not written)
+              (should killed)
+              (should-not (with-current-buffer merge-buffer
+                            (buffer-modified-p))))))
+      (kill-buffer merge-buffer))))
 
 (ert-deftest majutsu-ediff-test-cleanup-diffedit-variant-buffers ()
   "Diffedit helper should save and kill session-created variant buffers."

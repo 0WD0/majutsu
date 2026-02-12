@@ -38,6 +38,13 @@
 (defvar majutsu-buffer-diff-range)
 
 (defvar ediff-after-quit-hook-internal)
+(defvar ediff-buffer-C)
+(defvar ediff-combination-pattern)
+(defvar ediff-default-variant)
+(defvar ediff-merge-store-file)
+
+(defconst majutsu-ediff--merge-tool-name "majutsu_ediff_merge"
+  "Jujutsu merge-tools entry used by `majutsu-ediff-resolve'.")
 
 ;;; Options
 
@@ -239,24 +246,39 @@ When sidedness cannot be parsed, return 0."
 
 (defun majutsu-ediff--build-resolve-args (rev file merge-editor-config)
   "Build `jj resolve' arguments for REV and FILE.
-MERGE-EDITOR-CONFIG is a `ui.merge-editor=[...]' TOML config string."
-  (append
-   (list
-    "resolve"
-    "--config"
-    merge-editor-config
-    "-r" (or rev "@"))
-   (when file
-     (list "--" file))))
+MERGE-EDITOR-CONFIG is a TOML config string or list of config strings."
+  (let ((configs (if (listp merge-editor-config)
+                     merge-editor-config
+                   (list merge-editor-config))))
+    (append
+     (list "resolve")
+     (apply #'append
+            (mapcar (lambda (config)
+                      (list "--config" config))
+                    configs))
+     (list "-r" (or rev "@"))
+     (when file
+       (list "--" file)))))
+
+(defun majutsu-ediff--toml-string-config (key value)
+  "Build KEY=VALUE TOML config where VALUE is a basic string."
+  (format "%s=\"%s\"" key (majutsu-jj--toml-escape value)))
 
 (defun majutsu-ediff--merge-editor-config ()
   "Return ui.merge-editor config that launches 3-way Ediff."
   (let* ((editor (majutsu-jj--editor-command-from-env))
-         (eval-form (format "(majutsu-ediff-merge-files %S %S %S %S)"
-                            "$left" "$base" "$right" "$output")))
-    (majutsu-jj--toml-array-config
-     "ui.merge-editor"
-     (append editor (list "--eval" eval-form)))))
+         (program (car editor))
+         (editor-args (cdr editor))
+         (eval-form (format "(majutsu-ediff-merge-files %S %S %S %S %S)"
+                            "$left" "$base" "$right" "$output" "$marker_length"))
+         (merge-args (append editor-args (list "--eval" eval-form)))
+         (tool-key (format "merge-tools.%s" majutsu-ediff--merge-tool-name)))
+    (list
+     (majutsu-ediff--toml-string-config "ui.merge-editor" majutsu-ediff--merge-tool-name)
+     (majutsu-ediff--toml-string-config (format "%s.program" tool-key) program)
+     (majutsu-jj--toml-array-config (format "%s.merge-args" tool-key) merge-args)
+     (format "%s.merge-tool-edits-conflict-markers=true" tool-key)
+     (majutsu-ediff--toml-string-config (format "%s.conflict-marker-style" tool-key) "git"))))
 
 (defun majutsu-ediff--run-resolve (rev file)
   "Run `jj resolve` for REV and FILE with with-editor merge-editor config."
@@ -337,6 +359,55 @@ WINCONF is the window configuration saved before launching Ediff."
   ;; Exit recursive edit only after Ediff has completed its quit cleanup.
   (add-hook 'ediff-after-quit-hook-internal
             #'majutsu-ediff--exit-recursive-edit t t))
+
+(defun majutsu-ediff--setup-merge-quit-hooks (winconf)
+  "Install local quit hooks for a merge Ediff session.
+WINCONF is the window configuration saved before launching Ediff."
+  ;; Replace Ediff's default merge quit hook so save semantics stay local to
+  ;; Majutsu's `jj resolve` integration.
+  (setq-local ediff-quit-merge-hook '(majutsu-ediff--quit-merge-session))
+  (add-hook 'ediff-quit-hook
+            (lambda ()
+              (let ((majutsu-ediff-previous-winconf winconf))
+                (run-hooks 'majutsu-ediff-quit-hook)))
+            t t)
+  ;; Exit recursive edit only after Ediff has completed its quit cleanup.
+  (add-hook 'ediff-after-quit-hook-internal
+            #'majutsu-ediff--exit-recursive-edit t t))
+
+(defun majutsu-ediff--quit-merge-session ()
+  "Persist merge output, then close merge buffer.
+This hook runs in the Ediff control buffer and is intended for `jj resolve'."
+  (let ((store-file ediff-merge-store-file))
+    (when (ediff-buffer-live-p ediff-buffer-C)
+      (when (and (stringp store-file)
+                 (> (length store-file) 0))
+        (ediff-with-current-buffer ediff-buffer-C
+          ;; `ediff-merge-store-file' is local to the control buffer, so keep
+          ;; a stable copy before switching to buffer C.
+          (write-region nil nil store-file nil 'silent)))
+      (ediff-with-current-buffer ediff-buffer-C
+        ;; Avoid save prompts during cleanup. Output is already persisted above.
+        (set-buffer-modified-p nil))
+      (ediff-kill-buffer-carefully ediff-buffer-C))))
+
+(defun majutsu-ediff--merge-marker-length (marker-length)
+  "Return normalized conflict MARKER-LENGTH for Ediff merge sessions."
+  (let* ((parsed (if (numberp marker-length)
+                     marker-length
+                   (string-to-number (or marker-length ""))))
+         (len (if (> parsed 0) parsed 7)))
+    (max len 7)))
+
+(defun majutsu-ediff--git-combination-pattern (marker-length)
+  "Return `ediff-combination-pattern' using git-style MARKER-LENGTH."
+  (list (make-string marker-length ?<)
+        'A
+        (make-string marker-length ?|)
+        'Ancestor
+        (make-string marker-length ?=)
+        'B
+        (make-string marker-length ?>)))
 
 (defun majutsu-ediff--directory-common-files (left right)
   "Return common relative file paths between LEFT and RIGHT directories."
@@ -461,15 +532,25 @@ Blocks until user finishes editing and quits Ediff."
     (exit-recursive-edit)))
 
 ;;;###autoload
-(defun majutsu-ediff-merge-files (left base right output)
+(defun majutsu-ediff-merge-files (left base right output &optional marker-length)
   "Resolve a 3-way merge with Ediff and write result to OUTPUT.
 Called by `jj resolve` merge editor command via emacsclient."
   (interactive "fLeft file: \nfBase file: \nfRight file: \nFOutput file: ")
-  (let ((left (expand-file-name left))
-        (base (expand-file-name base))
-        (right (expand-file-name right))
-        (output (expand-file-name output)))
-    (ediff-merge-files-with-ancestor left right base nil output)))
+  (let* ((left (expand-file-name left))
+         (base (expand-file-name base))
+         (right (expand-file-name right))
+         (output (expand-file-name output))
+         (marker-length (majutsu-ediff--merge-marker-length marker-length))
+         (ediff-default-variant 'combined)
+         (ediff-combination-pattern
+          (majutsu-ediff--git-combination-pattern marker-length))
+         (winconf (current-window-configuration)))
+    (ediff-merge-files-with-ancestor
+     left right base
+     (list (lambda ()
+             (majutsu-ediff--setup-merge-quit-hooks winconf)))
+     output)
+    (recursive-edit)))
 
 ;;; Transient
 
