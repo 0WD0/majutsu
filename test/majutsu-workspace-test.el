@@ -176,6 +176,19 @@
     (should (equal (majutsu-workspace--root-for-name "secondary")
                    "/home/user/repo-secondary/"))))
 
+(ert-deftest majutsu-workspace--root-for-name/preserves-remote-prefix ()
+  "Workspace roots discovered on TRAMP should keep remote host prefix."
+  (let ((default-directory "/ssh:demo:/tmp/"))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:")))
+              ((symbol-function 'majutsu-jj-lines)
+               (lambda (&rest _args) '("/home/demo/repo-secondary"))))
+      (should (equal (majutsu-workspace--root-for-name "secondary")
+                     "/ssh:demo:/home/demo/repo-secondary/")))))
+
 (ert-deftest majutsu-workspace--root-for-name/returns-nil-on-error ()
   "Test that root-for-name returns nil when jj fails (no output)."
   (cl-letf (((symbol-function 'majutsu-jj-lines)
@@ -189,6 +202,19 @@
                (when (equal name "secondary") "/tmp/secondary/"))))
     (should (equal (majutsu-workspace--read-root "secondary")
                    "/tmp/secondary/"))))
+
+(ert-deftest majutsu-workspace--read-root/preserves-remote-prefix ()
+  "Read-root should keep remote host prefix when using absolute localname."
+  (let ((root "/ssh:demo:/tmp/main/"))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path root)
+                            (null identification))
+                   "/ssh:demo:")))
+              ((symbol-function 'majutsu-workspace--root-for-name)
+               (lambda (_name) "/home/demo/repo-secondary/")))
+      (should (equal (majutsu-workspace--read-root "secondary" root)
+                     "/ssh:demo:/home/demo/repo-secondary/")))))
 
 (ert-deftest majutsu-workspace--sibling-root/finds-matching-sibling ()
   "Test that sibling-root finds a sibling dir that is the named workspace."
