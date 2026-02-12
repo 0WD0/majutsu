@@ -79,14 +79,6 @@ a jj-commit section, add --revision from that section."
   :argument "--revision="
   :reader #'majutsu-diff--transient-read-revset)
 
-(transient-define-argument majutsu-squash:revision ()
-  :description "Revision (toggle at point)"
-  :class 'majutsu-squash--toggle-option
-  :selection-label "[REV]"
-  :selection-face '(:background "goldenrod" :foreground "black")
-  :key "r"
-  :argument "--revision=")
-
 (transient-define-argument majutsu-squash:--from ()
   :description "From"
   :class 'majutsu-squash-option
