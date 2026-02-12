@@ -183,7 +183,9 @@ a jj-commit section, add --revision from that section."
   :transient-non-suffix t
   :incompatible '(("--revision=" "--onto=")
                   ("--revision=" "--insert-after=")
-                  ("--revision=" "--insert-before="))
+                  ("--revision=" "--insert-before=")
+                  ("--revision=" "--from=")
+                  ("--revision=" "--to="))
   [
    :description "JJ Squash"
    ["Selection"
