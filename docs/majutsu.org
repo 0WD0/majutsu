@@ -292,8 +292,9 @@ Runs: =jj edit REV=
 - ~-t~ :: Destination revision (=--into=).
 - ~-o~ :: Onto destination.
 - ~-A~ / ~-B~ :: Insert after/before constraints.
+- ~--~ :: Limit squash to specific filesets.
 - ~-k~ :: Keep commits that become empty after squashing.
-Runs: =jj squash --from SRC --into DEST=
+Runs: =jj squash --from SRC --into DEST [FILESETS...]=
 
 ** Absorbing
 - ~a~ (Emacs/Evil), or ~?~ then ~A~ (~majutsu-absorb~) :: Open the Absorb transient.

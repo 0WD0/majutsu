@@ -17,8 +17,6 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-selection)
-(require 'majutsu-interactive)
 
 (defclass majutsu-squash-option (majutsu-selection-option)
   ())
@@ -168,6 +166,15 @@ a jj-commit section, add --revision from that section."
   :argument "--insert-before="
   :multi-value 'repeat)
 
+(transient-define-argument majutsu-squash:-- ()
+  :description "Limit to files"
+  :class 'transient-files
+  :key "--"
+  :argument "--"
+  :prompt "Limit to file,s: "
+  :reader #'majutsu-read-files
+  :multi-value t)
+
 ;;;; Prefix
 
 (transient-define-prefix majutsu-squash ()
@@ -198,6 +205,8 @@ a jj-commit section, add --revision from that section."
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
+   ["Paths" :if-not majutsu-interactive-selection-available-p
+    (majutsu-squash:--)]
    ["Options"
     ("-k" "Keep emptied commit" "-k")
     (majutsu-transient-arg-ignore-immutable)]
