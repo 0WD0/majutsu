@@ -18,6 +18,7 @@
 ;;; Code:
 
 (require 'majutsu-diff)
+
 (require 'ansi-color)
 (require 'magit-section)
 (require 'subr-x)

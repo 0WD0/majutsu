@@ -17,13 +17,14 @@
 
 ;;; Code:
 
+(require 'majutsu-base)
+(require 'majutsu-diff)
+(require 'majutsu-process)
+
 (require 'cl-lib)
 (require 'diff-mode)
 (require 'magit-section)
 (require 'transient)
-(require 'majutsu-base)
-(require 'majutsu-diff)
-(require 'majutsu-process)
 
 ;;; Options
 

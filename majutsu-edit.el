@@ -16,11 +16,12 @@
 
 ;;; Code:
 
-(require 'magit-section)
-(require 'transient)
 (require 'majutsu-jj)
 (require 'majutsu-file)
 (require 'majutsu-process)
+
+(require 'magit-section)
+(require 'transient)
 (require 'server)
 
 (declare-function majutsu-goto-diff-line "majutsu-diff")

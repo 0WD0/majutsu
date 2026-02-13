@@ -71,6 +71,7 @@ Instead of invoking this alias for `majutsu-log' using
 (provide 'majutsu)
 
 (cl-eval-when (load eval)
+  (require 'majutsu-template)
   (require 'majutsu-jjdescription)
   (require 'majutsu-log)
   (require 'majutsu-diff)

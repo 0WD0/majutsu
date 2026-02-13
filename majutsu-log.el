@@ -19,13 +19,7 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-mode)
-(require 'majutsu-process)
-(require 'majutsu-template)
-(require 'majutsu-selection)
 (require 'json)
-
-(declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
 
 (defcustom majutsu-log-field-faces
   '((bookmarks . magit-branch-local)

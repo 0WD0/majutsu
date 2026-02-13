@@ -17,8 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-mode)
-(require 'majutsu-jj)
+
 (require 'json)
 (require 'seq)
 (require 'subr-x)
