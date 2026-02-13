@@ -647,8 +647,8 @@ When REVERSE is non-nil, reset $right to $left state first, then apply patch."
   "Build jj --config arguments for applypatch tool with PATCH-FILE.
 When REVERSE is non-nil, the script will apply the patch in reverse."
   (let* ((script (majutsu-interactive--write-applypatch-script reverse))
-         (script-path (majutsu-jj--local-path script))
-         (patch-path (majutsu-jj--local-path patch-file)))
+         (script-path (majutsu-convert-filename-for-jj script))
+         (patch-path (majutsu-convert-filename-for-jj patch-file)))
     (list
      "--config" (format "merge-tools.majutsu-applypatch.program=%s"
                         (shell-quote-argument script-path))

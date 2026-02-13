@@ -156,7 +156,7 @@ of ROOT whose name matches NAME.  Falls back to prompting the user."
                   (read-directory-name (format "Workspace root for %s: " name)
                                        (file-name-directory (directory-file-name root))
                                        nil t))))
-    (majutsu-jj--expand-directory dir root)))
+    (majutsu-jj-expand-directory-from-jj dir root)))
 
 ;;; Workspace root discovery
 
@@ -167,7 +167,7 @@ This calls `jj workspace root --name NAME' (available since jj v0.38.0)
 and returns a directory name with a trailing slash."
   (let ((line (car (majutsu-jj-lines "workspace" "root" "--name" name))))
     (when (and line (not (string-empty-p line)))
-      (majutsu-jj--expand-directory line default-directory))))
+      (majutsu-jj-expand-directory-from-jj line default-directory))))
 
 (defun majutsu-workspace--sibling-root (name root)
   "Return a sibling directory of ROOT named NAME if it is a matching workspace.
@@ -397,7 +397,7 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
            (unless (string-empty-p revision) revision)
            (unless (equal sparse "copy") sparse))))
   (let* ((dest (expand-file-name destination))
-         (args (append (list "workspace" "add" dest)
+         (args (append (list "workspace" "add" (majutsu-convert-filename-for-jj dest))
                        (and name (list "--name" name))
                        (and revision (list "--revision" revision))
                        (and sparse-patterns (list "--sparse-patterns" sparse-patterns))))

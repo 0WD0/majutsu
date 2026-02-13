@@ -138,7 +138,7 @@
                    "/ssh:demo:"))))
       (should (equal (majutsu-jj--executable) "jj-remote")))))
 
-(ert-deftest majutsu-jj--expand-path/preserves-remote-prefix ()
+(ert-deftest majutsu-jj-expand-filename-from-jj/preserves-remote-prefix ()
   "Absolute paths from jj output should keep TRAMP host prefix."
   (let ((default-directory "/ssh:demo:/tmp/"))
     (cl-letf (((symbol-function 'file-remote-p)
@@ -146,17 +146,17 @@
                  (when (and (equal path default-directory)
                             (null identification))
                    "/ssh:demo:"))))
-      (should (equal (majutsu-jj--expand-path "/home/demo/repo")
+      (should (equal (majutsu-jj-expand-filename-from-jj "/home/demo/repo")
                      "/ssh:demo:/home/demo/repo")))))
 
-(ert-deftest majutsu-jj--local-path/strips-tramp-prefix ()
+(ert-deftest majutsu-jj-convert-filename-for-jj/strips-tramp-prefix ()
   "Paths passed to remote jj tools should drop TRAMP prefix."
   (cl-letf (((symbol-function 'file-remote-p)
              (lambda (path &optional identification _connected)
                (when (and (equal path "/ssh:demo:/tmp/patch.diff")
                           (eq identification 'localname))
                  "/tmp/patch.diff"))))
-    (should (equal (majutsu-jj--local-path "/ssh:demo:/tmp/patch.diff")
+    (should (equal (majutsu-convert-filename-for-jj "/ssh:demo:/tmp/patch.diff")
                    "/tmp/patch.diff"))))
 
 (ert-deftest majutsu-toplevel/preserves-remote-prefix ()
@@ -176,34 +176,32 @@
       (should (equal (majutsu-toplevel)
                      "/ssh:demo:/home/demo/repo/")))))
 
-(ert-deftest majutsu--assert-usable-jj/uses-process-check-remotely ()
-  "Remote executable assertion should probe via `process-file'."
+(ert-deftest majutsu--assert-usable-jj/uses-remote-aware-executable-find ()
+  "Remote executable assertion should use `executable-find' with REMOTE.
+This mirrors Magit's behavior."
   (let ((default-directory "/ssh:demo:/tmp/")
         (majutsu-jj-executable "jj-local")
         (majutsu-remote-jj-executable "jj-remote")
         seen)
-    (cl-letf (((symbol-function 'process-file)
-               (lambda (program _infile _destination _display &rest _args)
-                 (setq seen program)
-                 0))
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (program &optional remote)
+                 (setq seen (list program remote))
+                 "/usr/bin/jj"))
               ((symbol-function 'file-remote-p)
                (lambda (path &optional identification _connected)
                  (when (and (equal path default-directory)
                             (null identification))
-                   "/ssh:demo:")))
-              ((symbol-function 'executable-find)
-               (lambda (&rest _args)
-                 (ert-fail "remote assertion should not call executable-find"))))
+                   "/ssh:demo:"))))
       (should-not (majutsu--assert-usable-jj))
-      (should (equal seen "jj-remote")))))
+      (should (equal seen '("jj-remote" t))))))
 
-(ert-deftest majutsu--assert-usable-jj/handles-non-integer-remote-exit ()
-  "Remote executable assertion should gracefully handle non-integer exits."
+(ert-deftest majutsu--assert-usable-jj/signals-when-remote-executable-missing ()
+  "Remote executable assertion should signal not-found on lookup failure."
   (let ((default-directory "/ssh:demo:/tmp/")
         (majutsu-jj-executable "jj-local")
         (majutsu-remote-jj-executable "jj-remote"))
-    (cl-letf (((symbol-function 'process-file)
-               (lambda (&rest _args) "terminated"))
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (_program &optional _remote) nil))
               ((symbol-function 'file-remote-p)
                (lambda (path &optional identification _connected)
                  (when (and (equal path default-directory)

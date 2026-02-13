@@ -259,5 +259,22 @@
     (should (equal (majutsu-workspace--read-root "feature")
                    "/tmp/feature/"))))
 
+(ert-deftest majutsu-workspace-add/uses-local-destination-for-jj ()
+  "Workspace add should pass a local destination path to remote jj.
+The Emacs-facing path remains unchanged for visiting the new workspace."
+  (let (seen-args seen-visit)
+    (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
+               (lambda (_path) "/tmp/feature"))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'majutsu-workspace-visit)
+               (lambda (dir)
+                 (setq seen-visit dir))))
+      (majutsu-workspace-add "/ssh:demo:/tmp/feature")
+      (should (equal seen-args '("workspace" "add" "/tmp/feature")))
+      (should (equal seen-visit (expand-file-name "/ssh:demo:/tmp/feature"))))))
+
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here
