@@ -442,7 +442,7 @@
       (setq-local majutsu-buffer-blob-root "/tmp")
       (setq-local majutsu-buffer-blob-path "src/a.el")
       (setq-local majutsu-buffer-blob-revision "rev")
-      (cl-letf (((symbol-function 'majutsu-jj--local-path)
+      (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
                  (lambda (path)
                    (setq seen-temp path)
                    "/tmp/local-temp"))

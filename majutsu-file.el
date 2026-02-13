@@ -115,7 +115,7 @@ When Evil is active, also update `evil-normal-state-cursor'."
          (editor-config (majutsu-jj--editor-command-config
                          "ui.diff-editor"
                          (concat "$right/" file)
-                         (list "cp" (majutsu-jj--local-path temp-file))))
+                         (list "cp" (majutsu-convert-filename-for-jj temp-file))))
          (args (list "diffedit"
                      "--config" editor-config
                      "--from" (concat rev "-")

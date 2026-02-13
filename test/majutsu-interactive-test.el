@@ -18,7 +18,7 @@
   (let ((config
          (cl-letf (((symbol-function 'majutsu-interactive--write-applypatch-script)
                     (lambda (_reverse) "/ssh:demo:/tmp/applypatch.sh"))
-                   ((symbol-function 'majutsu-jj--local-path)
+                   ((symbol-function 'majutsu-convert-filename-for-jj)
                     (lambda (path)
                       (pcase path
                         ("/ssh:demo:/tmp/applypatch.sh" "/tmp/applypatch.sh")

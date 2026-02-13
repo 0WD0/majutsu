@@ -108,10 +108,21 @@ If TARGET is nil, return config for EDITOR-COMMAND as-is."
       majutsu-remote-jj-executable
     majutsu-jj-executable))
 
-(defun majutsu-jj--expand-path (path &optional directory)
-  "Expand PATH relative to DIRECTORY while preserving remote prefix.
-If PATH is an absolute local path and DIRECTORY is remote, then prepend
-the remote prefix from DIRECTORY so the result remains remote."
+(defun majutsu-convert-filename-for-jj (filename)
+  "Convert FILENAME so it can be passed to a jj subprocess.
+This follows Magit's `magit-convert-filename-for-git' direction: absolute
+remote file names are converted to host-local paths before being passed in
+`process-file'/`start-file-process' ARGS. Relative names are left untouched."
+  (if (not (file-name-absolute-p filename))
+      filename
+    (let ((expanded (expand-file-name filename)))
+      (or (file-remote-p expanded 'localname)
+          expanded))))
+
+(defun majutsu-jj-expand-filename-from-jj (path &optional directory)
+  "Expand PATH returned by jj into an Emacs-usable file name.
+If PATH is an absolute local path and DIRECTORY is remote, prepend the
+remote prefix from DIRECTORY so the result remains remote."
   (let* ((base (or directory default-directory))
          (remote (file-remote-p base)))
     (cond
@@ -122,14 +133,9 @@ the remote prefix from DIRECTORY so the result remains remote."
      (t
       (expand-file-name path base)))))
 
-(defun majutsu-jj--expand-directory (path &optional directory)
-  "Expand PATH as a directory relative to DIRECTORY.
-See `majutsu-jj--expand-path' for remote handling details."
-  (file-name-as-directory (majutsu-jj--expand-path path directory)))
-
-(defun majutsu-jj--local-path (path)
-  "Return PATH without TRAMP prefix when PATH is remote."
-  (or (file-remote-p path 'localname) path))
+(defun majutsu-jj-expand-directory-from-jj (path &optional directory)
+  "Like `majutsu-jj-expand-filename-from-jj', but always return a directory."
+  (file-name-as-directory (majutsu-jj-expand-filename-from-jj path directory)))
 
 ;;; Reading
 
@@ -427,16 +433,7 @@ in the revision identifier (used for recursive refinement)."
 
 (defun majutsu--assert-usable-jj ()
   (let ((jj (majutsu-jj--executable)))
-    (unless
-        (if (file-remote-p default-directory)
-            (condition-case nil
-                (with-temp-buffer
-                  (let ((coding-system-for-read 'utf-8-unix)
-                        (coding-system-for-write 'utf-8-unix)
-                        (exit (process-file jj nil t nil "--version")))
-                    (and (integerp exit) (zerop exit))))
-              (error nil))
-          (executable-find jj))
+    (unless (executable-find jj t)
       (signal 'majutsu-jj-executable-not-found (list jj))))
   nil)
 
@@ -475,14 +472,14 @@ trailing slash) or nil if not inside a JJ workspace."
             (when (zerop exit)
               (let ((out (string-trim (buffer-string))))
                 (unless (string-empty-p out)
-                  (majutsu-jj--expand-directory out default-directory))))))))))
+                  (majutsu-jj-expand-directory-from-jj out default-directory))))))))))
 
 (defun majutsu--toplevel-safe (&optional directory)
   "Return the workspace root for DIRECTORY or signal an error."
   (or (majutsu-toplevel directory)
       (let ((default-directory
              (or (majutsu--safe-default-directory directory)
-                 (majutsu-jj--expand-directory (or directory default-directory)))))
+                 (majutsu-jj-expand-directory-from-jj (or directory default-directory)))))
         (majutsu--not-inside-repository-error))))
 
 (defmacro majutsu-with-toplevel (&rest body)

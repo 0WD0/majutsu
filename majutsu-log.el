@@ -1007,7 +1007,7 @@ offer to create one using `jj git init`."
              (_ (majutsu--assert-usable-jj))
              (jj (majutsu-jj--executable))
              (args (majutsu-process-jj-arguments (list "git" "init"
-                                                       (majutsu-jj--local-path dest))))
+                                                       (majutsu-convert-filename-for-jj dest))))
              (exit nil)
              (out ""))
         (with-temp-buffer
