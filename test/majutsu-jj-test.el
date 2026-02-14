@@ -159,6 +159,17 @@
     (should (equal (majutsu-convert-filename-for-jj "/ssh:demo:/tmp/patch.diff")
                    "/tmp/patch.diff"))))
 
+(ert-deftest majutsu-jj--editor-command-from-env/parses-sleeping-editor-wrapper ()
+  "Sleeping editor env should parse as PROGRAM -c SCRIPT, not `wait'."
+  (let* ((majutsu-with-editor-envvar "JJ_EDITOR")
+         (process-environment
+          (cons (format "JJ_EDITOR=%s" with-editor-sleeping-editor)
+                process-environment))
+         (command (majutsu-jj--editor-command-from-env)))
+    (should (equal (car command) "sh"))
+    (should (equal (cadr command) "-c"))
+    (should (string-match-p "WITH-EDITOR: \\\$\\\$ OPEN" (nth 2 command)))))
+
 (ert-deftest majutsu-toplevel/preserves-remote-prefix ()
   "`majutsu-toplevel' should return remote workspace roots on TRAMP."
   (let ((default-directory "/ssh:demo:/tmp/"))
