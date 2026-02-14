@@ -50,6 +50,81 @@
           (delete-process proc)))
       (should (eq called 'password)))))
 
+(ert-deftest test-majutsu-process-filter/ignores-with-editor-control-packets ()
+  (with-temp-buffer
+    (let* ((packet (format "WITH-EDITOR: 123 OPEN +1%c/tmp/manifest%c IN /tmp\n"
+                           ?\x1f ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat"))))
+      (set-marker (process-mark proc) (point))
+      (majutsu--process-filter proc (concat "normal output\n" packet "tail\n"))
+      (delete-process proc)
+      (let ((out (buffer-string)))
+        (should (string-match-p (regexp-quote "normal output\ntail\n") out))
+        (should-not (string-match-p "WITH-EDITOR:" out))))))
+
+(ert-deftest test-majutsu-process-filter/ignores-split-with-editor-packets ()
+  (with-temp-buffer
+    (let* ((part1 "WITH-EDITOR: 123 OPEN +1")
+           (part2 (format "%c/tmp/manifest%c IN /tmp\n"
+                          ?\x1f ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat"))))
+      (set-marker (process-mark proc) (point))
+      (majutsu--process-filter proc "normal\n")
+      (majutsu--process-filter proc part1)
+      (majutsu--process-filter proc part2)
+      (majutsu--process-filter proc "tail\n")
+      (delete-process proc)
+      (let ((out (buffer-string)))
+        (should (string-match-p (regexp-quote "normal\ntail\n") out))
+        (should-not (string-match-p "WITH-EDITOR:" out))))))
+
+(ert-deftest test-majutsu-process-filter/dispatches-majutsu-ediff-control-packets ()
+  (with-temp-buffer
+    (let* ((packet (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c/tmp/right%cfoo.txt\n"
+                           ?\x1f ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat")))
+           seen)
+      (cl-letf (((symbol-function 'majutsu-ediff--handle-control-line)
+                 (lambda (_proc line)
+                   (setq seen line)
+                   t)))
+        (set-marker (process-mark proc) (point))
+        (majutsu--process-filter proc (concat "normal\n" packet "tail\n"))
+        (delete-process proc)
+        (let ((out (buffer-string)))
+          (should (equal seen (substring packet 0 -1)))
+          (should (string-match-p (regexp-quote "normal\ntail\n") out))
+          (should-not (string-match-p "MAJUTSU-EDIFF:" out)))))))
+
+(ert-deftest test-majutsu-process-filter/dispatches-split-majutsu-ediff-packets ()
+  (with-temp-buffer
+    (let* ((part1 (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c" ?\x1f))
+           (part2 (format "/tmp/right%cfoo.txt\n" ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat")))
+           seen)
+      (cl-letf (((symbol-function 'majutsu-ediff--handle-control-line)
+                 (lambda (_proc line)
+                   (setq seen line)
+                   t)))
+        (set-marker (process-mark proc) (point))
+        (majutsu--process-filter proc "normal\n")
+        (majutsu--process-filter proc part1)
+        (majutsu--process-filter proc part2)
+        (majutsu--process-filter proc "tail\n")
+        (delete-process proc)
+        (let ((out (buffer-string)))
+          (should (equal seen (substring (concat part1 part2) 0 -1)))
+          (should (string-match-p (regexp-quote "normal\ntail\n") out))
+          (should-not (string-match-p "MAJUTSU-EDIFF:" out)))))))
+
 (ert-deftest majutsu-process-test-start-jj-binds-root-cwd ()
   "`majutsu-start-jj' should run from repo root."
   (let ((default-directory "/repo/sub/")
