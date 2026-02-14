@@ -85,7 +85,18 @@ Also respect the value of `majutsu-with-editor-envvar'."
     (unless (and raw (not (equal raw "")))
       (user-error "Missing %s in process environment" majutsu-with-editor-envvar))
     (condition-case err
-        (let ((words (split-string-shell-command raw)))
+        (let ((words
+               ;; `split-string-shell-command' can mis-parse with-editor's
+               ;; sleeping editor and yield only ("wait" "$sleep").
+               ;; Detect `PROGRAM -c 'SCRIPT'' forms directly and preserve
+               ;; the script as a single argument.
+               (or (and (string-match "\\`\\([^[:space:]]+\\)[[:space:]]+-c[[:space:]]+'" raw)
+                        (let ((program (match-string 1 raw))
+                              (start (match-end 0)))
+                          (when (and (<= start (length raw))
+                                     (string-suffix-p "'" raw))
+                            (list program "-c" (substring raw start -1)))))
+                   (split-string-shell-command raw))))
           (unless words
             (user-error "%s is empty" majutsu-with-editor-envvar))
           words)
@@ -93,6 +104,13 @@ Also respect the value of `majutsu-with-editor-envvar'."
        (user-error "Failed to parse %s: %s"
                    majutsu-with-editor-envvar
                    (error-message-string err))))))
+
+(defun majutsu-jj--sleeping-editor-command-p (command)
+  "Return non-nil when COMMAND is with-editor's sleeping editor wrapper."
+  (or (equal command '("wait" "$sleep"))
+      (and (>= (length command) 3)
+           (string= (nth 1 command) "-c")
+           (string-match-p "WITH-EDITOR: \\$\\$ OPEN" (nth 2 command)))))
 
 (defun majutsu-jj--editor-command-config (key target &optional editor-command)
   "Build KEY config command string editing TARGET.
