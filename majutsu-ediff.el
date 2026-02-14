@@ -677,10 +677,14 @@ Blocks until user finishes editing and quits Ediff."
          (left-existing (get-file-buffer left-file))
          (right-existing (get-file-buffer right-file))
          (winconf (current-window-configuration)))
-    (ediff-files left-file right-file
-                 (list (lambda ()
-                         (majutsu-ediff--setup-diffedit-quit-hooks
-                          winconf left-file right-file left-existing right-existing))))
+    ;; These are jj temporary files, not repository files. Skipping VC probes
+    ;; avoids slow/fragile remote vc-registered checks on first TRAMP access.
+    (let ((vc-handled-backends nil))
+      (ediff-files left-file right-file
+                   (list (lambda ()
+                           (majutsu-ediff--setup-diffedit-quit-hooks
+                            winconf left-file right-file
+                            left-existing right-existing)))))
     (recursive-edit)))
 
 (defun majutsu-ediff--exit-recursive-edit ()
@@ -702,11 +706,14 @@ Called by `jj resolve` merge editor command via emacsclient."
          (ediff-combination-pattern
           (majutsu-ediff--git-combination-pattern marker-length))
          (winconf (current-window-configuration)))
-    (ediff-merge-files-with-ancestor
-     left right base
-     (list (lambda ()
-             (majutsu-ediff--setup-merge-quit-hooks winconf)))
-     output)
+    ;; These are jj temporary files, not repository files. Skipping VC probes
+    ;; avoids slow/fragile remote vc-registered checks on first TRAMP access.
+    (let ((vc-handled-backends nil))
+      (ediff-merge-files-with-ancestor
+       left right base
+       (list (lambda ()
+               (majutsu-ediff--setup-merge-quit-hooks winconf)))
+       output))
     (recursive-edit)))
 
 ;;; Transient
