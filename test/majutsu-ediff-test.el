@@ -106,27 +106,162 @@
                  "$right/src/one.el")))
 
 (ert-deftest majutsu-ediff-test-merge-editor-config ()
-  "Merge editor config should evaluate 3-way Ediff."
-  (let* ((majutsu-with-editor-envvar "JJ_EDITOR")
-         (process-environment
-          (cons "JJ_EDITOR=emacsclient --socket-name=/tmp/editor.sock"
-                process-environment))
-         (configs (majutsu-ediff--merge-editor-config))
+  "Merge editor config should use Majutsu control wrapper."
+  (let* ((configs (majutsu-ediff--merge-editor-config))
          (all (mapconcat #'identity configs "\n")))
     (should (= (length configs) 5))
     (should (string-match-p "ui.merge-editor=\"majutsu_ediff_merge\"" all))
-    (should (string-match-p "merge-tools.majutsu_ediff_merge.program=\"emacsclient\"" all))
+    (should (string-match-p "merge-tools.majutsu_ediff_merge.program=\"sh\"" all))
     (should (string-match-p "merge-tools.majutsu_ediff_merge.merge-args=\\[" all))
-    (should (string-match-p "--socket-name=/tmp/editor.sock" all))
-    (should (string-match-p "--eval" all))
-    (should (string-match-p "majutsu-ediff-merge-files" all))
+    (should (string-match-p "MAJUTSU-EDIFF: \\\$\\\$ MERGE" all))
     (should (string-match-p "\\$left" all))
     (should (string-match-p "\\$base" all))
     (should (string-match-p "\\$right" all))
     (should (string-match-p "\\$output" all))
     (should (string-match-p "\\$marker_length" all))
+    (should-not (string-match-p "--eval" all))
     (should (string-match-p "merge-tools.majutsu_ediff_merge.merge-tool-edits-conflict-markers=true" all))
     (should (string-match-p "merge-tools.majutsu_ediff_merge.conflict-marker-style=\"git\"" all))))
+
+(ert-deftest majutsu-ediff-test-diff-editor-config/uses-control-wrapper ()
+  "Diff config should use Majutsu control wrapper script."
+  (let ((config (majutsu-ediff--diff-editor-config "src/main.el")))
+    (should (string-match-p "ui.diff-editor=\\[\"sh\", \"-c\"" config))
+    (should (string-match-p "MAJUTSU-EDIFF: \\\$\\\$ DIFF" config))
+    (should (string-match-p "\\$left" config))
+    (should (string-match-p "\\$right" config))
+    (should (string-match-p "src/main.el" config))
+    (should-not (string-match-p "--eval" config))))
+
+(ert-deftest majutsu-ediff-test-control-packet-spec/diff-with-file-hint ()
+  "Diff control packets can carry an optional file hint field."
+  (let ((line (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c/tmp/right%csrc/main.el"
+                      ?\x1f ?\x1f)))
+    (should (equal (majutsu-ediff--control-packet-spec line)
+                   '(:pid "123"
+                     :type diff
+                     :left "/tmp/left"
+                     :right "/tmp/right"
+                     :file "src/main.el")))))
+
+(ert-deftest majutsu-ediff-test-control-packet-spec/diff-with-empty-file-hint ()
+  "Empty diff file hint should be treated as absent."
+  (let ((line (format "MAJUTSU-EDIFF: 456 DIFF /tmp/left%c/tmp/right%c"
+                      ?\x1f ?\x1f)))
+    (should (equal (majutsu-ediff--control-packet-spec line)
+                   '(:pid "456"
+                     :type diff
+                     :left "/tmp/left"
+                     :right "/tmp/right")))))
+
+(ert-deftest majutsu-ediff-test-control-packet-spec/merge ()
+  "Merge control packets should parse into a structured spec."
+  (let ((line (format "MAJUTSU-EDIFF: 789 MERGE /tmp/left%c/tmp/base%c/tmp/right%c/tmp/output%c7"
+                      ?\x1f ?\x1f ?\x1f ?\x1f)))
+    (should (equal (majutsu-ediff--control-packet-spec line)
+                   '(:pid "789"
+                     :type merge
+                     :left "/tmp/left"
+                     :base "/tmp/base"
+                     :right "/tmp/right"
+                     :output "/tmp/output"
+                     :marker "7")))))
+
+(ert-deftest majutsu-ediff-test-handle-control-line/schedules-callback ()
+  "Control line handler should schedule callback with parsed spec."
+  (let ((line (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c/tmp/right%cfoo.txt"
+                      ?\x1f ?\x1f))
+        (default-directory "/ssh:demo:/repo/")
+        scheduled)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_time _repeat function &rest args)
+                 (setq scheduled (list function args))
+                 'timer)))
+      (should (majutsu-ediff--handle-control-line nil line))
+      (should (eq (car scheduled) #'majutsu-ediff--run-control-packet))
+      (should (equal (car (cadr scheduled))
+                     '(:pid "123"
+                       :type diff
+                       :left "/tmp/left"
+                       :right "/tmp/right"
+                       :file "foo.txt")))
+      (should (equal (cadr (cadr scheduled)) "/ssh:demo:/repo/")))))
+
+(ert-deftest majutsu-ediff-test-control-required-inputs/diff-with-file-hint ()
+  "Diff specs with file hint should resolve concrete left/right temp files."
+  (let ((default-directory "/ssh:demo:/repo/"))
+    (should (equal
+             (majutsu-ediff--control-required-inputs
+              '(:pid "123"
+                :type diff
+                :left "/tmp/left"
+                :right "/tmp/right"
+                :file "foo.txt"))
+             '("/ssh:demo:/tmp/left/foo.txt"
+               "/ssh:demo:/tmp/right/foo.txt")))))
+
+(ert-deftest majutsu-ediff-test-control-required-inputs/merge ()
+  "Merge specs should resolve all three required temp input files."
+  (let ((default-directory "/ssh:demo:/repo/"))
+    (should (equal
+             (majutsu-ediff--control-required-inputs
+              '(:pid "789"
+                :type merge
+                :left "/tmp/left"
+                :base "/tmp/base"
+                :right "/tmp/right"
+                :output "/tmp/output"
+                :marker "7"))
+             '("/ssh:demo:/tmp/left"
+               "/ssh:demo:/tmp/base"
+               "/ssh:demo:/tmp/right")))))
+
+(ert-deftest majutsu-ediff-test-wait-for-input-files/retries-after-file-error ()
+  "Transient stat errors should be retried while waiting for temp inputs."
+  (let ((majutsu-ediff--sleeping-input-ready-timeout 0.2)
+        (calls 0))
+    (cl-letf (((symbol-function 'file-exists-p)
+               (lambda (_file)
+                 (cl-incf calls)
+                 (if (= calls 1)
+                     (signal 'file-error '("not ready"))
+                   t)))
+              ((symbol-function 'accept-process-output)
+               (lambda (&rest _args)
+                 nil)))
+      (should (majutsu-ediff--wait-for-input-files '("/tmp/a"))))))
+
+(ert-deftest majutsu-ediff-test-run-control-packet/cancels-on-callback-error ()
+  "Callback errors should still signal cancel to avoid hanging jj."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-ediff-diffedit-file)
+               (lambda (&rest _args)
+                 (error "boom")))
+              ((symbol-function 'majutsu-ediff--wait-for-input-files)
+               (lambda (_files)
+                 t))
+              ((symbol-function 'majutsu-ediff--signal-control-session)
+               (lambda (pid ok)
+                 (setq seen (list pid ok)))))
+      (majutsu-ediff--run-control-packet
+       '(:pid "123" :type diff :left "/tmp/left" :right "/tmp/right")
+       "/tmp/")
+      (should (equal seen '("123" nil))))))
+
+(ert-deftest majutsu-ediff-test-signal-control-session/uses-usr-signals ()
+  "Control session signaling should map success and cancel to USR1/USR2."
+  (let (calls)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (&rest args)
+                 (push args calls)
+                 0)))
+      (majutsu-ediff--signal-control-session "111" t)
+      (majutsu-ediff--signal-control-session "222" nil)
+      (setq calls (nreverse calls))
+      (should (equal (nth 0 calls)
+                     '("kill" nil nil nil "-s" "USR1" "111")))
+      (should (equal (nth 1 calls)
+                     '("kill" nil nil nil "-s" "USR2" "222"))))))
 
 (ert-deftest majutsu-ediff-test-build-resolve-args ()
   "Resolve args should include rev, file and all merge editor configs."
@@ -189,6 +324,58 @@
       (should (= (length startup-hooks) 1))
       (should entered-recursive))))
 
+(ert-deftest majutsu-ediff-test-diffedit-file/uses-file-hint-without-scanning ()
+  "When FILE-HINT is provided, directory scan/prompt should be skipped."
+  (let (called-left called-right entered-recursive)
+    (cl-letf (((symbol-function 'majutsu-ediff--read-directory-file)
+               (lambda (&rest _args)
+                 (ert-fail "should not scan directories when file hint exists")))
+              ((symbol-function 'ediff-files)
+               (lambda (left right &optional _hooks)
+                 (setq called-left left)
+                 (setq called-right right)))
+              ((symbol-function 'recursive-edit)
+               (lambda ()
+                 (setq entered-recursive t))))
+      (majutsu-ediff-diffedit-file "/tmp/left" "/tmp/right" "foo.txt")
+      (should (equal called-left (expand-file-name "foo.txt" "/tmp/left")))
+      (should (equal called-right (expand-file-name "foo.txt" "/tmp/right")))
+      (should entered-recursive))))
+
+(ert-deftest majutsu-ediff-test-diffedit-file/preserves-remote-prefix-for-jj-paths ()
+  "Absolute paths from jj should stay remote when `default-directory' is TRAMP."
+  (let ((default-directory "/ssh:demo:/repo/")
+        called-left called-right entered-recursive)
+    (cl-letf (((symbol-function 'ediff-files)
+               (lambda (left right &optional _hooks)
+                 (setq called-left left)
+                 (setq called-right right)))
+              ((symbol-function 'recursive-edit)
+               (lambda ()
+                 (setq entered-recursive t))))
+      (majutsu-ediff-diffedit-file "/tmp/left" "/tmp/right" "foo.txt")
+      (should (equal called-left "/ssh:demo:/tmp/left/foo.txt"))
+      (should (equal called-right "/ssh:demo:/tmp/right/foo.txt"))
+      (should entered-recursive))))
+
+(ert-deftest majutsu-ediff-test-run-diffedit/passes-file-hint-to-config ()
+  "Run-diffedit should pass resolved FILE to diff-editor config builder."
+  (let (seen-file)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _dir) "/tmp/repo/"))
+              ((symbol-function 'majutsu-edit--replace-diffedit-file-arg)
+               (lambda (args _file) args))
+              ((symbol-function 'majutsu-ediff--diff-editor-config)
+               (lambda (&optional file)
+                 (setq seen-file file)
+                 "CFG"))
+              ((symbol-function 'majutsu-run-jj-async)
+               (lambda (&rest _args) nil)))
+      (let ((default-directory "/tmp/repo/"))
+        (majutsu-ediff--run-diffedit '("--from" "@-" "--to" "@" "--" "src/main.el")
+                                     "src/main.el"))
+      (should (equal seen-file "src/main.el")))))
+
 (ert-deftest majutsu-ediff-test-diffedit-file-installs-local-quit-hooks ()
   "Diffedit startup hook should install local quit hooks.
 The recursive-edit exit hook must run from `ediff-after-quit-hook-internal'
@@ -236,6 +423,24 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
       (should (= (length startup-hooks) 1))
       (should (functionp (car startup-hooks)))
       (should entered-recursive))))
+
+(ert-deftest majutsu-ediff-test-merge-files/preserves-remote-prefix-for-jj-paths ()
+  "Merge callback should keep absolute jj paths remote under TRAMP defaults."
+  (let ((default-directory "/ssh:demo:/repo/")
+        called-left called-right called-base called-output)
+    (cl-letf (((symbol-function 'ediff-merge-files-with-ancestor)
+               (lambda (left right base &optional _hooks output)
+                 (setq called-left left)
+                 (setq called-right right)
+                 (setq called-base base)
+                 (setq called-output output)))
+              ((symbol-function 'recursive-edit)
+               (lambda () nil)))
+      (majutsu-ediff-merge-files "/tmp/left" "/tmp/base" "/tmp/right" "/tmp/output")
+      (should (equal called-left "/ssh:demo:/tmp/left"))
+      (should (equal called-base "/ssh:demo:/tmp/base"))
+      (should (equal called-right "/ssh:demo:/tmp/right"))
+      (should (equal called-output "/ssh:demo:/tmp/output")))))
 
 (ert-deftest majutsu-ediff-test-merge-files-uses-git-markers-with-marker-length ()
   "Merge callback should configure git-style marker pattern from jj marker length."
