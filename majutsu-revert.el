@@ -163,7 +163,8 @@ destination, fill with --revisions and --insert-after defaults."
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("v" "Revert" majutsu-revert-execute)
+    ("_" "Revert" majutsu-revert-execute)
+    ("V" "Revert" majutsu-revert-execute)
     ("RET" "Revert" majutsu-revert-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
