@@ -30,32 +30,33 @@ efficient way to interact with JJ repositories from within Emacs.
 4. In blob buffers, press ~e~ to enter editable mode; save applies via =jj diffedit= (~i~ in Evil also enters editable mode)
 5. In blob buffers, press ~b~ to annotate; ~C-c m~ opens the blob in Magit
 
-** Essential Keybindings
+** Essential Keybindings (Emacs / Evil)
 
-| Key   | Action                   |
-|-------+--------------------------|
-| ~n~ / ~p~ | Next / previous revision |
-| ~RET~   | Visit thing at point     |
-| ~?~     | Show all commands        |
-| ~g~     | Refresh                  |
-| ~a~     | Absorb                   |
-| ~b~     | Bookmarks                |
-| ~c~     | Describe                 |
-| ~C~     | Commit                   |
-| ~d~     | Diff                     |
-| ~E~     | Ediff                    |
-| ~e~     | Edit change              |
-| ~G~     | Git                      |
-| ~k~     | Abandon                  |
-| ~o~     | New                      |
-| ~r~     | Rebase                   |
-| ~R~     | Restore                  |
-| ~s~     | Squash                   |
-| ~S~     | Split                    |
-| ~y~     | Duplicate                |
-| ~Z~     | Workspaces               |
-| ~C-/~   | Undo                     |
-| ~C-?~   | Redo                     |
+| Key       | Action               |
+|-----------+----------------------|
+| ~n~ / ~j~     | Next revision        |
+| ~p~ / ~k~     | Previous revision    |
+| ~RET~       | Visit thing at point |
+| ~?~         | Show all commands    |
+| ~g~ / ~g r~   | Refresh              |
+| ~a~         | Absorb               |
+| ~b~         | Bookmarks            |
+| ~c~         | Describe             |
+| ~C~         | Commit               |
+| ~d~         | Diff                 |
+| ~E~         | Ediff                |
+| ~e~         | Edit change          |
+| ~G~ / none  | Git                  |
+| ~k~         | Abandon              |
+| ~o~         | New                  |
+| ~r~         | Rebase               |
+| ~R~         | Restore              |
+| ~s~         | Squash               |
+| ~S~         | Split                |
+| ~y~         | Duplicate            |
+| ~Z~ / ~*~     | Workspaces           |
+| ~C-/~ / ~u~   | Undo                 |
+| ~C-?~ / ~C-r~ | Redo                 |
 
 * Requirements
 
