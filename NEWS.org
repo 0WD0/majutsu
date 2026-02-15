@@ -5,6 +5,10 @@
 
 ** Added
 
+- Add ~majutsu-revert~ transient for =jj revert= with source revision selection
+  and destination placement options (=--onto= / =--insert-after= /
+  =--insert-before=).
+
 ** Changed
 
 ** Fixed

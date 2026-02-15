@@ -150,6 +150,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "L") #'majutsu-log-transient
     (kbd "b") #'majutsu-bookmark
     (kbd "r") #'majutsu-rebase
+    (kbd "_") #'majutsu-revert
+    (kbd "V") nil
     (kbd "d") #'majutsu-diff
     (kbd "D") #'majutsu-diff-dwim
     (kbd "*") #'majutsu-workspace

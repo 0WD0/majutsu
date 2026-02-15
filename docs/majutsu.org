@@ -347,6 +347,13 @@ Runs: =jj split -r REV [FILESETS...]=
 - ~--~ :: Limit restore to selected files/filesets.
 Runs: =jj restore --from REV [FILESETS...]= or =jj restore --changes-in REV [FILESETS...]=
 
+** Reverting
+- ~V~ (Emacs), ~_~ (Evil) (~majutsu-revert~) :: Open the Revert transient to create reverse changes in a new revision.
+- ~-r~ :: Source revisions to revert (=--revisions=).
+- ~-o~ :: Apply reverse changes on top of revisions (=--onto=).
+- ~-A~ / ~-B~ :: Insert reverse changes after/before selected revisions.
+Runs: =jj revert --revisions REV --onto DEST=
+
 ** Sparse Working Copy
 - ~>~ (~majutsu-sparse~) :: Open the sparse working copy transient (set, add, remove, list, edit).
 - Editing patterns opens a temporary =.jjsparse= buffer; lines starting with ~JJ:~ are comments and are ignored by Jujutsu.

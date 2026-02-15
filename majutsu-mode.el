@@ -45,6 +45,7 @@
   "S"   'majutsu-split
   "d"   'majutsu-diff
   "r"   'majutsu-rebase
+  "V"   'majutsu-revert
   "b"   'majutsu-bookmark
   "y"   'majutsu-duplicate
   "G"   'majutsu-git-transient

@@ -50,6 +50,7 @@ efficient way to interact with JJ repositories from within Emacs.
 | ~k~         | Abandon              |
 | ~o~         | New                  |
 | ~r~         | Rebase               |
+| ~V~ / ~_~     | Revert               |
 | ~R~         | Restore              |
 | ~s~         | Squash               |
 | ~S~         | Split                |
