@@ -482,6 +482,23 @@ Press ~b~ to manage bookmarks.
 - ~t~ :: Track a remote bookmark to create a local one.
 - ~u~ :: Untrack a remote bookmark.
 
+* Tags
+** Understanding Tags
+In Jujutsu, tags are lightweight refs that point to revisions, similar to Git tags.
+Majutsu wraps =jj tag set/list/delete= and follows jj semantics where creating and
+moving tags both use =tag set= (moving requires =--allow-move=).
+
+** Tag Transient
+Tag commands are intentionally dispatch-first. Open dispatcher with ~?~, then
+press ~t~ to manage tags.
+- ~l~ :: List tags in a dedicated buffer.
+- ~s~ :: Set tag(s). Uses completion and allows new names.
+- ~m~ :: Move existing tag(s) to another revision (internally =--allow-move=).
+- ~d~ :: Delete tag(s) by name/pattern.
+
+Tag prompts use completion candidates from local tags. Existing tags are shown for
+selection, while set/delete prompts still allow entering string patterns manually.
+
 * Git Integration
 ** Git Transient
 Press ~G~ to access Git-specific commands. Jujutsu can interact directly with Git remotes.

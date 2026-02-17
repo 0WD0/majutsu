@@ -40,6 +40,7 @@ Instead of invoking this alias for `majutsu-log' using
   ["Transient and dwim commands"
    [("k" "Abandon"           majutsu-abandon)
     ("b" "Bookmarks"         majutsu-bookmark)
+    ("t" "Tags"              majutsu-tag)
     ("c" "Describe"          majutsu-describe)
     ("C" "Commit"            majutsu-commit)
     ("d" "Diff"              majutsu-diff)
@@ -78,6 +79,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-diff)
   (require 'majutsu-ediff)
   (require 'majutsu-bookmark)
+  (require 'majutsu-tag)
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)
   (require 'majutsu-git)
