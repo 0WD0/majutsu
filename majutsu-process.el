@@ -33,6 +33,8 @@
 (require 'magit-section)
 (require 'magit-process) ; for prompt functions
 
+(declare-function majutsu-ediff--handle-control-line "majutsu-ediff" (process line))
+
 ;;; Customization
 
 (defgroup majutsu-process nil
@@ -378,6 +380,65 @@ repository's log buffer (see `majutsu-refresh')."
     (majutsu--process-display-buffer process)
     process))
 
+(defun majutsu--with-editor-control-line-p (line)
+  "Return non-nil when LINE is a with-editor sleeping OPEN packet."
+  (string-match-p "^WITH-EDITOR: [0-9]+ OPEN " line))
+
+(defun majutsu--with-editor-control-fragment-p (fragment)
+  "Return non-nil when FRAGMENT looks like a partial OPEN packet."
+  (and (not (string-empty-p fragment))
+       (or (string-prefix-p "WITH-EDITOR:" fragment)
+           (string-prefix-p fragment "WITH-EDITOR:"))))
+
+(defun majutsu--ediff-control-line-p (line)
+  "Return non-nil when LINE is a Majutsu Ediff control packet."
+  (string-match-p "^MAJUTSU-EDIFF: [0-9]+ \\(DIFF\\|MERGE\\) " line))
+
+(defun majutsu--ediff-control-fragment-p (fragment)
+  "Return non-nil when FRAGMENT looks like a partial Ediff packet."
+  (and (not (string-empty-p fragment))
+       (or (string-prefix-p "MAJUTSU-EDIFF:" fragment)
+           (string-prefix-p fragment "MAJUTSU-EDIFF:"))))
+
+(defun majutsu--process-handle-control-line (proc line)
+  "Handle known control LINE values for PROC.
+Return non-nil when LINE is consumed as a control packet."
+  (cond
+   ((majutsu--with-editor-control-line-p line)
+    t)
+   ((majutsu--ediff-control-line-p line)
+    (if (fboundp 'majutsu-ediff--handle-control-line)
+        (condition-case err
+            (majutsu-ediff--handle-control-line proc line)
+          (error
+           (message "Majutsu Ediff control packet failed: %s"
+                    (error-message-string err))
+           nil))
+      nil))
+   (t nil)))
+
+(defun majutsu--process-strip-with-editor-control-packets (proc input)
+  "Strip control packets from INPUT and keep partial state on PROC."
+  (let ((start 0)
+        (visible nil))
+    (while (string-match "\n" input start)
+      (let* ((end (match-beginning 0))
+             (line (substring input start end)))
+        (unless (majutsu--process-handle-control-line proc line)
+          (push (concat line "\n") visible))
+        (setq start (1+ end))))
+    (let ((trailing (substring input start)))
+      (cond
+       ((or (majutsu--with-editor-control-fragment-p trailing)
+            (majutsu--ediff-control-fragment-p trailing))
+        (process-put proc 'majutsu--with-editor-filter-pending trailing))
+       ((string-empty-p trailing)
+        (process-put proc 'majutsu--with-editor-filter-pending ""))
+       (t
+        (process-put proc 'majutsu--with-editor-filter-pending "")
+        (push trailing visible)))
+      (apply #'concat (nreverse visible)))))
+
 (defun majutsu--process-filter (proc string)
   "Default filter used by `majutsu-start-process'."
   (with-current-buffer (process-buffer proc)
@@ -388,13 +449,21 @@ repository's log buffer (see `majutsu-refresh')."
       (when-let* ((ret-pos (cl-position ?\r string :from-end t)))
         (setq string (substring string (1+ ret-pos)))
         (delete-region (line-beginning-position) (point)))
-      (insert (propertize string 'magit-section
-                          (process-get proc 'section)))
-      (magit-process-yes-or-no-prompt proc string)
-      (magit-process-username-prompt proc string)
-      (magit-process-password-prompt proc string)
-      (run-hook-with-args-until-success 'magit-process-prompt-functions
-                                        proc string)
+      ;; Control packets (with-editor and Majutsu Ediff) are not user-facing
+      ;; process output and should be consumed before insertion.
+      (setq string
+            (majutsu--process-strip-with-editor-control-packets
+             proc
+             (concat (or (process-get proc 'majutsu--with-editor-filter-pending) "")
+                     string)))
+      (unless (string-empty-p string)
+        (insert (propertize string 'magit-section
+                            (process-get proc 'section)))
+        (magit-process-yes-or-no-prompt proc string)
+        (magit-process-username-prompt proc string)
+        (magit-process-password-prompt proc string)
+        (run-hook-with-args-until-success 'magit-process-prompt-functions
+                                          proc string))
       (set-marker (process-mark proc) (point)))))
 
 (defun majutsu--process-sentinel (process _event)
@@ -421,9 +490,10 @@ Return the process object.
 SUCCESS-MSG is displayed on exit code 0.  When FINISH-CALLBACK is
 non-nil, call it as (FINISH-CALLBACK PROCESS EXIT-CODE) after the
 process terminates."
-  (let* ((args (majutsu-process-jj-arguments args))
-         (default-directory (majutsu--toplevel-safe default-directory))
-         (process (apply #'majutsu-start-process majutsu-jj-executable nil args)))
+  (let* ((default-directory (majutsu--toplevel-safe default-directory))
+         (jj (majutsu-jj--executable))
+         (args (majutsu-process-jj-arguments args))
+         (process (apply #'majutsu-start-process jj nil args)))
     (when success-msg
       (process-put process 'success-msg success-msg))
     (when finish-callback
@@ -438,18 +508,19 @@ Process output goes into a new section in the buffer returned by
 
 Unlike `majutsu-start-jj', this does not implicitly refresh any Majutsu
 buffers.  Call `majutsu-refresh' explicitly when desired."
-  (let* ((args (majutsu-process-jj-arguments args))
-         (default-directory (majutsu--toplevel-safe default-directory))
+  (let* ((default-directory (majutsu--toplevel-safe default-directory))
+         (jj (majutsu-jj--executable))
+         (args (majutsu-process-jj-arguments args))
          (pwd default-directory)
          (process-buf (let ((default-directory pwd))
                         (majutsu-process-buffer t)))
          (process-root (with-current-buffer process-buf default-directory)))
     (pcase-let* ((section
                   (with-current-buffer process-buf
-                    (prog1 (majutsu--process-insert-section pwd majutsu-jj-executable args nil nil)
+                    (prog1 (majutsu--process-insert-section pwd jj args nil nil)
                       (backward-char 1))))
                  (inhibit-read-only t)
-                 (exit (apply #'process-file majutsu-jj-executable nil process-buf nil args)))
+                 (exit (apply #'process-file jj nil process-buf nil args)))
       (setq exit (majutsu-process-finish exit process-buf (current-buffer) process-root section))
       exit)))
 
@@ -458,7 +529,7 @@ buffers.  Call `majutsu-refresh' explicitly when desired."
 ARGS is flattened before being passed to jj."
   (let ((flat (flatten-tree args)))
     (majutsu--message-with-log "Running %s %s"
-                               majutsu-jj-executable
+                               (majutsu-jj--executable)
                                (string-join flat " ")))
   (majutsu-start-jj args))
 
