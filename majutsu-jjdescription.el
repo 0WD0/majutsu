@@ -383,8 +383,7 @@ Added to `font-lock-extend-region-functions'."
     (let ((auto-mode-alist
            (list (cons (concat "\\`"
                                (regexp-quote
-                                (or (file-remote-p buffer-file-name 'localname)
-                                    buffer-file-name))
+                                (majutsu-convert-filename-for-jj buffer-file-name))
                                "\\'")
                        majutsu-jjdescription-major-mode)))
           ;; Pre-enable modes so hooks can see them

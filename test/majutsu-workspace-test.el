@@ -176,6 +176,19 @@
     (should (equal (majutsu-workspace--root-for-name "secondary")
                    "/home/user/repo-secondary/"))))
 
+(ert-deftest majutsu-workspace--root-for-name/preserves-remote-prefix ()
+  "Workspace roots discovered on TRAMP should keep remote host prefix."
+  (let ((default-directory "/ssh:demo:/tmp/"))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:")))
+              ((symbol-function 'majutsu-jj-lines)
+               (lambda (&rest _args) '("/home/demo/repo-secondary"))))
+      (should (equal (majutsu-workspace--root-for-name "secondary")
+                     "/ssh:demo:/home/demo/repo-secondary/")))))
+
 (ert-deftest majutsu-workspace--root-for-name/returns-nil-on-error ()
   "Test that root-for-name returns nil when jj fails (no output)."
   (cl-letf (((symbol-function 'majutsu-jj-lines)
@@ -189,6 +202,19 @@
                (when (equal name "secondary") "/tmp/secondary/"))))
     (should (equal (majutsu-workspace--read-root "secondary")
                    "/tmp/secondary/"))))
+
+(ert-deftest majutsu-workspace--read-root/preserves-remote-prefix ()
+  "Read-root should keep remote host prefix when using absolute localname."
+  (let ((root "/ssh:demo:/tmp/main/"))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path root)
+                            (null identification))
+                   "/ssh:demo:")))
+              ((symbol-function 'majutsu-workspace--root-for-name)
+               (lambda (_name) "/home/demo/repo-secondary/")))
+      (should (equal (majutsu-workspace--read-root "secondary" root)
+                     "/ssh:demo:/home/demo/repo-secondary/")))))
 
 (ert-deftest majutsu-workspace--sibling-root/finds-matching-sibling ()
   "Test that sibling-root finds a sibling dir that is the named workspace."
@@ -232,6 +258,23 @@
                (when (equal name "feature") "/tmp/feature/"))))
     (should (equal (majutsu-workspace--read-root "feature")
                    "/tmp/feature/"))))
+
+(ert-deftest majutsu-workspace-add/uses-local-destination-for-jj ()
+  "Workspace add should pass a local destination path to remote jj.
+The Emacs-facing path remains unchanged for visiting the new workspace."
+  (let (seen-args seen-visit)
+    (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
+               (lambda (_path) "/tmp/feature"))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'majutsu-workspace-visit)
+               (lambda (dir)
+                 (setq seen-visit dir))))
+      (majutsu-workspace-add "/ssh:demo:/tmp/feature")
+      (should (equal seen-args '("workspace" "add" "/tmp/feature")))
+      (should (equal seen-visit (expand-file-name "/ssh:demo:/tmp/feature"))))))
 
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here
