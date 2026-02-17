@@ -450,8 +450,13 @@ Returns a list of `majutsu-annotate-chunk' structures."
 
 (defun majutsu-annotate--file-exists-p (rev file)
   "Check if FILE exists in REV."
-  (let ((lines (majutsu-jj-lines "file" "list" "-r" rev
-                                 (majutsu-jj-fileset-quote file))))
+  (let* ((root (or (majutsu-toplevel) default-directory))
+         (default-directory root)
+         (file (if (file-name-absolute-p file)
+                   (file-relative-name file root)
+                 file))
+         (lines (majutsu-jj-lines "file" "list" "-r" rev
+                                  (majutsu-jj-fileset-quote file))))
     ;; Use exact path matching; plain path args can behave like prefix patterns.
     (and (= (length lines) 1)
          (equal (car lines) file))))

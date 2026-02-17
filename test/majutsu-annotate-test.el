@@ -37,6 +37,29 @@
              (lambda (&rest _args) '("Warning: No matching entries"))))
     (should-not (majutsu-annotate--file-exists-p "rev" "src/file.el"))))
 
+(ert-deftest majutsu-annotate-file-exists-p/runs-from-repo-root ()
+  "Run file existence checks from the repository root directory."
+  (let* ((root (file-name-as-directory (make-temp-file "majutsu-annotate-root-" t)))
+         (docs (expand-file-name "docs/" root))
+         captured-default-directory
+         captured-path)
+    (unwind-protect
+        (progn
+          (make-directory docs t)
+          (let ((default-directory docs))
+            (cl-letf (((symbol-function 'majutsu-toplevel)
+                       (lambda (&optional _directory) root))
+                      ((symbol-function 'majutsu-jj-lines)
+                       (lambda (&rest args)
+                         (setq captured-default-directory (symbol-value 'default-directory))
+                         (setq captured-path (nth 4 args))
+                         '("docs/majutsu.org"))))
+              (should (majutsu-annotate--file-exists-p "rev" "docs/majutsu.org"))
+              (should (equal captured-default-directory root))
+              (should (equal captured-path
+                             (majutsu-jj-fileset-quote "docs/majutsu.org"))))))
+      (ignore-errors (delete-directory root t)))))
+
 (ert-deftest majutsu-annotate-visit-other-file/stops-when-target-file-missing ()
   "Do not open a blob buffer if parent revision doesn't contain FILE."
   (with-temp-buffer
