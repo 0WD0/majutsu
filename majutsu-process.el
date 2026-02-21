@@ -26,6 +26,7 @@
 (require 'majutsu-mode)
 (require 'majutsu-jj)
 (require 'ansi-color)
+(require 'seq)
 (require 'subr-x)
 (require 'with-editor)
 
@@ -72,6 +73,15 @@ When this is nil, no sections are ever removed."
 (defcustom majutsu-show-process-buffer-hint t
   "Whether to append a hint about the process buffer to JJ error messages."
   :type 'boolean
+  :group 'majutsu-process)
+
+(defcustom majutsu-jj-environment
+  (list (format "INSIDE_EMACS=%s,majutsu" emacs-version))
+  "Environment entries prepended while running jj commands.
+
+Each entry must be in KEY=VALUE format and is prepended to
+`process-environment' for both local and TRAMP subprocesses."
+  :type '(repeat string)
   :group 'majutsu-process)
 
 (defcustom majutsu-process-timestamp-format nil
@@ -359,8 +369,10 @@ repository's log buffer (see `majutsu-refresh')."
          (section (with-current-buffer process-buf
                     (prog1 (majutsu--process-insert-section pwd program args nil nil)
                       (backward-char 1))))
-         (process (apply #'start-file-process (file-name-nondirectory program)
-                         process-buf program args)))
+         (process (let ((process-environment (majutsu-process-environment args))
+                        (default-process-coding-system '(utf-8-unix . utf-8-unix)))
+                    (apply #'start-file-process (file-name-nondirectory program)
+                           process-buf program args))))
     (set-process-query-on-exit-flag process nil)
     (process-put process 'section section)
     (process-put process 'command-buf (current-buffer))
@@ -482,6 +494,36 @@ Return non-nil when LINE is consumed as a control packet."
               (with-current-buffer buffer
                 (ignore-errors (majutsu-log-refresh))))))))))
 
+(defun majutsu--process-diffstat-command-p (args)
+  "Return non-nil when ARGS represent a `jj diff --stat' command."
+  (and (member "diff" args)
+       (member "--stat" args)))
+
+(defun majutsu-process-environment (&optional args)
+  "Return process environment used to run jj command ARGS.
+
+A local binding of `process-environment' affects the environment used by
+TRAMP subprocesses, so this function composes all process overrides in one
+place similarly to Magit's `magit-process-environment'."
+  (let ((env (append majutsu-jj-environment process-environment)))
+    (if (and majutsu-jj-diffstat-columns
+             (integerp majutsu-jj-diffstat-columns)
+             (> majutsu-jj-diffstat-columns 0)
+             (majutsu--process-diffstat-command-p args))
+        (cons (format "COLUMNS=%d" majutsu-jj-diffstat-columns)
+              (seq-remove (lambda (entry)
+                            (string-prefix-p "COLUMNS=" entry))
+                          env))
+      env)))
+
+(defun majutsu-process-file (program &optional infile destination display &rest args)
+  "Run PROGRAM synchronously like `process-file' with Majutsu process defaults.
+
+This centralizes subprocess environment and coding behavior for jj invocations."
+  (let ((process-environment (majutsu-process-environment args))
+        (default-process-coding-system '(utf-8-unix . utf-8-unix)))
+    (apply #'process-file program infile destination display args)))
+
 (defun majutsu-start-jj (args &optional success-msg finish-callback)
   "Run jj ARGS asynchronously for side-effects and log output.
 
@@ -520,7 +562,7 @@ buffers.  Call `majutsu-refresh' explicitly when desired."
                     (prog1 (majutsu--process-insert-section pwd jj args nil nil)
                       (backward-char 1))))
                  (inhibit-read-only t)
-                 (exit (apply #'process-file jj nil process-buf nil args)))
+                 (exit (apply #'majutsu-process-file jj nil process-buf nil args)))
       (setq exit (majutsu-process-finish exit process-buf (current-buffer) process-root section))
       exit)))
 

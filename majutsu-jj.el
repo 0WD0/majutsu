@@ -29,6 +29,8 @@
 (require 'with-editor)
 (require 'majutsu-base)
 
+(autoload 'majutsu-process-file "majutsu-process" nil nil)
+
 ;;; Options
 
 (defcustom majutsu-jj-executable "jj"
@@ -49,6 +51,17 @@ When `default-directory' is remote, this executable is used instead of
   :group 'majutsu-commands
   :group 'majutsu-process
   :type '(repeat string))
+
+(defcustom majutsu-jj-diffstat-columns 80
+  "Columns to expose when running `jj diff --stat'.
+When non-nil, Majutsu sets `COLUMNS' to this value for diffstat commands.
+This stabilizes output in very narrow terminal environments (common with
+TRAMP) while keeping stat bars readable.  Increase the value to prioritize
+full path visibility, or set to nil to inherit terminal width."
+  :group 'majutsu-commands
+  :group 'majutsu-process
+  :type '(choice (const :tag "Inherit environment" nil)
+          (integer :tag "Columns")))
 
 ;;; with-editor
 
@@ -522,13 +535,11 @@ This is the low-level worker for `majutsu-jj-insert' and similar
 functions."
   (setq args (majutsu-process-jj-arguments args))
   (let* ((start-time (current-time))
-         (coding-system-for-read 'utf-8-unix)
-         (coding-system-for-write 'utf-8-unix)
          (err-file (and return-error
                         (make-nearby-temp-file "majutsu-jj-err")))
          exit-code)
     (majutsu--debug "Running command: %s %s" (majutsu-jj--executable) (string-join args " "))
-    (setq exit-code (apply #'process-file (majutsu-jj--executable) nil
+    (setq exit-code (apply #'majutsu-process-file (majutsu-jj--executable) nil
                            (list t err-file) nil args))
     (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                     (float-time (time-subtract (current-time) start-time))
@@ -620,8 +631,8 @@ error text.  Output is optionally colorized based on
 `majutsu-process-apply-ansi-colors'."
   (declare (indent 2))
   (setq args (majutsu-process-jj-arguments args))
-  (let ((beg (point))
-        (exit (apply #'process-file (majutsu-jj--executable) nil t nil args)))
+  (let* ((beg (point))
+         (exit (apply #'majutsu-process-file (majutsu-jj--executable) nil t nil args)))
     (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
                (> (point) beg))
       ;; Use text-properties instead of overlays so that subsequent
