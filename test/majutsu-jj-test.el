@@ -109,6 +109,70 @@
     (with-temp-buffer
       (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0)))))
 
+(ert-deftest majutsu--jj-insert/forces-wide-columns-for-diffstat ()
+  "Diffstat commands should run with widened `COLUMNS'."
+  (let ((majutsu-jj-diffstat-columns 80)
+        seen-columns)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 0)))
+      (with-temp-buffer
+        (let ((process-environment (cons "COLUMNS=10" process-environment)))
+          (should (equal (majutsu--jj-insert nil "diff" "--stat") 0))
+          (should (equal seen-columns "80")))))))
+
+(ert-deftest majutsu--jj-insert/keeps-columns-for-non-diffstat ()
+  "Non-diffstat commands should keep inherited `COLUMNS'."
+  (let ((majutsu-jj-diffstat-columns 80)
+        seen-columns)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 0)))
+      (with-temp-buffer
+        (let ((process-environment (cons "COLUMNS=10" process-environment)))
+          (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0))
+          (should (equal seen-columns "10")))))))
+
+(ert-deftest majutsu-process-environment/overrides-columns-for-diffstat ()
+  "Environment helper should replace inherited COLUMNS for diffstat commands."
+  (let ((majutsu-jj-diffstat-columns 80)
+        (majutsu-jj-environment '("INSIDE_EMACS=test,majutsu"))
+        (process-environment '("COLUMNS=10" "FOO=bar")))
+    (should (equal (car (majutsu-process-environment '("diff" "--stat")))
+                   "COLUMNS=80"))
+    (should (member "FOO=bar" (majutsu-process-environment '("diff" "--stat"))))
+    (should (member "INSIDE_EMACS=test,majutsu"
+                    (majutsu-process-environment '("diff" "--stat"))))
+    (should-not (member "COLUMNS=10" (majutsu-process-environment '("diff" "--stat"))))))
+
+(ert-deftest majutsu-process-environment/preserves-columns-for-non-diffstat ()
+  "Environment helper should keep inherited COLUMNS for non-diffstat commands."
+  (let ((majutsu-jj-diffstat-columns 80)
+        (majutsu-jj-environment nil)
+        (process-environment '("COLUMNS=10" "FOO=bar")))
+    (should (equal (majutsu-process-environment '("log" "-r" "@"))
+                   '("COLUMNS=10" "FOO=bar")))))
+
+(ert-deftest majutsu-jj-wash/forces-wide-columns-for-diffstat ()
+  "`majutsu-jj-wash' should run diffstat with widened `COLUMNS'."
+  (let ((majutsu-jj-diffstat-columns 80)
+        seen-columns)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 (insert "x\n")
+                 0)))
+      (with-temp-buffer
+        (let ((process-environment (cons "COLUMNS=10" process-environment)))
+          (should (equal (majutsu-jj-wash (lambda (&rest _) nil)
+                             'wash-anyway
+                           "diff"
+                           "--stat")
+                         0))
+          (should (equal seen-columns "80")))))))
+
 (ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
   "majutsu--jj-insert should return error message when return-error is t and command fails."
   (cl-letf (((symbol-function 'process-file)
