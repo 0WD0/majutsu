@@ -64,9 +64,6 @@
 (defvar majutsu-ediff-previous-winconf nil
   "Window configuration before starting Ediff.")
 
-(defvar-local majutsu-ediff--merge-user-edited nil
-  "Non-nil when the current Ediff merge session made user edits.")
-
 ;;; Buffer Management
 
 (defmacro majutsu-ediff-buffers (a b &optional c setup quit file)
@@ -366,16 +363,6 @@ WINCONF is the window configuration saved before launching Ediff."
 (defun majutsu-ediff--setup-merge-quit-hooks (winconf)
   "Install local quit hooks for a merge Ediff session.
 WINCONF is the window configuration saved before launching Ediff."
-  (setq-local majutsu-ediff--merge-user-edited nil)
-  (let ((control-buffer (current-buffer)))
-    (when (ediff-buffer-live-p ediff-buffer-C)
-      (with-current-buffer ediff-buffer-C
-        (add-hook 'before-change-functions
-                  (lambda (&rest _)
-                    (when (buffer-live-p control-buffer)
-                      (with-current-buffer control-buffer
-                        (setq-local majutsu-ediff--merge-user-edited t))))
-                  nil t))))
   ;; Replace Ediff's default merge quit hook so save semantics stay local to
   ;; Majutsu's `jj resolve` integration.
   (setq-local ediff-quit-merge-hook '(majutsu-ediff--quit-merge-session))
@@ -391,10 +378,9 @@ WINCONF is the window configuration saved before launching Ediff."
 (defun majutsu-ediff--quit-merge-session ()
   "Persist merge output if edited, then close merge buffer.
 This hook runs in the Ediff control buffer and is intended for `jj resolve'."
-  (let ((store-file ediff-merge-store-file)
-        (edited-p majutsu-ediff--merge-user-edited))
+  (let ((store-file ediff-merge-store-file))
     (when (ediff-buffer-live-p ediff-buffer-C)
-      (when (and edited-p
+      (when (and (buffer-modified-p ediff-buffer-C)
                  (stringp store-file)
                  (> (length store-file) 0)
                  (majutsu-ediff--confirm-save-merge store-file))
