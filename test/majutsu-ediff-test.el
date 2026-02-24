@@ -315,7 +315,6 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
     (unwind-protect
         (with-temp-buffer
           (let ((ediff-buffer-C merge-buffer))
-            (setq-local majutsu-ediff--merge-user-edited t)
             (setq-local ediff-merge-store-file "/tmp/output_test.txt")
             (with-current-buffer merge-buffer
               (setq-local ediff-merge-store-file nil)
@@ -348,7 +347,6 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
     (unwind-protect
         (with-temp-buffer
           (let ((ediff-buffer-C merge-buffer))
-            (setq-local majutsu-ediff--merge-user-edited t)
             (setq-local ediff-merge-store-file "/tmp/output_test.txt")
             (with-current-buffer merge-buffer
               (setq-local ediff-merge-store-file nil)
@@ -380,7 +378,6 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
     (unwind-protect
         (with-temp-buffer
           (let ((ediff-buffer-C merge-buffer))
-            (setq-local majutsu-ediff--merge-user-edited nil)
             (setq-local ediff-merge-store-file "/tmp/output_test.txt")
             (with-current-buffer merge-buffer
               (setq buffer-file-name "/tmp/output_test.txt")
@@ -406,7 +403,6 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
     (unwind-protect
         (with-temp-buffer
           (let ((ediff-buffer-C merge-buffer))
-            (setq-local majutsu-ediff--merge-user-edited t)
             (setq-local ediff-merge-store-file nil)
             (with-current-buffer merge-buffer
               (setq buffer-file-name "/tmp/output_test.txt")
