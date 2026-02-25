@@ -381,7 +381,7 @@ instead of `ediff-quit-hook' to avoid interrupting Ediff cleanup."
             (setq-local ediff-merge-store-file "/tmp/output_test.txt")
             (with-current-buffer merge-buffer
               (setq buffer-file-name "/tmp/output_test.txt")
-              (set-buffer-modified-p t))
+              (set-buffer-modified-p nil))
             (cl-letf (((symbol-function 'write-region)
                        (lambda (&rest _)
                          (setq written t)))
