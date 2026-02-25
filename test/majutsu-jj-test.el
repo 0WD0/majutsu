@@ -109,13 +109,77 @@
     (with-temp-buffer
       (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0)))))
 
+(ert-deftest majutsu--jj-insert/forces-wide-columns-for-diffstat ()
+  "Diffstat commands should run with widened `COLUMNS'."
+  (let ((majutsu-jj-diffstat-columns 80)
+        seen-columns)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 0)))
+      (with-temp-buffer
+        (let ((process-environment (cons "COLUMNS=10" process-environment)))
+          (should (equal (majutsu--jj-insert nil "diff" "--stat") 0))
+          (should (equal seen-columns "80")))))))
+
+(ert-deftest majutsu--jj-insert/keeps-columns-for-non-diffstat ()
+  "Non-diffstat commands should keep inherited `COLUMNS'."
+  (let ((majutsu-jj-diffstat-columns 80)
+        seen-columns)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 0)))
+      (with-temp-buffer
+        (let ((process-environment (cons "COLUMNS=10" process-environment)))
+          (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0))
+          (should (equal seen-columns "10")))))))
+
+(ert-deftest majutsu-process-environment/overrides-columns-for-diffstat ()
+  "Environment helper should replace inherited COLUMNS for diffstat commands."
+  (let ((majutsu-jj-diffstat-columns 80)
+        (majutsu-jj-environment '("INSIDE_EMACS=test,majutsu"))
+        (process-environment '("COLUMNS=10" "FOO=bar")))
+    (should (equal (car (majutsu-process-environment '("diff" "--stat")))
+                   "COLUMNS=80"))
+    (should (member "FOO=bar" (majutsu-process-environment '("diff" "--stat"))))
+    (should (member "INSIDE_EMACS=test,majutsu"
+                    (majutsu-process-environment '("diff" "--stat"))))
+    (should-not (member "COLUMNS=10" (majutsu-process-environment '("diff" "--stat"))))))
+
+(ert-deftest majutsu-process-environment/preserves-columns-for-non-diffstat ()
+  "Environment helper should keep inherited COLUMNS for non-diffstat commands."
+  (let ((majutsu-jj-diffstat-columns 80)
+        (majutsu-jj-environment nil)
+        (process-environment '("COLUMNS=10" "FOO=bar")))
+    (should (equal (majutsu-process-environment '("log" "-r" "@"))
+                   '("COLUMNS=10" "FOO=bar")))))
+
+(ert-deftest majutsu-jj-wash/forces-wide-columns-for-diffstat ()
+  "`majutsu-jj-wash' should run diffstat with widened `COLUMNS'."
+  (let ((majutsu-jj-diffstat-columns 80)
+        seen-columns)
+    (cl-letf (((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 (insert "x\n")
+                 0)))
+      (with-temp-buffer
+        (let ((process-environment (cons "COLUMNS=10" process-environment)))
+          (should (equal (majutsu-jj-wash (lambda (&rest _) nil)
+                             'wash-anyway
+                           "diff"
+                           "--stat")
+                         0))
+          (should (equal seen-columns "80")))))))
+
 (ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
   "majutsu--jj-insert should return error message when return-error is t and command fails."
   (cl-letf (((symbol-function 'process-file)
              (lambda (_program _infile _destination _display &rest _args)
                ;; Simulate error by writing to stderr file
                1))
-            ((symbol-function 'make-temp-file)
+            ((symbol-function 'make-nearby-temp-file)
              (lambda (_prefix) "/tmp/test-err"))
             ((symbol-function 'insert-file-contents)
              (lambda (file) (insert "Error: something went wrong")))
@@ -125,6 +189,101 @@
       (let ((result (majutsu--jj-insert t "log" "-r" "invalid")))
         (should (stringp result))
         (should (string-match-p "something went wrong" result))))))
+
+(ert-deftest majutsu-jj--executable/picks-remote-value ()
+  "Executable selection should use remote override on TRAMP paths."
+  (let ((default-directory "/ssh:demo:/tmp/")
+        (majutsu-jj-executable "jj-local")
+        (majutsu-remote-jj-executable "jj-remote"))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:"))))
+      (should (equal (majutsu-jj--executable) "jj-remote")))))
+
+(ert-deftest majutsu-jj-expand-filename-from-jj/preserves-remote-prefix ()
+  "Absolute paths from jj output should keep TRAMP host prefix."
+  (let ((default-directory "/ssh:demo:/tmp/"))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:"))))
+      (should (equal (majutsu-jj-expand-filename-from-jj "/home/demo/repo")
+                     "/ssh:demo:/home/demo/repo")))))
+
+(ert-deftest majutsu-jj-convert-filename-for-jj/strips-tramp-prefix ()
+  "Paths passed to remote jj tools should drop TRAMP prefix."
+  (cl-letf (((symbol-function 'file-remote-p)
+             (lambda (path &optional identification _connected)
+               (when (and (equal path "/ssh:demo:/tmp/patch.diff")
+                          (eq identification 'localname))
+                 "/tmp/patch.diff"))))
+    (should (equal (majutsu-convert-filename-for-jj "/ssh:demo:/tmp/patch.diff")
+                   "/tmp/patch.diff"))))
+
+(ert-deftest majutsu-jj--editor-command-from-env/parses-sleeping-editor-wrapper ()
+  "Sleeping editor env should parse as PROGRAM -c SCRIPT, not `wait'."
+  (let* ((majutsu-with-editor-envvar "JJ_EDITOR")
+         (process-environment
+          (cons (format "JJ_EDITOR=%s" with-editor-sleeping-editor)
+                process-environment))
+         (command (majutsu-jj--editor-command-from-env)))
+    (should (equal (car command) "sh"))
+    (should (equal (cadr command) "-c"))
+    (should (string-match-p "WITH-EDITOR: \\\$\\\$ OPEN" (nth 2 command)))))
+
+(ert-deftest majutsu-toplevel/preserves-remote-prefix ()
+  "`majutsu-toplevel' should return remote workspace roots on TRAMP."
+  (let ((default-directory "/ssh:demo:/tmp/"))
+    (cl-letf (((symbol-function 'majutsu--safe-default-directory)
+               (lambda (&optional _file) default-directory))
+              ((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:")))
+              ((symbol-function 'process-file)
+               (lambda (_program _infile _destination _display &rest _args)
+                 (insert "/home/demo/repo\n")
+                 0)))
+      (should (equal (majutsu-toplevel)
+                     "/ssh:demo:/home/demo/repo/")))))
+
+(ert-deftest majutsu--assert-usable-jj/uses-remote-aware-executable-find ()
+  "Remote executable assertion should use `executable-find' with REMOTE.
+This mirrors Magit's behavior."
+  (let ((default-directory "/ssh:demo:/tmp/")
+        (majutsu-jj-executable "jj-local")
+        (majutsu-remote-jj-executable "jj-remote")
+        seen)
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (program &optional remote)
+                 (setq seen (list program remote))
+                 "/usr/bin/jj"))
+              ((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:"))))
+      (should-not (majutsu--assert-usable-jj))
+      (should (equal seen '("jj-remote" t))))))
+
+(ert-deftest majutsu--assert-usable-jj/signals-when-remote-executable-missing ()
+  "Remote executable assertion should signal not-found on lookup failure."
+  (let ((default-directory "/ssh:demo:/tmp/")
+        (majutsu-jj-executable "jj-local")
+        (majutsu-remote-jj-executable "jj-remote"))
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (_program &optional _remote) nil))
+              ((symbol-function 'file-remote-p)
+               (lambda (path &optional identification _connected)
+                 (when (and (equal path default-directory)
+                            (null identification))
+                   "/ssh:demo:"))))
+      (should-error (majutsu--assert-usable-jj)
+                    :type 'majutsu-jj-executable-not-found))))
 
 (ert-deftest majutsu-jj-revset-candidates/includes-workspaces-bookmarks-tags ()
   "Revset candidates should include common refs and deduplicate values."

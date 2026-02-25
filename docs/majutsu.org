@@ -591,6 +591,7 @@ In Evil integration:
 ** Essential Settings
 - ~majutsu-jj-executable~ :: Path to the =jj= binary (default: ="jj"=).
 - ~majutsu-jj-global-arguments~ :: Global arguments passed to all jj commands (default: =("--no-pager" "--color=always")=).
+- ~majutsu-jj-diffstat-columns~ :: Column width used only for =jj diff --stat= (default: =80=). Set to =nil= to inherit terminal width. Raise it if you want more full path visibility; keep it near 80 if you prefer compact stat bars.
 - ~majutsu-show-process-buffer-hint~ :: Whether to show the "Type $ for details" hint on errors.
 - ~majutsu-debug~ :: Enable debug logging for jj operations.
 - ~majutsu-show-command-output~ :: Show jj command output in messages.
@@ -605,6 +606,7 @@ In Evil integration:
 - ~majutsu-process-log-max~ :: Maximum number of sections to keep in a process log buffer (default: 32).
 - ~majutsu-process-apply-ansi-colors~ :: When non-nil, convert ANSI escapes in jj output to text properties.
 - ~majutsu-process-timestamp-format~ :: Format string for timestamps in process buffer sections.
+- ~majutsu-jj-environment~ :: Extra =KEY=VALUE= entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by =majutsu-process=.
 
 ** Display Options
 - ~majutsu-log-commit-columns~ :: Customize which columns are shown in the log (ID, author, date, etc.).
