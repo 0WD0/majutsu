@@ -590,12 +590,18 @@ Returns patch string or nil if no selections."
 (defvar majutsu-interactive--temp-dir nil
   "Temporary directory for patch files.")
 
+(defvar majutsu-interactive--temp-dir-remote nil
+  "Remote prefix associated with `majutsu-interactive--temp-dir'.")
+
 (defun majutsu-interactive--temp-dir ()
   "Return or create temporary directory."
-  (unless (and majutsu-interactive--temp-dir
-               (file-directory-p majutsu-interactive--temp-dir))
-    (setq majutsu-interactive--temp-dir
-          (make-temp-file "majutsu-interactive-" t)))
+  (let ((remote (file-remote-p default-directory)))
+    (unless (and majutsu-interactive--temp-dir
+                 (equal remote majutsu-interactive--temp-dir-remote)
+                 (file-directory-p majutsu-interactive--temp-dir))
+      (setq majutsu-interactive--temp-dir
+            (make-nearby-temp-file "majutsu-interactive-" t)
+            majutsu-interactive--temp-dir-remote remote)))
   majutsu-interactive--temp-dir)
 
 (defun majutsu-interactive--write-patch (patch)
@@ -640,12 +646,14 @@ When REVERSE is non-nil, reset $right to $left state first, then apply patch."
 (defun majutsu-interactive--build-tool-config (patch-file reverse)
   "Build jj --config arguments for applypatch tool with PATCH-FILE.
 When REVERSE is non-nil, the script will apply the patch in reverse."
-  (let ((script (majutsu-interactive--write-applypatch-script reverse)))
+  (let* ((script (majutsu-interactive--write-applypatch-script reverse))
+         (script-path (majutsu-convert-filename-for-jj script))
+         (patch-path (majutsu-convert-filename-for-jj patch-file)))
     (list
      "--config" (format "merge-tools.majutsu-applypatch.program=%s"
-                        (shell-quote-argument script))
+                        (shell-quote-argument script-path))
      "--config" (format "merge-tools.majutsu-applypatch.edit-args=[\"$left\",\"$right\",%s]"
-                        (prin1-to-string patch-file)))))
+                        (prin1-to-string patch-path)))))
 
 ;;; Pending Operation Flow
 

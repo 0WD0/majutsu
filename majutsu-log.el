@@ -19,7 +19,6 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'json)
 
 (defcustom majutsu-log-field-faces
   '((bookmarks . magit-branch-local)
@@ -201,41 +200,84 @@ When TAKES-VALUE is non-nil, also remove the following element."
 ;;; Log Template
 
 (defconst majutsu-log--field-separator "\x1e"
-  "Separator character inserted between template fields.
-We use an ASCII record separator so parsing stays robust while
-remaining invisible in the rendered buffer.")
+  "Separator character inserted between fields inside each module payload.")
 
-(defconst majutsu-log--required-columns '(change-id commit-id long-desc)
-  "Columns that must always be present in the compiled template for parsing.")
+(defconst majutsu-log--field-line-separator "\x1f"
+  "Encoded newline separator used inside template field payloads.
+Log records are transported as single lines, then this separator is
+decoded back to literal newlines after field splitting.")
+
+(defconst majutsu-log--record-marker "\x1d"
+  "Control marker prefix for module boundaries inside log output.")
+
+(defconst majutsu-log--entry-start-token (concat majutsu-log--record-marker "S")
+  "Marker that starts a commit entry and heading payload.")
+
+(defconst majutsu-log--entry-body-token (concat majutsu-log--record-marker "B")
+  "Marker that starts the body payload.")
+
+(defconst majutsu-log--entry-right-token (concat majutsu-log--record-marker "R")
+  "Marker that starts the right-margin payload.")
+
+(defconst majutsu-log--entry-meta-token (concat majutsu-log--record-marker "M")
+  "Marker that starts the metadata payload.")
+
+(defconst majutsu-log--entry-end-token (concat majutsu-log--record-marker "E")
+  "Marker that terminates a commit entry.")
+
+(defconst majutsu-log--module-order '(heading body right-margin metadata)
+  "Module parse/render order for sequential log payloads.")
+
+(defconst majutsu-log--field-default-modules
+  '((id . metadata)
+    (change-id . heading)
+    (commit-id . metadata)
+    (bookmarks . heading)
+    (tags . heading)
+    (working-copies . heading)
+    (flags . metadata)
+    (git-head . heading)
+    (signature . heading)
+    (empty . heading)
+    (description . heading)
+    (author . right-margin)
+    (timestamp . right-margin)
+    (long-desc . body))
+  "Default module placement for known log fields.")
+
+(defconst majutsu-log--required-columns '(id)
+  "Fields that must exist in `majutsu-log-commit-columns'.")
+
+(defconst majutsu-log--default-column-postprocessors
+  '(majutsu-log-post-decode-line-separator)
+  "Default postprocessors applied to every field unless overridden.")
 
 (defcustom majutsu-log-commit-columns
-  '((:field id :align left :visible nil)
-    (:field change-id :align left)
-    (:field bookmarks :align left)
-    (:field tags :align left)
-    (:field working-copies :align left)
-    (:field empty :align left)
-    (:field git-head :align left)
-    (:field description :align left)
-    (:field author :align right)
-    (:field timestamp :align right)
-    (:field commit-id :align right :visible nil)
-    (:field flags :align left :visible nil)
-    (:field long-desc :visible nil))
-  "Column specification controlling how log rows are rendered.
+  '((:field change-id :module heading :face t)
+    (:field bookmarks :module heading :face magit-branch-local)
+    (:field tags :module heading :face magit-tag)
+    (:field working-copies :module heading :face magit-branch-remote)
+    (:field empty :module heading :face t)
+    (:field git-head :module heading :face t)
+    (:field description :module heading :face t)
+    (:field long-desc :module body :face t)
+    (:field author :module right-margin :face magit-log-author)
+    (:field timestamp :module right-margin :face magit-log-date)
+    (:field id :module metadata :face nil)
+    (:field commit-id :module metadata :face nil)
+    (:field flags :module metadata :face nil))
+  "Field specification controlling log template and rendering.
 
 Each element is a plist with at least `:field'. Supported keys:
-- :field   - symbol identifying a known field (e.g. `change-id',
-             `commit-id', `description', `author',
-             `timestamp', `flags', `long-desc').
-- :align   - one of `left', `right', or `center' (defaults to `left').
-- :visible - non-nil to show in the buffer; nil keeps the field hidden
-             but still present in the template for parsing.
+- :field  - symbol identifying a known field.
+- :module - one of `heading', `body', `right-margin', `metadata'.
+- :face   - t (preserve jj highlighting), nil (strip), or FACE (override).
+- :post   - postprocessor function or function list for field value transforms.
 
-Width is computed dynamically per buffer based on content; the optional
-:width key is currently ignored. Required fields are injected
-automatically even if omitted or hidden."
-  :type '(repeat (plist :options (:field :align :width :visible)))
+`heading' is the only module that may emit physical newlines. Other modules
+remain on the final heading line and should encode logical newlines as
+`majutsu-log--field-line-separator' (\\x1f)."
+  :type '(repeat (plist :options (:field :module :face :post)))
   :group 'majutsu)
 
 (defmacro majutsu-log-define-column (name template doc)
@@ -353,10 +395,10 @@ Also registers a variable watcher to invalidate the template cache."
   "Template for the timestamp column.")
 
 (majutsu-log-define-column long-desc
-  [:json [:description :trim_end]]
+  [:description :lines :skip 1 :join "\x1f"]
   "Template for the long-desc column.
-Note: This must return a valid JSON string (usually via :json)
-to be parsed correctly.")
+Newlines are encoded as an internal separator so ANSI/label styling
+can survive transport through the single-line log format.")
 
 (defvar majutsu-log--compiled-template-cache nil
   "Cached structure holding the compiled log template and column metadata.")
@@ -366,6 +408,41 @@ to be parsed correctly.")
   (setq majutsu-log--compiled-template-cache nil)
   (setq majutsu-log--cached-entries nil))
 
+(defun majutsu-log-post-decode-line-separator (value &optional _ctx)
+  "Decode `majutsu-log--field-line-separator' inside VALUE.
+
+This is the default postprocessor for log fields so all modules can
+transport logical newlines safely through single-line payload segments."
+  (if (stringp value)
+      (subst-char-in-string
+       (aref majutsu-log--field-line-separator 0)
+       ?\n
+       value t)
+    value))
+
+(defun majutsu-log--default-module-for-field (field)
+  "Return default module symbol for FIELD."
+  (or (alist-get field majutsu-log--field-default-modules nil nil #'eq)
+      (user-error "Field %S requires explicit :module" field)))
+
+(defun majutsu-log--default-face-for-field (field)
+  "Return default face policy for FIELD."
+  (let ((spec (alist-get field majutsu-log-field-faces nil nil #'eq)))
+    (if (null spec) t spec)))
+
+(defun majutsu-log--normalize-postprocessors (post field)
+  "Normalize POST value for FIELD into a function list."
+  (let ((fns (cond
+              ((eq post :default) majutsu-log--default-column-postprocessors)
+              ((null post) nil)
+              ((functionp post) (list post))
+              ((and (listp post) (seq-every-p #'functionp post)) post)
+              (t (user-error "Column %S has invalid :post %S" field post)))))
+    (dolist (fn fns)
+      (unless (functionp fn)
+        (user-error "Column %S has non-callable postprocessor %S" field fn)))
+    fns))
+
 (defun majutsu-log--normalize-column-spec (spec)
   "Normalize a single column SPEC into a plist with defaults."
   (let* ((col (cond
@@ -373,23 +450,39 @@ to be parsed correctly.")
                ((symbolp spec) (list :field spec))
                (t (user-error "Invalid column spec: %S" spec))))
          (field (plist-get col :field))
-         (align (or (plist-get col :align) 'left))
-         (visible (if (plist-member col :visible)
-                      (plist-get col :visible)
-                    t)))
-    (setq align (if (keywordp align) (intern (substring (symbol-name align) 1)) align))
-    (unless (memq align '(left right center))
-      (user-error "Column %S has invalid :align %S" field align))
-    (list :field field :align align :visible visible)))
+         (module (if (plist-member col :module)
+                     (plist-get col :module)
+                   (majutsu-log--default-module-for-field field)))
+         (face (if (plist-member col :face)
+                   (plist-get col :face)
+                 (majutsu-log--default-face-for-field field)))
+         (post (if (plist-member col :post)
+                   (plist-get col :post)
+                 :default)))
+    (setq module (if (keywordp module)
+                     (intern (substring (symbol-name module) 1))
+                   module))
+    (unless (memq module majutsu-log--module-order)
+      (user-error "Column %S has invalid :module %S" field module))
+    (unless (or (eq face t) (null face) (symbolp face))
+      (user-error "Column %S has invalid :face %S" field face))
+    (list :field field
+          :module module
+          :face face
+          :post (majutsu-log--normalize-postprocessors post field))))
 
 (defun majutsu-log--ensure-required-columns (columns)
   "Ensure required columns are present in COLUMNS list.
-Missing required fields are appended as hidden columns."
+Missing required fields are appended with defaults."
   (let ((present (mapcar (lambda (c) (plist-get c :field)) columns)))
     (dolist (req majutsu-log--required-columns)
       (unless (memq req present)
-        (setq columns (append columns (list (list :field req :visible nil :align 'left))))))
+        (setq columns (append columns (list (majutsu-log--normalize-column-spec req))))))
     columns))
+
+(defun majutsu-log--module-columns (compiled module)
+  "Return compiled column specs for MODULE from COMPILED metadata."
+  (alist-get module (plist-get compiled :module-columns) nil nil #'eq))
 
 (defun majutsu-log--column-template (field)
   "Return majutsu-template form for FIELD.
@@ -399,22 +492,70 @@ Looks up `majutsu-log-template-FIELD'."
         (symbol-value var)
       (user-error "Unknown column field %S" field))))
 
+(defun majutsu-log--build-module-template-form (templates)
+  "Return a template form joining TEMPLATES with field separators."
+  (cond
+   ((null templates) "")
+   ((null (cdr templates)) (car templates))
+   (t
+    (let ((forms nil)
+          (first t))
+      (dolist (template templates)
+        (unless first
+          (setq forms (append forms (list majutsu-log--field-separator))))
+        (setq first nil)
+        (setq forms (append forms (list template))))
+      (cons :concat forms)))))
+
 (defun majutsu-log--compile-columns (&optional columns)
   "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
-Returns a plist with :template, :columns, and :field-order."
+Returns a plist with :template, :columns, and :module-columns."
   (let* ((normalized (mapcar #'majutsu-log--normalize-column-spec
                              (or columns majutsu-log-commit-columns)))
          (complete (majutsu-log--ensure-required-columns normalized))
-         (field-order (mapcar (lambda (c) (plist-get c :field)) complete))
-         (templates (mapcar (lambda (c)
-                              (majutsu-log--column-template (plist-get c :field)))
-                            complete))
-         (compiled (majutsu-tpl `[,majutsu-log--field-separator
-                                  ,(vconcat (list :join majutsu-log--field-separator) templates)
-                                  "\n"])))
+         (module-columns
+          (mapcar (lambda (module)
+                    (cons module
+                          (seq-filter (lambda (c)
+                                        (eq (plist-get c :module) module))
+                                      complete)))
+                  majutsu-log--module-order))
+         (heading-form
+          (majutsu-log--build-module-template-form
+           (mapcar (lambda (c)
+                     (majutsu-log--column-template (plist-get c :field)))
+                   (alist-get 'heading module-columns nil nil #'eq))))
+         (body-form
+          (majutsu-log--build-module-template-form
+           (mapcar (lambda (c)
+                     (majutsu-log--column-template (plist-get c :field)))
+                   (alist-get 'body module-columns nil nil #'eq))))
+         (right-form
+          (majutsu-log--build-module-template-form
+           (mapcar (lambda (c)
+                     (majutsu-log--column-template (plist-get c :field)))
+                   (alist-get 'right-margin module-columns nil nil #'eq))))
+         (meta-form
+          (majutsu-log--build-module-template-form
+           (mapcar (lambda (c)
+                     (majutsu-log--column-template (plist-get c :field)))
+                   (alist-get 'metadata module-columns nil nil #'eq))))
+         (compiled
+          (majutsu-tpl
+           `[:concat
+             ,majutsu-log--entry-start-token
+             ,heading-form
+             ,majutsu-log--entry-body-token
+             ,body-form
+             ,majutsu-log--entry-right-token
+             ,right-form
+             ,majutsu-log--entry-meta-token
+             ,meta-form
+             ,majutsu-log--entry-end-token
+             "\n"])))
     (list :template compiled
           :columns complete
-          :field-order field-order)))
+          :module-columns module-columns)))
 
 (defun majutsu-log--ensure-template ()
   "Return cached compiled template structure, recomputing if necessary."
@@ -439,12 +580,92 @@ Returns a plist with :template, :columns, and :field-order."
 (defvar-local majutsu-log--cached-entries nil
   "Cached log entries for the current buffer.")
 
-(defun majutsu-log--parse-json-safe (value)
-  "Parse VALUE as JSON, returning nil on failure or blank strings."
-  (when (and value (not (string-empty-p value)))
-    (condition-case nil
-        (json-parse-string value)
-      (error nil))))
+(defun majutsu-log--split-by-separator (value separator)
+  "Split VALUE by one-char string SEPARATOR, preserving empty fields."
+  (if (not (stringp value))
+      nil
+    (let ((start 0)
+          (len (length value))
+          (sep (aref separator 0))
+          out)
+      (dotimes (idx len)
+        (when (eq (aref value idx) sep)
+          (push (substring value start idx) out)
+          (setq start (1+ idx))))
+      (push (substring value start len) out)
+      (nreverse out))))
+
+(defun majutsu-log--join-lines (lines)
+  "Join LINES with literal newlines, preserving string properties."
+  (if (null lines)
+      ""
+    (let ((out (car lines)))
+      (dolist (line (cdr lines) out)
+        (setq out (concat out "\n" line))))))
+
+(defun majutsu-log--line-token-position (token bol eol &optional start)
+  "Return start position of TOKEN between BOL and EOL, or nil."
+  (save-excursion
+    (goto-char (or start bol))
+    (when (search-forward token eol t)
+      (- (point) (length token)))))
+
+(defun majutsu-log--parse-tail-payloads (tail)
+  "Parse B/R/M/E payload segments from TAIL string.
+
+TAIL must start with `majutsu-log--entry-body-token'."
+  (when (string-prefix-p majutsu-log--entry-body-token tail)
+    (let* ((body-start (length majutsu-log--entry-body-token))
+           (right-pos (string-match (regexp-quote majutsu-log--entry-right-token)
+                                    tail body-start))
+           (meta-pos (and right-pos
+                          (string-match (regexp-quote majutsu-log--entry-meta-token)
+                                        tail (+ right-pos (length majutsu-log--entry-right-token)))))
+           (end-pos (and meta-pos
+                         (string-match (regexp-quote majutsu-log--entry-end-token)
+                                       tail (+ meta-pos (length majutsu-log--entry-meta-token))))))
+      (when (and right-pos meta-pos end-pos)
+        (let ((trailing (substring tail (+ end-pos (length majutsu-log--entry-end-token)))))
+          (when (string-empty-p trailing)
+            (list :body (substring tail body-start right-pos)
+                  :right-margin (substring tail
+                                           (+ right-pos (length majutsu-log--entry-right-token))
+                                           meta-pos)
+                  :metadata (substring tail
+                                       (+ meta-pos (length majutsu-log--entry-meta-token))
+                                       end-pos))))))))
+
+(defun majutsu-log--split-module-values (payload count)
+  "Split PAYLOAD into COUNT field values using `majutsu-log--field-separator'."
+  (if (<= count 0)
+      nil
+    (let ((values (majutsu-log--split-by-separator (or payload "") majutsu-log--field-separator)))
+      (cond
+       ((< (length values) count)
+        (append values (make-list (- count (length values)) "")))
+       ((> (length values) count)
+        (seq-take values count))
+       (t values)))))
+
+(defun majutsu-log--apply-postprocessor (fn value ctx)
+  "Apply postprocessor FN to VALUE with context CTX.
+
+FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
+  (condition-case err
+      (condition-case _
+          (funcall fn value ctx)
+        (wrong-number-of-arguments
+         (funcall fn value)))
+    (error
+     (majutsu--debug "majutsu-log postprocessor failed (%S on %S): %s"
+                     fn (plist-get ctx :field) (error-message-string err))
+     value)))
+
+(defun majutsu-log--apply-postprocessors (value postprocessors ctx)
+  "Apply POSTPROCESSORS to VALUE with CTX sequentially."
+  (let ((out value))
+    (dolist (fn postprocessors out)
+      (setq out (majutsu-log--apply-postprocessor fn out ctx)))))
 
 (defun majutsu-log--apply-flags (entry value)
   "Set flag fields on ENTRY based on VALUE string."
@@ -481,7 +702,7 @@ Returns a plist with :template, :columns, and :field-order."
      (setq value (string-remove-suffix " ago" value))
      (setq entry (plist-put entry :timestamp value)))
     ('long-desc
-     (setq entry (plist-put entry :long-desc (string-join (cdr (string-lines (majutsu-log--parse-json-safe value))) "\n"))))
+     (setq entry (plist-put entry :long-desc value)))
     ('flags
      (setq entry (majutsu-log--apply-flags entry value)))
     ('git-head
@@ -496,20 +717,101 @@ Returns a plist with :template, :columns, and :field-order."
     (setq entry (plist-put entry :columns columns)))
   entry)
 
-(defun majutsu-log--build-entry-from-elems (elems field-order line)
-  "Construct a log ENTRY plist from ELEMS split by separator.
-FIELD-ORDER describes which field name corresponds to each element
-after the leading graph prefix."
-  (let* ((prefix (car elems))
-         (fields (cdr elems))
-         (entry (list :prefix prefix
-                      :line line
-                      :elems elems
-                      :columns nil)))
-    (cl-loop for field in field-order
-             for value in fields
-             do (setq entry (majutsu-log--record-column entry field value)))
+(defun majutsu-log--record-module-fields (entry module payload compiled)
+  "Record MODULE PAYLOAD values into ENTRY using COMPILED module layout."
+  (let* ((columns (majutsu-log--module-columns compiled module))
+         (values (majutsu-log--split-module-values payload (length columns)))
+         (stored nil))
+    (cl-loop for column in columns
+             for value in values
+             for field = (plist-get column :field)
+             for ctx = (list :field field :module module)
+             for out = (majutsu-log--apply-postprocessors value (plist-get column :post) ctx)
+             do (setq entry (majutsu-log--record-column entry field out))
+             do (push out stored))
+    (let ((modules (plist-get entry :modules)))
+      (setf (alist-get module modules nil nil #'eq) (nreverse stored))
+      (setq entry (plist-put entry :modules modules)))
     entry))
+
+(defun majutsu-log--parse-entry-at-point (compiled)
+  "Parse one sequentially-encoded log entry at point using COMPILED.
+
+Point must be at a line potentially containing `majutsu-log--entry-start-token'.
+Returns entry plist and moves point past the consumed entry, or nil."
+  (let* ((bol (line-beginning-position))
+         (eol (line-end-position))
+         (start-pos (majutsu-log--line-token-position majutsu-log--entry-start-token bol eol)))
+    (when start-pos
+      (let* ((indent (- start-pos bol))
+             (heading-prefixes nil)
+             (heading-segments nil)
+             (tail nil)
+             (done nil)
+             (first-line t))
+        (while (and (not done) (not (eobp)))
+          (setq bol (line-beginning-position)
+                eol (line-end-position))
+          (let* ((prefix-end (min (+ bol indent) eol))
+                 (prefix (buffer-substring bol prefix-end))
+                 (content-start (if first-line
+                                    (+ start-pos (length majutsu-log--entry-start-token))
+                                  prefix-end))
+                 (body-pos (majutsu-log--line-token-position
+                            majutsu-log--entry-body-token bol eol content-start)))
+            (if body-pos
+                (progn
+                  (push prefix heading-prefixes)
+                  (push (buffer-substring content-start body-pos) heading-segments)
+                  (setq tail (buffer-substring body-pos eol))
+                  (setq done t)
+                  (forward-line 1))
+              (push prefix heading-prefixes)
+              (push (buffer-substring content-start eol) heading-segments)
+              (forward-line 1)
+              (when (eobp)
+                (setq done :incomplete))))
+          (setq first-line nil))
+        (when (eq done t)
+          (when-let* ((tail-payloads (majutsu-log--parse-tail-payloads tail)))
+            (let* ((entry (list :indent indent
+                                :columns nil
+                                :modules nil
+                                :heading-prefixes (nreverse heading-prefixes)))
+                   (heading-payload (majutsu-log--join-lines (nreverse heading-segments))))
+              (setq entry (majutsu-log--record-module-fields entry 'heading heading-payload compiled))
+              (setq entry (majutsu-log--record-module-fields
+                           entry 'body (plist-get tail-payloads :body) compiled))
+              (setq entry (majutsu-log--record-module-fields
+                           entry 'right-margin (plist-get tail-payloads :right-margin) compiled))
+              (setq entry (majutsu-log--record-module-fields
+                           entry 'metadata (plist-get tail-payloads :metadata) compiled))
+              (let ((suffix-lines nil))
+                ;; Preserve graph continuation lines between the current entry's
+                ;; end marker and the next entry start marker. These lines stay
+                ;; visible as part of the current section heading area.
+                (while (and (not (eobp))
+                            (let ((next-bol (line-beginning-position))
+                                  (next-eol (line-end-position)))
+                              (not (majutsu-log--line-token-position
+                                    majutsu-log--entry-start-token next-bol next-eol))))
+                  (push (buffer-substring (line-beginning-position) (line-end-position))
+                        suffix-lines)
+                  (forward-line 1))
+                (setq entry (plist-put entry :suffix-lines (nreverse suffix-lines))))
+              entry)))))))
+
+(defun majutsu-log--parse-entries-in-buffer (compiled)
+  "Parse all sequentially-encoded log entries in current buffer using COMPILED."
+  (let (entries)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((entry (majutsu-log--parse-entry-at-point compiled)))
+          (if entry
+              (push entry entries)
+            (forward-line 1)))))
+    (nreverse entries)))
 
 (defun majutsu--indent-string (s column)
   "Insert STRING into the current buffer, indenting each line to COLUMN."
@@ -523,25 +825,32 @@ after the leading graph prefix."
   "Return string value for FIELD stored on ENTRY."
   (alist-get field (plist-get entry :columns) nil nil #'eq))
 
-(defun majutsu-log--field-face (field)
-  "Return face symbol for FIELD, or nil."
-  (alist-get field majutsu-log-field-faces nil nil #'eq))
+(defun majutsu-log--apply-face-policy (value face)
+  "Apply FACE policy to VALUE and return display string."
+  (let ((v (or value "")))
+    (cond
+     ((eq face t) v)
+     ((null face) (substring-no-properties v))
+     (t (propertize (substring-no-properties v) 'font-lock-face face)))))
+
+(defun majutsu-log--max-line-width (value)
+  "Return max display width among VALUE's lines."
+  (if (or (null value) (string-empty-p value))
+      0
+    (let ((widths (mapcar #'string-width (split-string value "\n" nil))))
+      (if widths (apply #'max widths) 0))))
 
 (defun majutsu-log--compute-column-widths (entries compiled)
-  "Compute display widths for visible columns.
-Returns plist with:
-- :right (alist field->width)  ; per right-aligned column max width
-- :right-total                 ; total width of right block incl. spaces"
-  (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
-                                   (plist-get compiled :columns)))
-         (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
-                                 visible-cols))
+  "Compute right-margin widths from ENTRIES according to COMPILED layout."
+  (let* ((right-cols (majutsu-log--module-columns compiled 'right-margin))
          (right-widths ()))
     (dolist (entry entries)
       (dolist (col right-cols)
         (let* ((field (plist-get col :field))
-               (val (or (majutsu-log--entry-column entry field) ""))
-               (w (string-width val)))
+               (val (replace-regexp-in-string "\n" " "
+                                              (or (majutsu-log--entry-column entry field) "")
+                                              nil t))
+               (w (majutsu-log--max-line-width val)))
           (setf (alist-get field right-widths nil nil #'eq)
                 (max w (or (alist-get field right-widths nil nil #'eq) 0))))))
     (let* ((right-total
@@ -567,48 +876,87 @@ Returns plist with:
                  (concat (make-string left ?\s) txt (make-string right ?\s))))
       (_ (concat txt (make-string pad ?\s))))))
 
-(defun majutsu-log--format-entry-line (entry compiled widths)
-  "Return plist (:line string :margin string :desc-indent col).
-Left fields follow graph width per-line; right fields are rendered for margin."
-  (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
-                                   (plist-get compiled :columns)))
-         (left-cols (seq-filter (lambda (c) (not (eq (plist-get c :align) 'right)))
-                                visible-cols))
-         (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
-                                 visible-cols))
-         (prefix (or (plist-get entry :prefix) ""))
-         (parts (list prefix))
-         (current-width (string-width prefix))
-         (desc-indent nil))
-    ;; build left part without padding
-    (dolist (col left-cols)
-      (let* ((field (plist-get col :field))
+(defun majutsu-log--concat-heading-parts (parts)
+  "Concatenate heading PARTS without adding spaces after newlines."
+  (let ((out ""))
+    (dolist (part parts out)
+      (unless (string-empty-p part)
+        (let ((need-space
+               (and (> (length out) 0)
+                    (not (eq (aref out (1- (length out))) ?\n))
+                    (not (eq (aref part 0) ?\n)))))
+          (setq out (concat out (if need-space " " "") part)))))))
+
+(defun majutsu-log--render-heading-lines (entry compiled)
+  "Render ENTRY heading module as visible lines with graph prefixes."
+  (let* ((columns (majutsu-log--module-columns compiled 'heading))
+         (parts nil))
+    (dolist (column columns)
+      (let* ((field (plist-get column :field))
+             (face (plist-get column :face))
              (raw (or (majutsu-log--entry-column entry field) ""))
-             (face (majutsu-log--field-face field))
-             (formatted (if face (propertize raw 'font-lock-face face) raw)))
-        (unless (string-empty-p formatted)
-          (setq parts (append parts (list formatted)))
-          (setq current-width (+ current-width 1 (string-width formatted)))
-          (when (and (not desc-indent) (eq field 'description))
-            (setq desc-indent (- current-width (string-width formatted)))))))
-    (let* ((left-str (string-join parts " "))
-           (left-len (string-width left-str))
-           (right-parts '()))
-      ;; build right block with per-column padding
-      (dolist (col right-cols)
-        (let* ((field (plist-get col :field))
-               (raw (or (majutsu-log--entry-column entry field) ""))
-               (face (majutsu-log--field-face field))
-               (col-width (or (alist-get field (plist-get widths :right) nil nil #'eq)
-                              (string-width raw)))
-               (formatted (majutsu-log--pad-display raw col-width (plist-get col :align)))
-               (formatted (if face (propertize formatted 'font-lock-face face) formatted)))
-          (push formatted right-parts)))
-      (setq right-parts (nreverse right-parts))
-      (let ((margin (string-join right-parts " ")))
-        (list :line left-str
-              :margin margin
-              :desc-indent (or desc-indent left-len))))))
+             (value (majutsu-log--apply-face-policy raw face)))
+        (unless (string-empty-p value)
+          (push value parts))))
+    (setq parts (nreverse parts))
+    (let* ((content (if parts (majutsu-log--concat-heading-parts parts) ""))
+           (content-lines (split-string content "\n" nil))
+           (prefixes (or (plist-get entry :heading-prefixes) (list "")))
+           (last-prefix (or (car (last prefixes)) ""))
+           (count (max (length content-lines) (length prefixes)))
+           out)
+      (cl-loop for idx below count
+               do (let ((prefix (or (nth idx prefixes) last-prefix))
+                        (line (or (nth idx content-lines) "")))
+                    (push (concat prefix line) out)))
+      (nreverse out))))
+
+(defun majutsu-log--render-right-margin (entry compiled widths)
+  "Render ENTRY right-margin module string using WIDTHS and COMPILED layout."
+  (let* ((columns (majutsu-log--module-columns compiled 'right-margin))
+         (parts nil)
+         (has-content nil))
+    (dolist (column columns)
+      (let* ((field (plist-get column :field))
+             (face (plist-get column :face))
+             (raw (replace-regexp-in-string "\n" " "
+                                            (or (majutsu-log--entry-column entry field) "")
+                                            nil t))
+             (col-width (or (alist-get field (plist-get widths :right) nil nil #'eq)
+                            (string-width raw)))
+             (padded (majutsu-log--pad-display raw col-width 'right))
+             (value (majutsu-log--apply-face-policy padded face)))
+        (unless (string-empty-p (string-trim raw))
+          (setq has-content t))
+        (push value parts)))
+    (when has-content
+      (string-join (nreverse parts) " "))))
+
+(defun majutsu-log--render-body (entry compiled)
+  "Render ENTRY body module as foldable multiline content."
+  (let* ((columns (majutsu-log--module-columns compiled 'body))
+         (parts nil))
+    (dolist (column columns)
+      (let* ((field (plist-get column :field))
+             (face (plist-get column :face))
+             (raw (or (majutsu-log--entry-column entry field) ""))
+             (value (majutsu-log--apply-face-policy raw face)))
+        (unless (string-empty-p (string-trim value))
+          (push value parts))))
+    (when parts
+      (string-join (nreverse parts) "\n"))))
+
+(defun majutsu-log--entry-id (entry)
+  "Return stable section id string from ENTRY metadata fields."
+  (or (let ((id (plist-get entry :id)))
+        (and (stringp id)
+             (not (string-empty-p (string-trim id)))
+             (substring-no-properties id)))
+      (let ((change-id (plist-get entry :change-id)))
+        (and (stringp change-id)
+             (not (string-empty-p (string-trim change-id)))
+             (substring-no-properties change-id)))
+      "unknown"))
 
 (defun majutsu-log--set-right-margin (width)
   "Set right margin WIDTH (in columns) for all windows showing current buffer."
@@ -647,151 +995,44 @@ disappear again."
       (insert ?\n))
     (setq majutsu-log--this-error nil)))
 
-(defun majutsu-log--buffer-substring-trim-right (beg end)
-  "Return buffer substring between BEG and END, trimming trailing spaces/tabs.
 
-Preserve text properties on the retained portion."
-  (save-excursion
-    (goto-char end)
-    (while (and (> (point) beg)
-                (memq (char-before) '(?\s ?\t)))
-      (backward-char 1))
-    (buffer-substring beg (point))))
-
-(defun majutsu-log--split-line-into-elems (bol eol)
-  "Split the current line between BOL and EOL into elems preserving properties.
-
-Return a list (PREFIX FIELD1 FIELD2 ...), trimming trailing whitespace
-from each element like the old `string-trim-right' based implementation."
-  (save-excursion
-    (goto-char bol)
-    (let ((sep majutsu-log--field-separator)
-          (start bol)
-          (elems nil))
-      (while (search-forward sep eol t)
-        (let ((seg-end (1- (point))))
-          (push (majutsu-log--buffer-substring-trim-right start seg-end) elems)
-          (setq start (point))))
-      (push (majutsu-log--buffer-substring-trim-right start eol) elems)
-      (nreverse elems))))
-
-(defun majutsu-log--line-has-fields-p (bol eol)
-  "Return non-nil if the line between BOL and EOL contains template fields."
-  (save-excursion
-    (goto-char bol)
-    (search-forward majutsu-log--field-separator eol t)))
-
-(defun majutsu-log--compute-column-widths-in-buffer (compiled)
-  "Compute right-aligned column widths for COMPILED in the current buffer.
-
-Return a plist like `majutsu-log--compute-column-widths'."
-  (let* ((visible-cols (seq-filter (lambda (c) (plist-get c :visible))
-                                   (plist-get compiled :columns)))
-         (right-cols (seq-filter (lambda (c) (eq (plist-get c :align) 'right))
-                                 visible-cols))
-         (field-order (plist-get compiled :field-order))
-         (right-widths nil))
-    (save-excursion
-      (goto-char (point-min))
-      (while (not (eobp))
-        (let ((bol (line-beginning-position))
-              (eol (line-end-position)))
-          (when (majutsu-log--line-has-fields-p bol eol)
-            (let* ((elems (majutsu-log--split-line-into-elems bol eol))
-                   (entry (majutsu-log--build-entry-from-elems elems field-order
-                                                               (buffer-substring bol eol))))
-              (dolist (col right-cols)
-                (let* ((field (plist-get col :field))
-                       (val (or (majutsu-log--entry-column entry field) ""))
-                       (w (string-width val)))
-                  (setf (alist-get field right-widths nil nil #'eq)
-                        (max w (or (alist-get field right-widths nil nil #'eq) 0))))))))
-        (forward-line 1)))
-    (let ((right-total
-           (let ((sum 0) (first t))
-             (dolist (col right-cols)
-               (let* ((field (plist-get col :field))
-                      (w (or (alist-get field right-widths nil nil #'eq) 0)))
-                 (unless first (setq sum (1+ sum)))
-                 (setq first nil)
-                 (setq sum (+ sum w))))
-             sum)))
-      (list :right right-widths :right-total right-total))))
-
-(defun majutsu-log--wash-entry (compiled widths)
-  "Wash the log entry at point using COMPILED and WIDTHS.
-
-Assumes point is at the beginning of a commit line (a line containing
-`majutsu-log--field-separator').  Replaces the raw line(s) with a
-`jj-commit' section and moves point to the end of the inserted section."
-  (let* ((field-order (plist-get compiled :field-order))
-         (bol (line-beginning-position))
-         (eol (line-end-position))
-         (elems (majutsu-log--split-line-into-elems bol eol))
-         (line (buffer-substring bol eol))
-         (entry (majutsu-log--build-entry-from-elems elems field-order line))
-         (suffix-lines nil)
-         (delete-end
-          (save-excursion
-            (forward-line 1)
-            (while (and (not (eobp))
-                        (let ((bol (line-beginning-position))
-                              (eol (line-end-position)))
-                          (not (majutsu-log--line-has-fields-p bol eol))))
-              (push (buffer-substring (line-beginning-position) (line-end-position))
-                    suffix-lines)
-              (forward-line 1))
-            (point))))
-    (setq suffix-lines (nreverse suffix-lines))
-    (delete-region bol delete-end)
-    (goto-char bol)
-    (let* ((id (substring-no-properties (plist-get entry :id)))
-           (line-info (majutsu-log--format-entry-line entry compiled widths))
-           (heading (plist-get line-info :line))
-           (margin (plist-get line-info :margin))
-           (indent (plist-get line-info :desc-indent))
-           (long-desc (plist-get entry :long-desc))
-           (has-body (and (stringp long-desc)
-                          (not (string-empty-p (string-trim long-desc))))))
-      (magit-insert-section (jj-commit id t)
-        ;; Insert the visible, non-folded part of the section.  The log
-        ;; contains "suffix lines" that are part of the ASCII graph but
-        ;; don't carry record fields; those should remain visible even
-        ;; when the section is folded.
-        (insert heading)
-        (insert "\n")
-        (when margin
-          (majutsu-log--make-margin-overlay margin))
-        (dolist (suffix-line suffix-lines)
-          (insert suffix-line)
-          (insert "\n"))
-        (when has-body
-          ;; Start of foldable body: everything inserted after this point is
-          ;; hidden when the section is collapsed.
-          (magit-insert-heading)
-          (let ((indented (majutsu--indent-string long-desc (or indent 0))))
-            (magit-insert-section-body
-              (insert indented)
-              (insert "\n"))))))))
+(defun majutsu-log--insert-entry (entry compiled widths)
+  "Insert parsed ENTRY as a `jj-commit' section using COMPILED and WIDTHS."
+  (let* ((id (majutsu-log--entry-id entry))
+         (heading-lines (majutsu-log--render-heading-lines entry compiled))
+         (heading (majutsu-log--join-lines heading-lines))
+         (suffix-lines (plist-get entry :suffix-lines))
+         (margin (majutsu-log--render-right-margin entry compiled widths))
+         (body (majutsu-log--render-body entry compiled))
+         (has-body (and (stringp body)
+                        (not (string-empty-p (string-trim body))))))
+    (magit-insert-section (jj-commit id t)
+      (insert heading)
+      (insert "\n")
+      (when margin
+        (majutsu-log--make-margin-overlay margin))
+      (dolist (suffix-line suffix-lines)
+        (insert suffix-line)
+        (insert "\n"))
+      (when has-body
+        (magit-insert-heading)
+        (let ((indented (majutsu--indent-string body (or (plist-get entry :indent) 0))))
+          (magit-insert-section-body
+            (insert indented)
+            (insert "\n")))))))
 
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
 
 This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   (let* ((compiled (majutsu-log--ensure-template))
-         (widths (majutsu-log--compute-column-widths-in-buffer compiled)))
+         (entries (majutsu-log--parse-entries-in-buffer compiled))
+         (widths (majutsu-log--compute-column-widths entries compiled)))
+    (setq majutsu-log--cached-entries entries)
+    (delete-region (point-min) (point-max))
     (majutsu-log--set-right-margin (plist-get widths :right-total))
-    (goto-char (point-min))
-    ;; Convert raw output incrementally, one commit at a time, like Magit.
-    (while (not (eobp))
-      (let ((bol (line-beginning-position))
-            (eol (line-end-position)))
-        (cond
-         ((majutsu-log--line-has-fields-p bol eol)
-          (majutsu-log--wash-entry compiled widths))
-         (t
-          ;; Leading/trailing graph-only noise; drop it.
-          (magit-delete-line)))))
+    (dolist (entry entries)
+      (majutsu-log--insert-entry entry compiled widths))
     (insert "\n")))
 
 (defun majutsu-log-insert-logs ()
@@ -1002,19 +1243,19 @@ offer to create one using `jj git init`."
         (majutsu-log-setup-buffer)))
      ((y-or-n-p (format "Create jj repository in %s? "
                         (abbreviate-file-name default-directory)))
-      (unless (executable-find majutsu-jj-executable)
-        (signal 'majutsu-jj-executable-not-found (list majutsu-jj-executable)))
       (let* ((dest (file-name-as-directory (expand-file-name default-directory)))
-             (args (majutsu-process-jj-arguments (list "git" "init" dest)))
+             (default-directory dest)
+             (_ (majutsu--assert-usable-jj))
+             (jj (majutsu-jj--executable))
+             (args (majutsu-process-jj-arguments (list "git" "init"
+                                                       (majutsu-convert-filename-for-jj dest))))
              (exit nil)
              (out ""))
         (with-temp-buffer
           (let ((coding-system-for-read 'utf-8-unix)
                 (coding-system-for-write 'utf-8-unix))
-            (setq exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+            (setq exit (apply #'process-file jj nil t nil args)))
           (setq out (string-trim (buffer-string))))
-        (when (null exit)
-          (setq exit 0))
         (if (zerop exit)
             (let ((default-directory dest))
               (majutsu-log-setup-buffer))
