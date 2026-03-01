@@ -317,6 +317,14 @@ Runs: =jj absorb --from REV --into REVSET [FILESETS...]=
 - ~-o~ :: Specify the destination (=--onto=).
 Runs: =jj rebase -s SRC -o DEST=
 
+** Simplifying Parents
+- ~?~ then ~P~ (~majutsu-simplify-parents~) :: Open the Simplify Parents transient.
+- ~-s~ :: Simplify specified revision(s) together with descendant trees (=--source=).
+- ~-r~ :: Simplify specified revision(s) only (=--revisions=).
+- If neither is set, Majutsu defaults to region/point revision(s), fallback =@=.
+- ~-I~ :: Ignore immutable revisions.
+Runs: =jj simplify-parents [--source REVSET] [--revisions REVSET]=
+
 ** Duplicating
 - ~y~ (~majutsu-duplicate~) :: Open the Duplicate transient. Allows selecting source revisions and destination.
 - ~Y~ (~majutsu-duplicate-dwim~) :: Duplicate the revision at point onto its current parent.

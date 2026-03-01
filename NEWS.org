@@ -10,6 +10,8 @@
   =--insert-before=).
 - Add ~majutsu-metaedit~ transient for =jj metaedit= with a single-revision
   default from point and metadata flags (message/author/timestamp/update).
+- Add ~majutsu-simplify-parents~ transient for =jj simplify-parents= with
+  both =--source= and =--revisions= options.
 
 ** Changed
 
