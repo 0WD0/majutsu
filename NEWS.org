@@ -8,6 +8,8 @@
 - Add ~majutsu-revert~ transient for =jj revert= with source revision selection
   and destination placement options (=--onto= / =--insert-after= /
   =--insert-before=).
+- Add ~majutsu-metaedit~ transient for =jj metaedit= with a single-revision
+  default from point and metadata flags (message/author/timestamp/update).
 
 ** Changed
 

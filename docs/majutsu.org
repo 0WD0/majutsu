@@ -277,6 +277,13 @@ Runs: =jj new -r REV=
 - ~c~ (~majutsu-describe~) :: Edit the description of the revision at point. Supports =--ignore-immutable= flag for immutable revisions.
 Runs: =jj describe -r REV=
 
+** Metaediting
+- ~?~ then ~m~ (~majutsu-metaedit~) :: Open the Metaedit transient. Defaults to one revision from point (fallback =@=). If multiple revisions are selected, Majutsu asks you to narrow it down.
+- ~-r~ / ~-m~ / ~-a~ / ~-t~ :: Set revision, message, author, and author timestamp.
+- ~-c~ / ~-u~ / ~-U~ / ~-f~ :: Toggle update-change-id / update-author / update-author-timestamp / force-rewrite.
+- ~-I~ :: Ignore immutable revisions.
+Runs: =jj metaedit --revisions REV [OPTIONS...]=
+
 ** Committing
 - ~C~ (~majutsu-commit~) :: In Jujutsu, "commit" usually means finishing the current work. This command opens a description buffer for the working copy.
 Runs: =jj commit=

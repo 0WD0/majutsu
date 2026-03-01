@@ -1,4 +1,4 @@
-;;; majutsu-commit.el --- Commit command for Majutsu  -*- lexical-binding: t; -*-
+;;; majutsu-commit.el --- Commit and describe commands for Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 
@@ -11,10 +11,11 @@
 
 ;;; Commentary:
 
-;; This library implements jj commit and describe frontends using with-editor
-;; and log context defaults.
+;; This library implements jj commit and describe frontends.
 
 ;;; Code:
+
+(require 'majutsu)
 
 ;;; majutsu-commit
 
