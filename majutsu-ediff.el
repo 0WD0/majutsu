@@ -569,7 +569,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   "Read a revset for ediff transient with PROMPT."
   (majutsu-read-revset prompt))
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-ediff "majutsu-ediff" nil t)
 (transient-define-prefix majutsu-ediff ()
   "Show differences using Ediff."
   :incompatible '(("--revisions=" "--from=")

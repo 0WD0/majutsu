@@ -223,7 +223,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 ;;; Git Transients
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-git-transient "majutsu-git" nil t)
 (transient-define-prefix majutsu-git-transient ()
   "Top-level transient for jj git operations."
   :man-page "jj-git"

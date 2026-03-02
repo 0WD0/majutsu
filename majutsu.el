@@ -34,7 +34,7 @@ Instead of invoking this alias for `majutsu-log' using
 
 ;;; Dispatch Popup
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-dispatch "majutsu" nil t)
 (transient-define-prefix majutsu-dispatch ()
   "Top-level Majutsu command dispatcher."
   ["Transient and dwim commands"

@@ -1401,7 +1401,7 @@ REVSET is passed to jj diff using `--revisions='."
 ;;; Commands
 ;;;; Prefix Commands
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-diff "majutsu-diff" nil t)
 (transient-define-prefix majutsu-diff ()
   "Internal transient for jj diff."
   :man-page "jj-diff"

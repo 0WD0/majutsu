@@ -138,7 +138,7 @@ destination, fill with --revisions and --insert-after defaults."
   :argument "--insert-before="
   :multi-value 'repeat)
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-revert "majutsu-revert" nil t)
 (transient-define-prefix majutsu-revert ()
   "Transient for jj revert operations."
   :man-page "jj-revert"

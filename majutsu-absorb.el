@@ -108,7 +108,7 @@ jj-commit section, add --from from that section."
 
 ;;; Prefix
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-absorb "majutsu-absorb" nil t)
 (transient-define-prefix majutsu-absorb ()
   "Transient for jj absorb operations."
   :man-page "jj-absorb"

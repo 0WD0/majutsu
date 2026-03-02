@@ -1142,7 +1142,7 @@ offer to create one using `jj git init`."
   :reader #'majutsu-read-files
   :multi-value t)
 
-;;;###autoload
+;;;###autoload(autoload 'majutsu-log-transient "majutsu-log" nil t)
 (transient-define-prefix majutsu-log-transient ()
   "Transient interface for adjusting jj log options."
   :man-page "jj-log"
