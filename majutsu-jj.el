@@ -29,10 +29,19 @@
 (require 'with-editor)
 (require 'majutsu-base)
 
+(autoload 'majutsu-process-file "majutsu-process" nil nil)
+
 ;;; Options
 
 (defcustom majutsu-jj-executable "jj"
   "Path to jj executable."
+  :group 'majutsu-process
+  :type 'string)
+
+(defcustom majutsu-remote-jj-executable "jj"
+  "Path to jj executable on remote hosts.
+When `default-directory' is remote, this executable is used instead of
+`majutsu-jj-executable'."
   :group 'majutsu-process
   :type 'string)
 
@@ -42,6 +51,17 @@
   :group 'majutsu-commands
   :group 'majutsu-process
   :type '(repeat string))
+
+(defcustom majutsu-jj-diffstat-columns 80
+  "Columns to expose when running `jj diff --stat'.
+When non-nil, Majutsu sets `COLUMNS' to this value for diffstat commands.
+This stabilizes output in very narrow terminal environments (common with
+TRAMP) while keeping stat bars readable.  Increase the value to prioritize
+full path visibility, or set to nil to inherit terminal width."
+  :group 'majutsu-commands
+  :group 'majutsu-process
+  :type '(choice (const :tag "Inherit environment" nil)
+          (integer :tag "Columns")))
 
 ;;; with-editor
 
@@ -78,7 +98,18 @@ Also respect the value of `majutsu-with-editor-envvar'."
     (unless (and raw (not (equal raw "")))
       (user-error "Missing %s in process environment" majutsu-with-editor-envvar))
     (condition-case err
-        (let ((words (split-string-shell-command raw)))
+        (let ((words
+               ;; `split-string-shell-command' can mis-parse with-editor's
+               ;; sleeping editor and yield only ("wait" "$sleep").
+               ;; Detect `PROGRAM -c 'SCRIPT'' forms directly and preserve
+               ;; the script as a single argument.
+               (or (and (string-match "\\`\\([^[:space:]]+\\)[[:space:]]+-c[[:space:]]+'" raw)
+                        (let ((program (match-string 1 raw))
+                              (start (match-end 0)))
+                          (when (and (<= start (length raw))
+                                     (string-suffix-p "'" raw))
+                            (list program "-c" (substring raw start -1)))))
+                   (split-string-shell-command raw))))
           (unless words
             (user-error "%s is empty" majutsu-with-editor-envvar))
           words)
@@ -94,6 +125,41 @@ If TARGET is nil, return config for EDITOR-COMMAND as-is."
   (let ((command (append (or editor-command (majutsu-jj--editor-command-from-env))
                          (when target (list target)))))
     (majutsu-jj--toml-array-config key command)))
+
+(defsubst majutsu-jj--executable ()
+  "Return local or remote jj executable for `default-directory'."
+  (if (file-remote-p default-directory)
+      majutsu-remote-jj-executable
+    majutsu-jj-executable))
+
+(defun majutsu-convert-filename-for-jj (filename)
+  "Convert FILENAME so it can be passed to a jj subprocess.
+This follows Magit's `magit-convert-filename-for-git' direction: absolute
+remote file names are converted to host-local paths before being passed in
+`process-file'/`start-file-process' ARGS. Relative names are left untouched."
+  (if (not (file-name-absolute-p filename))
+      filename
+    (let ((expanded (expand-file-name filename)))
+      (or (file-remote-p expanded 'localname)
+          expanded))))
+
+(defun majutsu-jj-expand-filename-from-jj (path &optional directory)
+  "Expand PATH returned by jj into an Emacs-usable file name.
+If PATH is an absolute local path and DIRECTORY is remote, prepend the
+remote prefix from DIRECTORY so the result remains remote."
+  (let* ((base (or directory default-directory))
+         (remote (file-remote-p base)))
+    (cond
+     ((file-remote-p path)
+      (expand-file-name path))
+     ((and remote (file-name-absolute-p path))
+      (concat remote path))
+     (t
+      (expand-file-name path base)))))
+
+(defun majutsu-jj-expand-directory-from-jj (path &optional directory)
+  "Like `majutsu-jj-expand-filename-from-jj', but always return a directory."
+  (file-name-as-directory (majutsu-jj-expand-filename-from-jj path directory)))
 
 ;;; Reading
 
@@ -390,8 +456,9 @@ in the revision identifier (used for recursive refinement)."
 (define-error 'majutsu-jj-executable-not-found "jj executable cannot be found")
 
 (defun majutsu--assert-usable-jj ()
-  (unless (executable-find majutsu-jj-executable)
-    (signal 'majutsu-jj-executable-not-found (list majutsu-jj-executable)))
+  (let ((jj (majutsu-jj--executable)))
+    (unless (executable-find jj t)
+      (signal 'majutsu-jj-executable-not-found (list jj))))
   nil)
 
 (defun majutsu--not-inside-repository-error ()
@@ -425,22 +492,18 @@ trailing slash) or nil if not inside a JJ workspace."
         (with-temp-buffer
           (let ((coding-system-for-read 'utf-8-unix)
                 (coding-system-for-write 'utf-8-unix)
-                (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
-            ;; `process-file' may return nil on success for some Emacs builds.
-            (when (null exit)
-              (setq exit 0))
+                (exit (apply #'process-file (majutsu-jj--executable) nil t nil args)))
             (when (zerop exit)
               (let ((out (string-trim (buffer-string))))
                 (unless (string-empty-p out)
-                  (file-name-as-directory (expand-file-name out)))))))))))
+                  (majutsu-jj-expand-directory-from-jj out default-directory))))))))))
 
 (defun majutsu--toplevel-safe (&optional directory)
   "Return the workspace root for DIRECTORY or signal an error."
   (or (majutsu-toplevel directory)
       (let ((default-directory
              (or (majutsu--safe-default-directory directory)
-                 (file-name-as-directory
-                  (expand-file-name (or directory default-directory))))))
+                 (majutsu-jj-expand-directory-from-jj (or directory default-directory)))))
         (majutsu--not-inside-repository-error))))
 
 (defmacro majutsu-with-toplevel (&rest body)
@@ -472,17 +535,12 @@ This is the low-level worker for `majutsu-jj-insert' and similar
 functions."
   (setq args (majutsu-process-jj-arguments args))
   (let* ((start-time (current-time))
-         (coding-system-for-read 'utf-8-unix)
-         (coding-system-for-write 'utf-8-unix)
          (err-file (and return-error
-                        (make-temp-file "majutsu-jj-err")))
+                        (make-nearby-temp-file "majutsu-jj-err")))
          exit-code)
-    (majutsu--debug "Running command: %s %s" majutsu-jj-executable (string-join args " "))
-    (setq exit-code (apply #'process-file majutsu-jj-executable nil
+    (majutsu--debug "Running command: %s %s" (majutsu-jj--executable) (string-join args " "))
+    (setq exit-code (apply #'majutsu-process-file (majutsu-jj--executable) nil
                            (list t err-file) nil args))
-    ;; process-file may return nil on success for some Emacs builds.
-    (when (null exit-code)
-      (setq exit-code 0))
     (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                     (float-time (time-subtract (current-time) start-time))
                     exit-code)
@@ -573,17 +631,14 @@ error text.  Output is optionally colorized based on
 `majutsu-process-apply-ansi-colors'."
   (declare (indent 2))
   (setq args (majutsu-process-jj-arguments args))
-  (let ((beg (point))
-        (exit (apply #'process-file majutsu-jj-executable nil t nil args)))
+  (let* ((beg (point))
+         (exit (apply #'majutsu-process-file (majutsu-jj--executable) nil t nil args)))
     (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
                (> (point) beg))
       ;; Use text-properties instead of overlays so that subsequent
       ;; washing/parsing that uses `buffer-substring' preserves faces.
       (let ((ansi-color-apply-face-function #'ansi-color-apply-text-property-face))
         (ansi-color-apply-on-region beg (point))))
-    ;; `process-file' may return nil on success for some Emacs builds.
-    (when (null exit)
-      (setq exit 0))
     (cond
      ;; Command produced no output.
      ((= (point) beg)

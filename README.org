@@ -30,6 +30,11 @@ efficient way to interact with JJ repositories from within Emacs.
 4. In blob buffers, press ~e~ to enter editable mode; save applies via =jj diffedit= (~i~ in Evil also enters editable mode)
 5. In blob buffers, press ~b~ to annotate; ~C-c m~ opens the blob in Magit
 
+** Useful Options
+
+- ~majutsu-jj-diffstat-columns~ controls forced width for =jj diff --stat= in narrow terminals/TRAMP (set to =nil= to inherit terminal width; increase for more full path visibility).
+- ~majutsu-jj-environment~ prepends custom =KEY=VALUE= entries to every jj subprocess via the process layer.
+
 ** Essential Keybindings (Emacs / Evil)
 
 | Key       | Action               |

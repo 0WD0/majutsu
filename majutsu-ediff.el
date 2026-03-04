@@ -46,6 +46,15 @@
 (defconst majutsu-ediff--merge-tool-name "majutsu_ediff_merge"
   "Jujutsu merge-tools entry used by `majutsu-ediff-resolve'.")
 
+(defconst majutsu-ediff--control-packet-prefix "MAJUTSU-EDIFF"
+  "Prefix used by Majutsu Ediff control packets in jj process output.")
+
+(defconst majutsu-ediff--sleeping-input-ready-timeout 2.0
+  "Seconds to wait for sleeping-editor temp inputs to become accessible.")
+
+(defconst majutsu-ediff--sleeping-input-ready-interval 0.05
+  "Polling interval while waiting for sleeping-editor temp inputs.")
+
 ;;; Options
 
 (defgroup majutsu-ediff nil
@@ -265,37 +274,176 @@ MERGE-EDITOR-CONFIG is a TOML config string or list of config strings."
   (format "%s=\"%s\"" key (majutsu-jj--toml-escape value)))
 
 (defun majutsu-ediff--merge-editor-config ()
-  "Return ui.merge-editor config that launches 3-way Ediff."
-  (let* ((editor (majutsu-jj--editor-command-from-env))
-         (program (car editor))
-         (editor-args (cdr editor))
-         (eval-form (format "(majutsu-ediff-merge-files %S %S %S %S %S)"
-                            "$left" "$base" "$right" "$output" "$marker_length"))
-         (merge-args (append editor-args (list "--eval" eval-form)))
+  "Return ui.merge-editor config for Majutsu Ediff control callbacks."
+  (let* ((merge-args (list "-c" (majutsu-ediff--control-merge-script)
+                           "majutsu-ediff"
+                           "$left" "$base" "$right" "$output" "$marker_length"))
          (tool-key (format "merge-tools.%s" majutsu-ediff--merge-tool-name)))
     (list
      (majutsu-ediff--toml-string-config "ui.merge-editor" majutsu-ediff--merge-tool-name)
-     (majutsu-ediff--toml-string-config (format "%s.program" tool-key) program)
+     (majutsu-ediff--toml-string-config (format "%s.program" tool-key) "sh")
      (majutsu-jj--toml-array-config (format "%s.merge-args" tool-key) merge-args)
      (format "%s.merge-tool-edits-conflict-markers=true" tool-key)
      (majutsu-ediff--toml-string-config (format "%s.conflict-marker-style" tool-key) "git"))))
 
 (defun majutsu-ediff--run-resolve (rev file)
-  "Run `jj resolve` for REV and FILE with with-editor merge-editor config."
-  (majutsu-with-editor
-    (let* ((merge-editor-cmd
-            (majutsu-ediff--merge-editor-config))
-           (args (majutsu-ediff--build-resolve-args rev file merge-editor-cmd)))
-      ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
-      (apply #'majutsu-run-jj-async args))))
+  "Run `jj resolve` for REV and FILE with Majutsu Ediff config."
+  (let* ((merge-editor-cmd
+          (majutsu-ediff--merge-editor-config))
+         (args (majutsu-ediff--build-resolve-args rev file merge-editor-cmd)))
+    ;; Use async to avoid blocking Emacs while jj waits for merge completion.
+    (apply #'majutsu-run-jj-async args)))
 
-(defun majutsu-ediff--diff-editor-config ()
-  "Return ui.diff-editor config that launches single-file Ediff callback."
-  (let* ((editor (majutsu-jj--editor-command-from-env))
-         (eval-form "(majutsu-ediff-diffedit-file \"$left\" \"$right\")"))
+(defun majutsu-ediff--diff-editor-config (&optional file)
+  "Return ui.diff-editor config for Majutsu Ediff control callbacks.
+When FILE is non-nil, pass it as a file hint."
+  (let* ((command (list "sh" "-c" (majutsu-ediff--control-diff-script)
+                        "majutsu-ediff" "$left" "$right" (or file ""))))
     (majutsu-jj--toml-array-config
      "ui.diff-editor"
-     (append editor (list "--eval" eval-form)))))
+     command)))
+
+(defun majutsu-ediff--control-diff-script ()
+  "Return shell script used for diffedit control packets."
+  (string-join
+   (list
+    ;; Keep jj blocked until Emacs signals completion.
+    "sleep 604800 & sleep_pid=$!"
+    "printf \"\\nMAJUTSU-EDIFF: $$ DIFF %s\\037%s\\037%s\\n\" \"$1\" \"$2\" \"$3\""
+    "trap \"kill $sleep_pid; exit 0\" USR1"
+    "trap \"kill $sleep_pid; exit 1\" USR2"
+    "wait $sleep_pid")
+   "; "))
+
+(defun majutsu-ediff--control-merge-script ()
+  "Return shell script used for resolve merge control packets."
+  (string-join
+   (list
+    ;; Keep jj blocked until Emacs signals completion.
+    "sleep 604800 & sleep_pid=$!"
+    "printf \"\\nMAJUTSU-EDIFF: $$ MERGE %s\\037%s\\037%s\\037%s\\037%s\\n\" \"$1\" \"$2\" \"$3\" \"$4\" \"$5\""
+    "trap \"kill $sleep_pid; exit 0\" USR1"
+    "trap \"kill $sleep_pid; exit 1\" USR2"
+    "wait $sleep_pid")
+   "; "))
+
+(defun majutsu-ediff--control-packet-spec (line)
+  "Parse Majutsu Ediff control packet LINE into a plist spec.
+Return nil when LINE is not a valid control packet."
+  (when (string-match
+         (format "^%s: \\([0-9]+\\) \\(DIFF\\|MERGE\\) \\(.*\\)\\(?:\\r\\)?$"
+                 majutsu-ediff--control-packet-prefix)
+         line)
+    (let* ((pid (match-string 1 line))
+           (kind (downcase (match-string 2 line)))
+           (fields (split-string (match-string 3 line) "\x1f" nil)))
+      (pcase kind
+        ("diff"
+         (pcase fields
+           (`(,left ,right ,file)
+            (let ((spec (list :pid pid
+                              :type 'diff
+                              :left left
+                              :right right)))
+              (if (string-empty-p file)
+                  spec
+                (append spec (list :file file)))))
+           (`(,left ,right)
+            (list :pid pid :type 'diff :left left :right right))
+           (_ nil)))
+        ("merge"
+         (pcase fields
+           (`(,left ,base ,right ,output ,marker)
+            (list :pid pid
+                  :type 'merge
+                  :left left
+                  :base base
+                  :right right
+                  :output output
+                  :marker marker))
+           (_ nil)))
+        (_ nil)))))
+
+(defun majutsu-ediff--control-required-inputs (spec)
+  "Return temp input files that should exist before handling control SPEC."
+  (pcase (plist-get spec :type)
+    ('diff
+     (when-let* ((file (plist-get spec :file))
+                 (left-dir (majutsu-jj-expand-directory-from-jj
+                            (plist-get spec :left)))
+                 (right-dir (majutsu-jj-expand-directory-from-jj
+                             (plist-get spec :right))))
+       (list (expand-file-name file left-dir)
+             (expand-file-name file right-dir))))
+    ('merge
+     (list (majutsu-jj-expand-filename-from-jj (plist-get spec :left))
+           (majutsu-jj-expand-filename-from-jj (plist-get spec :base))
+           (majutsu-jj-expand-filename-from-jj (plist-get spec :right))))
+    (_ nil)))
+
+(defun majutsu-ediff--wait-for-input-files (files)
+  "Return non-nil when FILES become accessible before timeout."
+  (let ((deadline (+ (float-time) majutsu-ediff--sleeping-input-ready-timeout))
+        ready)
+    (while (and (not (setq ready
+                           (cl-every (lambda (file)
+                                       (condition-case nil
+                                           (file-exists-p file)
+                                         (error nil)))
+                                     files)))
+                (< (float-time) deadline))
+      (accept-process-output nil majutsu-ediff--sleeping-input-ready-interval))
+    ready))
+
+(defun majutsu-ediff--signal-control-session (pid ok)
+  "Signal PID when control session completes.
+When OK is non-nil send USR1, otherwise send USR2."
+  (process-file "kill" nil nil nil
+                "-s" (if ok "USR1" "USR2") pid))
+
+(defun majutsu-ediff--run-control-packet (spec directory)
+  "Handle parsed control SPEC in DIRECTORY and signal completion."
+  (let ((default-directory (or directory default-directory))
+        (inputs nil)
+        (ok nil))
+    (unwind-protect
+        (condition-case err
+            (progn
+              (setq inputs (majutsu-ediff--control-required-inputs spec))
+              (unless (majutsu-ediff--wait-for-input-files inputs)
+                (error "temporary inputs unavailable: %s"
+                       (mapconcat #'identity inputs ", ")))
+              (pcase (plist-get spec :type)
+                ('diff
+                 (majutsu-ediff-diffedit-file
+                  (plist-get spec :left)
+                  (plist-get spec :right)
+                  (plist-get spec :file)))
+                ('merge
+                 (majutsu-ediff-merge-files
+                  (plist-get spec :left)
+                  (plist-get spec :base)
+                  (plist-get spec :right)
+                  (plist-get spec :output)
+                  (plist-get spec :marker))))
+              (setq ok t))
+          ((error quit)
+           (message "Majutsu Ediff control callback failed: %s"
+                    (error-message-string err))))
+      (condition-case err
+          (majutsu-ediff--signal-control-session (plist-get spec :pid) ok)
+        ((error quit)
+         (message "Majutsu Ediff failed to signal editor process: %s"
+                  (error-message-string err)))))))
+
+(defun majutsu-ediff--handle-control-line (process line)
+  "Parse and schedule Majutsu Ediff control LINE emitted by PROCESS.
+Return non-nil when LINE is recognized as a Majutsu Ediff control packet."
+  (when-let* ((spec (majutsu-ediff--control-packet-spec line)))
+    (let ((directory (or (and process (process-get process 'default-dir))
+                         default-directory)))
+      (run-at-time 0 nil #'majutsu-ediff--run-control-packet spec directory))
+    t))
 
 (defun majutsu-ediff--run-diffedit (jj-args &optional file)
   "Run jj diffedit with JJ-ARGS using `majutsu-ediff-diffedit-file'."
@@ -312,10 +460,9 @@ MERGE-EDITOR-CONFIG is a TOML config string or list of config strings."
                        (user-error "Diffedit target outside repository: %s" file)))
                  file))
          (jj-args (majutsu-edit--replace-diffedit-file-arg jj-args file)))
-    (majutsu-with-editor
-      (let ((diff-editor-cmd (majutsu-ediff--diff-editor-config)))
-        ;; Use async to avoid blocking Emacs while jj waits for emacsclient.
-        (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))))
+    (let ((diff-editor-cmd (majutsu-ediff--diff-editor-config file)))
+      ;; Use async to avoid blocking Emacs while jj waits for diff completion.
+      (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args))))
 
 (defun majutsu-ediff--cleanup-diffedit-variant-buffers
     (left-file right-file left-existing right-existing)
@@ -513,23 +660,31 @@ at that revision before enabling conflict mode."
       (majutsu-conflict-goto-nearest))))
 
 ;;;###autoload
-(defun majutsu-ediff-diffedit-file (left right)
+(defun majutsu-ediff-diffedit-file (left right &optional file-hint)
   "Compare one file from LEFT and RIGHT using Ediff.
 This is called by jj diffedit when using Emacs as the diff editor.
 Blocks until user finishes editing and quits Ediff."
   (interactive "DLeft directory: \nDRight directory: ")
-  (let* ((left (expand-file-name left))
-         (right (expand-file-name right))
-         (file (majutsu-ediff--read-directory-file left right))
+  (let* ((left (majutsu-jj-expand-directory-from-jj left))
+         (right (majutsu-jj-expand-directory-from-jj right))
+         (file-hint (and file-hint
+                         (not (string-empty-p file-hint))
+                         file-hint))
+         (file (or file-hint
+                   (majutsu-ediff--read-directory-file left right)))
          (left-file (expand-file-name file left))
          (right-file (expand-file-name file right))
          (left-existing (get-file-buffer left-file))
          (right-existing (get-file-buffer right-file))
          (winconf (current-window-configuration)))
-    (ediff-files left-file right-file
-                 (list (lambda ()
-                         (majutsu-ediff--setup-diffedit-quit-hooks
-                          winconf left-file right-file left-existing right-existing))))
+    ;; These are jj temporary files, not repository files. Skipping VC probes
+    ;; avoids slow/fragile remote vc-registered checks on first TRAMP access.
+    (let ((vc-handled-backends nil))
+      (ediff-files left-file right-file
+                   (list (lambda ()
+                           (majutsu-ediff--setup-diffedit-quit-hooks
+                            winconf left-file right-file
+                            left-existing right-existing)))))
     (recursive-edit)))
 
 (defun majutsu-ediff--exit-recursive-edit ()
@@ -542,20 +697,23 @@ Blocks until user finishes editing and quits Ediff."
   "Resolve a 3-way merge with Ediff and write result to OUTPUT.
 Called by `jj resolve` merge editor command via emacsclient."
   (interactive "fLeft file: \nfBase file: \nfRight file: \nFOutput file: ")
-  (let* ((left (expand-file-name left))
-         (base (expand-file-name base))
-         (right (expand-file-name right))
-         (output (expand-file-name output))
+  (let* ((left (majutsu-jj-expand-filename-from-jj left))
+         (base (majutsu-jj-expand-filename-from-jj base))
+         (right (majutsu-jj-expand-filename-from-jj right))
+         (output (majutsu-jj-expand-filename-from-jj output))
          (marker-length (majutsu-ediff--merge-marker-length marker-length))
          (ediff-default-variant 'combined)
          (ediff-combination-pattern
           (majutsu-ediff--git-combination-pattern marker-length))
          (winconf (current-window-configuration)))
-    (ediff-merge-files-with-ancestor
-     left right base
-     (list (lambda ()
-             (majutsu-ediff--setup-merge-quit-hooks winconf)))
-     output)
+    ;; These are jj temporary files, not repository files. Skipping VC probes
+    ;; avoids slow/fragile remote vc-registered checks on first TRAMP access.
+    (let ((vc-handled-backends nil))
+      (ediff-merge-files-with-ancestor
+       left right base
+       (list (lambda ()
+               (majutsu-ediff--setup-merge-quit-hooks winconf)))
+       output))
     (recursive-edit)))
 
 ;;; Transient
