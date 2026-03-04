@@ -143,6 +143,7 @@
 
 ;;;; Prefix
 
+;;;###autoload(autoload 'majutsu-split "majutsu-split" nil t)
 (transient-define-prefix majutsu-split ()
   "Transient for jj split operations."
   :man-page "jj-split"

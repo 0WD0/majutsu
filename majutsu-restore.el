@@ -146,6 +146,7 @@ In diff buffer on a file section, restore only that file."
 
 ;;; Prefix
 
+;;;###autoload(autoload 'majutsu-restore "majutsu-restore" nil t)
 (transient-define-prefix majutsu-restore ()
   "Transient for jj restore operations."
   :man-page "jj-restore"

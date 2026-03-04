@@ -47,7 +47,6 @@ If no targets are provided, default to region/point/@ as --revisions."
         args
       (append args (majutsu-simplify-parents--default-args)))))
 
-;;;###autoload
 (defun majutsu-simplify-parents-execute (args)
   "Execute jj simplify-parents with ARGS from transient."
   (interactive (list (majutsu-simplify-parents-arguments)))

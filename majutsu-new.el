@@ -194,6 +194,7 @@ a jj-commit section, add -r from that section."
         (concat "JJ New | " (string-join parts " | "))
       "JJ New")))
 
+;;;###autoload(autoload 'majutsu-new "majutsu-new" nil t)
 (transient-define-prefix majutsu-new ()
   "Internal transient for jj new operations."
   :man-page "jj-new"

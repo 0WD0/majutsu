@@ -150,6 +150,7 @@ ARGS are passed from the transient."
   :argument "--insert-before="
   :multi-value 'repeat)
 
+;;;###autoload(autoload 'majutsu-rebase "majutsu-rebase" nil t)
 (transient-define-prefix majutsu-rebase ()
   "Internal transient for jj rebase operations."
   :man-page "jj-rebase"

@@ -320,6 +320,7 @@ REMOTES are remote name patterns passed via repeated `--remote`."
 
 ;;; Bookmark Transient
 
+;;;###autoload(autoload 'majutsu-bookmark "majutsu-bookmark" nil t)
 (transient-define-prefix majutsu-bookmark ()
   "Internal transient for jj bookmark operations."
   :transient-non-suffix t

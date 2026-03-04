@@ -120,6 +120,7 @@ With prefix ARG, open the duplicate transient."
   :argument "--insert-before="
   :multi-value 'repeat)
 
+;;;###autoload(autoload 'majutsu-duplicate "majutsu-duplicate" nil t)
 (transient-define-prefix majutsu-duplicate ()
   "Internal transient for jj duplicate."
   :man-page "jj-duplicate"

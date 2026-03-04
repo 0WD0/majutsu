@@ -52,15 +52,12 @@ This calls `jj git remote list` and parses the first word of each line."
       (concat prefix (expand-file-name (substring arg (length prefix))))
     arg))
 
-;;;###autoload
 (transient-define-suffix majutsu-git-push (args)
   "Push to git remote with ARGS."
   (interactive (list (transient-args 'majutsu-git-push-transient)))
   (majutsu--message-with-log "Pushing to remote...")
   (majutsu-git--start (append '("push") args) "Pushed to remote"))
 
-
-;;;###autoload (autoload 'majutsu-git-fetch "majutsu-git" nil t)
 (defun majutsu-git-fetch (args)
   "Fetch from git remote with ARGS from transient."
   (interactive (list (transient-args 'majutsu-git-fetch-transient)))
@@ -263,7 +260,6 @@ Prompts for SOURCE and optional DEST; uses ARGS."
    [("p" "Push" majutsu-git-push)
     ("q" "Quit" transient-quit-one)]])
 
-;;;###autoload (autoload 'majutsu-git-fetch-transient "majutsu-git" nil t)
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
   :man-page "jj-git-fetch"

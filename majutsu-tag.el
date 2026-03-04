@@ -187,6 +187,7 @@ This is a convenience wrapper around `jj tag set --allow-move'."
      (list names revision)))
   (majutsu-tag-set names revision t))
 
+;;;###autoload(autoload 'majutsu-tag "majutsu-tag" nil t)
 (transient-define-prefix majutsu-tag ()
   "Internal transient for jj tag operations."
   :transient-non-suffix t
