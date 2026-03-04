@@ -17,6 +17,9 @@
 
 ** Fixed
 
+- Add a consistent ~RET~ execute binding to ~majutsu-squash~ and
+  ~majutsu-split~ transients (while keeping ~s~), so selection-driven command
+  transients share the same confirm/execute key.
 - Prevent =majutsu-ediff-resolve= from auto-resolving conflicts on no-op quit,
   and preserve partial conflict resolution by using git-style conflict markers
   that jj can parse as still-unresolved regions. Edited merge sessions now ask
