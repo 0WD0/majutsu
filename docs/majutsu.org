@@ -27,7 +27,7 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 * Installation
 ** Requirements
 - Emacs 29.1 or later.
-- Jujutsu (jj) v0.37.0 or later installed and in your =PATH=.
+- Jujutsu (jj) v0.39.0 or later installed and in your =PATH=.
 - =magit= 3.3.0 or later (for section management).
 - =transient= 0.5.0 or later (popup menus).
 - =with-editor= (for descriptive message editing).
