@@ -168,19 +168,13 @@ If FILE is non-nil, perform a merge with result written to FILE."
      (t
       (completing-read "Resolve conflicts in: " files nil t)))))
 
-(defun majutsu-ediff--resolve-revision-at-point ()
-  "Return commit revision at point for resolve DWIM, or nil.
-Only commit sections are considered for DWIM resolve flow."
-  (when-let* ((rev (magit-section-value-if 'jj-commit)))
-    (substring-no-properties rev)))
-
 (defun majutsu-ediff--resolve-file-dwim (&optional file)
   "Return conflicted FILE for resolve workflow.
 If FILE is nil and point is on a commit section, prompt conflicts in that
 revision; otherwise prompt from working copy conflicts."
   (or file
       (majutsu-ediff--read-conflicted-file
-       (majutsu-ediff--resolve-revision-at-point))))
+       (majutsu-revision-at-point))))
 
 (defun majutsu-ediff--working-copy-revision-p (rev)
   "Return non-nil when REV resolves to the working copy change.
@@ -487,7 +481,7 @@ ARGS are transient arguments."
 If FILE is nil, DWIM selects from conflicted files at point revision (commit
 section) or the working copy."
   (interactive)
-  (let* ((rev (or (majutsu-ediff--resolve-revision-at-point) "@"))
+  (let* ((rev (or (majutsu-revision-at-point) "@"))
          (file (majutsu-ediff--resolve-file-dwim file))
          (sides (majutsu-ediff--conflict-side-count rev file)))
     (if (> sides 2)
@@ -504,7 +498,7 @@ section) or the working copy."
 When resolving a non-working-copy revision, open the matching blob buffer
 at that revision before enabling conflict mode."
   (interactive)
-  (let* ((rev (or (majutsu-ediff--resolve-revision-at-point) "@"))
+  (let* ((rev (or (majutsu-revision-at-point) "@"))
          (file (majutsu-ediff--resolve-file-dwim))
          (buffer (majutsu-ediff--resolve-target-buffer rev file)))
     (pop-to-buffer buffer)

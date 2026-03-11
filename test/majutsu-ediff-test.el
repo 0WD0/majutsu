@@ -500,7 +500,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
 (ert-deftest majutsu-ediff-test-resolve-with-conflict-uses-working-copy-file ()
   "Resolve-with-conflict should open filesystem file for working copy revs."
   (let (opened pop-buffer ensured gotoed)
-    (cl-letf (((symbol-function 'majutsu-ediff--resolve-revision-at-point)
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
                (lambda () "rev-at-point"))
               ((symbol-function 'majutsu-ediff--resolve-file-dwim)
                (lambda (&optional _file) "conflicted.txt"))
@@ -532,7 +532,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
 (ert-deftest majutsu-ediff-test-resolve-with-conflict-uses-blob-buffer-for-non-wc ()
   "Resolve-with-conflict should open blob buffer when rev is not working copy."
   (let (seen-rev seen-file)
-    (cl-letf (((symbol-function 'majutsu-ediff--resolve-revision-at-point)
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
                (lambda () "abc123"))
               ((symbol-function 'majutsu-ediff--resolve-file-dwim)
                (lambda (&optional _file) "conflicted.txt"))
@@ -561,7 +561,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
 (ert-deftest majutsu-ediff-test-resolve-runs-jj-resolve ()
   "Resolve command should invoke jj resolve with built args."
   (let (captured)
-    (cl-letf (((symbol-function 'majutsu-ediff--resolve-revision-at-point)
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
                (lambda () "rev-at-point"))
               ((symbol-function 'majutsu-ediff--resolve-file-dwim)
                (lambda (&optional _file) "conflicted.txt"))
@@ -576,7 +576,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
 (ert-deftest majutsu-ediff-test-resolve-falls-back-to-diffedit-for-multi-side ()
   "Resolve should use diffedit fallback for conflicts with more than 2 sides."
   (let (captured)
-    (cl-letf (((symbol-function 'majutsu-ediff--resolve-revision-at-point)
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
                (lambda () "rev-at-point"))
               ((symbol-function 'majutsu-ediff--resolve-file-dwim)
                (lambda (&optional _file) "conflicted.txt"))
