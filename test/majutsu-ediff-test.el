@@ -151,6 +151,29 @@
              (lambda () default-directory)))
     (should (= 4 (majutsu-ediff--conflict-side-count "@" "f.txt")))))
 
+(ert-deftest majutsu-ediff-test-list-conflicted-files/preserves-spaces ()
+  "Conflicted file parsing should preserve spaces inside paths."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _)
+               '("dir with spaces/file name.txt    2-sided conflict"
+                 "other.txt    3-sided conflict including 1 deletion")))
+            ((symbol-function 'majutsu-file--root)
+             (lambda () default-directory)))
+    (should (equal (majutsu-ediff--list-conflicted-files "@")
+                   '("dir with spaces/file name.txt"
+                     "other.txt")))))
+
+(ert-deftest majutsu-ediff-test-conflict-side-count/handles-spaces-and-details ()
+  "Conflict side parsing should ignore padding and trailing conflict details."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _)
+               '("dir with spaces/file name.txt    3-sided conflict including 1 deletion and a directory")))
+            ((symbol-function 'majutsu-file--root)
+             (lambda () default-directory)))
+    (should (= 3 (majutsu-ediff--conflict-side-count
+                  "@"
+                  "dir with spaces/file name.txt")))))
+
 (ert-deftest majutsu-ediff-test-directory-common-files ()
   "Directory common file discovery should ignore JJ-INSTRUCTIONS."
   (let ((left (make-temp-file "majutsu-ediff-left" t))

@@ -146,15 +146,25 @@ If FILE is non-nil, perform a merge with result written to FILE."
   "Return buffer visiting FILE from REV."
   (majutsu-find-file-noselect rev file))
 
+(defun majutsu-ediff--parse-conflict-line (line)
+  "Parse plain-text `jj resolve --list' LINE.
+Return a plist with `:file' and `:sides', or nil when LINE is not recognized.
+Internal whitespace in file paths is preserved; only the padding before the
+conflict description is stripped."
+  (when (and line
+             (string-match
+              "[ \t]+\\([0-9]+\\)-sided conflict\\(?: including .*\\)?\\(?:\\r\\)?\\'"
+              line))
+    (list :file (string-trim-right (substring line 0 (match-beginning 0)))
+          :sides (string-to-number (match-string 1 line)))))
+
 (defun majutsu-ediff--list-conflicted-files (&optional rev)
   "Return list of conflicted files at REV (default @)."
   (let* ((default-directory (majutsu-file--root))
          (lines (majutsu-jj-lines "resolve" "--list" "-r" (or rev "@"))))
-    ;; Parse "filename    N-sided conflict" format
     (mapcar (lambda (line)
-              (if (string-match "^\\([^ \t]+\\)" line)
-                  (match-string 1 line)
-                line))
+              (or (plist-get (majutsu-ediff--parse-conflict-line line) :file)
+                  line))
             lines)))
 
 (defun majutsu-ediff--read-conflicted-file (&optional rev)
@@ -233,10 +243,8 @@ If FILE is nil, prompt for one."
 When sidedness cannot be parsed, return 0."
   (let* ((default-directory (majutsu-file--root))
          (line (car (majutsu-jj-lines "resolve" "--list" "-r" rev "--" file))))
-    (if (and line
-             (string-match "[ \t]+\\([0-9]+\\)-sided conflict\\'" line))
-        (string-to-number (match-string 1 line))
-      0)))
+    (or (plist-get (majutsu-ediff--parse-conflict-line line) :sides)
+        0)))
 
 (defun majutsu-ediff--build-resolve-args (rev file merge-editor-config)
   "Build `jj resolve' arguments for REV and FILE.
