@@ -12,8 +12,16 @@
   default from point and metadata flags (message/author/timestamp/update).
 - Add ~majutsu-simplify-parents~ transient for =jj simplify-parents= with
   both =--source= and =--revisions= options.
+- Add ~majutsu-find-file-other-window~ and ~majutsu-find-file-other-frame~
+  to open blob snapshots in another window or frame.
 
 ** Changed
+
+- Remove ~majutsu-find-file-at-point~. Use ~majutsu-find-file~ instead; it
+  still defaults revset/path from the current context.
+- Remove the dedicated ~v~ binding from diff file sections, following Magit's
+  split between explicit ~majutsu-find-file~ commands and diff-specific visit
+  commands.
 
 ** Fixed
 

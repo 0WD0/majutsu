@@ -165,7 +165,6 @@ If you diff =-r A::D | B::E=, there are two heads (D, E) and two roots (A, B). T
 The diff buffer is highly interactive:
 - ~RET~ :: Visit the appropriate version of the file at point. For working copy diffs, added/context lines visit the workspace file while removed lines visit the parent-side blob. For committed changes, it visits the blob at the corresponding side.
 - ~C-j~ / ~C-<return>~ :: Visit the workspace file, regardless of diff type. Note: when Evil mode is active, ~C-j~ may be overridden by Evil's section navigation; use ~C-<return>~ instead, which is unaffected.
-- ~v~ (on a file section) :: Open a blob buffer for that file using the current diff context.
 - ~+~ / ~-~ :: Increase or decrease the amount of context shown.
 - ~t~ :: Toggle word-level refinement.
 
@@ -178,10 +177,11 @@ line/column metadata from the color-words backend.
 
 ** File and Blob Inspection
 Majutsu's file inspector is implemented by =majutsu-file= and can be used both
-from command prompts and directly from sections in log/diff buffers.
+from command prompts and with defaults derived from the current section context.
 
-- ~M-x majutsu-find-file~ :: Prompt for revset + path and open that file as a blob.
-- ~M-x majutsu-find-file-at-point~ :: Open the file at point using section context.
+- ~M-x majutsu-find-file~ :: Prompt for revset + path (defaulting from point when possible) and open that file as a blob.
+- ~M-x majutsu-find-file-other-window~ :: Like ~majutsu-find-file~, but display the blob in another window.
+- ~M-x majutsu-find-file-other-frame~ :: Like ~majutsu-find-file~, but display the blob in another frame.
 
 Blob buffers are read-only snapshots with history-aware navigation:
 - ~p~ / ~n~ :: Jump to previous/next revision that touched this file (while preserving cursor position as much as possible).
