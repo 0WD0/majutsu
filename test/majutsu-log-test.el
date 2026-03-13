@@ -37,12 +37,33 @@
      (:field timestamp :module right-margin :face nil :width 6 :align right)
      (:field id :module metadata :face nil))))
 
+(defun majutsu-log-test--relations-compiled ()
+  "Return a layout that includes relation metadata."
+  (majutsu-log--compile-columns
+   '((:field change-id :module heading :face t)
+     (:field description :module heading :face t)
+     (:field id :module metadata :face nil)
+     (:field parent-ids :module metadata :face nil))))
+
 (defun majutsu-log-test--parse-entries (compiled raw)
   "Parse RAW entries with COMPILED layout and return parsed entries."
   (with-temp-buffer
     (insert raw)
     (goto-char (point-min))
     (majutsu-log--parse-entries-in-buffer compiled)))
+
+(defun majutsu-log-test--raw-entry (id title &optional parent-ids)
+  "Return one raw relation-aware log entry for ID and TITLE."
+  (concat
+   "○ " majutsu-log--entry-start-token id majutsu-log--field-separator title
+   majutsu-log--entry-body-token
+   majutsu-log--entry-right-token
+   majutsu-log--entry-meta-token id
+   (when parent-ids
+     (concat majutsu-log--field-separator
+             (string-join parent-ids majutsu-log--field-list-separator)))
+   majutsu-log--entry-end-token
+   "\n"))
 
 (defun majutsu-log-test--post-wrap (value _ctx)
   "Wrap VALUE in square brackets for postprocessor tests."
@@ -185,6 +206,27 @@
                         (plist-get entry :end))
                        first-raw))))))
 
+(ert-deftest majutsu-log-parse-entry-parent-ids ()
+  "Parser should decode parent ids into a visible id list."
+  (let* ((compiled (majutsu-log-test--relations-compiled))
+         (raw (majutsu-log-test--raw-entry "child" "Child" '("parent-a" "parent-b")))
+         (entry (car (majutsu-log-test--parse-entries compiled raw))))
+    (should (equal (plist-get entry :id) "child"))
+    (should (equal (plist-get entry :parent-ids) '("parent-a" "parent-b")))))
+
+(ert-deftest majutsu-log-rebuild-relation-indexes ()
+  "Visible entries should produce parent and child lookup indexes."
+  (let* ((entries (list (list :id "child-a" :parent-ids '("parent"))
+                        (list :id "child-b" :parent-ids '("parent"))
+                        (list :id "parent" :parent-ids nil))))
+    (with-temp-buffer
+      (setq-local majutsu-log--cached-entries entries)
+      (majutsu-log--rebuild-relation-indexes entries)
+      (should (equal (plist-get (gethash "parent" majutsu-log--entry-by-id) :id)
+                     "parent"))
+      (should (equal (gethash "parent" majutsu-log--children-by-id)
+                     '("child-a" "child-b"))))))
+
 (ert-deftest majutsu-log-postprocessor-runs-per-field ()
   "Field-level :post handlers should run after parsing."
   (let* ((compiled
@@ -246,6 +288,56 @@
           (should (= 2 (length majutsu-log--cached-entries)))
           (should (= (majutsu-log--right-margin-total-width compiled)
                      majutsu-log--right-margin-width)))))))
+
+(ert-deftest majutsu-log-goto-parent-selects-specific-parent ()
+  "Parent navigation should prompt when multiple visible parents exist."
+  (let* ((compiled (majutsu-log-test--relations-compiled))
+         (raw (concat (majutsu-log-test--raw-entry "child" "Merge child" '("parent-a" "parent-b"))
+                      (majutsu-log-test--raw-entry "parent-a" "Parent A")
+                      (majutsu-log-test--raw-entry "parent-b" "Parent B")))
+         (majutsu--default-directory "/tmp/test-repo/")
+         (majutsu-log--compiled-template-cache compiled))
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (lograph)
+        (insert raw)
+        (goto-char (point-min))
+        (majutsu-log--wash-logs nil))
+      (should (majutsu--goto-log-entry "child"))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &rest _)
+                   (seq-find (lambda (candidate)
+                               (string-match-p "parent-b" candidate))
+                             candidates))))
+        (majutsu-log-goto-parent))
+      (should (equal (magit-section-value-if 'jj-commit) "parent-b")))))
+
+(ert-deftest majutsu-log-goto-child-selects-specific-child ()
+  "Child navigation should prompt when multiple visible children exist."
+  (let* ((compiled (majutsu-log-test--relations-compiled))
+         (raw (concat (majutsu-log-test--raw-entry "child-a" "Child A" '("parent"))
+                      (majutsu-log-test--raw-entry "child-b" "Child B" '("parent"))
+                      (majutsu-log-test--raw-entry "parent" "Parent")))
+         (majutsu--default-directory "/tmp/test-repo/")
+         (majutsu-log--compiled-template-cache compiled))
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (lograph)
+        (insert raw)
+        (goto-char (point-min))
+        (majutsu-log--wash-logs nil))
+      (should (majutsu--goto-log-entry "parent"))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &rest _)
+                   (seq-find (lambda (candidate)
+                               (string-match-p "child-b" candidate))
+                             candidates))))
+        (majutsu-log-goto-child))
+      (should (equal (magit-section-value-if 'jj-commit) "child-b")))))
 
 (ert-deftest majutsu-log-apply-face-policy-modes ()
   "Face policy should support preserve, strip, and override."

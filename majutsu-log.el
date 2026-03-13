@@ -202,6 +202,9 @@ When TAKES-VALUE is non-nil, also remove the following element."
 (defconst majutsu-log--field-separator "\x1e"
   "Separator character inserted between fields inside each module payload.")
 
+(defconst majutsu-log--field-list-separator "\x1c"
+  "Separator character inserted between list items inside a single field value.")
+
 (defconst majutsu-log--field-line-separator "\x1f"
   "Encoded newline separator used inside template field payloads.
 Log records are transported as single lines, then this separator is
@@ -232,6 +235,7 @@ decoded back to literal newlines after field splitting.")
   '((id . metadata)
     (change-id . heading)
     (commit-id . metadata)
+    (parent-ids . metadata)
     (bookmarks . heading)
     (tags . heading)
     (working-copies . heading)
@@ -245,12 +249,16 @@ decoded back to literal newlines after field splitting.")
     (long-desc . body))
   "Default module placement for known log fields.")
 
-(defconst majutsu-log--required-columns '(id)
+(defconst majutsu-log--required-columns '(id parent-ids)
   "Fields that must exist in `majutsu-log-commit-columns'.")
 
 (defconst majutsu-log--default-column-postprocessors
   '(majutsu-log-post-decode-line-separator)
   "Default postprocessors applied to every field unless overridden.")
+
+(defconst majutsu-log--field-default-postprocessors
+  '((parent-ids . (majutsu-log-post-split-list-separator)))
+  "Field-specific default postprocessors.")
 
 (defconst majutsu-log--field-default-margin-widths
   '((author . 18)
@@ -318,10 +326,18 @@ Also registers a variable watcher to invalidate the template cache."
    [:label "change_offset" "/"]
    [:change_offset]])
 
+(defun majutsu-log--canonical-id-template (&optional object)
+  "Return template form producing the canonical log id for OBJECT.
+
+When OBJECT is nil, use the current template self object."
+  (let ((object (or object 'self)))
+    `[:if [:or [:method ,object :hidden]
+               [:method ,object :divergent]]
+         [:method [:method ,object :commit_id] :shortest 8]
+       [:method [:method ,object :change_id] :shortest 8]]))
+
 (majutsu-log-define-column id
-  [:if [:or [:hidden] [:divergent]]
-      [:commit_id :shortest 8]
-    [:change_id :shortest 8]]
+  (majutsu-log--canonical-id-template)
   "Template for the commit-id column.")
 
 (majutsu-log-define-column change-id
@@ -341,6 +357,14 @@ Also registers a variable watcher to invalidate the template cache."
 (majutsu-log-define-column commit-id
   [:commit_id :shortest 8]
   "Template for the commit-id column.")
+
+(majutsu-log-define-column parent-ids
+  `[:map-join
+    ,majutsu-log--field-list-separator
+    [:parents]
+    'p
+    ,(majutsu-log--canonical-id-template 'p)]
+  "Template for the parent-ids metadata column.")
 
 (majutsu-log-define-column bookmarks
   [:bookmarks]
@@ -413,10 +437,21 @@ can survive transport through the single-line log format.")
 (defvar majutsu-log--compiled-template-cache nil
   "Cached structure holding the compiled log template and column metadata.")
 
+(defvar-local majutsu-log--cached-entries nil
+  "Cached log entries for the current buffer.")
+
+(defvar-local majutsu-log--entry-by-id nil
+  "Hash table mapping visible log entry ids to parsed entry plists.")
+
+(defvar-local majutsu-log--children-by-id nil
+  "Hash table mapping visible parent ids to visible child id lists.")
+
 (defun majutsu-log--invalidate-template-cache (&rest _)
   "Reset cached compiled template when layout changes."
   (setq majutsu-log--compiled-template-cache nil)
-  (setq majutsu-log--cached-entries nil))
+  (setq majutsu-log--cached-entries nil)
+  (setq majutsu-log--entry-by-id nil)
+  (setq majutsu-log--children-by-id nil))
 
 (defun majutsu-log-post-decode-line-separator (value &optional _ctx)
   "Decode `majutsu-log--field-line-separator' inside VALUE.
@@ -430,6 +465,13 @@ transport logical newlines safely through single-line payload segments."
        value t)
     value))
 
+(defun majutsu-log-post-split-list-separator (value &optional _ctx)
+  "Split VALUE by `majutsu-log--field-list-separator'."
+  (when (and (stringp value)
+             (not (string-empty-p value)))
+    (mapcar #'substring-no-properties
+            (majutsu-log--split-by-separator value majutsu-log--field-list-separator))))
+
 (defun majutsu-log--default-module-for-field (field)
   "Return default module symbol for FIELD."
   (or (alist-get field majutsu-log--field-default-modules nil nil #'eq)
@@ -439,6 +481,11 @@ transport logical newlines safely through single-line payload segments."
   "Return default face policy for FIELD."
   (let ((spec (alist-get field majutsu-log-field-faces nil nil #'eq)))
     (if (null spec) t spec)))
+
+(defun majutsu-log--default-postprocessors-for-field (field)
+  "Return default postprocessors for FIELD."
+  (or (alist-get field majutsu-log--field-default-postprocessors nil nil #'eq)
+      majutsu-log--default-column-postprocessors))
 
 (defun majutsu-log--default-margin-width-for-field (field)
   "Return default fixed width for right-margin FIELD."
@@ -478,7 +525,7 @@ transport logical newlines safely through single-line payload segments."
                  (majutsu-log--default-face-for-field field)))
          (post (if (plist-member col :post)
                    (plist-get col :post)
-                 :default))
+                 (majutsu-log--default-postprocessors-for-field field)))
          (width (and (plist-member col :width)
                      (plist-get col :width)))
          (align (if (plist-member col :align)
@@ -612,9 +659,6 @@ Returns a plist with :template, :columns, and :module-columns."
 
 ;;; Log Parsing
 
-(defvar-local majutsu-log--cached-entries nil
-  "Cached log entries for the current buffer.")
-
 (defun majutsu-log--split-by-separator (value separator)
   "Split VALUE by one-char string SEPARATOR, preserving empty fields."
   (if (not (stringp value))
@@ -723,6 +767,8 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
      (setq entry (plist-put entry :change-id value)))
     ('commit-id
      (setq entry (plist-put entry :commit-id value)))
+    ('parent-ids
+     (setq entry (plist-put entry :parent-ids value)))
     ('bookmarks
      (setq entry (plist-put entry :bookmarks value)))
     ('tags
@@ -995,6 +1041,87 @@ Returns entry plist and moves point past the consumed entry, or nil."
              (substring-no-properties change-id)))
       "unknown"))
 
+(defun majutsu-log--rebuild-relation-indexes (&optional entries)
+  "Rebuild visible relation indexes from ENTRIES.
+
+When ENTRIES is nil, use `majutsu-log--cached-entries'."
+  (let ((entries (or entries majutsu-log--cached-entries))
+        (entry-by-id (make-hash-table :test #'equal))
+        (children-by-id (make-hash-table :test #'equal)))
+    (dolist (entry entries)
+      (puthash (majutsu-log--entry-id entry) entry entry-by-id))
+    (dolist (entry entries)
+      (let ((child-id (majutsu-log--entry-id entry)))
+        (dolist (parent-id (plist-get entry :parent-ids))
+          (when (and (stringp parent-id)
+                     (not (string-empty-p parent-id)))
+            (puthash parent-id
+                     (append (gethash parent-id children-by-id) (list child-id))
+                     children-by-id)))))
+    (setq majutsu-log--entry-by-id entry-by-id)
+    (setq majutsu-log--children-by-id children-by-id)))
+
+(defun majutsu-log--ensure-relation-indexes ()
+  "Ensure visible relation indexes are available in the current buffer."
+  (unless (and (hash-table-p majutsu-log--entry-by-id)
+               (hash-table-p majutsu-log--children-by-id))
+    (majutsu-log--rebuild-relation-indexes)))
+
+(defun majutsu-log--entry-for-id (id)
+  "Return visible parsed entry for ID, or nil."
+  (when (and id (not (string-empty-p id)))
+    (majutsu-log--ensure-relation-indexes)
+    (gethash id majutsu-log--entry-by-id)))
+
+(defun majutsu-log--current-entry-id ()
+  "Return current `jj-commit' section id or signal a user error."
+  (or (magit-section-value-if 'jj-commit)
+      (user-error "No changeset at point")))
+
+(defun majutsu-log--visible-parent-ids (entry)
+  "Return visible parent ids for ENTRY in current buffer order."
+  (seq-filter #'majutsu-log--entry-for-id
+              (delete-dups (copy-sequence (or (plist-get entry :parent-ids) nil)))))
+
+(defun majutsu-log--visible-child-ids (entry)
+  "Return visible child ids for ENTRY in current buffer order."
+  (majutsu-log--ensure-relation-indexes)
+  (seq-filter #'majutsu-log--entry-for-id
+              (delete-dups (copy-sequence
+                            (or (gethash (majutsu-log--entry-id entry)
+                                         majutsu-log--children-by-id)
+                                nil)))))
+
+(defun majutsu-log--format-related-candidate (id)
+  "Return display string for related revision ID."
+  (if-let* ((entry (majutsu-log--entry-for-id id))
+            (desc (plist-get entry :short-desc))
+            ((not (string-empty-p (string-trim desc)))))
+      (format "%s  %s" id (replace-regexp-in-string "\n+" " " desc nil t))
+    id))
+
+(defun majutsu-log--read-related-id (ids prompt)
+  "Read one relation target from IDS using PROMPT.
+
+When IDS contains a single element, return it without prompting."
+  (let ((ids (delete-dups (copy-sequence ids))))
+    (pcase ids
+      (`() nil)
+      (`(,id) id)
+      (_
+       (let* ((candidates (mapcar (lambda (id)
+                                    (cons (majutsu-log--format-related-candidate id) id))
+                                  ids))
+              (choice (completing-read prompt (mapcar #'car candidates) nil t)))
+         (cdr (assoc choice candidates)))))))
+
+(defun majutsu-log--goto-related (ids prompt empty-message)
+  "Jump to one of IDS using PROMPT, or signal EMPTY-MESSAGE."
+  (if-let* ((target-id (majutsu-log--read-related-id ids prompt)))
+      (unless (majutsu--goto-log-entry target-id)
+        (user-error "Revision %s is not visible in the current log" target-id))
+    (user-error "%s" empty-message)))
+
 (defvar-local majutsu-log--right-margin-width nil
   "Fixed right-margin width for the current log buffer.")
 
@@ -1088,6 +1215,8 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   (let* ((compiled (majutsu-log--ensure-template))
          (entries nil))
     (setq majutsu-log--cached-entries nil)
+    (setq majutsu-log--entry-by-id nil)
+    (setq majutsu-log--children-by-id nil)
     (majutsu-log--set-right-margin (majutsu-log--right-margin-total-width compiled))
     (goto-char (point-min))
     (while (not (eobp))
@@ -1095,6 +1224,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
           (push entry entries)
         (magit-delete-line)))
     (setq majutsu-log--cached-entries (nreverse entries))
+    (majutsu-log--rebuild-relation-indexes majutsu-log--cached-entries)
     (insert "\n")))
 
 (defun majutsu-log-insert-logs ()
@@ -1135,9 +1265,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 ;;; Log Navigation
 
 (defconst majutsu--show-id-template
-  (majutsu-tpl [:if [:or [:hidden] [:divergent]]
-                   [:commit_id :shortest 8]
-                 [:change_id :shortest 8]]))
+  (majutsu-tpl (majutsu-log--canonical-id-template)))
 
 (defun majutsu-current-id ()
   (when-let* ((output (majutsu-jj-string "log" "--no-graph" "-r" "@" "-T" majutsu--show-id-template)))
@@ -1147,6 +1275,36 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   "Jump to the current changeset (@)."
   (interactive)
   (majutsu--goto-log-entry (majutsu-current-id)))
+
+(defun majutsu-log-goto-parent ()
+  "Jump to a parent of the changeset at point.
+
+When the current changeset has multiple visible parents, prompt for which
+parent to visit."
+  (interactive)
+  (majutsu--assert-mode 'majutsu-log-mode)
+  (let* ((entry-id (majutsu-log--current-entry-id))
+         (entry (or (majutsu-log--entry-for-id entry-id)
+                    (user-error "Changeset %s is not available in the current log" entry-id))))
+    (majutsu-log--goto-related
+     (majutsu-log--visible-parent-ids entry)
+     "Go to parent: "
+     "No parent revisions visible in the current log")))
+
+(defun majutsu-log-goto-child ()
+  "Jump to a child of the changeset at point.
+
+When the current changeset has multiple visible children, prompt for which
+child to visit."
+  (interactive)
+  (majutsu--assert-mode 'majutsu-log-mode)
+  (let* ((entry-id (majutsu-log--current-entry-id))
+         (entry (or (majutsu-log--entry-for-id entry-id)
+                    (user-error "Changeset %s is not available in the current log" entry-id))))
+    (majutsu-log--goto-related
+     (majutsu-log--visible-child-ids entry)
+     "Go to child: "
+     "No child revisions visible in the current log")))
 
 (defun majutsu-goto-commit (commit-id)
   "Jump to a specific COMMIT-ID in the log."
@@ -1219,6 +1377,8 @@ Return non-nil when the section could be located."
   :parent majutsu-mode-map
   "n" 'majutsu-goto-next-changeset
   "p" 'majutsu-goto-prev-changeset
+  "[" 'majutsu-log-goto-parent
+  "]" 'majutsu-log-goto-child
   "O" 'majutsu-new-dwim
   "D" 'majutsu-diff-dwim
   "Y" 'majutsu-duplicate-dwim
@@ -1247,6 +1407,8 @@ Return non-nil when the section could be located."
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
   (setq majutsu-log--cached-entries nil)
+  (setq majutsu-log--entry-by-id nil)
+  (setq majutsu-log--children-by-id nil)
   (majutsu-log-render))
 
 ;;;###autoload

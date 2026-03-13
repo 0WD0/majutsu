@@ -194,6 +194,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
+    (kbd "[") #'majutsu-log-goto-parent
+    (kbd "]") #'majutsu-log-goto-child
     (kbd "O") #'majutsu-new-dwim
     (kbd "I") #'majutsu-new-with-before
     (kbd "A") #'majutsu-new-with-after)

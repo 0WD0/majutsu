@@ -14,6 +14,9 @@
   both =--source= and =--revisions= options.
 - Add ~majutsu-find-file-other-window~ and ~majutsu-find-file-other-frame~
   to open blob snapshots in another window or frame.
+- Add visible DAG relation navigation in log buffers: ~[~ jumps to a parent
+  revision and ~]~ jumps to a child revision, prompting when multiple
+  visible targets exist.
 
 ** Changed
 
