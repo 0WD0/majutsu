@@ -34,7 +34,6 @@
 (require 'smerge-mode)
 
 (declare-function majutsu-find-file "majutsu-file" (revset path))
-(declare-function majutsu-find-file-at-point "majutsu-file" ())
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
 (declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
 (declare-function majutsu-color-words-column-at-point "majutsu-color-words" (goto-from &optional pos info))
@@ -1257,8 +1256,7 @@ what the diff is about."
 
 (defvar-keymap majutsu-file-section-map
   :doc "Keymap for `jj-file' sections."
-  :parent majutsu-diff-section-map
-  "v" #'majutsu-find-file-at-point)
+  :parent majutsu-diff-section-map)
 
 (defvar-keymap majutsu-hunk-section-map
   :doc "Keymap for `jj-hunk' sections."
