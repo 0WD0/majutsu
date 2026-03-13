@@ -28,6 +28,15 @@
      (:field id :module metadata :face nil)
      (:field flags :module metadata :face nil))))
 
+(defun majutsu-log-test--margin-compiled ()
+  "Return a layout with explicit fixed-width right-margin columns."
+  (majutsu-log--compile-columns
+   '((:field change-id :module heading :face t)
+     (:field description :module heading :face t)
+     (:field author :module right-margin :face nil :width 8 :align left)
+     (:field timestamp :module right-margin :face nil :width 6 :align right)
+     (:field id :module metadata :face nil))))
+
 (defun majutsu-log-test--parse-entries (compiled raw)
   "Parse RAW entries with COMPILED layout and return parsed entries."
   (with-temp-buffer
@@ -149,6 +158,33 @@
     (should (equal (plist-get first :suffix-lines) '("│ carry-line")))
     (should (null (plist-get second :suffix-lines)))))
 
+(ert-deftest majutsu-log-parse-entry-records-raw-region ()
+  "Parser should record the raw entry region for streaming washing."
+  (let* ((compiled (majutsu-log-test--base-compiled))
+         (first-raw (concat
+                     "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
+                     majutsu-log--entry-body-token
+                     majutsu-log--entry-right-token
+                     majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
+                     majutsu-log--entry-end-token "\n"
+                     "│ carry-line\n"))
+         (raw (concat first-raw
+                      "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
+                      majutsu-log--entry-body-token
+                      majutsu-log--entry-right-token
+                      majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
+                      majutsu-log--entry-end-token "\n")))
+    (with-temp-buffer
+      (insert raw)
+      (goto-char (point-min))
+      (let ((entry (majutsu-log--parse-entry-at-point compiled)))
+        (should entry)
+        (should (= (plist-get entry :beg) (point-min)))
+        (should (equal (buffer-substring-no-properties
+                        (plist-get entry :beg)
+                        (plist-get entry :end))
+                       first-raw))))))
+
 (ert-deftest majutsu-log-postprocessor-runs-per-field ()
   "Field-level :post handlers should run after parsing."
   (let* ((compiled
@@ -166,6 +202,50 @@
     (should (= 1 (length entries)))
     (should (equal (plist-get entry :short-desc) "[desc]"))
     (should (equal (plist-get entry :id) "row-id"))))
+
+(ert-deftest majutsu-log-render-right-margin-uses-fixed-widths ()
+  "Right margin should use configured fixed widths without scanning entries."
+  (let* ((compiled (majutsu-log-test--margin-compiled))
+         (entry (list :columns '((author . "VeryLongAuthor")
+                                 (timestamp . "2m"))))
+         (margin (substring-no-properties
+                  (majutsu-log--render-right-margin entry compiled))))
+    (should (= (string-width margin)
+               (majutsu-log--right-margin-total-width compiled)))
+    (should-not (string-match-p "VeryLongAuthor" margin))
+    (should (string-suffix-p "    2m" margin))))
+
+(ert-deftest majutsu-log-wash-logs-streams-and-caches-entries ()
+  "Washing should transform the buffer incrementally and cache entries."
+  (let* ((compiled (majutsu-log-test--margin-compiled))
+         (raw (concat
+               "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
+               majutsu-log--entry-body-token
+               majutsu-log--entry-right-token "Alice" majutsu-log--field-separator "2m ago"
+               majutsu-log--entry-meta-token "id-1"
+               majutsu-log--entry-end-token "\n"
+               "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
+               majutsu-log--entry-body-token
+               majutsu-log--entry-right-token "Bob" majutsu-log--field-separator "1h ago"
+               majutsu-log--entry-meta-token "id-2"
+               majutsu-log--entry-end-token "\n"))
+         (majutsu--default-directory "/tmp/test-repo/")
+         (majutsu-log--compiled-template-cache compiled))
+    (with-temp-buffer
+      (require 'magit-section)
+      (magit-section-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (lograph)
+        (insert raw)
+        (goto-char (point-min))
+        (majutsu-log--wash-logs nil)
+        (let ((output (buffer-string)))
+          (should (string-match-p "Title1" output))
+          (should (string-match-p "Title2" output))
+          (should-not (string-match-p (regexp-quote majutsu-log--entry-start-token) output))
+          (should (= 2 (length majutsu-log--cached-entries)))
+          (should (= (majutsu-log--right-margin-total-width compiled)
+                     majutsu-log--right-margin-width)))))))
 
 (ert-deftest majutsu-log-apply-face-policy-modes ()
   "Face policy should support preserve, strip, and override."
