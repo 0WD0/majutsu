@@ -178,7 +178,7 @@ Majutsu ensures metadata field ~id~ is always available for stable section ident
 - ~nil~ :: Strip text properties (plain string).
 - ~FACE-SYMBOL~ :: Repaint field using that face.
 
-If ~:face~ is omitted, Majutsu falls back to ~majutsu-log-field-faces~.
+If ~:face~ is omitted, Majutsu preserves jj-provided text properties (~t~).
 
 **** Postprocessing (~:post~)
 ~:post~ can be:
@@ -736,8 +736,7 @@ In Evil integration:
 - ~majutsu-jj-environment~ :: Extra =KEY=VALUE= entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by =majutsu-process=.
 
 ** Display Options
-- ~majutsu-log-commit-columns~ :: Ordered log field layout for log rendering. For protocol details, module semantics, and schema examples, see /Inspecting -> Log Buffer/.
-- ~majutsu-log-field-faces~ :: Fallback face policy when a ~majutsu-log-commit-columns~ entry omits ~:face~.
+- ~majutsu-log-commit-columns~ :: Ordered log field layout for log rendering. It also controls face policy per field using ~:face~. For protocol details, module semantics, and schema examples, see /Inspecting -> Log Buffer/.
 - ~majutsu-log-template-<field>~ variables :: Template forms consumed by log fields. For newline and control-character rules, see /Inspecting -> Log Buffer/.
 - ~majutsu-log-sections-hook~ :: Hook run to insert sections in the log buffer.
 - ~majutsu-display-buffer-function~ :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).

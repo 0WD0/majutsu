@@ -25,6 +25,8 @@
 - Remove the dedicated ~v~ binding from diff file sections, following Magit's
   split between explicit ~majutsu-find-file~ commands and diff-specific visit
   commands.
+- Remove ~majutsu-log-field-faces~. Configure log field face policy directly
+  in ~majutsu-log-commit-columns~ using each field's ~:face~ property.
 
 ** Fixed
 

@@ -79,10 +79,9 @@
   (let ((spec (majutsu-log--normalize-column-spec 'description)))
     (should (eq (plist-get spec :field) 'description))
     (should (eq (plist-get spec :module) 'heading))
+    (should (eq (plist-get spec :face) t))
     (should (equal (plist-get spec :post)
-                   majutsu-log--default-column-postprocessors))
-    (should (or (eq (plist-get spec :face) t)
-                (symbolp (plist-get spec :face))))))
+                   majutsu-log--default-column-postprocessors))))
 
 (ert-deftest majutsu-log-compile-columns-emits-sequential-markers ()
   "Compiled log template should include S/B/R/M/E markers in order."

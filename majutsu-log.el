@@ -20,30 +20,6 @@
 
 (require 'majutsu)
 
-(defcustom majutsu-log-field-faces
-  '((bookmarks . magit-branch-local)
-    (tags . magit-tag)
-    (working-copies . magit-branch-remote)
-    (author . magit-log-author)
-    (timestamp . magit-log-date)
-    (flags . font-lock-comment-face))
-  "Alist mapping log fields to face behavior.
-
-Each entry is (FIELD . SPEC).  SPEC can be:
-
-- t    Preserve existing font-lock-face properties produced
-       by JJ and `ansi-color-apply-text-property-face'.
-- nil  Remove face properties from that field.
-- FACE Apply FACE to that field (overriding existing faces).
-
-When a field is not present in this alist, it defaults to t."
-  :type '(alist :tag "Field face behavior"
-          :key-type (symbol :tag "Field")
-          :value-type (choice (const :tag "Preserve existing faces" t)
-                              (const :tag "No faces" nil)
-                              (face :tag "Use this face")))
-  :group 'majutsu)
-
 ;;; Section Keymaps
 
 (defvar-keymap majutsu-commit-section-map
@@ -292,6 +268,8 @@ Each element is a plist with at least `:field'. Supported keys:
 - :face   - t (preserve jj highlighting), nil (strip), or FACE (override).
 - :post   - postprocessor function or function list for field value transforms.
 
+When `:face' is omitted, it defaults to t.
+
 `heading' is the only module that may emit physical newlines. Other modules
 remain on the final heading line and should encode logical newlines as
 `majutsu-log--field-line-separator' (\\x1f)."
@@ -477,11 +455,6 @@ transport logical newlines safely through single-line payload segments."
   (or (alist-get field majutsu-log--field-default-modules nil nil #'eq)
       (user-error "Field %S requires explicit :module" field)))
 
-(defun majutsu-log--default-face-for-field (field)
-  "Return default face policy for FIELD."
-  (let ((spec (alist-get field majutsu-log-field-faces nil nil #'eq)))
-    (if (null spec) t spec)))
-
 (defun majutsu-log--default-postprocessors-for-field (field)
   "Return default postprocessors for FIELD."
   (or (alist-get field majutsu-log--field-default-postprocessors nil nil #'eq)
@@ -522,7 +495,7 @@ transport logical newlines safely through single-line payload segments."
                    (majutsu-log--default-module-for-field field)))
          (face (if (plist-member col :face)
                    (plist-get col :face)
-                 (majutsu-log--default-face-for-field field)))
+                 t))
          (post (if (plist-member col :post)
                    (plist-get col :post)
                  (majutsu-log--default-postprocessors-for-field field)))
