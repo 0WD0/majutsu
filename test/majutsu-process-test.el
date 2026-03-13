@@ -50,6 +50,81 @@
           (delete-process proc)))
       (should (eq called 'password)))))
 
+(ert-deftest test-majutsu-process-filter/ignores-with-editor-control-packets ()
+  (with-temp-buffer
+    (let* ((packet (format "WITH-EDITOR: 123 OPEN +1%c/tmp/manifest%c IN /tmp\n"
+                           ?\x1f ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat"))))
+      (set-marker (process-mark proc) (point))
+      (majutsu--process-filter proc (concat "normal output\n" packet "tail\n"))
+      (delete-process proc)
+      (let ((out (buffer-string)))
+        (should (string-match-p (regexp-quote "normal output\ntail\n") out))
+        (should-not (string-match-p "WITH-EDITOR:" out))))))
+
+(ert-deftest test-majutsu-process-filter/ignores-split-with-editor-packets ()
+  (with-temp-buffer
+    (let* ((part1 "WITH-EDITOR: 123 OPEN +1")
+           (part2 (format "%c/tmp/manifest%c IN /tmp\n"
+                          ?\x1f ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat"))))
+      (set-marker (process-mark proc) (point))
+      (majutsu--process-filter proc "normal\n")
+      (majutsu--process-filter proc part1)
+      (majutsu--process-filter proc part2)
+      (majutsu--process-filter proc "tail\n")
+      (delete-process proc)
+      (let ((out (buffer-string)))
+        (should (string-match-p (regexp-quote "normal\ntail\n") out))
+        (should-not (string-match-p "WITH-EDITOR:" out))))))
+
+(ert-deftest test-majutsu-process-filter/dispatches-majutsu-ediff-control-packets ()
+  (with-temp-buffer
+    (let* ((packet (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c/tmp/right%cfoo.txt\n"
+                           ?\x1f ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat")))
+           seen)
+      (cl-letf (((symbol-function 'majutsu-ediff--handle-control-line)
+                 (lambda (_proc line)
+                   (setq seen line)
+                   t)))
+        (set-marker (process-mark proc) (point))
+        (majutsu--process-filter proc (concat "normal\n" packet "tail\n"))
+        (delete-process proc)
+        (let ((out (buffer-string)))
+          (should (equal seen (substring packet 0 -1)))
+          (should (string-match-p (regexp-quote "normal\ntail\n") out))
+          (should-not (string-match-p "MAJUTSU-EDIFF:" out)))))))
+
+(ert-deftest test-majutsu-process-filter/dispatches-split-majutsu-ediff-packets ()
+  (with-temp-buffer
+    (let* ((part1 (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c" ?\x1f))
+           (part2 (format "/tmp/right%cfoo.txt\n" ?\x1f))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat")))
+           seen)
+      (cl-letf (((symbol-function 'majutsu-ediff--handle-control-line)
+                 (lambda (_proc line)
+                   (setq seen line)
+                   t)))
+        (set-marker (process-mark proc) (point))
+        (majutsu--process-filter proc "normal\n")
+        (majutsu--process-filter proc part1)
+        (majutsu--process-filter proc part2)
+        (majutsu--process-filter proc "tail\n")
+        (delete-process proc)
+        (let ((out (buffer-string)))
+          (should (equal seen (substring (concat part1 part2) 0 -1)))
+          (should (string-match-p (regexp-quote "normal\ntail\n") out))
+          (should-not (string-match-p "MAJUTSU-EDIFF:" out)))))))
+
 (ert-deftest majutsu-process-test-start-jj-binds-root-cwd ()
   "`majutsu-start-jj' should run from repo root."
   (let ((default-directory "/repo/sub/")
@@ -58,8 +133,8 @@
                (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-start-process)
                (lambda (&rest _args)
-                  (setq seen-root default-directory)
-                  'dummy-process)))
+                 (setq seen-root default-directory)
+                 'dummy-process)))
       (should (eq (majutsu-start-jj '("status")) 'dummy-process))
       (should (equal seen-root "/repo/")))))
 
@@ -97,5 +172,73 @@ The process section should use root as command directory."
     (should (equal seen-prefix-pwd "/repo/"))
     (should (equal seen-process-cwd "/repo/"))
     (should (equal seen-finish-root "/repo/"))))
+
+(ert-deftest majutsu-process-test-start-jj-uses-process-environment-helper ()
+  "`majutsu-start-jj' should apply helper environment via start-process."
+  (let ((default-directory "/repo/sub/")
+        (process-environment (cons "COLUMNS=80" process-environment))
+        process
+        seen-columns
+        seen-env-args)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/tmp/"))
+              ((symbol-function 'majutsu-process-jj-arguments)
+               (lambda (args) args))
+              ((symbol-function 'majutsu-process-environment)
+               (lambda (args)
+                 (setq seen-env-args args)
+                 (cons "COLUMNS=123" process-environment)))
+              ((symbol-function 'start-file-process)
+               (lambda (name buffer _program &rest _args)
+                 (setq seen-columns (getenv "COLUMNS"))
+                 (make-process :name (format "%s-test" name)
+                               :buffer buffer
+                               :command (list "cat"))))
+              ((symbol-function 'majutsu--process-display-buffer)
+               (lambda (_process) nil)))
+      (unwind-protect
+          (progn
+            (setq process (majutsu-start-jj '("diff" "--stat")))
+            (should (processp process))
+            (should (equal seen-env-args '("diff" "--stat")))
+            (should (equal seen-columns "123")))
+        (when (and process (process-live-p process))
+          (delete-process process))
+        (let ((buf (and process (process-buffer process))))
+          (when (buffer-live-p buf)
+            (kill-buffer buf)))))))
+
+(ert-deftest majutsu-process-test-call-jj-uses-process-environment-helper ()
+  "`majutsu-call-jj' should bind environment from helper output."
+  (let ((default-directory "/repo/sub/")
+        seen-env-args
+        seen-columns)
+    (with-temp-buffer
+      (let ((process-buf (current-buffer)))
+        (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+                   (lambda (&optional _directory) "/repo/"))
+                  ((symbol-function 'majutsu-process-jj-arguments)
+                   (lambda (args) args))
+                  ((symbol-function 'majutsu-process-environment)
+                   (lambda (args)
+                     (setq seen-env-args args)
+                     (cons "COLUMNS=234" process-environment)))
+                  ((symbol-function 'majutsu-process-buffer)
+                   (lambda (&optional _nodisplay)
+                     process-buf))
+                  ((symbol-function 'majutsu--process-insert-section)
+                   (lambda (_pwd _program _args &optional _err _errlog _face)
+                     (insert "\n")
+                     'dummy-section))
+                  ((symbol-function 'process-file)
+                   (lambda (&rest _args)
+                     (setq seen-columns (getenv "COLUMNS"))
+                     0))
+                  ((symbol-function 'majutsu-process-finish)
+                   (lambda (exit _process-buf _command-buf _default-dir _section)
+                     exit)))
+          (should (= 0 (majutsu-call-jj "diff" "--stat")))))
+      (should (equal seen-env-args '("diff" "--stat")))
+      (should (equal seen-columns "234")))))
 
 ;;; majutsu-process-test.el ends here

@@ -111,11 +111,11 @@ When Evil is active, also update `evil-normal-state-cursor'."
          (default-directory root)
          (file majutsu-buffer-blob-path)
          (rev majutsu-buffer-blob-revision)
-         (temp-file (make-temp-file "majutsu-blob-edit-"))
+         (temp-file (make-nearby-temp-file "majutsu-blob-edit-"))
          (editor-config (majutsu-jj--editor-command-config
                          "ui.diff-editor"
                          (concat "$right/" file)
-                         (list "cp" temp-file)))
+                         (list "cp" (majutsu-convert-filename-for-jj temp-file))))
          (args (list "diffedit"
                      "--config" editor-config
                      "--from" (concat rev "-")
