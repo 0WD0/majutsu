@@ -4,17 +4,19 @@ docs: info
 
 info: majutsu.info dir
 
-majutsu.texi: majutsu.org
+dir: majutsu.info
 	@printf "Generating $@\n"
-	@emacs --batch -l org $< -f org-texinfo-export-to-texinfo
+	@install-info --dir=$@ $<
 
 majutsu.info: majutsu.texi
 	@printf "Generating $@\n"
 	@makeinfo --no-split $< -o $@
 
-dir: majutsu.info
+texi: majutsu.texi
+
+majutsu.texi: majutsu.org
 	@printf "Generating $@\n"
-	@install-info --dir=$@ $<
+	@emacs --batch -l org $< -f org-texinfo-export-to-texinfo
 
 html: majutsu.html
 
@@ -30,4 +32,4 @@ majutsu.pdf: majutsu.texi
 
 clean:
 	@printf "Cleaning docs/*...\n"
-	@rm -f majutsu.texi majutsu.info majutsu.html majutsu.pdf dir
+	@rm -f majutsu.info majutsu.html majutsu.pdf dir
