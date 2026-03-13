@@ -545,6 +545,18 @@ If revision metadata moved, preserve location heuristically:
                    (majutsu-file--read-path revset root))))
     (majutsu-find-file revset path)))
 
+;;;###autoload
+(defun majutsu-find-file-other-window (revset path)
+  "View PATH from REVSET in another window."
+  (interactive (majutsu-find-file-read-args "Find file in other window"))
+  (majutsu-find-file--internal revset path #'switch-to-buffer-other-window))
+
+;;;###autoload
+(defun majutsu-find-file-other-frame (revset path)
+  "View PATH from REVSET in another frame."
+  (interactive (majutsu-find-file-read-args "Find file in other frame"))
+  (majutsu-find-file--internal revset path #'switch-to-buffer-other-frame))
+
 (defun majutsu-bury-or-kill-buffer (&optional bury-buffer)
   "Bury the current buffer if displayed in multiple windows, else kill it.
 With a prefix argument BURY-BUFFER only bury the buffer even if it is only
