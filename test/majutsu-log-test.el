@@ -24,17 +24,17 @@
    '((:field change-id :module heading :face t)
      (:field description :module heading :face t)
      (:field long-desc :module body :face t)
-     (:field timestamp :module right-margin :face t)
      (:field id :module metadata :face nil)
+     (:field timestamp :module metadata :face nil)
      (:field flags :module metadata :face nil))))
 
-(defun majutsu-log-test--margin-compiled ()
-  "Return a layout with explicit fixed-width right-margin columns."
+(defun majutsu-log-test--heading-aux-compiled ()
+  "Return a layout with auxiliary heading fields."
   (majutsu-log--compile-columns
    '((:field change-id :module heading :face t)
      (:field description :module heading :face t)
-     (:field author :module right-margin :face nil :width 8 :align left)
-     (:field timestamp :module right-margin :face nil :width 6 :align right)
+     (:field author :module heading :face nil)
+     (:field timestamp :module heading :face nil)
      (:field id :module metadata :face nil))))
 
 (defun majutsu-log-test--relations-compiled ()
@@ -57,7 +57,6 @@
   (concat
    "○ " majutsu-log--entry-start-token id majutsu-log--field-separator title
    majutsu-log--entry-body-token
-   majutsu-log--entry-right-token
    majutsu-log--entry-meta-token id
    (when parent-ids
      (concat majutsu-log--field-separator
@@ -84,22 +83,19 @@
                    majutsu-log--default-column-postprocessors))))
 
 (ert-deftest majutsu-log-compile-columns-emits-sequential-markers ()
-  "Compiled log template should include S/B/R/M/E markers in order."
+  "Compiled log template should include S/B/M/E markers in order."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (tpl (prin1-to-string (plist-get compiled :template)))
          (s-pos (string-match (regexp-quote "\\x1dS") tpl))
          (b-pos (string-match (regexp-quote "\\x1dB") tpl))
-         (r-pos (string-match (regexp-quote "\\x1dR") tpl))
          (m-pos (string-match (regexp-quote "\\x1dM") tpl))
          (e-pos (string-match (regexp-quote "\\x1dE") tpl)))
     (should s-pos)
     (should b-pos)
-    (should r-pos)
     (should m-pos)
     (should e-pos)
     (should (< s-pos b-pos))
-    (should (< b-pos r-pos))
-    (should (< r-pos m-pos))
+    (should (< b-pos m-pos))
     (should (< m-pos e-pos))))
 
 (ert-deftest majutsu-log-post-decode-line-separator-restores-faces ()
@@ -120,8 +116,9 @@
                "○ " majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Title line 1\n"
                "│ Title line 2" majutsu-log--entry-body-token
                "body line 1" majutsu-log--field-line-separator "body line 2"
-               majutsu-log--entry-right-token "2m ago"
-               majutsu-log--entry-meta-token "id-123" majutsu-log--field-separator "@ immutable"
+               majutsu-log--entry-meta-token
+               "id-123" majutsu-log--field-separator "2m ago" majutsu-log--field-separator "@ immutable"
+               majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
@@ -142,8 +139,8 @@
          (raw (concat
                majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Top\n"
                "Tail" majutsu-log--entry-body-token "payload"
-               majutsu-log--entry-right-token "1h ago"
-               majutsu-log--entry-meta-token "id-999" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token "id-999" majutsu-log--field-separator "1h ago"
+               majutsu-log--field-separator "" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
@@ -160,14 +157,14 @@
          (raw (concat
                "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
                majutsu-log--entry-body-token
-               majutsu-log--entry-right-token
                majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
+               majutsu-log--field-separator "" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"
                "│ carry-line\n"
                "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
                majutsu-log--entry-body-token
-               majutsu-log--entry-right-token
                majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
+               majutsu-log--field-separator "" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (first (nth 0 entries))
@@ -184,15 +181,15 @@
          (first-raw (concat
                      "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
                      majutsu-log--entry-body-token
-                     majutsu-log--entry-right-token
                      majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
+                     majutsu-log--field-separator "" majutsu-log--field-separator ""
                      majutsu-log--entry-end-token "\n"
                      "│ carry-line\n"))
          (raw (concat first-raw
                       "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
                       majutsu-log--entry-body-token
-                      majutsu-log--entry-right-token
                       majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
+                      majutsu-log--field-separator "" majutsu-log--field-separator ""
                       majutsu-log--entry-end-token "\n")))
     (with-temp-buffer
       (insert raw)
@@ -235,8 +232,7 @@
          (raw (concat
                "○ " majutsu-log--entry-start-token "desc"
                majutsu-log--entry-body-token
-               majutsu-log--entry-right-token
-               majutsu-log--entry-meta-token "row-id"
+               majutsu-log--entry-meta-token "row-id" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
@@ -244,31 +240,34 @@
     (should (equal (plist-get entry :short-desc) "[desc]"))
     (should (equal (plist-get entry :id) "row-id"))))
 
-(ert-deftest majutsu-log-render-right-margin-uses-fixed-widths ()
-  "Right margin should use configured fixed widths without scanning entries."
-  (let* ((compiled (majutsu-log-test--margin-compiled))
-         (entry (list :columns '((author . "VeryLongAuthor")
-                                 (timestamp . "2m"))))
-         (margin (substring-no-properties
-                  (majutsu-log--render-right-margin entry compiled))))
-    (should (= (string-width margin)
-               (majutsu-log--right-margin-total-width compiled)))
-    (should-not (string-match-p "VeryLongAuthor" margin))
-    (should (string-suffix-p "    2m" margin))))
+(ert-deftest majutsu-log-render-heading-lines-with-auxiliary-heading-fields ()
+  "Heading rendering should include additional heading fields in order."
+  (let* ((compiled (majutsu-log-test--heading-aux-compiled))
+         (entry (list :columns '((change-id . "chg")
+                                 (description . "Title")
+                                 (author . "Very\nLong")
+                                 (timestamp . "2m"))
+                      :heading-prefixes '("" "")))
+         (heading (mapconcat #'substring-no-properties
+                             (majutsu-log--render-heading-lines entry compiled)
+                             "\n")))
+    (should (equal heading "chg Title Very\nLong 2m"))))
 
 (ert-deftest majutsu-log-wash-logs-streams-and-caches-entries ()
   "Washing should transform the buffer incrementally and cache entries."
-  (let* ((compiled (majutsu-log-test--margin-compiled))
+  (let* ((compiled (majutsu-log-test--heading-aux-compiled))
          (raw (concat
-               "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
+               "○ " majutsu-log--entry-start-token
+               "chg1" majutsu-log--field-separator "Title1" majutsu-log--field-separator
+               "Alice" majutsu-log--field-separator "2m ago"
                majutsu-log--entry-body-token
-               majutsu-log--entry-right-token "Alice" majutsu-log--field-separator "2m ago"
-               majutsu-log--entry-meta-token "id-1"
+               majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"
-               "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
+               "○ " majutsu-log--entry-start-token
+               "chg2" majutsu-log--field-separator "Title2" majutsu-log--field-separator
+               "Bob" majutsu-log--field-separator "1h ago"
                majutsu-log--entry-body-token
-               majutsu-log--entry-right-token "Bob" majutsu-log--field-separator "1h ago"
-               majutsu-log--entry-meta-token "id-2"
+               majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
          (majutsu--default-directory "/tmp/test-repo/")
          (majutsu-log--compiled-template-cache compiled))
@@ -281,12 +280,10 @@
         (goto-char (point-min))
         (majutsu-log--wash-logs nil)
         (let ((output (buffer-string)))
-          (should (string-match-p "Title1" output))
-          (should (string-match-p "Title2" output))
+          (should (string-match-p "Title1 Alice 2m" output))
+          (should (string-match-p "Title2 Bob 1h" output))
           (should-not (string-match-p (regexp-quote majutsu-log--entry-start-token) output))
-          (should (= 2 (length majutsu-log--cached-entries)))
-          (should (= (majutsu-log--right-margin-total-width compiled)
-                     majutsu-log--right-margin-width)))))))
+          (should (= 2 (length majutsu-log--cached-entries))))))))
 
 (ert-deftest majutsu-log-goto-parent-selects-specific-parent ()
   "Parent navigation should prompt when multiple visible parents exist."

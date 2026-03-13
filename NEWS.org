@@ -27,6 +27,8 @@
   commands.
 - Remove ~majutsu-log-field-faces~. Configure log field face policy directly
   in ~majutsu-log-commit-columns~ using each field's ~:face~ property.
+- Remove the log ~right-margin~ module. Auxiliary fields such as author and
+  timestamp now belong in the ~heading~ module.
 
 ** Fixed
 

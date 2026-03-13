@@ -112,7 +112,7 @@ Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI
 The log buffer is the heart of Majutsu. It displays the history graph using a custom template DSL that mirrors the =jj log= output but adds interactivity.
 
 *** Log Display
-Each revision in the log is a section. The visible heading content is produced by fields assigned to the ~heading~ module in ~majutsu-log-commit-columns~ (for example, change ID, bookmarks, tags, and description). Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
+Each revision in the log is a section. The visible heading content is produced by fields assigned to the ~heading~ module in ~majutsu-log-commit-columns~ (for example, change ID, bookmarks, tags, description, author, and timestamp). Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
 
 *** Log Options Transient
 Press ~l~ to open the log options. Here you can:
@@ -130,7 +130,6 @@ Majutsu's log parser uses an ordered marker protocol embedded in jj template out
 
 - Entry start: =\x1dS=
 - Body start: =\x1dB=
-- Right-margin start: =\x1dR=
 - Metadata start: =\x1dM=
 - Entry end: =\x1dE=
 
@@ -147,20 +146,20 @@ Avoid emitting these bytes literally in user templates unless intentionally part
 Newline rules:
 
 - *heading module*: may contain real physical newlines.
-- *body/right-margin/metadata modules*: stay in the tail payload; encode logical newlines as =\x1f= and decode them in postprocessing.
+- *body/metadata modules*: stay in the tail payload; encode logical newlines as =\x1f= and decode them in postprocessing.
 
 Parsing is strictly sequential and positional (not key/value based):
 
 1. Detect =\x1dS= and lock the entry indent column.
 2. Collect heading lines until =\x1dB= is found.
-3. Parse =B -> R -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
+3. Parse =B -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
 4. Keep lines between current entry =E= and next entry =S= attached to the current section heading area (graph continuation lines).
 
 *** ~majutsu-log-commit-columns~ Schema
 Each item in ~majutsu-log-commit-columns~ is a plist:
 
 - ~:field~ :: Field symbol mapped to a ~majutsu-log-template-<field>~ variable.
-- ~:module~ :: One of ~heading~, ~body~, ~right-margin~, ~metadata~.
+- ~:module~ :: One of ~heading~, ~body~, ~metadata~.
 - ~:face~ :: Highlight policy for that field.
 - ~:post~ :: Optional postprocessor function (or function list).
 
@@ -170,7 +169,6 @@ Majutsu ensures metadata field ~id~ is always available for stable section ident
 **** Module Semantics
 - ~heading~ :: Visible section heading content (can span physical lines).
 - ~body~ :: Foldable section body.
-- ~right-margin~ :: Rendered into right margin overlays.
 - ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.
 
 **** Face Policy (~:face~)
@@ -201,14 +199,14 @@ Default behavior includes decoding =\x1f= into =\n=.
 **** Minimal layout
 #+begin_src emacs-lisp
 (setq majutsu-log-commit-columns
-      '((:field change-id   :module heading      :face t)
-        (:field description :module heading      :face t)
-        (:field long-desc   :module body         :face t)
-        (:field timestamp   :module right-margin :face magit-log-date)
-        (:field author      :module right-margin :face magit-log-author)
-        (:field id          :module metadata     :face nil)
-        (:field commit-id   :module metadata     :face nil)
-        (:field flags       :module metadata     :face nil)))
+      '((:field change-id   :module heading  :face t)
+        (:field description :module heading  :face t)
+        (:field author      :module heading  :face magit-log-author)
+        (:field timestamp   :module heading  :face magit-log-date)
+        (:field long-desc   :module body     :face t)
+        (:field id          :module metadata :face nil)
+        (:field commit-id   :module metadata :face nil)
+        (:field flags       :module metadata :face nil)))
 #+end_src
 
 **** Keep heading multiline + encoded body multiline
@@ -234,6 +232,7 @@ Default behavior includes decoding =\x1f= into =\n=.
 
 *** Migration Notes
 Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
+Author and timestamp now belong in the ~heading~ module; the ~right-margin~ module has been removed.
 Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~.
 
 ** Diffing

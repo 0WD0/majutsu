@@ -195,16 +195,13 @@ decoded back to literal newlines after field splitting.")
 (defconst majutsu-log--entry-body-token (concat majutsu-log--record-marker "B")
   "Marker that starts the body payload.")
 
-(defconst majutsu-log--entry-right-token (concat majutsu-log--record-marker "R")
-  "Marker that starts the right-margin payload.")
-
 (defconst majutsu-log--entry-meta-token (concat majutsu-log--record-marker "M")
   "Marker that starts the metadata payload.")
 
 (defconst majutsu-log--entry-end-token (concat majutsu-log--record-marker "E")
   "Marker that terminates a commit entry.")
 
-(defconst majutsu-log--module-order '(heading body right-margin metadata)
+(defconst majutsu-log--module-order '(heading body metadata)
   "Module parse/render order for sequential log payloads.")
 
 (defconst majutsu-log--field-default-modules
@@ -220,8 +217,8 @@ decoded back to literal newlines after field splitting.")
     (signature . heading)
     (empty . heading)
     (description . heading)
-    (author . right-margin)
-    (timestamp . right-margin)
+    (author . heading)
+    (timestamp . heading)
     (long-desc . body))
   "Default module placement for known log fields.")
 
@@ -236,16 +233,6 @@ decoded back to literal newlines after field splitting.")
   '((parent-ids . (majutsu-log-post-split-list-separator)))
   "Field-specific default postprocessors.")
 
-(defconst majutsu-log--field-default-margin-widths
-  '((author . 18)
-    (timestamp . 10))
-  "Default fixed widths for right-margin fields.")
-
-(defconst majutsu-log--field-default-margin-alignments
-  '((author . left)
-    (timestamp . right))
-  "Default alignment policy for right-margin fields.")
-
 (defcustom majutsu-log-commit-columns
   '((:field change-id :module heading :face t)
     (:field bookmarks :module heading :face magit-branch-local)
@@ -254,9 +241,9 @@ decoded back to literal newlines after field splitting.")
     (:field empty :module heading :face t)
     (:field git-head :module heading :face t)
     (:field description :module heading :face t)
+    (:field author :module heading :face magit-log-author)
+    (:field timestamp :module heading :face magit-log-date)
     (:field long-desc :module body :face t)
-    (:field author :module right-margin :face magit-log-author)
-    (:field timestamp :module right-margin :face magit-log-date)
     (:field id :module metadata :face nil)
     (:field commit-id :module metadata :face nil)
     (:field flags :module metadata :face nil))
@@ -264,14 +251,14 @@ decoded back to literal newlines after field splitting.")
 
 Each element is a plist with at least `:field'. Supported keys:
 - :field  - symbol identifying a known field.
-- :module - one of `heading', `body', `right-margin', `metadata'.
+- :module - one of `heading', `body', or `metadata'.
 - :face   - t (preserve jj highlighting), nil (strip), or FACE (override).
 - :post   - postprocessor function or function list for field value transforms.
 
 When `:face' is omitted, it defaults to t.
 
 `heading' is the only module that may emit physical newlines. Other modules
-remain on the final heading line and should encode logical newlines as
+remain in the tail payload and should encode logical newlines as
 `majutsu-log--field-line-separator' (\\x1f)."
   :type '(repeat (plist :options (:field :module :face :post)))
   :group 'majutsu)
@@ -460,16 +447,6 @@ transport logical newlines safely through single-line payload segments."
   (or (alist-get field majutsu-log--field-default-postprocessors nil nil #'eq)
       majutsu-log--default-column-postprocessors))
 
-(defun majutsu-log--default-margin-width-for-field (field)
-  "Return default fixed width for right-margin FIELD."
-  (or (alist-get field majutsu-log--field-default-margin-widths nil nil #'eq)
-      12))
-
-(defun majutsu-log--default-margin-alignment-for-field (field)
-  "Return default alignment for right-margin FIELD."
-  (or (alist-get field majutsu-log--field-default-margin-alignments nil nil #'eq)
-      'left))
-
 (defun majutsu-log--normalize-postprocessors (post field)
   "Normalize POST value for FIELD into a function list."
   (let ((fns (cond
@@ -498,33 +475,18 @@ transport logical newlines safely through single-line payload segments."
                  t))
          (post (if (plist-member col :post)
                    (plist-get col :post)
-                 (majutsu-log--default-postprocessors-for-field field)))
-         (width (and (plist-member col :width)
-                     (plist-get col :width)))
-         (align (if (plist-member col :align)
-                    (plist-get col :align)
-                  (majutsu-log--default-margin-alignment-for-field field))))
+                 (majutsu-log--default-postprocessors-for-field field))))
     (setq module (if (keywordp module)
                      (intern (substring (symbol-name module) 1))
                    module))
-    (setq align (if (keywordp align)
-                    (intern (substring (symbol-name align) 1))
-                  align))
     (unless (memq module majutsu-log--module-order)
       (user-error "Column %S has invalid :module %S" field module))
     (unless (or (eq face t) (null face) (symbolp face))
       (user-error "Column %S has invalid :face %S" field face))
-    (when width
-      (unless (and (integerp width) (> width 0))
-        (user-error "Column %S has invalid :width %S" field width)))
-    (unless (memq align '(left right center))
-      (user-error "Column %S has invalid :align %S" field align))
     (list :field field
           :module module
           :face face
-          :post (majutsu-log--normalize-postprocessors post field)
-          :width width
-          :align align)))
+          :post (majutsu-log--normalize-postprocessors post field))))
 
 (defun majutsu-log--ensure-required-columns (columns)
   "Ensure required columns are present in COLUMNS list.
@@ -585,11 +547,6 @@ Returns a plist with :template, :columns, and :module-columns."
            (mapcar (lambda (c)
                      (majutsu-log--column-template (plist-get c :field)))
                    (alist-get 'body module-columns nil nil #'eq))))
-         (right-form
-          (majutsu-log--build-module-template-form
-           (mapcar (lambda (c)
-                     (majutsu-log--column-template (plist-get c :field)))
-                   (alist-get 'right-margin module-columns nil nil #'eq))))
          (meta-form
           (majutsu-log--build-module-template-form
            (mapcar (lambda (c)
@@ -602,8 +559,6 @@ Returns a plist with :template, :columns, and :module-columns."
              ,heading-form
              ,majutsu-log--entry-body-token
              ,body-form
-             ,majutsu-log--entry-right-token
-             ,right-form
              ,majutsu-log--entry-meta-token
              ,meta-form
              ,majutsu-log--entry-end-token
@@ -663,26 +618,20 @@ Returns a plist with :template, :columns, and :module-columns."
       (- (point) (length token)))))
 
 (defun majutsu-log--parse-tail-payloads (tail)
-  "Parse B/R/M/E payload segments from TAIL string.
+  "Parse B/M/E payload segments from TAIL string.
 
 TAIL must start with `majutsu-log--entry-body-token'."
   (when (string-prefix-p majutsu-log--entry-body-token tail)
     (let* ((body-start (length majutsu-log--entry-body-token))
-           (right-pos (string-match (regexp-quote majutsu-log--entry-right-token)
-                                    tail body-start))
-           (meta-pos (and right-pos
-                          (string-match (regexp-quote majutsu-log--entry-meta-token)
-                                        tail (+ right-pos (length majutsu-log--entry-right-token)))))
+           (meta-pos (string-match (regexp-quote majutsu-log--entry-meta-token)
+                                   tail body-start))
            (end-pos (and meta-pos
                          (string-match (regexp-quote majutsu-log--entry-end-token)
                                        tail (+ meta-pos (length majutsu-log--entry-meta-token))))))
-      (when (and right-pos meta-pos end-pos)
+      (when (and meta-pos end-pos)
         (let ((trailing (substring tail (+ end-pos (length majutsu-log--entry-end-token)))))
           (when (string-empty-p trailing)
-            (list :body (substring tail body-start right-pos)
-                  :right-margin (substring tail
-                                           (+ right-pos (length majutsu-log--entry-right-token))
-                                           meta-pos)
+            (list :body (substring tail body-start meta-pos)
                   :metadata (substring tail
                                        (+ meta-pos (length majutsu-log--entry-meta-token))
                                        end-pos))))))))
@@ -839,8 +788,6 @@ Returns entry plist and moves point past the consumed entry, or nil."
               (setq entry (majutsu-log--record-module-fields
                            entry 'body (plist-get tail-payloads :body) compiled))
               (setq entry (majutsu-log--record-module-fields
-                           entry 'right-margin (plist-get tail-payloads :right-margin) compiled))
-              (setq entry (majutsu-log--record-module-fields
                            entry 'metadata (plist-get tail-payloads :metadata) compiled))
               (let ((suffix-lines nil))
                 ;; Preserve graph continuation lines between the current entry's
@@ -890,49 +837,6 @@ Returns entry plist and moves point past the consumed entry, or nil."
      ((null face) (substring-no-properties v))
      (t (propertize (substring-no-properties v) 'font-lock-face face)))))
 
-(defun majutsu-log--right-margin-column-width (column)
-  "Return fixed display width for right-margin COLUMN."
-  (or (plist-get column :width)
-      (majutsu-log--default-margin-width-for-field (plist-get column :field))))
-
-(defun majutsu-log--right-margin-column-align (column)
-  "Return alignment for right-margin COLUMN."
-  (or (plist-get column :align)
-      (majutsu-log--default-margin-alignment-for-field (plist-get column :field))))
-
-(defun majutsu-log--single-line-value (value)
-  "Return VALUE with embedded newlines flattened to spaces."
-  (replace-regexp-in-string "\n" " " (or value "") nil t))
-
-(defun majutsu-log--fit-margin-value (value width align)
-  "Return VALUE truncated and padded to WIDTH using ALIGN."
-  (let* ((line (majutsu-log--single-line-value value))
-         (truncated (truncate-string-to-width line width 0 nil)))
-    (majutsu-log--pad-display truncated width align)))
-
-(defun majutsu-log--right-margin-total-width (compiled)
-  "Return the fixed total width reserved for COMPILED right margin."
-  (let ((columns (majutsu-log--module-columns compiled 'right-margin))
-        (sum 0)
-        (first t))
-    (dolist (column columns sum)
-      (unless first
-        (setq sum (1+ sum)))
-      (setq first nil)
-      (setq sum (+ sum (majutsu-log--right-margin-column-width column))))))
-
-(defun majutsu-log--pad-display (text width align)
-  "Pad TEXT to WIDTH using ALIGN (`left' | `right' | `center')."
-  (let* ((txt (or text ""))
-         (len (string-width txt))
-         (pad (max 0 (- width len))))
-    (pcase align
-      ('right (concat (make-string pad ?\s) txt))
-      ('center (let* ((left (/ pad 2))
-                      (right (- pad left)))
-                 (concat (make-string left ?\s) txt (make-string right ?\s))))
-      (_ (concat txt (make-string pad ?\s))))))
-
 (defun majutsu-log--concat-heading-parts (parts)
   "Concatenate heading PARTS without adding spaces after newlines."
   (let ((out ""))
@@ -967,26 +871,6 @@ Returns entry plist and moves point past the consumed entry, or nil."
                         (line (or (nth idx content-lines) "")))
                     (push (concat prefix line) out)))
       (nreverse out))))
-
-(defun majutsu-log--render-right-margin (entry compiled)
-  "Render ENTRY right-margin string using COMPILED fixed widths."
-  (let* ((columns (majutsu-log--module-columns compiled 'right-margin))
-         (parts nil)
-         (has-content nil))
-    (dolist (column columns)
-      (let* ((field (plist-get column :field))
-             (face (plist-get column :face))
-             (raw (or (majutsu-log--entry-column entry field) ""))
-             (line (majutsu-log--single-line-value raw))
-             (width (majutsu-log--right-margin-column-width column))
-             (align (majutsu-log--right-margin-column-align column))
-             (fitted (majutsu-log--fit-margin-value line width align))
-             (value (majutsu-log--apply-face-policy fitted face)))
-        (unless (string-empty-p (string-trim line))
-          (setq has-content t))
-        (push value parts)))
-    (when has-content
-      (string-join (nreverse parts) " "))))
 
 (defun majutsu-log--render-body (entry compiled)
   "Render ENTRY body module as foldable multiline content."
@@ -1095,36 +979,6 @@ When IDS contains a single element, return it without prompting."
         (user-error "Revision %s is not visible in the current log" target-id))
     (user-error "%s" empty-message)))
 
-(defvar-local majutsu-log--right-margin-width nil
-  "Fixed right-margin width for the current log buffer.")
-
-(defun majutsu-log--apply-window-margins (&optional window)
-  "Apply current log margins to WINDOW or the selected window."
-  (when (or window (setq window (get-buffer-window (current-buffer))))
-    (with-selected-window window
-      (let ((left (car (window-margins window))))
-        (set-window-margins window left majutsu-log--right-margin-width)))))
-
-(defun majutsu-log--set-right-margin (width)
-  "Set fixed right margin WIDTH for the current log buffer."
-  (setq majutsu-log--right-margin-width (and width (> width 0) width))
-  (dolist (win (get-buffer-window-list (current-buffer) nil t))
-    (majutsu-log--apply-window-margins win))
-  (if majutsu-log--right-margin-width
-      (add-hook 'window-configuration-change-hook #'majutsu-log--apply-window-margins nil t)
-    (remove-hook 'window-configuration-change-hook #'majutsu-log--apply-window-margins t)))
-
-(defun majutsu-log--make-margin-overlay (string)
-  "Display STRING in the right margin of the current (or previous) line."
-  (save-excursion
-    (forward-line (if (bolp) -1 0))
-    (let ((o (make-overlay (1+ (point)) (line-end-position) nil t)))
-      (overlay-put o 'evaporate t)
-      (overlay-put o 'before-string
-                   (propertize " " 'display
-                               (list (list 'margin 'right-margin)
-                                     (or string " ")))))))
-
 (defun majutsu-log-insert-error-header ()
   "Insert the message about the jj error that just occurred.
 
@@ -1149,15 +1003,12 @@ disappear again."
          (heading-lines (majutsu-log--render-heading-lines entry compiled))
          (heading (majutsu-log--join-lines heading-lines))
          (suffix-lines (plist-get entry :suffix-lines))
-         (margin (majutsu-log--render-right-margin entry compiled))
          (body (majutsu-log--render-body entry compiled))
          (has-body (and (stringp body)
                         (not (string-empty-p (string-trim body))))))
     (magit-insert-section (jj-commit id t)
       (insert heading)
       (insert "\n")
-      (when margin
-        (majutsu-log--make-margin-overlay margin))
       (dolist (suffix-line suffix-lines)
         (insert suffix-line)
         (insert "\n"))
@@ -1190,7 +1041,6 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
     (setq majutsu-log--cached-entries nil)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
-    (majutsu-log--set-right-margin (majutsu-log--right-margin-total-width compiled))
     (goto-char (point-min))
     (while (not (eobp))
       (if-let* ((entry (majutsu-log--wash-entry compiled)))
