@@ -29,6 +29,9 @@
   in ~majutsu-log-commit-columns~ using each field's ~:face~ property.
 - Remove the log ~right-margin~ module. Auxiliary fields such as author and
   timestamp now belong in the ~heading~ module.
+- Refine log column ~:post~ handling: transport decoding now happens before
+  postprocessors, explicit ~:post~ functions run per column instance, and
+  repeated fields can project to different values in different modules.
 
 ** Fixed
 

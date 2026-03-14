@@ -225,13 +225,13 @@ decoded back to literal newlines after field splitting.")
 (defconst majutsu-log--required-columns '(id parent-ids)
   "Fields that must exist in `majutsu-log-commit-columns'.")
 
-(defconst majutsu-log--default-column-postprocessors
-  '(majutsu-log-post-decode-line-separator)
-  "Default postprocessors applied to every field unless overridden.")
+(defconst majutsu-log--default-column-postprocessors nil
+  "Default postprocessors appended to every column instance.")
 
 (defconst majutsu-log--field-default-postprocessors
-  '((parent-ids . (majutsu-log-post-split-list-separator)))
-  "Field-specific default postprocessors.")
+  '((parent-ids . (majutsu-log-post-split-list-separator))
+    (timestamp . (majutsu-log-post-remove-ago-suffix)))
+  "Field-specific default postprocessors appended after global defaults.")
 
 (defcustom majutsu-log-commit-columns
   '((:field change-id :module heading :face t)
@@ -437,6 +437,12 @@ transport logical newlines safely through single-line payload segments."
     (mapcar #'substring-no-properties
             (majutsu-log--split-by-separator value majutsu-log--field-list-separator))))
 
+(defun majutsu-log-post-remove-ago-suffix (value &optional _ctx)
+  "Trim a trailing \\=' ago\\=' suffix from VALUE."
+  (if (stringp value)
+      (string-remove-suffix " ago" value)
+    value))
+
 (defun majutsu-log--default-module-for-field (field)
   "Return default module symbol for FIELD."
   (or (alist-get field majutsu-log--field-default-modules nil nil #'eq)
@@ -444,17 +450,22 @@ transport logical newlines safely through single-line payload segments."
 
 (defun majutsu-log--default-postprocessors-for-field (field)
   "Return default postprocessors for FIELD."
-  (or (alist-get field majutsu-log--field-default-postprocessors nil nil #'eq)
-      majutsu-log--default-column-postprocessors))
+  (append majutsu-log--default-column-postprocessors
+          (alist-get field majutsu-log--field-default-postprocessors nil nil #'eq)))
 
 (defun majutsu-log--normalize-postprocessors (post field)
-  "Normalize POST value for FIELD into a function list."
-  (let ((fns (cond
-              ((eq post :default) majutsu-log--default-column-postprocessors)
-              ((null post) nil)
-              ((functionp post) (list post))
-              ((and (listp post) (seq-every-p #'functionp post)) post)
-              (t (user-error "Column %S has invalid :post %S" field post)))))
+  "Normalize POST value for FIELD into a function list.
+
+Omitted or `:default' values use the field defaults. Explicit functions are
+appended after those defaults, while nil disables column postprocessing."
+  (let* ((defaults (majutsu-log--default-postprocessors-for-field field))
+         (fns (cond
+               ((eq post :default) defaults)
+               ((null post) nil)
+               ((functionp post) (append defaults (list post)))
+               ((and (listp post) (seq-every-p #'functionp post))
+                (append defaults post))
+               (t (user-error "Column %S has invalid :post %S" field post)))))
     (dolist (fn fns)
       (unless (functionp fn)
         (user-error "Column %S has non-callable postprocessor %S" field fn)))
@@ -475,7 +486,7 @@ transport logical newlines safely through single-line payload segments."
                  t))
          (post (if (plist-member col :post)
                    (plist-get col :post)
-                 (majutsu-log--default-postprocessors-for-field field))))
+                 :default)))
     (setq module (if (keywordp module)
                      (intern (substring (symbol-name module) 1))
                    module))
@@ -500,6 +511,12 @@ Missing required fields are appended with defaults."
 (defun majutsu-log--module-columns (compiled module)
   "Return compiled column specs for MODULE from COMPILED metadata."
   (alist-get module (plist-get compiled :module-columns) nil nil #'eq))
+
+(defun majutsu-log--assign-column-instances (columns)
+  "Return COLUMNS with stable per-instance ids assigned."
+  (cl-loop for column in columns
+           for idx from 0
+           collect (plist-put (copy-sequence column) :instance idx)))
 
 (defun majutsu-log--column-template (field)
   "Return majutsu-template form for FIELD.
@@ -529,7 +546,8 @@ Looks up `majutsu-log-template-FIELD'."
 Returns a plist with :template, :columns, and :module-columns."
   (let* ((normalized (mapcar #'majutsu-log--normalize-column-spec
                              (or columns majutsu-log-commit-columns)))
-         (complete (majutsu-log--ensure-required-columns normalized))
+         (complete (majutsu-log--assign-column-instances
+                    (majutsu-log--ensure-required-columns normalized)))
          (module-columns
           (mapcar (lambda (module)
                     (cons module
@@ -648,6 +666,10 @@ TAIL must start with `majutsu-log--entry-body-token'."
         (seq-take values count))
        (t values)))))
 
+(defun majutsu-log--decode-transport-value (value)
+  "Decode transport-level escapes inside VALUE before column postprocessing."
+  (majutsu-log-post-decode-line-separator value))
+
 (defun majutsu-log--apply-postprocessor (fn value ctx)
   "Apply postprocessor FN to VALUE with context CTX.
 
@@ -680,8 +702,15 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
       ("@" (setq entry (plist-put entry :current_working_copy t)))))
   entry)
 
-(defun majutsu-log--record-column (entry field value)
-  "Record FIELD VALUE onto ENTRY plist and column map."
+(defun majutsu-log--canonical-field-value (field value)
+  "Return canonical semantic value for FIELD based on VALUE."
+  (majutsu-log--apply-postprocessors
+   value
+   (majutsu-log--default-postprocessors-for-field field)
+   (list :field field :module 'canonical :raw-value value :canonical t)))
+
+(defun majutsu-log--record-field (entry field value)
+  "Record canonical FIELD VALUE onto ENTRY plist and field map."
   (pcase field
     ('id
      (setq entry (plist-put entry :id value)))
@@ -702,7 +731,6 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
     ('author
      (setq entry (plist-put entry :author value)))
     ('timestamp
-     (setq value (string-remove-suffix " ago" value))
      (setq entry (plist-put entry :timestamp value)))
     ('long-desc
      (setq entry (plist-put entry :long-desc value)))
@@ -715,10 +743,19 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
      (setq entry (plist-put entry :signature value)))
     ('empty
      (setq entry (plist-put entry :empty (not (string-empty-p value))))))
-  (let* ((columns (plist-get entry :columns)))
+  (let ((columns (plist-get entry :columns)))
     (setf (alist-get field columns nil nil #'eq) value)
     (setq entry (plist-put entry :columns columns)))
   entry)
+
+(defun majutsu-log--record-column-value (entry column value)
+  "Record per-instance VALUE for COLUMN onto ENTRY."
+  (let* ((instance (plist-get column :instance))
+         (column-values (plist-get entry :column-values)))
+    (when instance
+      (setf (alist-get instance column-values nil nil #'eql) value)
+      (setq entry (plist-put entry :column-values column-values)))
+    entry))
 
 (defun majutsu-log--record-module-fields (entry module payload compiled)
   "Record MODULE PAYLOAD values into ENTRY using COMPILED module layout."
@@ -726,12 +763,22 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
          (values (majutsu-log--split-module-values payload (length columns)))
          (stored nil))
     (cl-loop for column in columns
-             for value in values
-             for field = (plist-get column :field)
-             for ctx = (list :field field :module module)
-             for out = (majutsu-log--apply-postprocessors value (plist-get column :post) ctx)
-             do (setq entry (majutsu-log--record-column entry field out))
-             do (push out stored))
+             for raw-value in values
+             do (let* ((field (plist-get column :field))
+                       (decoded (majutsu-log--decode-transport-value raw-value))
+                       (canonical (majutsu-log--canonical-field-value field decoded)))
+                  (setq entry (majutsu-log--record-field entry field canonical))
+                  (let* ((ctx (list :field field
+                                    :module module
+                                    :column column
+                                    :entry entry
+                                    :raw-value decoded
+                                    :canonical-value canonical))
+                         (out (majutsu-log--apply-postprocessors decoded
+                                                                 (plist-get column :post)
+                                                                 ctx)))
+                    (setq entry (majutsu-log--record-column-value entry column out))
+                    (push out stored))))
     (let ((modules (plist-get entry :modules)))
       (setf (alist-get module modules nil nil #'eq) (nreverse stored))
       (setq entry (plist-put entry :modules modules)))
@@ -781,6 +828,7 @@ Returns entry plist and moves point past the consumed entry, or nil."
             (let* ((entry (list :beg entry-beg
                                 :indent indent
                                 :columns nil
+                                :column-values nil
                                 :modules nil
                                 :heading-prefixes (nreverse heading-prefixes)))
                    (heading-payload (majutsu-log--join-lines (nreverse heading-segments))))
@@ -826,8 +874,31 @@ Returns entry plist and moves point past the consumed entry, or nil."
                "\n"))) ; Join lines with newline, prefixed by indentation
 
 (defun majutsu-log--entry-column (entry field)
-  "Return string value for FIELD stored on ENTRY."
+  "Return canonical value for FIELD stored on ENTRY."
   (alist-get field (plist-get entry :columns) nil nil #'eq))
+
+(defun majutsu-log--entry-column-value (entry column)
+  "Return per-instance value for COLUMN stored on ENTRY.
+
+Fallback to the canonical field value when ENTRY predates per-instance storage."
+  (let* ((instance (plist-get column :instance))
+         (column-values (plist-get entry :column-values))
+         (missing (make-symbol "majutsu-log-missing-instance"))
+         (value (if instance
+                    (alist-get instance column-values missing nil #'eql)
+                  missing)))
+    (if (eq value missing)
+        (majutsu-log--entry-column entry (plist-get column :field))
+      value)))
+
+(defun majutsu-log--display-string (value)
+  "Return VALUE converted to a display string."
+  (cond
+   ((null value) "")
+   ((stringp value) value)
+   ((listp value)
+    (mapconcat #'majutsu-log--display-string value " "))
+   (t (format "%s" value))))
 
 (defun majutsu-log--apply-face-policy (value face)
   "Apply FACE policy to VALUE and return display string."
@@ -853,10 +924,10 @@ Returns entry plist and moves point past the consumed entry, or nil."
   (let* ((columns (majutsu-log--module-columns compiled 'heading))
          (parts nil))
     (dolist (column columns)
-      (let* ((field (plist-get column :field))
-             (face (plist-get column :face))
-             (raw (or (majutsu-log--entry-column entry field) ""))
-             (value (majutsu-log--apply-face-policy raw face)))
+      (let* ((face (plist-get column :face))
+             (raw (majutsu-log--entry-column-value entry column))
+             (value (majutsu-log--apply-face-policy
+                     (majutsu-log--display-string raw) face)))
         (unless (string-empty-p value)
           (push value parts))))
     (setq parts (nreverse parts))
@@ -877,10 +948,10 @@ Returns entry plist and moves point past the consumed entry, or nil."
   (let* ((columns (majutsu-log--module-columns compiled 'body))
          (parts nil))
     (dolist (column columns)
-      (let* ((field (plist-get column :field))
-             (face (plist-get column :face))
-             (raw (or (majutsu-log--entry-column entry field) ""))
-             (value (majutsu-log--apply-face-policy raw face)))
+      (let* ((face (plist-get column :face))
+             (raw (majutsu-log--entry-column-value entry column))
+             (value (majutsu-log--apply-face-policy
+                     (majutsu-log--display-string raw) face)))
         (unless (string-empty-p (string-trim value))
           (push value parts))))
     (when parts

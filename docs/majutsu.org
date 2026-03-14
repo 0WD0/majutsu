@@ -183,7 +183,8 @@ If ~:face~ is omitted, Majutsu preserves jj-provided text properties (~t~).
 
 - A function symbol
 - A list of functions (applied left-to-right)
-- Omitted (uses default postprocessors)
+- Omitted or ~:default~ (uses default postprocessors)
+- ~nil~ (disable column postprocessors)
 
 Function contract:
 
@@ -191,9 +192,15 @@ Function contract:
 (fn VALUE &optional CTX) => NEW-VALUE
 #+end_src
 
-~CTX~ includes at least ~:field~ and ~:module~.
+~CTX~ includes at least ~:field~, ~:module~, and the normalized ~:column~
+spec.
 
-Default behavior includes decoding =\x1f= into =\n=.
+Postprocessors run per column instance, so the same field can appear in
+multiple modules and project to different values. Transport decoding (for
+example, turning =\x1f= back into =\n=) happens before ~:post~ runs.
+
+When you provide a function or function list in ~:post~, Majutsu appends it
+after the field's default postprocessors.
 
 *** Configuration Examples
 **** Minimal layout

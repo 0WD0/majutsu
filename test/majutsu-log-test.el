@@ -68,6 +68,13 @@
   "Wrap VALUE in square brackets for postprocessor tests."
   (format "[%s]" value))
 
+(defun majutsu-log-test--post-by-module (value ctx)
+  "Return a module-specific projection of VALUE using CTX."
+  (pcase (plist-get ctx :module)
+    ('heading (format "[%s]" value))
+    ('body (upcase value))
+    (_ value)))
+
 (ert-deftest majutsu-log-long-desc-template-uses-line-separator ()
   "Default long-desc template should encode line breaks with \x1f."
   (should (equal majutsu-log-template-long-desc
@@ -80,7 +87,13 @@
     (should (eq (plist-get spec :module) 'heading))
     (should (eq (plist-get spec :face) t))
     (should (equal (plist-get spec :post)
-                   majutsu-log--default-column-postprocessors))))
+                   (majutsu-log--default-postprocessors-for-field 'description)))))
+
+(ert-deftest majutsu-log-explicit-default-postprocessors-keep-field-defaults ()
+  "Explicit `:post :default' should retain field-specific defaults."
+  (let ((spec (majutsu-log--normalize-column-spec '(:field parent-ids :post :default))))
+    (should (equal (plist-get spec :post)
+                   (majutsu-log--default-postprocessors-for-field 'parent-ids)))))
 
 (ert-deftest majutsu-log-compile-columns-emits-sequential-markers ()
   "Compiled log template should include S/B/M/E markers in order."
@@ -237,8 +250,32 @@
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
     (should (= 1 (length entries)))
-    (should (equal (plist-get entry :short-desc) "[desc]"))
-    (should (equal (plist-get entry :id) "row-id"))))
+    (should (equal (plist-get entry :short-desc) "desc"))
+    (should (equal (plist-get entry :id) "row-id"))
+    (should (equal (mapconcat #'substring-no-properties
+                              (majutsu-log--render-heading-lines entry compiled)
+                              "\n")
+                   "○ [desc]"))))
+
+(ert-deftest majutsu-log-postprocessor-runs-per-column-instance ()
+  "Module-specific `:post' results should be stored per column instance."
+  (let* ((compiled
+          (majutsu-log--compile-columns
+           '((:field description :module heading :face nil :post majutsu-log-test--post-by-module)
+             (:field description :module body :face nil :post majutsu-log-test--post-by-module)
+             (:field id :module metadata :face nil))))
+         (raw (concat
+               "○ " majutsu-log--entry-start-token "desc"
+               majutsu-log--entry-body-token "desc"
+               majutsu-log--entry-meta-token "row-id" majutsu-log--field-separator ""
+               majutsu-log--entry-end-token "\n"))
+         (entry (car (majutsu-log-test--parse-entries compiled raw))))
+    (should (equal (plist-get entry :short-desc) "desc"))
+    (should (equal (mapconcat #'substring-no-properties
+                              (majutsu-log--render-heading-lines entry compiled)
+                              "\n")
+                   "○ [desc]"))
+    (should (equal (majutsu-log--render-body entry compiled) "DESC"))))
 
 (ert-deftest majutsu-log-render-heading-lines-with-auxiliary-heading-fields ()
   "Heading rendering should include additional heading fields in order."
