@@ -192,6 +192,9 @@ decoded back to literal newlines after field splitting.")
 (defconst majutsu-log--entry-start-token (concat majutsu-log--record-marker "S")
   "Marker that starts a commit entry and heading payload.")
 
+(defconst majutsu-log--entry-tail-token (concat majutsu-log--record-marker "T")
+  "Marker that starts the tail payload.")
+
 (defconst majutsu-log--entry-body-token (concat majutsu-log--record-marker "B")
   "Marker that starts the body payload.")
 
@@ -201,7 +204,7 @@ decoded back to literal newlines after field splitting.")
 (defconst majutsu-log--entry-end-token (concat majutsu-log--record-marker "E")
   "Marker that terminates a commit entry.")
 
-(defconst majutsu-log--module-order '(heading body metadata)
+(defconst majutsu-log--module-order '(heading tail body metadata)
   "Module parse/render order for sequential log payloads.")
 
 (defconst majutsu-log--field-default-modules
@@ -217,8 +220,8 @@ decoded back to literal newlines after field splitting.")
     (signature . heading)
     (empty . heading)
     (description . heading)
-    (author . heading)
-    (timestamp . heading)
+    (author . tail)
+    (timestamp . tail)
     (long-desc . body))
   "Default module placement for known log fields.")
 
@@ -241,8 +244,8 @@ decoded back to literal newlines after field splitting.")
     (:field empty :module heading :face t)
     (:field git-head :module heading :face t)
     (:field description :module heading :face t)
-    (:field author :module heading :face magit-log-author)
-    (:field timestamp :module heading :face magit-log-date)
+    (:field author :module tail :face magit-log-author)
+    (:field timestamp :module tail :face magit-log-date)
     (:field long-desc :module body :face t)
     (:field id :module metadata :face nil)
     (:field commit-id :module metadata :face nil)
@@ -251,14 +254,14 @@ decoded back to literal newlines after field splitting.")
 
 Each element is a plist with at least `:field'. Supported keys:
 - :field  - symbol identifying a known field.
-- :module - one of `heading', `body', or `metadata'.
+- :module - one of `heading', `tail', `body', or `metadata'.
 - :face   - t (preserve jj highlighting), nil (strip), or FACE (override).
 - :post   - postprocessor function or function list for field value transforms.
 
 When `:face' is omitted, it defaults to t.
 
 `heading' is the only module that may emit physical newlines. Other modules
-remain in the tail payload and should encode logical newlines as
+remain in the sequential payload tail and should encode logical newlines as
 `majutsu-log--field-line-separator' (\\x1f)."
   :type '(repeat (plist :options (:field :module :face :post)))
   :group 'majutsu)
@@ -555,6 +558,11 @@ Returns a plist with :template, :columns, and :module-columns."
            (mapcar (lambda (c)
                      (majutsu-log--column-template (plist-get c :field)))
                    (alist-get 'heading module-columns nil nil #'eq))))
+         (tail-form
+          (majutsu-log--build-module-template-form
+           (mapcar (lambda (c)
+                     (majutsu-log--column-template (plist-get c :field)))
+                   (alist-get 'tail module-columns nil nil #'eq))))
          (body-form
           (majutsu-log--build-module-template-form
            (mapcar (lambda (c)
@@ -570,6 +578,8 @@ Returns a plist with :template, :columns, and :module-columns."
            `[:concat
              ,majutsu-log--entry-start-token
              ,heading-form
+             ,majutsu-log--entry-tail-token
+             ,tail-form
              ,majutsu-log--entry-body-token
              ,body-form
              ,majutsu-log--entry-meta-token
@@ -630,24 +640,47 @@ Returns a plist with :template, :columns, and :module-columns."
     (when (search-forward token eol t)
       (- (point) (length token)))))
 
-(defun majutsu-log--parse-tail-payloads (tail)
-  "Parse B/M/E payload segments from TAIL string.
+(defun majutsu-log--parse-trailing-payloads (payload)
+  "Parse trailing payload segments from PAYLOAD string.
 
-TAIL must start with `majutsu-log--entry-body-token'."
-  (when (string-prefix-p majutsu-log--entry-body-token tail)
-    (let* ((body-start (length majutsu-log--entry-body-token))
-           (meta-pos (string-match (regexp-quote majutsu-log--entry-meta-token)
-                                   tail body-start))
+PAYLOAD is expected to start with either `majutsu-log--entry-tail-token'
+(new format) or `majutsu-log--entry-body-token' (legacy format)."
+  (cond
+   ((string-prefix-p majutsu-log--entry-tail-token payload)
+    (let* ((tail-start (length majutsu-log--entry-tail-token))
+           (body-pos (string-match (regexp-quote majutsu-log--entry-body-token)
+                                   payload tail-start))
+           (meta-pos (and body-pos
+                          (string-match (regexp-quote majutsu-log--entry-meta-token)
+                                        payload (+ body-pos (length majutsu-log--entry-body-token)))))
            (end-pos (and meta-pos
                          (string-match (regexp-quote majutsu-log--entry-end-token)
-                                       tail (+ meta-pos (length majutsu-log--entry-meta-token))))))
-      (when (and meta-pos end-pos)
-        (let ((trailing (substring tail (+ end-pos (length majutsu-log--entry-end-token)))))
+                                       payload (+ meta-pos (length majutsu-log--entry-meta-token))))))
+      (when (and body-pos meta-pos end-pos)
+        (let ((trailing (substring payload (+ end-pos (length majutsu-log--entry-end-token)))))
           (when (string-empty-p trailing)
-            (list :body (substring tail body-start meta-pos)
-                  :metadata (substring tail
+            (list :tail (substring payload tail-start body-pos)
+                  :body (substring payload
+                                   (+ body-pos (length majutsu-log--entry-body-token))
+                                   meta-pos)
+                  :metadata (substring payload
                                        (+ meta-pos (length majutsu-log--entry-meta-token))
-                                       end-pos))))))))
+                                       end-pos)))))))
+   ((string-prefix-p majutsu-log--entry-body-token payload)
+    (let* ((body-start (length majutsu-log--entry-body-token))
+           (meta-pos (string-match (regexp-quote majutsu-log--entry-meta-token)
+                                   payload body-start))
+           (end-pos (and meta-pos
+                         (string-match (regexp-quote majutsu-log--entry-end-token)
+                                       payload (+ meta-pos (length majutsu-log--entry-meta-token))))))
+      (when (and meta-pos end-pos)
+        (let ((trailing (substring payload (+ end-pos (length majutsu-log--entry-end-token)))))
+          (when (string-empty-p trailing)
+            (list :tail ""
+                  :body (substring payload body-start meta-pos)
+                  :metadata (substring payload
+                                       (+ meta-pos (length majutsu-log--entry-meta-token))
+                                       end-pos)))))))))
 
 (defun majutsu-log--split-module-values (payload count)
   "Split PAYLOAD into COUNT field values using `majutsu-log--field-separator'."
@@ -792,7 +825,7 @@ Returns entry plist and moves point past the consumed entry, or nil."
       (let* ((indent (- start-pos bol))
              (heading-prefixes nil)
              (heading-segments nil)
-             (tail nil)
+             (trailing-payload nil)
              (done nil)
              (first-line t))
         (while (and (not done) (not (eobp)))
@@ -803,13 +836,17 @@ Returns entry plist and moves point past the consumed entry, or nil."
                  (content-start (if first-line
                                     (+ start-pos (length majutsu-log--entry-start-token))
                                   prefix-end))
-                 (body-pos (majutsu-log--line-token-position
-                            majutsu-log--entry-body-token bol eol content-start)))
-            (if body-pos
+                 (tail-pos (majutsu-log--line-token-position
+                            majutsu-log--entry-tail-token bol eol content-start))
+                 (body-pos (and (null tail-pos)
+                                (majutsu-log--line-token-position
+                                 majutsu-log--entry-body-token bol eol content-start)))
+                 (segment-pos (or tail-pos body-pos)))
+            (if segment-pos
                 (progn
                   (push prefix heading-prefixes)
-                  (push (buffer-substring content-start body-pos) heading-segments)
-                  (setq tail (buffer-substring body-pos eol))
+                  (push (buffer-substring content-start segment-pos) heading-segments)
+                  (setq trailing-payload (buffer-substring segment-pos eol))
                   (setq done t)
                   (forward-line 1))
               (push prefix heading-prefixes)
@@ -819,7 +856,7 @@ Returns entry plist and moves point past the consumed entry, or nil."
                 (setq done :incomplete))))
           (setq first-line nil))
         (when (eq done t)
-          (when-let* ((tail-payloads (majutsu-log--parse-tail-payloads tail)))
+          (when-let* ((payloads (majutsu-log--parse-trailing-payloads trailing-payload)))
             (let* ((entry (list :beg entry-beg
                                 :indent indent
                                 :columns nil
@@ -829,9 +866,11 @@ Returns entry plist and moves point past the consumed entry, or nil."
                    (heading-payload (majutsu-log--join-lines (nreverse heading-segments))))
               (setq entry (majutsu-log--record-module-fields entry 'heading heading-payload compiled))
               (setq entry (majutsu-log--record-module-fields
-                           entry 'body (plist-get tail-payloads :body) compiled))
+                           entry 'tail (plist-get payloads :tail) compiled))
               (setq entry (majutsu-log--record-module-fields
-                           entry 'metadata (plist-get tail-payloads :metadata) compiled))
+                           entry 'body (plist-get payloads :body) compiled))
+              (setq entry (majutsu-log--record-module-fields
+                           entry 'metadata (plist-get payloads :metadata) compiled))
               (let ((suffix-lines nil))
                 ;; Preserve graph continuation lines between the current entry's
                 ;; end marker and the next entry start marker. These lines stay
@@ -937,6 +976,28 @@ Fallback to the canonical field value when ENTRY predates per-instance storage."
                         (line (or (nth idx content-lines) "")))
                     (push (concat prefix line) out)))
       (nreverse out))))
+
+(defun majutsu-log--single-line-string (value)
+  "Return VALUE flattened to a single display line." 
+  (if (stringp value)
+      (string-trim (replace-regexp-in-string "[\n\r]+" " " value nil t))
+    value))
+
+(defun majutsu-log--render-tail (entry compiled)
+  "Render ENTRY tail module as a single-line auxiliary string."
+  (let* ((columns (majutsu-log--module-columns compiled 'tail))
+         (parts nil))
+    (dolist (column columns)
+      (let* ((face (plist-get column :face))
+             (raw (majutsu-log--entry-column-value entry column))
+             (value (majutsu-log--apply-face-policy
+                     (majutsu-log--single-line-string
+                      (majutsu-log--display-string raw))
+                     face)))
+        (unless (string-empty-p value)
+          (push value parts))))
+    (when parts
+      (majutsu-log--concat-heading-parts (nreverse parts)))))
 
 (defun majutsu-log--render-body (entry compiled)
   "Render ENTRY body module as foldable multiline content."
@@ -1063,18 +1124,87 @@ disappear again."
     (setq majutsu-log--this-error nil)))
 
 
+(defun majutsu-log--insert-text-with-module (text module)
+  "Insert TEXT and tag it with MODULE text properties."
+  (let ((beg (point)))
+    (insert text)
+    (add-text-properties beg (point) `(majutsu-log-module ,module))))
+
+(defun majutsu-log--insert-anchor-line (anchor-left tail)
+  "Insert ANCHOR-LEFT and right-aligned TAIL on the current line."
+  (majutsu-log--insert-text-with-module anchor-left 'heading)
+  (when (and (stringp tail) (not (string-empty-p tail)))
+    (let ((tail-width (string-width (substring-no-properties tail)))
+          (spacer-pos (point)))
+      (insert " ")
+      (add-text-properties
+       spacer-pos (point)
+       `(majutsu-log-module tail
+                            majutsu-log-tail-spacer t
+                            display ,`(space :align-to (- right ,tail-width))))
+      (majutsu-log--insert-text-with-module tail 'tail)))
+  (insert "\n"))
+
+(defun majutsu-log--string-has-module-p (string module)
+  "Return non-nil if STRING contains text marked with MODULE."
+  (let ((pos 0)
+        found)
+    (while (and (< pos (length string)) (not found))
+      (setq found (eq (get-text-property pos 'majutsu-log-module string) module)
+            pos (or (next-single-property-change pos 'majutsu-log-module string)
+                    (length string))))
+    found))
+
+(defun majutsu-log--string-remove-module (string module)
+  "Return STRING with text marked as MODULE removed."
+  (let ((pos 0)
+        parts)
+    (while (< pos (length string))
+      (let* ((next (or (next-single-property-change pos 'majutsu-log-module string)
+                       (length string)))
+             (current (get-text-property pos 'majutsu-log-module string)))
+        (unless (eq current module)
+          (push (substring string pos next) parts))
+        (setq pos next)))
+    (apply #'concat (nreverse parts))))
+
+(defun majutsu-log--cleanup-copied-string (string)
+  "Strip Majutsu log UI properties from copied STRING."
+  (when (stringp string)
+    (remove-list-of-text-properties
+     0 (length string)
+     '(majutsu-log-module majutsu-log-tail-spacer display)
+     string))
+  string)
+
+(defun majutsu-log--filter-buffer-substring (beg end &optional delete)
+  "Filter copied log text between BEG and END.
+
+When a copied region contains both heading and tail text, drop the tail text
+from the copied result by default. Copying tail text alone preserves it." 
+  (let ((string (buffer-substring--filter beg end delete)))
+    (when (and (stringp string)
+               (majutsu-log--string-has-module-p string 'heading)
+               (majutsu-log--string-has-module-p string 'tail))
+      (setq string (majutsu-log--string-remove-module string 'tail)))
+    (majutsu-log--cleanup-copied-string string)))
+
 (defun majutsu-log--insert-entry (entry compiled)
   "Insert parsed ENTRY as a `jj-commit' section using COMPILED."
   (let* ((id (majutsu-log--entry-id entry))
          (heading-lines (majutsu-log--render-heading-lines entry compiled))
-         (heading (majutsu-log--join-lines heading-lines))
+         (anchor-left (or (car heading-lines) ""))
+         (continuation-lines (cdr heading-lines))
+         (tail (majutsu-log--render-tail entry compiled))
          (suffix-lines (plist-get entry :suffix-lines))
          (body (majutsu-log--render-body entry compiled))
          (has-body (and (stringp body)
                         (not (string-empty-p (string-trim body))))))
     (magit-insert-section (jj-commit id t)
-      (insert heading)
-      (insert "\n")
+      (majutsu-log--insert-anchor-line anchor-left tail)
+      (dolist (line continuation-lines)
+        (majutsu-log--insert-text-with-module line 'heading)
+        (insert "\n"))
       (dolist (suffix-line suffix-lines)
         (insert suffix-line)
         (insert "\n"))
@@ -1279,6 +1409,7 @@ Return non-nil when the section could be located."
   :group 'majutsu
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (setq-local filter-buffer-substring-function #'majutsu-log--filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-log-mode))

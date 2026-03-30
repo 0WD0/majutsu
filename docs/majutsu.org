@@ -112,7 +112,7 @@ Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI
 The log buffer is the heart of Majutsu. It displays the history graph using a custom template DSL that mirrors the =jj log= output but adds interactivity.
 
 *** Log Display
-Each revision in the log is a section. The visible heading content is produced by fields assigned to the ~heading~ module in ~majutsu-log-commit-columns~ (for example, change ID, bookmarks, tags, description, author, and timestamp). Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
+Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
 
 *** Log Options Transient
 Press ~l~ to open the log options. Here you can:
@@ -129,6 +129,7 @@ While you can type revsets manually, Majutsu's selection system allows you to bu
 Majutsu's log parser uses an ordered marker protocol embedded in jj template output:
 
 - Entry start: =\x1dS=
+- Tail start: =\x1dT=
 - Body start: =\x1dB=
 - Metadata start: =\x1dM=
 - Entry end: =\x1dE=
@@ -146,20 +147,20 @@ Avoid emitting these bytes literally in user templates unless intentionally part
 Newline rules:
 
 - *heading module*: may contain real physical newlines.
-- *body/metadata modules*: stay in the tail payload; encode logical newlines as =\x1f= and decode them in postprocessing.
+- *tail/body/metadata modules*: stay in the trailing payload; encode logical newlines as =\x1f= and decode them in postprocessing.
 
 Parsing is strictly sequential and positional (not key/value based):
 
 1. Detect =\x1dS= and lock the entry indent column.
-2. Collect heading lines until =\x1dB= is found.
-3. Parse =B -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
+2. Collect heading lines until =\x1dT= is found.
+3. Parse =T -> B -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
 4. Keep lines between current entry =E= and next entry =S= attached to the current section heading area (graph continuation lines).
 
 *** ~majutsu-log-commit-columns~ Schema
 Each item in ~majutsu-log-commit-columns~ is a plist:
 
 - ~:field~ :: Field symbol mapped to a ~majutsu-log-template-<field>~ variable.
-- ~:module~ :: One of ~heading~, ~body~, ~metadata~.
+- ~:module~ :: One of ~heading~, ~tail~, ~body~, ~metadata~.
 - ~:face~ :: Highlight policy for that field.
 - ~:post~ :: Optional postprocessor function (or function list).
 
@@ -167,7 +168,8 @@ Only these keys are used by the current parser/renderer.
 Majutsu ensures metadata field ~id~ is always available for stable section identity even if omitted from user configuration.
 
 **** Module Semantics
-- ~heading~ :: Visible section heading content (can span physical lines).
+- ~heading~ :: Visible anchor-line content on the left (can span physical lines before the tail segment begins).
+- ~tail~ :: Single-line auxiliary content rendered on the anchor line with right alignment. It remains searchable as real text, but copying a mixed heading+tail region drops the tail text by default; copying the tail alone preserves it.
 - ~body~ :: Foldable section body.
 - ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.
 
@@ -208,8 +210,8 @@ after the field's default postprocessors.
 (setq majutsu-log-commit-columns
       '((:field change-id   :module heading  :face t)
         (:field description :module heading  :face t)
-        (:field author      :module heading  :face magit-log-author)
-        (:field timestamp   :module heading  :face magit-log-date)
+        (:field author      :module tail     :face magit-log-author)
+        (:field timestamp   :module tail     :face magit-log-date)
         (:field long-desc   :module body     :face t)
         (:field id          :module metadata :face nil)
         (:field commit-id   :module metadata :face nil)
@@ -239,8 +241,8 @@ after the field's default postprocessors.
 
 *** Migration Notes
 Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
-Author and timestamp now belong in the ~heading~ module; the ~right-margin~ module has been removed.
-Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~.
+The historical ~right-margin~ placement has been replaced by the ~tail~ module, which renders real text on the anchor line with right alignment.
+Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it.
 
 ** Diffing
 *** Diff Transient

@@ -37,6 +37,16 @@
      (:field timestamp :module heading :face nil)
      (:field id :module metadata :face nil))))
 
+(defun majutsu-log-test--tail-compiled ()
+  "Return a layout with auxiliary tail fields."
+  (majutsu-log--compile-columns
+   '((:field change-id :module heading :face t)
+     (:field description :module heading :face t)
+     (:field author :module tail :face nil)
+     (:field timestamp :module tail :face nil)
+     (:field long-desc :module body :face t)
+     (:field id :module metadata :face nil))))
+
 (defun majutsu-log-test--relations-compiled ()
   "Return a layout that includes relation metadata."
   (majutsu-log--compile-columns
@@ -56,6 +66,7 @@
   "Return one raw relation-aware log entry for ID and TITLE."
   (concat
    "○ " majutsu-log--entry-start-token id majutsu-log--field-separator title
+   majutsu-log--entry-tail-token
    majutsu-log--entry-body-token
    majutsu-log--entry-meta-token id
    (when parent-ids
@@ -106,18 +117,21 @@
                    (majutsu-log--default-postprocessors-for-field 'parent-ids)))))
 
 (ert-deftest majutsu-log-compile-columns-emits-sequential-markers ()
-  "Compiled log template should include S/B/M/E markers in order."
+  "Compiled log template should include S/T/B/M/E markers in order."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (tpl (prin1-to-string (plist-get compiled :template)))
          (s-pos (string-match (regexp-quote "\\x1dS") tpl))
+         (t-pos (string-match (regexp-quote "\\x1dT") tpl))
          (b-pos (string-match (regexp-quote "\\x1dB") tpl))
          (m-pos (string-match (regexp-quote "\\x1dM") tpl))
          (e-pos (string-match (regexp-quote "\\x1dE") tpl)))
     (should s-pos)
+    (should t-pos)
     (should b-pos)
     (should m-pos)
     (should e-pos)
-    (should (< s-pos b-pos))
+    (should (< s-pos t-pos))
+    (should (< t-pos b-pos))
     (should (< b-pos m-pos))
     (should (< m-pos e-pos))))
 
@@ -137,7 +151,8 @@
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
                "○ " majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Title line 1\n"
-               "│ Title line 2" majutsu-log--entry-body-token
+               "│ Title line 2" majutsu-log--entry-tail-token
+               majutsu-log--entry-body-token
                "body line 1" majutsu-log--field-line-separator "body line 2"
                majutsu-log--entry-meta-token
                "id-123" majutsu-log--field-separator "2m ago" majutsu-log--field-separator "@ immutable"
@@ -161,7 +176,7 @@
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
                majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Top\n"
-               "Tail" majutsu-log--entry-body-token "payload"
+               "Tail" majutsu-log--entry-tail-token majutsu-log--entry-body-token "payload"
                majutsu-log--entry-meta-token "id-999" majutsu-log--field-separator "1h ago"
                majutsu-log--field-separator "" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
@@ -174,17 +189,38 @@
     (should (equal (plist-get entry :timestamp) "1h"))
     (should (equal (plist-get entry :heading-prefixes) '("" "")))))
 
+(ert-deftest majutsu-log-parse-entry-with-tail-module ()
+  "Parser should decode tail payloads separately from body and metadata."
+  (let* ((compiled (majutsu-log-test--tail-compiled))
+         (raw (concat
+               "○ " majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Title"
+               majutsu-log--entry-tail-token
+               "Alice" majutsu-log--field-separator "2m ago"
+               majutsu-log--entry-body-token
+               "body line 1" majutsu-log--field-line-separator "body line 2"
+               majutsu-log--entry-meta-token
+               "id-123"
+               majutsu-log--entry-end-token "\n"))
+         (entry (car (majutsu-log-test--parse-entries compiled raw))))
+    (should (equal (plist-get entry :id) "id-123"))
+    (should (equal (plist-get entry :author) "Alice"))
+    (should (equal (plist-get entry :timestamp) "2m"))
+    (should (equal (plist-get entry :long-desc) "body line 1\nbody line 2"))
+    (should (equal (majutsu-log--render-tail entry compiled) "Alice 2m"))))
+
 (ert-deftest majutsu-log-parse-entry-preserves-between-entry-lines ()
   "Lines between E of one entry and S of next entry stay with previous entry."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
                "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
+               majutsu-log--entry-tail-token
                majutsu-log--entry-body-token
                majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
                majutsu-log--field-separator "" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"
                "│ carry-line\n"
                "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
+               majutsu-log--entry-tail-token
                majutsu-log--entry-body-token
                majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
                majutsu-log--field-separator "" majutsu-log--field-separator ""
@@ -203,6 +239,7 @@
   (let* ((compiled (majutsu-log-test--base-compiled))
          (first-raw (concat
                      "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
+                     majutsu-log--entry-tail-token
                      majutsu-log--entry-body-token
                      majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
                      majutsu-log--field-separator "" majutsu-log--field-separator ""
@@ -210,6 +247,7 @@
                      "│ carry-line\n"))
          (raw (concat first-raw
                       "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
+                      majutsu-log--entry-tail-token
                       majutsu-log--entry-body-token
                       majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
                       majutsu-log--field-separator "" majutsu-log--field-separator ""
@@ -254,6 +292,7 @@
              (:field id :module metadata :face nil))))
          (raw (concat
                "○ " majutsu-log--entry-start-token "desc"
+               majutsu-log--entry-tail-token
                majutsu-log--entry-body-token
                majutsu-log--entry-meta-token "row-id" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
@@ -276,6 +315,7 @@
              (:field id :module metadata :face nil))))
          (raw (concat
                "○ " majutsu-log--entry-start-token "desc"
+               majutsu-log--entry-tail-token
                majutsu-log--entry-body-token "desc"
                majutsu-log--entry-meta-token "row-id" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"))
@@ -300,18 +340,90 @@
                              "\n")))
     (should (equal heading "chg Title Very\nLong 2m"))))
 
+(ert-deftest majutsu-log-insert-entry-renders-tail-on-anchor-line ()
+  "Tail rendering should stay on the anchor line and use align-to spacing."
+  (let* ((compiled (majutsu-log-test--tail-compiled))
+         (entry (list :columns '((change-id . "chg")
+                                 (description . "Title\nMore")
+                                 (author . "Very\nLong")
+                                 (timestamp . "2m"))
+                      :heading-prefixes '("○ " "│ "))))
+    (with-temp-buffer
+      (require 'magit-section)
+      (magit-section-mode)
+      (setq buffer-read-only nil)
+      (majutsu-log--insert-entry entry compiled)
+      (goto-char (point-min))
+      (should (equal (buffer-substring-no-properties
+                      (line-beginning-position)
+                      (line-end-position))
+                     "○ chg Title Very Long 2m"))
+      (search-forward "Very Long 2m")
+      (let ((spacer-pos (- (point) (length "Very Long 2m") 1)))
+        (should (eq (get-text-property spacer-pos 'majutsu-log-module) 'tail))
+        (should (eq (car (get-text-property spacer-pos 'display)) 'space)))
+      (forward-line 1)
+      (should (equal (buffer-substring-no-properties
+                      (line-beginning-position)
+                      (line-end-position))
+                     "│ More")))))
+
+(ert-deftest majutsu-log-filter-buffer-substring-drops-tail-when-heading-present ()
+  "Copying mixed heading+tail text should drop the tail by default."
+  (let* ((compiled (majutsu-log-test--tail-compiled))
+         (entry (list :columns '((change-id . "chg")
+                                 (description . "Title")
+                                 (author . "Alice")
+                                 (timestamp . "2m"))
+                      :heading-prefixes '("○ "))))
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (majutsu-log--insert-entry entry compiled)
+      (goto-char (point-min))
+      (let ((copied (filter-buffer-substring (line-beginning-position)
+                                             (line-end-position))))
+        (should (equal copied "○ chg Title"))
+        (should-not (text-property-not-all 0 (length copied) 'majutsu-log-module nil copied))
+        (should-not (text-property-not-all 0 (length copied) 'display nil copied))))))
+
+(ert-deftest majutsu-log-filter-buffer-substring-preserves-tail-only ()
+  "Copying only tail text should keep the tail contents."
+  (let* ((compiled (majutsu-log-test--tail-compiled))
+         (entry (list :columns '((change-id . "chg")
+                                 (description . "Title")
+                                 (author . "Alice")
+                                 (timestamp . "2m"))
+                      :heading-prefixes '("○ "))))
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (majutsu-log--insert-entry entry compiled)
+      (goto-char (point-min))
+      (search-forward "Alice 2m")
+      (let* ((end (point))
+             (beg (- end (length "Alice 2m")))
+             (copied (filter-buffer-substring beg end)))
+        (should (equal copied "Alice 2m"))
+        (should-not (text-property-not-all 0 (length copied) 'majutsu-log-module nil copied))
+        (should-not (text-property-not-all 0 (length copied) 'display nil copied))))))
+
 (ert-deftest majutsu-log-wash-logs-streams-and-caches-entries ()
   "Washing should transform the buffer incrementally and cache entries."
-  (let* ((compiled (majutsu-log-test--heading-aux-compiled))
+  (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
                "○ " majutsu-log--entry-start-token
-               "chg1" majutsu-log--field-separator "Title1" majutsu-log--field-separator
+               "chg1" majutsu-log--field-separator "Title1"
+               majutsu-log--entry-tail-token
                "Alice" majutsu-log--field-separator "2m ago"
                majutsu-log--entry-body-token
                majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
                majutsu-log--entry-end-token "\n"
                "○ " majutsu-log--entry-start-token
-               "chg2" majutsu-log--field-separator "Title2" majutsu-log--field-separator
+               "chg2" majutsu-log--field-separator "Title2"
+               majutsu-log--entry-tail-token
                "Bob" majutsu-log--field-separator "1h ago"
                majutsu-log--entry-body-token
                majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
