@@ -212,6 +212,18 @@
   (mt--is (majutsu-tpl [:call [:lambda [c] [[:lambda [c] c] [:raw "inner"]]] [:raw "outer"]])
           "inner"))
 
+(ert-deftest test-majutsu-template-nested-lambda-outer-binding-keeps-type ()
+  (mt--is (majutsu-tpl
+           [:call
+            [:|o|
+             [[:|i|
+               [:if [:method 'o :root]
+                   [:method 'i :description]
+                 [:method 'o :description]]]
+              [:raw "inner" :Commit]]]
+            [:raw "outer" :Commit]])
+          "if(outer.root(), inner.description(), outer.description())"))
+
 (ert-deftest test-majutsu-template-defspecial-basic ()
   (mt--is (majutsu-tpl [:test-special-wrap [:str "x"]])
           "concat(\"<\", \"x\", \">\")"))

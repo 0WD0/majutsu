@@ -2107,12 +2107,16 @@ registered Elisp body and return its rewritten node."
       (let* ((object-str (majutsu-template--render-node receiver-node))
              (arg-str (mapconcat #'majutsu-template--render-node prepared-args ", "))
              (result-type (majutsu-template--method-segment-result-type
-                           receiver-type method-name prepared-args)))
+                           receiver-type method-name prepared-args))
+             (deferred-props (and (null dispatch)
+                                  (majutsu-template--node-has-deferred-type-p receiver-node)
+                                  '(:deferred-type t))))
         (majutsu-template--raw-node
          (if (= (length arg-str) 0)
              (format "%s.%s()" object-str method-name)
            (format "%s.%s(%s)" object-str method-name arg-str))
-         result-type)))))
+         result-type
+         deferred-props)))))
 
 (majutsu-template-defun method ((object Any)
                                 (name Any)

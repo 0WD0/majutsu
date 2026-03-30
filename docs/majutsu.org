@@ -942,10 +942,27 @@ is therefore kept generic first and can later be specialized from a typed call
 argument or a higher-order container element. In those cases =[:description]=
 becomes equivalent to =[:method 'c :description]=. If you prefer, you can also
 write that explicit =[:method 'c ...]= form directly, but most examples use bare
-keywords because it better matches the implicit-self model. This deferred
-behavior is limited to lambda parameters; Majutsu no longer uses unknown
-non-lambda receivers as a general bare-keyword fallback. If you need an outer
-receiver explicitly inside a nested lambda, use =[:self N]=.
+keywords because it better matches the implicit-self model. Explicit lexical
+references also keep working across nested lambdas, so inner bodies may still
+refer to outer parameters by name when that is clearer than rebinding receiver
+context. This deferred behavior is limited to lambda parameters; Majutsu no
+longer uses unknown non-lambda receivers as a general bare-keyword fallback. If
+you need an outer receiver explicitly inside a nested lambda, use =[:self N]=.
+
+For example, the inner body below uses all three forms at once: =[:description]=
+for the inner receiver, =[:self 1]= for the outer receiver, and explicit
+=[:method 'o ...]= for the outer lexical parameter:
+#+begin_src emacs-lisp
+(majutsu-tpl
+ [[:|o|
+   [[:|i|
+     [:if [:method 'o :root]
+         [:description]
+       [:method [:self 1] :description]]]
+    [:raw "inner" :Commit]]]
+  [:raw "outer" :Commit]])
+; => "if(outer.root(), inner.description(), outer.description())"
+#+end_src
 
 List-oriented methods can be written in several equivalent styles:
 #+begin_src emacs-lisp
