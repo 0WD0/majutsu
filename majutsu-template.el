@@ -407,12 +407,45 @@ node-shape constraints, but semantically behave like a simpler runtime type."
     ('StringLiteral 'String)
     (_ expected)))
 
+(defun majutsu-template--conditional-node-p (node)
+  "Return non-nil if NODE represents an upstream-style conditional Any value."
+  (and (majutsu-template-node-p node)
+       (eq (majutsu-template-node-kind node) :call)
+       (equal (majutsu-template-node-value node) "if")
+       (plist-get (majutsu-template-node-props node) :conditional)))
+
+(defun majutsu-template--conditional-node-satisfies-type-p (node expected)
+  "Return non-nil if conditional NODE can be consumed as EXPECTED.
+This follows upstream `if()` behavior more closely: the conditional itself is an
+`Any` value, but it can be used as `Template`/`Stringify` only if every branch
+supports that capability, and as `Serialize` only if every branch supports that
+capability and an explicit else branch is present."
+  (let* ((args (majutsu-template-node-args node))
+         (then-node (cadr args))
+         (else-node (caddr args))
+         (expected (majutsu-template--type-ref-normalize expected))
+         (runtime-expected (majutsu-template--type-check-runtime-expected expected)))
+    (pcase (majutsu-template--type-ref-base-type runtime-expected)
+      ('Any t)
+      ((or 'Template 'Stringify)
+       (and then-node
+            (majutsu-template--node-satisfies-type-p then-node runtime-expected)
+            (or (null else-node)
+                (majutsu-template--node-satisfies-type-p else-node runtime-expected))))
+      ('Serialize
+       (and then-node else-node
+            (majutsu-template--node-satisfies-type-p then-node runtime-expected)
+            (majutsu-template--node-satisfies-type-p else-node runtime-expected)))
+      (_ nil))))
+
 (defun majutsu-template--node-satisfies-type-p (node expected)
   "Return non-nil if NODE can be used where EXPECTED is required."
   (let* ((actual (majutsu-template--node-type-ref node))
          (expected (majutsu-template--type-ref-normalize expected))
          (runtime-expected (majutsu-template--type-check-runtime-expected expected)))
-    (and (majutsu-template--type-convertible-p actual runtime-expected)
+    (and (if (majutsu-template--conditional-node-p node)
+             (majutsu-template--conditional-node-satisfies-type-p node expected)
+           (majutsu-template--type-convertible-p actual runtime-expected))
          (majutsu-template--node-meets-type-constraints-p node expected))))
 
 (defun majutsu-template--assert-node-type (fn-name arg-name expected node)
@@ -1111,29 +1144,27 @@ participate in keyword sugar."
 
 ;;; Operator macro helpers
 
-(defmacro majutsu-template--definfix (name token)
+(defmacro majutsu-template--definfix (name token &optional arg-type return-type)
   "Define NAME as infix operator rendering TOKEN between two operands."
-  `(majutsu-template-defun ,name ((lhs Template) (rhs Template))
-     (:returns Template :doc ,(format "Infix %s operator." name))
+  `(majutsu-template-defun ,name ((lhs ,(or arg-type 'Template))
+                                  (rhs ,(or arg-type 'Template)))
+     (:returns ,(or return-type 'Template) :doc ,(format "Infix %s operator." name))
      (majutsu-template--raw-node
       (format "(%s %s %s)"
               (majutsu-template--render-node lhs)
               ,token
-              (majutsu-template--render-node rhs)))))
+              (majutsu-template--render-node rhs))
+      ',(or return-type 'Template))))
 
-(defmacro majutsu-template--defprefix (name token)
+(defmacro majutsu-template--defprefix (name token &optional arg-type return-type)
   "Define NAME as prefix/unary operator rendering TOKEN before operand."
-  `(majutsu-template-defun ,name ((value Template))
-     (:returns Template :doc ,(format "Prefix %s operator." name))
+  `(majutsu-template-defun ,name ((value ,(or arg-type 'Template)))
+     (:returns ,(or return-type 'Template) :doc ,(format "Prefix %s operator." name))
      (majutsu-template--raw-node
       (format "(%s%s)"
               ,token
-              (majutsu-template--render-node value)))))
-
-(defmacro majutsu-template--defpassthrough (name &optional doc)
-  "Define NAME as helper that simply emits NAME(ARGS...)."
-  `(majutsu-template-defun ,name ((values Template :rest t))
-     (:returns Template :doc ,doc :flavor :builtin)))
+              (majutsu-template--render-node value))
+      ',(or return-type 'Template))))
 
 (defconst majutsu-template--operator-aliases
   '((sub . -))
@@ -1146,23 +1177,23 @@ participate in keyword sugar."
                (t op))))
     (or (alist-get sym majutsu-template--operator-aliases) sym)))
 
-(majutsu-template--definfix + "+")
-(majutsu-template--definfix - "-")
-(majutsu-template--definfix * "*")
-(majutsu-template--definfix / "/")
-(majutsu-template--definfix % "%")
-(majutsu-template--definfix > ">")
-(majutsu-template--definfix >= ">=")
-(majutsu-template--definfix < "<")
-(majutsu-template--definfix <= "<=")
-(majutsu-template--definfix == "==")
-(majutsu-template--definfix != "!=")
-(majutsu-template--definfix and "&&")
-(majutsu-template--definfix or "||")
+(majutsu-template--definfix + "+" Integer Integer)
+(majutsu-template--definfix - "-" Integer Integer)
+(majutsu-template--definfix * "*" Integer Integer)
+(majutsu-template--definfix / "/" Integer Integer)
+(majutsu-template--definfix % "%" Integer Integer)
+(majutsu-template--definfix > ">" Integer Boolean)
+(majutsu-template--definfix >= ">=" Integer Boolean)
+(majutsu-template--definfix < "<" Integer Boolean)
+(majutsu-template--definfix <= "<=" Integer Boolean)
+(majutsu-template--definfix == "==" Any Boolean)
+(majutsu-template--definfix != "!=" Any Boolean)
+(majutsu-template--definfix and "&&" Boolean Boolean)
+(majutsu-template--definfix or "||" Boolean Boolean)
 (majutsu-template--definfix concat-op "++")
 (majutsu-template--definfix ++ "++")
-(majutsu-template--defprefix not "!")
-(majutsu-template--defprefix neg "-")
+(majutsu-template--defprefix not "!" Boolean Boolean)
+(majutsu-template--defprefix neg "-" Integer Integer)
 
 (defun majutsu-template--method-stub (&rest _args)
   "Placeholder for template methods/keywords that are not executable in Elisp."
@@ -1283,7 +1314,8 @@ participate in keyword sugar."
      :converts ((Boolean . yes) (Serialize . maybe) (Template . maybe)))
     (RefSymbol
      :doc "Reference symbol."
-     :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+     :converts ((Boolean . no) (Serialize . yes) (Template . yes)
+                (String . yes)))
     (RepoPath
      :doc "Repository path."
      :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
@@ -1342,8 +1374,34 @@ participate in keyword sugar."
 (dolist (type-spec majutsu-template--builtin-type-specs)
   (apply #'majutsu-template-define-type type-spec))
 
+(defconst majutsu-template--string-method-specs
+  '((len :returns Integer :keyword t)
+    (contains :args ((needle Stringify)) :returns Boolean)
+    (match :args ((needle StringPattern)) :returns String)
+    (replace :args ((pattern StringPattern)
+                    (replacement Stringify)
+                    (limit Integer :optional t))
+             :returns String)
+    (first_line :returns String :keyword t)
+    (lines :returns (:list String) :keyword t)
+    (upper :returns String :keyword t)
+    (lower :returns String :keyword t)
+    (starts_with :args ((needle Stringify)) :returns Boolean)
+    (ends_with :args ((needle Stringify)) :returns Boolean)
+    (remove_prefix :args ((needle Stringify)) :returns String)
+    (remove_suffix :args ((needle Stringify)) :returns String)
+    (trim :returns String :keyword t)
+    (trim_start :returns String :keyword t)
+    (trim_end :returns String :keyword t)
+    (split :args ((separator StringPattern)
+                  (limit Integer :optional t))
+           :returns (:list String))
+    (substr :args ((start Integer) (end Integer :optional t)) :returns String)
+    (escape_json :returns String :keyword t))
+  "Builtin methods shared by String-like value types.")
+
 (defconst majutsu-template--builtin-method-specs
-  '((AnnotationLine
+  `((AnnotationLine
      (commit :returns Commit :keyword t)
      (content :returns Template :keyword t)
      (line_number :returns Integer :keyword t)
@@ -1464,6 +1522,8 @@ participate in keyword sugar."
      (absolute :returns String :keyword t)
      (display :returns String :keyword t)
      (parent :returns (:option RepoPath) :keyword t))
+    (RefSymbol
+     ,@majutsu-template--string-method-specs)
     (ShortestIdPrefix
      (prefix :returns String :keyword t)
      (rest :returns String :keyword t)
@@ -1479,29 +1539,7 @@ participate in keyword sugar."
      (exact :returns (:option Integer) :keyword t)
      (zero :returns Boolean :keyword t))
     (String
-     (len :returns Integer :keyword t)
-     (contains :args ((needle Stringify)) :returns Boolean)
-     (match :args ((needle StringPattern)) :returns String)
-     (replace :args ((pattern StringPattern)
-                     (replacement Stringify)
-                     (limit Integer :optional t))
-              :returns String)
-     (first_line :returns String :keyword t)
-     (lines :returns (:list String) :keyword t)
-     (upper :returns String :keyword t)
-     (lower :returns String :keyword t)
-     (starts_with :args ((needle Stringify)) :returns Boolean)
-     (ends_with :args ((needle Stringify)) :returns Boolean)
-     (remove_prefix :args ((needle Stringify)) :returns String)
-     (remove_suffix :args ((needle Stringify)) :returns String)
-     (trim :returns String :keyword t)
-     (trim_start :returns String :keyword t)
-     (trim_end :returns String :keyword t)
-     (split :args ((separator StringPattern)
-                   (limit Integer :optional t))
-            :returns (:list String))
-     (substr :args ((start Integer) (end Integer :optional t)) :returns String)
-     (escape_json :returns String :keyword t))
+     ,@majutsu-template--string-method-specs)
     (Timestamp
      (ago :returns String :keyword t)
      (format :args ((format StringLiteral)) :returns String)
@@ -1591,6 +1629,18 @@ it."
    :type (or type 'Unknown)
    :value name
    :props props))
+
+(defun majutsu-template--node-with-type (node type)
+  "Return NODE annotated with TYPE, preserving all other fields."
+  (setq type (majutsu-template--type-ref-normalize type))
+  (if (not (majutsu-template-node-p node))
+      (majutsu-template--rewrite node)
+    (majutsu-template-node-create
+     :kind (majutsu-template-node-kind node)
+     :type type
+     :value (majutsu-template-node-value node)
+     :args (majutsu-template-node-args node)
+     :props (majutsu-template-node-props node))))
 
 (defun majutsu-template--lambda-node (params body &optional props type)
   "Return lambda node binding PARAMS around BODY.
@@ -1796,8 +1846,7 @@ CONTEXT is used in error messages."
                                  (majutsu-template-node-type lambda-node))))
       (cl-loop for expected in expected-types
                for arg in arg-nodes
-               do (unless (majutsu-template--type-convertible-p
-                           (majutsu-template-node-type arg) expected)
+               do (unless (majutsu-template--node-satisfies-type-p arg expected)
                     (user-error "majutsu-template: lambda expects %S, got %S"
                                 expected (majutsu-template-node-type arg)))))
     (if-let* ((body-form (plist-get (majutsu-template-node-props lambda-node) :body-form)))
@@ -1850,10 +1899,17 @@ Further passes (type-checking, rendering) operate on these nodes."
 (majutsu-template-defun concat ((forms Template :rest t))
   (:returns Template :doc "concat(FORMS...)." :flavor :builtin))
 
-(majutsu-template-defun if ((condition Template)
-                            (then Template)
-                            (else Template :optional t))
-  (:returns Template :doc "if(COND, THEN [, ELSE])." :flavor :builtin))
+(majutsu-template-defun if ((condition Boolean)
+                            (then Any)
+                            (else Any :optional t))
+  (:returns Any :doc "if(COND, THEN [, ELSE])." :flavor :custom)
+  (majutsu-template--call-node
+   "if"
+   (if else
+       (list condition then else)
+     (list condition then))
+   'Any
+   '(:conditional t)))
 
 (majutsu-template-defun separate ((separator Template)
                                   (forms Template :rest t))
@@ -1864,7 +1920,7 @@ Further passes (type-checking, rendering) operate on these nodes."
                                   (body Template))
   (:returns Template :doc "surround(PRE, POST, BODY)." :flavor :builtin))
 
-(majutsu-template-defun label ((label Template)
+(majutsu-template-defun label ((label Stringify)
                                (content Template))
   (:returns Template :doc "label helper." :flavor :builtin))
 
@@ -1882,14 +1938,14 @@ Further passes (type-checking, rendering) operate on these nodes."
  (majutsu-template--make-fn
   :name "str" :symbol 'majutsu-template-str
   :args (list (majutsu-template--make-arg :name 'value :type 'Any))
-  :returns 'Template :doc "String literal helper." :flavor :custom))
+  :returns 'String :doc "String literal helper." :flavor :custom))
 
 (majutsu-template--register-function
  (majutsu-template--make-fn
   :name "raw" :symbol 'majutsu-template-raw
   :args (list (majutsu-template--make-arg :name 'value :type 'Any)
               (majutsu-template--make-arg :name 'type :type 'Any :optional t))
-  :returns 'Template :doc "Raw literal helper." :flavor :custom))
+  :returns 'Any :doc "Raw literal helper." :flavor :custom))
 
 (defun majutsu-template--higher-order-form (method collection var body)
   "Return COLLECTION.METHOD(|VAR| BODY) as a template form."
@@ -1918,7 +1974,7 @@ Further passes (type-checking, rendering) operate on these nodes."
 
 (majutsu-template-defun call ((name Any)
                               (args Any :rest t))
-  (:returns Template :doc "funcall helper, with builtin function support.")
+  (:returns Any :doc "funcall helper, with builtin function support.")
   (let* ((name-node (majutsu-template--rewrite name))
          (arg-nodes (mapcar #'majutsu-template--rewrite args)))
     (if (eq (majutsu-template-node-kind name-node) :lambda)
@@ -2062,7 +2118,7 @@ Return nil if the result type is unknown."
 (majutsu-template-defun method ((object Any)
                                 (name Any)
                                 (args Any :rest t))
-  (:returns Template :doc "Method chaining helper." :flavor :custom)
+  (:returns Any :doc "Method chaining helper." :flavor :custom)
   (let* ((object-node (majutsu-template--rewrite object))
          (object-str (majutsu-template--render-node object-node))
          (name-node (majutsu-template--rewrite name))
@@ -2083,20 +2139,61 @@ Return nil if the result type is unknown."
                             current-type seg-name seg-args))))
     (majutsu-template--raw-node result current-type)))
 
-(majutsu-template--defpassthrough coalesce "coalesce helper.")
-(majutsu-template--defpassthrough fill "fill helper.")
-(majutsu-template--defpassthrough indent "indent helper.")
-(majutsu-template--defpassthrough pad_start "pad_start helper.")
-(majutsu-template--defpassthrough pad_end "pad_end helper.")
-(majutsu-template--defpassthrough pad_centered "pad_centered helper.")
-(majutsu-template--defpassthrough truncate_start "truncate_start helper.")
-(majutsu-template--defpassthrough truncate_end "truncate_end helper.")
-(majutsu-template--defpassthrough hash "hash helper.")
-(majutsu-template--defpassthrough stringify "stringify helper.")
-(majutsu-template--defpassthrough raw_escape_sequence "raw_escape_sequence helper.")
-(majutsu-template--defpassthrough config "config helper.")
-(majutsu-template--defpassthrough hyperlink "hyperlink helper.")
-(majutsu-template--defpassthrough git_web_url "git_web_url helper.")
+(majutsu-template-defun coalesce ((content Template :rest t))
+  (:returns Template :doc "coalesce helper." :flavor :builtin))
+
+(majutsu-template-defun fill ((width Integer)
+                              (content Template))
+  (:returns Template :doc "fill helper." :flavor :builtin))
+
+(majutsu-template-defun indent ((prefix Template)
+                                (content Template))
+  (:returns Template :doc "indent helper." :flavor :builtin))
+
+(majutsu-template-defun pad_start ((width Integer)
+                                   (content Template)
+                                   (fill_char Template :optional t))
+  (:returns Template :doc "pad_start helper." :flavor :builtin))
+
+(majutsu-template-defun pad_end ((width Integer)
+                                 (content Template)
+                                 (fill_char Template :optional t))
+  (:returns Template :doc "pad_end helper." :flavor :builtin))
+
+(majutsu-template-defun pad_centered ((width Integer)
+                                      (content Template)
+                                      (fill_char Template :optional t))
+  (:returns Template :doc "pad_centered helper." :flavor :builtin))
+
+(majutsu-template-defun truncate_start ((width Integer)
+                                        (content Template)
+                                        (ellipsis Template :optional t))
+  (:returns Template :doc "truncate_start helper." :flavor :builtin))
+
+(majutsu-template-defun truncate_end ((width Integer)
+                                      (content Template)
+                                      (ellipsis Template :optional t))
+  (:returns Template :doc "truncate_end helper." :flavor :builtin))
+
+(majutsu-template-defun hash ((content Stringify))
+  (:returns String :doc "hash helper." :flavor :builtin))
+
+(majutsu-template-defun stringify ((content Stringify))
+  (:returns String :doc "stringify helper." :flavor :builtin))
+
+(majutsu-template-defun raw_escape_sequence ((content Template))
+  (:returns Template :doc "raw_escape_sequence helper." :flavor :builtin))
+
+(majutsu-template-defun config ((name Stringify))
+  (:returns (:option ConfigValue) :doc "config helper." :flavor :builtin))
+
+(majutsu-template-defun hyperlink ((url Stringify)
+                                   (text Template)
+                                   (fallback Template :optional t))
+  (:returns Template :doc "hyperlink helper." :flavor :builtin))
+
+(majutsu-template-defun git_web_url ((remote Stringify :optional t))
+  (:returns String :doc "git_web_url helper." :flavor :builtin))
 ;; Internal node representation: (:tag ...)
 
 (defun majutsu-template--str-escape (s)
@@ -2283,7 +2380,8 @@ implicit self context installed during this compilation."
                          op))
                  (meta (and owner
                             (majutsu-template--lookup-method-for-type owner name)))
-                 (normalized-args (mapcar #'majutsu-template--rewrite args)))
+                 (normalized-args (mapcar #'majutsu-template--rewrite args))
+                 (deferred-self (majutsu-template--node-has-deferred-type-p object)))
             (cond
              ((and meta (not (majutsu-template--fn-keyword meta)))
               nil)
@@ -2293,9 +2391,12 @@ implicit self context installed during this compilation."
               (user-error "majutsu-template: keyword %s on %S does not accept arguments"
                           name owner))
              (meta
-              (let ((name-node (majutsu-template--rewrite op)))
-                (apply #'majutsu-template-method object name-node normalized-args)))
-             ((and (null owner) (keywordp op))
+              (let ((name-node (majutsu-template--rewrite op))
+                    (dispatch-object (if owner
+                                         (majutsu-template--node-with-type object owner)
+                                       object)))
+                (apply #'majutsu-template-method dispatch-object name-node normalized-args)))
+             ((and (null owner) deferred-self (keywordp op))
               (let ((name-node (majutsu-template--rewrite op)))
                 (apply #'majutsu-template-method object name-node normalized-args))))))))))
 
@@ -2307,12 +2408,22 @@ implicit self context installed during this compilation."
       (let* ((normalized (majutsu-template--operator-symbol op))
              (meta (or (majutsu-template--lookup-function-meta op)
                        (majutsu-template--lookup-function-meta normalized)))
+             (self-binding (majutsu-template--current-self))
              (self-node (majutsu-template--maybe-self-dispatch op args)))
         (cond
          (meta
           (apply (majutsu-template--fn-symbol meta)
                  (mapcar #'majutsu-template--sugar-transform args)))
          (self-node self-node)
+         ((and (keywordp op)
+               self-binding
+               (majutsu-template--self-binding-node self-binding)
+               (null (majutsu-template--self-binding-type self-binding))
+               (not (majutsu-template--node-has-deferred-type-p
+                     (majutsu-template--self-binding-node self-binding))))
+          (user-error
+           "majutsu-template: keyword %s requires a typed receiver; use an explicit :method form or provide a concrete self type"
+           (majutsu-template--symbol->template-name op)))
          (t
           (user-error "majutsu-template: unknown operator %S" op)))))))
 

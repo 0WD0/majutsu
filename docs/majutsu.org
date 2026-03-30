@@ -796,7 +796,7 @@ Example comparison:
 "if(self.root(), \"(root)\", self.commit_id().short())"
 
 ;; DSL (validated, composable, readable)
-(majutsu-tpl [:if [:raw "self.root()"] "(root)" [:method [:raw "self"] :commit_id :short]])
+(majutsu-tpl [:if [:root] "(root)" [:method [:raw "self"] :commit_id :short]])
 #+end_src
 
 ** Basic Syntax
@@ -916,7 +916,7 @@ Arithmetic and logical operators are supported:
 
 ** Conditional and Control Flow
 #+begin_src emacs-lisp
-(majutsu-tpl [:if [:raw "self.root()"] "(root)" [:raw "self.commit_id()"]])
+(majutsu-tpl [:if [:root] "(root)" [:commit_id]])
 ; => "if(self.root(), \"(root)\", self.commit_id())"
 
 (majutsu-tpl [:separate " " [:label "a" "A"] [:label "b" "B"]])
@@ -990,9 +990,17 @@ type-aware in the DSL.
 
 Builtin metadata is also kept close to current upstream =jj/docs/templates.md=
 for methods such as =files()= / =conflicted_files()=, =normal_target()=,
-=workspace_name()=, =since()=, and =root()=. Majutsu also lets method chains on
-=(:option T)= continue through the contained value type, mirroring upstream's
-option-method behavior.
+=workspace_name()=, =since()=, and =root()=. This now also includes upstream's
+string-like method dispatch for =RefSymbol= values, so chains like
++=[:method [:raw "bookmark" :CommitRef] :name :len]= type-check and lower like
+ordinary string method calls. For helper argument checks, =RefSymbol= is also
+accepted where a concrete =String= is expected, and builtin helpers now carry
+more accurate metadata such as upstream-style conditional handling for =if()=.
+That means the conditional result itself behaves like an =Any= expression and is
+validated at the consumption site for capabilities such as =Template= or
+=Serialize=, rather than being assigned an eager fixed joined type. Majutsu
+also lets method chains on =(:option T)= continue through the contained value
+type, mirroring upstream's option-method behavior.
 
 Reusable lambda bodies can be defined directly as ordinary helpers returning
 native lambda values:
@@ -1024,10 +1032,10 @@ Anonymous functions are first-class template values:
 (majutsu-tpl [:|c| [:method 'c :description]])
 ; => "|c| c.description()"
 
-(majutsu-tpl [:|c| [:description]])
-; => "|c| c.description()"
+(majutsu-tpl [:method [:raw "self" :Commit] :parents :map [:|c| [:description]]])
+; => "self.parents().map(|c| c.description())"
 
-(majutsu-tpl [:call [:|c| [:description]] [:raw "item"]])
+(majutsu-tpl [:call [:|c| [:description]] [:raw "item" :Commit]])
 ; => "item.description()"
 
 (majutsu-tpl [[:lambda [c] [:method 'c :description]] [:raw "item"]])
@@ -1036,11 +1044,15 @@ Anonymous functions are first-class template values:
 
 The shorthand =[:|c| BODY]= is equivalent to =[:lambda [c] BODY]=.
 
-Lambda parameters are lexical variables and also become the current implicit
-=self= for bare keyword dispatch. Inside lambda bodies, =[:description]= is
-therefore equivalent to =[:method 'c :description]= when the parameter is
-named =c=. If you need the outer template =self= explicitly, write it out as
-an explicit object in =:method= forms.
+Lambda parameters are lexical variables and can act as a deferred implicit
+=self= for bare keyword dispatch. A surface lambda such as
++=[:lambda [c] [:description]]= is therefore kept generic first and can later be
+specialized from a typed call argument or a higher-order container element. In
+those cases =[:description]= becomes equivalent to =[:method 'c :description]=.
+This deferred behavior is limited to lambda parameters; Majutsu no longer uses
+unknown non-lambda receivers as a general bare-keyword fallback. If you need
+the outer template =self= explicitly, write it out as an explicit object in
+=:method= forms.
 
 This is a deliberate Majutsu DSL adaptation. In upstream jj template syntax,
 lambda parameters and =self= are distinct names; Majutsu rebinds single-

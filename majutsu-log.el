@@ -282,8 +282,8 @@ Also registers a variable watcher to invalidate the template cache."
   [:change_id :shortest 8])
 
 (majutsu-template-defun git_head ()
-  (:returns Template :flavor :custom :doc "Deprecated alias for .contained_in('first_parent(@)')")
-  [:method 'self :contained_in "first_parent(@)"])
+  (:returns Boolean :flavor :custom :doc "Deprecated alias for .contained_in('first_parent(@)')")
+  [:method [:raw "self" :Commit] :contained_in "first_parent(@)"])
 
 (majutsu-template-defun short-change-id-with-offset ()
   (:returns Template :flavor :custom :doc "Shortest unique change id with offset.")
