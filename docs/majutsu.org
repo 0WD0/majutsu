@@ -380,7 +380,7 @@ Jujutsu tracks every operation that modifies the repository. Press ~M-x majutsu-
 - ~O~ :: Create a new change on top of the revision at point (DWIM).
 - ~o~ :: Open the New transient to specify options.
 - ~A~ :: Create a new change after the revision at point.
-- ~B~ (Emacs), ~I~ (Evil log mode) :: Create a new change before the revision at point.
+- ~B~ (Emacs), ~I~ (Evil) :: Create a new change before the revision at point.
 
 Transient options:
 - ~-r~ :: Parent revisions.
@@ -393,13 +393,6 @@ Runs: =jj new -r REV=
 ** Describing Changes
 - ~c~ (~majutsu-describe~) :: Edit the description of the revision at point. Supports =--ignore-immutable= flag for immutable revisions.
 Runs: =jj describe -r REV=
-
-** Metaediting
-- ~?~ then ~m~ (~majutsu-metaedit~) :: Open the Metaedit transient. Defaults to one revision from point (fallback =@=). If multiple revisions are selected, Majutsu asks you to narrow it down.
-- ~-r~ / ~-m~ / ~-a~ / ~-t~ :: Set revision, message, author, and author timestamp.
-- ~-c~ / ~-u~ / ~-U~ / ~-f~ :: Toggle update-change-id / update-author / update-author-timestamp / force-rewrite.
-- ~-I~ :: Ignore immutable revisions.
-Runs: =jj metaedit --revisions REV [OPTIONS...]=
 
 ** Committing
 - ~C~ (~majutsu-commit~) :: In Jujutsu, "commit" usually means finishing the current work. This command opens a description buffer for the working copy.
@@ -433,14 +426,6 @@ Runs: =jj absorb --from REV --into REVSET [FILESETS...]=
 - ~-b~ :: Rebase an entire branch.
 - ~-o~ :: Specify the destination (=--onto=).
 Runs: =jj rebase -s SRC -o DEST=
-
-** Simplifying Parents
-- ~?~ then ~P~ (~majutsu-simplify-parents~) :: Open the Simplify Parents transient.
-- ~-s~ :: Simplify specified revision(s) together with descendant trees (=--source=).
-- ~-r~ :: Simplify specified revision(s) only (=--revisions=).
-  If neither is set, Majutsu defaults to region/point revision(s), fallback =@=.
-- ~-I~ :: Ignore immutable revisions.
-Runs: =jj simplify-parents [--source REVSET] [--revisions REVSET]=
 
 ** Duplicating
 - ~y~ (~majutsu-duplicate~) :: Open the Duplicate transient. Allows selecting source revisions and destination.
@@ -577,7 +562,10 @@ When splitting or squashing a file deletion:
 - Selecting the *entire* deletion works correctly - the file gets deleted in the first commit / parent
 - *Partial selection of deleted files is not yet supported* - you must select all lines or none
 
-This limitation exists because git's patch format requires =deleted file mode= patches to remove the entire file contents. Partial deletion would require converting to a regular modification patch, which has edge cases with context matching.
+This limitation exists because git's patch format requires =deleted file mode=
+patches to remove the entire file contents. Partial deletion would require
+converting to a regular modification patch, which has edge cases with context
+matching.
 
 **** Renamed/Copied Files
 Renamed and copied files are handled correctly:
@@ -596,6 +584,21 @@ Renamed and copied files are handled correctly:
 - =majutsu-interactive-selected-hunk= :: Face for selected hunks
 - =majutsu-interactive-selected-region= :: Face for selected regions
 
+** Metaediting
+- ~?~ then ~m~ (~majutsu-metaedit~) :: Open the Metaedit transient. Defaults to one revision from point (fallback =@=). If multiple revisions are selected, Majutsu asks you to narrow it down.
+- ~-r~ / ~-m~ / ~-a~ / ~-t~ :: Set revision, message, author, and author timestamp.
+- ~-c~ / ~-u~ / ~-U~ / ~-f~ :: Toggle update-change-id / update-author / update-author-timestamp / force-rewrite.
+- ~-I~ :: Ignore immutable revisions.
+Runs: =jj metaedit --revisions REV [OPTIONS...]=
+
+** Simplifying Parents
+- ~?~ then ~P~ (~majutsu-simplify-parents~) :: Open the Simplify Parents transient.
+- ~-s~ :: Simplify specified revision(s) together with descendant trees (=--source=).
+- ~-r~ :: Simplify specified revision(s) only (=--revisions=).
+  If neither is set, Majutsu defaults to region/point revision(s), fallback =@=.
+- ~-I~ :: Ignore immutable revisions.
+Runs: =jj simplify-parents [--source REVSET] [--revisions REVSET]=
+
 * Bookmarks
 ** Understanding Bookmarks
 In Jujutsu, bookmarks are similar to Git branches but are explicitly tracked. They point to a specific change ID.
@@ -610,8 +613,6 @@ Press ~b~ to manage bookmarks.
 - ~r~ :: Rename a bookmark.
 - ~d~ :: Delete a bookmark (this deletion propagates to remotes).
 - ~f~ :: Forget a bookmark (removes local tracking without affecting remotes).
-
-** Tracking Remote Bookmarks
 - ~t~ :: Track a remote bookmark to create a local one.
 - ~u~ :: Untrack a remote bookmark.
 
@@ -634,7 +635,7 @@ selection, while set/delete prompts still allow entering string patterns manuall
 
 * Git Integration
 ** Git Transient
-Press ~G~ to access Git-specific commands. Jujutsu can interact directly with Git remotes.
+Press ~G~ (Emacs) / ~? G~ (Evil) to access Git-specific commands. Jujutsu can interact directly with Git remotes.
 
 ** Pushing
 - ~p~ :: Open the Push transient. You can push bookmarks, revisions, or changes.
@@ -677,7 +678,7 @@ Jujutsu automatically exports/imports to the underlying Git repo, but you can tr
 Jujutsu supports multiple workspaces sharing the same repository storage. This is similar to Git worktrees but more integrated.
 
 ** Workspace Transient
-Press ~Z~ or ~%~ (Emacs) or ~*~ (Evil) to manage workspaces.
+Press ~Z~ or ~%~ (Emacs) / ~*~ (Evil) to manage workspaces.
 - ~l~ :: List all workspaces.
 - ~v~ :: Visit a workspace (only changes default-directory, and refresh majutsu buffers).
 - ~a~ :: Add a new workspace.
@@ -685,9 +686,6 @@ Press ~Z~ or ~%~ (Emacs) or ~*~ (Evil) to manage workspaces.
 - ~u~ :: Update a stale workspace.
 - ~n~ :: Rename a workspace.
 - ~r~ :: Show and copy current workspace root.
-
-** Configuring Workspace Discovery
-If Majutsu cannot find a workspace on disk, it will prompt you. You can configure =majutsu-workspace-search-directories= to help it find them automatically.
 
 * Conflict Resolution
 ** Detecting Conflicts
@@ -773,9 +771,6 @@ In Evil integration:
 - ~majutsu-evil-enable-integration~ :: Set to =nil= to disable automatic Evil bindings.
 - ~majutsu-evil-initial-state~ :: The Evil state to start in (default: =normal=).
 
-** Workspace Options
-- ~majutsu-workspace-search-directories~ :: Directories to search when locating workspace roots.
-
 * Template DSL
 ** Overview
 Majutsu includes a domain-specific language (DSL) for building Jujutsu templates in Emacs Lisp. The main entry point is =majutsu-tpl=, which compiles a vector-based DSL form into a jj template string.
@@ -828,7 +823,8 @@ add an explicit annotation:
 [:raw "self" :Commit]
 #+end_src
 
-Symbols passed to =:call= are treated as raw identifiers:
+The callable position of =:call= can be written as a quoted symbol,
+keyword, or string name:
 #+begin_src emacs-lisp
 (majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => "coalesce(\"\", \"X\")"
 #+end_src
@@ -899,7 +895,7 @@ Arithmetic and logical operators are supported:
 (majutsu-tpl [:++ "L" "R"])         ; => "(\"L\" ++ \"R\")"
 #+end_src
 
-** Conditional and Control Flow
+** Conditionals and Composition
 #+begin_src emacs-lisp
 (majutsu-tpl [:if [:root] "(root)" [:commit_id]])
 ; => "if(self.root(), \"(root)\", self.commit_id())"
@@ -922,32 +918,34 @@ Elisp expressions are evaluated when the template is compiled.
 ** Anonymous Functions and Higher-Order Operations
 Anonymous functions are first-class template values:
 #+begin_src emacs-lisp
-(majutsu-tpl [:lambda [c] [:method 'c :description]])
+(majutsu-tpl [:lambda [c] [:description]])
 ; => "|c| c.description()"
 
-(majutsu-tpl [:|c| [:method 'c :description]])
+(majutsu-tpl [:|c| [:description]])
 ; => "|c| c.description()"
 
-(majutsu-tpl [:method [:raw "self" :Commit] :parents :map [:|c| [:description]]])
+(majutsu-tpl [:parents :map [:|c| [:description]]])
 ; => "self.parents().map(|c| c.description())"
 
 (majutsu-tpl [:call [:|c| [:description]] [:raw "item" :Commit]])
 ; => "item.description()"
 
-(majutsu-tpl [[:lambda [c] [:method 'c :description]] [:raw "item"]])
+(majutsu-tpl [[:lambda [c] [:description]] [:raw "item" :Commit]])
 ; => "item.description()"
 #+end_src
 
 The shorthand =[:|c| BODY]= is equivalent to =[:lambda [c] BODY]=.
 
-Lambda parameters are lexical variables and can act as a deferred implicit
-=self= for bare keyword dispatch. A surface lambda such as
-+=[:lambda [c] [:description]]= is therefore kept generic first and can later be
-specialized from a typed call argument or a higher-order container element. In
-those cases =[:description]= becomes equivalent to =[:method 'c :description]=.
-This deferred behavior is limited to lambda parameters; Majutsu no longer uses
-unknown non-lambda receivers as a general bare-keyword fallback. If you need an
-outer receiver explicitly inside a nested lambda, use =[:self N]=.
+Lambda parameters are lexical variables and can act as a deferred implicit =self=
+for bare keyword dispatch. A surface lambda such as =[:lambda [c] [:description]]=
+is therefore kept generic first and can later be specialized from a typed call
+argument or a higher-order container element. In those cases =[:description]=
+becomes equivalent to =[:method 'c :description]=. If you prefer, you can also
+write that explicit =[:method 'c ...]= form directly, but most examples use bare
+keywords because it better matches the implicit-self model. This deferred
+behavior is limited to lambda parameters; Majutsu no longer uses unknown
+non-lambda receivers as a general bare-keyword fallback. If you need an outer
+receiver explicitly inside a nested lambda, use =[:self N]=.
 
 List-oriented methods can be written in several equivalent styles:
 #+begin_src emacs-lisp
@@ -956,11 +954,11 @@ List-oriented methods can be written in several equivalent styles:
 ; => "self.bookmarks().map(|b| b.name())"
 
 ;; Direct jj-style method call with an anonymous lambda
-(majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:method 'c :description]]])
+(majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:description]]])
 ; => "refs.map(|c| c.description())"
 
 ;; Dash-style explicit lambda
-(majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
+(majutsu-tpl [:-map [:lambda [c] [:description]] [:raw "refs"]])
 ; => "refs.map(|c| c.description())"
 
 ;; Dash-style anaphoric shorthand
@@ -984,14 +982,14 @@ value-level explicit-lambda helper while the =:--map= family is syntax sugar
 layered on top of the same lambda support.
 
 This is a deliberate Majutsu DSL adaptation. Upstream jj centers the
-higher-order story around expressions such as +=collection.map(|x| body)+;
+higher-order story around expressions such as =collection.map(|x| body)=;
 Majutsu keeps that core model and layers additional sugar on top of it.
 Reusable lambda bodies can therefore also be defined as ordinary helpers that
 return native lambda values:
 #+begin_src emacs-lisp
 (majutsu-template-defun description-fn ()
   (:returns Lambda)
-  [:lambda [c] [:method 'c :description]])
+  [:lambda [c] [:description]])
 
 (majutsu-tpl [:description-fn])
 ; => "|c| c.description()"
@@ -1001,7 +999,7 @@ return native lambda values:
 
 (majutsu-template-defun description-with-suffix ((suffix Template))
   (:returns Lambda)
-  `[:lambda [c] [:concat [:method 'c :description] ,suffix]])
+  `[:lambda [c] [:concat [:description] ,suffix]])
 
 (majutsu-tpl [:method [:raw "refs"] :map [:description-with-suffix [:str "!"]]])
 ; => "refs.map(|c| concat(c.description(), \"!\"))"
@@ -1051,7 +1049,7 @@ into a local owner-bound lowering:
        [:commit_id :shortest 8]
      [:change_id :shortest 8]])
 
-(majutsu-template-compile '[:canonical-log-id] 'Commit)
+(majutsu-tpl [:canonical-log-id] 'Commit)
 ; => "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))"
 
 (majutsu-tpl [:method [:raw "p" :Commit] :canonical-log-id])
@@ -1071,40 +1069,24 @@ raw snippets still compile, but richer type propagation only kicks in once the
 expression is explicitly typed or inferred through later semantic steps.
 
 Majutsu distinguishes between broad =Any= expression placeholders and the
-narrower printable =Template= capability. Use =Any= for helper parameters that
-merely shuttle expressions around at DSL-expansion time (for example method
-objects, raw snippets, or higher-order bodies). Use =Template= when the helper
-semantically expects content that can actually be rendered or concatenated.
+narrower printable =Template= capability. In practice, =Any= means “some
+expression”, while =Template= means content that can actually be rendered or
+concatenated.
 
 Majutsu also propagates core result types through the normalized AST. For
 example, =parents()= is tracked as a list of commits, =lines()= as a list of
 strings, =trailers()= as =(:list Trailer)=, mapped lists use ordinary
 container refs such as =(:list String)=, and list methods such as =first()=
-preserve the element type. There is no separate =ListTemplate= semantic type;
-mapped output is just another list type in the DSL.
-
-Builtin metadata is kept close to current upstream =jj/docs/templates.md= for
-methods such as =files()= / =conflicted_files()=, =normal_target()=,
-=workspace_name()=, =since()=, and =root()=. This also includes upstream's
-string-like method dispatch for =RefSymbol= values, so chains like
-=[:method [:raw "bookmark" :CommitRef] :name :len]= type-check and lower like
-ordinary string method calls. For helper argument checks, =RefSymbol= is also
-accepted where a concrete =String= is expected.
-
-Conditional results now follow upstream's =if() -> Any= model. The result of
-=if()= is validated at the consumption site for capabilities such as
-=Template= or =Serialize= instead of being assigned an eager fixed joined type.
-Majutsu also lets method chains on =(:option T)= continue through the contained
-value type, mirroring upstream's option-method behavior.
+preserve the element type.
 
 A few upstream categories are still intentionally simplified in Majutsu's
-checker. Upstream =StringLiteral= parameters are now checked in a first,
-literal-aware way: direct string literal nodes are accepted, but Majutsu does
-not yet attempt full parse-time literal tracking through arbitrary helper calls
-or constant folding. Upstream =AnyList= style results are still normalized into
-ordinary container refs rather than separate semantic runtime classes.
+checker. For parameters that upstream models as =StringLiteral=, Majutsu
+currently recognizes obvious literal strings, but it does not try to prove that
+more complex expressions become literals after helper expansion or constant
+folding. Upstream also has distinct =AnyList=-style result categories; Majutsu
+currently models those as ordinary container refs instead.
 
-** Supported Commands
+** Supported Commands (for development reference)
 Templates can be used with these jj commands:
 
 | Command        | Self Type            |
@@ -1122,19 +1104,6 @@ Templates can be used with these jj commands:
 | op show        | Operation            |
 | workspace list | WorkspaceRef         |
 | config list    | ConfigValue          |
-
-* Extending Majutsu
-** Module Architecture
-Majutsu is modular. New features should be added as separate files (e.g., =majutsu-feature.el=) and use the core APIs in =majutsu-core.el= and =majutsu-process.el=.
-
-** Process Execution
-Use =majutsu-run-jj= for commands that modify the repo and require a refresh, or =majutsu-jj-string= to get command output as a string.
-
-** Section Types
-Majutsu defines several Magit section types: =jj-commit=, =jj-file=, =jj-hunk=, and =jj-workspace=. You can define custom keymaps for these sections using =defvar-keymap=.
-
-** Transient Definitions
-New commands should be exposed via =transient-define-prefix=. Refer to =majutsu-rebase.el= for examples of complex multi-step selections.
 
 * Keystroke Index
 :PROPERTIES:
