@@ -70,7 +70,10 @@ Instead of invoking this alias for `majutsu-log' using
     ("q" "Quit"              majutsu-mode-bury-buffer)]
    [("?" "Help"              transient-help)
     ("$" "Process buffer"    majutsu-process-buffer)]
-   [("C-x m"    "Show all key bindings"    describe-mode)]])
+   [("C-x m"    "Show all key bindings"    describe-mode)]]
+  ["Log commands"
+   :if-derived majutsu-log-mode
+   [("w" "Copy…"             majutsu-log-copy-transient)]])
 
 (provide 'majutsu)
 

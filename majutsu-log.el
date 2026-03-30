@@ -409,12 +409,16 @@ can survive transport through the single-line log format.")
 (defvar-local majutsu-log--children-by-id nil
   "Hash table mapping visible parent ids to visible child id lists.")
 
+(defvar-local majutsu-log--buffer-compiled nil
+  "Compiled column/layout metadata used to render the current buffer.")
+
 (defun majutsu-log--invalidate-template-cache (&rest _)
   "Reset cached compiled template when layout changes."
   (setq majutsu-log--compiled-template-cache nil)
   (setq majutsu-log--cached-entries nil)
   (setq majutsu-log--entry-by-id nil)
-  (setq majutsu-log--children-by-id nil))
+  (setq majutsu-log--children-by-id nil)
+  (setq majutsu-log--buffer-compiled nil))
 
 (defun majutsu-log-post-decode-line-separator (value &optional _ctx)
   "Decode `majutsu-log--field-line-separator' inside VALUE.
@@ -900,12 +904,12 @@ Returns entry plist and moves point past the consumed entry, or nil."
     (nreverse entries)))
 
 (defun majutsu--indent-string (s column)
-  "Insert STRING into the current buffer, indenting each line to COLUMN."
-  (let ((indentation (make-string column ?\s))) ; Create a string of spaces for indentation
+  "Return S with each line indented to COLUMN, preserving text properties."
+  (let ((indentation (make-string column ?\s)))
     (mapconcat (lambda (line)
                  (concat indentation line))
-               (split-string s "\n")
-               "\n"))) ; Join lines with newline, prefixed by indentation
+               (majutsu-log--split-by-separator s "\n")
+               "\n")))
 
 (defun majutsu-log--entry-column (entry field)
   "Return canonical value for FIELD stored on ENTRY."
@@ -942,6 +946,35 @@ Fallback to the canonical field value when ENTRY predates per-instance storage."
      ((null face) (substring-no-properties v))
      (t (propertize (substring-no-properties v) 'font-lock-face face)))))
 
+(defun majutsu-log--content-properties (entry-id module &optional column)
+  "Return content text properties for ENTRY-ID in MODULE.
+When COLUMN is non-nil, also include field and column-instance identity."
+  (append `(majutsu-log-module ,module
+            majutsu-log-entry-id ,entry-id)
+          (when column
+            `(majutsu-log-field ,(plist-get column :field)
+              majutsu-log-column ,(plist-get column :instance)))))
+
+(defun majutsu-log--decoration-properties (entry-id module decoration)
+  "Return decoration text properties for ENTRY-ID in MODULE."
+  `(majutsu-log-module ,module
+    majutsu-log-entry-id ,entry-id
+    majutsu-log-decoration ,decoration))
+
+(defun majutsu-log--propertize-content (text entry-id module &optional column)
+  "Return TEXT tagged as MODULE content for ENTRY-ID and COLUMN."
+  (if (stringp text)
+      (apply #'propertize text
+             (majutsu-log--content-properties entry-id module column))
+    text))
+
+(defun majutsu-log--propertize-decoration (text entry-id module decoration)
+  "Return TEXT tagged as MODULE DECORATION for ENTRY-ID."
+  (if (stringp text)
+      (apply #'propertize text
+             (majutsu-log--decoration-properties entry-id module decoration))
+    text))
+
 (defun majutsu-log--concat-heading-parts (parts)
   "Concatenate heading PARTS without adding spaces after newlines."
   (let ((out ""))
@@ -953,65 +986,79 @@ Fallback to the canonical field value when ENTRY predates per-instance storage."
                     (not (eq (aref part 0) ?\n)))))
           (setq out (concat out (if need-space " " "") part)))))))
 
-(defun majutsu-log--render-heading-lines (entry compiled)
-  "Render ENTRY heading module as visible lines with graph prefixes."
-  (let* ((columns (majutsu-log--module-columns compiled 'heading))
-         (parts nil))
-    (dolist (column columns)
-      (let* ((face (plist-get column :face))
-             (raw (majutsu-log--entry-column-value entry column))
-             (value (majutsu-log--apply-face-policy
-                     (majutsu-log--display-string raw) face)))
-        (unless (string-empty-p value)
-          (push value parts))))
-    (setq parts (nreverse parts))
-    (let* ((content (if parts (majutsu-log--concat-heading-parts parts) ""))
-           (content-lines (split-string content "\n" nil))
-           (prefixes (or (plist-get entry :heading-prefixes) (list "")))
-           (last-prefix (or (car (last prefixes)) ""))
-           (count (max (length content-lines) (length prefixes)))
-           out)
-      (cl-loop for idx below count
-               do (let ((prefix (or (nth idx prefixes) last-prefix))
-                        (line (or (nth idx content-lines) "")))
-                    (push (concat prefix line) out)))
-      (nreverse out))))
-
 (defun majutsu-log--single-line-string (value)
-  "Return VALUE flattened to a single display line." 
+  "Return VALUE flattened to a single display line."
   (if (stringp value)
       (string-trim (replace-regexp-in-string "[\n\r]+" " " value nil t))
     value))
 
-(defun majutsu-log--render-tail (entry compiled)
-  "Render ENTRY tail module as a single-line auxiliary string."
-  (let* ((columns (majutsu-log--module-columns compiled 'tail))
-         (parts nil))
-    (dolist (column columns)
-      (let* ((face (plist-get column :face))
-             (raw (majutsu-log--entry-column-value entry column))
-             (value (majutsu-log--apply-face-policy
-                     (majutsu-log--single-line-string
-                      (majutsu-log--display-string raw))
-                     face)))
-        (unless (string-empty-p value)
-          (push value parts))))
-    (when parts
-      (majutsu-log--concat-heading-parts (nreverse parts)))))
+(defun majutsu-log--render-column-text (entry column &optional plain)
+  "Return rendered text for ENTRY COLUMN.
+When PLAIN is non-nil, strip all text properties from the result."
+  (let* ((module (plist-get column :module))
+         (face (plist-get column :face))
+         (value (majutsu-log--display-string
+                 (majutsu-log--entry-column-value entry column))))
+    (when (eq module 'tail)
+      (setq value (majutsu-log--single-line-string value)))
+    (if plain
+        (substring-no-properties value)
+      (majutsu-log--apply-face-policy value face))))
 
-(defun majutsu-log--render-body (entry compiled)
-  "Render ENTRY body module as foldable multiline content."
-  (let* ((columns (majutsu-log--module-columns compiled 'body))
-         (parts nil))
-    (dolist (column columns)
-      (let* ((face (plist-get column :face))
-             (raw (majutsu-log--entry-column-value entry column))
-             (value (majutsu-log--apply-face-policy
-                     (majutsu-log--display-string raw) face)))
-        (unless (string-empty-p (string-trim value))
-          (push value parts))))
+(defun majutsu-log--render-module-parts (entry compiled module &optional annotate plain)
+  "Return rendered ENTRY parts for MODULE using COMPILED.
+When ANNOTATE is non-nil, add span properties for field/column identity.
+When PLAIN is non-nil, strip presentation text properties first."
+  (let ((entry-id (majutsu-log--entry-id entry))
+        parts)
+    (dolist (column (majutsu-log--module-columns compiled module))
+      (let ((value (majutsu-log--render-column-text entry column plain)))
+        (unless (if (eq module 'body)
+                    (string-empty-p (string-trim value))
+                  (string-empty-p value))
+          (push (if annotate
+                    (majutsu-log--propertize-content value entry-id module column)
+                  value)
+                parts))))
+    (nreverse parts)))
+
+(defun majutsu-log--render-heading-content (entry compiled &optional annotate plain)
+  "Render ENTRY heading module content without graph prefixes."
+  (let ((parts (majutsu-log--render-module-parts entry compiled 'heading annotate plain)))
+    (if parts
+        (majutsu-log--concat-heading-parts parts)
+      "")))
+
+(defun majutsu-log--render-heading-content-lines (entry compiled &optional annotate plain)
+  "Render ENTRY heading module content lines without graph prefixes."
+  (majutsu-log--split-by-separator
+   (majutsu-log--render-heading-content entry compiled annotate plain)
+   "\n"))
+
+(defun majutsu-log--render-heading-lines (entry compiled)
+  "Render ENTRY heading module as visible lines with graph prefixes."
+  (let* ((content-lines (majutsu-log--render-heading-content-lines entry compiled))
+         (prefixes (or (plist-get entry :heading-prefixes) (list "")))
+         (last-prefix (or (car (last prefixes)) ""))
+         (count (max (length content-lines) (length prefixes)))
+         out)
+    (cl-loop for idx below count
+             do (let ((prefix (or (nth idx prefixes) last-prefix))
+                      (line (or (nth idx content-lines) "")))
+                  (push (concat prefix line) out)))
+    (nreverse out)))
+
+(defun majutsu-log--render-tail (entry compiled &optional annotate plain)
+  "Render ENTRY tail module as a single-line auxiliary string."
+  (let ((parts (majutsu-log--render-module-parts entry compiled 'tail annotate plain)))
     (when parts
-      (string-join (nreverse parts) "\n"))))
+      (majutsu-log--concat-heading-parts parts))))
+
+(defun majutsu-log--render-body (entry compiled &optional annotate plain)
+  "Render ENTRY body module as foldable multiline content."
+  (let ((parts (majutsu-log--render-module-parts entry compiled 'body annotate plain)))
+    (when parts
+      (string-join parts "\n"))))
 
 (defun majutsu-log--entry-id (entry)
   "Return stable section id string from ENTRY metadata fields."
@@ -1061,6 +1108,101 @@ When ENTRIES is nil, use `majutsu-log--cached-entries'."
   "Return current `jj-commit' section id or signal a user error."
   (or (magit-section-value-if 'jj-commit)
       (user-error "No changeset at point")))
+
+(defun majutsu-log--text-property-near-point (property &optional pos)
+  "Return PROPERTY near POS, preferring the previous character.
+This makes point at the end of a field behave like point on that field."
+  (let ((pos (or pos (point))))
+    (or (and (> pos (point-min))
+             (get-text-property (1- pos) property))
+        (get-text-property pos property))))
+
+(defun majutsu-log--entry-at-point ()
+  "Return the parsed log entry at point, or nil if unavailable."
+  (or (when-let* ((entry-id (majutsu-log--text-property-near-point
+                             'majutsu-log-entry-id)))
+        (majutsu-log--entry-for-id entry-id))
+      (when-let* ((entry-id (magit-section-value-if 'jj-commit)))
+        (majutsu-log--entry-for-id entry-id))))
+
+(defun majutsu-log--current-compiled ()
+  "Return compiled column/layout metadata for the current buffer."
+  (or majutsu-log--buffer-compiled
+      majutsu-log--compiled-template-cache
+      (majutsu-log--ensure-template)))
+
+(defun majutsu-log--compiled-column-by-instance (compiled instance)
+  "Return column spec from COMPILED identified by INSTANCE."
+  (seq-find (lambda (column)
+              (eql (plist-get column :instance) instance))
+            (plist-get compiled :columns)))
+
+(defun majutsu-log--copy-string (string)
+  "Copy STRING to the kill ring and echo it."
+  (kill-new string)
+  (message "%s" string))
+
+;;;###autoload
+(defun majutsu-copy-section-value ()
+  "Copy the current section's stable value.
+
+When the region is active, copy it literally using `copy-region-as-kill'."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (if-let* ((section (magit-current-section))
+              (value (oref section value)))
+        (majutsu-log--copy-string (format "%s" value))
+      (user-error "No section value at point"))))
+
+;;;###autoload
+(defun majutsu-log-copy-field ()
+  "Copy the rendered value of the log field at point.
+
+When the region is active, copy it literally using `copy-region-as-kill'."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (let* ((compiled (majutsu-log--current-compiled))
+           (entry (majutsu-log--entry-at-point))
+           (instance (majutsu-log--text-property-near-point 'majutsu-log-column))
+           (field (majutsu-log--text-property-near-point 'majutsu-log-field))
+           (module (majutsu-log--text-property-near-point 'majutsu-log-module))
+           (column (or (and instance
+                            (majutsu-log--compiled-column-by-instance compiled instance))
+                       (and field module
+                            (seq-find (lambda (candidate)
+                                        (and (eq (plist-get candidate :field) field)
+                                             (eq (plist-get candidate :module) module)))
+                                      (plist-get compiled :columns))))))
+      (unless entry
+        (user-error "No log entry at point"))
+      (unless column
+        (user-error "No log field at point"))
+      (majutsu-log--copy-string
+       (majutsu-log--render-column-text entry column t)))))
+
+;;;###autoload
+(defun majutsu-log-copy-module ()
+  "Copy the rendered log module at point.
+
+When the region is active, copy it literally using `copy-region-as-kill'."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (let* ((compiled (majutsu-log--current-compiled))
+           (entry (majutsu-log--entry-at-point))
+           (module (majutsu-log--text-property-near-point 'majutsu-log-module))
+           (text (pcase module
+                   ('heading (majutsu-log--render-heading-content entry compiled nil t))
+                   ('tail (or (majutsu-log--render-tail entry compiled nil t) ""))
+                   ('body (or (majutsu-log--render-body entry compiled nil t) ""))
+                   (_ nil))))
+      (unless entry
+        (user-error "No log entry at point"))
+      (unless text
+        (user-error "No log module at point"))
+      (majutsu-log--copy-string text))))
 
 (defun majutsu-log--visible-parent-ids (entry)
   "Return visible parent ids for ENTRY in current buffer order."
@@ -1124,15 +1266,22 @@ disappear again."
     (setq majutsu-log--this-error nil)))
 
 
-(defun majutsu-log--insert-text-with-module (text module)
-  "Insert TEXT and tag it with MODULE text properties."
-  (let ((beg (point)))
+(defun majutsu-log--insert-text-with-module (text module &optional entry-id decoration)
+  "Insert TEXT and tag it with MODULE text properties.
+When ENTRY-ID is non-nil, also record it.  When DECORATION is non-nil,
+mark the inserted span as decoration metadata."
+  (let ((beg (point))
+        (props `(majutsu-log-module ,module)))
     (insert text)
-    (add-text-properties beg (point) `(majutsu-log-module ,module))))
+    (when entry-id
+      (setq props (append props `(majutsu-log-entry-id ,entry-id))))
+    (when decoration
+      (setq props (append props `(majutsu-log-decoration ,decoration))))
+    (add-text-properties beg (point) props)))
 
-(defun majutsu-log--insert-anchor-line (anchor-left tail)
+(defun majutsu-log--insert-anchor-line (anchor-left tail entry-id)
   "Insert ANCHOR-LEFT and right-aligned TAIL on the current line."
-  (majutsu-log--insert-text-with-module anchor-left 'heading)
+  (insert anchor-left)
   (when (and (stringp tail) (not (string-empty-p tail)))
     (let ((tail-width (string-width (substring-no-properties tail)))
           (spacer-pos (point)))
@@ -1140,9 +1289,11 @@ disappear again."
       (add-text-properties
        spacer-pos (point)
        `(majutsu-log-module tail
-                            majutsu-log-tail-spacer t
-                            display ,`(space :align-to (- right ,tail-width))))
-      (majutsu-log--insert-text-with-module tail 'tail)))
+         majutsu-log-entry-id ,entry-id
+         majutsu-log-decoration tail-spacer
+         majutsu-log-tail-spacer t
+         display ,`(space :align-to (- right ,tail-width))))
+      (insert tail)))
   (insert "\n"))
 
 (defun majutsu-log--string-has-module-p (string module)
@@ -1173,7 +1324,13 @@ disappear again."
   (when (stringp string)
     (remove-list-of-text-properties
      0 (length string)
-     '(majutsu-log-module majutsu-log-tail-spacer display)
+     '(majutsu-log-module
+       majutsu-log-field
+       majutsu-log-column
+       majutsu-log-entry-id
+       majutsu-log-decoration
+       majutsu-log-tail-spacer
+       display)
      string))
   string)
 
@@ -1181,32 +1338,49 @@ disappear again."
   "Filter copied log text between BEG and END.
 
 When a copied region contains both heading and tail text, drop the tail text
-from the copied result by default. Copying tail text alone preserves it." 
-  (let ((string (buffer-substring--filter beg end delete)))
+from the copied result by default. Copying tail text alone preserves it."
+  (let ((string (buffer-substring--filter beg end delete))
+        (trim-tail nil))
     (when (and (stringp string)
                (majutsu-log--string-has-module-p string 'heading)
                (majutsu-log--string-has-module-p string 'tail))
-      (setq string (majutsu-log--string-remove-module string 'tail)))
-    (majutsu-log--cleanup-copied-string string)))
+      (setq string (majutsu-log--string-remove-module string 'tail))
+      (setq trim-tail t))
+    (setq string (majutsu-log--cleanup-copied-string string))
+    (when (and trim-tail (stringp string))
+      (setq string (replace-regexp-in-string "[ \t]+$" "" string)))
+    string))
 
 (defun majutsu-log--insert-entry (entry compiled)
   "Insert parsed ENTRY as a `jj-commit' section using COMPILED."
+  (setq-local majutsu-log--buffer-compiled compiled)
   (let* ((id (majutsu-log--entry-id entry))
-         (heading-lines (majutsu-log--render-heading-lines entry compiled))
-         (anchor-left (or (car heading-lines) ""))
-         (continuation-lines (cdr heading-lines))
-         (tail (majutsu-log--render-tail entry compiled))
+         (prefixes (or (plist-get entry :heading-prefixes) (list "")))
+         (last-prefix (or (car (last prefixes)) ""))
+         (content-lines (majutsu-log--render-heading-content-lines entry compiled t))
+         (count (max (length content-lines) (length prefixes)))
+         (heading-lines nil)
+         (tail (majutsu-log--render-tail entry compiled t))
          (suffix-lines (plist-get entry :suffix-lines))
-         (body (majutsu-log--render-body entry compiled))
+         (body (majutsu-log--render-body entry compiled t))
          (has-body (and (stringp body)
                         (not (string-empty-p (string-trim body))))))
+    (cl-loop for idx below count
+             do (let ((prefix (or (nth idx prefixes) last-prefix))
+                      (line (or (nth idx content-lines) "")))
+                  (push (concat (majutsu-log--propertize-decoration
+                                 prefix id 'heading
+                                 (if (= idx 0) 'graph-prefix 'graph-carry))
+                                line)
+                        heading-lines)))
+    (setq heading-lines (nreverse heading-lines))
     (magit-insert-section (jj-commit id t)
-      (majutsu-log--insert-anchor-line anchor-left tail)
-      (dolist (line continuation-lines)
-        (majutsu-log--insert-text-with-module line 'heading)
+      (majutsu-log--insert-anchor-line (or (car heading-lines) "") tail id)
+      (dolist (line (cdr heading-lines))
+        (insert line)
         (insert "\n"))
       (dolist (suffix-line suffix-lines)
-        (insert suffix-line)
+        (insert (majutsu-log--propertize-decoration suffix-line id 'heading 'graph-carry))
         (insert "\n"))
       (when has-body
         (magit-insert-heading)
@@ -1390,6 +1564,13 @@ Return non-nil when the section could be located."
       (message "No more changesets"))))
 
 ;;; Log Mode
+
+;;;###autoload(autoload 'majutsu-log-copy-transient "majutsu-log" nil t)
+(transient-define-prefix majutsu-log-copy-transient ()
+  "Transient for semantic copy commands in `majutsu-log-mode'."
+  [[("s" "Section value" majutsu-copy-section-value)
+    ("f" "Field at point" majutsu-log-copy-field)
+    ("m" "Module at point" majutsu-log-copy-module)]])
 
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."

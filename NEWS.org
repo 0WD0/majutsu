@@ -17,6 +17,11 @@
 - Add visible DAG relation navigation in log buffers: ~[~ jumps to a parent
   revision and ~]~ jumps to a child revision, prompting when multiple
   visible targets exist.
+- Add explicit semantic copy commands for log buffers:
+  ~majutsu-copy-section-value~, ~majutsu-log-copy-field~, and
+  ~majutsu-log-copy-module~. They are exposed through the dispatcher in
+  log buffers (and remain callable via ~M-x~), without claiming a dedicated
+  direct key binding yet.
 
 ** Changed
 
@@ -69,7 +74,9 @@
   and similar fields can live in a dedicated tail segment instead of being
   folded into the left heading text. Tail text remains searchable as real
   buffer text, but copying a mixed heading+tail region strips the tail by
-  default while copying the tail itself preserves it.
+  default while copying the tail itself preserves it. Rendered log spans now
+  carry field/column/entry/decoration properties so explicit copy commands can
+  target section values, individual fields, or whole visible modules.
 - Refine log column ~:post~ handling: transport decoding now happens before
   postprocessors, explicit ~:post~ functions run per column instance, and
   repeated fields can project to different values in different modules.

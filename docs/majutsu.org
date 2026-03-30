@@ -170,6 +170,7 @@ Majutsu ensures metadata field ~id~ is always available for stable section ident
 **** Module Semantics
 - ~heading~ :: Visible anchor-line content on the left (can span physical lines before the tail segment begins).
 - ~tail~ :: Single-line auxiliary content rendered on the anchor line with right alignment. It remains searchable as real text, but copying a mixed heading+tail region drops the tail text by default; copying the tail alone preserves it.
+- Rendered log spans are tagged with ~majutsu-log-module~, ~majutsu-log-field~, ~majutsu-log-column~, ~majutsu-log-entry-id~, and ~majutsu-log-decoration~ so explicit copy commands can distinguish content from graph/tail decorations.
 - ~body~ :: Foldable section body.
 - ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.
 
@@ -243,6 +244,15 @@ after the field's default postprocessors.
 Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
 The historical ~right-margin~ placement has been replaced by the ~tail~ module, which renders real text on the anchor line with right alignment.
 Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it.
+
+*** Copying From Log Buffers
+Majutsu now provides both default copy filtering and explicit semantic copy commands:
+
+- ~M-x majutsu-copy-section-value~ / ~? w s~ :: copy the current section's stable value (for ~jj-commit~, this is the revision id at point). If the region is active, it falls back to ordinary region copy.
+- ~M-x majutsu-log-copy-field~ / ~? w f~ :: copy the rendered field value at point.
+- ~M-x majutsu-log-copy-module~ / ~? w m~ :: copy the rendered visible module at point (~heading~, ~tail~, or ~body~), without graph-prefix or tail-spacer decoration.
+
+This keeps ordinary Emacs copying predictable while still offering precise log-aware copy operations when you want semantic rather than purely visual text.
 
 ** Diffing
 *** Diff Transient
