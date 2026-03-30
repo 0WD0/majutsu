@@ -355,7 +355,8 @@ This checks multiple sources in order:
   "Return non-nil if REV names an existing JJ revision.
 Uses `jj log -r REV -G -T self.contained_in(\"REV\")' to verify."
   (when (and rev (not (string-empty-p rev)))
-    (let ((output (majutsu-jj-string "log" "-r" rev "-G" "-T" (majutsu-tpl `[:method 'self :contained_in ,rev]))))
+    (let ((output (majutsu-jj-string "log" "-r" rev "-G" "-T"
+                                     (majutsu-tpl `[:method [:self] :contained_in ,rev]))))
       (string= output "true"))))
 
 (put 'jj-revision 'thing-at-point #'majutsu-thingatpt--jj-revision)

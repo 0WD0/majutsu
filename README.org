@@ -71,7 +71,10 @@ efficient way to interact with JJ repositories from within Emacs.
 
 - [[file:docs/majutsu.org][User Manual]] - Complete guide to all features, including the template DSL's
   helper-local ~:bind-self~, compile-entry root ~self~ contexts for bare
-  keyword sugar, syntax-level ~majutsu-template-defspecial~ lowering,
+  keyword sugar, explicit ~[:self]~ / ~[:self N]~ references into the current
+  or outer implicit receiver stack, local owner-bound method/keyword lowering
+  via bodyful ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~,
+  syntax-level ~majutsu-template-defspecial~ lowering,
   anonymous ~:lambda~ / ~:|arg|~ values, basic semantic typing for
   helper arguments/method chains (including normalized container refs such as
   ~(:list T)~ / ~(:option T)~, specialized list methods on concrete element

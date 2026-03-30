@@ -22,7 +22,15 @@
 
 - The template DSL now supports helper-local ~:bind-self~ in
   ~majutsu-template-defun~, so helpers can temporarily rebind the implicit
-  ~self~ when expanding nested template bodies.
+  ~self~ when expanding nested template bodies. Explicit ~[:self]~ /
+  ~[:self N]~ references can now read the current or outer implicit
+  receiver binding without falling back to hard-coded raw ~"self"~ snippets.
+  Helper definitions were also simplified: ~majutsu-template-defun~ no longer
+  carries a separate ~:flavor~ option, body-less helpers now default to direct
+  wrappers for same-name jj callables, body-less owner-bound
+  ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~ declarations
+  remain metadata-only, and bodyful owner-bound declarations now lower through
+  their local DSL body instead of rendering a literal ~.name(...)~ segment.
 - Add first-class anonymous functions via ~[:lambda [arg] body]~ and concise
   ~[:|arg| body]~ sugar, compile-time lambda application via ~[:call ...]~ /
   ~[[:lambda...] arg]~, plus Dash-style explicit-lambda helpers such as ~:-map~
@@ -92,9 +100,10 @@
   entry points. Bare keyword dispatch still works for normal template
   compilation, ~:bind-self~, and lambda specialization, but internal rewrite
   passes no longer fabricate an ambient default ~self~.
-- ~canonical-log-id~ now uses ~:bind-self~, and log parent id templates now
-  prefer explicit ~map + join~ composition over a dedicated implementation
-  path.
+- ~canonical-log-id~, ~short-change-id~, and
+  ~short-change-id-with-offset~ now live as local Commit-bound keyword
+  lowerings, and log parent id templates continue to prefer explicit
+  ~map + join~ composition over a dedicated implementation path.
 - ~:map-join~ remains available as compatibility sugar, but it now expands to
   ~[:method [:map ...] :join ...]~ instead of using a separate renderer.
 - Remove ~majutsu-find-file-at-point~. Use ~majutsu-find-file~ instead; it

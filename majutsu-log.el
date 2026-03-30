@@ -277,29 +277,26 @@ Also registers a variable watcher to invalidate the template cache."
        (when (fboundp 'add-variable-watcher)
          (add-variable-watcher ',var-name #'majutsu-log--invalidate-template-cache)))))
 
-(majutsu-template-defun short-change-id ()
-  (:returns Template :flavor :custom :doc "Shortest unique change id.")
+(majutsu-template-defkeyword git_head Commit
+  (:returns Boolean :doc "Deprecated alias for .contained_in('first_parent(@)')")
+  [:method [:self] :contained_in "first_parent(@)"])
+
+(majutsu-template-defkeyword short-change-id Commit
+  (:returns Template :doc "Shortest unique change id.")
   [:change_id :shortest 8])
 
-(majutsu-template-defun git_head ()
-  (:returns Boolean :flavor :custom :doc "Deprecated alias for .contained_in('first_parent(@)')")
-  [:method [:raw "self" :Commit] :contained_in "first_parent(@)"])
-
-(majutsu-template-defun short-change-id-with-offset ()
-  (:returns Template :flavor :custom :doc "Shortest unique change id with offset.")
+(majutsu-template-defkeyword short-change-id-with-offset Commit
+  (:returns Template :doc "Shortest unique change id with offset.")
   [[:short-change-id]
    [:label "change_offset" "/"]
    [:change_offset]])
 
-(majutsu-template-defun canonical-log-id ((object Commit :optional t))
-  (:returns Template
-   :flavor :custom
-   :bind-self object
-   :doc "Canonical log id for current commit or OBJECT.")
+(majutsu-template-defkeyword canonical-log-id Commit
+  (:returns Template :doc "Canonical log id.")
   [:if [:or [:hidden]
-             [:divergent]]
-       [:commit_id :shortest 8]
-     [:change_id :shortest 8]])
+            [:divergent]]
+      [:commit_id :shortest 8]
+    [:change_id :shortest 8]])
 
 (majutsu-log-define-column id
   [:canonical-log-id]
@@ -325,7 +322,7 @@ Also registers a variable watcher to invalidate the template cache."
 
 (majutsu-log-define-column parent-ids
   `[:method
-    [:map [:parents] p [:canonical-log-id p]]
+    [:map [:parents] p [:canonical-log-id]]
     :join ,majutsu-log--field-list-separator]
   "Template for the parent-ids metadata column.")
 

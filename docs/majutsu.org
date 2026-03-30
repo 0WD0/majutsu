@@ -787,7 +787,7 @@ The DSL provides several advantages over writing raw template strings:
 - *Automatic escaping*: String literals are properly escaped (quotes, backslashes, control characters) without manual intervention.
 - *Elisp integration*: Embed Elisp expressions that evaluate at compile time, enabling dynamic template generation based on configuration or context.
 - *Composability*: Define reusable template functions with =majutsu-template-defun= that expand inline, avoiding runtime overhead.
-- *Type awareness*: The DSL understands jj's type system, enabling self-type context for cleaner keyword syntax (=[:description]= instead of =[:method [:raw "self"] :description]=).
+- *Type awareness*: The DSL understands jj's type system, enabling self-type context for cleaner keyword syntax (=[:description]= instead of =[:method [:self] :description]=).
 - *Readability*: Vector-based syntax with keywords is more readable than deeply nested string concatenation.
 
 Example comparison:
@@ -861,6 +861,22 @@ keywords become method calls on =self=:
 #+begin_src emacs-lisp
 (majutsu-tpl [:description] 'Commit)      ; => "self.description()"
 (majutsu-tpl [:parents :len] 'Commit)     ; => "self.parents().len()"
+#+end_src
+
+*** Explicit Self References
+Use =[:self]= when you need the current implicit receiver as a value. When
+nested lambdas or helper-local =:bind-self= scopes introduce new receivers,
+=[:self N]= selects the outer binding =N= levels up (=[:self 0]= is the same
+as =[:self]=):
+#+begin_src emacs-lisp
+(majutsu-tpl [:method [:self] :description] 'Commit)
+; => "self.description()"
+
+(majutsu-tpl [:method [:raw "self" :Commit]
+                      :parents
+                      :map
+                      [:|p| [:method [:self 1] :description]]])
+; => "self.parents().map(|p| self.description())"
 #+end_src
 
 ** List Operations
@@ -945,11 +961,21 @@ Use =majutsu-template-defun= to define reusable template functions:
 ; => "concat(\"ID\", \": \", \"VAL\")"
 #+end_src
 
+When a helper omits its body, =majutsu-template-defun= now defaults to a
+simple direct wrapper around the same jj callable name:
+#+begin_src emacs-lisp
+(majutsu-template-defun my-fill ((width Integer) (content Template))
+  (:returns Template))
+
+(majutsu-tpl [:my-fill 8 "x"])
+; => "my-fill(8, \"x\")"
+#+end_src
+
 Syntax-level sugar can be defined separately using
-+=majutsu-template-defspecial=, which receives raw forms and lowers them to
+=majutsu-template-defspecial=, which receives raw forms and lowers them to
 more primitive template syntax. Majutsu now uses this layer for operators such
 as =:|arg|=, the anaphoric =:--map= family, and the legacy
-+=[:map collection var body]= / =:map-join= compatibility forms; the matching
+=[:map collection var body]= / =:map-join= compatibility forms; the matching
 old Elisp helpers were removed so these binder-based constructs live only in
 syntax space:
 #+begin_src emacs-lisp
@@ -960,11 +986,13 @@ syntax space:
 ; => "concat(\"<\", \"x\", \">\")"
 #+end_src
 
-Helpers can also rebind the implicit =self= inside their body using
-=:bind-self=:
+Owner-bound methods can also be defined locally in the DSL. A body-less
+=majutsu-template-defmethod= / =majutsu-template-defkeyword= declaration just
+registers metadata for a native/rendered method, but providing a body turns it
+into a local lowering method:
 #+begin_src emacs-lisp
-(majutsu-template-defun canonical-log-id ((object Commit :optional t))
-  (:returns Template :bind-self object)
+(majutsu-template-defkeyword canonical-log-id Commit
+  (:returns Template)
   [:if [:or [:hidden]
              [:divergent]]
        [:commit_id :shortest 8]
@@ -973,8 +1001,16 @@ Helpers can also rebind the implicit =self= inside their body using
 (majutsu-template-compile '[:canonical-log-id] 'Commit)
 ; => "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))"
 
-(majutsu-tpl [:canonical-log-id [:raw "p" :Commit]])
+(majutsu-tpl [:method [:raw "p" :Commit] :canonical-log-id])
 ; => "if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))"
+#+end_src
+
+Ordinary helpers can still rebind the implicit =self= inside their body using
+=:bind-self=:
+#+begin_src emacs-lisp
+(majutsu-template-defun show-canonical-log-id ((object Commit :optional t))
+  (:returns Template :bind-self object)
+  [:canonical-log-id])
 #+end_src
 
 When the bound parameter is nil, the helper inherits the outer =self= binding.
@@ -992,7 +1028,7 @@ Builtin metadata is also kept close to current upstream =jj/docs/templates.md=
 for methods such as =files()= / =conflicted_files()=, =normal_target()=,
 =workspace_name()=, =since()=, and =root()=. This now also includes upstream's
 string-like method dispatch for =RefSymbol= values, so chains like
-+=[:method [:raw "bookmark" :CommitRef] :name :len]= type-check and lower like
+=[:method [:raw "bookmark" :CommitRef] :name :len]= type-check and lower like
 ordinary string method calls. For helper argument checks, =RefSymbol= is also
 accepted where a concrete =String= is expected, and builtin helpers now carry
 more accurate metadata such as upstream-style conditional handling for =if()=.

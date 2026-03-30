@@ -34,7 +34,7 @@
   (majutsu-template-defun test-builtin-wrapper ((primary Template)
                                                 (secondary Template :optional t)
                                                 (rest Template :rest t))
-    (:returns Template :doc "Auto-generated builtin wrapper for tests." :flavor :builtin))
+    (:returns Template :doc "Auto-generated direct wrapper for tests."))
 
   (majutsu-template-defun test-lambda-helper ()
     (:returns Lambda :doc "Reusable helper returning a native lambda.")
@@ -49,35 +49,36 @@
     items)
 
   (majutsu-template-defkeyword test-commitref-keyword CommitRef
-    (:returns Template :doc "Synthetic CommitRef keyword for tests.")
-    `[:raw "commitref_keyword"])
+    (:returns Template :doc "Synthetic CommitRef keyword for tests."))
 
   (majutsu-template-defkeyword test-commit-keyword Commit
-    (:returns Template :doc "Synthetic Commit keyword for tests.")
-    `[:raw "commit_keyword"])
+    (:returns Template :doc "Synthetic Commit keyword for tests."))
 
   (majutsu-template-defmethod test-list-method List ((suffix Template))
-    (:returns Template :doc "Synthetic List method for tests.")
-    `[:raw "list_method_stub"])
+    (:returns Template :doc "Synthetic List method for tests."))
 
   (majutsu-template-defmethod test-list-map-method List
     ((mapper (:lambda (Any) Any) :specialize :element-lambda))
     (:returns (:list Template)
      :returns-via (:list-of-lambda-return mapper)
-     :doc "Synthetic List higher-order method for tests.")
-    `[:raw "list_map_method_stub"])
+     :doc "Synthetic List higher-order method for tests."))
 
   (majutsu-template-defmethod test-commit-list-method (:list Commit) ((suffix Template))
-    (:returns Template :doc "Synthetic specialized list method for tests.")
-    `[:raw "commit_list_method_stub"])
+    (:returns Template :doc "Synthetic specialized list method for tests."))
 
   (majutsu-template-defmethod test-commit-flag Commit ()
-    (:returns Template :doc "Non-keyword Commit method for tests.")
-    `[:raw "commit_flag"])
+    (:returns Template :doc "Non-keyword Commit method for tests."))
 
   (majutsu-template-defmethod test-commit-optflag Commit ()
-    (:returns Template :keyword t :doc "Opt-in keyword Commit method for tests.")
-    `[:raw "commit_optflag"])
+    (:returns Template :keyword t :doc "Opt-in keyword Commit method for tests."))
+
+  (majutsu-template-defkeyword test-commit-local-description Commit
+    (:returns String :doc "Local lowering keyword for tests.")
+    [:description])
+
+  (majutsu-template-defmethod test-commit-local-label Commit ((suffix Template))
+    (:returns Template :doc "Local lowering method for tests.")
+    `[:concat [:description] ,suffix])
 
   (majutsu-template-defun test-bind-self ((object Commit :optional t))
     (:returns Template :doc "Helper using :bind-self for Commit objects." :bind-self object)
@@ -364,7 +365,19 @@
             [:description]))
    :type 'error))
 
-(ert-deftest test-majutsu-template-builtin-flavor-auto-body ()
+(ert-deftest test-majutsu-template-defmethod-body-lowers-on-explicit-receiver ()
+  (mt--is (majutsu-tpl [:method [:raw "c" :Commit] :test-commit-local-label [:str "!"]])
+          "concat(c.description(), \"!\")"))
+
+(ert-deftest test-majutsu-template-defkeyword-body-lowers-in-self-context ()
+  (mt--is (majutsu-tpl [:test-commit-local-description] 'Commit)
+          "self.description()"))
+
+(ert-deftest test-majutsu-template-defkeyword-body-lowers-then-chains ()
+  (mt--is (majutsu-tpl [:method [:raw "c" :Commit] :test-commit-local-description :len])
+          "c.description().len()"))
+
+(ert-deftest test-majutsu-template-default-defun-auto-body ()
   (mt--is (majutsu-tpl [:call 'test-builtin-wrapper [:str "L"]])
           "test-builtin-wrapper(\"L\")")
   ;; Optional argument present and multiple rest args.
@@ -458,7 +471,7 @@
           "refs.map(|c| concat(c.description(), \"!\"))"))
 
 (ert-deftest test-majutsu-template-call-dispatch ()
-  ;; Built-in flavor should emit direct jj call.
+  ;; Body-less helpers should emit direct jj calls.
   (mt--is (majutsu-tpl [:call 'concat [:str "L"] [:str "R"]])
           "concat(\"L\", \"R\")")
   ;; Custom helper keeps macro-generated body.
@@ -711,6 +724,9 @@
   (let ((meta (majutsu-template--lookup-method 'Operation "workspace_name")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'String)))
+  (let ((meta (majutsu-template--lookup-method 'Commit "git_head")))
+    (should meta)
+    (should (eq (majutsu-template--fn-returns meta) 'Boolean)))
   (let ((meta (majutsu-template--lookup-method 'RefSymbol "len")))
     (should meta)
     (should (eq (majutsu-template--fn-owner meta) 'RefSymbol))
@@ -857,6 +873,56 @@
                 :type 'Operation))))
     (mt--is (majutsu-template-compile '[:id])
             "op.id()")))
+
+(ert-deftest test-majutsu-template-self-special-basic ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (majutsu-template-compile '[:self])
+            "self")
+    (mt--is (majutsu-template-compile '[:self 0])
+            "self")
+    (mt--is (majutsu-template-compile '[:method [:self] :description])
+            "self.description()")))
+
+(ert-deftest test-majutsu-template-self-special-outer-depth ()
+  (let ((majutsu-template-default-self-type nil)
+        (majutsu-template--self-stack
+         (list (majutsu-template--make-self-binding
+                :node (majutsu-template-raw "inner" 'Commit)
+                :type 'Commit)
+               (majutsu-template--make-self-binding
+                :node (majutsu-template-raw "outer" 'Operation)
+                :type 'Operation))))
+    (mt--is (majutsu-template-compile '[:self])
+            "inner")
+    (mt--is (majutsu-template-compile '[:self 1])
+            "outer")
+    (mt--is (majutsu-template-compile '[:method [:self 1] :id])
+            "outer.id()")))
+
+(ert-deftest test-majutsu-template-self-special-nested-lambda-context ()
+  (mt--is (majutsu-tpl [:method [:raw "self" :Commit]
+                        :parents
+                        :map
+                        [:|p|
+                         [:concat [:method [:self] :description]
+                                  " <- "
+                                  [:method [:self 1] :description]]]])
+          "self.parents().map(|p| concat(p.description(), \" <- \", self.description()))"))
+
+(ert-deftest test-majutsu-template-self-special-invalid-usage ()
+  (let ((majutsu-template-default-self-type nil)
+        (majutsu-template--self-stack nil))
+    (should-error (majutsu-template-compile '[:self])
+                  :type 'error))
+  (should-error (majutsu-template-compile '[:self -1] 'Commit)
+                :type 'error)
+  (should-error (majutsu-template-compile '[:self "outer"] 'Commit)
+                :type 'error)
+  (should-error (majutsu-template-compile '[:self 1] 'Commit)
+                :type 'error)
+  (should-error (majutsu-template-compile '[:self 0 1] 'Commit)
+                :type 'error))
 
 (ert-deftest test-majutsu-template-self-keyword-missing-context ()
   (should-error (majutsu-template-compile '[:description] '_)
