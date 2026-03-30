@@ -821,6 +821,13 @@ Use =:raw= to inject template code directly without escaping:
 (majutsu-tpl [:raw "self.commit_id().short()"])  ; => "self.commit_id().short()"
 #+end_src
 
+Untyped raw snippets now default to semantic type =Unknown= rather than
+pretending to be =Template=. If you want method-chain typing to keep flowing,
+add an explicit annotation:
+#+begin_src emacs-lisp
+[:raw "self" :Commit]
+#+end_src
+
 Symbols passed to =:call= are treated as raw identifiers:
 #+begin_src emacs-lisp
 (majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => "coalesce(\"\", \"X\")"
@@ -886,9 +893,14 @@ List methods can be written in three equivalent styles:
 Prefer direct lambdas and =map + join= composition in new code; =:map= and
 =:map-join= remain available as compatibility sugar. The historical
 =[:map collection var body]= form now lowers to =[:method collection :map
-[:lambda [var] body]]=, and public Dash-style helpers such as =:-map= and
-=:--map= are ordinary convenience helpers layered on top of the same native
+[:lambda [var] body]]=, =:-map= remains the value-level explicit-lambda helper,
+and the =:--map= family is syntax sugar layered on top of the same native
 lambda support.
+
+Upstream jj itself centers the higher-order story around expressions such as
++=collection.map(|x| body)+. The =:--map= family is therefore a Majutsu DSL
+surface convenience that lowers to explicit lambda-based core forms; it is not
+an independent runtime/value primitive.
 
 ** Operators
 Arithmetic and logical operators are supported:
@@ -930,6 +942,19 @@ Use =majutsu-template-defun= to define reusable template functions:
 ; => "concat(\"ID\", \": \", \"VAL\")"
 #+end_src
 
+Syntax-level sugar can be defined separately using
++=majutsu-template-defspecial=, which receives raw forms and lowers them to
+more primitive template syntax. Majutsu now uses this layer for operators such
+as =:|arg|=, the anaphoric =:--map= family, and the legacy
++=[:map collection var body]= / =:map-join= compatibility forms:
+#+begin_src emacs-lisp
+(majutsu-template-defspecial :wrap-angle (body)
+  `[:concat [:str "<"] ,body [:str ">"]])
+
+(majutsu-tpl [:wrap-angle [:str "x"]])
+; => "concat(\"<\", \"x\", \">\")"
+#+end_src
+
 Helpers can also rebind the implicit =self= inside their body using
 =:bind-self=:
 #+begin_src emacs-lisp
@@ -948,6 +973,21 @@ Helpers can also rebind the implicit =self= inside their body using
 #+end_src
 
 When the bound parameter is nil, the helper inherits the outer =self= binding.
+
+Majutsu also propagates some core result types through the normalized AST. For
+example, =parents()= is tracked as a list of commits, =lines()= as a list of
+strings, =trailers()= as =(:list Trailer)=, mapped lists use ordinary
+container refs such as =(:list String)=, and list methods such as =first()=
+preserve the element type. There is no separate =ListTemplate= semantic type;
+mapped output is just another list type in the DSL. This is what makes chains
+like =[:method [:raw "self" :Commit] :parents :first :description]=
+type-aware in the DSL.
+
+Builtin metadata is also kept close to current upstream =jj/docs/templates.md=
+for methods such as =files()= / =conflicted_files()=, =normal_target()=,
+=workspace_name()=, =since()=, and =root()=. Majutsu also lets method chains on
+=(:option T)= continue through the contained value type, mirroring upstream's
+option-method behavior.
 
 Reusable lambda bodies can be defined directly as ordinary helpers returning
 native lambda values:
@@ -979,7 +1019,10 @@ Anonymous functions are first-class template values:
 (majutsu-tpl [:|c| [:method 'c :description]])
 ; => "|c| c.description()"
 
-(majutsu-tpl [:call [:|c| [:method 'c :description]] [:raw "item"]])
+(majutsu-tpl [:|c| [:description]])
+; => "|c| c.description()"
+
+(majutsu-tpl [:call [:|c| [:description]] [:raw "item"]])
 ; => "item.description()"
 
 (majutsu-tpl [[:lambda [c] [:method 'c :description]] [:raw "item"]])
@@ -988,15 +1031,41 @@ Anonymous functions are first-class template values:
 
 The shorthand =[:|c| BODY]= is equivalent to =[:lambda [c] BODY]=.
 
-Lambda parameters are lexical variables, not a rebinding of =self=. Inside the
-body, bare keywords such as =[:description]= still refer to the outer =self=
-unless a helper explicitly uses =:bind-self=.
+Lambda parameters are lexical variables and also become the current implicit
+=self= for bare keyword dispatch. Inside lambda bodies, =[:description]= is
+therefore equivalent to =[:method 'c :description]= when the parameter is
+named =c=. If you need the outer template =self= explicitly, write it out as
+an explicit object in =:method= forms.
+
+This is a deliberate Majutsu DSL adaptation. In upstream jj template syntax,
+lambda parameters and =self= are distinct names; Majutsu rebinds single-
+argument lambdas to implicit =self= for authoring convenience while still
+lowering to ordinary jj lambda/method forms.
 
 ** Type System
-The DSL supports Jujutsu's type system: =String=, =Boolean=, =Integer=, =Template=, =Commit=, =Signature=, =Timestamp=, =List=, =Option=, and more. Type annotations can be added to =:raw= nodes:
+The DSL supports Jujutsu's type system: =Any=, =String=, =Boolean=, =Integer=,
+=Template=, =Commit=, =Signature=, =Timestamp=, =List=, =Option=, and more.
+Type annotations can be added to =:raw= nodes:
 #+begin_src emacs-lisp
 [:raw "self" :Commit]  ; Declares the raw value has type Commit
 #+end_src
+
+Without an annotation, =:raw= remains =Unknown=. This keeps the DSL honest:
+raw snippets still compile, but richer type propagation only kicks in once the
+expression is explicitly typed or inferred through later semantic steps.
+
+Majutsu now distinguishes between broad =Any= expression placeholders and the
+narrower printable =Template= capability. Use =Any= for helper parameters that
+merely shuttle expressions around at DSL-expansion time (for example method
+objects, raw snippets, or higher-order bodies). Use =Template= when the helper
+semantically expects content that can actually be rendered/concatenated.
+
+A few upstream categories are still intentionally simplified in Majutsu's
+checker. Upstream =StringLiteral= parameters are now checked in a first,
+literal-aware way: direct string literal nodes are accepted, but Majutsu does
+not yet attempt full parse-time literal tracking through arbitrary helper calls
+or constant folding. Upstream =AnyList= style results are still normalized into
+ordinary container refs rather than separate semantic runtime classes.
 
 ** Supported Commands
 Templates can be used with these jj commands:
