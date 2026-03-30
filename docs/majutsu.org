@@ -796,7 +796,7 @@ Example comparison:
 "if(self.root(), \"(root)\", self.commit_id().short())"
 
 ;; DSL (validated, composable, readable)
-(majutsu-tpl [:if [:root] "(root)" [:method [:raw "self"] :commit_id :short]])
+(majutsu-tpl [:if [:root] "(root)" [:commit_id :short]] 'Commit)
 #+end_src
 
 ** Basic Syntax
@@ -840,30 +840,30 @@ Elisp =t= and =nil= map to =true= and =false=. Numbers pass through directly:
 (majutsu-tpl [:call 'pad_end 8 "x"])  ; => "pad_end(8, \"x\")"
 #+end_src
 
-** Method Calls
+** Method Calls and Self
 *** Explicit Method Chaining
 Use =:method= to call methods on objects. Methods can be chained:
 #+begin_src emacs-lisp
-(majutsu-tpl [:method [:raw "self" :Commit] :commit_id])
-; => "self.commit_id()"
+(majutsu-tpl [:method [:raw "commit" :Commit] :commit_id])
+; => "commit.commit_id()"
 
-(majutsu-tpl [:method [:raw "self" :Commit] :parents :len])
-; => "self.parents().len()"
+(majutsu-tpl [:method [:raw "commit" :Commit] :parents :len])
+; => "commit.parents().len()"
 
-(majutsu-tpl [:method [:raw "self" :Commit] :diff "src"])
-; => "self.diff(\"src\")"
+(majutsu-tpl [:method [:raw "commit" :Commit] :diff "src"])
+; => "commit.diff(\"src\")"
 #+end_src
 
-*** Self-Type Context
-At public compile entry points, when a self-type is provided (or the default
+*** Implicit Self Context
+At public compile entry points, when a self type is provided (or the default
 self type is configured), Majutsu installs a root =self= binding and bare
-keywords become method calls on =self=:
+keywords become method calls on that receiver:
 #+begin_src emacs-lisp
 (majutsu-tpl [:description] 'Commit)      ; => "self.description()"
 (majutsu-tpl [:parents :len] 'Commit)     ; => "self.parents().len()"
 #+end_src
 
-*** Explicit Self References
+*** Explicit Receiver References
 Use =[:self]= when you need the current implicit receiver as a value. When
 nested lambdas or helper-local =:bind-self= scopes introduce new receivers,
 =[:self N]= selects the outer binding =N= levels up (=[:self 0]= is the same
@@ -879,47 +879,16 @@ as =[:self]=):
 ; => "self.parents().map(|p| self.description())"
 #+end_src
 
-** List Operations
-List methods can be written in three equivalent styles:
-
+*** Binding Self in Helper Bodies
+Ordinary helpers can temporarily rebind the implicit =self= inside their body
+with =:bind-self=:
 #+begin_src emacs-lisp
-;; Historical explicit-binder sugar (lowers to a native lambda internally)
-(majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
-; => "self.bookmarks().map(|b| b.name())"
-
-;; Direct jj-style method call with an anonymous lambda
-(majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:method 'c :description]]])
-; => "refs.map(|c| c.description())"
-
-;; Dash-style explicit lambda
-(majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
-; => "refs.map(|c| c.description())"
-
-;; Dash-style anaphoric shorthand
-(majutsu-tpl [:--map [:method 'it :description] [:raw "refs"]])
-; => "refs.map(|it| it.description())"
-
-(majutsu-tpl [:method
-              [:map [:raw "self.parents()"] p [:raw "p.commit_id()"]]
-              :join [:str ", "]])
-; => "self.parents().map(|p| p.commit_id()).join(\", \")"
-
-(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
-; => "self.parents().map(|p| p.commit_id()).join(\", \")"
+(majutsu-template-defun show-canonical-log-id ((object Commit :optional t))
+  (:returns Template :bind-self object)
+  [:canonical-log-id])
 #+end_src
 
-Prefer direct lambdas and =map + join= composition in new code; =:map= and
-=:map-join= remain available as compatibility sugar. The historical
-=[:map collection var body]= form now lowers to =[:method collection :map
-[:lambda [var] body]]=, these binder-style forms are now syntax-only
-compatibility sugar rather than value-level Elisp helpers, =:-map= remains the
-value-level explicit-lambda helper, and the =:--map= family is syntax sugar
-layered on top of the same native lambda support.
-
-Upstream jj itself centers the higher-order story around expressions such as
-+=collection.map(|x| body)+. The =:--map= family is therefore a Majutsu DSL
-surface convenience that lowers to explicit lambda-based core forms; it is not
-an independent runtime/value primitive.
+When the bound parameter is nil, the helper inherits the outer =self= binding.
 
 ** Operators
 Arithmetic and logical operators are supported:
@@ -950,116 +919,7 @@ Elisp expressions are evaluated when the template is compiled.
 ; => "concat(\"T\", \"!\")concat(\"F\", \"!\")"
 #+end_src
 
-** Defining Custom Functions
-Use =majutsu-template-defun= to define reusable template functions:
-#+begin_src emacs-lisp
-(majutsu-template-defun my-helper ((label Template) (value Template :optional t))
-  (:returns Template)
-  `[:concat ,label [:str ": "] ,(or value [:str ""])])
-
-(majutsu-tpl [:my-helper [:str "ID"] [:str "VAL"]])
-; => "concat(\"ID\", \": \", \"VAL\")"
-#+end_src
-
-When a helper omits its body, =majutsu-template-defun= now defaults to a
-simple direct wrapper around the same jj callable name:
-#+begin_src emacs-lisp
-(majutsu-template-defun my-fill ((width Integer) (content Template))
-  (:returns Template))
-
-(majutsu-tpl [:my-fill 8 "x"])
-; => "my-fill(8, \"x\")"
-#+end_src
-
-Syntax-level sugar can be defined separately using
-=majutsu-template-defspecial=, which receives raw forms and lowers them to
-more primitive template syntax. Majutsu now uses this layer for operators such
-as =:|arg|=, the anaphoric =:--map= family, and the legacy
-=[:map collection var body]= / =:map-join= compatibility forms; the matching
-old Elisp helpers were removed so these binder-based constructs live only in
-syntax space:
-#+begin_src emacs-lisp
-(majutsu-template-defspecial :wrap-angle (body)
-  `[:concat [:str "<"] ,body [:str ">"]])
-
-(majutsu-tpl [:wrap-angle [:str "x"]])
-; => "concat(\"<\", \"x\", \">\")"
-#+end_src
-
-Owner-bound methods can also be defined locally in the DSL. A body-less
-=majutsu-template-defmethod= / =majutsu-template-defkeyword= declaration just
-registers metadata for a native/rendered method, but providing a body turns it
-into a local lowering method:
-#+begin_src emacs-lisp
-(majutsu-template-defkeyword canonical-log-id Commit
-  (:returns Template)
-  [:if [:or [:hidden]
-             [:divergent]]
-       [:commit_id :shortest 8]
-     [:change_id :shortest 8]])
-
-(majutsu-template-compile '[:canonical-log-id] 'Commit)
-; => "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))"
-
-(majutsu-tpl [:method [:raw "p" :Commit] :canonical-log-id])
-; => "if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))"
-#+end_src
-
-Ordinary helpers can still rebind the implicit =self= inside their body using
-=:bind-self=:
-#+begin_src emacs-lisp
-(majutsu-template-defun show-canonical-log-id ((object Commit :optional t))
-  (:returns Template :bind-self object)
-  [:canonical-log-id])
-#+end_src
-
-When the bound parameter is nil, the helper inherits the outer =self= binding.
-
-Majutsu also propagates some core result types through the normalized AST. For
-example, =parents()= is tracked as a list of commits, =lines()= as a list of
-strings, =trailers()= as =(:list Trailer)=, mapped lists use ordinary
-container refs such as =(:list String)=, and list methods such as =first()=
-preserve the element type. There is no separate =ListTemplate= semantic type;
-mapped output is just another list type in the DSL. This is what makes chains
-like =[:method [:raw "self" :Commit] :parents :first :description]=
-type-aware in the DSL.
-
-Builtin metadata is also kept close to current upstream =jj/docs/templates.md=
-for methods such as =files()= / =conflicted_files()=, =normal_target()=,
-=workspace_name()=, =since()=, and =root()=. This now also includes upstream's
-string-like method dispatch for =RefSymbol= values, so chains like
-=[:method [:raw "bookmark" :CommitRef] :name :len]= type-check and lower like
-ordinary string method calls. For helper argument checks, =RefSymbol= is also
-accepted where a concrete =String= is expected, and builtin helpers now carry
-more accurate metadata such as upstream-style conditional handling for =if()=.
-That means the conditional result itself behaves like an =Any= expression and is
-validated at the consumption site for capabilities such as =Template= or
-=Serialize=, rather than being assigned an eager fixed joined type. Majutsu
-also lets method chains on =(:option T)= continue through the contained value
-type, mirroring upstream's option-method behavior.
-
-Reusable lambda bodies can be defined directly as ordinary helpers returning
-native lambda values:
-#+begin_src emacs-lisp
-(majutsu-template-defun description-fn ()
-  (:returns Lambda)
-  [:lambda [c] [:method 'c :description]])
-
-(majutsu-tpl [:description-fn])
-; => "|c| c.description()"
-
-(majutsu-tpl [:method [:raw "refs"] :map [:description-fn]])
-; => "refs.map(|c| c.description())"
-
-(majutsu-template-defun description-with-suffix ((suffix Template))
-  (:returns Lambda)
-  `[:lambda [c] [:concat [:method 'c :description] ,suffix]])
-
-(majutsu-tpl [:method [:raw "refs"] :map [:description-with-suffix [:str "!"]]])
-; => "refs.map(|c| concat(c.description(), \"!\"))"
-#+end_src
-
-** Anonymous Functions
+** Anonymous Functions and Higher-Order Operations
 Anonymous functions are first-class template values:
 #+begin_src emacs-lisp
 (majutsu-tpl [:lambda [c] [:method 'c :description]])
@@ -1086,16 +946,119 @@ Lambda parameters are lexical variables and can act as a deferred implicit
 specialized from a typed call argument or a higher-order container element. In
 those cases =[:description]= becomes equivalent to =[:method 'c :description]=.
 This deferred behavior is limited to lambda parameters; Majutsu no longer uses
-unknown non-lambda receivers as a general bare-keyword fallback. If you need
-the outer template =self= explicitly, write it out as an explicit object in
-=:method= forms.
+unknown non-lambda receivers as a general bare-keyword fallback. If you need an
+outer receiver explicitly inside a nested lambda, use =[:self N]=.
 
-This is a deliberate Majutsu DSL adaptation. In upstream jj template syntax,
-lambda parameters and =self= are distinct names; Majutsu rebinds single-
-argument lambdas to implicit =self= for authoring convenience while still
-lowering to ordinary jj lambda/method forms.
+List-oriented methods can be written in several equivalent styles:
+#+begin_src emacs-lisp
+;; Historical explicit-binder sugar (lowers to a native lambda internally)
+(majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
+; => "self.bookmarks().map(|b| b.name())"
 
-** Type System
+;; Direct jj-style method call with an anonymous lambda
+(majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:method 'c :description]]])
+; => "refs.map(|c| c.description())"
+
+;; Dash-style explicit lambda
+(majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
+; => "refs.map(|c| c.description())"
+
+;; Dash-style anaphoric shorthand
+(majutsu-tpl [:--map [:method 'it :description] [:raw "refs"]])
+; => "refs.map(|it| it.description())"
+
+(majutsu-tpl [:method
+              [:map [:raw "self.parents()"] p [:raw "p.commit_id()"]]
+              :join [:str ", "]])
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
+
+(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
+#+end_src
+
+Prefer direct lambdas and =map + join= composition in new code. The historical
+binder forms such as =[:map collection var body]= and =:map-join= remain as
+compatibility sugar, but they now lower through the same core
+=:method= + =:lambda= path as direct method calls. Similarly, =:-map= remains a
+value-level explicit-lambda helper while the =:--map= family is syntax sugar
+layered on top of the same lambda support.
+
+This is a deliberate Majutsu DSL adaptation. Upstream jj centers the
+higher-order story around expressions such as +=collection.map(|x| body)+;
+Majutsu keeps that core model and layers additional sugar on top of it.
+Reusable lambda bodies can therefore also be defined as ordinary helpers that
+return native lambda values:
+#+begin_src emacs-lisp
+(majutsu-template-defun description-fn ()
+  (:returns Lambda)
+  [:lambda [c] [:method 'c :description]])
+
+(majutsu-tpl [:description-fn])
+; => "|c| c.description()"
+
+(majutsu-tpl [:method [:raw "refs"] :map [:description-fn]])
+; => "refs.map(|c| c.description())"
+
+(majutsu-template-defun description-with-suffix ((suffix Template))
+  (:returns Lambda)
+  `[:lambda [c] [:concat [:method 'c :description] ,suffix]])
+
+(majutsu-tpl [:method [:raw "refs"] :map [:description-with-suffix [:str "!"]]])
+; => "refs.map(|c| concat(c.description(), \"!\"))"
+#+end_src
+
+** Extending the DSL
+Use =majutsu-template-defun= to define reusable template functions:
+#+begin_src emacs-lisp
+(majutsu-template-defun my-helper ((label Template) (value Template :optional t))
+  (:returns Template)
+  `[:concat ,label [:str ": "] ,(or value [:str ""])])
+
+(majutsu-tpl [:my-helper [:str "ID"] [:str "VAL"]])
+; => "concat(\"ID\", \": \", \"VAL\")"
+#+end_src
+
+When a helper omits its body, =majutsu-template-defun= defaults to a simple
+wrapper around the same jj callable name:
+#+begin_src emacs-lisp
+(majutsu-template-defun my-fill ((width Integer) (content Template))
+  (:returns Template))
+
+(majutsu-tpl [:my-fill 8 "x"])
+; => "my-fill(8, \"x\")"
+#+end_src
+
+Syntax-level sugar should be defined separately with
+=majutsu-template-defspecial=, which receives raw forms and lowers them to more
+primitive template syntax:
+#+begin_src emacs-lisp
+(majutsu-template-defspecial :wrap-angle (body)
+  `[:concat [:str "<"] ,body [:str ">"]])
+
+(majutsu-tpl [:wrap-angle [:str "x"]])
+; => "concat(\"<\", \"x\", \">\")"
+#+end_src
+
+Owner-bound methods can also be defined locally in the DSL. A body-less
+=majutsu-template-defmethod= / =majutsu-template-defkeyword= declaration just
+registers metadata for a native/rendered method, but providing a body turns it
+into a local owner-bound lowering:
+#+begin_src emacs-lisp
+(majutsu-template-defkeyword canonical-log-id Commit
+  (:returns Template)
+  [:if [:or [:hidden]
+             [:divergent]]
+       [:commit_id :shortest 8]
+     [:change_id :shortest 8]])
+
+(majutsu-template-compile '[:canonical-log-id] 'Commit)
+; => "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))"
+
+(majutsu-tpl [:method [:raw "p" :Commit] :canonical-log-id])
+; => "if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))"
+#+end_src
+
+** Type System and Upstream Alignment
 The DSL supports Jujutsu's type system: =Any=, =String=, =Boolean=, =Integer=,
 =Template=, =Commit=, =Signature=, =Timestamp=, =List=, =Option=, and more.
 Type annotations can be added to =:raw= nodes:
@@ -1107,11 +1070,32 @@ Without an annotation, =:raw= remains =Unknown=. This keeps the DSL honest:
 raw snippets still compile, but richer type propagation only kicks in once the
 expression is explicitly typed or inferred through later semantic steps.
 
-Majutsu now distinguishes between broad =Any= expression placeholders and the
+Majutsu distinguishes between broad =Any= expression placeholders and the
 narrower printable =Template= capability. Use =Any= for helper parameters that
 merely shuttle expressions around at DSL-expansion time (for example method
 objects, raw snippets, or higher-order bodies). Use =Template= when the helper
-semantically expects content that can actually be rendered/concatenated.
+semantically expects content that can actually be rendered or concatenated.
+
+Majutsu also propagates core result types through the normalized AST. For
+example, =parents()= is tracked as a list of commits, =lines()= as a list of
+strings, =trailers()= as =(:list Trailer)=, mapped lists use ordinary
+container refs such as =(:list String)=, and list methods such as =first()=
+preserve the element type. There is no separate =ListTemplate= semantic type;
+mapped output is just another list type in the DSL.
+
+Builtin metadata is kept close to current upstream =jj/docs/templates.md= for
+methods such as =files()= / =conflicted_files()=, =normal_target()=,
+=workspace_name()=, =since()=, and =root()=. This also includes upstream's
+string-like method dispatch for =RefSymbol= values, so chains like
+=[:method [:raw "bookmark" :CommitRef] :name :len]= type-check and lower like
+ordinary string method calls. For helper argument checks, =RefSymbol= is also
+accepted where a concrete =String= is expected.
+
+Conditional results now follow upstream's =if() -> Any= model. The result of
+=if()= is validated at the consumption site for capabilities such as
+=Template= or =Serialize= instead of being assigned an eager fixed joined type.
+Majutsu also lets method chains on =(:option T)= continue through the contained
+value type, mirroring upstream's option-method behavior.
 
 A few upstream categories are still intentionally simplified in Majutsu's
 checker. Upstream =StringLiteral= parameters are now checked in a first,

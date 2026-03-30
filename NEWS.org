@@ -20,92 +20,43 @@
 
 ** Changed
 
-- The template DSL now supports helper-local ~:bind-self~ in
-  ~majutsu-template-defun~, so helpers can temporarily rebind the implicit
-  ~self~ when expanding nested template bodies. Explicit ~[:self]~ /
-  ~[:self N]~ references can now read the current or outer implicit
-  receiver binding without falling back to hard-coded raw ~"self"~ snippets.
-  Helper definitions were also simplified: ~majutsu-template-defun~ no longer
-  carries a separate ~:flavor~ option, body-less helpers now default to direct
-  wrappers for same-name jj callables, body-less owner-bound
+- Rework the template DSL around explicit and bindable receivers.
+  ~majutsu-template-defun~ can now temporarily rebind implicit ~self~ with
+  ~:bind-self~, explicit ~[:self]~ / ~[:self N]~ forms can refer to the
+  current or outer receiver, and top-level implicit ~self~ bindings are now
+  installed only at public compile entry points. The extension API was also
+  simplified: body-less ~majutsu-template-defun~ forms now default to direct
+  wrappers for same-name jj callables, while body-less owner-bound
   ~majutsu-template-defmethod~ / ~majutsu-template-defkeyword~ declarations
-  remain metadata-only, and bodyful owner-bound declarations now lower through
-  their local DSL body instead of rendering a literal ~.name(...)~ segment.
+  remain metadata-only and bodyful ones lower through their local DSL body.
+  Local log helpers such as ~canonical-log-id~, ~short-change-id~, and
+  ~short-change-id-with-offset~ now use that owner-bound lowering model.
 - Add first-class anonymous functions via ~[:lambda [arg] body]~ and concise
   ~[:|arg| body]~ sugar, compile-time lambda application via ~[:call ...]~ /
-  ~[[:lambda...] arg]~, plus Dash-style explicit-lambda helpers such as ~:-map~
-  and syntax sugar such as ~:--map~. Lambda parameters now also act as the
-  current implicit ~self~ for bare keyword dispatch inside lambda bodies.
-- Add ~majutsu-template-defspecial~ for syntax-level lowering, so operators
-  such as ~:|arg|~, ~:--map~, and the legacy ~:map~ / ~:filter~ / ~:any~ /
-  ~:all~ / ~:map-join~ surface forms can expand through a dedicated
-  special-form layer instead of living as ad-hoc branches in the main helper
-  dispatcher.
-- Tighten unknown bare-keyword dispatch without breaking deferred lambda
-  specialization: ordinary untyped receivers no longer guess a method call,
-  but lambda parameters may still carry deferred bare keywords that are later
-  specialized from typed call arguments or higher-order container metadata.
-- Start a core semantic typing pass in the DSL: helper arguments now receive
-  basic runtime type validation, builtin/helper method chains propagate result
-  types onto AST nodes, and container-aware return typing now preserves element
-  types for key methods such as ~parents()~, ~lines()~, ~first()~, and higher-
-  order list operations. Mapped list results are now represented as ordinary
-  container refs like ~(:list String)~ / ~(:list Template)~ instead of a
-  dedicated ~ListTemplate~ pseudo-type. Internal higher-order behavior is now
-  metadata-driven (~:specialize~, ~:returns-via~), and Majutsu now separates
-  broad =Any= expression placeholders from the narrower printable =Template=
-  capability instead of treating =Template= as a universal top type. Untyped
-  ~:raw~ snippets now default to =Unknown= rather than =Template=, so explicit
-  annotations more directly control semantic propagation.
-- Sync more builtin template metadata with current upstream
-  =jj/docs/templates.md=: commit file listings now type as ~TreeEntry~ lists,
-  ref targets carry specific ~Commit~ / ~RefSymbol~ option/list types,
-  operations expose ~workspace_name()~, timestamps expose ~since()~,
-  workspaces expose ~root()~, common global helpers such as ~fill()~,
-  ~hash()~, ~stringify()~, ~config()~, and ~git_web_url()~ now carry more
-  precise argument/return signatures, and option-typed receivers can keep
-  chaining methods through their contained value types.
-- Normalize trailer lists to ordinary parametric containers:
-  ~trailers()~ is now typed as ~(:list Trailer)~ instead of a dedicated
-  ~List-Trailer~ pseudo-type, while specialized methods such as
-  ~contains_key()~ dispatch on the richer container type.
-- Start a first literal-aware pass for upstream-style ~StringLiteral~
-  parameters: methods such as ~contained_in()~, ~diff()~, ~files()~,
-  ~format()~, and ~before()/after()~ now reject obvious non-literal string
-  expressions even though Majutsu does not yet perform full parse-time literal
-  tracking.
-- Prefer native lambda-returning helpers over dedicated dash lambda-body
-  flavors; reusable higher-order behavior can now be expressed directly with
-  ordinary ~majutsu-template-defun~ forms that return ~Lambda~ values.
-- Re-center higher-order implementation around native ~[:lambda ...]~ forms:
-  the historical ~[:map collection var body]~ sugar now lowers through the
-  same lambda path as direct method calls and Dash-style helpers.
-- Remove the old value-level Elisp helpers ~majutsu-template-map~,
-  ~majutsu-template-filter~, ~majutsu-template-any~,
-  ~majutsu-template-all~, and ~majutsu-template-map-join~. Their
-  binder-based counterparts now live only as syntax-level compatibility sugar
-  that lowers directly to core ~:method~ + ~:lambda~ forms.
-- Treat upstream ~RefSymbol~ values as string-like for method dispatch, so
-  methods such as ~len()~, ~lines()~, and ~contains()~ are available on
-  ref names and on ~Option<RefSymbol>~ chains. For helper argument checks,
-  ~RefSymbol~ now also converts to ~String~ where upstream treats it as a
-  string-like value.
-- Tighten several builtin helper signatures/results to match upstream more
-  closely: ~if()~ now follows upstream's conditional ~Any~ model instead of
-  trying to infer a fixed joined result type, ~if()~ conditions are checked as
-  ~Boolean~, while ~label()~ and ~git_web_url()~ accept ~Stringify~ inputs,
-  and the helper metadata for ~str()~, ~raw()~, ~call()~, and ~method()~ now
-  better reflects the kinds of values they actually produce.
-- Install default top-level implicit ~self~ bindings only at public compile
-  entry points. Bare keyword dispatch still works for normal template
-  compilation, ~:bind-self~, and lambda specialization, but internal rewrite
-  passes no longer fabricate an ambient default ~self~.
-- ~canonical-log-id~, ~short-change-id~, and
-  ~short-change-id-with-offset~ now live as local Commit-bound keyword
-  lowerings, and log parent id templates continue to prefer explicit
-  ~map + join~ composition over a dedicated implementation path.
-- ~:map-join~ remains available as compatibility sugar, but it now expands to
-  ~[:method [:map ...] :join ...]~ instead of using a separate renderer.
+  ~[[:lambda ...] arg]~, and a dedicated ~majutsu-template-defspecial~ layer
+  for syntax-level lowering. Historical higher-order surface forms such as
+  ~:map~, ~:filter~, ~:any~, ~:all~, ~:map-join~, and the anaphoric ~:--map~ family now
+  lower through the same core lambda/method forms instead of relying on
+  separate helper implementations.
+- Start a semantic typing pass in the DSL. Helper arguments now receive basic
+  type validation, method chains propagate result types, list operations keep
+  track of their element types, and deferred lambda specialization remains
+  available without restoring general unknown-self fallback. Untyped ~:raw~
+  snippets now default to =Unknown=, broad expression placeholders use =Any=,
+  printable content uses =Template=, and mapped list results are represented
+  as ordinary refs like ~(:list String)~ instead of pseudo-types such as
+  ~ListTemplate~.
+- Align more builtin metadata and conversions with upstream =jj=. Option/list
+  receivers keep chaining through their contained types, ~RefSymbol~ behaves
+  like a string for both method dispatch and helper argument checks, literal-
+  only parameters such as ~contained_in()~ now receive a first literal-aware
+  validation pass, and ~if()~ now follows upstream's conditional-~Any~ model
+  with consumption-site validation instead of eager joined result typing.
+- Tighten builtin helper and operator typing to better match upstream.
+  Helpers such as ~fill()~, ~hash()~, ~stringify()~, ~config()~,
+  ~git_web_url()~, ~label()~, ~str()~, ~raw()~, ~call()~, and ~method()~ now
+  carry more precise argument/return metadata, and operator checks no longer
+  pretend that arbitrary template values are valid integer or boolean inputs.
 - Remove ~majutsu-find-file-at-point~. Use ~majutsu-find-file~ instead; it
   still defaults revset/path from the current context.
 - Remove the dedicated ~v~ binding from diff file sections, following Magit's
