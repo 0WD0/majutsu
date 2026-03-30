@@ -215,6 +215,17 @@
   (mt--is (majutsu-tpl [:test-special-wrap [:str "x"]])
           "concat(\"<\", \"x\", \">\")"))
 
+(ert-deftest test-majutsu-template-legacy-higher-order-forms-are-syntax-only ()
+  (should-not (majutsu-template--lookup-function-meta 'map))
+  (should-not (majutsu-template--lookup-function-meta 'filter))
+  (should-not (majutsu-template--lookup-function-meta 'any))
+  (should-not (majutsu-template--lookup-function-meta 'all))
+  (should-not (majutsu-template--lookup-function-meta 'map-join))
+  (mt--is (majutsu-tpl [:map [:raw "xs"] item [:raw "item.value()"]])
+          "xs.map(|item| item.value())")
+  (mt--is (majutsu-tpl [:map-join [:str ", "] [:raw "xs"] item [:raw "item.value()"]])
+          "xs.map(|item| item.value()).join(\", \")"))
+
 (ert-deftest test-majutsu-template-dash-map-syntax ()
   (should-not (majutsu-template--lookup-function-meta '--map))
   (mt--is (majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
@@ -350,10 +361,8 @@
 (ert-deftest test-majutsu-template-map-sugar-lowers-to-native-lambda ()
   (mt--is (majutsu-tpl [:map [:raw "xs"] item [:raw "item.value()"]])
           "xs.map(|item| item.value())")
-  (let ((node (majutsu-template-map [:raw "xs"] 'item [:raw "item.value()"])))
-    (should (majutsu-template-node-p node))
-    (should (equal (majutsu-template-compile node)
-                   "xs.map(|item| item.value())")))
+  (should (equal (majutsu-template-compile '[:map [:raw "xs"] item [:raw "item.value()"]])
+                 (majutsu-template-compile '[:method [:raw "xs"] :map [:lambda [item] [:raw "item.value()"]]])))
   (mt--is (majutsu-tpl [:filter [:raw "xs"] item [:raw "item.present()"]])
           "xs.filter(|item| item.present())"))
 
@@ -505,6 +514,73 @@
   (let ((node (majutsu-template--rewrite '[:call 'json [:raw "self.commit_id()" :CommitId]])))
     (should (eq (majutsu-template-node-type node) 'String))))
 
+(ert-deftest test-majutsu-template-element-lambda-specialization ()
+  ;; Use non-Commit element types so these would fail if bare keywords inside
+  ;; lambdas accidentally fell back to the global default Commit self.
+  (let* ((lambda-node (majutsu-template--rewrite '[:|op| [:id]]))
+         (specialized (car (majutsu-template--check-method-segment-args
+                            '(:list Operation) "map" (list lambda-node)))))
+    (should (equal (majutsu-template-node-type specialized)
+                   '(:lambda (Operation) OperationId)))
+    (should (equal (majutsu-template-compile specialized)
+                   "|op| op.id()")))
+  (let* ((lambda-node (majutsu-template--rewrite '[:|op| [:current_operation]]))
+         (specialized (car (majutsu-template--check-method-segment-args
+                            '(:list Operation) "any" (list lambda-node)))))
+    (should (equal (majutsu-template-node-type specialized)
+                   '(:lambda (Operation) Boolean)))
+    (should (equal (majutsu-template-compile specialized)
+                   "|op| op.current_operation()")))
+  (let* ((lambda-node (majutsu-template--rewrite '[:|line| [:len]]))
+         (specialized (car (majutsu-template--check-method-segment-args
+                            '(:list String) "map" (list lambda-node)))))
+    (should (equal (majutsu-template-node-type specialized)
+                   '(:lambda (String) Integer)))
+    (should (equal (majutsu-template-compile specialized)
+                   "|line| line.len()"))))
+
+(ert-deftest test-majutsu-template-higher-order-element-typing ()
+  ;; Again prefer non-Commit receivers/methods so a hidden default Commit self
+  ;; cannot accidentally make these pass.
+  (let ((node (majutsu-template--rewrite '[:map [:method [:raw "op" :Operation] :parents]
+                                           parent
+                                           [:id]])))
+    (should (equal (majutsu-template-node-type node) '(:list OperationId)))
+    (should (equal (majutsu-template-compile node)
+                   "op.parents().map(|parent| parent.id())")))
+  (let ((node (majutsu-template--rewrite '[:filter [:method [:raw "op" :Operation] :parents]
+                                           parent
+                                           [:current_operation]])))
+    (should (equal (majutsu-template-node-type node) '(:list Operation)))
+    (should (equal (majutsu-template-compile node)
+                   "op.parents().filter(|parent| parent.current_operation())")))
+  (let ((node (majutsu-template--rewrite '[:any [:method [:raw "op" :Operation] :parents]
+                                           parent
+                                           [:current_operation]])))
+    (should (eq (majutsu-template-node-type node) 'Boolean))
+    (should (equal (majutsu-template-compile node)
+                   "op.parents().any(|parent| parent.current_operation())")))
+  (let ((node (majutsu-template--rewrite '[:all [:method [:raw "op" :Operation] :parents]
+                                           parent
+                                           [:current_operation]])))
+    (should (eq (majutsu-template-node-type node) 'Boolean))
+    (should (equal (majutsu-template-compile node)
+                   "op.parents().all(|parent| parent.current_operation())")))
+  (let ((node (majutsu-template--rewrite '[:method [:raw "op" :Operation]
+                                           :parents
+                                           :filter [:|parent| [:current_operation]]
+                                           :first
+                                           :id])))
+    (should (eq (majutsu-template-node-type node) 'OperationId))
+    (should (equal (majutsu-template-compile node)
+                   "op.parents().filter(|parent| parent.current_operation()).first().id()")))
+  (let ((node (majutsu-template--rewrite '[:method [:raw "text" :String]
+                                           :lines
+                                           :map [:|line| [:len]]])))
+    (should (equal (majutsu-template-node-type node) '(:list Integer)))
+    (should (equal (majutsu-template-compile node)
+                   "text.lines().map(|line| line.len())"))))
+
 (ert-deftest test-majutsu-template-builtin-method-registry ()
   ;; Keyword method: Commit.description()
   (let* ((meta (majutsu-template--lookup-method 'Commit "description"))
@@ -628,14 +704,18 @@
     (should (equal (majutsu-template-compile node)
                    "label(\"status\", \"ok\")"))))
 
-(ert-deftest test-majutsu-template-map-join-helper ()
-  (let ((node (majutsu-template-map-join [:str ", "]
-                                         [:raw "self.parents()"]
-                                         'p
-                                         [:raw "p.commit_id()"])))
-    (should (majutsu-template-node-p node))
-    (should (equal (majutsu-template-compile node)
-                   "self.parents().map(|p| p.commit_id()).join(\", \")"))))
+(ert-deftest test-majutsu-template-map-join-sugar-lowers-to-map-then-join ()
+  (should (equal (majutsu-template-compile '[:map-join [:str ", "]
+                                             [:raw "self.parents()"]
+                                             p
+                                             [:raw "p.commit_id()"]])
+                 (majutsu-template-compile '[:method [:map [:raw "self.parents()"]
+                                                           p
+                                                           [:raw "p.commit_id()"]]
+                                             :join
+                                             [:str ", "]])))
+  (mt--is (majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+          "self.parents().map(|p| p.commit_id()).join(\", \")"))
 
 (ert-deftest test-majutsu-template-self-keyword-basic ()
   (mt--is (majutsu-tpl [:description] 'Commit)
@@ -653,8 +733,16 @@
   (mt--is (majutsu-tpl [:test-commit-optflag] 'Commit)
           "self.test-commit-optflag()"))
 
+(ert-deftest test-majutsu-template-root-self-binding-installed-at-compile-entry ()
+  (let ((majutsu-template-default-self-type 'Commit)
+        (majutsu-template--self-stack nil))
+    (mt--is (majutsu-template-compile '[:description])
+            "self.description()")
+    (should-error (majutsu-template--rewrite '[:description])
+                  :type 'error)))
+
 (ert-deftest test-majutsu-template-with-self-binding ()
-  (let ((majutsu-template-default-self-type nil)
+  (let ((majutsu-template-default-self-type 'Commit)
         (majutsu-template--self-stack
          (list (majutsu-template--make-self-binding
                 :node (majutsu-template-raw "op" 'Operation)

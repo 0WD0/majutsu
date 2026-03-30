@@ -66,6 +66,15 @@
 - Re-center higher-order implementation around native ~[:lambda ...]~ forms:
   the historical ~[:map collection var body]~ sugar now lowers through the
   same lambda path as direct method calls and Dash-style helpers.
+- Remove the old value-level Elisp helpers ~majutsu-template-map~,
+  ~majutsu-template-filter~, ~majutsu-template-any~,
+  ~majutsu-template-all~, and ~majutsu-template-map-join~. Their
+  binder-based counterparts now live only as syntax-level compatibility sugar
+  that lowers directly to core ~:method~ + ~:lambda~ forms.
+- Install default top-level implicit ~self~ bindings only at public compile
+  entry points. Bare keyword dispatch still works for normal template
+  compilation, ~:bind-self~, and lambda specialization, but internal rewrite
+  passes no longer fabricate an ambient default ~self~.
 - ~canonical-log-id~ now uses ~:bind-self~, and log parent id templates now
   prefer explicit ~map + join~ composition over a dedicated implementation
   path.

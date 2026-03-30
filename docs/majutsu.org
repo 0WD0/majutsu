@@ -855,7 +855,9 @@ Use =:method= to call methods on objects. Methods can be chained:
 #+end_src
 
 *** Self-Type Context
-When a self-type is provided, bare keywords become method calls on =self=:
+At public compile entry points, when a self-type is provided (or the default
+self type is configured), Majutsu installs a root =self= binding and bare
+keywords become method calls on =self=:
 #+begin_src emacs-lisp
 (majutsu-tpl [:description] 'Commit)      ; => "self.description()"
 (majutsu-tpl [:parents :len] 'Commit)     ; => "self.parents().len()"
@@ -893,9 +895,10 @@ List methods can be written in three equivalent styles:
 Prefer direct lambdas and =map + join= composition in new code; =:map= and
 =:map-join= remain available as compatibility sugar. The historical
 =[:map collection var body]= form now lowers to =[:method collection :map
-[:lambda [var] body]]=, =:-map= remains the value-level explicit-lambda helper,
-and the =:--map= family is syntax sugar layered on top of the same native
-lambda support.
+[:lambda [var] body]]=, these binder-style forms are now syntax-only
+compatibility sugar rather than value-level Elisp helpers, =:-map= remains the
+value-level explicit-lambda helper, and the =:--map= family is syntax sugar
+layered on top of the same native lambda support.
 
 Upstream jj itself centers the higher-order story around expressions such as
 +=collection.map(|x| body)+. The =:--map= family is therefore a Majutsu DSL
@@ -946,7 +949,9 @@ Syntax-level sugar can be defined separately using
 +=majutsu-template-defspecial=, which receives raw forms and lowers them to
 more primitive template syntax. Majutsu now uses this layer for operators such
 as =:|arg|=, the anaphoric =:--map= family, and the legacy
-+=[:map collection var body]= / =:map-join= compatibility forms:
++=[:map collection var body]= / =:map-join= compatibility forms; the matching
+old Elisp helpers were removed so these binder-based constructs live only in
+syntax space:
 #+begin_src emacs-lisp
 (majutsu-template-defspecial :wrap-angle (body)
   `[:concat [:str "<"] ,body [:str ">"]])

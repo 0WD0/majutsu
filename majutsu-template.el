@@ -35,24 +35,35 @@
   type)
 
 (defcustom majutsu-template-default-self-type 'Commit
-  "Default template type assumed for implicit `self' keywords.
-Set to nil to disable keyword rewriting unless explicitly bound."
+  "Default top-level template type assumed for implicit `self' keywords.
+This is only installed as a root self binding at public compile entry points.
+Set it to nil to disable top-level keyword rewriting unless explicitly bound."
   :type '(choice (const :tag "None" nil) symbol)
   :group 'majutsu-template)
 
 (defvar majutsu-template--self-stack nil
   "Dynamic stack describing the current implicit `self' binding.")
 
-(defun majutsu-template--default-self-binding ()
-  "Return default `self' binding."
-  (majutsu-template--make-self-binding
-   :node (majutsu-template--raw-node "self" majutsu-template-default-self-type)
-   :type majutsu-template-default-self-type))
-
 (defun majutsu-template--current-self ()
-  "Return the current implicit `self' binding."
-  (or (car majutsu-template--self-stack)
-      (majutsu-template--default-self-binding)))
+  "Return the current implicit `self' binding, or nil when none exists."
+  (car majutsu-template--self-stack))
+
+(defun majutsu-template--root-self-type (&optional explicit-type)
+  "Return root self type to install for EXPLICIT-TYPE, or nil.
+A synthetic root binding is only created when no more local self binding is
+currently active."
+  (when (null majutsu-template--self-stack)
+    (when-let* ((type (or explicit-type majutsu-template-default-self-type)))
+      (majutsu-template--normalize-type-symbol type))))
+
+(defun majutsu-template--call-with-root-self-binding (explicit-type thunk)
+  "Call THUNK with a synthetic root self binding when EXPLICIT-TYPE requires it."
+  (if-let* ((type (majutsu-template--root-self-type explicit-type)))
+      (majutsu-template--call-with-self-binding
+       (majutsu-template--raw-node "self" type)
+       type
+       thunk)
+    (funcall thunk)))
 
 (defun majutsu-template--call-with-self-binding (node type thunk)
   "Call THUNK with NODE/TYPE temporarily bound as current `self'.
@@ -1880,41 +1891,10 @@ Further passes (type-checking, rendering) operate on these nodes."
               (majutsu-template--make-arg :name 'type :type 'Any :optional t))
   :returns 'Template :doc "Raw literal helper." :flavor :custom))
 
-(majutsu-template-defun map-join ((separator Template)
-                                  (collection Any)
-                                  (var Any)
-                                  (body Any))
-  (:returns Template :doc "Convenience sugar for map(...).join(...).")
-  `[:method [:map ,collection ,var ,body] :join ,separator])
-
 (defun majutsu-template--higher-order-form (method collection var body)
   "Return COLLECTION.METHOD(|VAR| BODY) as a template form."
   (let ((var-name (intern (majutsu-template--node->identifier var method))))
     `[:method ,collection ,(intern (concat ":" method)) [:lambda [,var-name] ,body]]))
-
-(majutsu-template-defun map ((collection Any)
-                             (var Any)
-                             (body Any))
-  (:returns (:list Template) :doc "map(|var| ...) operator." :flavor :custom)
-  (majutsu-template--higher-order-form "map" collection var body))
-
-(majutsu-template-defun filter ((collection Any)
-                                (var Any)
-                                (body Any))
-  (:returns List :doc "filter(|var| ...) operator." :flavor :custom)
-  (majutsu-template--higher-order-form "filter" collection var body))
-
-(majutsu-template-defun any ((collection Any)
-                             (var Any)
-                             (body Any))
-  (:returns Boolean :doc "any(|var| ...) operator." :flavor :custom)
-  (majutsu-template--higher-order-form "any" collection var body))
-
-(majutsu-template-defun all ((collection Any)
-                             (var Any)
-                             (body Any))
-  (:returns Boolean :doc "all(|var| ...) operator." :flavor :custom)
-  (majutsu-template--higher-order-form "all" collection var body))
 
 (majutsu-template-defun -map ((function Lambda)
                               (collection Any))
@@ -1923,7 +1903,7 @@ Further passes (type-checking, rendering) operate on these nodes."
 
 (majutsu-template-defun -filter ((function Lambda)
                                  (collection Any))
-  (:returns List :doc "Dash-style filter taking an explicit lambda." :flavor :custom)
+  (:returns (:list Template) :doc "Dash-style filter taking an explicit lambda." :flavor :custom)
   `[:method ,collection :filter ,function])
 
 (majutsu-template-defun -any ((function Lambda)
@@ -2241,9 +2221,16 @@ CONTEXT is used in error messages."
 ;;;###autoload
 (defun majutsu-template-compile (form &optional self-type)
   "Public entry point: compile FORM into a jj template string.
-Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
-  (let ((majutsu-template-default-self-type (or self-type majutsu-template-default-self-type)))
-    (majutsu-template--render-node (majutsu-template--rewrite form))))
+Optional SELF-TYPE overrides `majutsu-template-default-self-type' for the root
+implicit self context installed during this compilation."
+  (let* ((effective-default (or self-type majutsu-template-default-self-type))
+         (majutsu-template-default-self-type
+          (and effective-default
+               (majutsu-template--normalize-type-symbol effective-default))))
+    (majutsu-template--call-with-root-self-binding
+     nil
+     (lambda ()
+       (majutsu-template--render-node (majutsu-template--rewrite form))))))
 (defun majutsu-template--sugar-transform (form)
   "Transform compact FORM into the template AST."
   (cond
@@ -2286,30 +2273,31 @@ Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
 
 (defun majutsu-template--maybe-self-dispatch (op args)
   "Return method node if OP is a self keyword applicable in current context."
-  (let* ((self-binding (majutsu-template--current-self))
-         (owner (majutsu-template--self-binding-type self-binding))
-         (object (majutsu-template--self-binding-node self-binding)))
-    (when (and object (or (symbolp op) (stringp op)))
-      (let* ((name (if (symbolp op)
-                       (majutsu-template--symbol->template-name op)
-                     op))
-             (meta (and owner
-                        (majutsu-template--lookup-method-for-type owner name)))
-             (normalized-args (mapcar #'majutsu-template--rewrite args)))
-        (cond
-         ((and meta (not (majutsu-template--fn-keyword meta)))
-          nil)
-         ((and meta
-               normalized-args
-               (not (majutsu-template--method-name-node-p (car normalized-args))))
-          (user-error "majutsu-template: keyword %s on %S does not accept arguments"
-                      name owner))
-         (meta
-          (let ((name-node (majutsu-template--rewrite op)))
-            (apply #'majutsu-template-method object name-node normalized-args)))
-         ((and (null owner) (keywordp op))
-          (let ((name-node (majutsu-template--rewrite op)))
-            (apply #'majutsu-template-method object name-node normalized-args))))))))
+  (let ((self-binding (majutsu-template--current-self)))
+    (when (and self-binding (or (symbolp op) (stringp op)))
+      (let* ((object (majutsu-template--self-binding-node self-binding))
+             (owner (majutsu-template--self-binding-type self-binding)))
+        (when object
+          (let* ((name (if (symbolp op)
+                           (majutsu-template--symbol->template-name op)
+                         op))
+                 (meta (and owner
+                            (majutsu-template--lookup-method-for-type owner name)))
+                 (normalized-args (mapcar #'majutsu-template--rewrite args)))
+            (cond
+             ((and meta (not (majutsu-template--fn-keyword meta)))
+              nil)
+             ((and meta
+                   normalized-args
+                   (not (majutsu-template--method-name-node-p (car normalized-args))))
+              (user-error "majutsu-template: keyword %s on %S does not accept arguments"
+                          name owner))
+             (meta
+              (let ((name-node (majutsu-template--rewrite op)))
+                (apply #'majutsu-template-method object name-node normalized-args)))
+             ((and (null owner) (keywordp op))
+              (let ((name-node (majutsu-template--rewrite op)))
+                (apply #'majutsu-template-method object name-node normalized-args))))))))))
 
 (defun majutsu-template--sugar-apply (op args)
   "Dispatch helper applying OP to ARGS within sugar transformation."
@@ -2340,7 +2328,10 @@ dynamic bindings of `majutsu-template-default-self-type'."
    ((and (vectorp form) (or (keywordp self-type) (and (consp self-type) (eq (car self-type) 'quote))))
     (let ((majutsu-template-default-self-type (majutsu-template--normalize-type-symbol (eval self-type)))
           (majutsu-template--allow-eval t))
-      (let ((node (majutsu-template--rewrite form)))
+      (let ((node (majutsu-template--call-with-root-self-binding
+                   nil
+                   (lambda ()
+                     (majutsu-template--rewrite form)))))
         `(majutsu-template-compile ',node))))
    ((vectorp form)
     `(let ((majutsu-template--allow-eval t))
