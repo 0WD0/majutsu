@@ -855,20 +855,40 @@ When a self-type is provided, bare keywords become method calls on =self=:
 #+end_src
 
 ** List Operations
-List methods (=map=, =filter=, =any=, =all=) use a special syntax with a binding variable:
+List methods can be written in three equivalent styles:
+
 #+begin_src emacs-lisp
+;; Historical explicit-binder sugar (lowers to a native lambda internally)
 (majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
 ; => "self.bookmarks().map(|b| b.name())"
 
-(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+;; Direct jj-style method call with an anonymous lambda
+(majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:method 'c :description]]])
+; => "refs.map(|c| c.description())"
+
+;; Dash-style explicit lambda
+(majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
+; => "refs.map(|c| c.description())"
+
+;; Dash-style anaphoric shorthand
+(majutsu-tpl [:--map [:method 'it :description] [:raw "refs"]])
+; => "refs.map(|it| it.description())"
+
+(majutsu-tpl [:method
+              [:map [:raw "self.parents()"] p [:raw "p.commit_id()"]]
+              :join [:str ", "]])
 ; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 
-(majutsu-tpl [:filter [:raw "parents"] c [:raw "c.mine()"]])
-; => "parents.filter(|c| c.mine())"
-
-(majutsu-tpl [:any [:raw "parents"] c [:raw "c.conflict()"]])
-; => "parents.any(|c| c.conflict())"
+(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 #+end_src
+
+Prefer direct lambdas and =map + join= composition in new code; =:map= and
+=:map-join= remain available as compatibility sugar. The historical
+=[:map collection var body]= form now lowers to =[:method collection :map
+[:lambda [var] body]]=, and public Dash-style helpers such as =:-map= and
+=:--map= are ordinary convenience helpers layered on top of the same native
+lambda support.
 
 ** Operators
 Arithmetic and logical operators are supported:
@@ -909,6 +929,68 @@ Use =majutsu-template-defun= to define reusable template functions:
 (majutsu-tpl [:my-helper [:str "ID"] [:str "VAL"]])
 ; => "concat(\"ID\", \": \", \"VAL\")"
 #+end_src
+
+Helpers can also rebind the implicit =self= inside their body using
+=:bind-self=:
+#+begin_src emacs-lisp
+(majutsu-template-defun canonical-log-id ((object Commit :optional t))
+  (:returns Template :bind-self object)
+  [:if [:or [:hidden]
+             [:divergent]]
+       [:commit_id :shortest 8]
+     [:change_id :shortest 8]])
+
+(majutsu-template-compile '[:canonical-log-id] 'Commit)
+; => "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))"
+
+(majutsu-tpl [:canonical-log-id [:raw "p" :Commit]])
+; => "if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))"
+#+end_src
+
+When the bound parameter is nil, the helper inherits the outer =self= binding.
+
+Reusable lambda bodies can be defined directly as ordinary helpers returning
+native lambda values:
+#+begin_src emacs-lisp
+(majutsu-template-defun description-fn ()
+  (:returns Lambda)
+  [:lambda [c] [:method 'c :description]])
+
+(majutsu-tpl [:description-fn])
+; => "|c| c.description()"
+
+(majutsu-tpl [:method [:raw "refs"] :map [:description-fn]])
+; => "refs.map(|c| c.description())"
+
+(majutsu-template-defun description-with-suffix ((suffix Template))
+  (:returns Lambda)
+  `[:lambda [c] [:concat [:method 'c :description] ,suffix]])
+
+(majutsu-tpl [:method [:raw "refs"] :map [:description-with-suffix [:str "!"]]])
+; => "refs.map(|c| concat(c.description(), \"!\"))"
+#+end_src
+
+** Anonymous Functions
+Anonymous functions are first-class template values:
+#+begin_src emacs-lisp
+(majutsu-tpl [:lambda [c] [:method 'c :description]])
+; => "|c| c.description()"
+
+(majutsu-tpl [:|c| [:method 'c :description]])
+; => "|c| c.description()"
+
+(majutsu-tpl [:call [:|c| [:method 'c :description]] [:raw "item"]])
+; => "item.description()"
+
+(majutsu-tpl [[:lambda [c] [:method 'c :description]] [:raw "item"]])
+; => "item.description()"
+#+end_src
+
+The shorthand =[:|c| BODY]= is equivalent to =[:lambda [c] BODY]=.
+
+Lambda parameters are lexical variables, not a rebinding of =self=. Inside the
+body, bare keywords such as =[:description]= still refer to the outer =self=
+unless a helper explicitly uses =:bind-self=.
 
 ** Type System
 The DSL supports Jujutsu's type system: =String=, =Boolean=, =Integer=, =Template=, =Commit=, =Signature=, =Timestamp=, =List=, =Option=, and more. Type annotations can be added to =:raw= nodes:

@@ -36,10 +36,13 @@
                                                 (rest Template :rest t))
     (:returns Template :doc "Auto-generated builtin wrapper for tests." :flavor :builtin))
 
-  (majutsu-template-defun test-map-wrapper ((collection Template)
-                                            (var Template)
-                                            (body Template))
-    (:returns Template :doc "Auto-generated map-like wrapper for tests." :flavor :map-like))
+  (majutsu-template-defun test-lambda-helper ()
+    (:returns Lambda :doc "Reusable helper returning a native lambda.")
+    [:lambda [c] [:method 'c :description]])
+
+  (majutsu-template-defun test-lambda-helper-extra ((suffix Template))
+    (:returns Lambda :doc "Native lambda helper capturing outer arguments.")
+    `[:lambda [c] [:concat [:method 'c :description] ,suffix]])
 
   (majutsu-template-defkeyword test-commitref-keyword CommitRef
     (:returns Template :doc "Synthetic CommitRef keyword for tests.")
@@ -60,6 +63,21 @@
   (majutsu-template-defmethod test-commit-optflag Commit ()
     (:returns Template :keyword t :doc "Opt-in keyword Commit method for tests.")
     `[:raw "commit_optflag"])
+
+  (majutsu-template-defun test-bind-self ((object Commit :optional t))
+    (:returns Template :doc "Helper using :bind-self for Commit objects." :bind-self object)
+    [:if [:hidden]
+        [:commit_id :shortest 8]
+      [:change_id :shortest 8]])
+
+  (majutsu-template-defun test-bind-self-inner ((object Commit :optional t))
+    (:returns Template :doc "Nested helper using :bind-self." :bind-self object)
+    [:description])
+
+  (majutsu-template-defun test-bind-self-outer ((outer Commit)
+                                                (inner Commit))
+    (:returns Template :doc "Outer helper that restores nested :bind-self state." :bind-self outer)
+    `[:concat [:description] " -> " [:test-bind-self-inner ,inner] " -> " [:description]])
   )
 
 (ert-deftest test-majutsu-template-compile-basic ()
@@ -132,6 +150,47 @@
           "json(\"ok\")")
   (mt--is (majutsu-tpl [:call (if nil 'json 'coalesce) [:str ""] [:str "x"]])
           "coalesce(\"\", \"x\")"))
+
+(ert-deftest test-majutsu-template-compile-lambda ()
+  (mt--is (majutsu-tpl [:lambda [c] [:method 'c :description]])
+          "|c| c.description()")
+  (mt--is (majutsu-tpl [:|c| [:method 'c :description]])
+          "|c| c.description()")
+  (mt--is (majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:method 'c :description]]])
+          "refs.map(|c| c.description())")
+  (mt--is (majutsu-tpl [:method [:raw "refs"] :map [:|c| [:method 'c :description]]])
+          "refs.map(|c| c.description())")
+  (mt--is (majutsu-tpl [:lambda [c] c])
+          "|c| c"))
+
+(ert-deftest test-majutsu-template-call-lambda ()
+  (mt--is (majutsu-tpl [:call [:lambda [c] [:method 'c :description]] [:raw "item"]])
+          "item.description()")
+  (mt--is (majutsu-tpl [:call [:|c| [:method 'c :description]] [:raw "item"]])
+          "item.description()")
+  (mt--is (majutsu-tpl [[:lambda [c] [:method 'c :description]] [:raw "item"]])
+          "item.description()")
+  (mt--is (majutsu-tpl [[:|c| [:method 'c :description]] [:raw "item"]])
+          "item.description()")
+  (mt--is (majutsu-tpl [:call [:lambda [c] [[:lambda [c] c] [:raw "inner"]]] [:raw "outer"]])
+          "inner"))
+
+(ert-deftest test-majutsu-template-dash-map-syntax ()
+  (mt--is (majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
+          "refs.map(|c| c.description())")
+  (mt--is (majutsu-tpl [:--map [:method 'it :description] [:raw "refs"]])
+          "refs.map(|it| it.description())")
+  (mt--is (majutsu-template-compile '[:--map [:description] [:raw "refs"]] 'Commit)
+          "refs.map(|it| self.description())")
+  (mt--is (majutsu-tpl [:--all-p [:method 'it :present] [:raw "refs"]])
+          "refs.all(|it| it.present())"))
+
+(ert-deftest test-majutsu-template-lambda-invalid-syntax ()
+  (should-error (majutsu-template-compile '[:lambda [a b] a]) :type 'error)
+  (should-error (majutsu-template-compile '[:|c|]) :type 'error)
+  (should-error (majutsu-template-compile '[:|c| a b]) :type 'error)
+  (should-error (majutsu-template-compile '[:-map [:raw "not_a_lambda"] [:raw "refs"]])
+                :type 'error))
 
 (ert-deftest test-majutsu-template-compile-operators ()
   (mt--is (majutsu-tpl [:+ 1 2])
@@ -212,6 +271,32 @@
   (should (string= (majutsu-template--lookup-function-name :test-helper) "test-helper"))
   (should (string= (majutsu-template--lookup-function-name 'test-helper) "test-helper")))
 
+(ert-deftest test-majutsu-template-bind-self-explicit-object ()
+  (mt--is (majutsu-tpl [:test-bind-self [:raw "p" :Commit]])
+          "if(p.hidden(), p.commit_id().shortest(8), p.change_id().shortest(8))"))
+
+(ert-deftest test-majutsu-template-bind-self-inherits-outer-self ()
+  (mt--is (majutsu-template-compile '[:test-bind-self] 'Commit)
+          "if(self.hidden(), self.commit_id().shortest(8), self.change_id().shortest(8))"))
+
+(ert-deftest test-majutsu-template-bind-self-restores-outer-binding ()
+  (mt--is (majutsu-tpl [:test-bind-self-outer [:raw "lhs" :Commit] [:raw "rhs" :Commit]])
+          "concat(lhs.description(), \" -> \", rhs.description(), \" -> \", lhs.description())"))
+
+(ert-deftest test-majutsu-template-bind-self-invalid-parameter ()
+  (should-error
+   (eval '(majutsu-template-defun test-bind-self-missing ((object Commit))
+            (:returns Template :bind-self missing)
+            [:description]))
+   :type 'error))
+
+(ert-deftest test-majutsu-template-bind-self-rest-parameter-rejected ()
+  (should-error
+   (eval '(majutsu-template-defun test-bind-self-rest ((objects Commit :rest t))
+            (:returns Template :bind-self objects)
+            [:description]))
+   :type 'error))
+
 (ert-deftest test-majutsu-template-builtin-flavor-auto-body ()
   (mt--is (majutsu-tpl [:call 'test-builtin-wrapper [:str "L"]])
           "test-builtin-wrapper(\"L\")")
@@ -219,9 +304,21 @@
   (mt--is (majutsu-tpl [:call 'test-builtin-wrapper [:str "L"] [:str "R"] [:str "X"] [:str "Y"]])
           "test-builtin-wrapper(\"L\", \"R\", \"X\", \"Y\")"))
 
-(ert-deftest test-majutsu-template-map-like-flavor-auto-body ()
-  (mt--is (majutsu-tpl [:test-map-wrapper [:raw "xs"] 'item [:raw "item.value()"]])
-          "xs.test-map-wrapper(|item| item.value())"))
+(ert-deftest test-majutsu-template-map-sugar-lowers-to-native-lambda ()
+  (mt--is (majutsu-tpl [:map [:raw "xs"] item [:raw "item.value()"]])
+          "xs.map(|item| item.value())")
+  (mt--is (majutsu-tpl [:filter [:raw "xs"] item [:raw "item.present()"]])
+          "xs.filter(|item| item.present())"))
+
+(ert-deftest test-majutsu-template-native-lambda-helper ()
+  (mt--is (majutsu-tpl [:test-lambda-helper])
+          "|c| c.description()")
+  (mt--is (majutsu-tpl [:test-lambda-helper-extra [:str "!"]])
+          "|c| concat(c.description(), \"!\")")
+  (mt--is (majutsu-tpl [:method [:raw "refs"] :map [:test-lambda-helper]])
+          "refs.map(|c| c.description())")
+  (mt--is (majutsu-tpl [:method [:raw "refs"] :map [:test-lambda-helper-extra [:str "!"]]])
+          "refs.map(|c| concat(c.description(), \"!\"))"))
 
 (ert-deftest test-majutsu-template-call-dispatch ()
   ;; Built-in flavor should emit direct jj call.
@@ -238,9 +335,9 @@
           "concat(\"P\", \"Q\")"))
 
 (ert-deftest test-majutsu-template-ast-basic-nodes ()
-  (let ((literal (majutsu-template-ast '[:str "X"]))
-        (raw (majutsu-template-ast '[:raw "foo()"]))
-        (call (majutsu-template-ast '[:concat [:str "A"] [:raw "bar"]])))
+  (let ((literal (majutsu-template--rewrite '[:str "X"]))
+        (raw (majutsu-template--rewrite '[:raw "foo()"]))
+        (call (majutsu-template--rewrite '[:concat [:str "A"] [:raw "bar"]])))
     (should (majutsu-template-node-p literal))
     (should (eq (majutsu-template-node-kind literal) :literal))
     (should (equal (majutsu-template-node-value literal) "X"))
@@ -256,7 +353,7 @@
 
 (ert-deftest test-majutsu-template-ast-evaluates-elisp ()
   (let* ((majutsu-template--allow-eval t)
-         (node (majutsu-template-ast `[:concat ,(majutsu-template-str "X") [:str "Y"]])))
+         (node (majutsu-template--rewrite `[:concat ,(majutsu-template-str "X") [:str "Y"]])))
     (should (majutsu-template-node-p node))
     (should (equal (majutsu-template-compile node)
                    "concat(\"X\", \"Y\")")))
@@ -272,7 +369,7 @@
     (mt--is (majutsu-tpl s) "concat(\"F\", \"!\")")))
 
 (ert-deftest test-majutsu-template-raw-type-annotation ()
-  (let ((node (majutsu-template-ast '[:raw "foo" :Template])))
+  (let ((node (majutsu-template--rewrite '[:raw "foo" :Template])))
     (should (majutsu-template-node-p node))
     (should (eq (majutsu-template-node-kind node) :raw))
     (should (equal (majutsu-template-node-value node) "foo"))
@@ -329,7 +426,13 @@
     (should method)
     (should (not (majutsu-template--fn-keyword method)))
     (should (eq (majutsu-template--fn-owner method) 'List))
-    (should (= (length (majutsu-template--fn-args method)) 2))))
+    (should (= (length (majutsu-template--fn-args method)) 2)))
+  (let ((helper (majutsu-template--lookup-function-meta 'test-bind-self)))
+    (should helper)
+    (should (eq (majutsu-template--fn-bind-self helper) 'object)))
+  (let ((helper (majutsu-template--lookup-function-meta 'test-lambda-helper)))
+    (should helper)
+    (should (eq (majutsu-template--fn-returns helper) 'Lambda))))
 
 (ert-deftest test-majutsu-template-label-helper ()
   (let ((node (majutsu-template-label "status" (majutsu-template-str "ok"))))

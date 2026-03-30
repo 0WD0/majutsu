@@ -80,6 +80,16 @@
   (should (equal majutsu-log-template-long-desc
                  [:description :lines :skip 1 :join "\x1f"])))
 
+(ert-deftest majutsu-log-canonical-log-id-template-uses-bound-self ()
+  "Canonical log id helper should compile against the current Commit self."
+  (should (equal (majutsu-template-compile majutsu-log-template-id 'Commit)
+                 "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))")))
+
+(ert-deftest majutsu-log-parent-ids-template-composes-map-and-join ()
+  "Parent ids template should map canonical ids before joining them."
+  (should (equal (majutsu-template-compile majutsu-log-template-parent-ids 'Commit)
+                 "self.parents().map(|p| if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))).join(\"\\x1C\")")))
+
 (ert-deftest majutsu-log-default-column-schema-contains-module-and-face ()
   "Normalized column specs should include module/face/post metadata."
   (let ((spec (majutsu-log--normalize-column-spec 'description)))

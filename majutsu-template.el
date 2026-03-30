@@ -54,6 +54,40 @@ Set to nil to disable keyword rewriting unless explicitly bound."
   (or (car majutsu-template--self-stack)
       (majutsu-template--default-self-binding)))
 
+(defun majutsu-template--call-with-self-binding (node type thunk)
+  "Call THUNK with NODE/TYPE temporarily bound as current `self'.
+If NODE is nil, call THUNK without changing the current binding."
+  (let ((majutsu-template--self-stack
+         (if node
+             (cons (majutsu-template--make-self-binding :node node :type type)
+                   majutsu-template--self-stack)
+           majutsu-template--self-stack)))
+    (funcall thunk)))
+
+;;; Lexical variable binding context
+
+(cl-defstruct (majutsu-template--binding
+               (:constructor majutsu-template--make-binding))
+  "Lexical binding describing a lambda parameter."
+  name
+  type
+  node)
+
+(defvar majutsu-template--binding-stack nil
+  "Dynamic stack of lexical template variable bindings.")
+
+(defun majutsu-template--lookup-binding (name)
+  "Return lexical binding for NAME, or nil if NAME is unbound."
+  (cl-find-if (lambda (binding)
+                (eq (majutsu-template--binding-name binding) name))
+              majutsu-template--binding-stack))
+
+(defun majutsu-template--call-with-bindings (bindings thunk)
+  "Call THUNK with lexical BINDINGS temporarily active."
+  (let ((majutsu-template--binding-stack
+         (append bindings majutsu-template--binding-stack)))
+    (funcall thunk)))
+
 ;;;; Type and callable metadata
 
 (cl-defstruct (majutsu-template--type
@@ -113,7 +147,8 @@ Recognised keys: :doc (string), :converts or :converts-to (list)."
     args
     returns
     owner
-    keyword))
+    keyword
+    bind-self))
 
 (eval-and-compile
   (cl-defstruct (majutsu-template--fn-flavor
@@ -213,27 +248,16 @@ Recognised keys: :doc (string), :parent (keyword), :builder (function)."
               ,@(when rest-form (list rest-form))
               (apply #'majutsu-template-call ,template-name ,call-args-sym)))))))
 
-  (defun majutsu-template--flavor-map-like-body (context)
-    "Generate default body for map-like flavors using CONTEXT plist."
-    (let* ((args (plist-get context :args)))
-      (when (= (length args) 3)
-        (let* ((collection (nth 0 args))
-               (var (nth 1 args))
-               (body (nth 2 args)))
-          (when (and (not (majutsu-template--arg-optional collection))
-                     (not (majutsu-template--arg-optional var))
-                     (not (majutsu-template--arg-optional body))
-                     (not (majutsu-template--arg-rest collection))
-                     (not (majutsu-template--arg-rest var))
-                     (not (majutsu-template--arg-rest body)))
-            (let ((method (plist-get context :template-name))
-                  (result (plist-get context :returns)))
-              (list `(majutsu-template--map-like
-                      ,method
-                      ,(majutsu-template--arg-name collection)
-                      ,(majutsu-template--arg-name var)
-                      ,(majutsu-template--arg-name body)
-                      ',result))))))))
+  (defun majutsu-template--higher-order-body-form (method collection params bindings thunk)
+    "Return COLLECTION.METHOD(lambda PARAMS . BODY) form with lexical BINDINGS.
+THUNK is called to produce the lambda body form inside the binding scope."
+    (let* ((body-node
+            (majutsu-template--call-with-bindings
+             bindings
+             (lambda ()
+               (majutsu-template--rewrite (funcall thunk)))))
+           (lambda-node (majutsu-template--lambda-node params body-node)))
+      `[:method ,collection ,(intern (concat ":" method)) ,lambda-node]))
 
   (defun majutsu-template--flavor-body (flavor context)
     "Return auto-generated body forms for FLAVOR using CONTEXT plist."
@@ -250,18 +274,7 @@ Recognised keys: :doc (string), :parent (keyword), :builder (function)."
                                   :builder #'majutsu-template--flavor-fn-body)
 
   (majutsu-template-define-flavor :custom
-                                  :doc "Blank flavor for custom helpers with no default body.")
-
-  (majutsu-template-define-flavor :map-like
-                                  :doc "Helpers producing collection.method(|var| body) nodes."
-                                  :parent :fn
-                                  :builder #'majutsu-template--flavor-map-like-body)
-
-  (majutsu-template-define-flavor :filter-like :parent :map-like)
-  (majutsu-template-define-flavor :any-like :parent :map-like)
-  (majutsu-template-define-flavor :all-like :parent :map-like)
-  (majutsu-template-define-flavor :-map-like :parent :fn)
-  (majutsu-template-define-flavor :--map-like :parent :-map-like))
+                                  :doc "Blank flavor for custom helpers with no default body."))
 
 (defvar majutsu-template--function-registry (make-hash-table :test #'equal)
   "Map template function names to `majutsu-template--fn' metadata.")
@@ -465,11 +478,31 @@ Also validates placement of optional/rest arguments."
              (let ((name (majutsu-template--arg-name arg)))
                (cond
                 ((majutsu-template--arg-rest arg)
-                 `(setq ,name (mapcar #'majutsu-template--normalize ,name)))
+                 `(setq ,name (mapcar #'majutsu-template--rewrite ,name)))
                 ((majutsu-template--arg-optional arg)
-                 `(when ,name (setq ,name (majutsu-template--normalize ,name))))
+                 `(when ,name (setq ,name (majutsu-template--rewrite ,name))))
                 (t
-                 `(setq ,name (majutsu-template--normalize ,name)))))))
+                 `(setq ,name (majutsu-template--rewrite ,name)))))))
+  (defun majutsu-template--lookup-arg (args name)
+    "Return argument metadata from ARGS matching NAME, or nil."
+    (cl-find-if (lambda (arg)
+                  (eq (majutsu-template--arg-name arg) name))
+                args))
+
+  (defun majutsu-template--validate-bind-self (fn-name bind-self args)
+    "Validate BIND-SELF for FN-NAME against ARGS and return its arg metadata."
+    (when bind-self
+      (unless (symbolp bind-self)
+        (user-error "majutsu-template-defun %s: :bind-self expects parameter name, got %S"
+                    fn-name bind-self))
+      (let ((arg (majutsu-template--lookup-arg args bind-self)))
+        (unless arg
+          (user-error "majutsu-template-defun %s: :bind-self parameter %S is not declared"
+                      fn-name bind-self))
+        (when (majutsu-template--arg-rest arg)
+          (user-error "majutsu-template-defun %s: :bind-self parameter %S cannot be :rest"
+                      fn-name bind-self))
+        arg)))
 
   (defun majutsu-template--parse-signature (fn-name signature)
     "Parse SIGNATURE plist for FN-NAME, returning plist with metadata."
@@ -482,7 +515,8 @@ Also validates placement of optional/rest arguments."
           (owner nil)
           (template-name nil)
           (flavor :fn)
-          (keyword nil))
+          (keyword nil)
+          (bind-self nil))
       (unless (symbolp returns)
         (user-error "majutsu-template-defun %s: invalid return type %S" fn-name returns))
       (while rest
@@ -495,6 +529,7 @@ Also validates placement of optional/rest arguments."
             (:template-name (setq template-name value))
             (:flavor (setq flavor value))
             (:keyword (setq keyword value))
+            (:bind-self (setq bind-self value))
             (_ (user-error "majutsu-template-defun %s: unknown signature key %S" fn-name key)))))
       (when (and owner (not (symbolp owner)))
         (user-error "majutsu-template-defun %s: :owner expects a symbol, got %S" fn-name owner))
@@ -516,7 +551,8 @@ Also validates placement of optional/rest arguments."
             :owner owner
             :template-name template-name
             :flavor flavor
-            :keyword keyword)))
+            :keyword keyword
+            :bind-self bind-self)))
 
   (defun majutsu-template--compose-docstring (name base-doc args)
     "Compose docstring for helper NAME using BASE-DOC and ARGS metadata."
@@ -575,6 +611,10 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
          (keyword-flag (plist-get signature-info :keyword))
          (fn-symbol (intern (format "majutsu-template-%s" name-str)))
          (parsed-args (majutsu-template--parse-args name args))
+         (bind-self-arg (majutsu-template--validate-bind-self
+                         name
+                         (plist-get signature-info :bind-self)
+                         parsed-args))
          (lambda-list (majutsu-template--build-lambda-list parsed-args))
          (normalizers (majutsu-template--build-arg-normalizers parsed-args))
          (return-type (plist-get signature-info :returns))
@@ -586,8 +626,10 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
                                :owner owner
                                :keyword keyword-flag
                                :args parsed-args
-                               :returns return-type))
-         (auto-body (majutsu-template--flavor-body flavor flavor-context))
+                               :returns return-type
+                               :body-forms body))
+         (auto-body (and (null body)
+                         (majutsu-template--flavor-body flavor flavor-context)))
          (body-forms (or body auto-body))
          (meta `(majutsu-template--make-fn
                  :name ,template-name
@@ -597,7 +639,9 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
                  :doc ,docstring
                  :owner ',owner
                  :flavor ',flavor
-                 :keyword ',keyword-flag)))
+                 :keyword ',keyword-flag
+                 :bind-self ',(and bind-self-arg
+                                   (majutsu-template--arg-name bind-self-arg)))))
     (unless body-forms
       (user-error "majutsu-template-defun %s: flavor %S does not provide a default body"
                   name flavor))
@@ -606,9 +650,15 @@ Generates `majutsu-template-NAME' and registers it for template DSL usage."
        (defun ,fn-symbol ,lambda-list
          ,docstring
          ,@normalizers
-         (let ((majutsu-template--result (progn ,@body-forms)))
-           (majutsu-template--normalize majutsu-template--result))))))
-
+         ,(if bind-self-arg
+              `(majutsu-template--call-with-self-binding
+                ,(majutsu-template--arg-name bind-self-arg)
+                ',(majutsu-template--arg-type bind-self-arg)
+                (lambda ()
+                  (let ((majutsu-template--result (progn ,@body-forms)))
+                    (majutsu-template--rewrite majutsu-template--result))))
+            `(let ((majutsu-template--result (progn ,@body-forms)))
+               (majutsu-template--rewrite majutsu-template--result)))))))
 (defmacro majutsu-template-defmethod (name owner args signature &rest body)
   "Define template method NAME applicable to OWNER type.
 ARGS describe parameters after the implicit SELF argument.
@@ -1086,6 +1136,38 @@ participate in keyword sugar."
    :args args
    :props props))
 
+(defun majutsu-template--var-node (name &optional type props)
+  "Return lexical variable node for NAME."
+  (majutsu-template-node-create
+   :kind :var
+   :type (or type 'Template)
+   :value name
+   :props props))
+
+(defun majutsu-template--lambda-node (params body &optional props)
+  "Return lambda node binding PARAMS around BODY.
+PARAMS is a list of symbols. BODY must already be a template node."
+  (majutsu-template-node-create
+   :kind :lambda
+   :type 'Lambda
+   :value params
+   :args (list body)
+   :props props))
+
+(defun majutsu-template--lambda-params (node)
+  "Return parameter list stored in lambda NODE."
+  (unless (and (majutsu-template-node-p node)
+               (eq (majutsu-template-node-kind node) :lambda))
+    (user-error "majutsu-template: expected lambda node, got %S" node))
+  (majutsu-template-node-value node))
+
+(defun majutsu-template--lambda-body (node)
+  "Return body node stored in lambda NODE."
+  (unless (and (majutsu-template-node-p node)
+               (eq (majutsu-template-node-kind node) :lambda))
+    (user-error "majutsu-template: expected lambda node, got %S" node))
+  (car (majutsu-template-node-args node)))
+
 (defun majutsu-template--expand-elisp (form)
   "Expand embedded Elisp expressions inside FORM when allowed."
   (cond
@@ -1102,6 +1184,104 @@ participate in keyword sugar."
     (cons (majutsu-template--expand-elisp (car form))
           (mapcar #'majutsu-template--expand-elisp (cdr form))))
    (t form)))
+
+(defun majutsu-template--parse-lambda-params (params)
+  "Parse PARAMS form into a validated list of lambda parameter symbols."
+  (let ((items (cond
+                ((vectorp params) (append params nil))
+                ((listp params) params)
+                (t (user-error "majutsu-template: lambda parameters must be a vector or list, got %S"
+                               params)))))
+    (unless (= (length items) 1)
+      (user-error "majutsu-template: only single-argument lambdas are supported, got %S"
+                  params))
+    (dolist (item items)
+      (unless (and (symbolp item) (not (keywordp item)))
+        (user-error "majutsu-template: invalid lambda parameter %S" item)))
+    items))
+
+(defun majutsu-template--lambda-from-form (params body)
+  "Return lambda node from PARAMS and BODY forms."
+  (let* ((parsed-params (majutsu-template--parse-lambda-params params))
+         (bindings (mapcar (lambda (param)
+                             (majutsu-template--make-binding :name param))
+                           parsed-params))
+         (body-node (majutsu-template--call-with-bindings
+                     bindings
+                     (lambda ()
+                       (majutsu-template--sugar-transform body)))))
+    (majutsu-template--lambda-node parsed-params body-node
+                                   (list :body-form body))))
+
+(defun majutsu-template--lambda-sugar-params (op)
+  "Return lambda parameter list encoded by keyword OP like `:|x|'.
+Return nil when OP is not lambda shorthand syntax."
+  (when (keywordp op)
+    (let ((name (symbol-name op)))
+      (when (and (string-prefix-p ":|" name)
+                 (string-suffix-p "|" name))
+        (let ((items (split-string (string-trim (substring name 2 -1))
+                                   "[[:space:]]+" t)))
+          (unless items
+            (user-error "majutsu-template: lambda shorthand %S requires at least one parameter" op))
+          (mapcar #'intern items))))))
+
+(defun majutsu-template--ensure-lambda-node (value &optional context)
+  "Return VALUE normalized as a lambda node.
+CONTEXT is used in error messages."
+  (let ((node (majutsu-template--rewrite value)))
+    (if (eq (majutsu-template-node-kind node) :lambda)
+        node
+      (user-error "majutsu-template: expected lambda%s, got %S"
+                  (if context (format " for %s" context) "")
+                  value))))
+
+(defun majutsu-template--substitute-var (node name replacement)
+  "Replace lexical variable NAME in NODE with REPLACEMENT node."
+  (pcase (majutsu-template-node-kind node)
+    (:var
+     (if (eq (majutsu-template-node-value node) name)
+         replacement
+       node))
+    (:lambda
+     (if (memq name (majutsu-template--lambda-params node))
+         node
+       (majutsu-template--lambda-node
+        (majutsu-template--lambda-params node)
+        (majutsu-template--substitute-var
+         (majutsu-template--lambda-body node)
+         name replacement)
+        (majutsu-template-node-props node))))
+    (:call
+     (majutsu-template-node-create
+      :kind :call
+      :type (majutsu-template-node-type node)
+      :value (majutsu-template-node-value node)
+      :args (mapcar (lambda (arg)
+                      (majutsu-template--substitute-var arg name replacement))
+                    (majutsu-template-node-args node))
+      :props (majutsu-template-node-props node)))
+    (_ node)))
+
+(defun majutsu-template--apply-lambda (lambda-node arg-nodes)
+  "Apply LAMBDA-NODE to ARG-NODES by compile-time substitution."
+  (let ((params (majutsu-template--lambda-params lambda-node)))
+    (unless (= (length params) (length arg-nodes))
+      (user-error "majutsu-template: lambda expects %d arguments, got %d"
+                  (length params) (length arg-nodes)))
+    (if-let* ((body-form (plist-get (majutsu-template-node-props lambda-node) :body-form)))
+        (let ((bindings (cl-mapcar (lambda (param arg)
+                                     (majutsu-template--make-binding :name param :node arg))
+                                   params arg-nodes)))
+          (majutsu-template--call-with-bindings
+           bindings
+           (lambda ()
+             (majutsu-template--sugar-transform body-form))))
+      (cl-loop with result = (majutsu-template--lambda-body lambda-node)
+               for param in params
+               for arg in arg-nodes
+               do (setq result (majutsu-template--substitute-var result param arg))
+               finally return result))))
 
 (defun majutsu-template--rewrite (form)
   "Rewrite literal FORM into normalized AST nodes.
@@ -1159,45 +1339,120 @@ Further passes (type-checking, rendering) operate on these nodes."
                                   (collection Template)
                                   (var Template)
                                   (body Template))
-  (:returns Template :doc "map-then-join helper.")
-  (majutsu-template--map-join-impl separator collection var body))
+  (:returns Template :doc "Convenience sugar for map(...).join(...).")
+  `[:method [:map ,collection ,var ,body] :join ,separator])
+
+(defun majutsu-template--higher-order-form (method collection var body)
+  "Return COLLECTION.METHOD(|VAR| BODY) as a template form."
+  (let ((var-name (intern (majutsu-template--node->identifier var method))))
+    `[:method ,collection ,(intern (concat ":" method)) [:lambda [,var-name] ,body]]))
 
 (majutsu-template-defun map ((collection Template)
                              (var Template)
                              (body Template))
-  (:returns ListTemplate :doc "map(|var| ...) operator." :flavor :map-like))
+  (:returns ListTemplate :doc "map(|var| ...) operator." :flavor :custom)
+  (majutsu-template--higher-order-form "map" collection var body))
 
 (majutsu-template-defun filter ((collection Template)
                                 (var Template)
                                 (body Template))
-  (:returns List :doc "filter(|var| ...) operator." :flavor :filter-like))
+  (:returns List :doc "filter(|var| ...) operator." :flavor :custom)
+  (majutsu-template--higher-order-form "filter" collection var body))
 
 (majutsu-template-defun any ((collection Template)
                              (var Template)
                              (body Template))
-  (:returns Boolean :doc "any(|var| ...) operator." :flavor :any-like))
+  (:returns Boolean :doc "any(|var| ...) operator." :flavor :custom)
+  (majutsu-template--higher-order-form "any" collection var body))
 
 (majutsu-template-defun all ((collection Template)
                              (var Template)
                              (body Template))
-  (:returns Boolean :doc "all(|var| ...) operator." :flavor :all-like))
+  (:returns Boolean :doc "all(|var| ...) operator." :flavor :custom)
+  (majutsu-template--higher-order-form "all" collection var body))
+
+(majutsu-template-defun -map ((function Lambda)
+                              (collection Template))
+  (:returns ListTemplate :doc "Dash-style map taking an explicit lambda." :flavor :custom)
+  `[:method ,collection :map ,(majutsu-template--ensure-lambda-node function "-map")])
+
+(majutsu-template-defun -filter ((function Lambda)
+                                 (collection Template))
+  (:returns List :doc "Dash-style filter taking an explicit lambda." :flavor :custom)
+  `[:method ,collection :filter ,(majutsu-template--ensure-lambda-node function "-filter")])
+
+(majutsu-template-defun -any ((function Lambda)
+                              (collection Template))
+  (:returns Boolean :doc "Dash-style any taking an explicit lambda." :flavor :custom)
+  `[:method ,collection :any ,(majutsu-template--ensure-lambda-node function "-any")])
+
+(majutsu-template-defun -all-p ((function Lambda)
+                                (collection Template))
+  (:returns Boolean :doc "Dash-style all taking an explicit lambda." :flavor :custom)
+  `[:method ,collection :all ,(majutsu-template--ensure-lambda-node function "-all-p")])
+
+(majutsu-template-defun --map ((body Template)
+                               (collection Template))
+  (:returns ListTemplate :doc "Dash-style anaphoric map over BODY." :flavor :custom)
+  (majutsu-template--higher-order-body-form
+   "map" collection '(it)
+   (list (majutsu-template--make-binding
+          :name 'it
+          :type 'Template
+          :node (majutsu-template--var-node 'it 'Template)))
+   (lambda () body)))
+
+(majutsu-template-defun --filter ((body Template)
+                                  (collection Template))
+  (:returns List :doc "Dash-style anaphoric filter over BODY." :flavor :custom)
+  (majutsu-template--higher-order-body-form
+   "filter" collection '(it)
+   (list (majutsu-template--make-binding
+          :name 'it
+          :type 'Template
+          :node (majutsu-template--var-node 'it 'Template)))
+   (lambda () body)))
+
+(majutsu-template-defun --any ((body Template)
+                               (collection Template))
+  (:returns Boolean :doc "Dash-style anaphoric any over BODY." :flavor :custom)
+  (majutsu-template--higher-order-body-form
+   "any" collection '(it)
+   (list (majutsu-template--make-binding
+          :name 'it
+          :type 'Template
+          :node (majutsu-template--var-node 'it 'Template)))
+   (lambda () body)))
+
+(majutsu-template-defun --all-p ((body Template)
+                                 (collection Template))
+  (:returns Boolean :doc "Dash-style anaphoric all over BODY." :flavor :custom)
+  (majutsu-template--higher-order-body-form
+   "all" collection '(it)
+   (list (majutsu-template--make-binding
+          :name 'it
+          :type 'Template
+          :node (majutsu-template--var-node 'it 'Template)))
+   (lambda () body)))
 
 (majutsu-template-defun call ((name Template)
                               (args Template :rest t))
   (:returns Template :doc "funcall helper, with builtin function support.")
-  (let* ((name-node (majutsu-template--ensure-node name))
-         (identifier (majutsu-template--node->identifier name-node "call name"))
-         (meta (majutsu-template--lookup-function-meta identifier))
-         (arg-nodes (mapcar #'majutsu-template--ensure-node args)))
-    (cond
-     ((and meta (eq (majutsu-template--fn-flavor meta) :builtin))
-      (majutsu-template--call-node (majutsu-template--fn-name meta) arg-nodes))
-     (meta
-      (apply (majutsu-template--fn-symbol meta) arg-nodes))
-     (t
-      (majutsu-template--call-node
-       (majutsu-template--normalize-call-name identifier)
-       arg-nodes)))))
+  (let* ((name-node (majutsu-template--rewrite name))
+         (arg-nodes (mapcar #'majutsu-template--rewrite args)))
+    (if (eq (majutsu-template-node-kind name-node) :lambda)
+        (majutsu-template--apply-lambda name-node arg-nodes)
+      (let* ((identifier (majutsu-template--node->identifier name-node "call name"))
+             (meta (majutsu-template--lookup-function-meta identifier)))
+        (cond
+         ((and meta (eq (majutsu-template--fn-flavor meta) :builtin))
+          (majutsu-template--call-node (majutsu-template--fn-name meta) arg-nodes))
+         (meta
+          (apply (majutsu-template--fn-symbol meta) arg-nodes))
+         (t
+          (majutsu-template--call-node
+           (majutsu-template--normalize-call-name identifier)
+           arg-nodes)))))))
 
 (defun majutsu-template--method-node-name (node)
   "Return normalized method name string from NODE."
@@ -1242,11 +1497,11 @@ NODES are the remaining argument nodes. Returns list of (NAME . ARGS)."
                                 (name Template)
                                 (args Template :rest t))
   (:returns Template :doc "Method chaining helper." :flavor :custom)
-  (let* ((object-node (majutsu-template--ensure-node object))
+  (let* ((object-node (majutsu-template--rewrite object))
          (object-str (majutsu-template--render-node object-node))
-         (name-node (majutsu-template--ensure-node name))
+         (name-node (majutsu-template--rewrite name))
          (start-name (majutsu-template--method-name-from-node name-node))
-         (arg-nodes (mapcar #'majutsu-template--ensure-node args))
+         (arg-nodes (mapcar #'majutsu-template--rewrite args))
          (segments (majutsu-template--method-split-segments start-name arg-nodes))
          (result object-str))
     (dolist (segment segments)
@@ -1320,7 +1575,7 @@ VALUE may be a string or template node. TYPE optional annotation."
 NAME may be symbol, keyword, string, or template node."
   (let* ((identifier (majutsu-template--node->identifier name "call name"))
          (resolved (majutsu-template--normalize-call-name identifier))
-         (arg-nodes (mapcar #'majutsu-template--ensure-node args)))
+         (arg-nodes (mapcar #'majutsu-template--rewrite args)))
     (majutsu-template--call-node resolved arg-nodes)))
 
 (defun majutsu-template--literal-string-from-node (node)
@@ -1348,8 +1603,7 @@ CONTEXT is used in error messages."
         (_ (user-error "majutsu-template: expected identifier%s, got %S"
                        (if context (format " for %s" context) "")
                        node)))
-    (majutsu-template--node->identifier (majutsu-template--normalize node) context)))
-
+    (majutsu-template--node->identifier (majutsu-template--rewrite node) context)))
 (defun majutsu-template--node->type-symbol (node)
   "Return normalized type symbol described by NODE."
   (majutsu-template--normalize-type-symbol
@@ -1370,43 +1624,6 @@ CONTEXT is used in error messages."
     (majutsu-template--resolve-call-name (eval expr)))
    (t expr)))
 
-(defun majutsu-template--map-join-impl (sep coll var body)
-  "Return node for COLL.map(|VAR| BODY).join(SEP)."
-  (let* ((sep-node (majutsu-template--normalize sep))
-         (coll-node (majutsu-template--normalize coll))
-         (body-node (majutsu-template--normalize body))
-         (var-name (if (majutsu-template-node-p var)
-                       (majutsu-template--node->identifier var "join variable")
-                     (format "%s" var))))
-    (majutsu-template--raw-node
-     (format "%s.map(|%s| %s).join(%s)"
-             (majutsu-template--render-node coll-node)
-             var-name
-             (majutsu-template--render-node body-node)
-             (majutsu-template--render-node sep-node)))))
-
-(defun majutsu-template--map-like (method collection var body result-type)
-  "Helper to produce raw node for METHOD on COLLECTION with VAR and BODY.
-RESULT-TYPE, when non-nil, is used as declared type."
-  (let* ((collection-node (majutsu-template--normalize collection))
-         (body-node (majutsu-template--normalize body))
-         (var-name (majutsu-template--node->identifier var method))
-         (rendered (format "%s.%s(|%s| %s)"
-                           (majutsu-template--render-node collection-node)
-                           method
-                           var-name
-                           (majutsu-template--render-node body-node))))
-    (majutsu-template--raw-node rendered result-type
-                                (when result-type (list :declared result-type)))))
-
-(defun majutsu-template--normalize (x)
-  "Normalize X into an AST node."
-  (majutsu-template--rewrite x))
-
-(defun majutsu-template--ensure-node (form)
-  "Return AST node corresponding to FORM."
-  (majutsu-template--normalize form))
-
 (defun majutsu-template--render-node (node)
   "Render AST NODE to jj template string."
   (pcase (majutsu-template-node-kind node)
@@ -1414,6 +1631,14 @@ RESULT-TYPE, when non-nil, is used as declared type."
      (format "\"%s\"" (majutsu-template--str-escape (majutsu-template-node-value node))))
     (:raw
      (majutsu-template-node-value node))
+    (:var
+     (symbol-name (majutsu-template-node-value node)))
+    (:lambda
+     (let* ((params (majutsu-template--lambda-params node))
+            (body (majutsu-template--lambda-body node)))
+       (format "|%s| %s"
+               (mapconcat #'symbol-name params ", " )
+               (majutsu-template--render-node body))))
     (:call
      (let* ((name (majutsu-template-node-value node))
             (args (majutsu-template-node-args node))
@@ -1422,26 +1647,12 @@ RESULT-TYPE, when non-nil, is used as declared type."
     (_
      (user-error "majutsu-template: unknown AST node kind %S" (majutsu-template-node-kind node)))))
 
-(defun majutsu-template--compile-list (xs)
-  (mapconcat (lambda (x)
-               (majutsu-template--render-node (majutsu-template--ensure-node x)))
-             xs ", "))
-
-(defun majutsu-template--compile (form)
-  "Compile FORM (node or literal) to jj template string."
-  (majutsu-template--render-node (majutsu-template--ensure-node form)))
-
-(defun majutsu-template-ast (form)
-  "Return AST node representing FORM without rendering."
-  (majutsu-template--ensure-node form))
-
 ;;;###autoload
 (defun majutsu-template-compile (form &optional self-type)
   "Public entry point: compile FORM into a jj template string.
 Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
   (let ((majutsu-template-default-self-type (or self-type majutsu-template-default-self-type)))
-    (majutsu-template--compile form)))
-
+    (majutsu-template--render-node (majutsu-template--rewrite form))))
 (defun majutsu-template--sugar-transform (form)
   "Transform compact FORM into the template AST."
   (cond
@@ -1452,13 +1663,25 @@ Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
    ((eq form t) (majutsu-template-raw "true"))
    ((eq form nil) (majutsu-template-raw "false"))
    ((stringp form) (majutsu-template-str form))
-   ((symbolp form) (majutsu-template-raw (symbol-name form)))
+   ((symbolp form)
+    (if-let* ((binding (majutsu-template--lookup-binding form)))
+        (or (majutsu-template--binding-node binding)
+            (majutsu-template--var-node form (majutsu-template--binding-type binding)))
+      (majutsu-template-raw (symbol-name form))))
    ((vectorp form)
-    (let* ((list-form (append form nil))
-           (normalized (if (and list-form (symbolp (car list-form)))
-                           list-form
-                         (cons :concat list-form))))
-      (majutsu-template--sugar-transform normalized)))
+    (let* ((list-form (append form nil)))
+      (cond
+       ((null list-form)
+        (majutsu-template--sugar-transform '(:concat)))
+       ((symbolp (car list-form))
+        (majutsu-template--sugar-transform list-form))
+       ((cdr list-form)
+        (let ((head (majutsu-template--sugar-transform (car list-form))))
+          (if (eq (majutsu-template-node-kind head) :lambda)
+              (majutsu-template--sugar-transform (cons :call (cons head (cdr list-form))))
+            (majutsu-template--sugar-transform (cons :concat list-form)))))
+       (t
+        (majutsu-template--sugar-transform (cons :concat list-form))))))
    ((and (consp form) (eq (car form) 'quote))
     (majutsu-template--sugar-transform (cadr form)))
    ((and (consp form) (symbolp (car form)))
@@ -1479,7 +1702,7 @@ Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
                        (majutsu-template--symbol->template-name op)
                      op))
              (meta (majutsu-template--lookup-method owner name))
-             (normalized-args (mapcar #'majutsu-template--normalize args)))
+             (normalized-args (mapcar #'majutsu-template--rewrite args)))
         (cond
          ((and meta (not (majutsu-template--fn-keyword meta)))
           nil)
@@ -1490,22 +1713,37 @@ Optional SELF-TYPE overrides `majutsu-template-default-self-type'."
                       name owner))
          (meta
           (let ((object (majutsu-template--self-binding-node self-binding))
-                (name-node (majutsu-template--normalize op)))
+                (name-node (majutsu-template--rewrite op)))
             (apply #'majutsu-template-method object name-node normalized-args))))))))
 
 (defun majutsu-template--sugar-apply (op args)
   "Dispatch helper applying OP to ARGS within sugar transformation."
-  (let* ((normalized (majutsu-template--operator-symbol op))
-         (meta (or (majutsu-template--lookup-function-meta op)
-                   (majutsu-template--lookup-function-meta normalized)))
-         (self-node (majutsu-template--maybe-self-dispatch op args)))
+  (let ((lambda-params (majutsu-template--lambda-sugar-params op)))
     (cond
-     (meta
-      (apply (majutsu-template--fn-symbol meta)
-             (mapcar #'majutsu-template--sugar-transform args)))
-     (self-node self-node)
+     ((eq op :lambda)
+      (pcase args
+        (`(,params ,body)
+         (majutsu-template--lambda-from-form params body))
+        (_
+         (user-error "majutsu-template: :lambda expects [PARAM] and BODY, got %S" args))))
+     (lambda-params
+      (pcase args
+        (`(,body)
+         (majutsu-template--lambda-from-form lambda-params body))
+        (_
+         (user-error "majutsu-template: %S expects BODY, got %S" op args))))
      (t
-      (user-error "majutsu-template: unknown operator %S" op)))))
+      (let* ((normalized (majutsu-template--operator-symbol op))
+             (meta (or (majutsu-template--lookup-function-meta op)
+                       (majutsu-template--lookup-function-meta normalized)))
+             (self-node (majutsu-template--maybe-self-dispatch op args)))
+        (cond
+         (meta
+          (apply (majutsu-template--fn-symbol meta)
+                 (mapcar #'majutsu-template--sugar-transform args)))
+         (self-node self-node)
+         (t
+          (user-error "majutsu-template: unknown operator %S" op))))))))
 
 ;;;###autoload
 (defmacro majutsu-tpl (form &optional self-type)

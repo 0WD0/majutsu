@@ -20,6 +20,24 @@
 
 ** Changed
 
+- The template DSL now supports helper-local ~:bind-self~ in
+  ~majutsu-template-defun~, so helpers can temporarily rebind the implicit
+  ~self~ when expanding nested template bodies.
+- Add first-class anonymous functions via ~[:lambda [arg] body]~ and concise
+  ~[:|arg| body]~ sugar, compile-time lambda application via ~[:call ...]~ /
+  ~[[:lambda...] arg]~, and Dash-style higher-order helpers such as ~:-map~ /
+  ~:--map~.
+- Prefer native lambda-returning helpers over dedicated dash lambda-body
+  flavors; reusable higher-order behavior can now be expressed directly with
+  ordinary ~majutsu-template-defun~ forms that return ~Lambda~ values.
+- Re-center higher-order implementation around native ~[:lambda ...]~ forms:
+  the historical ~[:map collection var body]~ sugar now lowers through the
+  same lambda path as direct method calls and Dash-style helpers.
+- ~canonical-log-id~ now uses ~:bind-self~, and log parent id templates now
+  prefer explicit ~map + join~ composition over a dedicated implementation
+  path.
+- ~:map-join~ remains available as compatibility sugar, but it now expands to
+  ~[:method [:map ...] :join ...]~ instead of using a separate renderer.
 - Remove ~majutsu-find-file-at-point~. Use ~majutsu-find-file~ instead; it
   still defaults revset/path from the current context.
 - Remove the dedicated ~v~ binding from diff file sections, following Magit's

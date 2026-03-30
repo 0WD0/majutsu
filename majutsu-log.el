@@ -291,18 +291,18 @@ Also registers a variable watcher to invalidate the template cache."
    [:label "change_offset" "/"]
    [:change_offset]])
 
-(defun majutsu-log--canonical-id-template (&optional object)
-  "Return template form producing the canonical log id for OBJECT.
-
-When OBJECT is nil, use the current template self object."
-  (let ((object (or object 'self)))
-    `[:if [:or [:method ,object :hidden]
-               [:method ,object :divergent]]
-         [:method [:method ,object :commit_id] :shortest 8]
-       [:method [:method ,object :change_id] :shortest 8]]))
+(majutsu-template-defun canonical-log-id ((object Commit :optional t))
+  (:returns Template
+   :flavor :custom
+   :bind-self object
+   :doc "Canonical log id for current commit or OBJECT.")
+  [:if [:or [:hidden]
+             [:divergent]]
+       [:commit_id :shortest 8]
+     [:change_id :shortest 8]])
 
 (majutsu-log-define-column id
-  (majutsu-log--canonical-id-template)
+  [:canonical-log-id]
   "Template for the commit-id column.")
 
 (majutsu-log-define-column change-id
@@ -324,11 +324,9 @@ When OBJECT is nil, use the current template self object."
   "Template for the commit-id column.")
 
 (majutsu-log-define-column parent-ids
-  `[:map-join
-    ,majutsu-log--field-list-separator
-    [:parents]
-    'p
-    ,(majutsu-log--canonical-id-template 'p)]
+  `[:method
+    [:map [:parents] p [:canonical-log-id p]]
+    :join ,majutsu-log--field-list-separator]
   "Template for the parent-ids metadata column.")
 
 (majutsu-log-define-column bookmarks
@@ -1159,7 +1157,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 ;;; Log Navigation
 
 (defconst majutsu--show-id-template
-  (majutsu-tpl (majutsu-log--canonical-id-template)))
+  (majutsu-tpl [:canonical-log-id]))
 
 (defun majutsu-current-id ()
   (when-let* ((output (majutsu-jj-string "log" "--no-graph" "-r" "@" "-T" majutsu--show-id-template)))
