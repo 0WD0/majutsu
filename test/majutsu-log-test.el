@@ -62,18 +62,41 @@
     (goto-char (point-min))
     (majutsu-log--parse-entries-in-buffer compiled)))
 
+(defun majutsu-log-test--transport-value (value)
+  "Return transport encoding for test VALUE."
+  (cond
+   ((null value) "")
+   ((stringp value) value)
+   ((listp value) (string-join value majutsu-log--field-list-separator))
+   (t (format "%s" value))))
+
+(defun majutsu-log-test--module-payload (compiled module values)
+  "Return transport payload for MODULE in COMPILED using VALUES alist."
+  (string-join
+   (mapcar (lambda (column)
+             (majutsu-log-test--transport-value
+              (alist-get (plist-get column :field) values nil nil #'eq)))
+           (majutsu-log--module-columns compiled module))
+   majutsu-log--field-separator))
+
+(defun majutsu-log-test--metadata-payload (compiled values)
+  "Return metadata payload for COMPILED using VALUES alist."
+  (majutsu-log-test--module-payload compiled 'metadata values))
+
 (defun majutsu-log-test--raw-entry (id title &optional parent-ids)
   "Return one raw relation-aware log entry for ID and TITLE."
-  (concat
-   "○ " majutsu-log--entry-start-token id majutsu-log--field-separator title
-   majutsu-log--entry-tail-token
-   majutsu-log--entry-body-token
-   majutsu-log--entry-meta-token id
-   (when parent-ids
-     (concat majutsu-log--field-separator
-             (string-join parent-ids majutsu-log--field-list-separator)))
-   majutsu-log--entry-end-token
-   "\n"))
+  (let ((compiled (majutsu-log-test--relations-compiled)))
+    (concat
+     "○ " majutsu-log--entry-start-token id majutsu-log--field-separator title
+     majutsu-log--entry-tail-token
+     majutsu-log--entry-body-token
+     majutsu-log--entry-meta-token
+     (majutsu-log-test--metadata-payload
+      compiled
+      `((id . ,id)
+        (parent-ids . ,parent-ids)))
+     majutsu-log--entry-end-token
+     "\n")))
 
 (defun majutsu-log-test--post-wrap (value _ctx)
   "Wrap VALUE in square brackets for postprocessor tests."
@@ -135,6 +158,14 @@
     (should (< b-pos m-pos))
     (should (< m-pos e-pos))))
 
+(ert-deftest majutsu-log-compile-columns-adds-required-hidden-metadata-fields ()
+  "Compiling columns should preserve hidden transport fields needed by log semantics."
+  (let* ((compiled (majutsu-log--compile-columns
+                    '((:field description :module heading :face t))))
+         (fields (mapcar (lambda (column) (plist-get column :field))
+                         (majutsu-log--module-columns compiled 'metadata))))
+    (should (equal fields '(id commit-id parent-ids)))))
+
 (ert-deftest majutsu-log-post-decode-line-separator-restores-faces ()
   "\x1f decoding should keep surrounding text properties."
   (let* ((sep (aref majutsu-log--field-line-separator 0))
@@ -155,8 +186,11 @@
                majutsu-log--entry-body-token
                "body line 1" majutsu-log--field-line-separator "body line 2"
                majutsu-log--entry-meta-token
-               "id-123" majutsu-log--field-separator "2m ago" majutsu-log--field-separator "@ immutable"
-               majutsu-log--field-separator ""
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-123")
+                  (timestamp . "2m ago")
+                  (flags . "@ immutable")))
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
@@ -177,8 +211,11 @@
          (raw (concat
                majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Top\n"
                "Tail" majutsu-log--entry-tail-token majutsu-log--entry-body-token "payload"
-               majutsu-log--entry-meta-token "id-999" majutsu-log--field-separator "1h ago"
-               majutsu-log--field-separator "" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-999")
+                  (timestamp . "1h ago")))
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
@@ -199,7 +236,9 @@
                majutsu-log--entry-body-token
                "body line 1" majutsu-log--field-line-separator "body line 2"
                majutsu-log--entry-meta-token
-               "id-123"
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-123")))
                majutsu-log--entry-end-token "\n"))
          (entry (car (majutsu-log-test--parse-entries compiled raw))))
     (should (equal (plist-get entry :id) "id-123"))
@@ -215,15 +254,19 @@
                "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
                majutsu-log--entry-tail-token
                majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
-               majutsu-log--field-separator "" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-1")))
                majutsu-log--entry-end-token "\n"
                "│ carry-line\n"
                "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
                majutsu-log--entry-tail-token
                majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
-               majutsu-log--field-separator "" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-2")))
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (first (nth 0 entries))
@@ -241,16 +284,20 @@
                      "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
                      majutsu-log--entry-tail-token
                      majutsu-log--entry-body-token
-                     majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
-                     majutsu-log--field-separator "" majutsu-log--field-separator ""
+                     majutsu-log--entry-meta-token
+                     (majutsu-log-test--metadata-payload
+                      compiled
+                      '((id . "id-1")))
                      majutsu-log--entry-end-token "\n"
                      "│ carry-line\n"))
          (raw (concat first-raw
                       "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
                       majutsu-log--entry-tail-token
                       majutsu-log--entry-body-token
-                      majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
-                      majutsu-log--field-separator "" majutsu-log--field-separator ""
+                      majutsu-log--entry-meta-token
+                      (majutsu-log-test--metadata-payload
+                       compiled
+                       '((id . "id-2")))
                       majutsu-log--entry-end-token "\n")))
     (with-temp-buffer
       (insert raw)
@@ -294,7 +341,10 @@
                "○ " majutsu-log--entry-start-token "desc"
                majutsu-log--entry-tail-token
                majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token "row-id" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "row-id")))
                majutsu-log--entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
@@ -317,7 +367,10 @@
                "○ " majutsu-log--entry-start-token "desc"
                majutsu-log--entry-tail-token
                majutsu-log--entry-body-token "desc"
-               majutsu-log--entry-meta-token "row-id" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "row-id")))
                majutsu-log--entry-end-token "\n"))
          (entry (car (majutsu-log-test--parse-entries compiled raw))))
     (should (equal (plist-get entry :short-desc) "desc"))
@@ -506,10 +559,74 @@
         (majutsu-log-copy-module))
       (should (equal copied "chg Title\nMore")))))
 
+(ert-deftest majutsu-log-copy-entry-field-copies-hidden-metadata ()
+  "`majutsu-log-copy-entry-field' should copy hidden canonical metadata fields."
+  (let* ((compiled (majutsu-log-test--tail-compiled))
+         (entry (list :id "id-123"
+                      :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
+                      :columns '((change-id . "chg")
+                                 (description . "Title")
+                                 (author . "Alice")
+                                 (timestamp . "2m")
+                                 (commit-id . "230dd059e1b059aefcda37d0a668f2f08f6e5a13"))
+                      :heading-prefixes '("○ ")))
+         copied)
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-log--insert-entry entry compiled)
+      (goto-char (point-min))
+      (search-forward "Title")
+      (cl-letf (((symbol-function 'kill-new)
+                 (lambda (string) (setq copied string)))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (apply #'format format-string args)))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &rest _)
+                   (or (seq-find (lambda (candidate)
+                                   (string-match-p "commit-id" candidate))
+                                 candidates)
+                       (car candidates)))))
+        (majutsu-log-copy-entry-field))
+      (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
+
+(ert-deftest majutsu-log-copy-commit-id-copies-hidden-hash ()
+  "`majutsu-log-copy-commit-id' should copy the canonical hidden commit hash."
+  (let* ((compiled (majutsu-log-test--tail-compiled))
+         (entry (list :id "id-123"
+                      :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
+                      :columns '((change-id . "chg")
+                                 (description . "Title")
+                                 (author . "Alice")
+                                 (timestamp . "2m")
+                                 (commit-id . "230dd059e1b059aefcda37d0a668f2f08f6e5a13"))
+                      :heading-prefixes '("○ ")))
+         copied)
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-log--insert-entry entry compiled)
+      (goto-char (point-min))
+      (search-forward "Title")
+      (cl-letf (((symbol-function 'kill-new)
+                 (lambda (string) (setq copied string)))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (apply #'format format-string args))))
+        (majutsu-log-copy-commit-id))
+      (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
+
 (ert-deftest majutsu-log-copy-transient-has-copy-actions ()
-  "Log copy transient should expose section/field/module copy commands."
+  "Log copy transient should expose visible and hidden-field copy commands."
   (should (transient-get-suffix 'majutsu-log-copy-transient "s"))
   (should (transient-get-suffix 'majutsu-log-copy-transient "f"))
+  (should (transient-get-suffix 'majutsu-log-copy-transient "F"))
+  (should (transient-get-suffix 'majutsu-log-copy-transient "h"))
   (should (transient-get-suffix 'majutsu-log-copy-transient "m")))
 
 (ert-deftest majutsu-dispatch-exposes-log-copy-transient ()
@@ -526,14 +643,20 @@
                majutsu-log--entry-tail-token
                "Alice" majutsu-log--field-separator "2m ago"
                majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token "id-1" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-1")))
                majutsu-log--entry-end-token "\n"
                "○ " majutsu-log--entry-start-token
                "chg2" majutsu-log--field-separator "Title2"
                majutsu-log--entry-tail-token
                "Bob" majutsu-log--field-separator "1h ago"
                majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token "id-2" majutsu-log--field-separator ""
+               majutsu-log--entry-meta-token
+               (majutsu-log-test--metadata-payload
+                compiled
+                '((id . "id-2")))
                majutsu-log--entry-end-token "\n"))
          (majutsu--default-directory "/tmp/test-repo/")
          (majutsu-log--compiled-template-cache compiled))

@@ -18,7 +18,8 @@
   revision and ~]~ jumps to a child revision, prompting when multiple
   visible targets exist.
 - Add explicit semantic copy commands for log buffers:
-  ~majutsu-copy-section-value~, ~majutsu-log-copy-field~, and
+  ~majutsu-copy-section-value~, ~majutsu-log-copy-field~,
+  ~majutsu-log-copy-entry-field~, ~majutsu-log-copy-commit-id~, and
   ~majutsu-log-copy-module~. They are exposed through the dispatcher in
   log buffers (and remain callable via ~M-x~), without claiming a dedicated
   direct key binding yet.
@@ -76,7 +77,10 @@
   buffer text, but copying a mixed heading+tail region strips the tail by
   default while copying the tail itself preserves it. Rendered log spans now
   carry field/column/entry/decoration properties so explicit copy commands can
-  target section values, individual fields, or whole visible modules.
+  target section values, individual fields, whole visible modules, or hidden
+  entry metadata. Hidden transport fields now always include ~commit-id~, so
+  copying the current commit hash does not depend on whether that field is
+  shown in the visible layout.
 - Refine log column ~:post~ handling: transport decoding now happens before
   postprocessors, explicit ~:post~ functions run per column instance, and
   repeated fields can project to different values in different modules.
