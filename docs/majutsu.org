@@ -165,7 +165,7 @@ Each item in ~majutsu-log-commit-columns~ is a plist:
 - ~:post~ :: Optional postprocessor function (or function list).
 
 Only these keys are used by the current parser/renderer.
-Majutsu ensures metadata field ~id~ is always available for stable section identity even if omitted from user configuration.
+Majutsu ensures hidden metadata fields ~id~, ~commit-id~, and ~parent-ids~ are always available even if omitted from user configuration.
 
 **** Module Semantics
 - ~heading~ :: Visible anchor-line content on the left (can span physical lines before the tail segment begins).
@@ -701,6 +701,12 @@ Press ~Z~ or ~%~ (Emacs) / ~*~ (Evil) to manage workspaces.
 - ~u~ :: Update a stale workspace.
 - ~n~ :: Rename a workspace.
 - ~r~ :: Show and copy current workspace root.
+
+Workspace sections are rendered from a structured =jj workspace list -T=
+template. By default they show each workspace name, working-copy ids,
+description, and resolved root path when available. If jj cannot resolve a
+workspace root, Majutsu treats it as unavailable instead of showing the raw
+=<Error: ...>= text in the section body.
 
 * Conflict Resolution
 ** Detecting Conflicts

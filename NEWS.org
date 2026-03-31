@@ -84,6 +84,11 @@
 - Refine log column ~:post~ handling: transport decoding now happens before
   postprocessors, explicit ~:post~ functions run per column instance, and
   repeated fields can project to different values in different modules.
+- Rework workspace list rendering around a single structured
+  =jj workspace list -T= template/parse pipeline. Workspace sections now show
+  resolved workspace roots when available, treat unavailable roots as empty
+  data instead of propagating raw jj error strings, and reuse parsed section
+  roots before falling back to =jj workspace root --name=.
 
 ** Fixed
 

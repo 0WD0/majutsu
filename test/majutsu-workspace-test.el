@@ -18,12 +18,19 @@
 (require 'ert)
 (require 'majutsu-workspace)
 
+(ert-deftest majutsu-workspace-template-plan/default-fields ()
+  "The default workspace template plan should transport the default fields."
+  (let ((plan (majutsu-workspace--ensure-template-plan)))
+    (should (equal (plist-get plan :fields)
+                   majutsu-workspace--default-fields))))
+
 (ert-deftest majutsu-workspace-parse-list-output/basic ()
   "Parse structured `jj workspace list -T ...` output."
-  (let* ((sep "\x1e")
+  (let* ((sep majutsu-workspace--field-separator)
+         (default-directory "/tmp/main/")
          (output (concat
-                  "@" sep "default" sep "wnurqwps" sep "6acd46b7" sep "Main wc" "\n"
-                  ""  sep "w2"      sep "lvolzxkz" sep "32e07e11" sep "" "\n"))
+                  "@" sep "default" sep "wnurqwps" sep "6acd46b7" sep "Main wc" sep "/tmp/main" "\n"
+                  ""  sep "w2"      sep "lvolzxkz" sep "32e07e11" sep ""        sep "/tmp/w2"   "\n"))
          (entries (majutsu-workspace-parse-list-output output)))
     (should (equal (length entries) 2))
     (should (equal (plist-get (nth 0 entries) :name) "default"))
@@ -31,9 +38,50 @@
     (should (equal (plist-get (nth 0 entries) :change-id) "wnurqwps"))
     (should (equal (plist-get (nth 0 entries) :commit-id) "6acd46b7"))
     (should (equal (plist-get (nth 0 entries) :desc) "Main wc"))
+    (should (equal (plist-get (nth 0 entries) :root) "/tmp/main/"))
     (should (equal (plist-get (nth 1 entries) :name) "w2"))
     (should-not (plist-get (nth 1 entries) :current))
-    (should (equal (plist-get (nth 1 entries) :desc) ""))))
+    (should (equal (plist-get (nth 1 entries) :desc) ""))
+    (should (equal (plist-get (nth 1 entries) :root) "/tmp/w2/"))))
+
+(ert-deftest majutsu-workspace-parse-list-output/root-error-normalizes-to-nil ()
+  "Workspace root template errors should normalize to nil."
+  (let* ((sep majutsu-workspace--field-separator)
+         (default-directory "/tmp/main/")
+         (output (concat
+                  "@" sep "default" sep "wnurqwps" sep "6acd46b7" sep "Main wc"
+                  sep "<Error: Failed to resolve workspace root>" "\n"))
+         (entries (majutsu-workspace-parse-list-output output)))
+    (should (equal (length entries) 1))
+    (should (null (plist-get (car entries) :root)))))
+
+(ert-deftest majutsu-workspace-parse-list-output/root-preserves-remote-prefix ()
+  "Structured workspace roots should keep the current TRAMP prefix."
+  (let ((default-directory "/ssh:demo:/tmp/main/"))
+    (let* ((sep majutsu-workspace--field-separator)
+           (output (concat "@" sep "default" sep "wnurqwps" sep "6acd46b7" sep "Main wc"
+                           sep "/home/demo/repo-main" "\n"))
+           (entries (majutsu-workspace-parse-list-output output)))
+      (should (equal (plist-get (car entries) :root)
+                     "/ssh:demo:/home/demo/repo-main/")))))
+
+(ert-deftest majutsu-workspace--names/uses-structured-list-entries ()
+  "Workspace names should be derived from structured entries."
+  (cl-letf (((symbol-function 'majutsu-workspace-list-entries)
+             (lambda (&optional _directory)
+               '((:name "ws-a")
+                 (:name "ws-b")
+                 (:name "ws-a")))))
+    (should (equal (majutsu-workspace--names)
+                   '("ws-a" "ws-b")))))
+
+(ert-deftest majutsu-workspace-current-name/uses-structured-list-entries ()
+  "Current workspace name should be derived from structured entries."
+  (cl-letf (((symbol-function 'majutsu-workspace-list-entries)
+             (lambda (&optional _directory)
+               '((:name "ws-a" :current nil)
+                 (:name "ws-b" :current t)))))
+    (should (equal (majutsu-workspace-current-name) "ws-b"))))
 
 (ert-deftest majutsu-workspace-visit/binds-default-directory ()
   "Ensure visiting another workspace updates buffer context."
@@ -54,107 +102,53 @@
 
 ;;; Wash tests
 
-(ert-deftest majutsu-workspace-line-regexp-matches-current-workspace ()
-  "Test that the line regexp correctly matches current workspace line."
-  (let* ((sep (string 30))
-         (line (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main workspace\n")))
-    (with-temp-buffer
-      (insert line)
-      (goto-char (point-min))
-      (should (looking-at majutsu-workspace--line-regexp))
-      (should (equal (match-string 1) "@"))
-      (should (equal (match-string 2) "default"))
-      (should (equal (match-string 3) "wqps1234"))
-      (should (equal (match-string 4) "6acd46b7"))
-      (should (equal (match-string 5) "Main workspace")))))
-
-(ert-deftest majutsu-workspace-line-regexp-matches-other-workspace ()
-  "Test that the line regexp correctly matches non-current workspace line."
-  (let* ((sep (string 30))
-         (line (concat sep "feature-x" sep "lvolzxkz" sep "32e07e11" sep "Add feature\n")))
-    (with-temp-buffer
-      (insert line)
-      (goto-char (point-min))
-      (should (looking-at majutsu-workspace--line-regexp))
-      (should (null (match-string 1)))  ; No current marker
-      (should (equal (match-string 2) "feature-x"))
-      (should (equal (match-string 3) "lvolzxkz"))
-      (should (equal (match-string 4) "32e07e11"))
-      (should (equal (match-string 5) "Add feature")))))
-
-(ert-deftest majutsu-workspace-line-regexp-matches-empty-description ()
-  "Test that the line regexp handles empty descriptions."
-  (let* ((sep (string 30))
-         (line (concat sep "test-ws" sep "abcd1234" sep "5678efab" sep "\n")))
-    (with-temp-buffer
-      (insert line)
-      (goto-char (point-min))
-      (should (looking-at majutsu-workspace--line-regexp))
-      (should (equal (match-string 2) "test-ws"))
-      (should (equal (match-string 5) "")))))  ; Empty description
-
-(ert-deftest majutsu-workspace-wash-entry-transforms-line ()
-  "Test that wash-entry transforms a single line into a magit section."
-  (let* ((sep (string 30))
-         (line (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main workspace\n"))
-         (majutsu--default-directory "/tmp/test-repo/"))
-    (with-temp-buffer
-      (require 'magit-section)
-      (magit-section-mode)
-      (setq buffer-read-only nil)  ; Allow modifications during wash
-      ;; Wrap in magit-insert-section as in actual use
-      (magit-insert-section (jj-workspace)
-        (insert line)
-        (goto-char (point-min))
-        ;; Wash the entry
-        (let ((result (majutsu-workspace--wash-entry 8)))
-          (should result)  ; Should return t on success
-          ;; The original line should be replaced
-          (should-not (string-match-p sep (buffer-string)))
-          ;; Should contain the workspace name
-          (should (string-match-p "default" (buffer-string)))
-          ;; Should contain the change ID
-          (should (string-match-p "wqps1234" (buffer-string))))))))
-
-(ert-deftest majutsu-workspace-wash-entry-returns-nil-on-no-match ()
-  "Test that wash-entry returns nil when there's no matching line."
-  (let ((line "invalid line without proper format\n"))
-    (with-temp-buffer
-      (insert line)
-      (goto-char (point-min))
-      (let ((result (majutsu-workspace--wash-entry 8)))
-        (should (null result))  ; Should return nil
-        ;; Buffer should be unchanged
-        (should (equal (buffer-string) line))))))
-
 (ert-deftest majutsu-workspace-wash-list-transforms-buffer ()
-  "Test that wash-list transforms the entire buffer into sections."
-  (let* ((sep (string 30))
-         (lines (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main\n"
-                        sep "feature" sep "lvolzxkz" sep "32e07e11" sep "Feature work\n"))
+  "Structured wash should transform the buffer into workspace sections."
+  (let* ((sep majutsu-workspace--field-separator)
+         (lines (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main"
+                        sep "/workspaces/default" "\n"
+                        sep "feature" sep "lvolzxkz" sep "32e07e11" sep "Feature work"
+                        sep "/workspaces/feature" "\n"))
+         (default-directory "/tmp/test-repo/")
          (majutsu--default-directory "/tmp/test-repo/"))
     (with-temp-buffer
       (require 'magit-section)
       (magit-section-mode)
-      (setq buffer-read-only nil)  ; Allow modifications during wash
-      ;; Wrap in magit-insert-section as in actual use
+      (setq buffer-read-only nil)
       (magit-insert-section (workspaces)
         (insert lines)
         (goto-char (point-min))
-        ;; Wash the list
         (majutsu-workspace--wash-list t nil)
-        ;; Check that separators are gone
         (should-not (string-match-p sep (buffer-string)))
-        ;; Check that both workspaces are present
+        (should (string-match-p "Workspaces" (buffer-string)))
         (should (string-match-p "default" (buffer-string)))
         (should (string-match-p "feature" (buffer-string)))
-        ;; Check that heading is present
-        (should (string-match-p "Workspaces" (buffer-string)))))))
+        (should (string-match-p "/workspaces/default" (buffer-string)))
+        (should (string-match-p "/workspaces/feature" (buffer-string)))))))
+
+(ert-deftest majutsu-workspace-wash-list-renders-missing-root-placeholder ()
+  "Missing structured roots should render as a fixed placeholder."
+  (let* ((sep majutsu-workspace--field-separator)
+         (lines (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main"
+                        sep "<Error: Failed to resolve workspace root>" "\n"))
+         (default-directory "/tmp/test-repo/")
+         (majutsu--default-directory "/tmp/test-repo/"))
+    (with-temp-buffer
+      (require 'magit-section)
+      (magit-section-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (workspaces)
+        (insert lines)
+        (goto-char (point-min))
+        (majutsu-workspace--wash-list t nil)
+        (should (string-match-p "default" (buffer-string)))
+        (should (string-match-p "-" (buffer-string)))))))
 
 (ert-deftest majutsu-workspace-wash-list-hides-single-workspace ()
-  "Test that wash-list hides single workspace when show-single is nil."
-  (let* ((sep (string 30))
-         (line (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main\n")))
+  "Wash-list should hide a single workspace when show-single is nil."
+  (let* ((sep majutsu-workspace--field-separator)
+         (line (concat "@" sep "default" sep "wqps1234" sep "6acd46b7" sep "Main"
+                       sep "/workspaces/default" "\n")))
     (with-temp-buffer
       (require 'magit-section)
       (magit-section-mode)
@@ -162,9 +156,7 @@
       (magit-insert-section (workspaces)
         (insert line)
         (goto-char (point-min))
-        ;; With show-single=nil, should cancel the section
         (majutsu-workspace--wash-list nil nil)
-        ;; Buffer should be empty after cancel (or root placeholder).
         (should (member (buffer-string) '("" "(empty)\n")))))))
 
 ;;; Root-for-name tests
@@ -195,9 +187,21 @@
              (lambda (&rest _args) nil)))
     (should (null (majutsu-workspace--root-for-name "nonexistent")))))
 
+(ert-deftest majutsu-workspace--read-root/prefers-section-root ()
+  "Read-root should reuse a structured root from the current section first."
+  (cl-letf (((symbol-function 'majutsu-workspace--section-entry)
+             (lambda () '(:name "secondary" :root "/tmp/secondary/")))
+            ((symbol-function 'majutsu-workspace--root-for-name)
+             (lambda (&rest _args)
+               (ert-fail "should not consult jj workspace root when section root exists"))))
+    (should (equal (majutsu-workspace--read-root "secondary")
+                   "/tmp/secondary/"))))
+
 (ert-deftest majutsu-workspace--read-root/uses-jj-workspace-root ()
   "Test that read-root delegates to jj workspace root --name."
-  (cl-letf (((symbol-function 'majutsu-workspace--root-for-name)
+  (cl-letf (((symbol-function 'majutsu-workspace--section-entry)
+             (lambda () nil))
+            ((symbol-function 'majutsu-workspace--root-for-name)
              (lambda (name)
                (when (equal name "secondary") "/tmp/secondary/"))))
     (should (equal (majutsu-workspace--read-root "secondary")
@@ -206,13 +210,15 @@
 (ert-deftest majutsu-workspace--read-root/preserves-remote-prefix ()
   "Read-root should keep remote host prefix when using absolute localname."
   (let ((root "/ssh:demo:/tmp/main/"))
-    (cl-letf (((symbol-function 'file-remote-p)
+    (cl-letf (((symbol-function 'majutsu-workspace--section-entry)
+               (lambda () nil))
+              ((symbol-function 'file-remote-p)
                (lambda (path &optional identification _connected)
                  (when (and (equal path root)
                             (null identification))
                    "/ssh:demo:")))
               ((symbol-function 'majutsu-workspace--root-for-name)
-               (lambda (_name) "/home/demo/repo-secondary/")))
+               (lambda (_name) "/ssh:demo:/home/demo/repo-secondary/")))
       (should (equal (majutsu-workspace--read-root "secondary" root)
                      "/ssh:demo:/home/demo/repo-secondary/")))))
 
@@ -251,7 +257,9 @@
 
 (ert-deftest majutsu-workspace--read-root/falls-back-to-sibling ()
   "Test that read-root uses sibling-root when root-for-name fails."
-  (cl-letf (((symbol-function 'majutsu-workspace--root-for-name)
+  (cl-letf (((symbol-function 'majutsu-workspace--section-entry)
+             (lambda () nil))
+            ((symbol-function 'majutsu-workspace--root-for-name)
              (lambda (_name) nil))
             ((symbol-function 'majutsu-workspace--sibling-root)
              (lambda (name _root)
