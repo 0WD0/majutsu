@@ -17,6 +17,7 @@
 
 (require 'ert)
 (require 'majutsu-log)
+(require 'majutsu-section)
 
 (defun majutsu-log-test--base-compiled ()
   "Return a compact compiled layout for parser tests."

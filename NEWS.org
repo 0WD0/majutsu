@@ -23,6 +23,10 @@
   ~majutsu-log-copy-module~. They are exposed through the dispatcher in
   log buffers (and remain callable via ~M-x~), without claiming a dedicated
   direct key binding yet.
+- Add ~majutsu-section.el~ as a thin Majutsu-local visibility layer over
+  Magit's section commands, so log commit fold/unfold preserves display-only
+  graph prefixes more reliably, including Evil / evil-collection fold paths
+  that dispatch through standard Magit section commands.
 
 ** Changed
 
