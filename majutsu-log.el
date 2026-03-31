@@ -1389,25 +1389,123 @@ disappear again."
       (insert ?\n))
     (setq majutsu-log--this-error nil)))
 
+(defconst majutsu-log--tail-terminal-padding 1
+  "Reserved terminal columns kept to the right of tail-aligned text.")
+
+(defun majutsu-log--tail-owner-window ()
+  "Return the window that currently owns tail layout for the current buffer.
+Prefer the selected window when it is showing the current buffer, falling back
+to any visible window for the buffer."
+  (let ((selected (selected-window)))
+    (if (eq (window-buffer selected) (current-buffer))
+        selected
+      (get-buffer-window (current-buffer) 0))))
+
+(defun majutsu-log--tail-align-to-width (width &optional window)
+  "Return a `:align-to' target that right-aligns content of WIDTH.
+On graphical displays, return an absolute pixel column from the left edge of
+WINDOW's text area when WINDOW is available.  On terminals, return an ordinary
+column while reserving a small safety gap at the right edge.  Fall back to
+right-relative alignment when WINDOW is unavailable."
+  (cond
+   ((and (display-graphic-p) window)
+    (list (max 0 (- (window-body-width window t) width))))
+   ((display-graphic-p)
+    `(- right (,width)))
+   (window
+    (max 0 (- (window-body-width window)
+              width
+              majutsu-log--tail-terminal-padding)))
+   (t
+    `(- right ,(+ width majutsu-log--tail-terminal-padding)))))
+
+(defun majutsu-log--tail-spacer-display (tail &optional window)
+  "Return the spacer display spec used to right-align TAIL."
+  (setq window (or window (majutsu-log--tail-owner-window)))
+  `(space :align-to
+    ,(majutsu-log--tail-align-to-width
+      (if (and (display-graphic-p)
+               (fboundp 'string-pixel-width))
+          (string-pixel-width tail (current-buffer))
+        (string-width tail))
+      window)))
+
+(defun majutsu-log--tail-width-at (pos &optional window)
+  "Return displayed width of tail text following spacer at POS.
+Use WINDOW when provided, falling back to the current tail owner window.  If no
+suitable window is available, fall back to string-based measurement."
+  (let ((tail (save-excursion
+                (goto-char pos)
+                (buffer-substring (1+ pos) (line-end-position))))
+        (window (or window (majutsu-log--tail-owner-window))))
+    (if (and (display-graphic-p) window)
+        (save-excursion
+          (goto-char (1+ pos))
+          (car (window-text-pixel-size window (point) (line-end-position) t)))
+      (if (and (display-graphic-p)
+               (fboundp 'string-pixel-width))
+          (save-excursion
+            (goto-char pos)
+            (string-pixel-width tail (current-buffer)))
+        (string-width tail)))))
+
+(defun majutsu-log--refresh-tail-spacers (&optional beg end window)
+  "Recompute right-alignment display specs for tail spacers in BEG..END.
+When WINDOW is non-nil, use that window as the tail layout owner."
+  (setq window (or window (majutsu-log--tail-owner-window)))
+  (with-silent-modifications
+    (let ((inhibit-read-only t))
+      (save-excursion
+        (let ((pos (or beg (point-min)))
+              (end (or end (point-max))))
+          (while (and (< pos end)
+                      (setq pos (text-property-any pos end 'majutsu-log-tail-spacer t)))
+            (put-text-property pos (1+ pos) 'display
+                               `(space :align-to
+                                 ,(majutsu-log--tail-align-to-width
+                                   (majutsu-log--tail-width-at pos window)
+                                   window)))
+            (setq pos (1+ pos))))))))
+
+(defun majutsu-log--refresh-tail-window (&optional window)
+  "Refresh tail alignment for the current log buffer using WINDOW.
+When WINDOW is nil, use `majutsu-log--tail-owner-window'."
+  (when (derived-mode-p 'majutsu-log-mode)
+    (setq window (or window (majutsu-log--tail-owner-window)))
+    (majutsu-log--refresh-tail-spacers nil nil window)
+    (when window
+      (force-window-update window))))
+
+(defun majutsu-log--after-text-scale-change ()
+  "Refresh lightweight display alignment after text scaling changes."
+  (majutsu-log--refresh-tail-window (selected-window)))
+
+(defun majutsu-log--after-window-size-change (window)
+  "Refresh tail alignment after the selected log WINDOW changes size."
+  (when (eq window (selected-window))
+    (majutsu-log--refresh-tail-window window)))
 
 (defun majutsu-log--insert-heading-anchor-line (anchor-left tail entry-id prefix)
   "Insert ANCHOR-LEFT and right-aligned TAIL on one prefixed line."
-  (let ((start (point)))
+  (let ((start (point))
+        (spacer-pos nil)
+        (window (majutsu-log--tail-owner-window)))
     (insert anchor-left)
     (when (and (stringp tail) (not (string-empty-p tail)))
-      (let ((tail-width (string-width (substring-no-properties tail)))
-            (spacer-pos (point)))
-        (insert " ")
-        (add-text-properties
-         spacer-pos (point)
-         `(majutsu-log-module tail
-           majutsu-log-entry-id ,entry-id
-           majutsu-log-decoration tail-spacer
-           majutsu-log-tail-spacer t
-           display ,`(space :align-to (- right ,tail-width))))
-        (insert tail)))
+      (setq spacer-pos (point))
+      (insert " ")
+      (add-text-properties
+       spacer-pos (point)
+       `(majutsu-log-module tail
+         majutsu-log-entry-id ,entry-id
+         majutsu-log-decoration tail-spacer
+         majutsu-log-tail-spacer t
+         display ,(majutsu-log--tail-spacer-display tail window)))
+      (insert tail))
     (insert "\n")
-    (majutsu-log--apply-line-prefix-span start (point) prefix)))
+    (majutsu-log--apply-line-prefix-span start (point) prefix)
+    (when spacer-pos
+      (majutsu-log--refresh-tail-spacers spacer-pos (1+ spacer-pos) window))))
 
 (defun majutsu-log--string-has-module-p (string module)
   "Return non-nil if STRING contains text marked with MODULE."
@@ -1720,7 +1818,9 @@ Return non-nil when the section could be located."
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function #'majutsu-log--filter-buffer-substring)
-  (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
+  (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t)
+  (add-hook 'text-scale-mode-hook #'majutsu-log--after-text-scale-change nil t)
+  (add-hook 'window-size-change-functions #'majutsu-log--after-window-size-change nil t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-log-mode))
   (list majutsu-buffer-log-args
