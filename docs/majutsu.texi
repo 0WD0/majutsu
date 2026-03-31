@@ -36,12 +36,12 @@ Majutsu is a Magit-inspired Emacs interface for the Jujutsu (jj) version control
 * Inspecting::
 * Manipulating::
 * Bookmarks::
+* Tags::
 * Git Integration::
 * Workspaces::
 * Conflict Resolution::
 * Customizing::
 * Template DSL::
-* Extending Majutsu::
 * Keystroke Index::
 * Function and Command Index::
 * Variable Index::
@@ -100,6 +100,11 @@ Log Buffer
 * Log Display::
 * Log Options Transient::
 * Revset Builder::
+* Log Output Protocol (Sequential Markers)::
+* @code{majutsu-log-commit-columns} Schema::
+* Configuration Examples::
+* Migration Notes::
+* Copying From Log Buffers::
 
 Diffing
 
@@ -120,8 +125,11 @@ Manipulating
 * Undo and Redo::
 * Splitting::
 * Restoring::
+* Reverting::
 * Sparse Working Copy::
 * Interactive Patching::
+* Metaediting::
+* Simplifying Parents::
 
 Interactive Patching
 
@@ -138,7 +146,11 @@ Bookmarks
 
 * Understanding Bookmarks::
 * Bookmark Transient::
-* Tracking Remote Bookmarks::
+
+Tags
+
+* Understanding Tags::
+* Tag Transient::
 
 Git Integration
 
@@ -153,7 +165,6 @@ Workspaces
 
 * Understanding Workspaces::
 * Workspace Transient::
-* Configuring Workspace Discovery::
 
 Conflict Resolution
 
@@ -171,21 +182,20 @@ Customizing
 * Buffer Hooks::
 * Description Options::
 * Evil Integration::
-* Workspace Options::
 
 Template DSL
 
 * Overview::
 * Why Use the DSL@?::
 * Basic Syntax::
-* Method Calls::
-* List Operations::
+* Method Calls and Self::
 * Operators::
-* Conditional and Control Flow::
+* Conditionals and Composition::
 * Elisp Embedding::
-* Defining Custom Functions::
-* Type System::
-* Supported Commands::
+* Anonymous Functions and Higher-Order Operations::
+* Extending the DSL::
+* Type System and Upstream Alignment::
+* Supported Commands (for development reference)::
 
 Basic Syntax
 
@@ -194,17 +204,12 @@ Basic Syntax
 * Raw Injection::
 * Booleans and Numbers::
 
-Method Calls
+Method Calls and Self
 
 * Explicit Method Chaining::
-* Self-Type Context::
-
-Extending Majutsu
-
-* Module Architecture::
-* Process Execution::
-* Section Types::
-* Transient Definitions::
+* Implicit Self Context::
+* Explicit Receiver References::
+* Binding Self in Helper Bodies::
 
 @end detailmenu
 @end menu
@@ -259,7 +264,7 @@ Brandon Olivier for the initial codebase of @samp{jj-mode.el}.
 @item
 Emacs 29.1 or later.
 @item
-Jujutsu (jj) v0.37.0 or later installed and in your @samp{PATH}.
+Jujutsu (jj) v0.39.0 or later installed and in your @samp{PATH}.
 @item
 @samp{magit} 3.3.0 or later (for section management).
 @item
@@ -322,7 +327,7 @@ If you use Evil mode, Majutsu includes a native integration that provides sensib
 @node Getting Started
 @chapter Getting Started
 
-To begin using Majutsu, navigate to a directory within a Jujutsu repository and run @code{M-x majutsu} (or its alias @code{majutsu-log}).
+To begin using Majutsu, navigate to a directory within a Jujutsu repository and run @code{M-x majutsu-log} (or its alias @code{majutsu}).
 
 If the directory is not a repository, Majutsu will offer to initialize one using @samp{jj git init}. Once the log buffer opens, you will see a graphical representation of your revision history, similar to Magit's log but with Jujutsu's unique features like hidden and divergent revisions clearly marked.
 
@@ -427,12 +432,17 @@ The log buffer is the heart of Majutsu. It displays the history graph using a cu
 * Log Display::
 * Log Options Transient::
 * Revset Builder::
+* Log Output Protocol (Sequential Markers)::
+* @code{majutsu-log-commit-columns} Schema::
+* Configuration Examples::
+* Migration Notes::
+* Copying From Log Buffers::
 @end menu
 
 @node Log Display
 @subsection Log Display
 
-Each revision in the log is a section. You can see the change ID, bookmarks, tags, and the first line of the description. Collapsed by default, you can expand a revision to see its full description.
+Each revision in the log is a section. The visible anchor line is built from fields assigned to the @code{heading} module plus any auxiliary fields assigned to the @code{tail} module in @code{majutsu-log-commit-columns} (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Collapsed by default, you can expand a revision to see foldable @code{body} module content (for example, long descriptions).
 
 @node Log Options Transient
 @subsection Log Options Transient
@@ -447,14 +457,232 @@ Limit the number of revisions shown.
 Toggle reverse order.
 @item @code{-G}
 Toggle the ASCII graph.
-@item @code{a}
-Add a path filter to see only changes affecting certain files.
+@item @code{--}
+Add fileset/path filters to limit the log to matching files.
 @end table
 
 @node Revset Builder
 @subsection Revset Builder
 
 While you can type revsets manually, Majutsu's selection system allows you to build them interactively. Commands that require a revset will often default to the revision at point or your current selection.
+
+@node Log Output Protocol (Sequential Markers)
+@subsection Log Output Protocol (Sequential Markers)
+
+Majutsu's log parser uses an ordered marker protocol embedded in jj template output:
+
+@itemize
+@item
+Entry start: @samp{\x1dS}
+@item
+Tail start: @samp{\x1dT}
+@item
+Body start: @samp{\x1dB}
+@item
+Metadata start: @samp{\x1dM}
+@item
+Entry end: @samp{\x1dE}
+@end itemize
+
+Within each module payload, fields are separated by @samp{\x1e}.
+
+Protocol control bytes are reserved:
+
+@itemize
+@item
+@samp{\x1d} for module markers
+@item
+@samp{\x1e} for field boundaries
+@item
+@samp{\x1f} for encoded logical newlines
+@end itemize
+
+Avoid emitting these bytes literally in user templates unless intentionally participating in the protocol.
+
+Newline rules:
+
+@itemize
+@item
+@strong{heading module}: may contain real physical newlines.
+@item
+@strong{tail/body/metadata modules}: stay in the trailing payload; encode logical newlines as @samp{\x1f} and decode them in postprocessing.
+@end itemize
+
+Parsing is strictly sequential and positional (not key/value based):
+
+@enumerate
+@item
+Detect @samp{\x1dS} and lock the entry indent column.
+@item
+Collect heading lines until @samp{\x1dT} is found.
+@item
+Parse @samp{T -> B -> M -> E} payload segments in order on the final heading line (no extra physical line breaks between these module markers).
+@item
+Keep lines between current entry @samp{E} and next entry @samp{S} attached to the current section heading area (graph continuation lines).
+@end enumerate
+
+@node @code{majutsu-log-commit-columns} Schema
+@subsection @code{majutsu-log-commit-columns} Schema
+
+Each item in @code{majutsu-log-commit-columns} is a plist:
+
+@table @asis
+@item @code{:field}
+Field symbol mapped to a @code{majutsu-log-template-<field>} variable.
+@item @code{:module}
+One of @code{heading}, @code{tail}, @code{body}, @code{metadata}.
+@item @code{:face}
+Highlight policy for that field.
+@item @code{:post}
+Optional postprocessor function (or function list).
+@end table
+
+Only these keys are used by the current parser/renderer.
+Majutsu ensures hidden metadata fields @code{id}, @code{commit-id}, and @code{parent-ids} are always available even if omitted from user configuration.
+
+@enumerate
+@item
+@anchor{Module Semantics}Module Semantics
+
+
+@table @asis
+@item @code{heading}
+Visible anchor-line content on the left (can span physical lines before the tail segment begins).
+@item @code{tail}
+Single-line auxiliary content rendered on the anchor line with right alignment. It remains searchable as real text, but copying a mixed heading+tail region drops the tail text by default; copying the tail alone preserves it.
+@item
+Rendered log spans are tagged with @code{majutsu-log-module}, @code{majutsu-log-field}, @code{majutsu-log-column}, @code{majutsu-log-entry-id}, and @code{majutsu-log-decoration} so explicit copy commands can distinguish content from graph/tail decorations.
+@item
+Hidden transport fields always include @code{id}, @code{commit-id}, and @code{parent-ids}, even if you omit them from visible layout. That keeps stable identity, relation navigation, and commit-hash copying available.
+@item @code{body}
+Foldable section body.
+@item @code{metadata}
+Parsed/stored for behavior and lookup; not directly shown by default.
+@end table
+
+@item
+@anchor{Face Policy (@code{face})}Face Policy (@code{:face})
+
+
+@table @asis
+@item @code{t}
+Preserve jj-provided text properties/highlighting.
+@item @code{nil}
+Strip text properties (plain string).
+@item @code{FACE-SYMBOL}
+Repaint field using that face.
+@end table
+
+If @code{:face} is omitted, Majutsu preserves jj-provided text properties (@code{t}).
+
+@item
+@anchor{Postprocessing (@code{post})}Postprocessing (@code{:post})
+
+
+@code{:post} can be:
+
+@itemize
+@item
+A function symbol
+@item
+A list of functions (applied left-to-right)
+@item
+Omitted or @code{:default} (uses default postprocessors)
+@item
+@code{nil} (disable column postprocessors)
+@end itemize
+
+Function contract:
+
+@lisp
+(fn VALUE &optional CTX) => NEW-VALUE
+@end lisp
+
+@code{CTX} includes at least @code{:field}, @code{:module}, and the normalized @code{:column}
+spec.
+
+Postprocessors run per column instance, so the same field can appear in
+multiple modules and project to different values. Transport decoding (for
+example, turning @samp{\x1f} back into @samp{\n}) happens before @code{:post} runs.
+
+When you provide a function or function list in @code{:post}, Majutsu appends it
+after the field's default postprocessors.
+@end enumerate
+
+@node Configuration Examples
+@subsection Configuration Examples
+
+@enumerate
+@item
+@anchor{Minimal layout}Minimal layout
+
+
+@lisp
+(setq majutsu-log-commit-columns
+      '((:field change-id   :module heading  :face t)
+        (:field description :module heading  :face t)
+        (:field author      :module tail     :face magit-log-author)
+        (:field timestamp   :module tail     :face magit-log-date)
+        (:field long-desc   :module body     :face t)
+        (:field id          :module metadata :face nil)
+        (:field commit-id   :module metadata :face nil)
+        (:field flags       :module metadata :face nil)))
+@end lisp
+
+@item
+@anchor{Keep heading multiline + encoded body multiline}Keep heading multiline + encoded body multiline
+
+
+@lisp
+;; heading field can emit real newlines directly
+(setq majutsu-log-template-description
+      [:concat [:change_id] "\n" [:description]])
+
+;; non-heading field should encode line breaks as \x1f
+(setq majutsu-log-template-long-desc
+      [:description :lines :skip 1 :join "\x1f"])
+@end lisp
+
+@item
+@anchor{Custom postprocessor}Custom postprocessor
+
+
+@lisp
+(defun my-log-trim (value &optional _ctx)
+  (if (stringp value) (string-trim-right value) value))
+
+(setq majutsu-log-commit-columns
+      '((:field description :module heading :face t :post my-log-trim)
+        (:field id :module metadata :face nil)))
+@end lisp
+@end enumerate
+
+@node Migration Notes
+@subsection Migration Notes
+
+Older column keys like @code{:align} and @code{:visible} are no longer part of the log column schema.
+The historical @code{right-margin} placement has been replaced by the @code{tail} module, which renders real text on the anchor line with right alignment.
+Move fields between visual areas by changing @code{:module}, and adjust display behavior with @code{:face} and @code{:post}. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
+
+@node Copying From Log Buffers
+@subsection Copying From Log Buffers
+
+Majutsu now provides both default copy filtering and explicit semantic copy commands:
+
+@table @asis
+@item @code{M-x majutsu-copy-section-value} / @code{? w s}
+copy the current section's stable value (for @code{jj-commit}, this is the revision id at point). If the region is active, it falls back to ordinary region copy.
+@item @code{M-x majutsu-log-copy-field} / @code{? w f}
+copy the rendered field value at point.
+@item @code{M-x majutsu-log-copy-entry-field} / @code{? w F}
+choose any canonical field stored on the current entry, including hidden metadata that is not visible in the current layout.
+@item @code{M-x majutsu-log-copy-commit-id} / @code{? w h}
+copy the current entry's commit hash from hidden metadata.
+@item @code{M-x majutsu-log-copy-module} / @code{? w m}
+copy the rendered visible module at point (@code{heading}, @code{tail}, or @code{body}), without graph-prefix or tail-spacer decoration.
+@end table
+
+This keeps ordinary Emacs copying predictable while still offering precise log-aware copy operations when you want semantic rather than purely visual text.
 
 @node Diffing
 @section Diffing
@@ -533,7 +761,7 @@ If you diff @samp{-r A::D | B::E}, there are two heads (D, E) and two roots (A, 
 The diff buffer is highly interactive:
 @table @asis
 @item @code{RET}
-Visit the appropriate version of the file at point. For working copy diffs, visits the actual file. For committed changes, visits the blob.
+Visit the appropriate version of the file at point. For working copy diffs, added/context lines visit the workspace file while removed lines visit the parent-side blob. For committed changes, it visits the blob at the corresponding side.
 @item @code{C-j} / @code{C-<return>}
 Visit the workspace file, regardless of diff type. Note: when Evil mode is active, @code{C-j} may be overridden by Evil's section navigation; use @code{C-<return>} instead, which is unaffected.
 @item @code{+} / @code{-}
@@ -648,20 +876,36 @@ buffer).
 Run @samp{jj diffedit} with Emacs as
 @samp{ui.diff-editor}. If no file is at point, Majutsu prompts for a changed file,
 then launches a two-sided Ediff session for that single file (left/right
-temp files). Edit and save as needed, then quit Ediff to return control to
-@samp{jj diffedit}. When @samp{majutsu-edit-finish-on-save} is non-nil, saving can
-finish the with-editor session automatically.
+temp files). Edit the right-side temp file and quit Ediff to return control
+to @samp{jj diffedit}. When @samp{majutsu-edit-finish-on-save} is non-nil, saving a
+diffedit temp file can finish the with-editor session automatically.
 @end itemize
 
-Conflict resolution is now a separate command:
-@table @asis
-@item @code{m} in dispatcher (@samp{majutsu-ediff-resolve})
+Resolve entry points:
+@itemize
+@item
+Ediff transient: @code{m} (@samp{majutsu-ediff-resolve}),
+@code{M} (@samp{majutsu-ediff-resolve-with-conflict}).
+@item
+Direct commands: @samp{M-x majutsu-ediff-resolve},
+@samp{M-x majutsu-ediff-resolve-with-conflict}.
+
+@item @code{m} (@samp{majutsu-ediff-resolve})
 Resolve conflicted files.
-Uses @samp{jj resolve} with 3-way Ediff (merge tool: @samp{$left}, @samp{$base}, @samp{$right})
-for 2-sided conflicts, and falls back to @samp{jj diffedit} for conflicts with
-more than 2 sides.
-In a @samp{jj-commit} section, conflicted files are listed for that revision.
-@end table
+In a @samp{jj-commit} section, it lists conflicted files for that revision;
+otherwise it uses working copy @samp{@@}. Uses @samp{jj resolve} with 3-way Ediff
+(merge tool: @samp{$left}, @samp{$base}, @samp{$right}) for up-to-2-sided conflicts, and
+falls back to @samp{jj diffedit} for conflicts with more than 2 sides.
+In this flow, quitting Ediff without editing leaves jj's output unchanged,
+so the conflict stays unresolved. If you edited and quit, Majutsu asks whether
+to save the resolved result; choosing no discards edits and keeps conflicts.
+When only part of a conflict is resolved, remaining regions are written with
+git-style conflict markers so jj keeps unresolved regions unresolved.
+@item @code{M} (@samp{majutsu-ediff-resolve-with-conflict})
+Open the resolve target
+buffer (working-copy file or revision blob), enable
+@samp{majutsu-conflict-mode}, and jump to the first conflict.
+@end itemize
 
 @node Process Buffer (1)
 @section Process Buffer
@@ -689,8 +933,11 @@ Jujutsu tracks every operation that modifies the repository. Press @code{M-x maj
 * Undo and Redo::
 * Splitting::
 * Restoring::
+* Reverting::
 * Sparse Working Copy::
 * Interactive Patching::
+* Metaediting::
+* Simplifying Parents::
 @end menu
 
 @node Creating Changes
@@ -703,7 +950,7 @@ Create a new change on top of the revision at point (DWIM).
 Open the New transient to specify options.
 @item @code{A}
 Create a new change after the revision at point.
-@item @code{B} (Emacs), @code{I} (Evil log mode)
+@item @code{B} (Emacs), @code{I} (Evil)
 Create a new change before the revision at point.
 @end table
 
@@ -765,10 +1012,12 @@ Destination revision (@samp{--into}).
 Onto destination.
 @item @code{-A} / @code{-B}
 Insert after/before constraints.
-@item @code{-m}
-Set a message for the result.
+@item @code{--}
+Limit squash to specific filesets.
+@item @code{-k}
+Keep commits that become empty after squashing.
 @end table
-Runs: @samp{jj squash --from SRC --into DEST}
+Runs: @samp{jj squash --from SRC --into DEST [FILESETS...]}
 
 @node Absorbing
 @section Absorbing
@@ -878,14 +1127,27 @@ Limit restore to selected files/filesets.
 @end table
 Runs: @samp{jj restore --from REV [FILESETS...]} or @samp{jj restore --changes-in REV [FILESETS...]}
 
+@node Reverting
+@section Reverting
+
+@table @asis
+@item @code{V} (Emacs), @code{_} (Evil) (@code{majutsu-revert})
+Open the Revert transient to create reverse changes in a new revision.
+@item @code{-r}
+Source revisions to revert (@samp{--revisions}).
+@item @code{-o}
+Apply reverse changes on top of revisions (@samp{--onto}).
+@item @code{-A} / @code{-B}
+Insert reverse changes after/before selected revisions.
+@end table
+Runs: @samp{jj revert --revisions REV --onto DEST}
+
 @node Sparse Working Copy
 @section Sparse Working Copy
 
 @table @asis
 @item @code{>} (@code{majutsu-sparse})
 Open the sparse working copy transient (set, add, remove, list, edit).
-@item
-Editing patterns opens a temporary @samp{.jjsparse} buffer; lines starting with @code{JJ:} are comments and are ignored by Jujutsu.
 @end table
 
 Sparse transient actions:
@@ -904,6 +1166,10 @@ Reset to all files (@samp{jj sparse reset}).
 
 Notes:
 @itemize
+@item
+Editing patterns opens a temporary @samp{.jjsparse} buffer.
+@item
+Lines starting with @code{JJ:} are comments and are ignored by Jujutsu.
 @item
 Pattern completion includes current directories/files from @samp{@@}.
 @item
@@ -1078,7 +1344,10 @@ Selecting the @strong{entire} deletion works correctly - the file gets deleted i
 @strong{Partial selection of deleted files is not yet supported} - you must select all lines or none
 @end itemize
 
-This limitation exists because git's patch format requires @samp{deleted file mode} patches to remove the entire file contents. Partial deletion would require converting to a regular modification patch, which has edge cases with context matching.
+This limitation exists because git's patch format requires @samp{deleted file mode}
+patches to remove the entire file contents. Partial deletion would require
+converting to a regular modification patch, which has edge cases with context
+matching.
 
 @item
 @anchor{Renamed/Copied Files}Renamed/Copied Files
@@ -1121,13 +1390,43 @@ Face for selected hunks
 Face for selected regions
 @end table
 
+@node Metaediting
+@section Metaediting
+
+@table @asis
+@item @code{?} then @code{m} (@code{majutsu-metaedit})
+Open the Metaedit transient. Defaults to one revision from point (fallback @samp{@@}). If multiple revisions are selected, Majutsu asks you to narrow it down.
+@item @code{-r} / @code{-m} / @code{-a} / @code{-t}
+Set revision, message, author, and author timestamp.
+@item @code{-c} / @code{-u} / @code{-U} / @code{-f}
+Toggle update-change-id / update-author / update-author-timestamp / force-rewrite.
+@item @code{-I}
+Ignore immutable revisions.
+@end table
+Runs: @samp{jj metaedit --revisions REV [OPTIONS...]}
+
+@node Simplifying Parents
+@section Simplifying Parents
+
+@table @asis
+@item @code{?} then @code{P} (@code{majutsu-simplify-parents})
+Open the Simplify Parents transient.
+@item @code{-s}
+Simplify specified revision(s) together with descendant trees (@samp{--source}).
+@item @code{-r}
+Simplify specified revision(s) only (@samp{--revisions}).
+If neither is set, Majutsu defaults to region/point revision(s), fallback @samp{@@}.
+@item @code{-I}
+Ignore immutable revisions.
+@end table
+Runs: @samp{jj simplify-parents [--source REVSET] [--revisions REVSET]}
+
 @node Bookmarks
 @chapter Bookmarks
 
 @menu
 * Understanding Bookmarks::
 * Bookmark Transient::
-* Tracking Remote Bookmarks::
 @end menu
 
 @node Understanding Bookmarks
@@ -1156,17 +1455,45 @@ Rename a bookmark.
 Delete a bookmark (this deletion propagates to remotes).
 @item @code{f}
 Forget a bookmark (removes local tracking without affecting remotes).
-@end table
-
-@node Tracking Remote Bookmarks
-@section Tracking Remote Bookmarks
-
-@table @asis
 @item @code{t}
 Track a remote bookmark to create a local one.
 @item @code{u}
 Untrack a remote bookmark.
 @end table
+
+@node Tags
+@chapter Tags
+
+@menu
+* Understanding Tags::
+* Tag Transient::
+@end menu
+
+@node Understanding Tags
+@section Understanding Tags
+
+In Jujutsu, tags are lightweight refs that point to revisions, similar to Git tags.
+Majutsu wraps @samp{jj tag set/list/delete} and follows jj semantics where creating and
+moving tags both use @samp{tag set} (moving requires @samp{--allow-move}).
+
+@node Tag Transient
+@section Tag Transient
+
+Tag commands are intentionally dispatch-first. Open dispatcher with @code{?}, then
+press @code{t} to manage tags.
+@table @asis
+@item @code{l}
+List tags in a dedicated buffer.
+@item @code{s}
+Set tag(s). Uses completion and allows new names.
+@item @code{m}
+Move existing tag(s) to another revision (internally @samp{--allow-move}).
+@item @code{d}
+Delete tag(s) by name/pattern.
+@end table
+
+Tag prompts use completion candidates from local tags. Existing tags are shown for
+selection, while set/delete prompts still allow entering string patterns manually.
 
 @node Git Integration
 @chapter Git Integration
@@ -1183,26 +1510,26 @@ Untrack a remote bookmark.
 @node Git Transient
 @section Git Transient
 
-Press @code{G} to access Git-specific commands. Jujutsu can interact directly with Git remotes.
+Press @code{G} (Emacs) / @code{? G} (Evil) to access Git-specific commands. Jujutsu can interact directly with Git remotes.
 
 @node Pushing
 @section Pushing
 
 @table @asis
 @item @code{p}
-Open the Push transient. You can push specific bookmarks or all tracked bookmarks.
+Open the Push transient. You can push bookmarks, revisions, or changes.
 @item @code{-a}
-Push all tracked bookmarks.
+Push all bookmarks.
+@item @code{-t}
+Push tracked bookmarks only.
 @item @code{-b}
 Push specific bookmark(s).
 @item @code{-c}
 Push a specific change.
 @item @code{-r}
 Push specific revision(s).
-@item @code{--allow-new}
-Allow creating new remote bookmarks.
-@item @code{--dry-run}
-Show what would be pushed without pushing.
+@item @code{-y}
+Show what would be pushed without pushing (@samp{--dry-run}).
 @end table
 Runs: @samp{jj git push}
 
@@ -1212,11 +1539,13 @@ Runs: @samp{jj git push}
 @table @asis
 @item @code{f}
 Open the Fetch transient to pull changes from a remote.
-@item @code{-b}
-Fetch specific bookmark(s).
-@item @code{-r}
-Fetch from specific remote.
-@item @code{--all-remotes}
+@item @code{-R}
+Fetch from a specific remote.
+@item @code{-B}
+Fetch a specific branch.
+@item @code{-t}
+Fetch only tracked bookmarks.
+@item @code{-A}
 Fetch from all remotes.
 @end table
 Runs: @samp{jj git fetch}
@@ -1268,7 +1597,6 @@ Show Git directory path (@samp{jj git root})
 @menu
 * Understanding Workspaces::
 * Workspace Transient::
-* Configuring Workspace Discovery::
 @end menu
 
 @node Understanding Workspaces
@@ -1279,7 +1607,7 @@ Jujutsu supports multiple workspaces sharing the same repository storage. This i
 @node Workspace Transient
 @section Workspace Transient
 
-Press @code{Z} or @code{%} (Emacs) or @code{*} (Evil) to manage workspaces.
+Press @code{Z} or @code{%} (Emacs) / @code{*} (Evil) to manage workspaces.
 @table @asis
 @item @code{l}
 List all workspaces.
@@ -1297,10 +1625,11 @@ Rename a workspace.
 Show and copy current workspace root.
 @end table
 
-@node Configuring Workspace Discovery
-@section Configuring Workspace Discovery
-
-If Majutsu cannot find a workspace on disk, it will prompt you. You can configure @samp{majutsu-workspace-search-directories} to help it find them automatically.
+Workspace sections are rendered from a structured @samp{jj workspace list -T}
+template. By default they show each workspace name, working-copy ids,
+description, and resolved root path when available. If jj cannot resolve a
+workspace root, Majutsu treats it as unavailable instead of showing the raw
+@samp{<Error: ...>} text in the section body.
 
 @node Conflict Resolution
 @chapter Conflict Resolution
@@ -1321,10 +1650,6 @@ JJ marks conflicts in the log with a "conflict" label. Expanding the revision wi
 
 You can enter conflict handling from multiple places:
 @itemize
-@item
-In dispatcher, use @code{m} (@samp{majutsu-ediff-resolve}) for auto resolve flow.
-@item
-In a diff hunk, use @code{C-c ^ RET} (@samp{majutsu-diff-resolve-conflict}).
 @item
 In Ediff transient, use @code{m} (auto strategy) or @code{M} (force conflict workflow).
 @code{M} opens the working-copy file (or a revision blob buffer for non-working-copy
@@ -1386,7 +1711,6 @@ Refine.
 * Buffer Hooks::
 * Description Options::
 * Evil Integration::
-* Workspace Options::
 @end menu
 
 @node Essential Settings
@@ -1397,6 +1721,8 @@ Refine.
 Path to the @samp{jj} binary (default: @samp{"jj"}).
 @item @code{majutsu-jj-global-arguments}
 Global arguments passed to all jj commands (default: @samp{("--no-pager" "--color=always")}).
+@item @code{majutsu-jj-diffstat-columns}
+Column width used only for @samp{jj diff --stat} (default: @samp{80}). Set to @samp{nil} to inherit terminal width. Raise it if you want more full path visibility; keep it near 80 if you prefer compact stat bars.
 @item @code{majutsu-show-process-buffer-hint}
 Whether to show the "Type $ for details" hint on errors.
 @item @code{majutsu-debug}
@@ -1429,6 +1755,8 @@ Maximum number of sections to keep in a process log buffer (default: 32).
 When non-nil, convert ANSI escapes in jj output to text properties.
 @item @code{majutsu-process-timestamp-format}
 Format string for timestamps in process buffer sections.
+@item @code{majutsu-jj-environment}
+Extra @samp{KEY=VALUE} entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by @samp{majutsu-process}.
 @end table
 
 @node Display Options
@@ -1436,9 +1764,9 @@ Format string for timestamps in process buffer sections.
 
 @table @asis
 @item @code{majutsu-log-commit-columns}
-Customize which columns are shown in the log (ID, author, date, etc.).
-@item @code{majutsu-log-field-faces}
-Customize the colors used for different fields in the log.
+Ordered log field layout for log rendering. It also controls face policy per field using @code{:face}. For protocol details, module semantics, and schema examples, see @emph{Inspecting -> Log Buffer}.
+@item @code{majutsu-log-template-<field>} variables
+Template forms consumed by log fields. For newline and control-character rules, see @emph{Inspecting -> Log Buffer}.
 @item @code{majutsu-log-sections-hook}
 Hook run to insert sections in the log buffer.
 @item @code{majutsu-display-buffer-function}
@@ -1505,14 +1833,6 @@ Set to @samp{nil} to disable automatic Evil bindings.
 The Evil state to start in (default: @samp{normal}).
 @end table
 
-@node Workspace Options
-@section Workspace Options
-
-@table @asis
-@item @code{majutsu-workspace-search-directories}
-Directories to search when locating workspace roots.
-@end table
-
 @node Template DSL
 @chapter Template DSL
 
@@ -1520,14 +1840,14 @@ Directories to search when locating workspace roots.
 * Overview::
 * Why Use the DSL@?::
 * Basic Syntax::
-* Method Calls::
-* List Operations::
+* Method Calls and Self::
 * Operators::
-* Conditional and Control Flow::
+* Conditionals and Composition::
 * Elisp Embedding::
-* Defining Custom Functions::
-* Type System::
-* Supported Commands::
+* Anonymous Functions and Higher-Order Operations::
+* Extending the DSL::
+* Type System and Upstream Alignment::
+* Supported Commands (for development reference)::
 @end menu
 
 @node Overview
@@ -1550,7 +1870,7 @@ The DSL provides several advantages over writing raw template strings:
 @item
 @strong{Composability}: Define reusable template functions with @samp{majutsu-template-defun} that expand inline, avoiding runtime overhead.
 @item
-@strong{Type awareness}: The DSL understands jj's type system, enabling self-type context for cleaner keyword syntax (@samp{[:description]} instead of @samp{[:method [:raw "self"] :description]}).
+@strong{Type awareness}: The DSL understands jj's type system, enabling self-type context for cleaner keyword syntax (@samp{[:description]} instead of @samp{[:method [:self] :description]}).
 @item
 @strong{Readability}: Vector-based syntax with keywords is more readable than deeply nested string concatenation.
 @end itemize
@@ -1561,7 +1881,7 @@ Example comparison:
 "if(self.root(), \"(root)\", self.commit_id().short())"
 
 ;; DSL (validated, composable, readable)
-(majutsu-tpl [:if [:raw "self.root()"] "(root)" [:method [:raw "self"] :commit_id :short]])
+(majutsu-tpl [:if [:root] "(root)" [:commit_id :short]] 'Commit)
 @end lisp
 
 @node Basic Syntax
@@ -1601,7 +1921,15 @@ Use @samp{:raw} to inject template code directly without escaping:
 (majutsu-tpl [:raw "self.commit_id().short()"])  ; => "self.commit_id().short()"
 @end lisp
 
-Symbols passed to @samp{:call} are treated as raw identifiers:
+Untyped raw snippets now default to semantic type @samp{Unknown} rather than
+pretending to be @samp{Template}. If you want method-chain typing to keep flowing,
+add an explicit annotation:
+@lisp
+[:raw "self" :Commit]
+@end lisp
+
+The callable position of @samp{:call} can be written as a quoted symbol,
+keyword, or string name:
 @lisp
 (majutsu-tpl [:call 'coalesce [:str ""] [:str "X"]])  ; => "coalesce(\"\", \"X\")"
 @end lisp
@@ -1615,12 +1943,14 @@ Elisp @samp{t} and @samp{nil} map to @samp{true} and @samp{false}. Numbers pass 
 (majutsu-tpl [:call 'pad_end 8 "x"])  ; => "pad_end(8, \"x\")"
 @end lisp
 
-@node Method Calls
-@section Method Calls
+@node Method Calls and Self
+@section Method Calls and Self
 
 @menu
 * Explicit Method Chaining::
-* Self-Type Context::
+* Implicit Self Context::
+* Explicit Receiver References::
+* Binding Self in Helper Bodies::
 @end menu
 
 @node Explicit Method Chaining
@@ -1628,42 +1958,57 @@ Elisp @samp{t} and @samp{nil} map to @samp{true} and @samp{false}. Numbers pass 
 
 Use @samp{:method} to call methods on objects. Methods can be chained:
 @lisp
-(majutsu-tpl [:method [:raw "self" :Commit] :commit_id])
-; => "self.commit_id()"
+(majutsu-tpl [:method [:raw "commit" :Commit] :commit_id])
+; => "commit.commit_id()"
 
-(majutsu-tpl [:method [:raw "self" :Commit] :parents :len])
-; => "self.parents().len()"
+(majutsu-tpl [:method [:raw "commit" :Commit] :parents :len])
+; => "commit.parents().len()"
 
-(majutsu-tpl [:method [:raw "self" :Commit] :diff "src"])
-; => "self.diff(\"src\")"
+(majutsu-tpl [:method [:raw "commit" :Commit] :diff "src"])
+; => "commit.diff(\"src\")"
 @end lisp
 
-@node Self-Type Context
-@subsection Self-Type Context
+@node Implicit Self Context
+@subsection Implicit Self Context
 
-When a self-type is provided, bare keywords become method calls on @samp{self}:
+At public compile entry points, when a self type is provided (or the default
+self type is configured), Majutsu installs a root @samp{self} binding and bare
+keywords become method calls on that receiver:
 @lisp
 (majutsu-tpl [:description] 'Commit)      ; => "self.description()"
 (majutsu-tpl [:parents :len] 'Commit)     ; => "self.parents().len()"
 @end lisp
 
-@node List Operations
-@section List Operations
+@node Explicit Receiver References
+@subsection Explicit Receiver References
 
-List methods (@samp{map}, @samp{filter}, @samp{any}, @samp{all}) use a special syntax with a binding variable:
+Use @samp{[:self]} when you need the current implicit receiver as a value. When
+nested lambdas or helper-local @samp{:bind-self} scopes introduce new receivers,
+@samp{[:self N]} selects the outer binding @samp{N} levels up (@samp{[:self 0]} is the same
+as @samp{[:self]}):
 @lisp
-(majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
-; => "self.bookmarks().map(|b| b.name())"
+(majutsu-tpl [:method [:self] :description] 'Commit)
+; => "self.description()"
 
-(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
-; => "self.parents().map(|p| p.commit_id()).join(\", \")"
-
-(majutsu-tpl [:filter [:raw "parents"] c [:raw "c.mine()"]])
-; => "parents.filter(|c| c.mine())"
-
-(majutsu-tpl [:any [:raw "parents"] c [:raw "c.conflict()"]])
-; => "parents.any(|c| c.conflict())"
+(majutsu-tpl [:method [:raw "self" :Commit]
+                      :parents
+                      :map
+                      [:|p| [:method [:self 1] :description]]])
+; => "self.parents().map(|p| self.description())"
 @end lisp
+
+@node Binding Self in Helper Bodies
+@subsection Binding Self in Helper Bodies
+
+Ordinary helpers can temporarily rebind the implicit @samp{self} inside their body
+with @samp{:bind-self}:
+@lisp
+(majutsu-template-defun show-canonical-log-id ((object Commit :optional t))
+  (:returns Template :bind-self object)
+  [:canonical-log-id])
+@end lisp
+
+When the bound parameter is nil, the helper inherits the outer @samp{self} binding.
 
 @node Operators
 @section Operators
@@ -1676,11 +2021,11 @@ Arithmetic and logical operators are supported:
 (majutsu-tpl [:++ "L" "R"])         ; => "(\"L\" ++ \"R\")"
 @end lisp
 
-@node Conditional and Control Flow
-@section Conditional and Control Flow
+@node Conditionals and Composition
+@section Conditionals and Composition
 
 @lisp
-(majutsu-tpl [:if [:raw "self.root()"] "(root)" [:raw "self.commit_id()"]])
+(majutsu-tpl [:if [:root] "(root)" [:commit_id]])
 ; => "if(self.root(), \"(root)\", self.commit_id())"
 
 (majutsu-tpl [:separate " " [:label "a" "A"] [:label "b" "B"]])
@@ -1700,8 +2045,117 @@ Elisp expressions are evaluated when the template is compiled.
 ; => "concat(\"T\", \"!\")concat(\"F\", \"!\")"
 @end lisp
 
-@node Defining Custom Functions
-@section Defining Custom Functions
+@node Anonymous Functions and Higher-Order Operations
+@section Anonymous Functions and Higher-Order Operations
+
+Anonymous functions are first-class template values:
+@lisp
+(majutsu-tpl [:lambda [c] [:description]])
+; => "|c| c.description()"
+
+(majutsu-tpl [:|c| [:description]])
+; => "|c| c.description()"
+
+(majutsu-tpl [:parents :map [:|c| [:description]]])
+; => "self.parents().map(|c| c.description())"
+
+(majutsu-tpl [:call [:|c| [:description]] [:raw "item" :Commit]])
+; => "item.description()"
+
+(majutsu-tpl [[:lambda [c] [:description]] [:raw "item" :Commit]])
+; => "item.description()"
+@end lisp
+
+The shorthand @samp{[:|c| BODY]} is equivalent to @samp{[:lambda [c] BODY]}.
+
+Lambda parameters are lexical variables and can act as a deferred implicit @samp{self}
+for bare keyword dispatch. A surface lambda such as @samp{[:lambda [c] [:description]]}
+is therefore kept generic first and can later be specialized from a typed call
+argument or a higher-order container element. In those cases @samp{[:description]}
+becomes equivalent to @samp{[:method 'c :description]}. If you prefer, you can also
+write that explicit @samp{[:method 'c ...]} form directly, but most examples use bare
+keywords because it better matches the implicit-self model. Explicit lexical
+references also keep working across nested lambdas, so inner bodies may still
+refer to outer parameters by name when that is clearer than rebinding receiver
+context. This deferred behavior is limited to lambda parameters; Majutsu no
+longer uses unknown non-lambda receivers as a general bare-keyword fallback. If
+you need an outer receiver explicitly inside a nested lambda, use @samp{[:self N]}.
+
+For example, the inner body below uses all three forms at once: @samp{[:description]}
+for the inner receiver, @samp{[:self 1]} for the outer receiver, and explicit
+@samp{[:method 'o ...]} for the outer lexical parameter:
+@lisp
+(majutsu-tpl
+ [[:|o|
+   [[:|i|
+     [:if [:method 'o :root]
+         [:description]
+       [:method [:self 1] :description]]]
+    [:raw "inner" :Commit]]]
+  [:raw "outer" :Commit]])
+; => "if(outer.root(), inner.description(), outer.description())"
+@end lisp
+
+List-oriented methods can be written in several equivalent styles:
+@lisp
+;; Historical explicit-binder sugar (lowers to a native lambda internally)
+(majutsu-tpl [:map [:raw "self.bookmarks()"] b [:raw "b.name()"]])
+; => "self.bookmarks().map(|b| b.name())"
+
+;; Direct jj-style method call with an anonymous lambda
+(majutsu-tpl [:method [:raw "refs"] :map [:lambda [c] [:description]]])
+; => "refs.map(|c| c.description())"
+
+;; Dash-style explicit lambda
+(majutsu-tpl [:-map [:lambda [c] [:description]] [:raw "refs"]])
+; => "refs.map(|c| c.description())"
+
+;; Dash-style anaphoric shorthand
+(majutsu-tpl [:--map [:method 'it :description] [:raw "refs"]])
+; => "refs.map(|it| it.description())"
+
+(majutsu-tpl [:method
+              [:map [:raw "self.parents()"] p [:raw "p.commit_id()"]]
+              :join [:str ", "]])
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
+
+(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+; => "self.parents().map(|p| p.commit_id()).join(\", \")"
+@end lisp
+
+Prefer direct lambdas and @samp{map + join} composition in new code. The historical
+binder forms such as @samp{[:map collection var body]} and @samp{:map-join} remain as
+compatibility sugar, but they now lower through the same core
+@samp{:method} + @samp{:lambda} path as direct method calls. Similarly, @samp{:-map} remains a
+value-level explicit-lambda helper while the @samp{:--map} family is syntax sugar
+layered on top of the same lambda support.
+
+This is a deliberate Majutsu DSL adaptation. Upstream jj centers the
+higher-order story around expressions such as @samp{collection.map(|x| body)};
+Majutsu keeps that core model and layers additional sugar on top of it.
+Reusable lambda bodies can therefore also be defined as ordinary helpers that
+return native lambda values:
+@lisp
+(majutsu-template-defun description-fn ()
+  (:returns Lambda)
+  [:lambda [c] [:description]])
+
+(majutsu-tpl [:description-fn])
+; => "|c| c.description()"
+
+(majutsu-tpl [:method [:raw "refs"] :map [:description-fn]])
+; => "refs.map(|c| c.description())"
+
+(majutsu-template-defun description-with-suffix ((suffix Template))
+  (:returns Lambda)
+  `[:lambda [c] [:concat [:description] ,suffix]])
+
+(majutsu-tpl [:method [:raw "refs"] :map [:description-with-suffix [:str "!"]]])
+; => "refs.map(|c| concat(c.description(), \"!\"))"
+@end lisp
+
+@node Extending the DSL
+@section Extending the DSL
 
 Use @samp{majutsu-template-defun} to define reusable template functions:
 @lisp
@@ -1713,16 +2167,80 @@ Use @samp{majutsu-template-defun} to define reusable template functions:
 ; => "concat(\"ID\", \": \", \"VAL\")"
 @end lisp
 
-@node Type System
-@section Type System
+When a helper omits its body, @samp{majutsu-template-defun} defaults to a simple
+wrapper around the same jj callable name:
+@lisp
+(majutsu-template-defun my-fill ((width Integer) (content Template))
+  (:returns Template))
 
-The DSL supports Jujutsu's type system: @samp{String}, @samp{Boolean}, @samp{Integer}, @samp{Template}, @samp{Commit}, @samp{Signature}, @samp{Timestamp}, @samp{List}, @samp{Option}, and more. Type annotations can be added to @samp{:raw} nodes:
+(majutsu-tpl [:my-fill 8 "x"])
+; => "my-fill(8, \"x\")"
+@end lisp
+
+Syntax-level sugar should be defined separately with
+@samp{majutsu-template-defspecial}, which receives raw forms and lowers them to more
+primitive template syntax:
+@lisp
+(majutsu-template-defspecial :wrap-angle (body)
+  `[:concat [:str "<"] ,body [:str ">"]])
+
+(majutsu-tpl [:wrap-angle [:str "x"]])
+; => "concat(\"<\", \"x\", \">\")"
+@end lisp
+
+Owner-bound methods can also be defined locally in the DSL@. A body-less
+@samp{majutsu-template-defmethod} / @samp{majutsu-template-defkeyword} declaration just
+registers metadata for a native/rendered method, but providing a body turns it
+into a local owner-bound lowering:
+@lisp
+(majutsu-template-defkeyword canonical-log-id Commit
+  (:returns Template)
+  [:if [:or [:hidden]
+             [:divergent]]
+       [:commit_id :shortest 8]
+     [:change_id :shortest 8]])
+
+(majutsu-tpl [:canonical-log-id] 'Commit)
+; => "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))"
+
+(majutsu-tpl [:method [:raw "p" :Commit] :canonical-log-id])
+; => "if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))"
+@end lisp
+
+@node Type System and Upstream Alignment
+@section Type System and Upstream Alignment
+
+The DSL supports Jujutsu's type system: @samp{Any}, @samp{String}, @samp{Boolean}, @samp{Integer},
+@samp{Template}, @samp{Commit}, @samp{Signature}, @samp{Timestamp}, @samp{List}, @samp{Option}, and more.
+Type annotations can be added to @samp{:raw} nodes:
 @lisp
 [:raw "self" :Commit]  ; Declares the raw value has type Commit
 @end lisp
 
-@node Supported Commands
-@section Supported Commands
+Without an annotation, @samp{:raw} remains @samp{Unknown}. This keeps the DSL honest:
+raw snippets still compile, but richer type propagation only kicks in once the
+expression is explicitly typed or inferred through later semantic steps.
+
+Majutsu distinguishes between broad @samp{Any} expression placeholders and the
+narrower printable @samp{Template} capability. In practice, @samp{Any} means “some
+expression”, while @samp{Template} means content that can actually be rendered or
+concatenated.
+
+Majutsu also propagates core result types through the normalized AST@. For
+example, @samp{parents()} is tracked as a list of commits, @samp{lines()} as a list of
+strings, @samp{trailers()} as @samp{(:list Trailer)}, mapped lists use ordinary
+container refs such as @samp{(:list String)}, and list methods such as @samp{first()}
+preserve the element type.
+
+A few upstream categories are still intentionally simplified in Majutsu's
+checker. For parameters that upstream models as @samp{StringLiteral}, Majutsu
+currently recognizes obvious literal strings, but it does not try to prove that
+more complex expressions become literals after helper expansion or constant
+folding. Upstream also has distinct @samp{AnyList}-style result categories; Majutsu
+currently models those as ordinary container refs instead.
+
+@node Supported Commands (for development reference)
+@section Supported Commands (for development reference)
 
 Templates can be used with these jj commands:
 
@@ -1753,37 +2271,9 @@ Templates can be used with these jj commands:
 @tab Operation
 @item workspace list
 @tab WorkspaceRef
+@item config list
+@tab ConfigValue
 @end multitable
-
-@node Extending Majutsu
-@chapter Extending Majutsu
-
-@menu
-* Module Architecture::
-* Process Execution::
-* Section Types::
-* Transient Definitions::
-@end menu
-
-@node Module Architecture
-@section Module Architecture
-
-Majutsu is modular. New features should be added as separate files (e.g., @samp{majutsu-feature.el}) and use the core APIs in @samp{majutsu-core.el} and @samp{majutsu-process.el}.
-
-@node Process Execution
-@section Process Execution
-
-Use @samp{majutsu-run-jj} for commands that modify the repo and require a refresh, or @samp{majutsu-jj-string} to get command output as a string.
-
-@node Section Types
-@section Section Types
-
-Majutsu defines several Magit section types: @samp{jj-commit}, @samp{jj-file}, @samp{jj-hunk}, and @samp{jj-workspace}. You can define custom keymaps for these sections using @samp{defvar-keymap}.
-
-@node Transient Definitions
-@section Transient Definitions
-
-New commands should be exposed via @samp{transient-define-prefix}. Refer to @samp{majutsu-rebase.el} for examples of complex multi-step selections.
 
 @node Keystroke Index
 @appendix Keystroke Index
