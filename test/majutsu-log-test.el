@@ -411,11 +411,10 @@
       (should (equal (buffer-substring-no-properties
                       (line-beginning-position)
                       (line-end-position))
-                     "○ chg Title Very Long 2m"))
-      (should (eq (get-text-property (point-min) 'majutsu-log-decoration)
-                  'graph-prefix))
-      (should (equal (get-text-property (point-min) 'majutsu-log-entry-id)
-                     "id-123"))
+                     "chg Title Very Long 2m"))
+      (let ((prefix (get-text-property (point-min) 'line-prefix)))
+        (should (stringp prefix))
+        (should (equal (substring-no-properties prefix) "○ ")))
       (search-forward "chg")
       (backward-char 3)
       (should (eq (get-text-property (point) 'majutsu-log-field) 'change-id))
@@ -430,9 +429,10 @@
       (should (equal (buffer-substring-no-properties
                       (line-beginning-position)
                       (line-end-position))
-                     "│ More"))
-      (should (eq (get-text-property (point) 'majutsu-log-decoration)
-                  'graph-carry)))))
+                     "More"))
+      (let ((prefix (get-text-property (point) 'line-prefix)))
+        (should (stringp prefix))
+        (should (equal (substring-no-properties prefix) "│ "))))))
 
 (ert-deftest majutsu-log-filter-buffer-substring-drops-tail-when-heading-present ()
   "Copying mixed heading+tail text should drop the tail by default."
@@ -450,9 +450,11 @@
       (goto-char (point-min))
       (let ((copied (filter-buffer-substring (line-beginning-position)
                                              (line-end-position))))
-        (should (equal copied "○ chg Title"))
+        (should (equal copied "chg Title"))
         (should-not (text-property-not-all 0 (length copied) 'majutsu-log-module nil copied))
-        (should-not (text-property-not-all 0 (length copied) 'display nil copied))))))
+        (should-not (text-property-not-all 0 (length copied) 'display nil copied))
+        (should-not (text-property-not-all 0 (length copied) 'line-prefix nil copied))
+        (should-not (text-property-not-all 0 (length copied) 'wrap-prefix nil copied))))))
 
 (ert-deftest majutsu-log-filter-buffer-substring-preserves-tail-only ()
   "Copying only tail text should keep the tail contents."
@@ -478,7 +480,9 @@
         (should-not (text-property-not-all 0 (length copied) 'majutsu-log-column nil copied))
         (should-not (text-property-not-all 0 (length copied) 'majutsu-log-entry-id nil copied))
         (should-not (text-property-not-all 0 (length copied) 'majutsu-log-decoration nil copied))
-        (should-not (text-property-not-all 0 (length copied) 'display nil copied))))))
+        (should-not (text-property-not-all 0 (length copied) 'display nil copied))
+        (should-not (text-property-not-all 0 (length copied) 'line-prefix nil copied))
+        (should-not (text-property-not-all 0 (length copied) 'wrap-prefix nil copied))))))
 
 (ert-deftest majutsu-copy-section-value-copies-current-commit-id ()
   "`majutsu-copy-section-value' should copy the current commit section id."

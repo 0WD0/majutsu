@@ -75,8 +75,11 @@
   and similar fields can live in a dedicated tail segment instead of being
   folded into the left heading text. Tail text remains searchable as real
   buffer text, but copying a mixed heading+tail region strips the tail by
-  default while copying the tail itself preserves it. Rendered log spans now
-  carry field/column/entry/decoration properties so explicit copy commands can
+  default while copying the tail itself preserves it. Graph prefixes and
+  graph-related body indentation are now rendered as display-only
+  ~line-prefix~/~wrap-prefix~ decoration, so they no longer interfere with
+  ordinary copying or cursor movement. Rendered log spans now carry
+  field/column/entry/decoration properties so explicit copy commands can
   target section values, individual fields, whole visible modules, or hidden
   entry metadata. Hidden transport fields now always include ~commit-id~, so
   copying the current commit hash does not depend on whether that field is

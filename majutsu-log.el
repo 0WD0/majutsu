@@ -906,13 +906,26 @@ Returns entry plist and moves point past the consumed entry, or nil."
             (forward-line 1)))))
     (nreverse entries)))
 
-(defun majutsu--indent-string (s column)
-  "Return S with each line indented to COLUMN, preserving text properties."
-  (let ((indentation (make-string column ?\s)))
-    (mapconcat (lambda (line)
-                 (concat indentation line))
-               (majutsu-log--split-by-separator s "\n")
-               "\n")))
+(defun majutsu-log--apply-line-prefix-span (start end line-prefix-str &optional wrap-prefix-str)
+  "Apply display-only line/wrap prefix strings to START..END."
+  (when (< start end)
+    (add-text-properties
+     start end
+     (list 'line-prefix (or line-prefix-str "")
+           'wrap-prefix (or wrap-prefix-str line-prefix-str "")))))
+
+(defun majutsu-log--insert-prefixed-line (content prefix)
+  "Insert CONTENT as one line with display-only PREFIX."
+  (let ((start (point)))
+    (insert (or content "") "\n")
+    (majutsu-log--apply-line-prefix-span start (point) prefix)))
+
+(defun majutsu-log--split-prefix-line (line prefix-width)
+  "Split LINE into (PREFIX . CONTENT) using PREFIX-WIDTH characters."
+  (let* ((width (max 0 (min (or prefix-width 0) (length (or line "")))))
+         (text (or line "")))
+    (cons (substring text 0 width)
+          (substring text width))))
 
 (defun majutsu-log--entry-column (entry field)
   "Return canonical value for FIELD stored on ENTRY."
@@ -1377,35 +1390,24 @@ disappear again."
     (setq majutsu-log--this-error nil)))
 
 
-(defun majutsu-log--insert-text-with-module (text module &optional entry-id decoration)
-  "Insert TEXT and tag it with MODULE text properties.
-When ENTRY-ID is non-nil, also record it.  When DECORATION is non-nil,
-mark the inserted span as decoration metadata."
-  (let ((beg (point))
-        (props `(majutsu-log-module ,module)))
-    (insert text)
-    (when entry-id
-      (setq props (append props `(majutsu-log-entry-id ,entry-id))))
-    (when decoration
-      (setq props (append props `(majutsu-log-decoration ,decoration))))
-    (add-text-properties beg (point) props)))
-
-(defun majutsu-log--insert-anchor-line (anchor-left tail entry-id)
-  "Insert ANCHOR-LEFT and right-aligned TAIL on the current line."
-  (insert anchor-left)
-  (when (and (stringp tail) (not (string-empty-p tail)))
-    (let ((tail-width (string-width (substring-no-properties tail)))
-          (spacer-pos (point)))
-      (insert " ")
-      (add-text-properties
-       spacer-pos (point)
-       `(majutsu-log-module tail
-         majutsu-log-entry-id ,entry-id
-         majutsu-log-decoration tail-spacer
-         majutsu-log-tail-spacer t
-         display ,`(space :align-to (- right ,tail-width))))
-      (insert tail)))
-  (insert "\n"))
+(defun majutsu-log--insert-heading-anchor-line (anchor-left tail entry-id prefix)
+  "Insert ANCHOR-LEFT and right-aligned TAIL on one prefixed line."
+  (let ((start (point)))
+    (insert anchor-left)
+    (when (and (stringp tail) (not (string-empty-p tail)))
+      (let ((tail-width (string-width (substring-no-properties tail)))
+            (spacer-pos (point)))
+        (insert " ")
+        (add-text-properties
+         spacer-pos (point)
+         `(majutsu-log-module tail
+           majutsu-log-entry-id ,entry-id
+           majutsu-log-decoration tail-spacer
+           majutsu-log-tail-spacer t
+           display ,`(space :align-to (- right ,tail-width))))
+        (insert tail)))
+    (insert "\n")
+    (majutsu-log--apply-line-prefix-span start (point) prefix)))
 
 (defun majutsu-log--string-has-module-p (string module)
   "Return non-nil if STRING contains text marked with MODULE."
@@ -1441,6 +1443,8 @@ mark the inserted span as decoration metadata."
        majutsu-log-entry-id
        majutsu-log-decoration
        majutsu-log-tail-spacer
+       line-prefix
+       wrap-prefix
        display)
      string))
   string)
@@ -1466,6 +1470,7 @@ from the copied result by default. Copying tail text alone preserves it."
   "Insert parsed ENTRY as a `jj-commit' section using COMPILED."
   (setq-local majutsu-log--buffer-compiled compiled)
   (let* ((id (majutsu-log--entry-id entry))
+         (indent (or (plist-get entry :indent) 0))
          (prefixes (or (plist-get entry :heading-prefixes) (list "")))
          (last-prefix (or (car (last prefixes)) ""))
          (content-lines (majutsu-log--render-heading-content-lines entry compiled t))
@@ -1477,28 +1482,39 @@ from the copied result by default. Copying tail text alone preserves it."
          (has-body (and (stringp body)
                         (not (string-empty-p (string-trim body))))))
     (cl-loop for idx below count
-             do (let ((prefix (or (nth idx prefixes) last-prefix))
+             do (let ((prefix (majutsu-log--propertize-decoration
+                               (or (nth idx prefixes) last-prefix)
+                               id 'heading
+                               (if (= idx 0) 'graph-prefix 'graph-carry)))
                       (line (or (nth idx content-lines) "")))
-                  (push (concat (majutsu-log--propertize-decoration
-                                 prefix id 'heading
-                                 (if (= idx 0) 'graph-prefix 'graph-carry))
-                                line)
-                        heading-lines)))
+                  (push (cons prefix line) heading-lines)))
     (setq heading-lines (nreverse heading-lines))
     (magit-insert-section (jj-commit id t)
-      (majutsu-log--insert-anchor-line (or (car heading-lines) "") tail id)
+      (when heading-lines
+        (majutsu-log--insert-heading-anchor-line (cdar heading-lines)
+                                                 tail
+                                                 id
+                                                 (caar heading-lines)))
       (dolist (line (cdr heading-lines))
-        (insert line)
-        (insert "\n"))
+        (majutsu-log--insert-prefixed-line (cdr line) (car line)))
       (dolist (suffix-line suffix-lines)
-        (insert (majutsu-log--propertize-decoration suffix-line id 'heading 'graph-carry))
-        (insert "\n"))
+        (pcase-let* ((`(,prefix . ,content)
+                      (majutsu-log--split-prefix-line suffix-line indent))
+                     (decorated-prefix
+                      (majutsu-log--propertize-decoration prefix id 'heading 'graph-carry))
+                     (decorated-content
+                      (majutsu-log--propertize-content content id 'heading)))
+          (majutsu-log--insert-prefixed-line decorated-content decorated-prefix)))
       (when has-body
         (magit-insert-heading)
-        (let ((indented (majutsu--indent-string body (or (plist-get entry :indent) 0))))
+        (let ((body-prefix (majutsu-log--propertize-decoration
+                            (make-string indent ?\s)
+                            id 'body 'body-prefix)))
           (magit-insert-section-body
-            (insert indented)
-            (insert "\n")))))))
+            (let ((start (point)))
+              (insert body)
+              (insert "\n")
+              (majutsu-log--apply-line-prefix-span start (point) body-prefix))))))))
 
 (defun majutsu-log--wash-entry (compiled)
   "Wash the entry at point using COMPILED.

@@ -112,7 +112,7 @@ Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI
 The log buffer is the heart of Majutsu. It displays the history graph using a custom template DSL that mirrors the =jj log= output but adds interactivity.
 
 *** Log Display
-Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
+Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
 
 *** Log Options Transient
 Press ~l~ to open the log options. Here you can:
@@ -244,7 +244,7 @@ after the field's default postprocessors.
 *** Migration Notes
 Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
 The historical ~right-margin~ placement has been replaced by the ~tail~ module, which renders real text on the anchor line with right alignment.
-Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it.
+Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
 
 *** Copying From Log Buffers
 Majutsu now provides both default copy filtering and explicit semantic copy commands:
