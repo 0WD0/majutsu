@@ -1424,9 +1424,8 @@ right-relative alignment when WINDOW is unavailable."
   (setq window (or window (majutsu-log--tail-owner-window)))
   `(space :align-to
     ,(majutsu-log--tail-align-to-width
-      (if (and (display-graphic-p)
-               (fboundp 'string-pixel-width))
-          (string-pixel-width tail (current-buffer))
+      (if (display-graphic-p)
+          (string-pixel-width tail)
         (string-width tail))
       window)))
 
@@ -1442,11 +1441,10 @@ suitable window is available, fall back to string-based measurement."
         (save-excursion
           (goto-char (1+ pos))
           (car (window-text-pixel-size window (point) (line-end-position) t)))
-      (if (and (display-graphic-p)
-               (fboundp 'string-pixel-width))
+      (if (display-graphic-p)
           (save-excursion
             (goto-char pos)
-            (string-pixel-width tail (current-buffer)))
+            (string-pixel-width tail))
         (string-width tail)))))
 
 (defun majutsu-log--refresh-tail-spacers (&optional beg end window)
