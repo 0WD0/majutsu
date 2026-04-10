@@ -1419,14 +1419,25 @@ right-relative alignment when WINDOW is unavailable."
    (t
     `(- right ,(+ width majutsu-log--tail-terminal-padding)))))
 
+(defun majutsu-log--string-pixel-width (string)
+  "Return the pixel width of STRING in the current buffer.
+Use buffer-local face remappings when the current Emacs supports passing a
+buffer to `string-pixel-width', while remaining compatible with Emacs 29 where
+that function accepts only STRING."
+  (if (not (fboundp 'string-pixel-width))
+      (string-width string)
+    (condition-case nil
+        (string-pixel-width string (current-buffer))
+      (wrong-number-of-arguments
+       (string-pixel-width string)))))
+
 (defun majutsu-log--tail-spacer-display (tail &optional window)
   "Return the spacer display spec used to right-align TAIL."
   (setq window (or window (majutsu-log--tail-owner-window)))
   `(space :align-to
     ,(majutsu-log--tail-align-to-width
-      (if (and (display-graphic-p)
-               (fboundp 'string-pixel-width))
-          (string-pixel-width tail (current-buffer))
+      (if (display-graphic-p)
+          (majutsu-log--string-pixel-width tail)
         (string-width tail))
       window)))
 
@@ -1442,11 +1453,10 @@ suitable window is available, fall back to string-based measurement."
         (save-excursion
           (goto-char (1+ pos))
           (car (window-text-pixel-size window (point) (line-end-position) t)))
-      (if (and (display-graphic-p)
-               (fboundp 'string-pixel-width))
+      (if (display-graphic-p)
           (save-excursion
             (goto-char pos)
-            (string-pixel-width tail (current-buffer)))
+            (majutsu-log--string-pixel-width tail))
         (string-width tail)))))
 
 (defun majutsu-log--refresh-tail-spacers (&optional beg end window)

@@ -445,6 +445,15 @@
       (should (equal (majutsu-log--tail-spacer-display "tail" 'fake-window)
                      '(space :align-to (163)))))))
 
+(ert-deftest majutsu-log-tail-spacer-display-supports-single-arg-string-pixel-width ()
+  "Tail spacer display should remain compatible with Emacs 29's API."
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _display) t))
+            ((symbol-function 'string-pixel-width) (lambda (_string) 37))
+            ((symbol-function 'window-body-width) (lambda (&optional _window pixelwise) (if pixelwise 200 80))))
+    (with-temp-buffer
+      (should (equal (majutsu-log--tail-spacer-display "tail" 'fake-window)
+                     '(space :align-to (163)))))))
+
 (ert-deftest majutsu-log-tail-spacer-display-uses-columns-on-terminal ()
   "Tail spacer display should use absolute columns on terminal frames."
   (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _display) nil))
