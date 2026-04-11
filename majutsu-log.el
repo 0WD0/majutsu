@@ -241,6 +241,7 @@ navigation remain available.")
 
 (defcustom majutsu-log-commit-columns
   '((:field change-id :module heading :face t)
+    (:field commit-id :module tail :face t)
     (:field bookmarks :module heading :face magit-branch-local)
     (:field tags :module heading :face magit-tag)
     (:field working-copies :module heading :face magit-branch-remote)
