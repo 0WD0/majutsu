@@ -121,7 +121,7 @@ When Evil is active, also update `evil-normal-state-cursor'."
                      "--from" (concat rev "-")
                      "--to" rev
                      "--"
-                     file))
+                     (majutsu-jj-fileset-quote file)))
          exit)
     (unwind-protect
         (progn

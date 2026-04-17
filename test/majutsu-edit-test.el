@@ -62,7 +62,7 @@
     (should (equal seen-args
                    '("diffedit" "--config" "CFG"
                      "--from" "a-" "--to" "a"
-                     "--" "test/majutsu-file-test.el")))))
+                     "--" "file:\"test/majutsu-file-test.el\"")))))
 
 (ert-deftest majutsu-edit-test-run-diffedit-rejects-outside-absolute-file ()
   "Diffedit should reject absolute file targets outside repository."
@@ -78,15 +78,17 @@
        :type 'user-error))))
 
 (ert-deftest majutsu-edit-test-replace-diffedit-file-arg ()
-  "Diffedit args should carry exactly the normalized file after `--'."
+  "Diffedit args should carry the normalized file as an exact fileset after `--'."
   (should (equal (majutsu-edit--replace-diffedit-file-arg
                   '("--from" "a-" "--to" "a" "--" "old/file.el")
-                  "test/majutsu-file-test.el")
-                 '("--from" "a-" "--to" "a" "--" "test/majutsu-file-test.el")))
+                  "docs/wiki/Configuration:-Layout.md")
+                 '("--from" "a-" "--to" "a" "--"
+                   "file:\"docs/wiki/Configuration:-Layout.md\"")))
   (should (equal (majutsu-edit--replace-diffedit-file-arg
                   '("--from" "a-" "--to" "a")
-                  "test/majutsu-file-test.el")
-                 '("--from" "a-" "--to" "a" "--" "test/majutsu-file-test.el"))))
+                  "docs/wiki/Configuration:-Layout.md")
+                 '("--from" "a-" "--to" "a" "--"
+                   "file:\"docs/wiki/Configuration:-Layout.md\""))))
 
 (provide 'majutsu-edit-test)
 ;;; majutsu-edit-test.el ends here

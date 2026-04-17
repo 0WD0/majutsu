@@ -410,7 +410,7 @@
   (let (editor-command editor-target run-args copied)
     (with-temp-buffer
       (setq-local majutsu-buffer-blob-root "/tmp")
-      (setq-local majutsu-buffer-blob-path "src/a.el")
+      (setq-local majutsu-buffer-blob-path "docs/wiki/Configuration:-Layout.md")
       (setq-local majutsu-buffer-blob-revision "rev")
       (cl-letf (((symbol-function 'majutsu-jj--editor-command-config)
                  (lambda (_key target &optional command)
@@ -426,14 +426,14 @@
                            (buffer-string)))
                    0)))
         (should (zerop (majutsu-blob-edit--apply-diffedit "after")))))
-    (should (equal editor-target "$right/src/a.el"))
+    (should (equal editor-target "$right/docs/wiki/Configuration:-Layout.md"))
     (should (equal (car editor-command) "cp"))
     (should (equal copied "after"))
     (should-not (file-exists-p (cadr editor-command)))
     (should (equal run-args
                    '("diffedit" "--config" "CFG"
                      "--from" "rev-" "--to" "rev"
-                     "--" "src/a.el")))))
+                     "--" "file:\"docs/wiki/Configuration:-Layout.md\"")))))
 
 (ert-deftest majutsu-blob-edit-apply-diffedit/uses-local-temp-path-for-editor ()
   "Diffedit editor command should use temp path stripped for remote execution."

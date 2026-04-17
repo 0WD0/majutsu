@@ -128,13 +128,14 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
   (concat "$right/" file))
 
 (defun majutsu-edit--replace-diffedit-file-arg (jj-args file)
-  "Return JJ-ARGS with FILE as the diffedit path after `--'."
-  (let ((args (copy-sequence jj-args)))
+  "Return JJ-ARGS with FILE as the exact diffedit fileset after `--'."
+  (let ((args (copy-sequence jj-args))
+        (fileset (majutsu-jj-fileset-quote file)))
     (if-let* ((sep (member "--" args)))
         (if (cdr sep)
-            (setcar (cdr sep) file)
-          (setcdr sep (list file)))
-      (setq args (append args (list "--" file))))
+            (setcar (cdr sep) fileset)
+          (setcdr sep (list fileset)))
+      (setq args (append args (list "--" fileset))))
     args))
 
 (defun majutsu-edit--file-at-point ()
