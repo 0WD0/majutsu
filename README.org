@@ -32,31 +32,31 @@ efficient way to interact with JJ repositories from within Emacs.
 
 ** Essential Keybindings (Emacs / Evil)
 
-| Key       | Action               |
-|-----------+----------------------|
+| Key           | Action               |
+|---------------+----------------------|
 | ~n~ / ~j~     | Next revision        |
 | ~p~ / ~k~     | Previous revision    |
-| ~[~         | Go to parent         |
-| ~]~         | Go to child          |
-| ~RET~       | Visit thing at point |
-| ~?~         | Show all commands    |
+| ~[~           | Go to parent         |
+| ~]~           | Go to child          |
+| ~RET~         | Visit thing at point |
+| ~?~           | Show all commands    |
 | ~g~ / ~g r~   | Refresh              |
-| ~a~         | Absorb               |
-| ~b~         | Bookmarks            |
-| ~c~         | Describe             |
-| ~C~         | Commit               |
-| ~d~         | Diff                 |
-| ~E~         | Ediff                |
-| ~e~         | Edit change          |
-| ~G~ / none  | Git                  |
-| ~k~         | Abandon              |
-| ~o~         | New                  |
-| ~r~         | Rebase               |
+| ~a~           | Absorb               |
+| ~b~           | Bookmarks            |
+| ~c~           | Describe             |
+| ~C~           | Commit               |
+| ~d~           | Diff                 |
+| ~E~           | Ediff                |
+| ~e~           | Edit change          |
+| ~G~ / none    | Git                  |
+| ~k~           | Abandon              |
+| ~o~           | New                  |
+| ~r~           | Rebase               |
 | ~V~ / ~_~     | Revert               |
-| ~R~         | Restore              |
-| ~s~         | Squash               |
-| ~S~         | Split                |
-| ~y~         | Duplicate            |
+| ~R~           | Restore              |
+| ~s~           | Squash               |
+| ~S~           | Split                |
+| ~y~           | Duplicate            |
 | ~Z~ / ~*~     | Workspaces           |
 | ~C-/~ / ~u~   | Undo                 |
 | ~C-?~ / ~C-r~ | Redo                 |
