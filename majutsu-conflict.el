@@ -667,30 +667,31 @@ Without prefix, keep add term N (jj side #N)."
 (defvar-local majutsu-conflict--marker-len nil
   "Current conflict marker length used by font-lock state machine.")
 
-(defvar majutsu-conflict-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c ^ n") #'majutsu-conflict-next)
-    (define-key map (kbd "C-c ^ p") #'majutsu-conflict-prev)
-    (define-key map (kbd "C-c ^ b") #'majutsu-conflict-keep-base)
-    (define-key map (kbd "C-c ^ R") #'majutsu-conflict-refine)
-    ;; 1-9 for sides (after), M-1 to M-9 for before
-    (dotimes (i 9)
-      (let ((n (1+ i)))
-        (define-key map (kbd (format "C-c ^ %d" n))
-                    (lambda () (interactive)
-                      (majutsu-conflict-keep-side n nil)))
-        (define-key map (kbd (format "C-c ^ M-%d" n))
-                    (lambda () (interactive)
-                      (majutsu-conflict-keep-side n t)))))
-    map)
-  "Keymap for `majutsu-conflict-mode'.
+(defun majutsu-conflict--bind-side-keys (map prefix before)
+  "Bind PREFIX 1-9 in MAP to conflict side commands.
+When BEFORE is non-nil, keep the before side."
+  (dotimes (i 9)
+    (let ((n (1+ i)))
+      (keymap-set map (format "%s%d" prefix n)
+                  (lambda () (interactive)
+                    (majutsu-conflict-keep-side n before))))))
+
+(defvar-keymap majutsu-conflict-mode-map
+  :doc "Keymap for `majutsu-conflict-mode'.
 \\<majutsu-conflict-mode-map>
 \\[majutsu-conflict-next] - next conflict
 \\[majutsu-conflict-prev] - previous conflict
 \\[majutsu-conflict-keep-base] - keep base (rebase destination)
 \\[majutsu-conflict-refine] - add word-level refinement
 C-c ^ 1-9 - keep side N (after diff)
-C-c ^ M-1 to M-9 - keep side N (before diff)")
+C-c ^ M-1 to M-9 - keep side N (before diff)"
+  "C-c ^ n" #'majutsu-conflict-next
+  "C-c ^ p" #'majutsu-conflict-prev
+  "C-c ^ b" #'majutsu-conflict-keep-base
+  "C-c ^ R" #'majutsu-conflict-refine)
+
+(majutsu-conflict--bind-side-keys majutsu-conflict-mode-map "C-c ^ " nil)
+(majutsu-conflict--bind-side-keys majutsu-conflict-mode-map "C-c ^ M-" t)
 
 (defun majutsu-conflict--git-style-only-p ()
   "Return non-nil if buffer only contains Git-style conflicts."

@@ -9,6 +9,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 
 (defconst majutsu-conflict-test--root
   (locate-dominating-file (or (getenv "PWD") default-directory)
@@ -622,6 +623,25 @@ apricot
     (majutsu-conflict-ensure-mode)
     (should smerge-mode)
     (should-not majutsu-conflict-mode)))
+
+(ert-deftest majutsu-conflict-test-mode-map-side-bindings ()
+  "Conflict mode map should bind side selection keys correctly."
+  (let (after-call before-call)
+    (should (eq (lookup-key majutsu-conflict-mode-map (kbd "C-c ^ n"))
+                #'majutsu-conflict-next))
+    (should (eq (lookup-key majutsu-conflict-mode-map (kbd "C-c ^ b"))
+                #'majutsu-conflict-keep-base))
+    (cl-letf (((symbol-function 'majutsu-conflict-keep-side)
+               (lambda (side before)
+                 (if before
+                     (setq before-call (list side before))
+                   (setq after-call (list side before))))))
+      (call-interactively
+       (lookup-key majutsu-conflict-mode-map (kbd "C-c ^ 3")))
+      (call-interactively
+       (lookup-key majutsu-conflict-mode-map (kbd "C-c ^ M-4"))))
+    (should (equal after-call '(3 nil)))
+    (should (equal before-call '(4 t)))))
 
 (provide 'majutsu-conflict-test)
 ;;; majutsu-conflict-test.el ends here

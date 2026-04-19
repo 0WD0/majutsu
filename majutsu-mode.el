@@ -57,27 +57,26 @@
   ">"   'majutsu-sparse
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo
-  "R"   'majutsu-restore)
-
-(define-key majutsu-mode-map [remap magit-section-show] #'majutsu-section-show)
-(define-key majutsu-mode-map [remap magit-section-hide] #'majutsu-section-hide)
-(define-key majutsu-mode-map [remap magit-section-toggle] #'majutsu-section-toggle)
-(define-key majutsu-mode-map [remap magit-section-toggle-children] #'majutsu-section-toggle-children)
-(define-key majutsu-mode-map [remap magit-section-show-children] #'majutsu-section-show-children)
-(define-key majutsu-mode-map [remap magit-section-hide-children] #'majutsu-section-hide-children)
-(define-key majutsu-mode-map [remap magit-section-show-headings] #'majutsu-section-show-headings)
-(define-key majutsu-mode-map [remap magit-section-cycle] #'majutsu-section-cycle)
-(define-key majutsu-mode-map [remap magit-section-cycle-global] #'majutsu-section-cycle-global)
-(define-key majutsu-mode-map [remap magit-section-show-level] #'majutsu-section-show-level)
-(define-key majutsu-mode-map [remap magit-section-show-level-1] #'majutsu-section-show-level-1)
-(define-key majutsu-mode-map [remap magit-section-show-level-1-all] #'majutsu-section-show-level-1-all)
-(define-key majutsu-mode-map [remap magit-section-show-level-2] #'majutsu-section-show-level-2)
-(define-key majutsu-mode-map [remap magit-section-show-level-2-all] #'majutsu-section-show-level-2-all)
-(define-key majutsu-mode-map [remap magit-section-show-level-3] #'majutsu-section-show-level-3)
-(define-key majutsu-mode-map [remap magit-section-show-level-3-all] #'majutsu-section-show-level-3-all)
-(define-key majutsu-mode-map [remap magit-section-show-level-4] #'majutsu-section-show-level-4)
-(define-key majutsu-mode-map [remap magit-section-show-level-4-all] #'majutsu-section-show-level-4-all)
-(define-key majutsu-mode-map [remap magit-mouse-toggle-section] #'majutsu-mouse-toggle-section)
+  "R"   'majutsu-restore
+  "<remap> <magit-section-show>" #'majutsu-section-show
+  "<remap> <magit-section-hide>" #'majutsu-section-hide
+  "<remap> <magit-section-toggle>" #'majutsu-section-toggle
+  "<remap> <magit-section-toggle-children>" #'majutsu-section-toggle-children
+  "<remap> <magit-section-show-children>" #'majutsu-section-show-children
+  "<remap> <magit-section-hide-children>" #'majutsu-section-hide-children
+  "<remap> <magit-section-show-headings>" #'majutsu-section-show-headings
+  "<remap> <magit-section-cycle>" #'majutsu-section-cycle
+  "<remap> <magit-section-cycle-global>" #'majutsu-section-cycle-global
+  "<remap> <magit-section-show-level>" #'majutsu-section-show-level
+  "<remap> <magit-section-show-level-1>" #'majutsu-section-show-level-1
+  "<remap> <magit-section-show-level-1-all>" #'majutsu-section-show-level-1-all
+  "<remap> <magit-section-show-level-2>" #'majutsu-section-show-level-2
+  "<remap> <magit-section-show-level-2-all>" #'majutsu-section-show-level-2-all
+  "<remap> <magit-section-show-level-3>" #'majutsu-section-show-level-3
+  "<remap> <magit-section-show-level-3-all>" #'majutsu-section-show-level-3-all
+  "<remap> <magit-section-show-level-4>" #'majutsu-section-show-level-4
+  "<remap> <magit-section-show-level-4-all>" #'majutsu-section-show-level-4-all
+  "<remap> <magit-mouse-toggle-section>" #'majutsu-mouse-toggle-section)
 
 ;;; Window Management
 

@@ -52,25 +52,24 @@ When nil, Majutsu leaves Evil's state untouched."
           (symbol :tag "Custom state"))
   :group 'majutsu-evil)
 
-(defvar majutsu-conflict-evil-before-map
-  (let ((map (make-sparse-keymap)))
-    (dotimes (i 9)
-      (let ((n (1+ i)))
-        (define-key map (kbd (number-to-string n))
-                    (lambda () (interactive)
-                      (majutsu-conflict-keep-side n t)))))
-    map)
-  "Keymap for selecting the before state in JJ conflicts.")
+(defun majutsu-evil--bind-conflict-side-keys (map before)
+  "Bind 1-9 in MAP to conflict side commands.
+When BEFORE is non-nil, keep the before side."
+  (dotimes (i 9)
+    (let ((n (1+ i)))
+      (keymap-set map (number-to-string n)
+                  (lambda () (interactive)
+                    (majutsu-conflict-keep-side n before))))))
 
-(defvar majutsu-conflict-evil-resolve-map
-  (let ((map (make-sparse-keymap)))
-    (dotimes (i 9)
-      (let ((n (1+ i)))
-        (define-key map (kbd (number-to-string n))
-                    (lambda () (interactive)
-                      (majutsu-conflict-keep-side n nil)))))
-    map)
-  "Keymap for JJ conflict actions under Evil.")
+(defvar-keymap majutsu-conflict-evil-before-map
+  :doc "Keymap for selecting the before state in JJ conflicts.")
+
+(majutsu-evil--bind-conflict-side-keys majutsu-conflict-evil-before-map t)
+
+(defvar-keymap majutsu-conflict-evil-resolve-map
+  :doc "Keymap for JJ conflict actions under Evil.")
+
+(majutsu-evil--bind-conflict-side-keys majutsu-conflict-evil-resolve-map nil)
 
 (defun majutsu-evil--define-keys (states keymap &rest bindings)
   "Define Evil BINDINGS for each state in STATES on KEYMAP.
