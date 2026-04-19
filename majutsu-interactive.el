@@ -414,7 +414,7 @@ Return a hunk string or nil when no change lines remain."
          (new-len 0)
          (has-change nil)
          (started nil)
-         (prev-included-change nil))
+         (prev-included-line nil))
     (dolist (line lines)
       (pcase-let ((`(,text ,type ,bol ,eol) line))
         (let* ((selected (if ranges
@@ -427,7 +427,7 @@ Return a hunk string or nil when no change lines remain."
                           ('context t)
                           ('added (or include-change convert-added))
                           ('removed (or include-change convert-removed))
-                          ('meta prev-included-change)
+                          ('meta prev-included-line)
                           (_ nil)))
                (old-inc (pcase type
                           ('context 1)
@@ -443,7 +443,7 @@ Return a hunk string or nil when no change lines remain."
                   (setq started t))
                 (when (and (memq type '(added removed)) include-change)
                   (setq has-change t))
-                (setq prev-included-change (and (memq type '(added removed)) include-change))
+                (setq prev-included-line (memq type '(context added removed)))
                 (cond
                  (convert-added
                   (setq old-len (1+ old-len))
@@ -460,7 +460,8 @@ Return a hunk string or nil when no change lines remain."
             (when (and (not started) (memq type '(context added removed)))
               (setq old-skip (+ old-skip old-inc))
               (setq new-skip (+ new-skip new-inc)))
-            (setq prev-included-change nil)))))
+            (unless (eq type 'meta)
+              (setq prev-included-line nil))))))
     (when (and has-change selected-lines)
       (let* ((body (mapconcat #'identity (nreverse selected-lines) ""))
              (hunk-header
