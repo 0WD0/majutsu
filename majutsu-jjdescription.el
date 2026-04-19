@@ -17,15 +17,21 @@
 (require 'majutsu-mode)
 (require 'majutsu-process)
 
+(require 'log-edit)
+(require 'ring)
+(require 'subr-x)
 (require 'with-editor)
 (require 'server)
 (require 'git-commit nil t)
 (require 'cl-lib)
 
+(autoload 'majutsu-diff-revset "majutsu-diff" nil t)
+
 (defvar recentf-exclude)
 (defvar better-jumper-ignored-file-patterns)
 (defvar font-lock-beg)
 (defvar font-lock-end)
+(defvar server-buffer-clients)
 
 (defconst majutsu-jjdescription-regexp
   (rx (seq (or string-start
@@ -341,9 +347,157 @@ Added to `font-lock-extend-region-functions'."
       (majutsu-jjdescription--refresh-font-lock)
     (majutsu-jjdescription-mode 1)))
 
+;;; History Support
+
+(defun majutsu-jjdescription--message-region-end ()
+  "Return the end of the replaceable description region."
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward (majutsu-jjdescription--comment-line-re) nil t)
+        (let ((beg (match-beginning 0)))
+          (if (and (> beg (point-min))
+                   (eq (char-before beg) ?\n))
+              (1- beg)
+            beg))
+      (point-max))))
+
+(defun majutsu-jjdescription-buffer-message ()
+  "Return the current description without JJ comments.
+Return nil when the remaining text is empty or whitespace only."
+  (let ((comment-re (majutsu-jjdescription--comment-prefix-re))
+        (ignore-rest-re (majutsu-jjdescription--ignore-rest-line-re))
+        (str (buffer-substring-no-properties (point-min) (point-max))))
+    (with-temp-buffer
+      (insert str)
+      (goto-char (point-min))
+      (when (re-search-forward ignore-rest-re nil t)
+        (delete-region (line-beginning-position) (point-max)))
+      (goto-char (point-min))
+      (flush-lines comment-re)
+      (goto-char (point-max))
+      (when (and (> (point) (point-min))
+                 (not (eq (char-before) ?\n)))
+        (insert ?\n))
+      (setq str (buffer-string)))
+    (and (not (string-match-p "\\`[ \t\n\r]*\\'" str))
+         (progn
+           (when (string-match "\\`\n\\{2,\\}" str)
+             (setq str (replace-match "\n" t t str)))
+           (when (string-match "\n\\{2,\\}\\'" str)
+             (setq str (replace-match "\n" t t str)))
+           str))))
+
+(defun majutsu-jjdescription--save-message (&optional quiet)
+  "Save the current description to `log-edit-comment-ring'.
+When QUIET is non-nil, do not report status in the echo area."
+  (if-let* ((message (majutsu-jjdescription-buffer-message)))
+      (progn
+        (when-let* ((index (ring-member log-edit-comment-ring message)))
+          (ring-remove log-edit-comment-ring index))
+        (ring-insert log-edit-comment-ring message)
+        (unless quiet
+          (message "Description saved"))
+        t)
+    (unless quiet
+      (message "Only whitespace and/or comments; description not saved"))
+    nil))
+
+(defun majutsu-jjdescription-save-message ()
+  "Save the current description to `log-edit-comment-ring'."
+  (interactive)
+  (majutsu-jjdescription--save-message))
+
+(defun majutsu-jjdescription-prepare-message-ring ()
+  "Prepare buffer-local state for cycling description history."
+  (make-local-variable 'log-edit-comment-ring-index))
+
+(defun majutsu-jjdescription-prev-message (arg)
+  "Cycle backward through description history, saving current text first.
+With a numeric prefix ARG, go back ARG descriptions."
+  (interactive "*p")
+  (let ((len (ring-length log-edit-comment-ring)))
+    (if (<= len 0)
+        (progn (message "Empty description ring") (ding))
+      (when-let* ((message (majutsu-jjdescription-buffer-message))
+                  (_ (not (ring-member log-edit-comment-ring message))))
+        (ring-insert log-edit-comment-ring message)
+        (cl-incf arg)
+        (setq len (ring-length log-edit-comment-ring)))
+      (delete-region (point-min) (majutsu-jjdescription--message-region-end))
+      (setq log-edit-comment-ring-index (log-edit-new-comment-index arg len))
+      (message "Description %d" (1+ log-edit-comment-ring-index))
+      (insert (ring-ref log-edit-comment-ring log-edit-comment-ring-index)))))
+
+(defun majutsu-jjdescription-next-message (arg)
+  "Cycle forward through description history, saving current text first.
+With a numeric prefix ARG, go forward ARG descriptions."
+  (interactive "*p")
+  (majutsu-jjdescription-prev-message (- arg)))
+
+(defun majutsu-jjdescription-search-message-backward (string)
+  "Search backward through description history for STRING.
+Save the current description before searching."
+  (interactive
+   (list (read-string (format-prompt "Description substring"
+                                     log-edit-last-comment-match)
+                      nil nil log-edit-last-comment-match)))
+  (cl-letf (((symbol-function #'log-edit-previous-comment)
+             (symbol-function #'majutsu-jjdescription-prev-message)))
+    (log-edit-comment-search-backward string)))
+
+(defun majutsu-jjdescription-search-message-forward (string)
+  "Search forward through description history for STRING.
+Save the current description before searching."
+  (interactive
+   (list (read-string (format-prompt "Description substring"
+                                     log-edit-last-comment-match)
+                      nil nil log-edit-last-comment-match)))
+  (cl-letf (((symbol-function #'log-edit-previous-comment)
+             (symbol-function #'majutsu-jjdescription-prev-message)))
+    (log-edit-comment-search-forward string)))
+
+(defun majutsu-jjdescription--change-id ()
+  "Return the first JJ Change ID in the current buffer, or nil."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward (majutsu-jjdescription--change-id-line-re) nil t)
+      (string-trim (match-string-no-properties 2)))))
+
+(defun majutsu-jjdescription--server-client-root ()
+  "Return the associated emacsclient working directory, if any."
+  (when-let* ((client (car-safe server-buffer-clients))
+              (dir (process-get client 'server-client-directory)))
+    (file-name-as-directory dir)))
+
+(defun majutsu-jjdescription--repository-root ()
+  "Return the repository root associated with this JJ description buffer."
+  (or majutsu--default-directory
+      (and buffer-file-name
+           (majutsu-process-with-editor-file-root buffer-file-name))
+      (majutsu-jjdescription--server-client-root)
+      (ignore-errors (majutsu-toplevel default-directory))))
+
+(defun majutsu-jjdescription-show-diff ()
+  "Show the diff for the described JJ change."
+  (interactive)
+  (let ((default-directory
+         (or (majutsu-jjdescription--repository-root)
+             (user-error "No repository associated with this JJ description buffer"))))
+    (majutsu-diff-revset (or (majutsu-jjdescription--change-id) "@"))))
+
+(defvar-keymap majutsu-jjdescription-mode-map
+  :doc "Keymap used by `majutsu-jjdescription-mode'."
+  "M-p"     #'majutsu-jjdescription-prev-message
+  "M-n"     #'majutsu-jjdescription-next-message
+  "C-c M-p" #'majutsu-jjdescription-search-message-backward
+  "C-c M-n" #'majutsu-jjdescription-search-message-forward
+  "C-c M-s" #'majutsu-jjdescription-save-message
+  "C-c C-d" #'majutsu-jjdescription-show-diff)
+
 (define-minor-mode majutsu-jjdescription-mode
   "Minor mode for JJ description buffers."
   :lighter " JJDesc"
+  :keymap majutsu-jjdescription-mode-map
   (if majutsu-jjdescription-mode
       (progn
         (setq-local majutsu-jjdescription--summary-range nil
@@ -378,6 +532,12 @@ Added to `font-lock-extend-region-functions'."
 
 (defun majutsu-jjdescription-setup ()
   "Set up the current buffer for editing a JJ description."
+  (when-let* ((root (majutsu-jjdescription--repository-root)))
+    (setq-local default-directory root)
+    (setq-local majutsu--default-directory root)
+    (when buffer-file-name
+      (majutsu-process-forget-with-editor-file-root buffer-file-name)))
+
   ;; Apply major-mode with pre-enabled modes (like git-commit does)
   (when majutsu-jjdescription-major-mode
     (let ((auto-mode-alist
@@ -397,6 +557,14 @@ Added to `font-lock-extend-region-functions'."
   ;; Ensure with-editor-mode is enabled
   (unless with-editor-mode
     (with-editor-mode 1))
+
+  ;; History support
+  (add-hook 'with-editor-pre-finish-hook
+            #'majutsu-jjdescription-save-message nil t)
+  (add-hook 'with-editor-pre-cancel-hook
+            #'majutsu-jjdescription-save-message nil t)
+  (majutsu-jjdescription-prepare-message-ring)
+  (majutsu-jjdescription--save-message t)
 
   ;; Font-lock and finalization
   (majutsu-jjdescription-setup-font-lock)
@@ -442,8 +610,6 @@ when a JJ description file is opened."
     (remove-hook 'find-file-hook #'majutsu-jjdescription-setup-check-buffer)
     (remove-hook 'after-change-major-mode-hook
                  #'majutsu-jjdescription-setup-font-lock-in-buffer))))
-
-;; TODO: Add majutsu-jjdescription-show-diff similar to Magit.
 
 ;;; _
 (provide 'majutsu-jjdescription)

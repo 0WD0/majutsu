@@ -27,6 +27,12 @@
   Magit's section commands, so log commit fold/unfold preserves display-only
   graph prefixes more reliably, including Evil / evil-collection fold paths
   that dispatch through standard Magit section commands.
+- Add Magit-style JJ description history commands and bindings:
+  ~majutsu-jjdescription-save-message~, ~majutsu-jjdescription-prev-message~,
+  ~majutsu-jjdescription-next-message~,
+  ~majutsu-jjdescription-search-message-backward~,
+  ~majutsu-jjdescription-search-message-forward~, and
+  ~majutsu-jjdescription-show-diff~.
 
 ** Changed
 

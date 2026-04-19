@@ -91,6 +91,47 @@ the heading of each process section."
   :type '(choice (const :tag "None" nil) string)
   :group 'majutsu-process)
 
+(defvar majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)
+  "Map with-editor temp files to the repository roots that opened them.")
+
+(defun majutsu-process--with-editor-open-file (process line)
+  "Return the file opened by with-editor control LINE from PROCESS."
+  (save-match-data
+    (when (string-match with-editor-sleeping-editor-regexp line)
+      (let ((arg0 (match-string 2 line))
+            (arg1 (match-string 3 line))
+            (dir (match-string 4 line))
+            file)
+        (cond
+         ((string-match "\\`\\+[0-9]+\\(?::[0-9]+\\)?\\'" arg0)
+          (setq file arg1))
+         (t
+          (setq file arg0)))
+        (when file
+          (unless (file-name-absolute-p file)
+            (setq file (expand-file-name file dir)))
+          (when-let* ((root (and process (process-get process 'default-dir)))
+                      (remote (file-remote-p root)))
+            (setq file (concat remote file)))
+          file)))))
+
+(defun majutsu-process--remember-with-editor-file-root (process line)
+  "Remember repository root for with-editor control LINE from PROCESS."
+  (when-let* ((file (majutsu-process--with-editor-open-file process line))
+              (root (or (and process (process-get process 'default-dir))
+                        default-directory)))
+    (puthash file (file-name-as-directory root)
+             majutsu-process--with-editor-file-roots)))
+
+(defun majutsu-process-with-editor-file-root (file)
+  "Return the repository root recorded for with-editor FILE."
+  (and file (gethash file majutsu-process--with-editor-file-roots)))
+
+(defun majutsu-process-forget-with-editor-file-root (file)
+  "Forget the repository root recorded for with-editor FILE."
+  (when file
+    (remhash file majutsu-process--with-editor-file-roots)))
+
 ;;; Process buffer
 
 (defclass majutsu-process-section (magit-section)
@@ -417,6 +458,7 @@ repository's log buffer (see `majutsu-refresh')."
 Return non-nil when LINE is consumed as a control packet."
   (cond
    ((majutsu--with-editor-control-line-p line)
+    (majutsu-process--remember-with-editor-file-root proc line)
     t)
    ((majutsu--ediff-control-line-p line)
     (if (fboundp 'majutsu-ediff--handle-control-line)

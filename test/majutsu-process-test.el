@@ -82,6 +82,21 @@
         (should (string-match-p (regexp-quote "normal\ntail\n") out))
         (should-not (string-match-p "WITH-EDITOR:" out))))))
 
+(ert-deftest test-majutsu-process-filter/remembers-with-editor-file-root ()
+  (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (let* ((packet (format "WITH-EDITOR: 123 OPEN +1%c/tmp/manifest%c IN /repo\n"
+                             ?\x1f ?\x1f))
+             (proc (make-process :name "majutsu-test"
+                                 :buffer (current-buffer)
+                                 :command (list "cat"))))
+        (process-put proc 'default-dir "/repo/")
+        (set-marker (process-mark proc) (point))
+        (majutsu--process-filter proc packet)
+        (delete-process proc)
+        (should (equal (majutsu-process-with-editor-file-root "/tmp/manifest")
+                       "/repo/"))))))
+
 (ert-deftest test-majutsu-process-filter/dispatches-majutsu-ediff-control-packets ()
   (with-temp-buffer
     (let* ((packet (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c/tmp/right%cfoo.txt\n"

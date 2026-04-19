@@ -191,6 +191,115 @@
   (global-majutsu-jjdescription-mode 1)
   (should (memq #'majutsu-jjdescription-setup-check-buffer find-file-hook)))
 
+(ert-deftest majutsu-jjdescription-buffer-message-strips-comments ()
+  "Saved descriptions should exclude JJ comments and ignored text."
+  (with-temp-buffer
+    (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
+    (insert majutsu-test--jjdescription-sample)
+    (majutsu-jjdescription-setup)
+    (should
+     (equal (majutsu-jjdescription-buffer-message)
+            (concat
+             "feat(conflict): add majutsu-conflict mode with font-lock\n"
+             "\n"
+             "- Add majutsu-conflict.el for parsing jj conflict markers\n"
+             "- Support diff, snapshot, and git conflict styles\n"
+             "- Add font-lock highlighting for conflict regions\n"
+             "- Add smerge integration for conflict resolution\n"
+             "- Add evil keybindings for conflict navigation\n"
+             "- Add majutsu-conflict-test.el\n")))))
+
+(ert-deftest majutsu-jjdescription-save-message-ring ()
+  "Saving a JJ description stores the cleaned message in history."
+  (let ((log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size))
+        (log-edit-comment-ring-index nil))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert majutsu-test--jjdescription-sample)
+      (majutsu-jjdescription-setup)
+      (setq log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size)
+            log-edit-comment-ring-index nil)
+      (majutsu-jjdescription-save-message)
+      (should (= (ring-length log-edit-comment-ring) 1))
+      (should (equal (ring-ref log-edit-comment-ring 0)
+                     (majutsu-jjdescription-buffer-message))))))
+
+(ert-deftest majutsu-jjdescription-prev-next-message ()
+  "History cycling replaces only the editable description region."
+  (let ((log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size))
+        (log-edit-comment-ring-index nil))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "current summary\n\nJJ: Change ID: abcdefgh\nJJ: note\n")
+      (majutsu-jjdescription-setup)
+      (setq log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size)
+            log-edit-comment-ring-index nil)
+      (ring-insert log-edit-comment-ring "older summary\n")
+      (majutsu-jjdescription-prev-message 1)
+      (should (equal (buffer-string)
+                     "older summary\n\nJJ: Change ID: abcdefgh\nJJ: note\n"))
+      (majutsu-jjdescription-next-message 1)
+      (should (equal (buffer-string)
+                     "current summary\n\nJJ: Change ID: abcdefgh\nJJ: note\n")))))
+
+(ert-deftest majutsu-jjdescription-search-message-backward ()
+  "History search reuses JJ description region replacement logic."
+  (let ((log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size))
+        (log-edit-comment-ring-index nil)
+        (log-edit-last-comment-match ""))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "current summary\n\nJJ: Change ID: abcdefgh\nJJ: note\n")
+      (majutsu-jjdescription-setup)
+      (setq log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size)
+            log-edit-comment-ring-index nil)
+      (ring-insert log-edit-comment-ring "feature work\n")
+      (ring-insert log-edit-comment-ring "bugfix summary\n")
+      (majutsu-jjdescription-search-message-backward "feature")
+      (should (equal (buffer-string)
+                     "feature work\n\nJJ: Change ID: abcdefgh\nJJ: note\n")))))
+
+(ert-deftest majutsu-jjdescription-setup-uses-server-client-directory ()
+  "Setup should bind the repository root from the emacsclient cwd."
+  (with-temp-buffer
+    (let ((client (make-process :name "majutsu-jjdescription-client"
+                                :buffer (current-buffer)
+                                :command (list "cat"))))
+      (unwind-protect
+          (progn
+            (setq buffer-file-name "/tmp/editor-123.jjdescription")
+            (process-put client 'server-client-directory "/tmp/test-repo")
+            (setq-local server-buffer-clients (list client))
+            (majutsu-jjdescription-setup)
+            (should (equal default-directory "/tmp/test-repo/"))
+            (should (equal majutsu--default-directory "/tmp/test-repo/")))
+        (delete-process client)))))
+
+(ert-deftest majutsu-jjdescription-show-diff-uses-change-id ()
+  "Show-diff should prefer the first Change ID in the buffer."
+  (with-temp-buffer
+    (text-mode)
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
+    (insert "summary\n\nJJ: Change ID: zzzabcde\nJJ: note\n")
+    (cl-letf (((symbol-function #'majutsu-process-with-editor-file-root)
+               (lambda (file)
+                 (and (equal file buffer-file-name) "/tmp/test-repo/")))
+              ((symbol-function #'majutsu-process-forget-with-editor-file-root)
+               (lambda (&rest _) nil)))
+      (majutsu-jjdescription-setup)
+      (let (seen seen-default-directory)
+        (cl-letf (((symbol-function #'majutsu-diff-revset)
+                   (lambda (revset &rest _)
+                     (setq seen revset
+                           seen-default-directory default-directory))))
+          (majutsu-jjdescription-show-diff))
+        (should (equal seen "zzzabcde"))
+        (should (equal seen-default-directory "/tmp/test-repo/"))))))
+
 (provide 'majutsu-jjdescription-test)
 
 ;;; majutsu-jjdescription-test.el ends here
