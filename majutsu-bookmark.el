@@ -118,14 +118,16 @@ SCOPE controls what to return:
 
 (defconst majutsu-bookmark--completion-template
   (let ((sep (format "\"%s\"" majutsu-bookmark--completion-field-separator)))
-    (string-join
-     (list "name"
-           sep "if(remote, remote, \"\")"
-           sep "if(conflict, \"t\", \"\")"
-           sep "if(present, \"t\", \"\")"
-           sep "if(tracked, \"t\", \"\")"
-           sep "if(synced, \"t\", \"\")")
-     " ++ "))
+    (concat
+     (string-join
+      (list "name"
+            sep "if(remote, remote, \"\")"
+            sep "if(conflict, \"t\", \"\")"
+            sep "if(present, \"t\", \"\")"
+            sep "if(tracked, \"t\", \"\")"
+            sep "if(synced, \"t\", \"\")")
+      " ++ ")
+     " ++ \"\\n\""))
   "Template used to collect bookmark completion metadata.")
 
 (defun majutsu-bookmark--split-completion-fields (value)
