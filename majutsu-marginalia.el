@@ -178,8 +178,28 @@ Insert Marginalia's alignment marker before the first separator."
 
 (defun majutsu-marginalia-annotate-tag (cand)
   "Annotate tag candidate CAND."
-  (or (majutsu-marginalia--cached-annotation 'majutsu-tag cand)
-      (majutsu-marginalia--label "tag" 'marginalia-key)))
+  (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-tag cand)))
+      (majutsu-marginalia--annotation
+       (majutsu-marginalia--column "tag" 9 'marginalia-key)
+       (majutsu-marginalia--column
+        (if (plist-get entry :local) "local" "remote only")
+        11 'marginalia-type)
+       (majutsu-marginalia--column
+        (and (plist-get entry :synced) "synced")
+        8 'success)
+       (majutsu-marginalia--column
+        (and (plist-get entry :conflict) "conflicted")
+        10 'warning)
+       (majutsu-marginalia--column
+        (majutsu-marginalia--bookmark-remote-field
+         "tracked" (plist-get entry :tracked-remotes) nil)
+        22 'success)
+       (majutsu-marginalia--column
+        (majutsu-marginalia--bookmark-remote-field
+         "untracked" (plist-get entry :untracked-remotes) nil)
+        22 'marginalia-documentation))
+    (or (majutsu-marginalia--cached-annotation 'majutsu-tag cand)
+        (majutsu-marginalia--label "tag" 'marginalia-key))))
 
 (defun majutsu-marginalia-annotate-remote (cand)
   "Annotate Git remote candidate CAND."
@@ -221,14 +241,33 @@ Insert Marginalia's alignment marker before the first separator."
           (majutsu-marginalia--label "current workspace" 'success)
         (majutsu-marginalia--label "workspace" 'marginalia-key)))))
 
-(defun majutsu-marginalia-annotate-file (cand)
-  "Annotate repo-relative file candidate CAND using file attributes.
+(defun majutsu-marginalia--file-status-face (status)
+  "Return a face for file STATUS."
+  (pcase status
+    ((or "added" "copied") 'success)
+    ("deleted" 'error)
+    ("renamed" 'warning)
+    ("modified" 'marginalia-key)
+    (_ 'marginalia-documentation)))
 
-If CAND does not resolve inside a repository, fall back to a simple file label."
-  (if-let* ((root (majutsu-marginalia--repo-root))
-            (path (expand-file-name cand root)))
-      (marginalia-annotate-file path)
-    (majutsu-marginalia--label "file" 'marginalia-key)))
+(defun majutsu-marginalia-annotate-file (cand)
+  "Annotate repo-relative file candidate CAND."
+  (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-file cand)))
+      (let ((status (plist-get entry :status))
+            (file-type (or (plist-get entry :file-type) "file")))
+        (majutsu-marginalia--annotation
+         (majutsu-marginalia--column
+          (if (plist-get entry :conflict) "conflict" file-type)
+          10 (if (plist-get entry :conflict) 'warning 'marginalia-key))
+         (majutsu-marginalia--column
+          status 10 (majutsu-marginalia--file-status-face status))
+         (majutsu-marginalia--column
+          (and (plist-get entry :executable) "executable")
+          10 'marginalia-type)))
+    (if-let* ((root (majutsu-marginalia--repo-root))
+              (path (expand-file-name cand root)))
+        (marginalia-annotate-file path)
+      (majutsu-marginalia--label "file" 'marginalia-key))))
 
 (defun majutsu-marginalia--set-annotator (category function)
   "Register FUNCTION as the primary Marginalia annotator for CATEGORY."

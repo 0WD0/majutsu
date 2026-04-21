@@ -70,6 +70,26 @@
         (should (text-property-any 0 (length annotation)
                                    'marginalia--align t annotation))))))
 
+(ert-deftest majutsu-marginalia-annotate-tag/uses-structured-entry ()
+  (let ((marginalia-separator "  ")
+        (default-directory "/tmp/repo/")
+        (majutsu-marginalia--payload-cache (make-hash-table :test #'equal)))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "v1.0"
+               '(:local t :synced t :conflict t
+                 :tracked-remotes ("origin")
+                 :untracked-remotes ("fork"))
+               entries)
+      (majutsu-marginalia-prewarm-candidate-data
+       'majutsu-tag (list :entries entries) nil default-directory)
+      (let ((annotation (majutsu-marginalia-annotate-tag "v1.0")))
+        (should (string-match-p "tag" annotation))
+        (should (string-match-p "local" annotation))
+        (should (string-match-p "synced" annotation))
+        (should (string-match-p "conflicted" annotation))
+        (should (string-match-p "tracked@origin" annotation))
+        (should (string-match-p "untracked@fork" annotation))))))
+
 (ert-deftest majutsu-marginalia-annotate-remote/uses-cached-urls ()
   (let ((marginalia-separator "  ")
         (default-directory "/tmp/repo/")
@@ -113,6 +133,24 @@
                               (majutsu-marginalia-annotate-workspace "default")))
       (should (string-match-p "workspace"
                               (majutsu-marginalia-annotate-workspace "feature"))))))
+
+(ert-deftest majutsu-marginalia-annotate-file/uses-structured-entry ()
+  (let ((marginalia-separator "  ")
+        (default-directory "/tmp/repo/")
+        (majutsu-marginalia--payload-cache (make-hash-table :test #'equal)))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "src/main.el"
+               '(:path "src/main.el" :file-type "file" :status "modified"
+                 :executable t)
+               entries)
+      (majutsu-marginalia-prewarm-candidate-data
+       'majutsu-file (list :entries entries) nil default-directory)
+      (let ((annotation (majutsu-marginalia-annotate-file "src/main.el")))
+        (should (string-match-p "file" annotation))
+        (should (string-match-p "modified" annotation))
+        (should (string-match-p "executable" annotation))
+        (should (text-property-any 0 (length annotation)
+                                   'marginalia--align t annotation))))))
 
 (ert-deftest majutsu-marginalia-annotate-file/expands-against-repo-root ()
   (let ((marginalia-separator "  ")
