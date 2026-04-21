@@ -18,6 +18,7 @@
 
 ;;; Code:
 
+(require 'compat)
 (require 'subr-x)
 
 (declare-function majutsu-marginalia-prewarm-candidate-data
