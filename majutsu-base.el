@@ -216,6 +216,24 @@ is `any', require non-empty input without requiring a candidate match."
           nil)
       value)))
 
+(defun majutsu-completing-read-payload
+    (prompt payload &optional predicate require-match initial-input hist def category context directory)
+  "Read one value from structured completion PAYLOAD.
+PAYLOAD may provide :category for completion styling.  CONTEXT and
+DIRECTORY are forwarded to Marginalia cache prewarming.  REQUIRE-MATCH
+follows `majutsu-completing-read'."
+  (let ((table (majutsu-completion-payload-table payload category def)))
+    (majutsu-completion-prewarm-payload payload category context directory)
+    (let ((value (completing-read (format-prompt prompt def)
+                                  table predicate
+                                  (if (eq require-match 'any) nil require-match)
+                                  initial-input hist def)))
+      (if (equal value "")
+          (if require-match
+              (user-error "Nothing selected")
+            nil)
+        value))))
+
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
   "Read multiple choices with completion, preserving CATEGORY metadata.
@@ -235,6 +253,22 @@ requiring a candidate match."
     (when (and (eq require-match 'any) (null values))
       (user-error "Nothing selected"))
     values))
+
+(defun majutsu-completing-read-multiple-payload
+    (prompt payload &optional predicate require-match initial-input hist def category context directory)
+  "Read multiple values from structured completion PAYLOAD.
+PAYLOAD may provide :category for completion styling.  CONTEXT and
+DIRECTORY are forwarded to Marginalia cache prewarming.  REQUIRE-MATCH
+follows `majutsu-completing-read-multiple'."
+  (let ((table (majutsu-completion-payload-table payload category def)))
+    (majutsu-completion-prewarm-payload payload category context directory)
+    (let ((values (completing-read-multiple (format-prompt prompt def)
+                                            table predicate
+                                            (if (eq require-match 'any) nil require-match)
+                                            initial-input hist def)))
+      (when (and (eq require-match 'any) (null values))
+        (user-error "Nothing selected"))
+      values)))
 
 (defun majutsu-read-string (prompt &optional initial-input history default-value)
   "Read a string from the minibuffer, prompting with PROMPT.

@@ -35,5 +35,27 @@
     (should-not (funcall annotation "dev"))
     (should-not (funcall annotation "@"))))
 
+(ert-deftest majutsu-completion-payload-items/uses-annotation-hash ()
+  "Structured payloads should become annotated completion items."
+  (let ((annotations (make-hash-table :test #'equal)))
+    (puthash "main" "Main bookmark" annotations)
+    (should (equal (majutsu-completion-payload-items
+                    (list :candidates '("main" "dev")
+                          :annotations annotations))
+                   '(("main" . "Main bookmark") "dev")))))
+
+(ert-deftest majutsu-completion-prewarm-payload/forwards-category-and-context ()
+  "Payload prewarming should forward structured metadata to Marginalia."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
+               (lambda (&rest args)
+                 (setq seen args))))
+      (majutsu-completion-prewarm-payload
+       (list :category 'majutsu-remote :candidates '("origin"))
+       nil 'ctx "/tmp/repo/")
+      (should (equal seen
+                     '(majutsu-remote (:category majutsu-remote :candidates ("origin"))
+                                      ctx "/tmp/repo/"))))))
+
 (provide 'majutsu-completion-test)
 ;;; majutsu-completion-test.el ends here

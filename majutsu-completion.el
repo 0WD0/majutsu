@@ -20,6 +20,10 @@
 
 (require 'subr-x)
 
+(declare-function majutsu-marginalia-prewarm-candidate-data
+                  "majutsu-marginalia"
+                  (category payload &optional context directory))
+
 (defun majutsu-completion-parse-annotated-line (line)
   "Parse LINE as CANDIDATE<TAB>ANNOTATION.
 Return (CANDIDATE . ANNOTATION).  Return nil for empty lines."
@@ -69,6 +73,40 @@ and absent from ITEMS, is prepended without annotation."
              . ,(lambda (candidate)
                   (gethash candidate annotations))))
         (complete-with-action action candidates string predicate)))))
+
+(defun majutsu-completion-payload-category (payload &optional category)
+  "Return completion CATEGORY or PAYLOAD's :category."
+  (or category (plist-get payload :category)))
+
+(defun majutsu-completion-payload-items (payload)
+  "Return completion items from structured PAYLOAD.
+PAYLOAD should contain :candidates and may contain :annotations, a hash
+mapping candidates to annotation strings."
+  (let ((annotations (plist-get payload :annotations)))
+    (mapcar (lambda (candidate)
+              (if (and (hash-table-p annotations)
+                       (gethash candidate annotations))
+                  (cons candidate (gethash candidate annotations))
+                candidate))
+            (plist-get payload :candidates))))
+
+(defun majutsu-completion-payload-table (payload &optional category default)
+  "Return a completion table for structured PAYLOAD.
+CATEGORY overrides PAYLOAD's :category when non-nil.  DEFAULT is passed to
+`majutsu-completion-table'."
+  (majutsu-completion-table
+   (majutsu-completion-payload-items payload)
+   (majutsu-completion-payload-category payload category)
+   default))
+
+(defun majutsu-completion-prewarm-payload (payload &optional category context directory)
+  "Prewarm Marginalia cache for structured PAYLOAD when available.
+CATEGORY overrides PAYLOAD's :category when non-nil.  CONTEXT and
+DIRECTORY are forwarded to `majutsu-marginalia-prewarm-candidate-data'."
+  (when-let* ((category (majutsu-completion-payload-category payload category))
+              ((fboundp 'majutsu-marginalia-prewarm-candidate-data)))
+    (majutsu-marginalia-prewarm-candidate-data
+     category payload context directory)))
 
 (provide 'majutsu-completion)
 ;;; majutsu-completion.el ends here
