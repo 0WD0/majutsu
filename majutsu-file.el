@@ -422,7 +422,8 @@ Results are cached in `majutsu-file--list-cache`."
       (when (and (not (gethash path entries))
                  (gethash path statuses))
         (puthash path (gethash path statuses) entries)))
-    (list :candidates candidates
+    (list :category 'majutsu-file
+          :candidates candidates
           :entries entries)))
 
 (defvar majutsu-file-path-history nil
@@ -435,14 +436,12 @@ LIST-FN defaults to `majutsu-file-list'."
   (let* ((root (majutsu-file--root))
          (candidates (funcall (or list-fn #'majutsu-file-list)))
          (payload (majutsu-file-candidate-data "@" root candidates)))
-    (majutsu-marginalia-prewarm-candidate-data
-     'majutsu-file payload nil root)
-    (majutsu-completing-read-multiple
-     prompt candidates
+    (majutsu-completing-read-multiple-payload
+     prompt payload
      nil nil
      (or initial-input (majutsu-file--path-at-point root))
      (or history 'majutsu-file-path-history)
-     nil 'majutsu-file)))
+     nil nil nil root)))
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
@@ -471,11 +470,9 @@ DEFAULT is the initial file choice when present in REVSET file list."
          (default (or default (majutsu-file--path-at-point root))))
     (when (and default (not (member default paths)))
       (setq default nil))
-    (majutsu-marginalia-prewarm-candidate-data
-     'majutsu-file payload nil root)
-    (majutsu-completing-read "Find file" paths nil t nil
-                             'majutsu-file-path-history
-                             default 'majutsu-file)))
+    (majutsu-completing-read-payload "Find file" payload nil t nil
+                                    'majutsu-file-path-history
+                                    default nil nil root)))
 
 (defun majutsu-file--diff-range-value (range prefix)
   "Return the value in RANGE for argument starting with PREFIX."
