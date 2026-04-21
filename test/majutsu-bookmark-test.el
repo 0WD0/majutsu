@@ -102,6 +102,9 @@
     (should (equal (majutsu--bookmark-untrack-name-candidates)
                    '("main" "topic")))))
 
+(ert-deftest majutsu-bookmark-completion-template/emits-line-delimiters ()
+  (should (string-match-p (regexp-quote "\\n") majutsu-bookmark--completion-template)))
+
 (ert-deftest majutsu-bookmark-candidate-data/aggregates-local-and-remote-state ()
   (let ((sep majutsu-bookmark--completion-field-separator))
     (cl-letf (((symbol-function 'majutsu-jj-lines)
