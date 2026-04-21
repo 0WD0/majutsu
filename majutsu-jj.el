@@ -239,28 +239,49 @@ workspace working-copy refs (`<workspace>@`), bookmarks, and tags.
 DEFAULT, when non-nil, is inserted first so users can accept it quickly."
   (plist-get (majutsu-jj-revset-candidate-data default) :candidates))
 
+(defun majutsu-jj--revset-completion-table (&optional default)
+  "Return a completion table for revset input.
+DEFAULT is inserted first in the candidate list when non-nil."
+  (let* ((data (majutsu-jj-revset-candidate-data default))
+         (candidates (plist-get data :candidates))
+         (sources (plist-get data :sources))
+         (annotation (majutsu-jj--revset-annotation-function sources)))
+    (lambda (string pred action)
+      (if (eq action 'metadata)
+          `(metadata
+            (display-sort-function . identity)
+            (category . majutsu-revision)
+            (annotation-function . ,annotation))
+        (complete-with-action action candidates string pred)))))
+
 (defun majutsu-read-revset (prompt &optional default)
   "Prompt user with PROMPT to read a revision set string.
 Completion candidates include workspaces, bookmarks, and tags, while
 still allowing free-form revset expressions."
   (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
-         (data (majutsu-jj-revset-candidate-data default))
-         (candidates (plist-get data :candidates))
-         (sources (plist-get data :sources))
-         (annotation (majutsu-jj--revset-annotation-function sources))
-         (table (lambda (string pred action)
-                  (if (eq action 'metadata)
-                      `(metadata
-                        (display-sort-function . identity)
-                        (category . majutsu-revision)
-                        (annotation-function . ,annotation))
-                    (complete-with-action action candidates string pred))))
+         (table (majutsu-jj--revset-completion-table default))
          (value (completing-read (format-prompt prompt default)
                                  table nil nil nil
                                  'majutsu-read-revset-history
                                  default)))
     (if (string-empty-p value)
         (user-error "Need non-empty input")
+      value)))
+
+(defun majutsu-read-optional-revset (prompt &optional default initial-input history)
+  "Prompt user with PROMPT to read an optional revset string.
+
+Completion candidates include workspaces, bookmarks, and tags.  Empty
+input returns nil instead of signaling an error.  DEFAULT is shown in
+`format-prompt' when non-nil, and INITIAL-INPUT is inserted into the
+minibuffer when non-nil.  HISTORY defaults to
+`majutsu-read-revset-history'."
+  (let* ((table (majutsu-jj--revset-completion-table default))
+         (value (completing-read (format-prompt prompt default)
+                                 table nil nil initial-input
+                                 (or history 'majutsu-read-revset-history)
+                                 default)))
+    (unless (string-empty-p value)
       value)))
 
 (defun majutsu-jj--parse-diff-range (range)
@@ -298,9 +319,9 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
      ((= (length changed) 1)
       (car changed))
      (t
-      (completing-read
+      (majutsu-completing-read
        (format "File to compare between %s and %s: " from to)
-       changed nil t)))))
+       changed nil t nil 'majutsu-file-path-history nil 'majutsu-file)))))
 
 ;;; Safe default-directory
 

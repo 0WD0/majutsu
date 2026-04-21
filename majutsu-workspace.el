@@ -215,6 +215,9 @@ Entries are parsed from `jj workspace list -T ...`."
         (plist-get value :name)
       value)))
 
+(defvar majutsu-workspace-name-history nil
+  "Minibuffer history for workspace-name input.")
+
 (defun majutsu-workspace--read-name (&optional prompt root default)
   "Read a workspace name.
 
@@ -224,7 +227,9 @@ the workspaces for ROOT."
       (let* ((root (or root default-directory))
              (default (or default (majutsu-workspace-current-name root) ""))
              (prompt (or prompt "Workspace")))
-        (majutsu-completing-read prompt (majutsu-workspace--names root) nil t nil nil default))))
+        (majutsu-completing-read prompt (majutsu-workspace--names root)
+                                 nil t nil 'majutsu-workspace-name-history
+                                 default 'majutsu-workspace))))
 
 (defun majutsu-workspace--read-root (name &optional root)
   "Return the workspace root directory for NAME.
@@ -413,8 +418,12 @@ directory."
   (interactive
    (let* ((root (majutsu--toplevel-safe))
           (workspace (majutsu-workspace--read-name "Rename workspace: " root))
-          (new-name (read-string (format "Rename workspace (%s) to: " workspace)
-                                 nil nil workspace)))
+          (new-name (and workspace
+                         (majutsu-completing-read
+                          (format "Rename workspace (%s) to" workspace)
+                          (majutsu-workspace--names root)
+                          nil nil nil 'majutsu-workspace-name-history
+                          workspace 'majutsu-workspace))))
      (list workspace new-name)))
   (when (and workspace (not (string-empty-p workspace))
              new-name (not (string-empty-p new-name)))
@@ -434,7 +443,9 @@ This stops tracking the workspaces' working-copy commits in the repo. The
 workspace directories are not touched on disk."
   (interactive
    (let* ((names (majutsu-workspace--names)))
-     (list (majutsu-completing-read-multiple "Forget workspace(s)" names nil t))))
+     (list (majutsu-completing-read-multiple
+            "Forget workspace(s)" names nil t nil
+            'majutsu-workspace-name-history nil 'majutsu-workspace))))
   (when names
     (unless (majutsu-confirm 'workspace-forget
                              (format "Forget workspace(s) %s? "
@@ -456,8 +467,17 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
    (let* ((root (majutsu--toplevel-safe))
           (parent (file-name-directory (directory-file-name root)))
           (destination (read-directory-name "Create workspace at: " parent nil nil))
-          (name (string-trim (majutsu-read-string "Workspace name (empty = default)" nil nil "")))
-          (revision (string-trim (majutsu-read-string "Parent revset (-r, empty = default)" nil nil "")))
+          (name (string-trim
+                 (or (majutsu-completing-read
+                      "Workspace name (empty = default)"
+                      (majutsu-workspace--names root)
+                      nil nil nil 'majutsu-workspace-name-history
+                      nil 'majutsu-workspace)
+                     "")))
+          (revision (or (majutsu-read-optional-revset
+                         "Parent revset (-r, empty = default)"
+                         nil nil 'majutsu-read-revset-history)
+                        ""))
           (sparse (majutsu-completing-read "Sparse patterns"
                                            '("copy" "full" "empty") nil t nil nil "copy")))
      (list destination

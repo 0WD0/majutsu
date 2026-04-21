@@ -1930,12 +1930,12 @@ offer to create one using `jj git init`."
   "Prompt for a revset and store it in the current log variables."
   (interactive)
   (let* ((current (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-         (input (string-trim (read-from-minibuffer "Revset (empty to clear): " current))))
+         (input (majutsu-read-optional-revset
+                 "Revset (empty to clear)" nil current
+                 'majutsu-read-revset-history)))
     (pcase-let ((`(,args ,_revsets ,filesets)
                  (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-      (majutsu-log--set-value 'majutsu-log-mode args
-                              (unless (string-empty-p input) input)
-                              filesets))
+      (majutsu-log--set-value 'majutsu-log-mode args input filesets))
     (majutsu-log-transient--redisplay)))
 
 (defun majutsu-log-transient-clear-revisions ()

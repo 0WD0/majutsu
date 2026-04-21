@@ -185,7 +185,9 @@ conflict description is stripped."
      ((= (length files) 1)
       (car files))
      (t
-      (completing-read "Resolve conflicts in: " files nil t)))))
+      (majutsu-completing-read "Resolve conflicts in" files nil t nil
+                               'majutsu-file-path-history
+                               nil 'majutsu-file)))))
 
 (defun majutsu-ediff--resolve-file-dwim (&optional file)
   "Return conflicted FILE for resolve workflow.
@@ -586,7 +588,9 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
      ((= (length files) 1)
       (car files))
      (t
-      (completing-read "Diffedit file: " files nil t)))))
+      (majutsu-completing-read "Diffedit file" files nil t nil
+                               'majutsu-file-path-history
+                               nil 'majutsu-file)))))
 
 ;;;###autoload
 (defun majutsu-ediff-dwim ()
