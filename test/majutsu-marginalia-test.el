@@ -66,7 +66,9 @@
         (should (string-match-p "synced" annotation))
         (should (string-match-p "conflicted" annotation))
         (should (string-match-p "tracked@origin" annotation))
-        (should (string-match-p "untracked@fork" annotation))))))
+        (should (string-match-p "untracked@fork" annotation))
+        (should (text-property-any 0 (length annotation)
+                                   'marginalia--align t annotation))))))
 
 (ert-deftest majutsu-marginalia-annotate-remote/uses-cached-urls ()
   (let ((marginalia-separator "  ")
