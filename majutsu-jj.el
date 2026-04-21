@@ -170,11 +170,28 @@ remote prefix from DIRECTORY so the result remains remote."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
-(defconst majutsu-jj--revset-completion-style-override
-  '(majutsu-revision (styles basic))
-  "Completion category override for revset expression prompts.
-Revsets are expressions, so spaces and operators must be sent to jj as
-literal input instead of being reinterpreted by styles such as Orderless.")
+(defcustom majutsu-jj-revset-completion-mode 'basic
+  "How revset prompts interact with Emacs completion styles.
+
+When set to `basic', Majutsu locally forces `basic' completion for the
+`majutsu-revision' category so revset expressions such as `main | foo'
+and `trunk()..bar' are sent to jj literally.
+
+When set to `inherit', Majutsu leaves the user's global completion style
+configuration untouched.  This can be useful for Orderless-based
+annotation filtering, but may interfere with continuous completion of
+operator-heavy revset expressions."
+  :group 'majutsu
+  :type '(choice (const :tag "Prefer revset expression correctness" basic)
+          (const :tag "Inherit global completion styles" inherit)))
+
+(defun majutsu-jj--revset-completion-category-overrides ()
+  "Return category overrides for the current revset completion mode."
+  (pcase majutsu-jj-revset-completion-mode
+    ('basic
+     (cons '(majutsu-revision (styles basic))
+           completion-category-overrides))
+    (_ completion-category-overrides)))
 
 (defconst majutsu-jj--revset-source-order
   '(pseudo workspace bookmark tag)
@@ -490,8 +507,7 @@ revset value being read."
     (when payload
       (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
     (let* ((completion-category-overrides
-            (cons majutsu-jj--revset-completion-style-override
-                  completion-category-overrides))
+            (majutsu-jj--revset-completion-category-overrides))
            (value (completing-read (format-prompt prompt default)
                                    table nil nil nil
                                    'majutsu-read-revset-history
@@ -520,8 +536,7 @@ jj's native completer in that command context."
     (when payload
       (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
     (let* ((completion-category-overrides
-            (cons majutsu-jj--revset-completion-style-override
-                  completion-category-overrides))
+            (majutsu-jj--revset-completion-category-overrides))
            (value (completing-read (format-prompt prompt default)
                                    table nil nil initial-input
                                    (or history 'majutsu-read-revset-history)

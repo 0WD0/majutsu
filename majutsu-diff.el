@@ -1558,7 +1558,8 @@ REVSET is passed to jj diff using `--revisions='."
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
-  :prompt "Revisions: ")
+  :prompt "Revisions: "
+  :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-diff:revisions ()
   :description "Revisions (toggle at point)"
