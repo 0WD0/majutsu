@@ -27,19 +27,35 @@
   "Start `jj git ARGS' asynchronously, for side-effects."
   (majutsu-start-jj (append '("git") args) success-msg finish-callback))
 
-(defun majutsu-git--remote-names (&optional directory)
-  "Return a list of Git remote names for DIRECTORY.
+(defun majutsu-git--parse-remote-list-line (line)
+  "Parse one `jj git remote list` LINE into a plist."
+  (let ((raw (string-trim (substring-no-properties (or line "")))))
+    (when (and (not (string-empty-p raw))
+               (string-match "\\`\\([^ \\t]+\\)[ \\t]+\\(.+?\\)\\(?:[ \\t]+(push: \\(.*\\))\\)?\\'" raw))
+      (list :name (match-string 1 raw)
+            :fetch-url (string-trim (match-string 2 raw))
+            :push-url (when-let* ((push (match-string 3 raw)))
+                        (string-trim push))))))
 
-This calls `jj git remote list` and parses the first word of each line."
-  (let ((default-directory (or directory default-directory)))
+(defun majutsu-git-remote-candidate-data (&optional directory)
+  "Return completion payload for Git remote names in DIRECTORY."
+  (let ((default-directory (or directory default-directory))
+        (entries (make-hash-table :test #'equal))
+        candidates)
     (condition-case _
-        (let* ((lines (or (majutsu-jj-lines "git" "remote" "list") '()))
-               (names (delq nil
-                            (mapcar (lambda (line)
-                                      (car (split-string line "[ :\t]+" t)))
-                                    lines))))
-          (delete-dups names))
-      (error nil))))
+        (dolist (line (or (majutsu-jj-lines "git" "remote" "list") '()))
+          (when-let* ((entry (majutsu-git--parse-remote-list-line line))
+                      (name (plist-get entry :name)))
+            (unless (gethash name entries)
+              (setq candidates (append candidates (list name))))
+            (puthash name entry entries)))
+      (error nil))
+    (list :candidates candidates
+          :entries entries)))
+
+(defun majutsu-git--remote-names (&optional directory)
+  "Return a list of Git remote names for DIRECTORY."
+  (plist-get (majutsu-git-remote-candidate-data directory) :candidates))
 
 (defvar majutsu-remote-name-history nil
   "Minibuffer history for exact remote-name input.")
@@ -47,14 +63,15 @@ This calls `jj git remote list` and parses the first word of each line."
 (defun majutsu-git--read-remote (prompt &optional require-match default)
   "Read a Git remote name with PROMPT.
 If REQUIRE-MATCH is non-nil, require an existing remote name.  DEFAULT
-is preselected when non-nil." 
-  (let* ((remotes (or (majutsu-git--remote-names (ignore-errors (majutsu--toplevel-safe)))
-                      '("origin")))
-         (value (majutsu-completing-read prompt remotes nil require-match nil
-                                         'majutsu-remote-name-history
-                                         default 'majutsu-remote)))
-    (unless (string-empty-p value)
-      value)))
+is preselected when non-nil."
+  (let* ((root (ignore-errors (majutsu--toplevel-safe)))
+         (payload (majutsu-git-remote-candidate-data root))
+         (remotes (or (plist-get payload :candidates) '("origin"))))
+    (majutsu-marginalia-prewarm-candidate-data
+     'majutsu-remote payload nil (or root default-directory))
+    (majutsu-completing-read prompt remotes nil (or require-match 'any) nil
+                             'majutsu-remote-name-history
+                             default 'majutsu-remote)))
 
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."

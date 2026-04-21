@@ -64,7 +64,7 @@
                  (setq seen-history history)
                  (let ((metadata (funcall collection "" nil 'metadata)))
                    (setq seen-category (cdr (assq 'category (cdr metadata)))))
-                 '("v1.0" ""))))
+                 '("v1.0"))))
       (should (equal (majutsu-tag--read-exact-names "Set tag(s)") '("v1.0")))
       (should (eq seen-history 'majutsu-tag-name-history))
       (should (eq seen-category 'majutsu-tag))

@@ -46,7 +46,10 @@
 
 - Completion: Standardize history-aware readers and completion categories for
   revsets, bookmark/tag names and patterns, remote names/patterns,
-  workspace names, and repo-relative file paths.
+  workspace names, and repo-relative file paths, and add optional
+  Marginalia annotations for Majutsu completion categories. The optional
+  Marginalia integration now shows richer bookmark, remote, and workspace
+  annotations based on structured completion payloads.
 - Workspace: Workspace lists now show resolved roots when available and
   treat unavailable roots as empty data instead of raw jj errors. Internally
   this now uses one structured =jj workspace list -T= parse pipeline.

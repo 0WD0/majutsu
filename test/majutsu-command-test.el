@@ -49,6 +49,44 @@
     (should (equal (majutsu--jj-command-args "jj jj log") '("log")))
     (should (equal (majutsu--jj-command-args "log -r @") '("log" "-r" "@")))))
 
+(ert-deftest majutsu-command-test-jj-completion-argv-strips-leading-jj ()
+  "JJ completion argv should match jj's completion protocol input."
+  (let ((majutsu-jj-executable "/usr/bin/jj"))
+    (should (equal (majutsu--jj-completion-argv "") '("")))
+    (should (equal (majutsu--jj-completion-argv "jj l") '("l")))
+    (should (equal (majutsu--jj-completion-argv "log -r ") '("log" "-r" "")))))
+
+(ert-deftest majutsu-command-test-jj-completion-items-calls-native-jj-completer ()
+  "Completion should shell out through jj's COMPLETE protocol."
+  (let ((majutsu-jj-executable "/usr/bin/jj")
+        seen-program
+        seen-args
+        seen-complete)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (program _infile destination _display &rest args)
+                 (setq seen-program program)
+                 (setq seen-args args)
+                 (setq seen-complete (getenv "COMPLETE"))
+                 (when (eq destination t)
+                   (insert "log\tShow revision history\n"))
+                 0)))
+      (should (equal (majutsu--jj-completion-items "jj l")
+                     '(("log" . "Show revision history"))))
+      (should (equal seen-program "/usr/bin/jj"))
+      (should (equal seen-args '("--" "jj" "l")))
+      (should (equal seen-complete "fish")))))
+
+(ert-deftest majutsu-command-test-read-jj-command-uses-native-completion-map ()
+  "JJ command reader should install the custom minibuffer keymap."
+  (let ((default-directory "/tmp/")
+        seen-map)
+    (cl-letf (((symbol-function 'read-from-minibuffer)
+               (lambda (_prompt _initial keymap &rest _args)
+                 (setq seen-map keymap)
+                 "log")))
+      (should (equal (majutsu-read-jj-command) "log"))
+      (should (eq seen-map majutsu-read-jj-command-map)))))
+
 (ert-deftest majutsu-command-test-jj-command-args-rejects-shell-syntax ()
   "JJ command prompts should not fall back to the shell."
   (should-error (majutsu--jj-command-args "jj log | head") :type 'user-error))

@@ -78,7 +78,7 @@
                  (setq seen-history history)
                  (let ((metadata (funcall table "" nil 'metadata)))
                    (setq seen-category (cdr (assq 'category (cdr metadata)))))
-                 '("src" ""))))
+                 '("src"))))
       (should (equal (majutsu-sparse--read-patterns "Sparse" '("src" "lib"))
                      '("src")))
       (should (eq seen-history 'majutsu-sparse-pattern-history))

@@ -186,12 +186,26 @@ Entries are parsed from `jj workspace list -T ...`."
                    (buffer-string))))
     (majutsu-workspace-parse-list-output output plan)))
 
+(defun majutsu-workspace-candidate-data (&optional directory)
+  "Return completion payload for workspace names in DIRECTORY."
+  (let* ((default-directory (or directory default-directory))
+         (entry-list (condition-case nil
+                         (majutsu-workspace-list-entries default-directory)
+                       (error nil)))
+         (entries (make-hash-table :test #'equal))
+         candidates)
+    (dolist (entry entry-list)
+      (when-let* ((name (plist-get entry :name)))
+        (unless (gethash name entries)
+          (setq candidates (append candidates (list name))))
+        (puthash name entry entries)))
+    (list :candidates candidates
+          :entry-list entry-list
+          :entries entries)))
+
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
-  (delete-dups
-   (mapcar (lambda (entry)
-             (plist-get entry :name))
-           (majutsu-workspace-list-entries directory))))
+  (plist-get (majutsu-workspace-candidate-data directory) :candidates))
 
 (defun majutsu-workspace-current-name (&optional directory)
   "Return current workspace name for DIRECTORY, or nil if it can't be determined."
@@ -225,9 +239,16 @@ Prefer the workspace section at point, otherwise use completion over
 the workspaces for ROOT."
   (or (majutsu-workspace--section-name)
       (let* ((root (or root default-directory))
-             (default (or default (majutsu-workspace-current-name root) ""))
-             (prompt (or prompt "Workspace")))
-        (majutsu-completing-read prompt (majutsu-workspace--names root)
+             (payload (majutsu-workspace-candidate-data root))
+             (current (cl-find-if (lambda (entry)
+                                    (plist-get entry :current))
+                                  (plist-get payload :entry-list)))
+             (default (or default (plist-get current :name) ""))
+             (prompt (or prompt "Workspace"))
+             (candidates (plist-get payload :candidates)))
+        (majutsu-marginalia-prewarm-candidate-data
+         'majutsu-workspace payload nil root)
+        (majutsu-completing-read prompt candidates
                                  nil t nil 'majutsu-workspace-name-history
                                  default 'majutsu-workspace))))
 
