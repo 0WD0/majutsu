@@ -118,11 +118,10 @@ This checks if patterns differ from the default '.' (all files)."
 
 (defun majutsu-sparse--read-patterns (prompt candidates)
   "Read sparse working-copy patterns with PROMPT from CANDIDATES."
-  (seq-filter (lambda (pattern) (not (string-empty-p pattern)))
-              (majutsu-completing-read-multiple
-               prompt candidates nil nil nil
-               'majutsu-sparse-pattern-history
-               nil 'majutsu-file)))
+  (majutsu-completing-read-multiple
+   prompt candidates nil nil nil
+   'majutsu-sparse-pattern-history
+   nil 'majutsu-file))
 
 ;;; Commands
 

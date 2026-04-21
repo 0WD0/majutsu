@@ -14,6 +14,22 @@
 (require 'cl-lib)
 (require 'majutsu-git)
 
+(ert-deftest majutsu-git-remote-candidate-data/parses-fetch-and-push-urls ()
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _args)
+               '("origin git@github.com:0WD0/majutsu.git"
+                 "rad rad://z4fugm4aenykjpk8tpvvqjvwtzvwj (push: rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk...)"))))
+    (let* ((payload (majutsu-git-remote-candidate-data))
+           (entries (plist-get payload :entries))
+           (origin (gethash "origin" entries))
+           (rad (gethash "rad" entries)))
+      (should (equal (plist-get payload :candidates) '("origin" "rad")))
+      (should (equal (plist-get origin :fetch-url) "git@github.com:0WD0/majutsu.git"))
+      (should (equal (plist-get rad :fetch-url)
+                     "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj"))
+      (should (equal (plist-get rad :push-url)
+                     "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk...")))))
+
 (ert-deftest majutsu-git--expand-option-arg/strips-tramp-prefix ()
   "--git-repo option paths should be converted to host-local paths."
   (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
@@ -92,9 +108,10 @@
 
 (ert-deftest majutsu-git-read-remote/uses-history-and-category ()
   (let (seen-history seen-category)
-    (cl-letf (((symbol-function 'majutsu-git--remote-names)
+    (cl-letf (((symbol-function 'majutsu-git-remote-candidate-data)
                (lambda (&optional _directory)
-                 '("origin" "upstream")))
+                 (list :candidates '("origin" "upstream")
+                       :entries (make-hash-table :test #'equal))))
               ((symbol-function 'completing-read)
                (lambda (_prompt table _predicate _require-match _initial history _default)
                  (setq seen-history history)

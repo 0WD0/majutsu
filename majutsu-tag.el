@@ -21,10 +21,6 @@
 (require 'seq)
 (require 'subr-x)
 
-(declare-function majutsu-marginalia-prewarm-candidate-data
-                  "majutsu-marginalia"
-                  (category payload &optional revset directory))
-
 (defvar-local majutsu-tag--list-all-remotes nil
   "Non-nil when the tag list includes remote tags.")
 
@@ -49,18 +45,107 @@ SCOPE controls what to return:
                        (list "-T" template))))
     (delete-dups (majutsu-jj-lines args))))
 
+(defconst majutsu-tag--completion-field-separator (string 31)
+  "Separator inserted between tag completion fields.")
+
+(defconst majutsu-tag--completion-template
+  (let ((sep (format "\"%s\"" majutsu-tag--completion-field-separator)))
+    (concat
+     (string-join
+      (list "name"
+            sep "if(remote, remote, \"\")"
+            sep "if(conflict, \"t\", \"\")"
+            sep "if(present, \"t\", \"\")"
+            sep "if(tracked, \"t\", \"\")"
+            sep "if(synced, \"t\", \"\")")
+      " ++ ")
+     " ++ \"\\n\""))
+  "Template used to collect tag completion metadata.")
+
+(defun majutsu-tag--split-completion-fields (value)
+  "Split tag completion VALUE by `majutsu-tag--completion-field-separator'."
+  (if (not (stringp value))
+      nil
+    (let ((start 0)
+          (len (length value))
+          (sep (aref majutsu-tag--completion-field-separator 0))
+          out)
+      (dotimes (idx len)
+        (when (eq (aref value idx) sep)
+          (push (substring value start idx) out)
+          (setq start (1+ idx))))
+      (push (substring value start len) out)
+      (nreverse out))))
+
+(defun majutsu-tag--parse-completion-bool (value)
+  "Parse tag completion boolean VALUE."
+  (equal value "t"))
+
+(defun majutsu-tag--parse-completion-line (line)
+  "Parse one tag completion LINE into a plist."
+  (let* ((fields (majutsu-tag--split-completion-fields (or line "")))
+         (name (nth 0 fields))
+         (remote (nth 1 fields)))
+    (when (and (stringp name) (not (string-empty-p name)))
+      (list :name name
+            :remote (unless (string-empty-p remote) remote)
+            :conflict (majutsu-tag--parse-completion-bool (nth 2 fields))
+            :present (majutsu-tag--parse-completion-bool (nth 3 fields))
+            :tracked (majutsu-tag--parse-completion-bool (nth 4 fields))
+            :synced (majutsu-tag--parse-completion-bool (nth 5 fields))))))
+
+(defun majutsu-tag--completion-entries (&optional directory)
+  "Return structured tag completion entries for DIRECTORY."
+  (let ((default-directory (or directory default-directory))
+        entries)
+    (dolist (line (majutsu-jj-lines "tag" "list" "--quiet" "--all-remotes"
+                                    "-T" majutsu-tag--completion-template))
+      (when-let* ((entry (majutsu-tag--parse-completion-line line)))
+        (push entry entries)))
+    (nreverse entries)))
+
+(defun majutsu-tag--add-unique-string (items item)
+  "Return ITEMS with ITEM appended unless it is already present."
+  (if (member item items)
+      items
+    (append items (list item))))
+
 (defun majutsu-tag-candidate-data (&optional directory)
-  "Return completion payload for local tags in DIRECTORY.
-The payload follows `(:candidates LIST :annotations HASH-TABLE)'."
-  (let* ((default-directory (or directory default-directory))
-         (tags (condition-case nil
-                   (majutsu--get-tag-names 'local)
-                 (error nil)))
-         (annotations (make-hash-table :test #'equal)))
-    (dolist (tag tags)
-      (puthash tag "local tag" annotations))
-    (list :candidates tags
-          :annotations annotations)))
+  "Return completion payload for local tags in DIRECTORY."
+  (let ((default-directory (or directory default-directory))
+        (entries (make-hash-table :test #'equal))
+        candidates)
+    (condition-case _
+        (dolist (row (majutsu-tag--completion-entries default-directory))
+          (let* ((name (plist-get row :name))
+                 (remote (plist-get row :remote))
+                 (entry (or (gethash name entries)
+                            (list :name name
+                                  :tracked-remotes nil
+                                  :untracked-remotes nil))))
+            (when (plist-get row :conflict)
+              (setq entry (plist-put entry :conflict t)))
+            (if remote
+                (setq entry
+                      (plist-put entry
+                                 (if (plist-get row :tracked)
+                                     :tracked-remotes
+                                   :untracked-remotes)
+                                 (majutsu-tag--add-unique-string
+                                  (plist-get entry
+                                             (if (plist-get row :tracked)
+                                                 :tracked-remotes
+                                               :untracked-remotes))
+                                  remote)))
+              (setq entry (plist-put entry :local t))
+              (when (plist-get row :synced)
+                (setq entry (plist-put entry :synced t)))
+              (unless (member name candidates)
+                (setq candidates (append candidates (list name)))))
+            (puthash name entry entries)))
+      (error nil))
+    (list :candidates candidates
+          :entries entries)))
 
 (defun majutsu-tag-parse-list-output (output)
   "Parse `jj tag list` OUTPUT into grouped entries.
@@ -90,19 +175,15 @@ Return a list of plists with keys:
 
 (defun majutsu-tag--read-candidates (prompt history &optional require-match)
   "Read tag candidates with PROMPT using HISTORY.
-If REQUIRE-MATCH is non-nil, require existing local tags." 
+If REQUIRE-MATCH is non-nil, require existing local tags."
   (let* ((payload (majutsu-tag-candidate-data))
          (candidates (plist-get payload :candidates)))
-    (when (fboundp 'majutsu-marginalia-prewarm-candidate-data)
-      (majutsu-marginalia-prewarm-candidate-data
-       'majutsu-tag payload nil default-directory))
-    (seq-filter (lambda (name) (not (string-empty-p name)))
-                (majutsu-completing-read-multiple
-                 prompt candidates nil require-match nil history nil 'majutsu-tag))))
+    (majutsu-completing-read-multiple
+     prompt candidates nil (or require-match 'any) nil history nil 'majutsu-tag)))
 
 (defun majutsu-tag--read-exact-names (prompt &optional require-match)
   "Read exact tag names with PROMPT.
-If REQUIRE-MATCH is non-nil, require existing local tag names." 
+If REQUIRE-MATCH is non-nil, require existing local tag names."
   (majutsu-tag--read-candidates prompt 'majutsu-tag-name-history require-match))
 
 (defun majutsu-tag--read-patterns (prompt)

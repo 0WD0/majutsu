@@ -201,24 +201,44 @@ When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
                                        initial-input hist def category)
   "Read a choice with completion, preserving CATEGORY metadata.
 Like `completing-read' but uses `format-prompt' and supports CATEGORY
-for completion UI styling (icons, grouping)."
-  (let ((table (if category
-                   (majutsu--make-completion-table collection category)
-                 collection)))
-    (completing-read (format-prompt prompt def)
-                     table predicate require-match
-                     initial-input hist def)))
+for completion UI styling (icons, grouping).
+
+When REQUIRE-MATCH is nil, empty input returns nil.  When REQUIRE-MATCH
+is `any', require non-empty input without requiring a candidate match."
+  (when (and def (listp collection) (not (member def collection)))
+    (setq collection (cons def collection)))
+  (let* ((table (if category
+                    (majutsu--make-completion-table collection category)
+                  collection))
+         (value (completing-read (format-prompt prompt def)
+                                 table predicate
+                                 (if (eq require-match 'any) nil require-match)
+                                 initial-input hist def)))
+    (if (equal value "")
+        (if require-match
+            (user-error "Nothing selected")
+          nil)
+      value)))
 
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
   "Read multiple choices with completion, preserving CATEGORY metadata.
-Like `completing-read-multiple' but uses `format-prompt' and supports CATEGORY."
-  (let ((table (if category
-                   (majutsu--make-completion-table collection category)
-                 collection)))
-    (completing-read-multiple (format-prompt prompt def)
-                              table predicate require-match
-                              initial-input hist def)))
+Like `completing-read-multiple' but uses `format-prompt' and supports CATEGORY.
+
+When REQUIRE-MATCH is `any', require at least one non-empty input without
+requiring a candidate match."
+  (when (and def (listp collection) (not (member def collection)))
+    (setq collection (cons def collection)))
+  (let* ((table (if category
+                    (majutsu--make-completion-table collection category)
+                  collection))
+         (values (completing-read-multiple (format-prompt prompt def)
+                                           table predicate
+                                           (if (eq require-match 'any) nil require-match)
+                                           initial-input hist def)))
+    (when (and (eq require-match 'any) (null values))
+      (user-error "Nothing selected"))
+    values))
 
 (defun majutsu-read-string (prompt &optional initial-input history default-value)
   "Read a string from the minibuffer, prompting with PROMPT.
