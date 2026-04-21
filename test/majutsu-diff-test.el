@@ -159,6 +159,14 @@
       (should (equal seen-default "@"))
       (should (equal seen-completion-args '("restore" "--changes-in"))))))
 
+(ert-deftest majutsu-diff--r-argument/uses-native-revset-reader ()
+  "The `-r' diff infix should use the native revset reader."
+  (let ((obj (seq-find (lambda (suffix)
+                         (equal (oref suffix key) "-r"))
+                       (transient-suffixes 'majutsu-diff))))
+    (should obj)
+    (should (eq (oref obj reader) #'majutsu-diff--transient-read-revset))))
+
 (ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
   "`majutsu-diff-revset' should use default formatting args when ARGS is nil."
   (let (captured-args

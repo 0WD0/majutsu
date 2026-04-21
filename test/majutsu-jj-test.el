@@ -494,8 +494,9 @@ This mirrors Magit's behavior."
         (should (eq seen-category 'majutsu-revision))))))
 
 (ert-deftest majutsu-read-revset/overrides-orderless-with-basic-style ()
-  "Revset readers should force `basic' completion for expression input."
-  (let ((completion-category-overrides '((majutsu-revision (styles orderless)))))
+  "Revset readers should force `basic' completion for expression input by default."
+  (let ((completion-category-overrides '((majutsu-revision (styles orderless))))
+        (majutsu-jj-revset-completion-mode 'basic))
     (cl-letf (((symbol-function 'majutsu-jj--completion-table)
                (lambda (&rest _args)
                  (completion-table-dynamic (lambda (_string) '("main | dev")))))
@@ -510,5 +511,22 @@ This mirrors Magit's behavior."
                  "main | dev")))
       (should (equal (majutsu-read-revset "Rev" "@" '("diff" "-r"))
                      "main | dev")))))
+
+(ert-deftest majutsu-read-revset/can-inherit-orderless-style ()
+  "Revset readers can preserve global styles for annotation filtering."
+  (let ((completion-category-overrides '((majutsu-revision (styles orderless basic))))
+        (majutsu-jj-revset-completion-mode 'inherit))
+    (cl-letf (((symbol-function 'majutsu-jj--completion-table)
+               (lambda (&rest _args)
+                 (completion-table-dynamic (lambda (_string) '("main")))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args)
+                 (should (equal (alist-get 'styles
+                                           (alist-get 'majutsu-revision
+                                                      completion-category-overrides))
+                                '(orderless basic)))
+                 "main")))
+      (should (equal (majutsu-read-revset "Rev" "@" '("diff" "-r"))
+                     "main")))))
 
 (provide 'majutsu-jj-test)

@@ -53,9 +53,13 @@
   Marginalia annotations for Majutsu completion categories. When available,
   Majutsu now prefers the machine-readable =jj util complete= interface for
   native jj completion and falls back to jj's shell completion protocol on
-  older jj versions. The optional Marginalia integration now shows richer
-  bookmark, tag, remote, workspace, and file annotations based on structured
-  completion payloads.
+  older jj versions. Native revset prompts now complete continuously inside
+  expressions such as =main | = and =trunk()..ma=. The new
+  ~majutsu-jj-revset-completion-mode~ option controls whether revset prompts
+  prefer expression-correct =basic= completion or inherit global completion
+  styles for setups such as Orderless annotation filtering. The optional
+  Marginalia integration now shows richer bookmark, tag, remote, workspace,
+  revision, and file annotations based on structured completion payloads.
 - Workspace: Workspace lists now show resolved roots when available and
   treat unavailable roots as empty data instead of raw jj errors. Internally
   this now uses one structured =jj workspace list -T= parse pipeline.
