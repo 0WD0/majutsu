@@ -197,10 +197,49 @@ remote prefix from DIRECTORY so the result remains remote."
     ('tag "tag")
     (_ (symbol-name source))))
 
-(defun majutsu-jj-completion-items (args)
-  "Return jj native completion items for ARGS.
+(defun majutsu-jj--machine-completion-item (item)
+  "Return completion item parsed from machine-readable completion ITEM."
+  (when-let* ((value (gethash "value" item))
+              ((stringp value))
+              ((not (string-empty-p value))))
+    (let ((annotation (or (gethash "help" item)
+                          (gethash "tag" item))))
+      (if (and (stringp annotation) (not (string-empty-p annotation)))
+          (cons value annotation)
+        value))))
+
+(defun majutsu-jj--machine-completion-items (args)
+  "Return jj machine-readable completion items for ARGS.
 ARGS are command-line arguments after the leading jj executable name.
-Each returned item is (CANDIDATE . HELP)."
+Return a list of completion items on success, an empty list when jj returns
+no candidates, or the symbol `:failed' if machine-readable completion is not
+available."
+  (condition-case nil
+      (with-temp-buffer
+        (let* ((argv (append '("util" "complete"
+                               "--format" "json"
+                               "--index")
+                             (list (number-to-string (length args)))
+                             '("--" "jj")
+                             args))
+               (exit (apply #'majutsu-process-file
+                            (majutsu-jj--executable)
+                            nil t nil
+                            argv)))
+          (if (zerop exit)
+              (progn
+                (goto-char (point-min))
+                (delq nil
+                      (mapcar #'majutsu-jj--machine-completion-item
+                              (json-parse-buffer :array-type 'list
+                                                 :object-type 'hash-table
+                                                 :null-object nil
+                                                 :false-object nil))))
+            :failed)))
+    (error :failed)))
+
+(defun majutsu-jj--fish-completion-items (args)
+  "Return jj shell completion items for ARGS using fish output format."
   (condition-case nil
       (with-temp-buffer
         (let* ((process-environment (cons "COMPLETE=fish" process-environment))
@@ -213,6 +252,18 @@ Each returned item is (CANDIDATE . HELP)."
                   (mapcar #'majutsu-completion-parse-annotated-line
                           (split-string (buffer-string) "\n" t))))))
     (error nil)))
+
+(defun majutsu-jj-completion-items (args)
+  "Return jj native completion items for ARGS.
+ARGS are command-line arguments after the leading jj executable name.
+Each returned item is (CANDIDATE . HELP).
+
+Prefer the machine-readable `jj util complete' interface when available, and
+fall back to jj's shell completion protocol for older jj versions."
+  (let ((items (majutsu-jj--machine-completion-items args)))
+    (if (eq items :failed)
+        (majutsu-jj--fish-completion-items args)
+      items)))
 
 (defun majutsu-jj--completion-table (args &optional category default)
   "Return an Emacs completion table using jj native completion.

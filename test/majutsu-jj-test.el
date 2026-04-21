@@ -297,8 +297,8 @@ This mirrors Magit's behavior."
     (should (equal (majutsu-jj-revset-candidates "main")
                    '("main" "@" "@-" "@+" "ws-a@" "ws-b@" "feature" "v1.0")))))
 
-(ert-deftest majutsu-jj-completion-items/uses-native-complete-env ()
-  "Native completion should invoke jj's COMPLETE protocol."
+(ert-deftest majutsu-jj-completion-items/prefers-machine-readable-completion ()
+  "Native completion should prefer `jj util complete` when available."
   (let ((majutsu-jj-executable "/usr/bin/jj")
         seen-program
         seen-args
@@ -309,13 +309,52 @@ This mirrors Magit's behavior."
                        seen-args args
                        seen-complete (getenv "COMPLETE"))
                  (when (eq destination t)
-                   (insert "main\tMain bookmark\n"))
+                   (insert "[{\"value\":\"main\",\"help\":\"Main bookmark\",\"tag\":\"--revset\",\"display_order\":0,\"hidden\":false}]") )
                  0)))
       (should (equal (majutsu-jj-completion-items '("log" "-r" "ma"))
                      '(("main" . "Main bookmark"))))
       (should (equal seen-program "/usr/bin/jj"))
-      (should (equal seen-args '("--" "jj" "log" "-r" "ma")))
-      (should (equal seen-complete "fish")))))
+      (should (equal seen-args '("util" "complete" "--format" "json"
+                                 "--index" "3" "--" "jj" "log" "-r" "ma")))
+      (should-not seen-complete))))
+
+(ert-deftest majutsu-jj-completion-items/falls-back-to-fish-completion ()
+  "Native completion should fall back to fish output on older jj versions."
+  (let ((majutsu-jj-executable "/usr/bin/jj")
+        calls)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (_program _infile destination _display &rest args)
+                 (setq calls (append calls (list (list :args args
+                                                      :complete (getenv "COMPLETE")))))
+                 (pcase (length calls)
+                   (1 1)
+                   (2 (when (eq destination t)
+                        (insert "main\tMain bookmark\n"))
+                      0)
+                   (_ (ert-fail "Unexpected extra completion invocation"))))))
+      (should (equal (majutsu-jj-completion-items '("log" "-r" "ma"))
+                     '(("main" . "Main bookmark"))))
+      (should (equal calls
+                     '((:args ("util" "complete" "--format" "json"
+                               "--index" "3" "--" "jj" "log" "-r" "ma")
+                        :complete nil)
+                       (:args ("--" "jj" "log" "-r" "ma")
+                        :complete "fish")))))))
+
+(ert-deftest majutsu-jj-completion-items/does-not-fallback-on-empty-machine-result ()
+  "Machine-readable completion should not fall back when it returns no items."
+  (let ((majutsu-jj-executable "/usr/bin/jj")
+        calls)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (_program _infile destination _display &rest args)
+                 (setq calls (1+ (or calls 0)))
+                 (when (eq destination t)
+                   (insert "[]"))
+                 (should (equal args '("util" "complete" "--format" "json"
+                                       "--index" "3" "--" "jj" "log" "-r" "ma")))
+                 0)))
+      (should-not (majutsu-jj-completion-items '("log" "-r" "ma")))
+      (should (= calls 1)))))
 
 (ert-deftest majutsu-jj-completion-table/exposes-annotations-and-default ()
   "Native completion tables should expose metadata annotations."

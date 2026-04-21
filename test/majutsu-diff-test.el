@@ -127,6 +127,19 @@
     (should (equal (majutsu-diff--transient-revset-completion-args)
                    '("new" "-r")))))
 
+(ert-deftest majutsu-diff-transient-revset-completion-args/falls-back-to-suffix-name ()
+  "Transient revset readers should infer jj context from `this-command'."
+  (let ((transient-current-command nil)
+        (transient-current-prefix nil)
+        (this-command 'majutsu-diff:--from))
+    (should (equal (majutsu-diff--transient-revset-completion-args)
+                   '("diff" "--from"))))
+  (let ((transient-current-command nil)
+        (transient-current-prefix nil)
+        (this-command 'majutsu-restore:--changes-in))
+    (should (equal (majutsu-diff--transient-revset-completion-args)
+                   '("restore" "--changes-in")))))
+
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
   "Transient revset reader should pass native jj completion context."
   (let ((transient-current-command 'majutsu-restore)
