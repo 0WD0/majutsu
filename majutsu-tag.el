@@ -144,7 +144,8 @@ SCOPE controls what to return:
                 (setq candidates (append candidates (list name)))))
             (puthash name entry entries)))
       (error nil))
-    (list :candidates candidates
+    (list :category 'majutsu-tag
+          :candidates candidates
           :entries entries)))
 
 (defun majutsu-tag-parse-list-output (output)
@@ -176,12 +177,10 @@ Return a list of plists with keys:
 (defun majutsu-tag--read-candidates (prompt history &optional require-match)
   "Read tag candidates with PROMPT using HISTORY.
 If REQUIRE-MATCH is non-nil, require existing local tags."
-  (let* ((payload (majutsu-tag-candidate-data))
-         (candidates (plist-get payload :candidates)))
-    (majutsu-marginalia-prewarm-candidate-data
-     'majutsu-tag payload nil default-directory)
-    (majutsu-completing-read-multiple
-     prompt candidates nil (or require-match 'any) nil history nil 'majutsu-tag)))
+  (let ((payload (majutsu-tag-candidate-data)))
+    (majutsu-completing-read-multiple-payload
+     prompt payload nil (or require-match 'any) nil history nil
+     'majutsu-tag nil default-directory)))
 
 (defun majutsu-tag--read-exact-names (prompt &optional require-match)
   "Read exact tag names with PROMPT.
