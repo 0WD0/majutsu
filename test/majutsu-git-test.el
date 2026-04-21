@@ -90,5 +90,20 @@
       (majutsu-git-root)
       (should (equal copied "/ssh:demo:/home/demo/repo/.git")))))
 
+(ert-deftest majutsu-git-read-remote/uses-history-and-category ()
+  (let (seen-history seen-category)
+    (cl-letf (((symbol-function 'majutsu-git--remote-names)
+               (lambda (&optional _directory)
+                 '("origin" "upstream")))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt table _predicate _require-match _initial history _default)
+                 (setq seen-history history)
+                 (let ((metadata (funcall table "" nil 'metadata)))
+                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 "origin")))
+      (should (equal (majutsu-git--read-remote "Remote") "origin"))
+      (should (eq seen-history 'majutsu-remote-name-history))
+      (should (eq seen-category 'majutsu-remote)))))
+
 (provide 'majutsu-git-test)
 ;;; majutsu-git-test.el ends here

@@ -339,4 +339,27 @@ This mirrors Magit's behavior."
         (should (equal (funcall seen-annotation "main")
                        "  [bookmark,tag]"))))))
 
+(ert-deftest majutsu-read-optional-revset/uses-completion-and-allows-empty ()
+  "Optional revset reader should use revset metadata and accept empty input."
+  (let (seen-category seen-history seen-default seen-initial)
+    (let ((sources (make-hash-table :test #'equal)))
+      (puthash "main" '(bookmark) sources)
+      (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
+                 (lambda (_default)
+                   (list :candidates '("@" "main")
+                         :sources sources)))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt table _predicate _require-match initial hist def)
+                   (let ((metadata (funcall table "" nil 'metadata)))
+                     (setq seen-initial initial
+                           seen-history hist
+                           seen-default def
+                           seen-category (cdr (assq 'category (cdr metadata)))))
+                   "")))
+        (should-not (majutsu-read-optional-revset "Rev" nil "current"))
+        (should (equal seen-initial "current"))
+        (should (eq seen-history 'majutsu-read-revset-history))
+        (should (null seen-default))
+        (should (eq seen-category 'majutsu-revision))))))
+
 (provide 'majutsu-jj-test)
