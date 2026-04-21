@@ -37,6 +37,40 @@
         (should (equal (majutsu-marginalia--cached-annotation 'majutsu-tag "v1.0")
                        "  repo-b tag"))))))
 
+(ert-deftest majutsu-marginalia-prewarm-candidate-data/caches-revisions-per-input-context ()
+  (let ((marginalia-separator "  ")
+        (majutsu-marginalia--payload-cache (make-hash-table :test #'equal)))
+    (let ((empty-entries (make-hash-table :test #'equal))
+          (expr-entries (make-hash-table :test #'equal)))
+      (puthash "main" '(:kind bookmark :help "Main branch") empty-entries)
+      (puthash "main | dev" '(:kind bookmark :help "Union with dev") expr-entries)
+      (majutsu-marginalia-prewarm-candidate-data
+       'majutsu-revision (list :entries empty-entries) "" "/tmp/repo/")
+      (majutsu-marginalia-prewarm-candidate-data
+       'majutsu-revision (list :entries expr-entries) "main | " "/tmp/repo/")
+      (cl-letf (((symbol-function 'majutsu-marginalia--minibuffer-default-directory)
+                 (lambda () "/tmp/repo/"))
+                ((symbol-function 'majutsu-marginalia--minibuffer-context)
+                 (lambda () "")))
+        (should (equal (plist-get (majutsu-marginalia--cached-entry
+                                   'majutsu-revision "main")
+                                  :help)
+                       "Main branch"))
+        (should-not (majutsu-marginalia--cached-entry
+                     'majutsu-revision "main | dev"))
+        (should (string-match-p "Main branch"
+                                (majutsu-marginalia-annotate-revision "main"))))
+      (cl-letf (((symbol-function 'majutsu-marginalia--minibuffer-default-directory)
+                 (lambda () "/tmp/repo/"))
+                ((symbol-function 'majutsu-marginalia--minibuffer-context)
+                 (lambda () "main | ")))
+        (should (equal (plist-get (majutsu-marginalia--cached-entry
+                                   'majutsu-revision "main | dev")
+                                  :help)
+                       "Union with dev"))
+        (should-not (majutsu-marginalia--cached-entry
+                     'majutsu-revision "main"))))))
+
 (ert-deftest majutsu-marginalia-annotate-revision/uses-structured-entry ()
   (let ((marginalia-separator "  ")
         (default-directory "/tmp/repo/")

@@ -170,28 +170,20 @@ remote prefix from DIRECTORY so the result remains remote."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
-(defcustom majutsu-jj-revset-completion-mode 'basic
-  "How revset prompts interact with Emacs completion styles.
+(defvar majutsu-jj--revset-completion-args nil
+  "Dynamic jj command context for revset minibuffer completion.")
 
-When set to `basic', Majutsu locally forces `basic' completion for the
-`majutsu-revision' category so revset expressions such as `main | foo'
-and `trunk()..bar' are sent to jj literally.
+(defvar majutsu-jj--revset-completion-default nil
+  "Dynamic default value for revset minibuffer completion.")
 
-When set to `inherit', Majutsu leaves the user's global completion style
-configuration untouched.  This can be useful for Orderless-based
-annotation filtering, but may interfere with continuous completion of
-operator-heavy revset expressions."
-  :group 'majutsu
-  :type '(choice (const :tag "Prefer revset expression correctness" basic)
-          (const :tag "Inherit global completion styles" inherit)))
-
-(defun majutsu-jj--revset-completion-category-overrides ()
-  "Return category overrides for the current revset completion mode."
-  (pcase majutsu-jj-revset-completion-mode
-    ('basic
-     (cons '(majutsu-revision (styles basic))
-           completion-category-overrides))
-    (_ completion-category-overrides)))
+(defvar majutsu-read-revset-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "TAB") #'majutsu-jj-revset-complete)
+    (define-key map (kbd "<tab>") #'majutsu-jj-revset-complete)
+    (define-key map [remap completion-at-point]
+                #'majutsu-jj-revset-complete)
+    (make-composed-keymap map minibuffer-local-map))
+  "Keymap used while reading revset expressions.")
 
 (defconst majutsu-jj--revset-source-order
   '(pseudo workspace bookmark tag)
@@ -487,6 +479,42 @@ DEFAULT is inserted first in the candidate list when non-nil."
    (majutsu-jj-revset-candidate-data default)
    'majutsu-revision default))
 
+(defun majutsu-jj--revset-minibuffer-input ()
+  "Return revset minibuffer contents before point."
+  (buffer-substring-no-properties (minibuffer-prompt-end) (point)))
+
+(defun majutsu-jj--revset-completion-payload (input)
+  "Return completion payload for revset INPUT."
+  (if majutsu-jj--revset-completion-args
+      (majutsu-jj--completion-payload
+       (append majutsu-jj--revset-completion-args (list input))
+       'majutsu-revision)
+    (majutsu-jj-revset-candidate-data majutsu-jj--revset-completion-default)))
+
+(defun majutsu-jj-revset-completion-at-point ()
+  "Return completion data for the revset expression at point."
+  (let* ((input (majutsu-jj--revset-minibuffer-input))
+         (payload (majutsu-jj--revset-completion-payload input))
+         (table (majutsu-completion-payload-table
+                 payload 'majutsu-revision
+                 majutsu-jj--revset-completion-default)))
+    (majutsu-completion-prewarm-payload
+     payload 'majutsu-revision input default-directory)
+    (when (plist-get payload :candidates)
+      (list (minibuffer-prompt-end) (point) table
+            :exclusive 'no))))
+
+(defun majutsu-jj-revset-complete ()
+  "Complete the revset expression at point using jj's native completer."
+  (interactive)
+  (unless (completion-at-point)
+    (minibuffer-message "No jj revset completions")))
+
+(defun majutsu-jj--revset-minibuffer-setup ()
+  "Install revset completion-at-point for the current minibuffer."
+  (add-hook 'completion-at-point-functions
+            #'majutsu-jj-revset-completion-at-point nil t))
+
 (defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.
 Completion candidates include workspaces, bookmarks, and tags, while
@@ -496,25 +524,24 @@ When COMPLETION-ARGS is non-nil, use jj's native completer in that
 command context.  COMPLETION-ARGS are command-line arguments before the
 revset value being read."
   (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
+         (majutsu-jj--revset-completion-args completion-args)
+         (majutsu-jj--revset-completion-default default)
          (payload (unless completion-args
-                    (majutsu-jj-revset-candidate-data default)))
-         (table (if completion-args
-                    (majutsu-jj--completion-table completion-args
-                                                  'majutsu-revision
-                                                  default)
-                  (majutsu-completion-payload-table
-                   payload 'majutsu-revision default))))
+                    (majutsu-jj-revset-candidate-data default))))
     (when payload
       (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
-    (let* ((completion-category-overrides
-            (majutsu-jj--revset-completion-category-overrides))
-           (value (completing-read (format-prompt prompt default)
-                                   table nil nil nil
-                                   'majutsu-read-revset-history
-                                   default)))
-      (if (string-empty-p value)
-          (user-error "Need non-empty input")
-        value))))
+    (let ((value (minibuffer-with-setup-hook
+                     #'majutsu-jj--revset-minibuffer-setup
+                   (read-from-minibuffer (format-prompt prompt default)
+                                         nil
+                                         majutsu-read-revset-map
+                                         nil
+                                         'majutsu-read-revset-history
+                                         default))))
+      (cond
+       ((not (string-empty-p value)) value)
+       ((and default (not (string-empty-p default))) default)
+       (t (user-error "Need non-empty input"))))))
 
 (defun majutsu-read-optional-revset (prompt &optional default initial-input history completion-args)
   "Prompt user with PROMPT to read an optional revset string.
@@ -525,22 +552,20 @@ input returns nil instead of signaling an error.  DEFAULT is shown in
 minibuffer when non-nil.  HISTORY defaults to
 `majutsu-read-revset-history'.  When COMPLETION-ARGS is non-nil, use
 jj's native completer in that command context."
-  (let* ((payload (unless completion-args
-                    (majutsu-jj-revset-candidate-data default)))
-         (table (if completion-args
-                    (majutsu-jj--completion-table completion-args
-                                                  'majutsu-revision
-                                                  default)
-                  (majutsu-completion-payload-table
-                   payload 'majutsu-revision default))))
+  (let* ((majutsu-jj--revset-completion-args completion-args)
+         (majutsu-jj--revset-completion-default default)
+         (payload (unless completion-args
+                    (majutsu-jj-revset-candidate-data default))))
     (when payload
       (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
-    (let* ((completion-category-overrides
-            (majutsu-jj--revset-completion-category-overrides))
-           (value (completing-read (format-prompt prompt default)
-                                   table nil nil initial-input
-                                   (or history 'majutsu-read-revset-history)
-                                   default)))
+    (let ((value (minibuffer-with-setup-hook
+                     #'majutsu-jj--revset-minibuffer-setup
+                   (read-from-minibuffer (format-prompt prompt default)
+                                         initial-input
+                                         majutsu-read-revset-map
+                                         nil
+                                         (or history 'majutsu-read-revset-history)
+                                         default))))
       (unless (string-empty-p value)
         value))))
 

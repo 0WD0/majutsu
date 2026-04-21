@@ -436,97 +436,96 @@ This mirrors Magit's behavior."
       (should (equal (plist-get (gethash "main" entries) :sources)
                      '(bookmark tag))))))
 
-(ert-deftest majutsu-read-revset/uses-completion-and-allows-free-form ()
-  "Revset reader should use completion metadata and allow free-form input."
-  (let (seen-require-match seen-default seen-category seen-history seen-annotation)
-    (let ((sources (make-hash-table :test #'equal))
-          (annotations (make-hash-table :test #'equal)))
-      (puthash "main" '(bookmark tag) sources)
-      (puthash "main" "  [bookmark,tag]" annotations)
-      (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
-                 (lambda (_default)
-                   (list :category 'majutsu-revision
-                         :candidates '("@" "main")
-                         :annotations annotations
-                         :sources sources)))
-                ((symbol-function 'completing-read)
-                 (lambda (_prompt table _predicate require-match _initial hist def)
-                   (let ((metadata (funcall table "" nil 'metadata)))
-                     (setq seen-require-match require-match
-                           seen-history hist
-                           seen-default def
-                           seen-category (cdr (assq 'category (cdr metadata)))
-                           seen-annotation (cdr (assq 'annotation-function (cdr metadata)))))
-                   "main")))
-        (should (equal (majutsu-read-revset "Rev" "@") "main"))
-        (should (null seen-require-match))
-        (should (eq seen-history 'majutsu-read-revset-history))
-        (should (equal seen-default "@"))
-        (should (eq seen-category 'majutsu-revision))
-        (should (equal (funcall seen-annotation "main")
-                       "  [bookmark,tag]"))))))
+(ert-deftest majutsu-jj-revset-completion-at-point/uses-current-expression ()
+  "Revset CAPF should ask jj about the current full expression."
+  (let (calls prewarmed-contexts)
+    (with-temp-buffer
+      (insert "main | ")
+      (goto-char (point-max))
+      (let ((majutsu-jj--revset-completion-args '("diff" "-r"))
+            (majutsu-jj--revset-completion-default "@"))
+        (cl-letf (((symbol-function 'minibuffer-prompt-end)
+                   (lambda () 1))
+                  ((symbol-function 'majutsu-jj--completion-payload)
+                   (lambda (args category)
+                     (push args calls)
+                     (should (eq category 'majutsu-revision))
+                     (let ((annotations (make-hash-table :test #'equal)))
+                       (puthash "main | dev" "Union with dev" annotations)
+                       (list :category 'majutsu-revision
+                             :candidates '("main | dev")
+                             :annotations annotations))))
+                  ((symbol-function 'majutsu-completion-prewarm-payload)
+                   (lambda (_payload _category context _directory)
+                     (push context prewarmed-contexts))))
+          (pcase-let ((`(,beg ,end ,table . ,props)
+                       (majutsu-jj-revset-completion-at-point)))
+            (should (= beg 1))
+            (should (= end (point-max)))
+            (should (equal (plist-get props :exclusive) 'no))
+            (should (equal (all-completions "main | " table)
+                           '("main | dev")))
+            (should (member '("diff" "-r" "main | ") calls))
+            (should (member "main | " prewarmed-contexts))))))))
 
-(ert-deftest majutsu-read-optional-revset/uses-completion-and-allows-empty ()
-  "Optional revset reader should use revset metadata and accept empty input."
-  (let (seen-category seen-history seen-default seen-initial)
-    (let ((sources (make-hash-table :test #'equal))
-          (annotations (make-hash-table :test #'equal)))
-      (puthash "main" '(bookmark) sources)
-      (puthash "main" "  [bookmark]" annotations)
-      (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
-                 (lambda (_default)
-                   (list :category 'majutsu-revision
-                         :candidates '("@" "main")
-                         :annotations annotations
-                         :sources sources)))
-                ((symbol-function 'completing-read)
-                 (lambda (_prompt table _predicate _require-match initial hist def)
-                   (let ((metadata (funcall table "" nil 'metadata)))
-                     (setq seen-initial initial
-                           seen-history hist
-                           seen-default def
-                           seen-category (cdr (assq 'category (cdr metadata)))))
-                   "")))
-        (should-not (majutsu-read-optional-revset "Rev" nil "current"))
-        (should (equal seen-initial "current"))
-        (should (eq seen-history 'majutsu-read-revset-history))
-        (should (null seen-default))
-        (should (eq seen-category 'majutsu-revision))))))
+(ert-deftest majutsu-jj--revset-minibuffer-setup/installs-capf ()
+  "Revset minibuffer setup should install the CAPF helper locally."
+  (with-temp-buffer
+    (majutsu-jj--revset-minibuffer-setup)
+    (should (memq #'majutsu-jj-revset-completion-at-point
+                  completion-at-point-functions))))
 
-(ert-deftest majutsu-read-revset/overrides-orderless-with-basic-style ()
-  "Revset readers should force `basic' completion for expression input by default."
-  (let ((completion-category-overrides '((majutsu-revision (styles orderless))))
-        (majutsu-jj-revset-completion-mode 'basic))
-    (cl-letf (((symbol-function 'majutsu-jj--completion-table)
-               (lambda (&rest _args)
-                 (completion-table-dynamic (lambda (_string) '("main | dev")))))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt _table _predicate _require-match _initial hist def)
-                 (should (eq hist 'majutsu-read-revset-history))
-                 (should (equal def "@"))
-                 (should (equal (alist-get 'styles
-                                           (alist-get 'majutsu-revision
-                                                      completion-category-overrides))
-                                '(basic)))
-                 "main | dev")))
-      (should (equal (majutsu-read-revset "Rev" "@" '("diff" "-r"))
-                     "main | dev")))))
-
-(ert-deftest majutsu-read-revset/can-inherit-orderless-style ()
-  "Revset readers can preserve global styles for annotation filtering."
-  (let ((completion-category-overrides '((majutsu-revision (styles orderless basic))))
-        (majutsu-jj-revset-completion-mode 'inherit))
-    (cl-letf (((symbol-function 'majutsu-jj--completion-table)
-               (lambda (&rest _args)
-                 (completion-table-dynamic (lambda (_string) '("main")))))
-              ((symbol-function 'completing-read)
-               (lambda (&rest _args)
-                 (should (equal (alist-get 'styles
-                                           (alist-get 'majutsu-revision
-                                                      completion-category-overrides))
-                                '(orderless basic)))
+(ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
+  "Revset reader should use plain minibuffer input and allow free-form text."
+  (let (seen-keymap seen-history seen-default)
+    (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
+               (lambda (_default)
+                 (list :category 'majutsu-revision
+                       :candidates '("@" "main"))))
+              ((symbol-function 'majutsu-completion-prewarm-payload)
+               (lambda (&rest _args)))
+              ((symbol-function 'read-from-minibuffer)
+               (lambda (_prompt _initial keymap _read hist default &optional _inherit)
+                 (setq seen-keymap keymap
+                       seen-history hist
+                       seen-default default)
                  "main")))
-      (should (equal (majutsu-read-revset "Rev" "@" '("diff" "-r"))
-                     "main")))))
+      (should (equal (majutsu-read-revset "Rev" "@") "main"))
+      (should (eq seen-keymap majutsu-read-revset-map))
+      (should (eq seen-history 'majutsu-read-revset-history))
+      (should (equal seen-default "@")))))
+
+(ert-deftest majutsu-read-revset/empty-input-accepts-default ()
+  "Required revset reader should accept DEFAULT on empty input."
+  (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
+             (lambda (_default)
+               (list :category 'majutsu-revision :candidates '("@"))))
+            ((symbol-function 'majutsu-completion-prewarm-payload)
+             (lambda (&rest _args)))
+            ((symbol-function 'read-from-minibuffer)
+             (lambda (&rest _args) "")))
+    (should (equal (majutsu-read-revset "Rev" "@") "@"))))
+
+(ert-deftest majutsu-read-optional-revset/uses-read-from-minibuffer-and-allows-empty ()
+  "Optional revset reader should use minibuffer input and accept empty input."
+  (let (seen-initial seen-history seen-default seen-keymap)
+    (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
+               (lambda (_default)
+                 (list :category 'majutsu-revision
+                       :candidates '("@" "main"))))
+              ((symbol-function 'majutsu-completion-prewarm-payload)
+               (lambda (&rest _args)))
+              ((symbol-function 'read-from-minibuffer)
+               (lambda (_prompt initial keymap _read hist default &optional _inherit)
+                 (setq seen-initial initial
+                       seen-keymap keymap
+                       seen-history hist
+                       seen-default default)
+                 "")))
+      (should-not (majutsu-read-optional-revset "Rev" nil "current"))
+      (should (equal seen-initial "current"))
+      (should (eq seen-keymap majutsu-read-revset-map))
+      (should (eq seen-history 'majutsu-read-revset-history))
+      (should (null seen-default)))))
 
 (provide 'majutsu-jj-test)
