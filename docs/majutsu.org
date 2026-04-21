@@ -655,6 +655,9 @@ In Jujutsu, bookmarks are similar to Git branches but are explicitly tracked. Th
 
 - Key: l (majutsu-bookmark-list) :: List all bookmarks.
 - Key: c (majutsu-bookmark-create) :: Create a new bookmark at point.
+- Key: a (majutsu-bookmark-advance) :: Advance bookmarks using jj's configured default selection and target.
+- Key: A (majutsu-bookmark-advance-to) :: Advance bookmarks using jj's default selection to an explicit target revset.
+- Key: p (majutsu-bookmark-advance-patterns) :: Advance specific bookmark name(s)/pattern(s) using jj's configured default target.
 - Key: s (majutsu-bookmark-set) :: Set or move an existing bookmark to the current revision.
 - Key: m (majutsu-bookmark-move) :: Move a bookmark.
 - Key: M (majutsu-bookmark-move-allow-backwards) :: Move bookmark(s) with =--allow-backwards=.

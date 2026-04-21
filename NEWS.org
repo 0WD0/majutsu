@@ -5,6 +5,10 @@
 
 ** Added
 
+- Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
+  plus ~majutsu-bookmark-advance-to~ for the explicit =--to= form and
+  ~majutsu-bookmark-advance-patterns~ for explicit bookmark
+  name/pattern selection with the configured default target.
 - Commands: Add ~majutsu-revert~ transient for =jj revert= with source
   revision selection and destination placement options (=--onto= /
   =--insert-after= / =--insert-before=).

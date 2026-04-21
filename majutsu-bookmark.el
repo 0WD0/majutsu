@@ -237,6 +237,47 @@ With prefix ALL, include remote bookmarks."
     (majutsu-completing-read-multiple
      prompt bookmarks nil t nil nil default 'majutsu-bookmark)))
 
+(defvar majutsu-bookmark-advance-pattern-history nil
+  "Minibuffer history for `majutsu-bookmark-advance-patterns'.")
+
+(defun majutsu--bookmark-read-advance-patterns ()
+  "Read bookmark name patterns for `jj bookmark advance'."
+  (let ((default (majutsu-bookmark-at-point)))
+    (seq-filter (lambda (s) (not (string-empty-p s)))
+                (majutsu-completing-read-multiple
+                 "Advance bookmark name(s)/pattern(s)"
+                 (majutsu--get-bookmark-names)
+                 nil nil nil 'majutsu-bookmark-advance-pattern-history
+                 default 'majutsu-bookmark))))
+
+;;;###autoload
+(defun majutsu-bookmark-advance (&optional arg1 arg2)
+  "Advance bookmarks using jj's configured default selection.
+
+If ARG1 is a string, use it as the target revset.  For backward
+compatibility, if ARG2 is non-nil, use ARG2 as the target revset and
+ignore ARG1.  Use `majutsu-bookmark-advance-patterns' for explicit
+bookmark-name/pattern selection."
+  (interactive)
+  (let ((commit (or arg2 (and (stringp arg1) arg1))))
+    (apply #'majutsu-run-jj
+           (append '("bookmark" "advance")
+                   (and commit (list "-t" commit))))))
+
+;;;###autoload
+(defun majutsu-bookmark-advance-to (commit)
+  "Advance bookmarks using jj's default selection to COMMIT."
+  (interactive (list (majutsu-read-revset "Advance to revset")))
+  (majutsu-bookmark-advance commit))
+
+;;;###autoload
+(defun majutsu-bookmark-advance-patterns (names)
+  "Advance bookmark name patterns NAMES using jj's default target."
+  (interactive (list (majutsu--bookmark-read-advance-patterns)))
+  (if names
+      (majutsu-run-jj "bookmark" "advance" names)
+    (message "No bookmark name/pattern provided")))
+
 (defun majutsu--bookmark-move (names commit &optional allow-backwards)
   "Internal helper to move bookmark(s) NAMES to COMMIT.
 When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
@@ -331,6 +372,12 @@ REMOTES are remote name patterns passed via repeated `--remote`."
     ("c" "Create bookmark" majutsu-bookmark-create
      :description "Create new bookmark")]
    [
+    ("a" "Advance bookmark(s)" majutsu-bookmark-advance
+     :description "Advance default selection")
+    ("A" "Advance bookmark(s) to revset" majutsu-bookmark-advance-to
+     :description "Advance default selection to revset")
+    ("p" "Advance name(s)/pattern(s)" majutsu-bookmark-advance-patterns
+     :description "Advance name/pattern selection")
     ("s" "Set bookmark" majutsu-bookmark-set
      :description "Create/update to commit")
     ("m" "Move bookmark(s)" majutsu-bookmark-move
