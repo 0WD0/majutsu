@@ -297,6 +297,42 @@ This mirrors Magit's behavior."
     (should (equal (majutsu-jj-revset-candidates "main")
                    '("main" "@" "@-" "@+" "ws-a@" "ws-b@" "feature" "v1.0")))))
 
+(ert-deftest majutsu-jj-completion-items/uses-native-complete-env ()
+  "Native completion should invoke jj's COMPLETE protocol."
+  (let ((majutsu-jj-executable "/usr/bin/jj")
+        seen-program
+        seen-args
+        seen-complete)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (program _infile destination _display &rest args)
+                 (setq seen-program program
+                       seen-args args
+                       seen-complete (getenv "COMPLETE"))
+                 (when (eq destination t)
+                   (insert "main\tMain bookmark\n"))
+                 0)))
+      (should (equal (majutsu-jj-completion-items '("log" "-r" "ma"))
+                     '(("main" . "Main bookmark"))))
+      (should (equal seen-program "/usr/bin/jj"))
+      (should (equal seen-args '("--" "jj" "log" "-r" "ma")))
+      (should (equal seen-complete "fish")))))
+
+(ert-deftest majutsu-jj-completion-table/exposes-annotations-and-default ()
+  "Native completion tables should expose metadata annotations."
+  (cl-letf (((symbol-function 'majutsu-jj-completion-items)
+             (lambda (args)
+               (should (equal args '("log" "-r" "")))
+               '(("main" . "Main bookmark")))))
+    (let* ((table (majutsu-jj--completion-table '("log" "-r")
+                                                'majutsu-revision
+                                                "@"))
+           (metadata (funcall table "" nil 'metadata))
+           (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+      (should (equal (all-completions "" table) '("@" "main")))
+      (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
+      (should (equal (funcall annotation "main") " Main bookmark"))
+      (should-not (funcall annotation "@")))))
+
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
   "Candidate data should preserve source kinds for metadata annotations."
   (cl-letf (((symbol-function 'majutsu-jj--safe-lines)

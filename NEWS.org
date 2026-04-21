@@ -23,6 +23,9 @@
   ~majutsu-jj-command~, ~majutsu-jj-command-topdir~,
   ~majutsu-shell-command~, and ~majutsu-shell-command-topdir~.
   Native Evil integration now binds ~|~ to ~majutsu-jj-command~.
+- Transients: Revset arguments now use jj-native completion in command
+  context, so menus such as diff/rebase/restore/new complete the same
+  revision candidates as the jj CLI.
 - File inspection: Add ~majutsu-find-file-other-window~ and
   ~majutsu-find-file-other-frame~ for opening blob buffers in another window
   or frame.
@@ -48,8 +51,8 @@
   revsets, bookmark/tag names and patterns, remote names/patterns,
   workspace names, and repo-relative file paths, and add optional
   Marginalia annotations for Majutsu completion categories. The optional
-  Marginalia integration now shows richer bookmark, remote, and workspace
-  annotations based on structured completion payloads.
+  Marginalia integration now shows richer bookmark, tag, remote, workspace,
+  and file annotations based on structured completion payloads.
 - Workspace: Workspace lists now show resolved roots when available and
   treat unavailable roots as empty data instead of raw jj errors. Internally
   this now uses one structured =jj workspace list -T= parse pipeline.

@@ -196,6 +196,57 @@ remote prefix from DIRECTORY so the result remains remote."
     ('tag "tag")
     (_ (symbol-name source))))
 
+(defun majutsu-jj--completion-parse-line (line)
+  "Parse one fish completion LINE from jj.
+Return (CANDIDATE . HELP)."
+  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
+    (cons (match-string 1 line)
+          (match-string 2 line))))
+
+(defun majutsu-jj-completion-items (args)
+  "Return jj native completion items for ARGS.
+ARGS are command-line arguments after the leading jj executable name.
+Each returned item is (CANDIDATE . HELP)."
+  (condition-case nil
+      (with-temp-buffer
+        (let* ((process-environment (cons "COMPLETE=fish" process-environment))
+               (exit (apply #'majutsu-process-file
+                            (majutsu-jj--executable)
+                            nil t nil
+                            (append '("--" "jj") args))))
+          (when (zerop exit)
+            (delq nil
+                  (mapcar #'majutsu-jj--completion-parse-line
+                          (split-string (buffer-string) "\n" t))))))
+    (error nil)))
+
+(defun majutsu-jj--completion-table (args &optional category default)
+  "Return an Emacs completion table using jj native completion.
+ARGS are command-line arguments before the value being completed.  The
+completed value is requested from jj by appending an empty argument.
+CATEGORY, when non-nil, is exposed in completion metadata.  DEFAULT,
+when non-empty and missing from jj's candidates, is added first."
+  (let* ((items (majutsu-jj-completion-items (append args '(""))))
+         (candidates (mapcar #'car items))
+         (annotations (make-hash-table :test #'equal)))
+    (when (and default
+               (not (string-empty-p default))
+               (not (member default candidates)))
+      (push (cons default nil) items)
+      (push default candidates))
+    (dolist (item items)
+      (when (cdr item)
+        (puthash (car item) (concat " " (cdr item)) annotations)))
+    (lambda (string pred action)
+      (if (eq action 'metadata)
+          `(metadata
+            (display-sort-function . identity)
+            ,@(and category `((category . ,category)))
+            (annotation-function
+             . ,(lambda (candidate)
+                  (gethash candidate annotations))))
+        (complete-with-action action candidates string pred)))))
+
 (defun majutsu-jj--revset-annotation-function (sources)
   "Return annotation function from candidate SOURCES table."
   (lambda (candidate)
@@ -254,12 +305,20 @@ DEFAULT is inserted first in the candidate list when non-nil."
             (annotation-function . ,annotation))
         (complete-with-action action candidates string pred)))))
 
-(defun majutsu-read-revset (prompt &optional default)
+(defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.
 Completion candidates include workspaces, bookmarks, and tags, while
-still allowing free-form revset expressions."
+still allowing free-form revset expressions.
+
+When COMPLETION-ARGS is non-nil, use jj's native completer in that
+command context.  COMPLETION-ARGS are command-line arguments before the
+revset value being read."
   (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
-         (table (majutsu-jj--revset-completion-table default))
+         (table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision
+                                                  default)
+                  (majutsu-jj--revset-completion-table default)))
          (value (completing-read (format-prompt prompt default)
                                  table nil nil nil
                                  'majutsu-read-revset-history
@@ -268,15 +327,20 @@ still allowing free-form revset expressions."
         (user-error "Need non-empty input")
       value)))
 
-(defun majutsu-read-optional-revset (prompt &optional default initial-input history)
+(defun majutsu-read-optional-revset (prompt &optional default initial-input history completion-args)
   "Prompt user with PROMPT to read an optional revset string.
 
 Completion candidates include workspaces, bookmarks, and tags.  Empty
 input returns nil instead of signaling an error.  DEFAULT is shown in
 `format-prompt' when non-nil, and INITIAL-INPUT is inserted into the
 minibuffer when non-nil.  HISTORY defaults to
-`majutsu-read-revset-history'."
-  (let* ((table (majutsu-jj--revset-completion-table default))
+`majutsu-read-revset-history'.  When COMPLETION-ARGS is non-nil, use
+jj's native completer in that command context."
+  (let* ((table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision
+                                                  default)
+                  (majutsu-jj--revset-completion-table default)))
          (value (completing-read (format-prompt prompt default)
                                  table nil nil initial-input
                                  (or history 'majutsu-read-revset-history)
