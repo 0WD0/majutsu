@@ -377,6 +377,42 @@ This mirrors Magit's behavior."
         (should (equal (funcall annotation "main") " Main bookmark"))
         (should-not (funcall annotation "@"))))))
 
+(ert-deftest majutsu-jj-completion-table/completes-revset-expressions-dynamically ()
+  "Native completion tables should send the current revset expression to jj."
+  (let (calls prewarmed-contexts)
+    (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+               (lambda (args category)
+                 (push args calls)
+                 (should (eq category 'majutsu-revision))
+                 (let* ((input (car (last args)))
+                        (candidate (pcase input
+                                     ("main | " "main | dev")
+                                     ("trunk()..ma" "trunk()..main")
+                                     (_ nil)))
+                        (annotations (make-hash-table :test #'equal)))
+                   (when candidate
+                     (puthash candidate (concat "Help for " candidate) annotations))
+                   (list :category 'majutsu-revision
+                         :candidates (and candidate (list candidate))
+                         :annotations annotations))))
+              ((symbol-function 'majutsu-completion-prewarm-payload)
+               (lambda (_payload _category context _directory)
+                 (push context prewarmed-contexts))))
+      (let* ((table (majutsu-jj--completion-table '("diff" "-r")
+                                                  'majutsu-revision))
+             (metadata (funcall table "" nil 'metadata))
+             (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+        (should (equal (all-completions "main | " table)
+                       '("main | dev")))
+        (should (equal (all-completions "trunk()..ma" table)
+                       '("trunk()..main")))
+        (should (member '("diff" "-r" "main | ") calls))
+        (should (member '("diff" "-r" "trunk()..ma") calls))
+        (should (member "main | " prewarmed-contexts))
+        (should (member "trunk()..ma" prewarmed-contexts))
+        (should (equal (funcall annotation "main | dev")
+                       " Help for main | dev"))))))
+
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
   "Candidate data should preserve source kinds for metadata annotations."
   (cl-letf (((symbol-function 'majutsu-jj--safe-lines)
@@ -456,5 +492,23 @@ This mirrors Magit's behavior."
         (should (eq seen-history 'majutsu-read-revset-history))
         (should (null seen-default))
         (should (eq seen-category 'majutsu-revision))))))
+
+(ert-deftest majutsu-read-revset/overrides-orderless-with-basic-style ()
+  "Revset readers should force `basic' completion for expression input."
+  (let ((completion-category-overrides '((majutsu-revision (styles orderless)))))
+    (cl-letf (((symbol-function 'majutsu-jj--completion-table)
+               (lambda (&rest _args)
+                 (completion-table-dynamic (lambda (_string) '("main | dev")))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _table _predicate _require-match _initial hist def)
+                 (should (eq hist 'majutsu-read-revset-history))
+                 (should (equal def "@"))
+                 (should (equal (alist-get 'styles
+                                           (alist-get 'majutsu-revision
+                                                      completion-category-overrides))
+                                '(basic)))
+                 "main | dev")))
+      (should (equal (majutsu-read-revset "Rev" "@" '("diff" "-r"))
+                     "main | dev")))))
 
 (provide 'majutsu-jj-test)
