@@ -170,6 +170,12 @@ remote prefix from DIRECTORY so the result remains remote."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
+(defconst majutsu-jj--revset-completion-style-override
+  '(majutsu-revision (styles basic))
+  "Completion category override for revset expression prompts.
+Revsets are expressions, so spaces and operators must be sent to jj as
+literal input instead of being reinterpreted by styles such as Orderless.")
+
 (defconst majutsu-jj--revset-source-order
   '(pseudo workspace bookmark tag)
   "Source display order for revset completion metadata.")
@@ -325,15 +331,62 @@ Each returned item is (CANDIDATE . HELP)."
   (majutsu-completion-payload-items
    (majutsu-jj--completion-payload args 'majutsu-revision)))
 
+(defun majutsu-jj--completion-normalize-annotation (annotation)
+  "Return ANNOTATION in Emacs completion metadata format."
+  (when (and (stringp annotation) (not (string-empty-p annotation)))
+    (if (string-prefix-p " " annotation)
+        annotation
+      (concat " " annotation))))
+
+(defun majutsu-jj--completion-candidates (payload default)
+  "Return completion candidates from PAYLOAD, prepending DEFAULT if needed."
+  (let ((candidates (copy-sequence (or (plist-get payload :candidates) nil))))
+    (if (and default
+             (stringp default)
+             (not (string-empty-p default))
+             (not (member default candidates)))
+        (cons default candidates)
+      candidates)))
+
 (defun majutsu-jj--completion-table (args &optional category default)
-  "Return an Emacs completion table using jj native completion.
+  "Return a dynamic Emacs completion table using jj native completion.
 ARGS are command-line arguments before the value being completed.  The
-completed value is requested from jj by appending an empty argument.
-CATEGORY, when non-nil, is exposed in completion metadata.  DEFAULT,
-when non-empty and missing from jj's candidates, is added first."
-  (majutsu-completion-payload-table
-   (majutsu-jj--completion-payload (append args '("")) category)
-   category default))
+current input string is passed to jj as the value argument, which lets
+expression arguments such as revsets continue completing after operators
+like `|' or `..'.  CATEGORY, when non-nil, is exposed in completion
+metadata.  DEFAULT, when non-empty and missing from jj's candidates, is
+added first."
+  (let ((payload-cache (make-hash-table :test #'equal))
+        (annotations (make-hash-table :test #'equal))
+        (metadata-category (or category 'majutsu-revision)))
+    (cl-labels
+        ((payload-for
+          (string)
+          (or (gethash string payload-cache)
+              (let ((payload (majutsu-jj--completion-payload
+                              (append args (list string))
+                              metadata-category)))
+                (puthash string payload payload-cache)
+                (when-let* ((payload-annotations (plist-get payload :annotations)))
+                  (maphash (lambda (candidate annotation)
+                             (when-let* ((normalized (majutsu-jj--completion-normalize-annotation annotation)))
+                               (puthash candidate normalized annotations)))
+                           payload-annotations))
+                (majutsu-completion-prewarm-payload
+                 payload metadata-category string default-directory)
+                payload))))
+      (lambda (string predicate action)
+        (if (eq action 'metadata)
+            `(metadata
+              (display-sort-function . identity)
+              (category . ,metadata-category)
+              (annotation-function
+               . ,(lambda (candidate)
+                    (gethash candidate annotations))))
+          (complete-with-action
+           action
+           (majutsu-jj--completion-candidates (payload-for string) default)
+           string predicate))))))
 
 (defun majutsu-jj--revset-annotation-function (sources)
   "Return annotation function from candidate SOURCES table."
@@ -426,18 +479,23 @@ When COMPLETION-ARGS is non-nil, use jj's native completer in that
 command context.  COMPLETION-ARGS are command-line arguments before the
 revset value being read."
   (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
-         (payload (if completion-args
-                      (majutsu-jj--completion-payload
-                       (append completion-args '(""))
-                       'majutsu-revision)
+         (payload (unless completion-args
                     (majutsu-jj-revset-candidate-data default)))
-         (table (majutsu-completion-payload-table
-                 payload 'majutsu-revision default)))
-    (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory)
-    (let ((value (completing-read (format-prompt prompt default)
-                                  table nil nil nil
-                                  'majutsu-read-revset-history
-                                  default)))
+         (table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision
+                                                  default)
+                  (majutsu-completion-payload-table
+                   payload 'majutsu-revision default))))
+    (when payload
+      (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
+    (let* ((completion-category-overrides
+            (cons majutsu-jj--revset-completion-style-override
+                  completion-category-overrides))
+           (value (completing-read (format-prompt prompt default)
+                                   table nil nil nil
+                                   'majutsu-read-revset-history
+                                   default)))
       (if (string-empty-p value)
           (user-error "Need non-empty input")
         value))))
@@ -451,18 +509,23 @@ input returns nil instead of signaling an error.  DEFAULT is shown in
 minibuffer when non-nil.  HISTORY defaults to
 `majutsu-read-revset-history'.  When COMPLETION-ARGS is non-nil, use
 jj's native completer in that command context."
-  (let* ((payload (if completion-args
-                      (majutsu-jj--completion-payload
-                       (append completion-args '(""))
-                       'majutsu-revision)
+  (let* ((payload (unless completion-args
                     (majutsu-jj-revset-candidate-data default)))
-         (table (majutsu-completion-payload-table
-                 payload 'majutsu-revision default)))
-    (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory)
-    (let ((value (completing-read (format-prompt prompt default)
-                                  table nil nil initial-input
-                                  (or history 'majutsu-read-revset-history)
-                                  default)))
+         (table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision
+                                                  default)
+                  (majutsu-completion-payload-table
+                   payload 'majutsu-revision default))))
+    (when payload
+      (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
+    (let* ((completion-category-overrides
+            (cons majutsu-jj--revset-completion-style-override
+                  completion-category-overrides))
+           (value (completing-read (format-prompt prompt default)
+                                   table nil nil initial-input
+                                   (or history 'majutsu-read-revset-history)
+                                   default)))
       (unless (string-empty-p value)
         value))))
 
