@@ -333,8 +333,13 @@ Insert Marginalia's alignment marker before the first separator."
   (setf (alist-get category marginalia-annotators)
         (list function 'none)))
 
+(defun majutsu-marginalia--clear-annotator (category)
+  "Remove CATEGORY from `marginalia-annotators'."
+  (setq marginalia-annotators
+        (assq-delete-all category marginalia-annotators)))
+
 (with-eval-after-load 'marginalia
-  (majutsu-marginalia--set-annotator 'majutsu-revision #'majutsu-marginalia-annotate-revision)
+  (majutsu-marginalia--clear-annotator 'majutsu-revision)
   (majutsu-marginalia--set-annotator 'majutsu-bookmark #'majutsu-marginalia-annotate-bookmark)
   (majutsu-marginalia--set-annotator 'majutsu-tag #'majutsu-marginalia-annotate-tag)
   (majutsu-marginalia--set-annotator 'majutsu-remote #'majutsu-marginalia-annotate-remote)

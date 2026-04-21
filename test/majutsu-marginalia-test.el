@@ -14,6 +14,7 @@
 
 (defvar marginalia-separator)
 (defvar marginalia--metadata)
+(defvar marginalia-annotators)
 
 (ert-deftest majutsu-marginalia-prewarm-candidate-data/caches-annotations-per-directory ()
   (let ((marginalia-separator "  ")
@@ -70,6 +71,13 @@
                        "Union with dev"))
         (should-not (majutsu-marginalia--cached-entry
                      'majutsu-revision "main"))))))
+
+(ert-deftest majutsu-marginalia/does-not-register-revision-category ()
+  (let ((marginalia-annotators '((majutsu-revision old none)
+                                 (majutsu-tag keep none))))
+    (majutsu-marginalia--clear-annotator 'majutsu-revision)
+    (should-not (assq 'majutsu-revision marginalia-annotators))
+    (should (assq 'majutsu-tag marginalia-annotators))))
 
 (ert-deftest majutsu-marginalia-annotate-revision/uses-structured-entry ()
   (let ((marginalia-separator "  ")

@@ -371,10 +371,14 @@ This mirrors Magit's behavior."
                                                   'majutsu-revision
                                                   "@"))
              (metadata (funcall table "" nil 'metadata))
-             (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+             (annotation (cdr (assq 'annotation-function (cdr metadata))))
+             (affixation (cdr (assq 'affixation-function (cdr metadata)))))
         (should (equal (all-completions "" table) '("@" "main")))
         (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
         (should (equal (funcall annotation "main") " Main bookmark"))
+        (should affixation)
+        (should (equal (funcall affixation '("main"))
+                       '(("main" "" " Main bookmark"))))
         (should-not (funcall annotation "@"))))))
 
 (ert-deftest majutsu-jj-completion-table/completes-revset-expressions-dynamically ()

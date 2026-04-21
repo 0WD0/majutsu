@@ -35,6 +35,7 @@
 (eval-when-compile (require 'majutsu-template))
 
 (autoload 'majutsu-process-file "majutsu-process" nil nil)
+(declare-function majutsu-marginalia-annotate-revision "majutsu-marginalia" (cand))
 
 ;;; Options
 
@@ -348,6 +349,21 @@ Each returned item is (CANDIDATE . HELP)."
         annotation
       (concat " " annotation))))
 
+(defun majutsu-jj--revision-affixation-function (entries annotations)
+  "Return affixation function backed by revision ENTRIES and ANNOTATIONS."
+  (lambda (candidates)
+    (mapcar (lambda (candidate)
+              (list candidate
+                    ""
+                    (or (and (hash-table-p entries)
+                             (gethash candidate entries)
+                             (fboundp 'majutsu-marginalia-annotate-revision)
+                             (majutsu-marginalia-annotate-revision candidate))
+                        (and (hash-table-p annotations)
+                             (gethash candidate annotations))
+                        "")))
+            candidates)))
+
 (defun majutsu-jj--completion-candidates (payload default)
   "Return completion candidates from PAYLOAD, prepending DEFAULT if needed."
   (let ((candidates (copy-sequence (or (plist-get payload :candidates) nil))))
@@ -368,6 +384,7 @@ metadata.  DEFAULT, when non-empty and missing from jj's candidates, is
 added first."
   (let ((payload-cache (make-hash-table :test #'equal))
         (annotations (make-hash-table :test #'equal))
+        (entries (make-hash-table :test #'equal))
         (metadata-category (or category 'majutsu-revision)))
     (cl-labels
         ((payload-for
@@ -382,6 +399,10 @@ added first."
                              (when-let* ((normalized (majutsu-jj--completion-normalize-annotation annotation)))
                                (puthash candidate normalized annotations)))
                            payload-annotations))
+                (when-let* ((payload-entries (plist-get payload :entries)))
+                  (maphash (lambda (candidate entry)
+                             (puthash candidate entry entries))
+                           payload-entries))
                 (majutsu-completion-prewarm-payload
                  payload metadata-category string default-directory)
                 payload))))
@@ -392,7 +413,11 @@ added first."
               (category . ,metadata-category)
               (annotation-function
                . ,(lambda (candidate)
-                    (gethash candidate annotations))))
+                    (gethash candidate annotations)))
+              ,@(and (eq metadata-category 'majutsu-revision)
+                     `((affixation-function
+                        . ,(majutsu-jj--revision-affixation-function
+                            entries annotations)))))
           (complete-with-action
            action
            (majutsu-jj--completion-candidates (payload-for string) default)
@@ -473,10 +498,29 @@ workspace working-copy refs (`<workspace>@`), bookmarks, and tags.
 DEFAULT, when non-nil, is inserted first so users can accept it quickly."
   (plist-get (majutsu-jj-revset-candidate-data default) :candidates))
 
+(defun majutsu-jj--payload-table (payload &optional category default)
+  "Return a completion table for PAYLOAD with revision affixes when possible."
+  (let* ((category (or category (plist-get payload :category)))
+         (table (majutsu-completion-payload-table payload category default))
+         (entries (plist-get payload :entries))
+         (annotations (plist-get payload :annotations)))
+    (if (eq category 'majutsu-revision)
+        (completion-table-with-metadata
+         table
+         `((display-sort-function . identity)
+           (category . ,category)
+           (annotation-function
+            . ,(lambda (candidate)
+                 (and (hash-table-p annotations)
+                      (gethash candidate annotations))))
+           (affixation-function
+            . ,(majutsu-jj--revision-affixation-function entries annotations))))
+      table)))
+
 (defun majutsu-jj--revset-completion-table (&optional default)
   "Return a completion table for revset input.
 DEFAULT is inserted first in the candidate list when non-nil."
-  (majutsu-completion-payload-table
+  (majutsu-jj--payload-table
    (majutsu-jj-revset-candidate-data default)
    'majutsu-revision default))
 
@@ -496,7 +540,7 @@ DEFAULT is inserted first in the candidate list when non-nil."
   "Return completion data for the revset expression at point."
   (let* ((input (majutsu-jj--revset-minibuffer-input))
          (payload (majutsu-jj--revset-completion-payload input))
-         (table (majutsu-completion-payload-table
+         (table (majutsu-jj--payload-table
                  payload 'majutsu-revision
                  majutsu-jj--revset-completion-default)))
     (majutsu-completion-prewarm-payload
