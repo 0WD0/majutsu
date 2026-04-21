@@ -294,9 +294,36 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
                            (current-buffer))
     (or (magit-section-value-if 'jj-commit) "@")))
 
+(defun majutsu-diff--transient-prefix-command ()
+  "Return the current transient prefix command for revset readers.
+
+Prefer Transient's active prefix state when available.  Fall back to
+inferring the prefix from `this-command' so native completion still works
+when some Transient call paths do not bind `transient-current-command'."
+  (or transient-current-command
+      (ignore-errors
+        (and transient-current-prefix
+             (oref transient-current-prefix command)))
+      (ignore-errors
+        (and transient--prefix
+             (oref transient--prefix command)))
+      (when-let* ((name (and this-command (symbol-name this-command))))
+        (cond
+         ((string-prefix-p "majutsu-absorb:" name) 'majutsu-absorb)
+         ((string-prefix-p "majutsu-diff:" name) 'majutsu-diff)
+         ((string-prefix-p "majutsu-duplicate:" name) 'majutsu-duplicate)
+         ((string-prefix-p "majutsu-new:" name) 'majutsu-new)
+         ((string-prefix-p "majutsu-rebase:" name) 'majutsu-rebase)
+         ((string-prefix-p "majutsu-restore:" name) 'majutsu-restore)
+         ((string-prefix-p "majutsu-revert:" name) 'majutsu-revert)
+         ((string-prefix-p "majutsu-simplify-parents:" name)
+          'majutsu-simplify-parents-transient)
+         ((string-prefix-p "majutsu-split:" name) 'majutsu-split)
+         ((string-prefix-p "majutsu-squash:" name) 'majutsu-squash)))))
+
 (defun majutsu-diff--transient-jj-command-args ()
   "Return jj subcommand args for the active revset transient."
-  (pcase transient-current-command
+  (pcase (majutsu-diff--transient-prefix-command)
     ('majutsu-absorb '("absorb"))
     ('majutsu-diff '("diff"))
     ('majutsu-duplicate '("duplicate"))
