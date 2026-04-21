@@ -21,10 +21,6 @@
 (require 'seq)
 (require 'subr-x)
 
-(declare-function majutsu-marginalia-prewarm-candidate-data
-                  "majutsu-marginalia"
-                  (category payload &optional revset directory))
-
 (defvar-local majutsu-tag--list-all-remotes nil
   "Non-nil when the tag list includes remote tags.")
 
@@ -90,19 +86,17 @@ Return a list of plists with keys:
 
 (defun majutsu-tag--read-candidates (prompt history &optional require-match)
   "Read tag candidates with PROMPT using HISTORY.
-If REQUIRE-MATCH is non-nil, require existing local tags." 
+If REQUIRE-MATCH is non-nil, require existing local tags."
   (let* ((payload (majutsu-tag-candidate-data))
          (candidates (plist-get payload :candidates)))
-    (when (fboundp 'majutsu-marginalia-prewarm-candidate-data)
-      (majutsu-marginalia-prewarm-candidate-data
-       'majutsu-tag payload nil default-directory))
-    (seq-filter (lambda (name) (not (string-empty-p name)))
-                (majutsu-completing-read-multiple
-                 prompt candidates nil require-match nil history nil 'majutsu-tag))))
+    (majutsu-marginalia-prewarm-candidate-data
+     'majutsu-tag payload nil default-directory)
+    (majutsu-completing-read-multiple
+     prompt candidates nil (or require-match 'any) nil history nil 'majutsu-tag)))
 
 (defun majutsu-tag--read-exact-names (prompt &optional require-match)
   "Read exact tag names with PROMPT.
-If REQUIRE-MATCH is non-nil, require existing local tag names." 
+If REQUIRE-MATCH is non-nil, require existing local tag names."
   (majutsu-tag--read-candidates prompt 'majutsu-tag-name-history require-match))
 
 (defun majutsu-tag--read-patterns (prompt)
