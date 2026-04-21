@@ -183,100 +183,101 @@ BODY should return a lowered form or a final template node."
 
 ;;;; Type and callable metadata
 
-(cl-defstruct (majutsu-template--type
-               (:constructor majutsu-template--make-type))
-  "Metadata describing a template value type."
-  name
-  doc
-  converts-to)
+(eval-and-compile
+  (cl-defstruct (majutsu-template--type
+                 (:constructor majutsu-template--make-type))
+    "Metadata describing a template value type."
+    name
+    doc
+    converts-to)
 
-(defvar majutsu-template--type-registry (make-hash-table :test #'eq)
-  "Registry of known template types keyed by symbol.")
+  (defvar majutsu-template--type-registry (make-hash-table :test #'eq)
+    "Registry of known template types keyed by symbol.")
 
-(defun majutsu-template--normalize-converts (value)
-  "Normalize VALUE describing type conversions into a canonical list.
+  (defun majutsu-template--normalize-converts (value)
+    "Normalize VALUE describing type conversions into a canonical list.
 Accepts nil, a list of symbols, or a list of (TYPE . STATUS) pairs."
-  (cond
-   ((null value) nil)
-   ((and (listp value) (consp (car value)) (symbolp (caar value)))
-    value)
-   ((listp value)
-    (mapcar (lambda (type) (cons type 'yes)) value))
-   ((symbolp value)
-    (list (cons value 'yes)))
-   (t
-    (user-error "majutsu-template: invalid :converts specification %S" value))))
+    (cond
+     ((null value) nil)
+     ((and (listp value) (consp (car value)) (symbolp (caar value)))
+      value)
+     ((listp value)
+      (mapcar (lambda (type) (cons type 'yes)) value))
+     ((symbolp value)
+      (list (cons value 'yes)))
+     (t
+      (user-error "majutsu-template: invalid :converts specification %S" value))))
 
-(defun majutsu-template-define-type (name &rest plist)
-  "Register template type NAME with optional metadata PLIST.
+  (defun majutsu-template-define-type (name &rest plist)
+    "Register template type NAME with optional metadata PLIST.
 Recognised keys: :doc (string), :converts or :converts-to (list)."
-  (cl-check-type name symbol)
-  (let* ((doc (plist-get plist :doc))
-         (raw-converts (or (plist-get plist :converts)
-                           (plist-get plist :converts-to)))
-         (converts-to (majutsu-template--normalize-converts raw-converts)))
-    (puthash name
-             (majutsu-template--make-type
-              :name name
-              :doc doc
-              :converts-to converts-to)
-             majutsu-template--type-registry)))
+    (cl-check-type name symbol)
+    (let* ((doc (plist-get plist :doc))
+           (raw-converts (or (plist-get plist :converts)
+                             (plist-get plist :converts-to)))
+           (converts-to (majutsu-template--normalize-converts raw-converts)))
+      (puthash name
+               (majutsu-template--make-type
+                :name name
+                :doc doc
+                :converts-to converts-to)
+               majutsu-template--type-registry)))
 
-(defun majutsu-template--lookup-type (name)
-  "Return registered type metadata for NAME or nil."
-  (gethash name majutsu-template--type-registry))
+  (defun majutsu-template--lookup-type (name)
+    "Return registered type metadata for NAME or nil."
+    (gethash name majutsu-template--type-registry))
 
-(defun majutsu-template--type-ref-normalize (type)
-  "Normalize TYPE into a minimal internal type reference."
-  (cond
-   ((null type) 'Unknown)
-   ((and (consp type) (memq (car type) '(:list :option :lambda)))
-    (pcase (car type)
-      (:list (list :list (majutsu-template--type-ref-normalize (cadr type))))
-      (:option (list :option (majutsu-template--type-ref-normalize (cadr type))))
-      (:lambda (list :lambda
-                     (mapcar #'majutsu-template--type-ref-normalize (cadr type))
-                     (majutsu-template--type-ref-normalize (caddr type))))))
-   ((or (keywordp type) (symbolp type)) type)
-   ((stringp type) (intern type))
-   (t 'Unknown)))
+  (defun majutsu-template--type-ref-normalize (type)
+    "Normalize TYPE into a minimal internal type reference."
+    (cond
+     ((null type) 'Unknown)
+     ((and (consp type) (memq (car type) '(:list :option :lambda)))
+      (pcase (car type)
+        (:list (list :list (majutsu-template--type-ref-normalize (cadr type))))
+        (:option (list :option (majutsu-template--type-ref-normalize (cadr type))))
+        (:lambda (list :lambda
+                       (mapcar #'majutsu-template--type-ref-normalize (cadr type))
+                       (majutsu-template--type-ref-normalize (caddr type))))))
+     ((or (keywordp type) (symbolp type)) type)
+     ((stringp type) (intern type))
+     (t 'Unknown)))
 
-(defun majutsu-template--type-ref-base-type (type)
-  "Return nominal base type symbol for TYPE reference."
-  (setq type (majutsu-template--type-ref-normalize type))
-  (cond
-   ((symbolp type)
+  (defun majutsu-template--type-ref-base-type (type)
+    "Return nominal base type symbol for TYPE reference."
+    (setq type (majutsu-template--type-ref-normalize type))
+    (cond
+     ((symbolp type)
+      (pcase type
+        (:self 'Template)
+        (:element 'Template)
+        (:option-value 'Template)
+        (_ type)))
+     ((consp type)
+      (pcase (car type)
+        (:list 'List)
+        (:option 'Option)
+        (:lambda 'Lambda)
+        (_ 'Unknown)))
+     (t 'Unknown)))
+
+  (defun majutsu-template--type-ref-dispatch-fragment (type)
+    "Return canonical dispatch-name fragment derived from TYPE reference."
+    (setq type (majutsu-template--type-ref-normalize type))
     (pcase type
-      (:self 'Template)
-      (:element 'Template)
-      (:option-value 'Template)
-      (_ type)))
-   ((consp type)
-    (pcase (car type)
-      (:list 'List)
-      (:option 'Option)
-      (:lambda 'Lambda)
-      (_ 'Unknown)))
-   (t 'Unknown)))
+      ((pred symbolp)
+       (symbol-name (majutsu-template--type-ref-base-type type)))
+      (`(:list ,inner)
+       (concat (majutsu-template--type-ref-dispatch-fragment inner) "List"))
+      (`(:option ,inner)
+       (concat (majutsu-template--type-ref-dispatch-fragment inner) "Opt"))
+      (`(:lambda . ,_)
+       "Lambda")
+      (_
+       (symbol-name (majutsu-template--type-ref-base-type type)))))
 
-(defun majutsu-template--type-ref-dispatch-fragment (type)
-  "Return canonical dispatch-name fragment derived from TYPE reference."
-  (setq type (majutsu-template--type-ref-normalize type))
-  (pcase type
-    ((pred symbolp)
-     (symbol-name (majutsu-template--type-ref-base-type type)))
-    (`(:list ,inner)
-     (concat (majutsu-template--type-ref-dispatch-fragment inner) "List"))
-    (`(:option ,inner)
-     (concat (majutsu-template--type-ref-dispatch-fragment inner) "Opt"))
-    (`(:lambda . ,_)
-     "Lambda")
-    (_
-     (symbol-name (majutsu-template--type-ref-base-type type)))))
-
-(defun majutsu-template--type-ref-dispatch-kind (type)
-  "Return internal dispatch kind symbol derived from TYPE reference."
-  (intern (majutsu-template--type-ref-dispatch-fragment type)))
+  (defun majutsu-template--type-ref-dispatch-kind (type)
+    "Return internal dispatch kind symbol derived from TYPE reference."
+    (intern (majutsu-template--type-ref-dispatch-fragment type))))
 
 (defun majutsu-template--method-dispatch-candidates (receiver-type)
   "Return ordered `(SEMANTIC-TYPE . DISPATCH-KIND)' candidates for RECEIVER-TYPE."
@@ -1709,42 +1710,42 @@ Return nil when OP is not lambda shorthand syntax."
           (mapcar #'intern items))))))
 
 (majutsu-template-defspecial :lambda (params body)
-                             (majutsu-template--lambda-from-form params body))
+  (majutsu-template--lambda-from-form params body))
 
 (majutsu-template-defspecial :self (&rest args)
-                             (pcase args
-                               (`() (majutsu-template--resolve-self-node 0))
-                               (`(,depth) (majutsu-template--resolve-self-node depth))
-                               (_
-                                (user-error "majutsu-template: :self expects zero or one argument, got %S"
-                                            args))))
+  (pcase args
+    (`() (majutsu-template--resolve-self-node 0))
+    (`(,depth) (majutsu-template--resolve-self-node depth))
+    (_
+     (user-error "majutsu-template: :self expects zero or one argument, got %S"
+                 args))))
 
 (majutsu-template-defspecial :--map (body collection)
-                             `[:-map [:|it| ,body] ,collection])
+  `[:-map [:|it| ,body] ,collection])
 
 (majutsu-template-defspecial :--filter (body collection)
-                             `[:-filter [:|it| ,body] ,collection])
+  `[:-filter [:|it| ,body] ,collection])
 
 (majutsu-template-defspecial :--any (body collection)
-                             `[:-any [:|it| ,body] ,collection])
+  `[:-any [:|it| ,body] ,collection])
 
 (majutsu-template-defspecial :--all-p (body collection)
-                             `[:-all-p [:|it| ,body] ,collection])
+  `[:-all-p [:|it| ,body] ,collection])
 
 (majutsu-template-defspecial :map (collection var body)
-                             (majutsu-template--higher-order-form "map" collection var body))
+  (majutsu-template--higher-order-form "map" collection var body))
 
 (majutsu-template-defspecial :filter (collection var body)
-                             (majutsu-template--higher-order-form "filter" collection var body))
+  (majutsu-template--higher-order-form "filter" collection var body))
 
 (majutsu-template-defspecial :any (collection var body)
-                             (majutsu-template--higher-order-form "any" collection var body))
+  (majutsu-template--higher-order-form "any" collection var body))
 
 (majutsu-template-defspecial :all (collection var body)
-                             (majutsu-template--higher-order-form "all" collection var body))
+  (majutsu-template--higher-order-form "all" collection var body))
 
 (majutsu-template-defspecial :map-join (separator collection var body)
-                             `[:method [:map ,collection ,var ,body] :join ,separator])
+  `[:method [:map ,collection ,var ,body] :join ,separator])
 
 (defun majutsu-template--expand-lambda-shorthand-special (op args)
   "Expand lambda shorthand operator OP with raw ARGS.
