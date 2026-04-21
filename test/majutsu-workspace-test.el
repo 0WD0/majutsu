@@ -83,6 +83,25 @@
                  (:name "ws-b" :current t)))))
     (should (equal (majutsu-workspace-current-name) "ws-b"))))
 
+(ert-deftest majutsu-workspace-read-name/uses-history-and-category ()
+  "Workspace name reader should expose dedicated history and category."
+  (let (seen-history seen-category)
+    (cl-letf (((symbol-function 'magit-section-value-if)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'majutsu-workspace-current-name)
+               (lambda (&optional _root) "ws-a"))
+              ((symbol-function 'majutsu-workspace--names)
+               (lambda (&optional _root) '("ws-a" "ws-b")))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt table _predicate _require-match _initial history _default)
+                 (setq seen-history history)
+                 (let ((metadata (funcall table "" nil 'metadata)))
+                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 "ws-b")))
+      (should (equal (majutsu-workspace--read-name "Workspace") "ws-b"))
+      (should (eq seen-history 'majutsu-workspace-name-history))
+      (should (eq seen-category 'majutsu-workspace)))))
+
 (ert-deftest majutsu-workspace-visit/binds-default-directory ()
   "Ensure visiting another workspace updates buffer context."
   (let ((new-dir (make-temp-file "majutsu-test-" t))
