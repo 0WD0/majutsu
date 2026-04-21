@@ -213,7 +213,8 @@ Use `majutsu-bookmark--completion-field-separator' as the field separator."
                 (setq local-candidates (append local-candidates (list name)))))
             (puthash name entry entries)))
       (error nil))
-    (list :candidates (or candidates local-candidates)
+    (list :category 'majutsu-bookmark
+          :candidates (or candidates local-candidates)
           :entries entries)))
 
 (defun majutsu--bookmark-base-names-from-scope (scope)
@@ -244,58 +245,57 @@ SCOPE should be one of the scopes accepted by
   "Read one exact bookmark name using PROMPT.
 DEFAULT is preselected when non-nil.  If REQUIRE-MATCH is non-nil,
 require an existing local bookmark name."
-  (let* ((payload (majutsu-bookmark-candidate-data nil default-directory))
-         (candidates (plist-get payload :candidates)))
-    (majutsu-completing-read prompt candidates
-                             nil (or require-match 'any) nil
-                             'majutsu-bookmark-name-history
-                             default 'majutsu-bookmark)))
+  (let ((payload (majutsu-bookmark-candidate-data nil default-directory)))
+    (majutsu-completing-read-payload prompt payload
+                                     nil (or require-match 'any) nil
+                                     'majutsu-bookmark-name-history
+                                     default 'majutsu-bookmark nil
+                                     default-directory)))
 
 (defun majutsu-read-bookmark-names (prompt &optional candidates default require-match)
   "Read exact bookmark names with PROMPT.
 CANDIDATES defaults to local bookmark names.  DEFAULT is preselected when
 non-nil.  If REQUIRE-MATCH is non-nil, require existing local bookmark
 names."
-  (let* ((payload (majutsu-bookmark-candidate-data candidates default-directory))
-         (candidates (plist-get payload :candidates)))
-    (majutsu-completing-read-multiple
-     prompt candidates
+  (let ((payload (majutsu-bookmark-candidate-data candidates default-directory)))
+    (majutsu-completing-read-multiple-payload
+     prompt payload
      nil (or require-match 'any) nil 'majutsu-bookmark-name-history
-     default 'majutsu-bookmark)))
+     default 'majutsu-bookmark nil default-directory)))
 
 (defun majutsu-read-bookmark-pattern (prompt &optional default)
   "Read one bookmark name pattern using PROMPT.
 DEFAULT is preselected when non-nil."
-  (let* ((payload (majutsu-bookmark-candidate-data nil default-directory))
-         (candidates (plist-get payload :candidates)))
-    (majutsu-completing-read prompt candidates
-                             nil 'any nil
-                             'majutsu-bookmark-pattern-history
-                             default 'majutsu-bookmark)))
+  (let ((payload (majutsu-bookmark-candidate-data nil default-directory)))
+    (majutsu-completing-read-payload prompt payload
+                                     nil 'any nil
+                                     'majutsu-bookmark-pattern-history
+                                     default 'majutsu-bookmark nil
+                                     default-directory)))
 
 (defun majutsu-read-bookmark-patterns (prompt &optional _init-input _history candidates default)
   "Read bookmark name patterns with PROMPT.
 CANDIDATES defaults to local bookmark names.  DEFAULT defaults to the
 bookmark(s) at point."
   (let* ((default (or default (majutsu-bookmark-at-point)))
-         (payload (majutsu-bookmark-candidate-data candidates default-directory))
-         (candidates (plist-get payload :candidates)))
-    (majutsu-completing-read-multiple
-     prompt candidates
+         (payload (majutsu-bookmark-candidate-data candidates default-directory)))
+    (majutsu-completing-read-multiple-payload
+     prompt payload
      nil nil nil 'majutsu-bookmark-pattern-history
-     default 'majutsu-bookmark)))
+     default 'majutsu-bookmark nil default-directory)))
 
 (defun majutsu-read-remote-patterns (prompt &optional candidates)
   "Read remote name patterns with PROMPT.
 CANDIDATES defaults to known Git remote names."
-  (let* ((payload (majutsu-git-remote-candidate-data default-directory))
-         (candidates (or candidates
-                         (plist-get payload :candidates)
-                         (majutsu--bookmark-git-remote-candidates))))
-    (majutsu-completing-read-multiple
-     prompt candidates
+  (let ((payload (majutsu-git-remote-candidate-data default-directory)))
+    (unless (plist-get payload :candidates)
+      (setq payload (plist-put payload :candidates
+                               (or candidates
+                                   (majutsu--bookmark-git-remote-candidates)))))
+    (majutsu-completing-read-multiple-payload
+     prompt payload
      nil nil nil 'majutsu-remote-pattern-history
-     nil 'majutsu-remote)))
+     nil 'majutsu-remote nil default-directory)))
 
 ;;;###autoload
 (defun majutsu-bookmark-create (&optional names)

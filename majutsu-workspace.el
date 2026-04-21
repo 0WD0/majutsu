@@ -199,7 +199,8 @@ Entries are parsed from `jj workspace list -T ...`."
         (unless (gethash name entries)
           (setq candidates (append candidates (list name))))
         (puthash name entry entries)))
-    (list :candidates candidates
+    (list :category 'majutsu-workspace
+          :candidates candidates
           :entry-list entry-list
           :entries entries)))
 
@@ -244,11 +245,10 @@ the workspaces for ROOT."
                                     (plist-get entry :current))
                                   (plist-get payload :entry-list)))
              (default (or default (plist-get current :name) ""))
-             (prompt (or prompt "Workspace"))
-             (candidates (plist-get payload :candidates)))
-        (majutsu-completing-read prompt candidates
-                                 nil t nil 'majutsu-workspace-name-history
-                                 default 'majutsu-workspace))))
+             (prompt (or prompt "Workspace")))
+        (majutsu-completing-read-payload prompt payload
+                                         nil t nil 'majutsu-workspace-name-history
+                                         default 'majutsu-workspace nil root))))
 
 (defun majutsu-workspace--read-root (name &optional root)
   "Return the workspace root directory for NAME.

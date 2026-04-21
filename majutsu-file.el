@@ -422,7 +422,8 @@ Results are cached in `majutsu-file--list-cache`."
       (when (and (not (gethash path entries))
                  (gethash path statuses))
         (puthash path (gethash path statuses) entries)))
-    (list :candidates candidates
+    (list :category 'majutsu-file
+          :candidates candidates
           :entries entries)))
 
 (defvar majutsu-file-path-history nil
@@ -433,13 +434,14 @@ Results are cached in `majutsu-file--list-cache`."
 PROMPT, INITIAL-INPUT, HISTORY are standard reader args.
 LIST-FN defaults to `majutsu-file-list'."
   (let* ((root (majutsu-file--root))
-         (candidates (funcall (or list-fn #'majutsu-file-list))))
-    (majutsu-completing-read-multiple
-     prompt candidates
+         (candidates (funcall (or list-fn #'majutsu-file-list)))
+         (payload (majutsu-file-candidate-data "@" root candidates)))
+    (majutsu-completing-read-multiple-payload
+     prompt payload
      nil nil
      (or initial-input (majutsu-file--path-at-point root))
      (or history 'majutsu-file-path-history)
-     nil 'majutsu-file)))
+     nil nil nil root)))
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
@@ -464,12 +466,13 @@ LIST-FN defaults to `majutsu-file-list'."
   "Prompt for a file path from REVSET.
 DEFAULT is the initial file choice when present in REVSET file list."
   (let* ((paths (majutsu-file--list revset root))
+         (payload (majutsu-file-candidate-data revset root paths))
          (default (or default (majutsu-file--path-at-point root))))
     (when (and default (not (member default paths)))
       (setq default nil))
-    (majutsu-completing-read "Find file" paths nil t nil
-                             'majutsu-file-path-history
-                             default 'majutsu-file)))
+    (majutsu-completing-read-payload "Find file" payload nil t nil
+                                     'majutsu-file-path-history
+                                     default nil nil root)))
 
 (defun majutsu-file--diff-range-value (range prefix)
   "Return the value in RANGE for argument starting with PREFIX."

@@ -344,19 +344,26 @@ This mirrors Magit's behavior."
                  (_ nil)))))
     (let* ((data (majutsu-jj-revset-candidate-data "main"))
            (sources (plist-get data :sources))
+           (annotations (plist-get data :annotations))
            (annotation (majutsu-jj--revset-annotation-function sources)))
+      (should (eq (plist-get data :category) 'majutsu-revision))
       (should (equal (funcall annotation "@") "  [pseudo]"))
       (should (equal (funcall annotation "ws-a@") "  [workspace]"))
-      (should (equal (funcall annotation "main") "  [bookmark,tag]")))))
+      (should (equal (funcall annotation "main") "  [bookmark,tag]"))
+      (should (equal (gethash "main" annotations) "  [bookmark,tag]")))))
 
 (ert-deftest majutsu-read-revset/uses-completion-and-allows-free-form ()
   "Revset reader should use completion metadata and allow free-form input."
   (let (seen-require-match seen-default seen-category seen-history seen-annotation)
-    (let ((sources (make-hash-table :test #'equal)))
+    (let ((sources (make-hash-table :test #'equal))
+          (annotations (make-hash-table :test #'equal)))
       (puthash "main" '(bookmark tag) sources)
+      (puthash "main" "  [bookmark,tag]" annotations)
       (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
                  (lambda (_default)
-                   (list :candidates '("@" "main")
+                   (list :category 'majutsu-revision
+                         :candidates '("@" "main")
+                         :annotations annotations
                          :sources sources)))
                 ((symbol-function 'completing-read)
                  (lambda (_prompt table _predicate require-match _initial hist def)
@@ -378,11 +385,15 @@ This mirrors Magit's behavior."
 (ert-deftest majutsu-read-optional-revset/uses-completion-and-allows-empty ()
   "Optional revset reader should use revset metadata and accept empty input."
   (let (seen-category seen-history seen-default seen-initial)
-    (let ((sources (make-hash-table :test #'equal)))
+    (let ((sources (make-hash-table :test #'equal))
+          (annotations (make-hash-table :test #'equal)))
       (puthash "main" '(bookmark) sources)
+      (puthash "main" "  [bookmark]" annotations)
       (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
                  (lambda (_default)
-                   (list :candidates '("@" "main")
+                   (list :category 'majutsu-revision
+                         :candidates '("@" "main")
+                         :annotations annotations
                          :sources sources)))
                 ((symbol-function 'completing-read)
                  (lambda (_prompt table _predicate _require-match initial hist def)

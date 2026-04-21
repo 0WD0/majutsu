@@ -25,6 +25,7 @@
 (require 'subr-x)
 (require 'eieio)
 (require 'magit-section)
+(require 'majutsu-completion)
 
 (declare-function majutsu-save-window-configuration "majutsu-mode" ())
 
@@ -190,12 +191,7 @@ end with a question mark and space."
 (defun majutsu--make-completion-table (candidates &optional category)
   "Wrap CANDIDATES in a completion table.
 When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
-  (let ((metadata `(metadata (display-sort-function . identity)
-                    ,@(and category `((category . ,category))))))
-    (lambda (string pred action)
-      (if (eq action 'metadata)
-          metadata
-        (complete-with-action action candidates string pred)))))
+  (majutsu-completion-table candidates category))
 
 (defun majutsu-completing-read (prompt collection &optional predicate require-match
                                        initial-input hist def category)
@@ -220,6 +216,24 @@ is `any', require non-empty input without requiring a candidate match."
           nil)
       value)))
 
+(defun majutsu-completing-read-payload
+    (prompt payload &optional predicate require-match initial-input hist def category context directory)
+  "Read one value from structured completion PAYLOAD.
+PAYLOAD may provide :category for completion styling.  CONTEXT and
+DIRECTORY are accepted for API compatibility and ignored.  REQUIRE-MATCH
+follows `majutsu-completing-read'."
+  (ignore context directory)
+  (let ((table (majutsu-completion-payload-table payload category def)))
+    (let ((value (completing-read (format-prompt prompt def)
+                                  table predicate
+                                  (if (eq require-match 'any) nil require-match)
+                                  initial-input hist def)))
+      (if (equal value "")
+          (if require-match
+              (user-error "Nothing selected")
+            nil)
+        value))))
+
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
   "Read multiple choices with completion, preserving CATEGORY metadata.
@@ -239,6 +253,22 @@ requiring a candidate match."
     (when (and (eq require-match 'any) (null values))
       (user-error "Nothing selected"))
     values))
+
+(defun majutsu-completing-read-multiple-payload
+    (prompt payload &optional predicate require-match initial-input hist def category context directory)
+  "Read multiple values from structured completion PAYLOAD.
+PAYLOAD may provide :category for completion styling.  CONTEXT and
+DIRECTORY are accepted for API compatibility and ignored.  REQUIRE-MATCH
+follows `majutsu-completing-read-multiple'."
+  (ignore context directory)
+  (let ((table (majutsu-completion-payload-table payload category def)))
+    (let ((values (completing-read-multiple (format-prompt prompt def)
+                                            table predicate
+                                            (if (eq require-match 'any) nil require-match)
+                                            initial-input hist def)))
+      (when (and (eq require-match 'any) (null values))
+        (user-error "Nothing selected"))
+      values)))
 
 (defun majutsu-read-string (prompt &optional initial-input history default-value)
   "Read a string from the minibuffer, prompting with PROMPT.

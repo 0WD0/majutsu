@@ -50,7 +50,8 @@
               (setq candidates (append candidates (list name))))
             (puthash name entry entries)))
       (error nil))
-    (list :candidates candidates
+    (list :category 'majutsu-remote
+          :candidates candidates
           :entries entries)))
 
 (defun majutsu-git--remote-names (&optional directory)
@@ -65,11 +66,14 @@
 If REQUIRE-MATCH is non-nil, require an existing remote name.  DEFAULT
 is preselected when non-nil."
   (let* ((root (ignore-errors (majutsu--toplevel-safe)))
-         (payload (majutsu-git-remote-candidate-data root))
-         (remotes (or (plist-get payload :candidates) '("origin"))))
-    (majutsu-completing-read prompt remotes nil (or require-match 'any) nil
-                             'majutsu-remote-name-history
-                             default 'majutsu-remote)))
+         (payload (majutsu-git-remote-candidate-data root)))
+    (unless (plist-get payload :candidates)
+      (setq payload (plist-put payload :candidates '("origin"))))
+    (majutsu-completing-read-payload prompt payload
+                                     nil (or require-match 'any) nil
+                                     'majutsu-remote-name-history
+                                     default 'majutsu-remote nil
+                                     (or root default-directory))))
 
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."
