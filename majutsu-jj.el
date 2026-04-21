@@ -23,6 +23,7 @@
 (require 'ansi-color)
 (require 'compat)
 (require 'cl-lib)
+(require 'json)
 (require 'magit-section)
 (require 'seq)
 (require 'subr-x)
@@ -190,19 +191,106 @@ remote prefix from DIRECTORY so the result remains remote."
       (apply #'majutsu-jj-lines args)
     (error nil)))
 
-(defun majutsu-jj--parse-completion-line (line)
-  "Parse one fish completion LINE into a completion item."
+(defun majutsu-jj--machine-completion-kind (item)
+  "Return revision completion kind derived from machine-readable ITEM."
+  (let ((value (gethash "value" item)))
+    (pcase (gethash "display_order" item)
+      (0 (if (and (stringp value)
+                  (string-suffix-p "@" value))
+             'workspace
+           'bookmark))
+      (1 'tag)
+      (2 'change-id)
+      (3 'remote-bookmark)
+      (4 'revset-alias)
+      (_ nil))))
+
+(defun majutsu-jj--machine-completion-entry (item)
+  "Return structured completion entry parsed from machine-readable ITEM."
+  (when-let* ((value (gethash "value" item))
+              ((stringp value))
+              ((not (string-empty-p value))))
+    (let ((help (gethash "help" item))
+          (id (gethash "id" item))
+          (tag (gethash "tag" item))
+          (display-order (gethash "display_order" item))
+          (hidden (gethash "hidden" item)))
+      (list :value value
+            :annotation (or (and (stringp help) (not (string-empty-p help)) help)
+                            (and (stringp tag) (not (string-empty-p tag)) tag))
+            :help (and (stringp help) (not (string-empty-p help)) help)
+            :id (and (stringp id) (not (string-empty-p id)) id)
+            :tag (and (stringp tag) (not (string-empty-p tag)) tag)
+            :display-order display-order
+            :hidden hidden
+            :kind (majutsu-jj--machine-completion-kind item)))))
+
+(defun majutsu-jj--completion-payload-from-entries (entries &optional category)
+  "Return completion payload built from structured ENTRIES.
+CATEGORY defaults to `majutsu-revision'."
+  (let* ((category (or category 'majutsu-revision))
+         (annotations (make-hash-table :test #'equal))
+         (entry-table (make-hash-table :test #'equal))
+         candidates)
+    (dolist (entry entries)
+      (when-let* ((candidate (plist-get entry :value)))
+        (push candidate candidates)
+        (puthash candidate entry entry-table)
+        (when-let* ((annotation (plist-get entry :annotation)))
+          (puthash candidate annotation annotations))))
+    (list :category category
+          :candidates (nreverse candidates)
+          :annotations annotations
+          :entries entry-table
+          :annotation-suffix-function
+          (majutsu-jj--completion-suffix-function category entry-table annotations))))
+
+(defun majutsu-jj--machine-completion-payload (args &optional category)
+  "Return jj machine-readable completion payload for ARGS.
+ARGS are command-line arguments after the leading jj executable name.
+Return a payload on success, or the symbol `:failed' if machine-readable
+completion is not available."
+  (condition-case nil
+      (with-temp-buffer
+        (let* ((argv (append '("util" "complete"
+                               "--format" "json"
+                               "--index")
+                             (list (number-to-string (length args)))
+                             '("--" "jj")
+                             args))
+               (exit (apply #'majutsu-process-file
+                            (majutsu-jj--executable)
+                            nil t nil
+                            argv)))
+          (if (zerop exit)
+              (progn
+                (goto-char (point-min))
+                (majutsu-jj--completion-payload-from-entries
+                 (delq nil
+                       (mapcar #'majutsu-jj--machine-completion-entry
+                               (json-parse-buffer :array-type 'list
+                                                  :object-type 'hash-table
+                                                  :null-object nil
+                                                  :false-object nil)))
+                 category))
+            :failed)))
+    (error :failed)))
+
+(defun majutsu-jj--fish-completion-entry (line)
+  "Return structured completion entry parsed from fish completion LINE."
   (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
     (let ((candidate (match-string 1 line))
           (annotation (match-string 2 line)))
-      (if (and annotation (not (string-empty-p annotation)))
-          (cons candidate annotation)
-        candidate))))
+      (list :value candidate
+            :annotation (and annotation
+                             (not (string-empty-p annotation))
+                             annotation)
+            :help (and annotation
+                       (not (string-empty-p annotation))
+                       annotation)))))
 
-(defun majutsu-jj-completion-items (args)
-  "Return jj native completion items for ARGS.
-ARGS are command-line arguments after the leading jj executable name.
-Each returned item is a string or (CANDIDATE . HELP)."
+(defun majutsu-jj--fish-completion-items (args)
+  "Return jj shell completion items for ARGS using fish output format."
   (condition-case nil
       (with-temp-buffer
         (let* ((process-environment (cons "COMPLETE=fish" process-environment))
@@ -211,10 +299,37 @@ Each returned item is a string or (CANDIDATE . HELP)."
                             nil t nil
                             (append '("--" "jj") args))))
           (when (zerop exit)
-            (delq nil
-                  (mapcar #'majutsu-jj--parse-completion-line
-                          (split-string (buffer-string) "\n" t))))))
+            (split-string (buffer-string) "\n" t))))
     (error nil)))
+
+(defun majutsu-jj--fish-completion-payload (args &optional category)
+  "Return jj shell completion payload for ARGS using fish output format."
+  (majutsu-jj--completion-payload-from-entries
+   (delq nil (mapcar #'majutsu-jj--fish-completion-entry
+                     (majutsu-jj--fish-completion-items args)))
+   category))
+
+(defun majutsu-jj--completion-payload (args &optional category)
+  "Return jj native completion payload for ARGS.
+ARGS are command-line arguments after the leading jj executable name.
+Prefer the machine-readable `jj util complete' interface when available, and
+fall back to jj's shell completion protocol for older jj versions."
+  (let ((payload (majutsu-jj--machine-completion-payload args category)))
+    (if (eq payload :failed)
+        (majutsu-jj--fish-completion-payload args category)
+      payload)))
+
+(defun majutsu-jj-completion-items (args)
+  "Return jj native completion items for ARGS.
+ARGS are command-line arguments after the leading jj executable name.
+Each returned item is a string or (CANDIDATE . HELP)."
+  (let* ((payload (majutsu-jj--completion-payload args 'majutsu-revision))
+         (annotations (plist-get payload :annotations)))
+    (mapcar (lambda (candidate)
+              (if-let* ((annotation (and annotations (gethash candidate annotations))))
+                  (cons candidate annotation)
+                candidate))
+            (plist-get payload :candidates))))
 
 (defun majutsu-jj--completion-revision-kind-label (kind)
   "Return display label for revision completion KIND."
@@ -275,28 +390,6 @@ ENTRIES and ANNOTATIONS are candidate-indexed hash tables."
             (majutsu-completion-annotation-suffix-function annotations))
     (lambda (candidate)
       (majutsu-jj--completion-suffix category entries annotations candidate))))
-
-(defun majutsu-jj--completion-payload (args &optional category)
-  "Return jj native completion payload for ARGS.
-ARGS are command-line arguments after the leading jj executable name."
-  (let* ((category (or category 'majutsu-revision))
-         (items (majutsu-jj-completion-items args))
-         (annotations (make-hash-table :test #'equal))
-         (entries (make-hash-table :test #'equal))
-         candidates)
-    (dolist (item items)
-      (let ((candidate (if (consp item) (car item) item))
-            (annotation (and (consp item) (cdr item))))
-        (when (and (stringp candidate) (not (string-empty-p candidate)))
-          (push candidate candidates)
-          (when (and (stringp annotation) (not (string-empty-p annotation)))
-            (puthash candidate annotation annotations)))))
-    (list :category category
-          :candidates (nreverse candidates)
-          :annotations annotations
-          :entries entries
-          :annotation-suffix-function
-          (majutsu-jj--completion-suffix-function category entries annotations))))
 
 (defun majutsu-jj--revision-margin-label (entry)
   "Return a fixed-width short kind label for revision completion ENTRY."

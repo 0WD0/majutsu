@@ -97,7 +97,8 @@
   history and completion metadata conventions.
 
 - Native jj completion is richer ::
-  Majutsu completes full revset expressions through native jj completion.
+  Majutsu prefers =jj util complete --format json= when available and
+  completes full revset expressions.
 
 - Structured completion annotations are quieter ::
   Candidate suffixes use Majutsu faces/separators and omit fabricated fallback
