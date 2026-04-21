@@ -102,10 +102,12 @@ WIDTH is the target display width and FACE is applied to the whole column."
       value)))
 
 (defun majutsu-marginalia--annotation (&rest fields)
-  "Join FIELDS into one Marginalia annotation string."
+  "Join FIELDS into one Marginalia annotation string.
+Insert Marginalia's alignment marker before the first separator."
   (let ((fields (delq nil fields)))
     (when fields
-      (concat marginalia-separator
+      (concat (propertize " " 'marginalia--align t)
+              marginalia-separator
               (let ((result (car fields)))
                 (dolist (field (cdr fields))
                   (setq result (concat result marginalia-separator field)))
