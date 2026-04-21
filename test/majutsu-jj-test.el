@@ -358,19 +358,24 @@ This mirrors Magit's behavior."
 
 (ert-deftest majutsu-jj-completion-table/exposes-annotations-and-default ()
   "Native completion tables should expose metadata annotations."
-  (cl-letf (((symbol-function 'majutsu-jj-completion-items)
-             (lambda (args)
-               (should (equal args '("log" "-r" "")))
-               '(("main" . "Main bookmark")))))
-    (let* ((table (majutsu-jj--completion-table '("log" "-r")
-                                                'majutsu-revision
-                                                "@"))
-           (metadata (funcall table "" nil 'metadata))
-           (annotation (cdr (assq 'annotation-function (cdr metadata)))))
-      (should (equal (all-completions "" table) '("@" "main")))
-      (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
-      (should (equal (funcall annotation "main") " Main bookmark"))
-      (should-not (funcall annotation "@")))))
+  (let ((annotations (make-hash-table :test #'equal)))
+    (puthash "main" "Main bookmark" annotations)
+    (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+               (lambda (args category)
+                 (should (equal args '("log" "-r" "")))
+                 (should (eq category 'majutsu-revision))
+                 (list :category 'majutsu-revision
+                       :candidates '("main")
+                       :annotations annotations))))
+      (let* ((table (majutsu-jj--completion-table '("log" "-r")
+                                                  'majutsu-revision
+                                                  "@"))
+             (metadata (funcall table "" nil 'metadata))
+             (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+        (should (equal (all-completions "" table) '("@" "main")))
+        (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
+        (should (equal (funcall annotation "main") " Main bookmark"))
+        (should-not (funcall annotation "@"))))))
 
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
   "Candidate data should preserve source kinds for metadata annotations."
@@ -384,12 +389,16 @@ This mirrors Magit's behavior."
     (let* ((data (majutsu-jj-revset-candidate-data "main"))
            (sources (plist-get data :sources))
            (annotations (plist-get data :annotations))
+           (entries (plist-get data :entries))
            (annotation (majutsu-jj--revset-annotation-function sources)))
       (should (eq (plist-get data :category) 'majutsu-revision))
       (should (equal (funcall annotation "@") "  [pseudo]"))
       (should (equal (funcall annotation "ws-a@") "  [workspace]"))
       (should (equal (funcall annotation "main") "  [bookmark,tag]"))
-      (should (equal (gethash "main" annotations) "  [bookmark,tag]")))))
+      (should (equal (gethash "main" annotations) "  [bookmark,tag]"))
+      (should (equal (plist-get (gethash "main" entries) :kind) 'bookmark))
+      (should (equal (plist-get (gethash "main" entries) :sources)
+                     '(bookmark tag))))))
 
 (ert-deftest majutsu-read-revset/uses-completion-and-allows-free-form ()
   "Revset reader should use completion metadata and allow free-form input."
