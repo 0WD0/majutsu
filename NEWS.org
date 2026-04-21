@@ -19,6 +19,10 @@
   metadata edit/update flags.
 - Commands: Add ~majutsu-simplify-parents~ transient with both =--source=
   and =--revisions= options.
+- Commands: Add Magit-style ad-hoc runners: ~majutsu-command~,
+  ~majutsu-jj-command~, ~majutsu-jj-command-topdir~,
+  ~majutsu-shell-command~, and ~majutsu-shell-command-topdir~.
+  Native Evil integration now binds ~|~ to ~majutsu-jj-command~.
 - File inspection: Add ~majutsu-find-file-other-window~ and
   ~majutsu-find-file-other-frame~ for opening blob buffers in another window
   or frame.

@@ -136,6 +136,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "R") #'majutsu-restore
     (kbd "g r") #'majutsu-refresh
     (kbd "`") #'majutsu-process-buffer
+    (kbd "!") #'majutsu-command
+    (kbd "|") #'majutsu-jj-command
     (kbd "c") #'majutsu-describe
     (kbd "C") #'majutsu-commit
     (kbd "o") #'majutsu-new
