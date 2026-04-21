@@ -134,12 +134,14 @@ DEFAULT is preselected when non-nil."
     (unless (string-empty-p value)
       value)))
 
-(defun majutsu-read-bookmark-patterns (prompt &optional _init-input _history)
-  "Read bookmark name patterns with PROMPT."
-  (let ((default (majutsu-bookmark-at-point)))
+(defun majutsu-read-bookmark-patterns (prompt &optional _init-input _history candidates default)
+  "Read bookmark name patterns with PROMPT.
+CANDIDATES defaults to local bookmark names.  DEFAULT defaults to the
+bookmark(s) at point."
+  (let ((default (or default (majutsu-bookmark-at-point))))
     (seq-filter (lambda (s) (not (string-empty-p s)))
                 (majutsu-completing-read-multiple
-                 prompt (majutsu--get-bookmark-names)
+                 prompt (or candidates (majutsu--get-bookmark-names))
                  nil nil nil 'majutsu-bookmark-pattern-history
                  default 'majutsu-bookmark))))
 
@@ -185,7 +187,10 @@ CANDIDATES defaults to known Git remote names."
   "Track remote bookmark(s)."
   (interactive)
   (let* ((bookmark-patterns (majutsu-read-bookmark-patterns
-                             "Track bookmark name(s)/pattern(s)"))
+                             "Track bookmark name(s)/pattern(s)"
+                             nil nil
+                             (majutsu--bookmark-remote-name-candidates)
+                             nil))
          (remote-patterns (majutsu-read-remote-patterns
                            "Remote(s)/pattern(s) (empty = all)"
                            (majutsu--bookmark-git-remote-candidates))))
@@ -356,7 +361,10 @@ BOOKMARKS are bookmark name patterns (glob/exact/regex/substring).
 REMOTES are remote name patterns passed via repeated `--remote`."
   (interactive
    (list (majutsu-read-bookmark-patterns
-          "Untrack bookmark name(s)/pattern(s)")
+          "Untrack bookmark name(s)/pattern(s)"
+          nil nil
+          (majutsu--bookmark-remote-name-candidates)
+          nil)
          (majutsu-read-remote-patterns
           "Remote(s)/pattern(s) (empty = all)"
           (majutsu--bookmark-git-remote-candidates))))
