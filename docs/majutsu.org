@@ -347,8 +347,14 @@ If you diff =-r A::D | B::E=, there are two heads (D, E) and two roots (A, B). T
 The diff buffer is highly interactive:
 - Key: RET (majutsu-diff-visit-file) :: Visit the appropriate version of the file at point. For working copy diffs, added/context lines visit the workspace file while removed lines visit the parent-side blob. For committed changes, it visits the blob at the corresponding side.
 - Key: C-j / C-<return> (majutsu-diff-visit-workspace-file) :: Visit the workspace file, regardless of diff type. Note: when Evil mode is active, ~C-j~ may be overridden by Evil's section navigation; use ~C-<return>~ instead, which is unaffected.
-- Key: + / - (majutsu-diff-more-context / majutsu-diff-less-context) :: Increase or decrease the amount of context shown.
+- Key: - (majutsu-diff-less-context) :: Decrease the context for diff hunks by COUNT lines.
+- Key: + (majutsu-diff-more-context) :: Increase the context for diff hunks by COUNT lines.
+- Key: 0 (majutsu-diff-default-context) :: Reset the context for diff hunks to the default height.
 - Key: t (majutsu-diff-toggle-refine-hunk) :: Toggle word-level refinement.
+
+When Evil mode is active, Majutsu follows evil-collection's
+conventions for Magit diff buffers: ~+~ still increases context, ~=~
+decreases it, and =~= resets it to the default.
 
 When =--color-words= is enabled, Majutsu renders the old/new line numbers in
 the left margin and uses "..." lines to split hunks.

@@ -164,6 +164,9 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "Y") #'majutsu-duplicate-dwim)
 
   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
+    (kbd "+") #'majutsu-diff-more-context
+    (kbd "=") #'majutsu-diff-less-context
+    (kbd "~") #'majutsu-diff-default-context
     (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
     (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
 

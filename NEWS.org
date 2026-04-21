@@ -51,9 +51,9 @@
   ~[:|arg| body]~ sugar, compile-time lambda application via ~[:call ...]~ /
   ~[[:lambda ...] arg]~, and a dedicated ~majutsu-template-defspecial~ layer
   for syntax-level lowering. Historical higher-order surface forms such as
-  ~:map~, ~:filter~, ~:any~, ~:all~, ~:map-join~, and the anaphoric ~:--map~ family now
-  lower through the same core lambda/method forms instead of relying on
-  separate helper implementations.
+  ~:map~, ~:filter~, ~:any~, ~:all~, ~:map-join~, and the anaphoric ~:--map~
+  family now lower through the same core lambda/method forms instead of
+  relying on separate helper implementations.
 - Start a semantic typing pass in the DSL. Helper arguments now receive basic
   type validation, method chains propagate result types, list operations keep
   track of their element types, and deferred lambda specialization remains
@@ -112,6 +112,8 @@
   and preserve partial conflict resolution by using git-style conflict markers
   that jj can parse as still-unresolved regions. Edited merge sessions now ask
   whether to save on quit, so users can discard edits intentionally.
+- Restore evil-collection-style diff-context bindings in =majutsu-diff-mode=:
+  ~+~ adds context, ~=~ removes context, and =~= resets to the default.
 
 * [0.6.0] - 2026-02-09
 

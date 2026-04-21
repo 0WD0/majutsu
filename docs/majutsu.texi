@@ -870,15 +870,27 @@ Visit the appropriate version of the file at point. For working copy diffs@comma
 @kindex C-j / C-<return>
 @findex majutsu-diff-visit-workspace-file
 Visit the workspace file@comma{} regardless of diff type. Note: when Evil mode is active@comma{} @code{C-j} may be overridden by Evil's section navigation; use @code{C-<return>} instead@comma{} which is unaffected.
-@item @kbd{+ / -} (@code{majutsu-diff-more-context / majutsu-diff-less-context})
-@kindex + / -
-@findex majutsu-diff-more-context / majutsu-diff-less-context
-Increase or decrease the amount of context shown.
+@item @kbd{-} (@code{majutsu-diff-less-context})
+@kindex -
+@findex majutsu-diff-less-context
+Decrease the context for diff hunks by COUNT lines.
+@item @kbd{+} (@code{majutsu-diff-more-context})
+@kindex +
+@findex majutsu-diff-more-context
+Increase the context for diff hunks by COUNT lines.
+@item @kbd{0} (@code{majutsu-diff-default-context})
+@kindex 0
+@findex majutsu-diff-default-context
+Reset the context for diff hunks to the default height.
 @item @kbd{t} (@code{majutsu-diff-toggle-refine-hunk})
 @kindex t
 @findex majutsu-diff-toggle-refine-hunk
 Toggle word-level refinement.
 @end table
+
+When Evil mode is active@comma{} Majutsu follows evil-collection's
+conventions for Magit diff buffers: @code{+} still increases context@comma{} @code{=}
+decreases it@comma{} and @samp{~} resets it to the default.
 
 When @samp{--color-words} is enabled@comma{} Majutsu renders the old/new line numbers in
 the left margin and uses "@dots{}" lines to split hunks.
