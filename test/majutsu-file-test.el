@@ -137,6 +137,7 @@
              (entries (plist-get payload :entries))
              (a (gethash "src/a.el" entries))
              (new (gethash "src/new.el" entries)))
+        (should (eq (plist-get payload :category) 'majutsu-file))
         (should (equal (plist-get payload :candidates) '("src/a.el" "src/new.el")))
         (should (equal (plist-get a :file-type) "file"))
         (should (plist-get a :executable))
@@ -152,7 +153,8 @@
                  '("src/a.el" "src/b.el")))
               ((symbol-function 'majutsu-file-candidate-data)
                (lambda (_revset _root candidates)
-                 (list :candidates candidates
+                 (list :category 'majutsu-file
+                       :candidates candidates
                        :entries (make-hash-table :test #'equal))))
               ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
                (lambda (&rest args)
@@ -179,7 +181,8 @@
                  "/tmp/repo"))
               ((symbol-function 'majutsu-file-candidate-data)
                (lambda (_revset _root candidates)
-                 (list :candidates candidates
+                 (list :category 'majutsu-file
+                       :candidates candidates
                        :entries (make-hash-table :test #'equal))))
               ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
                (lambda (&rest args)

@@ -233,9 +233,19 @@ when non-empty and missing from jj's candidates, is added first."
              (labels (mapcar #'majutsu-jj--revset-source-label (append ordered extra))))
         (format "  [%s]" (string-join labels ","))))))
 
+(defun majutsu-jj--revset-annotations (sources candidates)
+  "Return annotation hash for revset CANDIDATES from SOURCES."
+  (let ((annotations (make-hash-table :test #'equal))
+        (annotation (majutsu-jj--revset-annotation-function sources)))
+    (dolist (candidate candidates)
+      (when-let* ((value (funcall annotation candidate)))
+        (puthash candidate value annotations)))
+    annotations))
+
 (defun majutsu-jj-revset-candidate-data (&optional default)
-  "Return revset completion data.
-The return value is a plist with keys :candidates and :sources."
+  "Return revset completion payload.
+The return value is a plist with keys :category, :candidates,
+:annotations, and :sources."
   (let* ((sources (make-hash-table :test #'equal))
          (ordered nil)
          (workspaces (majutsu-jj--safe-lines "workspace" "list" "-T" "name ++ \"\\n\""))
@@ -257,7 +267,9 @@ The return value is a plist with keys :candidates and :sources."
     (let ((candidates (if (and default (not (string-empty-p default)))
                           (cons default (delete default ordered))
                         ordered)))
-      (list :candidates candidates
+      (list :category 'majutsu-revision
+            :candidates candidates
+            :annotations (majutsu-jj--revset-annotations sources candidates)
             :sources sources))))
 
 (defun majutsu-jj-revset-candidates (&optional default)
@@ -270,17 +282,9 @@ DEFAULT, when non-nil, is inserted first so users can accept it quickly."
 (defun majutsu-jj--revset-completion-table (&optional default)
   "Return a completion table for revset input.
 DEFAULT is inserted first in the candidate list when non-nil."
-  (let* ((data (majutsu-jj-revset-candidate-data default))
-         (candidates (plist-get data :candidates))
-         (sources (plist-get data :sources))
-         (annotation (majutsu-jj--revset-annotation-function sources)))
-    (lambda (string pred action)
-      (if (eq action 'metadata)
-          `(metadata
-            (display-sort-function . identity)
-            (category . majutsu-revision)
-            (annotation-function . ,annotation))
-        (complete-with-action action candidates string pred)))))
+  (majutsu-completion-payload-table
+   (majutsu-jj-revset-candidate-data default)
+   'majutsu-revision default))
 
 (defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.
