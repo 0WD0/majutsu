@@ -37,6 +37,28 @@
         (should (equal (majutsu-marginalia--cached-annotation 'majutsu-tag "v1.0")
                        "  repo-b tag"))))))
 
+(ert-deftest majutsu-marginalia-annotate-revision/uses-structured-entry ()
+  (let ((marginalia-separator "  ")
+        (default-directory "/tmp/repo/")
+        (majutsu-marginalia--payload-cache (make-hash-table :test #'equal)))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "main"
+               '(:kind bookmark :sources (bookmark tag)
+                 :tag "--revisions <REVSETS>"
+                 :id "rev-main"
+                 :help "Main branch")
+               entries)
+      (majutsu-marginalia-prewarm-candidate-data
+       'majutsu-revision (list :entries entries) nil default-directory)
+      (let ((annotation (majutsu-marginalia-annotate-revision "main")))
+        (should (string-match-p "bookmark" annotation))
+        (should (string-match-p "bookmark,tag" annotation))
+        (should (string-match-p "--revisions <REVSETS>" annotation))
+        (should (string-match-p "rev-main" annotation))
+        (should (string-match-p "Main branch" annotation))
+        (should (text-property-any 0 (length annotation)
+                                   'marginalia--align t annotation))))))
+
 (ert-deftest majutsu-marginalia-annotate-revision/prefers-original-annotation ()
   (let ((marginalia-separator "  ")
         (marginalia--metadata 'dummy))

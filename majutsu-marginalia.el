@@ -146,10 +146,53 @@ Insert Marginalia's alignment marker before the first separator."
   (ignore-errors
     (majutsu-toplevel (majutsu-marginalia--minibuffer-default-directory))))
 
+(defun majutsu-marginalia--revision-kind-label (kind)
+  "Return display label for revision completion KIND."
+  (pcase kind
+    ('bookmark "bookmark")
+    ('remote-bookmark "remote bookmark")
+    ('tag "tag")
+    ('workspace "workspace")
+    ('pseudo "pseudo")
+    ('change-id "change")
+    ('revset-alias "alias")
+    ((pred stringp) kind)
+    (_ nil)))
+
+(defun majutsu-marginalia--revision-sources-label (entry)
+  "Return source label string for revision completion ENTRY."
+  (when-let* ((sources (plist-get entry :sources)))
+    (let* ((labels (delq nil (mapcar #'majutsu-marginalia--revision-kind-label sources)))
+           (kind (majutsu-marginalia--revision-kind-label (plist-get entry :kind))))
+      (unless (or (null labels)
+                  (and (= (length labels) 1)
+                       (equal (car labels) kind)))
+        (string-join labels ",")))))
+
 (defun majutsu-marginalia-annotate-revision (cand)
   "Annotate revision candidate CAND."
-  (or (majutsu-marginalia--orig-annotation cand)
-      (majutsu-marginalia--label "revset" 'marginalia-key)))
+  (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-revision cand)))
+      (majutsu-marginalia--annotation
+       (majutsu-marginalia--column
+        (or (majutsu-marginalia--revision-kind-label (plist-get entry :kind))
+            "revset")
+        15 'marginalia-key)
+       (majutsu-marginalia--column
+        (majutsu-marginalia--revision-sources-label entry)
+        16 'marginalia-type)
+       (majutsu-marginalia--column
+        (plist-get entry :tag)
+        24 'marginalia-documentation)
+       (majutsu-marginalia--column
+        (plist-get entry :id)
+        14 'marginalia-number)
+       (majutsu-marginalia--field
+        (or (plist-get entry :help)
+            (and (not (plist-get entry :hidden))
+                 (majutsu-marginalia--orig-annotation cand)))
+        'marginalia-documentation))
+    (or (majutsu-marginalia--orig-annotation cand)
+        (majutsu-marginalia--label "revset" 'marginalia-key))))
 
 (defun majutsu-marginalia-annotate-bookmark (cand)
   "Annotate bookmark candidate CAND."
