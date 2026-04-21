@@ -90,6 +90,17 @@ used to scope cached payloads to the current repository context."
         (propertize (format "%s" text) 'face face)
       (format "%s" text))))
 
+(defun majutsu-marginalia--column (text width &optional face)
+  "Return TEXT as a fixed-width annotation column.
+WIDTH is the target display width and FACE is applied to the whole column."
+  (let* ((raw (format "%s" (or text "")))
+         (truncated (truncate-string-to-width raw width 0 ?\s "…"))
+         (padding (max 0 (- width (string-width truncated))))
+         (value (concat truncated (make-string padding ?\s))))
+    (if face
+        (propertize value 'face face)
+      value)))
+
 (defun majutsu-marginalia--annotation (&rest fields)
   "Join FIELDS into one Marginalia annotation string."
   (let ((fields (delq nil fields)))
@@ -142,18 +153,24 @@ used to scope cached payloads to the current repository context."
   "Annotate bookmark candidate CAND."
   (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-bookmark cand)))
       (majutsu-marginalia--annotation
-       (majutsu-marginalia--field "bookmark" 'marginalia-key)
-       (majutsu-marginalia--field
+       (majutsu-marginalia--column "bookmark" 9 'marginalia-key)
+       (majutsu-marginalia--column
         (if (plist-get entry :local) "local" "remote only")
-        'marginalia-type)
-       (when (plist-get entry :synced)
-         (majutsu-marginalia--field "synced" 'success))
-       (when (plist-get entry :conflict)
-         (majutsu-marginalia--field "conflicted" 'warning))
-       (majutsu-marginalia--bookmark-remote-field
-        "tracked" (plist-get entry :tracked-remotes) 'success)
-       (majutsu-marginalia--bookmark-remote-field
-        "untracked" (plist-get entry :untracked-remotes) 'marginalia-documentation))
+        11 'marginalia-type)
+       (majutsu-marginalia--column
+        (and (plist-get entry :synced) "synced")
+        8 'success)
+       (majutsu-marginalia--column
+        (and (plist-get entry :conflict) "conflicted")
+        10 'warning)
+       (majutsu-marginalia--column
+        (majutsu-marginalia--bookmark-remote-field
+         "tracked" (plist-get entry :tracked-remotes) nil)
+        22 'success)
+       (majutsu-marginalia--column
+        (majutsu-marginalia--bookmark-remote-field
+         "untracked" (plist-get entry :untracked-remotes) nil)
+        22 'marginalia-documentation))
     (or (majutsu-marginalia--cached-annotation 'majutsu-bookmark cand)
         (majutsu-marginalia--label "bookmark" 'marginalia-key))))
 
@@ -168,27 +185,33 @@ used to scope cached payloads to the current repository context."
       (let ((fetch (plist-get entry :fetch-url))
             (push (plist-get entry :push-url)))
         (majutsu-marginalia--annotation
-         (majutsu-marginalia--field "git remote" 'marginalia-key)
-         (majutsu-marginalia--field fetch 'marginalia-file-name)
-         (when (and push (not (equal push fetch)))
-           (majutsu-marginalia--field (format "push:%s" push)
-                                      'marginalia-documentation))))
+         (majutsu-marginalia--column "git remote" 10 'marginalia-key)
+         (majutsu-marginalia--column fetch 28 'marginalia-file-name)
+         (majutsu-marginalia--field
+          (and push (not (equal push fetch))
+               (format "push:%s" push))
+          'marginalia-documentation)))
     (majutsu-marginalia--label "git remote" 'marginalia-key)))
 
 (defun majutsu-marginalia-annotate-workspace (cand)
   "Annotate workspace candidate CAND."
   (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-workspace cand)))
       (majutsu-marginalia--annotation
-       (majutsu-marginalia--field
+       (majutsu-marginalia--column
         (if (plist-get entry :current) "current" "workspace")
-        (if (plist-get entry :current) 'success 'marginalia-key))
-       (when-let* ((root (plist-get entry :root)))
-         (majutsu-marginalia--field (abbreviate-file-name root) 'marginalia-file-name))
-       (when-let* ((change-id (plist-get entry :change-id)))
-         (majutsu-marginalia--field change-id 'marginalia-number))
-       (when-let* ((desc (plist-get entry :desc))
-                   ((not (string-empty-p desc))))
-         (majutsu-marginalia--field desc 'marginalia-documentation)))
+        10 (if (plist-get entry :current) 'success 'marginalia-key))
+       (majutsu-marginalia--column
+        (when-let* ((root (plist-get entry :root)))
+          (abbreviate-file-name root))
+        28 'marginalia-file-name)
+       (majutsu-marginalia--column
+        (plist-get entry :change-id)
+        8 'marginalia-number)
+       (majutsu-marginalia--field
+        (when-let* ((desc (plist-get entry :desc))
+                    ((not (string-empty-p desc))))
+          desc)
+        'marginalia-documentation))
     (let ((current (ignore-errors
                      (majutsu-workspace-current-name
                       (majutsu-marginalia--minibuffer-default-directory)))))
