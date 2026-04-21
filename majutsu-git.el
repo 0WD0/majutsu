@@ -231,7 +231,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :shortarg "-b"
   :argument "--bookmark="
   :multi-value 'repeat
-  :reader #'majutsu-read-bookmarks)
+  :reader #'majutsu-read-bookmark-patterns)
 
 ;;; Git Transients
 
