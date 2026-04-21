@@ -66,6 +66,7 @@ afterward."
   "g"   'majutsu-refresh
   "q"   'majutsu-mode-bury-buffer
   "$"   'majutsu-process-buffer
+  "!"   'majutsu-command
   "l"   'majutsu-log-transient
   "?"   'majutsu-dispatch
   "c"   'majutsu-describe
@@ -88,6 +89,11 @@ afterward."
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo
   "R"   'majutsu-restore
+  "<remap> <magit-run>" #'majutsu-command
+  "<remap> <magit-git-command>" #'majutsu-jj-command
+  "<remap> <magit-git-command-topdir>" #'majutsu-jj-command-topdir
+  "<remap> <magit-shell-command>" #'majutsu-shell-command
+  "<remap> <magit-shell-command-topdir>" #'majutsu-shell-command-topdir
   "<remap> <magit-section-show>" #'majutsu-section-show
   "<remap> <magit-section-hide>" #'majutsu-section-hide
   "<remap> <magit-section-toggle>" #'majutsu-section-toggle
