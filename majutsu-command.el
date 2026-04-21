@@ -70,6 +70,37 @@ operators are left for the shell runner."
           (cdr argv))
       (error nil))))
 
+(defun majutsu--jj-command-args (command)
+  "Return jj arguments parsed from COMMAND.
+COMMAND may start with the jj executable name, but it does not have to.
+Signal a user error if COMMAND is empty or uses shell syntax."
+  (setq command (string-trim (or command "")))
+  (when (string-empty-p command)
+    (user-error "Need non-empty input"))
+  (when (majutsu--shell-command-needs-shell-p command)
+    (user-error "Shell syntax is not supported here; use `majutsu-shell-command'"))
+  (let* ((argv (condition-case nil
+                   (split-string-shell-command command)
+                 (error
+                  (user-error "Failed to parse command: %s" command))))
+         (program (car argv))
+         (jj (majutsu-jj--executable)))
+    (cond
+     ((null argv)
+      (user-error "Need non-empty input"))
+     ((string= (majutsu--command-program-name program)
+               (majutsu--command-program-name jj))
+      (or (cdr argv)
+          (user-error "Need jj subcommand")))
+     (t argv))))
+
+(defun majutsu--start-jj-command (command)
+  "Start jj COMMAND asynchronously and return the process."
+  (apply #'majutsu-start-process
+         (majutsu-jj--executable)
+         nil
+         (majutsu-process-jj-arguments (majutsu--jj-command-args command))))
+
 (defun majutsu--start-shell-command (command)
   "Start COMMAND asynchronously and return the process.
 Plain `jj ...' commands are started directly using Majutsu's jj process
@@ -106,6 +137,16 @@ workspace root.  INITIAL-INPUT is inserted into the minibuffer."
     (majutsu-process-buffer)
     process))
 
+(defun majutsu--run-jj-command (command &optional directory)
+  "Execute jj COMMAND asynchronously in DIRECTORY and display output."
+  (let ((default-directory (or directory default-directory))
+        process)
+    (with-connection-local-variables
+      (majutsu-with-editor
+        (setq process (majutsu--start-jj-command command))))
+    (majutsu-process-buffer)
+    process))
+
 ;;;###autoload
 (defun majutsu-jj-command (command)
   "Execute COMMAND asynchronously; display output.
@@ -116,7 +157,7 @@ initial input, but can be deleted to run another command.
 With a prefix argument COMMAND is run in the workspace root, otherwise
 in `default-directory'."
   (interactive (list (majutsu-read-shell-command nil "jj ")))
-  (majutsu--shell-command command (majutsu--shell-command-directory)))
+  (majutsu--run-jj-command command (majutsu--shell-command-directory)))
 
 ;;;###autoload
 (defun majutsu-jj-command-topdir (command)
@@ -125,7 +166,7 @@ in `default-directory'."
 Interactively, prompt for COMMAND in the minibuffer.  `jj ' is used as
 initial input, but can be deleted to run another command."
   (interactive (list (majutsu-read-shell-command t "jj ")))
-  (majutsu--shell-command command (majutsu--shell-command-directory t)))
+  (majutsu--run-jj-command command (majutsu--shell-command-directory t)))
 
 ;;;###autoload
 (defun majutsu-shell-command (command)
