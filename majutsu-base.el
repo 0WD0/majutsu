@@ -25,6 +25,7 @@
 (require 'subr-x)
 (require 'eieio)
 (require 'magit-section)
+(require 'majutsu-completion)
 
 (declare-function majutsu-save-window-configuration "majutsu-mode" ())
 
@@ -190,12 +191,7 @@ end with a question mark and space."
 (defun majutsu--make-completion-table (candidates &optional category)
   "Wrap CANDIDATES in a completion table.
 When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
-  (let ((metadata `(metadata (display-sort-function . identity)
-                    ,@(and category `((category . ,category))))))
-    (lambda (string pred action)
-      (if (eq action 'metadata)
-          metadata
-        (complete-with-action action candidates string pred)))))
+  (majutsu-completion-table candidates category))
 
 (defun majutsu-completing-read (prompt collection &optional predicate require-match
                                        initial-input hist def category)
