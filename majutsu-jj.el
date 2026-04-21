@@ -306,9 +306,6 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
        (to (cons "@-" to))
        (t (cons "@-" "@"))))))
 
-(defvar majutsu-file-path-history nil
-  "Minibuffer history for repo-relative file path prompts.")
-
 (defun majutsu-jj-read-diff-file (from to)
   "Read file to compare between FROM and TO revisions."
   (unless (and from to)
