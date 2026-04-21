@@ -32,7 +32,7 @@
 (declare-function majutsu-workspace-current-name "majutsu-workspace" (&optional directory))
 
 (defvar majutsu-marginalia--payload-cache (make-hash-table :test #'equal)
-  "Cache of prewarmed candidate payloads keyed by category and directory.")
+  "Cache of prewarmed candidate payloads keyed by category, directory, and context.")
 
 (defun majutsu-marginalia--normalize-directory (directory)
   "Return DIRECTORY as a normalized directory name, if possible."
@@ -41,26 +41,42 @@
         (file-name-as-directory (expand-file-name directory))
       (error directory))))
 
-(defun majutsu-marginalia--cache-key (category &optional directory)
-  "Return the payload-cache key for CATEGORY in DIRECTORY."
-  (list category (majutsu-marginalia--normalize-directory directory)))
+(defun majutsu-marginalia--cache-key (category &optional directory context)
+  "Return the payload-cache key for CATEGORY in DIRECTORY and CONTEXT."
+  (list category (majutsu-marginalia--normalize-directory directory) context))
 
-(defun majutsu-marginalia-prewarm-candidate-data (category payload &optional _context directory)
+(defun majutsu-marginalia-prewarm-candidate-data (category payload &optional context directory)
   "Cache completion PAYLOAD for Marginalia CATEGORY.
 
-CONTEXT is accepted for API compatibility with Majutsu callers.  DIRECTORY is
-used to scope cached payloads to the current repository context."
-  (puthash (majutsu-marginalia--cache-key category directory)
+CONTEXT is the minibuffer input that produced PAYLOAD.  DIRECTORY scopes cached
+payloads to the current repository context.  Dynamic payloads with non-nil
+CONTEXT are kept context-specific so revset expression completions do not
+overwrite each other while the user edits the minibuffer."
+  (puthash (majutsu-marginalia--cache-key category directory context)
            payload majutsu-marginalia--payload-cache)
-  (puthash category payload majutsu-marginalia--payload-cache))
+  (unless context
+    (puthash category payload majutsu-marginalia--payload-cache)))
+
+(defun majutsu-marginalia--minibuffer-context ()
+  "Return active minibuffer input, or nil outside a minibuffer."
+  (cond
+   ((minibufferp (current-buffer))
+    (minibuffer-contents-no-properties))
+   ((when-let* ((win (active-minibuffer-window)))
+      (with-current-buffer (window-buffer win)
+        (when (minibufferp (current-buffer))
+          (minibuffer-contents-no-properties)))))))
 
 (defun majutsu-marginalia--cached-payload (category)
   "Return cached payload for CATEGORY in the current minibuffer context."
-  (or (gethash (majutsu-marginalia--cache-key
-                category
-                (majutsu-marginalia--minibuffer-default-directory))
-               majutsu-marginalia--payload-cache)
-      (gethash category majutsu-marginalia--payload-cache)))
+  (let ((directory (majutsu-marginalia--minibuffer-default-directory))
+        (context (majutsu-marginalia--minibuffer-context)))
+    (or (and context
+             (gethash (majutsu-marginalia--cache-key category directory context)
+                      majutsu-marginalia--payload-cache))
+        (gethash (majutsu-marginalia--cache-key category directory)
+                 majutsu-marginalia--payload-cache)
+        (gethash category majutsu-marginalia--payload-cache))))
 
 (defun majutsu-marginalia--cached-entry (category cand)
   "Return cached structured entry for CAND in CATEGORY, if any."
