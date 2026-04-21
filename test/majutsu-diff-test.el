@@ -112,6 +112,40 @@
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
+(ert-deftest majutsu-diff-transient-revset-completion-args/use-current-command-context ()
+  "Transient revset readers should complete in the matching jj context."
+  (let ((transient-current-command 'majutsu-diff)
+        (this-command 'majutsu-diff:--from))
+    (should (equal (majutsu-diff--transient-revset-completion-args)
+                   '("diff" "--from"))))
+  (let ((transient-current-command 'majutsu-rebase)
+        (this-command 'majutsu-rebase:--after))
+    (should (equal (majutsu-diff--transient-revset-completion-args)
+                   '("rebase" "--insert-after"))))
+  (let ((transient-current-command 'majutsu-new)
+        (this-command 'majutsu-new:-r))
+    (should (equal (majutsu-diff--transient-revset-completion-args)
+                   '("new" "-r")))))
+
+(ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
+  "Transient revset reader should pass native jj completion context."
+  (let ((transient-current-command 'majutsu-restore)
+        (this-command 'majutsu-restore:--changes-in)
+        current-prefix-arg
+        seen-default
+        seen-completion-args)
+    (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
+               (lambda () "@"))
+              ((symbol-function 'majutsu-read-revset)
+               (lambda (_prompt default completion-args)
+                 (setq seen-default default
+                       seen-completion-args completion-args)
+                 "main")))
+      (should (equal (majutsu-diff--transient-read-revset "Changes in: " nil nil)
+                     "main"))
+      (should (equal seen-default "@"))
+      (should (equal seen-completion-args '("restore" "--changes-in"))))))
+
 (ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
   "`majutsu-diff-revset' should use default formatting args when ARGS is nil."
   (let (captured-args

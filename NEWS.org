@@ -25,6 +25,9 @@
   ~majutsu-mode-map~ now binds =!= to ~majutsu-command~, =Q= and =:= to
   ~majutsu-jj-command~.  Native Evil integration binds ~|~ to
   ~majutsu-jj-command~.
+- Transients: Revset arguments now use jj-native completion in command
+  context, so menus such as diff/rebase/restore/new complete the same
+  revision candidates as the jj CLI.
 - File inspection: Add ~majutsu-find-file-other-window~ and
   ~majutsu-find-file-other-frame~ for opening blob buffers in another window
   or frame.

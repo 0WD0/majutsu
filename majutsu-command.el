@@ -36,6 +36,15 @@ This affects `majutsu-jj-command', `majutsu-jj-command-topdir',
 (defvar majutsu-jj-command-history nil)
 (defvar majutsu-shell-command-history nil)
 
+(defvar majutsu-read-jj-command-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "TAB") #'majutsu-jj-command-complete)
+    (define-key map (kbd "<tab>") #'majutsu-jj-command-complete)
+    (define-key map [remap completion-at-point]
+                #'majutsu-jj-command-complete)
+    (make-composed-keymap map minibuffer-local-shell-command-map))
+  "Keymap used while reading jj commands.")
+
 (defun majutsu--shell-command-directory (&optional topdir)
   "Return directory used for ad-hoc command runners.
 When TOPDIR or `current-prefix-arg' is non-nil, use the current
@@ -107,6 +116,81 @@ Signal a user error if COMMAND is empty or uses shell syntax."
          nil
          (majutsu-process-jj-arguments (majutsu--jj-command-args command))))
 
+(defun majutsu--jj-completion-argv (command)
+  "Return argv to pass to jj's completion engine for COMMAND.
+COMMAND is the minibuffer text before point.  Preserve an empty trailing
+argument when completion happens after whitespace."
+  (let* ((ends-in-space (or (string-empty-p command)
+                            (string-match-p "[ 	]\'" command)))
+         (argv (condition-case nil
+                   (split-string-shell-command command)
+                 (error nil)))
+         (jj (majutsu-jj--executable)))
+    (when (and argv
+               (string= (majutsu--command-program-name (car argv))
+                        (majutsu--command-program-name jj)))
+      (setq argv (cdr argv)))
+    (when ends-in-space
+      (setq argv (append argv '(""))))
+    argv))
+
+(defun majutsu--jj-completion-parse-line (line)
+  "Parse one fish completion LINE from jj.
+Return (CANDIDATE . HELP)."
+  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
+    (cons (match-string 1 line)
+          (match-string 2 line))))
+
+(defun majutsu--jj-completion-items (command)
+  "Return completion items for COMMAND using jj's native completer.
+Each item is (CANDIDATE . HELP)."
+  (let ((argv (majutsu--jj-completion-argv command)))
+    (condition-case nil
+        (with-temp-buffer
+          (let* ((process-environment (cons "COMPLETE=fish" process-environment))
+                 (exit (apply #'majutsu-process-file
+                              (majutsu-jj--executable)
+                              nil t nil
+                              (append '("--" "jj") argv))))
+            (when (zerop exit)
+              (delq nil
+                    (mapcar #'majutsu--jj-completion-parse-line
+                            (split-string (buffer-string) "\n" t))))))
+      (error nil))))
+
+(defun majutsu--jj-completion-table (items)
+  "Return a completion table for completion ITEMS.
+ITEMS is a list of (CANDIDATE . HELP)."
+  (let ((candidates (mapcar #'car items))
+        (annotations (make-hash-table :test #'equal)))
+    (dolist (item items)
+      (when (cdr item)
+        (puthash (car item) (concat " " (cdr item)) annotations)))
+    (lambda (string predicate action)
+      (if (eq action 'metadata)
+          `(metadata
+            (annotation-function
+             . ,(lambda (candidate)
+                  (gethash candidate annotations))))
+        (complete-with-action action candidates string predicate)))))
+
+(defun majutsu--jj-command-completion-bounds ()
+  "Return minibuffer token bounds for jj command completion."
+  (let ((end (point)))
+    (save-excursion
+      (skip-chars-backward "^ 	\n" (minibuffer-prompt-end))
+      (cons (point) end))))
+
+(defun majutsu-jj-command-complete ()
+  "Complete the jj command at point using jj's native completer."
+  (interactive)
+  (let* ((input (buffer-substring-no-properties (minibuffer-prompt-end) (point)))
+         (items (majutsu--jj-completion-items input)))
+    (if items
+        (pcase-let ((`(,beg . ,end) (majutsu--jj-command-completion-bounds)))
+          (completion-in-region beg end (majutsu--jj-completion-table items)))
+      (minibuffer-message "No jj completions"))))
+
 (defun majutsu--start-shell-command (command)
   "Start COMMAND asynchronously and return the process.
 Plain `jj ...' commands are started directly using Majutsu's jj process
@@ -123,12 +207,14 @@ helpers.  Other commands are run through `shell-file-name'."
 When TOPDIR or `current-prefix-arg' is non-nil, prompt relative to the
 workspace root.  The leading `jj' executable name is optional."
   (let ((default-directory (majutsu--shell-command-directory topdir)))
-    (read-shell-command (if majutsu-shell-command-verbose-prompt
-                            (format "Async jj command in %s: "
-                                    (abbreviate-file-name default-directory))
-                          "Async jj command: ")
-                        nil
-                        'majutsu-jj-command-history)))
+    (read-from-minibuffer (if majutsu-shell-command-verbose-prompt
+                              (format "Async jj command in %s: "
+                                      (abbreviate-file-name default-directory))
+                            "Async jj command: ")
+                          nil
+                          majutsu-read-jj-command-map
+                          nil
+                          'majutsu-jj-command-history)))
 
 (defun majutsu-read-shell-command (&optional topdir initial-input)
   "Read a shell command for Majutsu runners.
