@@ -1,0 +1,87 @@
+;;; majutsu-command-test.el --- Tests for ad-hoc command runners  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026 0WD0
+
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;;; Commentary:
+
+;; Tests for Magit-style command runner compatibility.
+
+;;; Code:
+
+(require 'ert)
+(require 'cl-lib)
+(require 'majutsu-command)
+(require 'majutsu-mode)
+
+(ert-deftest majutsu-command-test-shell-command-jj-args-parses-plain-jj ()
+  "Plain jj commands should be parsed into argv for direct execution."
+  (let ((majutsu-jj-executable "/usr/bin/jj"))
+    (should (equal (majutsu--shell-command-jj-args "jj status -r @")
+                   '("status" "-r" "@")))
+    (should (equal (majutsu--shell-command-jj-args "JJ.exe log -r 'all()'")
+                   '("log" "-r" "all()")))))
+
+(ert-deftest majutsu-command-test-shell-command-jj-args-rejects-shell-syntax ()
+  "Commands using shell operators should stay on the shell path."
+  (let ((majutsu-jj-executable "jj"))
+    (should-not (majutsu--shell-command-jj-args "jj status | sed -n 1p"))
+    (should-not (majutsu--shell-command-jj-args "echo hi && jj status"))))
+
+(ert-deftest majutsu-command-test-jj-command-args-accepts-bare-subcommands ()
+  "JJ command prompts should accept input with or without leading jj."
+  (let ((majutsu-jj-executable "/usr/bin/jj"))
+    (should (equal (majutsu--jj-command-args "jj log") '("log")))
+    (should (equal (majutsu--jj-command-args "jj jj log") '("log")))
+    (should (equal (majutsu--jj-command-args "log -r @") '("log" "-r" "@")))))
+
+(ert-deftest majutsu-command-test-jj-command-args-rejects-shell-syntax ()
+  "JJ command prompts should not fall back to the shell."
+  (should-error (majutsu--jj-command-args "jj log | head") :type 'user-error))
+
+(ert-deftest majutsu-command-test-start-jj-command-runs-jj-directly ()
+  "JJ commands should use Majutsu's process helpers directly."
+  (let ((majutsu-jj-executable "/usr/bin/jj")
+        call)
+    (cl-letf (((symbol-function 'majutsu-process-jj-arguments)
+               (lambda (args)
+                 (append '("--no-pager" "--color=always") args)))
+              ((symbol-function 'majutsu-start-process)
+               (lambda (&rest args)
+                 (setq call args)
+                 'process)))
+      (should (eq (majutsu--start-jj-command "jj log") 'process))
+      (should (equal call
+                     '("/usr/bin/jj" nil "--no-pager" "--color=always" "log"))))))
+
+(ert-deftest majutsu-command-test-start-shell-command-runs-jj-directly ()
+  "Plain jj commands should use Majutsu's process helpers directly."
+  (let ((majutsu-jj-executable "/usr/bin/jj")
+        call)
+    (cl-letf (((symbol-function 'majutsu-process-jj-arguments)
+               (lambda (args)
+                 (append '("--no-pager" "--color=always") args)))
+              ((symbol-function 'majutsu-start-process)
+               (lambda (&rest args)
+                 (setq call args)
+                 'process)))
+      (should (eq (majutsu--start-shell-command "jj st") 'process))
+      (should (equal call
+                     '("/usr/bin/jj" nil "--no-pager" "--color=always" "st"))))))
+
+(ert-deftest majutsu-command-test-start-shell-command-runs-other-commands-via-shell ()
+  "Non-jj commands should be executed through the shell."
+  (let ((shell-file-name "/bin/sh")
+        (shell-command-switch "-c")
+        call)
+    (cl-letf (((symbol-function 'majutsu-start-process)
+               (lambda (&rest args)
+                 (setq call args)
+                 'process)))
+      (should (eq (majutsu--start-shell-command "printf test") 'process))
+      (should (equal call
+                     '("/bin/sh" nil "-c" "printf test"))))))
+
+(provide 'majutsu-command-test)
+;;; majutsu-command-test.el ends here

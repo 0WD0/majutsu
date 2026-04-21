@@ -49,6 +49,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("e" "Edit change"       majutsu-edit-changeset)
     ("E" "Ediff"             majutsu-ediff)]
    [("G" "Git"               majutsu-git-transient)
+    ("!" "Run"               majutsu-command)
     ("l" "Log options"       majutsu-log-transient)
     ("o" "New"               majutsu-new)
     ("O" "New (dwim)"        majutsu-new-dwim)
@@ -88,6 +89,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)
   (require 'majutsu-git)
+  (require 'majutsu-command)
   (require 'majutsu-interactive)
   (require 'majutsu-file)
   (require 'majutsu-annotate)

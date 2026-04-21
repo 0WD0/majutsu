@@ -66,6 +66,9 @@ afterward."
   "g"   'majutsu-refresh
   "q"   'majutsu-mode-bury-buffer
   "$"   'majutsu-process-buffer
+  "!"   'majutsu-command
+  "Q"   'majutsu-jj-command
+  ":"   'majutsu-jj-command
   "l"   'majutsu-log-transient
   "?"   'majutsu-dispatch
   "c"   'majutsu-describe
