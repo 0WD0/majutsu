@@ -19,6 +19,7 @@
 ;;; Code:
 
 (require 'majutsu-core)
+(require 'majutsu-completion)
 
 (require 'subr-x)
 
@@ -134,45 +135,15 @@ argument when completion happens after whitespace."
       (setq argv (append argv '(""))))
     argv))
 
-(defun majutsu--jj-completion-parse-line (line)
-  "Parse one fish completion LINE from jj.
-Return (CANDIDATE . HELP)."
-  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
-    (cons (match-string 1 line)
-          (match-string 2 line))))
-
 (defun majutsu--jj-completion-items (command)
   "Return completion items for COMMAND using jj's native completer.
 Each item is (CANDIDATE . HELP)."
-  (let ((argv (majutsu--jj-completion-argv command)))
-    (condition-case nil
-        (with-temp-buffer
-          (let* ((process-environment (cons "COMPLETE=fish" process-environment))
-                 (exit (apply #'majutsu-process-file
-                              (majutsu-jj--executable)
-                              nil t nil
-                              (append '("--" "jj") argv))))
-            (when (zerop exit)
-              (delq nil
-                    (mapcar #'majutsu--jj-completion-parse-line
-                            (split-string (buffer-string) "\n" t))))))
-      (error nil))))
+  (majutsu-jj-completion-items (majutsu--jj-completion-argv command)))
 
 (defun majutsu--jj-completion-table (items)
   "Return a completion table for completion ITEMS.
 ITEMS is a list of (CANDIDATE . HELP)."
-  (let ((candidates (mapcar #'car items))
-        (annotations (make-hash-table :test #'equal)))
-    (dolist (item items)
-      (when (cdr item)
-        (puthash (car item) (concat " " (cdr item)) annotations)))
-    (lambda (string predicate action)
-      (if (eq action 'metadata)
-          `(metadata
-            (annotation-function
-             . ,(lambda (candidate)
-                  (gethash candidate annotations))))
-        (complete-with-action action candidates string predicate)))))
+  (majutsu-completion-table items))
 
 (defun majutsu--jj-command-completion-bounds ()
   "Return minibuffer token bounds for jj command completion."

@@ -28,6 +28,7 @@
 
 (require 'with-editor)
 (require 'majutsu-base)
+(require 'majutsu-completion)
 
 (eval-when-compile (require 'majutsu-template))
 
@@ -196,13 +197,6 @@ remote prefix from DIRECTORY so the result remains remote."
     ('tag "tag")
     (_ (symbol-name source))))
 
-(defun majutsu-jj--completion-parse-line (line)
-  "Parse one fish completion LINE from jj.
-Return (CANDIDATE . HELP)."
-  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
-    (cons (match-string 1 line)
-          (match-string 2 line))))
-
 (defun majutsu-jj-completion-items (args)
   "Return jj native completion items for ARGS.
 ARGS are command-line arguments after the leading jj executable name.
@@ -216,7 +210,7 @@ Each returned item is (CANDIDATE . HELP)."
                             (append '("--" "jj") args))))
           (when (zerop exit)
             (delq nil
-                  (mapcar #'majutsu-jj--completion-parse-line
+                  (mapcar #'majutsu-completion-parse-annotated-line
                           (split-string (buffer-string) "\n" t))))))
     (error nil)))
 
@@ -226,26 +220,9 @@ ARGS are command-line arguments before the value being completed.  The
 completed value is requested from jj by appending an empty argument.
 CATEGORY, when non-nil, is exposed in completion metadata.  DEFAULT,
 when non-empty and missing from jj's candidates, is added first."
-  (let* ((items (majutsu-jj-completion-items (append args '(""))))
-         (candidates (mapcar #'car items))
-         (annotations (make-hash-table :test #'equal)))
-    (when (and default
-               (not (string-empty-p default))
-               (not (member default candidates)))
-      (push (cons default nil) items)
-      (push default candidates))
-    (dolist (item items)
-      (when (cdr item)
-        (puthash (car item) (concat " " (cdr item)) annotations)))
-    (lambda (string pred action)
-      (if (eq action 'metadata)
-          `(metadata
-            (display-sort-function . identity)
-            ,@(and category `((category . ,category)))
-            (annotation-function
-             . ,(lambda (candidate)
-                  (gethash candidate annotations))))
-        (complete-with-action action candidates string pred)))))
+  (majutsu-completion-table
+   (majutsu-jj-completion-items (append args '("")))
+   category default))
 
 (defun majutsu-jj--revset-annotation-function (sources)
   "Return annotation function from candidate SOURCES table."
