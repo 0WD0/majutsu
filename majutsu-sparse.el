@@ -113,6 +113,17 @@ This checks if patterns differ from the default '.' (all files)."
                          files)))))
     (append dirs '("."))))
 
+(defvar majutsu-sparse-pattern-history nil
+  "Minibuffer history for sparse working-copy pattern input.")
+
+(defun majutsu-sparse--read-patterns (prompt candidates)
+  "Read sparse working-copy patterns with PROMPT from CANDIDATES."
+  (seq-filter (lambda (pattern) (not (string-empty-p pattern)))
+              (majutsu-completing-read-multiple
+               prompt candidates nil nil nil
+               'majutsu-sparse-pattern-history
+               nil 'majutsu-file)))
+
 ;;; Commands
 
 ;;;###autoload
@@ -121,7 +132,7 @@ This checks if patterns differ from the default '.' (all files)."
 With CLEAR non-nil, clear existing patterns first.
 PATTERNS can be a single string or list of strings."
   (interactive
-   (list (majutsu-completing-read-multiple
+   (list (majutsu-sparse--read-patterns
           "Sparse patterns (directories/files)"
           (majutsu-sparse--directory-candidates))
          current-prefix-arg))
@@ -140,7 +151,7 @@ PATTERNS can be a single string or list of strings."
   "Clear all patterns and set to PATTERNS.
 This is equivalent to `jj sparse set --clear --add <patterns>'."
   (interactive
-   (list (majutsu-completing-read-multiple
+   (list (majutsu-sparse--read-patterns
           "New sparse patterns"
           (majutsu-sparse--directory-candidates))))
   (majutsu-sparse-set patterns t))
@@ -150,7 +161,7 @@ This is equivalent to `jj sparse set --clear --add <patterns>'."
   "Add PATTERNS to current sparse patterns.
 PATTERNS can be a single string or list of strings."
   (interactive
-   (list (majutsu-completing-read-multiple
+   (list (majutsu-sparse--read-patterns
           "Add patterns"
           (majutsu-sparse--directory-candidates))))
   (when (stringp patterns)
@@ -167,7 +178,7 @@ PATTERNS can be a single string or list of strings."
   "Remove PATTERNS from current sparse patterns.
 PATTERNS can be a single string or list of strings."
   (interactive
-   (list (majutsu-completing-read-multiple
+   (list (majutsu-sparse--read-patterns
           "Remove patterns"
           (majutsu-sparse-patterns))))
   (when (stringp patterns)

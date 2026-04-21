@@ -321,6 +321,9 @@ Results are cached in `majutsu-file--list-cache`."
   "Return list of file paths for REVSET (default \"@\")."
   (majutsu-file--list (or revset "@") (majutsu-file--root)))
 
+(defvar majutsu-file-path-history nil
+  "Minibuffer history for repo-relative file path prompts.")
+
 (defun majutsu-read-files (prompt initial-input history &optional list-fn)
   "Read multiple files with completion.
 PROMPT, INITIAL-INPUT, HISTORY are standard reader args.
@@ -331,7 +334,8 @@ LIST-FN defaults to `majutsu-file-list'."
      (funcall (or list-fn #'majutsu-file-list))
      nil nil
      (or initial-input (majutsu-file--path-at-point root))
-     history)))
+     (or history 'majutsu-file-path-history)
+     nil 'majutsu-file)))
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
@@ -359,7 +363,9 @@ DEFAULT is the initial file choice when present in REVSET file list."
          (default (or default (majutsu-file--path-at-point root))))
     (when (and default (not (member default paths)))
       (setq default nil))
-    (completing-read "Find file: " paths nil t nil nil default)))
+    (majutsu-completing-read "Find file" paths nil t nil
+                             'majutsu-file-path-history
+                             default 'majutsu-file)))
 
 (defun majutsu-file--diff-range-value (range prefix)
   "Return the value in RANGE for argument starting with PREFIX."

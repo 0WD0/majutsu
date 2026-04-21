@@ -82,9 +82,15 @@ Return a list of plists with keys:
       (push (list :name (car current) :lines (nreverse (cdr current))) entries))
     (nreverse entries)))
 
-(defun majutsu-tag--read-names (prompt)
-  "Read tag names with PROMPT.
-Allows entering both existing and new tag names."
+(defvar majutsu-tag-name-history nil
+  "Minibuffer history for exact tag-name input.")
+
+(defvar majutsu-tag-pattern-history nil
+  "Minibuffer history for tag name-pattern input.")
+
+(defun majutsu-tag--read-candidates (prompt history &optional require-match)
+  "Read tag candidates with PROMPT using HISTORY.
+If REQUIRE-MATCH is non-nil, require existing local tags." 
   (let* ((payload (majutsu-tag-candidate-data))
          (candidates (plist-get payload :candidates)))
     (when (fboundp 'majutsu-marginalia-prewarm-candidate-data)
@@ -92,7 +98,20 @@ Allows entering both existing and new tag names."
        'majutsu-tag payload nil default-directory))
     (seq-filter (lambda (name) (not (string-empty-p name)))
                 (majutsu-completing-read-multiple
-                 prompt candidates nil nil nil nil nil 'majutsu-tag))))
+                 prompt candidates nil require-match nil history nil 'majutsu-tag))))
+
+(defun majutsu-tag--read-exact-names (prompt &optional require-match)
+  "Read exact tag names with PROMPT.
+If REQUIRE-MATCH is non-nil, require existing local tag names." 
+  (majutsu-tag--read-candidates prompt 'majutsu-tag-name-history require-match))
+
+(defun majutsu-tag--read-patterns (prompt)
+  "Read tag name patterns with PROMPT."
+  (majutsu-tag--read-candidates prompt 'majutsu-tag-pattern-history nil))
+
+(defun majutsu-tag--read-names (prompt)
+  "Compatibility wrapper around `majutsu-tag--read-patterns'."
+  (majutsu-tag--read-patterns prompt))
 
 (defun majutsu-tag--list-args ()
   "Return arguments for `jj tag list`."
@@ -147,8 +166,8 @@ With prefix ALL-REMOTES, include remote tags."
 When ALLOW-MOVE is non-nil, pass `--allow-move'."
   (interactive
    (let* ((default-revision (or (magit-section-value-if 'jj-commit) "@"))
-          (names (majutsu-tag--read-names "Set tag(s)"))
-          (revision (majutsu-read-string "Target revision" nil nil default-revision))
+          (names (majutsu-tag--read-exact-names "Set tag(s)"))
+          (revision (majutsu-read-revset "Target revision" default-revision))
           (allow-move current-prefix-arg))
      (list names revision allow-move)))
   (when names
@@ -164,7 +183,7 @@ When ALLOW-MOVE is non-nil, pass `--allow-move'."
   "Delete tag NAMES.
 NAMES are passed as jj string patterns."
   (interactive
-   (list (majutsu-tag--read-names "Delete tag(s)/pattern(s)")))
+   (list (majutsu-tag--read-patterns "Delete tag(s)/pattern(s)")))
   (when names
     (when (zerop (apply #'majutsu-run-jj (append '("tag" "delete") names)))
       (message "Deleted tag(s): %s" (string-join names ", ")))))
@@ -174,16 +193,9 @@ NAMES are passed as jj string patterns."
   "Move existing tag NAMES to REVISION.
 This is a convenience wrapper around `jj tag set --allow-move'."
   (interactive
-   (let* ((payload (majutsu-tag-candidate-data))
-          (existing (plist-get payload :candidates))
-          (default-revision (or (magit-section-value-if 'jj-commit) "@"))
-          (_ (when (fboundp 'majutsu-marginalia-prewarm-candidate-data)
-               (majutsu-marginalia-prewarm-candidate-data
-                'majutsu-tag payload nil default-directory)))
-          (names (seq-filter (lambda (name) (not (string-empty-p name)))
-                             (majutsu-completing-read-multiple
-                              "Move tag(s)" existing nil t nil nil nil 'majutsu-tag)))
-          (revision (majutsu-read-string "Target revision" nil nil default-revision)))
+   (let* ((default-revision (or (magit-section-value-if 'jj-commit) "@"))
+          (names (majutsu-tag--read-exact-names "Move tag(s)" t))
+          (revision (majutsu-read-revset "Target revision" default-revision)))
      (list names revision)))
   (majutsu-tag-set names revision t))
 

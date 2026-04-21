@@ -41,10 +41,20 @@ This calls `jj git remote list` and parses the first word of each line."
           (delete-dups names))
       (error nil))))
 
-(defun majutsu-git--read-remote (prompt)
-  (let ((remotes (or (majutsu-git--remote-names (ignore-errors (majutsu--toplevel-safe)))
-                     '("origin"))))
-    (majutsu-completing-read prompt remotes nil t)))
+(defvar majutsu-remote-name-history nil
+  "Minibuffer history for exact remote-name input.")
+
+(defun majutsu-git--read-remote (prompt &optional require-match default)
+  "Read a Git remote name with PROMPT.
+If REQUIRE-MATCH is non-nil, require an existing remote name.  DEFAULT
+is preselected when non-nil." 
+  (let* ((remotes (or (majutsu-git--remote-names (ignore-errors (majutsu--toplevel-safe)))
+                      '("origin")))
+         (value (majutsu-completing-read prompt remotes nil require-match nil
+                                         'majutsu-remote-name-history
+                                         default 'majutsu-remote)))
+    (unless (string-empty-p value)
+      value)))
 
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."
@@ -120,15 +130,15 @@ This calls `jj git remote list` and parses the first word of each line."
 (defun majutsu-git-remote-add (args)
   "Add a Git remote. Prompts for name and URL; respects ARGS from transient."
   (interactive (list (transient-args 'majutsu-git-remote-transient)))
-  (let* ((remote (read-string "Remote name: "))
-         (url (read-string (format "URL for %s: " remote)))
-         (fetch-tags (seq-find (lambda (a) (string-prefix-p "--fetch-tags=" a)) args))
-         (cmd-args (append '("remote" "add")
-                           (when fetch-tags (list fetch-tags))
-                           (list remote url)))
-         (exit (majutsu-run-jj "git" cmd-args)))
-    (when (zerop exit)
-      (message "Added remote %s" remote))))
+  (when-let* ((remote (majutsu-git--read-remote "Remote name" nil))
+              (url (read-string (format "URL for %s: " remote))))
+    (let* ((fetch-tags (seq-find (lambda (a) (string-prefix-p "--fetch-tags=" a)) args))
+           (cmd-args (append '("remote" "add")
+                             (when fetch-tags (list fetch-tags))
+                             (list remote url)))
+           (exit (majutsu-run-jj "git" cmd-args)))
+      (when (zerop exit)
+        (message "Added remote %s" remote)))))
 
 (defun majutsu-git-remote-remove ()
   "Remove a Git remote and forget its bookmarks."
@@ -143,9 +153,9 @@ This calls `jj git remote list` and parses the first word of each line."
 (defun majutsu-git-remote-rename ()
   "Rename a Git remote."
   (interactive)
-  (let* ((old (majutsu-git--read-remote "Rename remote: "))
-         (new (read-string (format "New name for %s: " old))))
-    (when (and (not (string-empty-p old)) (not (string-empty-p new)))
+  (let* ((old (majutsu-git--read-remote "Rename remote:" t))
+         (new (and old (majutsu-git--read-remote (format "New name for %s" old) nil))))
+    (when (and old new)
       (let* ((cmd-args (list "remote" "rename" old new))
              (exit (majutsu-run-jj "git" cmd-args)))
         (when (zerop exit)
@@ -155,8 +165,8 @@ This calls `jj git remote list` and parses the first word of each line."
   "Set URL of a Git remote."
   (interactive)
   (let* ((remote (majutsu-git--read-remote "Set URL for remote: "))
-         (url (read-string (format "New URL for %s: " remote))))
-    (when (and (not (string-empty-p remote)) (not (string-empty-p url)))
+         (url (and remote (read-string (format "New URL for %s: " remote)))))
+    (when (and remote (not (string-empty-p url)))
       (let* ((cmd-args (list "remote" "set-url" remote url))
              (exit (majutsu-run-jj "git" cmd-args)))
         (when (zerop exit)
