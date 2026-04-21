@@ -33,6 +33,7 @@ This affects `majutsu-jj-command', `majutsu-jj-command-topdir',
   :group 'majutsu-command
   :type 'boolean)
 
+(defvar majutsu-jj-command-history nil)
 (defvar majutsu-shell-command-history nil)
 
 (defun majutsu--shell-command-directory (&optional topdir)
@@ -90,7 +91,12 @@ Signal a user error if COMMAND is empty or uses shell syntax."
       (user-error "Need non-empty input"))
      ((string= (majutsu--command-program-name program)
                (majutsu--command-program-name jj))
-      (or (cdr argv)
+      (setq argv (cdr argv))
+      (when (and argv
+                 (string= (majutsu--command-program-name (car argv))
+                          (majutsu--command-program-name jj)))
+        (setq argv (cdr argv)))
+      (or argv
           (user-error "Need jj subcommand")))
      (t argv))))
 
@@ -111,6 +117,18 @@ helpers.  Other commands are run through `shell-file-name'."
              nil
              (majutsu-process-jj-arguments jj-args))
     (majutsu-start-process shell-file-name nil shell-command-switch command)))
+
+(defun majutsu-read-jj-command (&optional topdir)
+  "Read a jj command for Majutsu runners.
+When TOPDIR or `current-prefix-arg' is non-nil, prompt relative to the
+workspace root.  The leading `jj' executable name is optional."
+  (let ((default-directory (majutsu--shell-command-directory topdir)))
+    (read-shell-command (if majutsu-shell-command-verbose-prompt
+                            (format "Async jj command in %s: "
+                                    (abbreviate-file-name default-directory))
+                          "Async jj command: ")
+                        nil
+                        'majutsu-jj-command-history)))
 
 (defun majutsu-read-shell-command (&optional topdir initial-input)
   "Read a shell command for Majutsu runners.
@@ -151,21 +169,21 @@ workspace root.  INITIAL-INPUT is inserted into the minibuffer."
 (defun majutsu-jj-command (command)
   "Execute COMMAND asynchronously; display output.
 
-Interactively, prompt for COMMAND in the minibuffer.  `jj ' is used as
-initial input, but can be deleted to run another command.
+Interactively, prompt for a jj subcommand in the minibuffer.  A leading
+`jj' executable name is accepted but not required.
 
 With a prefix argument COMMAND is run in the workspace root, otherwise
 in `default-directory'."
-  (interactive (list (majutsu-read-shell-command nil "jj ")))
+  (interactive (list (majutsu-read-jj-command nil)))
   (majutsu--run-jj-command command (majutsu--shell-command-directory)))
 
 ;;;###autoload
 (defun majutsu-jj-command-topdir (command)
   "Execute COMMAND asynchronously in the workspace root; display output.
 
-Interactively, prompt for COMMAND in the minibuffer.  `jj ' is used as
-initial input, but can be deleted to run another command."
-  (interactive (list (majutsu-read-shell-command t "jj ")))
+Interactively, prompt for a jj subcommand in the minibuffer.  A leading
+`jj' executable name is accepted but not required."
+  (interactive (list (majutsu-read-jj-command t)))
   (majutsu--run-jj-command command (majutsu--shell-command-directory t)))
 
 ;;;###autoload
