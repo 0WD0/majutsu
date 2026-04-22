@@ -36,7 +36,8 @@
 
 (autoload 'majutsu-process-file "majutsu-process" nil nil)
 (declare-function majutsu-marginalia-annotate-revision "majutsu-marginalia" (cand))
-(declare-function majutsu-marginalia-format-revision "majutsu-marginalia" (cand))
+
+(defvar corfu-margin-formatters)
 
 ;;; Options
 
@@ -350,20 +351,64 @@ Each returned item is (CANDIDATE . HELP)."
         annotation
       (concat " " annotation))))
 
-(defun majutsu-jj--revision-affixation-function (entries annotations)
-  "Return affixation function backed by revision ENTRIES and ANNOTATIONS."
-  (lambda (candidates)
-    (mapcar (lambda (candidate)
-              (list candidate
-                    ""
-                    (or (and (hash-table-p entries)
-                             (gethash candidate entries)
-                             (fboundp 'majutsu-marginalia-format-revision)
-                             (majutsu-marginalia-format-revision candidate))
-                        (and (hash-table-p annotations)
-                             (gethash candidate annotations))
-                        "")))
-            candidates)))
+(defun majutsu-jj--revision-margin-label (entry)
+  "Return a fixed-width short kind label for revision completion ENTRY."
+  (pcase (plist-get entry :kind)
+    ('bookmark "Bm")
+    ('remote-bookmark "Rb")
+    ('tag "Tag")
+    ('workspace "Ws")
+    ('pseudo "@ ")
+    ('change-id "Ch")
+    ('revset-alias "Al")
+    (_ "  ")))
+
+(defun majutsu-jj--revision-margin-face (entry)
+  "Return face used for revision completion ENTRY in Corfu margin."
+  (pcase (plist-get entry :kind)
+    ((or 'bookmark 'remote-bookmark) 'font-lock-keyword-face)
+    ('tag 'font-lock-constant-face)
+    ('workspace 'font-lock-variable-name-face)
+    ('pseudo 'shadow)
+    ('change-id 'font-lock-type-face)
+    ('revset-alias 'font-lock-function-name-face)
+    (_ 'shadow)))
+
+(defun majutsu-jj--corfu-revision-margin-formatter (metadata)
+  "Return Corfu margin formatter for revision completion METADATA."
+  (when (eq (completion-metadata-get metadata 'category) 'majutsu-revision)
+    (let ((entries (plist-get completion-extra-properties :majutsu-revision-entries)))
+      (lambda (candidate)
+        (let* ((entry (and (hash-table-p entries)
+                           (gethash candidate entries)))
+               (label (majutsu-jj--revision-margin-label entry)))
+          (propertize label 'face (majutsu-jj--revision-margin-face entry)))))))
+
+(defun majutsu-jj--revision-doc-buffer-function (entries)
+  "Return popupinfo doc buffer function backed by revision ENTRIES."
+  (lambda (candidate)
+    (when-let* ((entry (and (hash-table-p entries)
+                            (gethash candidate entries))))
+      (with-current-buffer (get-buffer-create " *majutsu revision doc*")
+        (erase-buffer)
+        (insert candidate)
+        (when-let* ((kind (plist-get entry :kind)))
+          (insert "\nkind: " (symbol-name kind)))
+        (when-let* ((sources (plist-get entry :sources)))
+          (insert "\nsources: "
+                  (mapconcat (lambda (source)
+                               (format "%s" source))
+                             sources ", ")))
+        (when-let* ((tag (plist-get entry :tag)))
+          (insert "\ntag: " tag))
+        (when-let* ((id (plist-get entry :id)))
+          (insert "\nid: " id))
+        (when-let* ((help (plist-get entry :help)))
+          (insert "\n\n" help))
+        (current-buffer)))))
+
+(with-eval-after-load 'corfu
+  (add-hook 'corfu-margin-formatters #'majutsu-jj--corfu-revision-margin-formatter))
 
 (defun majutsu-jj--completion-candidates (payload default)
   "Return completion candidates from PAYLOAD, prepending DEFAULT if needed."
@@ -389,24 +434,24 @@ added first."
         (metadata-category (or category 'majutsu-revision)))
     (cl-labels
         ((payload-for
-          (string)
-          (or (gethash string payload-cache)
-              (let ((payload (majutsu-jj--completion-payload
-                              (append args (list string))
-                              metadata-category)))
-                (puthash string payload payload-cache)
-                (when-let* ((payload-annotations (plist-get payload :annotations)))
-                  (maphash (lambda (candidate annotation)
-                             (when-let* ((normalized (majutsu-jj--completion-normalize-annotation annotation)))
-                               (puthash candidate normalized annotations)))
-                           payload-annotations))
-                (when-let* ((payload-entries (plist-get payload :entries)))
-                  (maphash (lambda (candidate entry)
-                             (puthash candidate entry entries))
-                           payload-entries))
-                (majutsu-completion-prewarm-payload
-                 payload metadata-category string default-directory)
-                payload))))
+           (string)
+           (or (gethash string payload-cache)
+               (let ((payload (majutsu-jj--completion-payload
+                               (append args (list string))
+                               metadata-category)))
+                 (puthash string payload payload-cache)
+                 (when-let* ((payload-annotations (plist-get payload :annotations)))
+                   (maphash (lambda (candidate annotation)
+                              (when-let* ((normalized (majutsu-jj--completion-normalize-annotation annotation)))
+                                (puthash candidate normalized annotations)))
+                            payload-annotations))
+                 (when-let* ((payload-entries (plist-get payload :entries)))
+                   (maphash (lambda (candidate entry)
+                              (puthash candidate entry entries))
+                            payload-entries))
+                 (majutsu-completion-prewarm-payload
+                  payload metadata-category string default-directory)
+                 payload))))
       (lambda (string predicate action)
         (if (eq action 'metadata)
             `(metadata
@@ -414,11 +459,7 @@ added first."
               (category . ,metadata-category)
               (annotation-function
                . ,(lambda (candidate)
-                    (gethash candidate annotations)))
-              ,@(and (eq metadata-category 'majutsu-revision)
-                     `((affixation-function
-                        . ,(majutsu-jj--revision-affixation-function
-                            entries annotations)))))
+                    (gethash candidate annotations))))
           (complete-with-action
            action
            (majutsu-jj--completion-candidates (payload-for string) default)
@@ -500,10 +541,9 @@ DEFAULT, when non-nil, is inserted first so users can accept it quickly."
   (plist-get (majutsu-jj-revset-candidate-data default) :candidates))
 
 (defun majutsu-jj--payload-table (payload &optional category default)
-  "Return a completion table for PAYLOAD with revision affixes when possible."
+  "Return a completion table for PAYLOAD."
   (let* ((category (or category (plist-get payload :category)))
          (table (majutsu-completion-payload-table payload category default))
-         (entries (plist-get payload :entries))
          (annotations (plist-get payload :annotations)))
     (if (eq category 'majutsu-revision)
         (completion-table-with-metadata
@@ -513,9 +553,7 @@ DEFAULT, when non-nil, is inserted first so users can accept it quickly."
            (annotation-function
             . ,(lambda (candidate)
                  (and (hash-table-p annotations)
-                      (gethash candidate annotations))))
-           (affixation-function
-            . ,(majutsu-jj--revision-affixation-function entries annotations))))
+                      (gethash candidate annotations))))))
       table)))
 
 (defun majutsu-jj--revset-completion-table (&optional default)
@@ -555,8 +593,8 @@ DEFAULT is inserted first in the candidate list when non-nil."
             :annotation-function (lambda (candidate)
                                    (and (hash-table-p annotations)
                                         (gethash candidate annotations)))
-            :affixation-function (majutsu-jj--revision-affixation-function
-                                  entries annotations)))))
+            :company-doc-buffer (majutsu-jj--revision-doc-buffer-function entries)
+            :majutsu-revision-entries entries))))
 
 (defun majutsu-jj-revset-complete ()
   "Complete the revset expression at point using jj's native completer."
