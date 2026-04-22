@@ -469,6 +469,7 @@ This mirrors Magit's behavior."
             (should (equal (plist-get props :exclusive) 'no))
             (should (eq (plist-get props :category) 'majutsu-revision))
             (should (functionp (plist-get props :annotation-function)))
+            (should (functionp (plist-get props :company-kind)))
             (should (functionp (plist-get props :company-doc-buffer)))
             (should (hash-table-p (plist-get props :majutsu-revision-entries)))
             (should (equal (all-completions "main | " table)
@@ -493,8 +494,10 @@ This mirrors Magit's behavior."
                          '(metadata (category . majutsu-revision))))
              (label (funcall formatter "main")))
         (should (functionp formatter))
-        (should (equal (substring-no-properties label) "Bm"))
-        (should (= (string-width label) 2))))))
+        (should (equal (substring-no-properties label) "Bm "))
+        (should (= (string-width label) 3))
+        (should (eq (majutsu-jj--revision-company-kind (gethash "main" entries))
+                    'reference))))))
 
 (ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
   "Revset reader should use plain minibuffer input and allow free-form text."
