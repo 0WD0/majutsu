@@ -371,19 +371,11 @@ This mirrors Magit's behavior."
                                                   'majutsu-revision
                                                   "@"))
              (metadata (funcall table "" nil 'metadata))
-             (annotation (cdr (assq 'annotation-function (cdr metadata))))
-             (affixation (cdr (assq 'affixation-function (cdr metadata)))))
+             (annotation (cdr (assq 'annotation-function (cdr metadata)))))
         (should (equal (all-completions "" table) '("@" "main")))
         (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
         (should (equal (funcall annotation "main") " Main bookmark"))
-        (should affixation)
-        (let* ((affixed (funcall affixation '("main")))
-               (suffix (caddar affixed)))
-          (should (= (length affixed) 1))
-          (should (equal (caar affixed) "main"))
-          (should (string-match-p "Main bookmark" suffix))
-          (should-not (text-property-any 0 (length suffix)
-                                         'marginalia--align t suffix)))
+        (should-not (assq 'affixation-function (cdr metadata)))
         (should-not (funcall annotation "@"))))))
 
 (ert-deftest majutsu-jj-completion-table/completes-revset-expressions-dynamically ()
@@ -459,11 +451,14 @@ This mirrors Magit's behavior."
                    (lambda (args category)
                      (push args calls)
                      (should (eq category 'majutsu-revision))
-                     (let ((annotations (make-hash-table :test #'equal)))
+                     (let ((annotations (make-hash-table :test #'equal))
+                           (entries (make-hash-table :test #'equal)))
                        (puthash "main | dev" "Union with dev" annotations)
+                       (puthash "main | dev" '(:kind bookmark :help "Union with dev") entries)
                        (list :category 'majutsu-revision
                              :candidates '("main | dev")
-                             :annotations annotations))))
+                             :annotations annotations
+                             :entries entries))))
                   ((symbol-function 'majutsu-completion-prewarm-payload)
                    (lambda (_payload _category context _directory)
                      (push context prewarmed-contexts))))
@@ -474,7 +469,8 @@ This mirrors Magit's behavior."
             (should (equal (plist-get props :exclusive) 'no))
             (should (eq (plist-get props :category) 'majutsu-revision))
             (should (functionp (plist-get props :annotation-function)))
-            (should (functionp (plist-get props :affixation-function)))
+            (should (functionp (plist-get props :company-doc-buffer)))
+            (should (hash-table-p (plist-get props :majutsu-revision-entries)))
             (should (equal (all-completions "main | " table)
                            '("main | dev")))
             (should (member '("diff" "-r" "main | ") calls))
@@ -486,6 +482,19 @@ This mirrors Magit's behavior."
     (majutsu-jj--revset-minibuffer-setup)
     (should (memq #'majutsu-jj-revset-completion-at-point
                   completion-at-point-functions))))
+
+(ert-deftest majutsu-jj--corfu-revision-margin-formatter/uses-entry-kind ()
+  "Corfu margin formatter should expose a fixed-width revision kind label."
+  (let ((completion-extra-properties nil))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "main" '(:kind bookmark) entries)
+      (let* ((completion-extra-properties (list :majutsu-revision-entries entries))
+             (formatter (majutsu-jj--corfu-revision-margin-formatter
+                         '(metadata (category . majutsu-revision))))
+             (label (funcall formatter "main")))
+        (should (functionp formatter))
+        (should (equal (substring-no-properties label) "Bm"))
+        (should (= (string-width label) 2))))))
 
 (ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
   "Revset reader should use plain minibuffer input and allow free-form text."

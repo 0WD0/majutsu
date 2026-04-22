@@ -72,12 +72,11 @@
         (should-not (majutsu-marginalia--cached-entry
                      'majutsu-revision "main"))))))
 
-(ert-deftest majutsu-marginalia/does-not-register-revision-category ()
-  (let ((marginalia-annotators '((majutsu-revision old none)
-                                 (majutsu-tag keep none))))
-    (majutsu-marginalia--clear-annotator 'majutsu-revision)
-    (should-not (assq 'majutsu-revision marginalia-annotators))
-    (should (assq 'majutsu-tag marginalia-annotators))))
+(ert-deftest majutsu-marginalia/registers-revision-category ()
+  (let ((marginalia-annotators nil))
+    (majutsu-marginalia--set-annotator 'majutsu-revision #'majutsu-marginalia-annotate-revision)
+    (should (equal (alist-get 'majutsu-revision marginalia-annotators)
+                   '(majutsu-marginalia-annotate-revision none)))))
 
 (ert-deftest majutsu-marginalia-format-revision/uses-compact-popup-suffix ()
   (let ((marginalia-separator "  ")
