@@ -90,7 +90,7 @@
               ((symbol-function 'message)
                (lambda (&rest _args) nil)))
       (majutsu-tag-set '("v1.0" "release") "@-" t)
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("tag" "set" "--allow-move" "-r" "@-" "v1.0" "release"))))))
 
 (ert-deftest majutsu-tag-delete/dispatches-correctly ()
@@ -102,7 +102,7 @@
               ((symbol-function 'message)
                (lambda (&rest _args) nil)))
       (majutsu-tag-delete '("v1.*" "release"))
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("tag" "delete" "v1.*" "release"))))))
 
 (provide 'majutsu-tag-test)
