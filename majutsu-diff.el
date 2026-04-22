@@ -34,6 +34,7 @@
 (require 'smerge-mode)
 
 (declare-function majutsu-find-file "majutsu-file" (revset path))
+(declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
 (declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
 (declare-function majutsu-color-words-column-at-point "majutsu-color-words" (goto-from &optional pos info))
