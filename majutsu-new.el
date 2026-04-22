@@ -19,6 +19,8 @@
 (require 'majutsu)
 (require 'majutsu-selection)
 
+(declare-function majutsu-target-revision-at-point "majutsu-jj" ())
+
 (defvar majutsu-buffer-blob-root)
 (defvar majutsu-buffer-blob-path)
 
@@ -38,7 +40,7 @@ With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
       (call-interactively #'majutsu-new)
-    (let ((parent (majutsu-revision-at-point)))
+    (let ((parent (majutsu-target-revision-at-point)))
       (majutsu-new--run-command (if parent
                                     (list "new" parent)
                                   (list "new"))))))
@@ -47,7 +49,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-after ()
   "Create a new changeset with the commit at point as --after."
   (interactive)
-  (if-let* ((after (majutsu-revision-at-point)))
+  (if-let* ((after (majutsu-target-revision-at-point)))
       (majutsu-new--run-command (list "new" "--insert-after" after))
     (user-error "No revision at point")))
 
@@ -55,7 +57,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-before ()
   "Create a new changeset with the commit at point as --before."
   (interactive)
-  (if-let* ((before (majutsu-revision-at-point)))
+  (if-let* ((before (majutsu-target-revision-at-point)))
       (majutsu-new--run-command (list "new" "--insert-before" before))
     (user-error "No revision at point")))
 

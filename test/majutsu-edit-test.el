@@ -40,6 +40,20 @@
           (majutsu-edit--finish-on-save))))
     (should called)))
 
+(ert-deftest majutsu-edit-test-edit-changeset-uses-target-revision-at-point ()
+  "Edit changeset should prefer the literal revision/ref under point."
+  (let (captured)
+    (cl-letf (((symbol-function 'majutsu-target-revision-at-point)
+               (lambda () "main@origin"))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq captured args)
+                 0))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (majutsu-edit-changeset)
+      (should (equal captured '("edit" "main@origin"))))))
+
 (ert-deftest majutsu-edit-test-run-diffedit-normalizes-absolute-file ()
   "Diffedit should normalize absolute file targets to repo-relative paths."
   (let (seen-target seen-args seen-default)
