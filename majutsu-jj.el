@@ -36,6 +36,7 @@
 
 (autoload 'majutsu-process-file "majutsu-process" nil nil)
 (declare-function majutsu-marginalia-annotate-revision "majutsu-marginalia" (cand))
+(declare-function majutsu-marginalia-format-revision "majutsu-marginalia" (cand))
 
 ;;; Options
 
@@ -357,8 +358,8 @@ Each returned item is (CANDIDATE . HELP)."
                     ""
                     (or (and (hash-table-p entries)
                              (gethash candidate entries)
-                             (fboundp 'majutsu-marginalia-annotate-revision)
-                             (majutsu-marginalia-annotate-revision candidate))
+                             (fboundp 'majutsu-marginalia-format-revision)
+                             (majutsu-marginalia-format-revision candidate))
                         (and (hash-table-p annotations)
                              (gethash candidate annotations))
                         "")))

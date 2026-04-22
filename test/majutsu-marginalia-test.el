@@ -103,7 +103,8 @@
 
 (ert-deftest majutsu-marginalia-annotate-revision/prefers-original-annotation ()
   (let ((marginalia-separator "  ")
-        (marginalia--metadata 'dummy))
+        (marginalia--metadata 'dummy)
+        (majutsu-marginalia--payload-cache (make-hash-table :test #'equal)))
     (cl-letf (((symbol-function 'marginalia--orig-completion-metadata-get)
                (lambda (_metadata prop)
                  (when (eq prop 'annotation-function)
