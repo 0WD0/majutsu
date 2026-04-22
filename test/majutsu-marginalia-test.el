@@ -79,6 +79,27 @@
     (should-not (assq 'majutsu-revision marginalia-annotators))
     (should (assq 'majutsu-tag marginalia-annotators))))
 
+(ert-deftest majutsu-marginalia-format-revision/uses-compact-popup-suffix ()
+  (let ((marginalia-separator "  ")
+        (default-directory "/tmp/repo/")
+        (majutsu-marginalia--payload-cache (make-hash-table :test #'equal)))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "dev"
+               '(:kind bookmark :tag "--revisions <REVSETS>" :help "short")
+               entries)
+      (puthash "feat/tramp"
+               '(:kind bookmark :tag "--revisions <REVSETS>"
+                 :help "fix(tramp): centralize jj process environment")
+               entries)
+      (majutsu-marginalia-prewarm-candidate-data
+       'majutsu-revision (list :entries entries) nil default-directory)
+      (let ((dev (majutsu-marginalia-format-revision "dev"))
+            (tramp (majutsu-marginalia-format-revision "feat/tramp")))
+        (should (string-match-p "bookmark" dev))
+        (should (string-match-p "short" dev))
+        (should (string-match-p "bookmark" tramp))
+        (should (string-match-p "fix(tramp)" tramp))))))
+
 (ert-deftest majutsu-marginalia-annotate-revision/uses-structured-entry ()
   (let ((marginalia-separator "  ")
         (default-directory "/tmp/repo/")
