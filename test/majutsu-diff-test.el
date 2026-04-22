@@ -141,7 +141,7 @@
                    '("restore" "--changes-in")))))
 
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
-  "Transient revset reader should pass native jj completion context."
+  "Transient single-revision readers should pass native jj completion context."
   (let ((transient-current-command 'majutsu-restore)
         (this-command 'majutsu-restore:--changes-in)
         current-prefix-arg
@@ -149,8 +149,8 @@
         seen-completion-args)
     (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
                (lambda () "@"))
-              ((symbol-function 'majutsu-read-revset)
-               (lambda (_prompt default completion-args)
+              ((symbol-function 'majutsu-read-single-revset)
+               (lambda (_prompt default completion-args &optional _history)
                  (setq seen-default default
                        seen-completion-args completion-args)
                  "main")))
@@ -158,6 +158,25 @@
                      "main"))
       (should (equal seen-default "@"))
       (should (equal seen-completion-args '("restore" "--changes-in"))))))
+
+(ert-deftest majutsu-diff-transient-read-revset/uses-expression-reader-for--revisions ()
+  "The `-r/--revisions' infix should keep using the expression reader."
+  (let ((transient-current-command 'majutsu-diff)
+        (this-command 'majutsu-diff:-r)
+        current-prefix-arg
+        seen)
+    (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
+               (lambda () "@"))
+              ((symbol-function 'majutsu-read-revset)
+               (lambda (_prompt default completion-args)
+                 (setq seen (list default completion-args))
+                 "main | dev"))
+              ((symbol-function 'majutsu-read-single-revset)
+               (lambda (&rest _args)
+                 (ert-fail "Should not use single reader for --revisions"))))
+      (should (equal (majutsu-diff--transient-read-revset "Revisions: " nil nil)
+                     "main | dev"))
+      (should (equal seen '("@" ("diff" "-r")))))))
 
 (ert-deftest majutsu-diff--r-argument/uses-native-revset-reader ()
   "The `-r' diff infix should use the native revset reader."

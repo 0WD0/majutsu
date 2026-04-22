@@ -56,7 +56,9 @@
   older jj versions. Native revset prompts now use minibuffer completion at
   point, so expression arguments such as =main | = and =trunk()..ma= keep jj's
   native semantics while still allowing users to move the candidate list into a
-  minibuffer for annotation-based filtering. Revision Marginalia payloads are
+  minibuffer for annotation-based filtering. Native jj revset completion now
+  includes other workspace working-copy refs in =<workspace>@= form. Revision
+  Marginalia payloads are
   cached per minibuffer input context, so annotations remain structured while
   editing revset expressions. The optional Marginalia integration now shows
   richer bookmark, tag, remote, workspace, revision, and file annotations based
