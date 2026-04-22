@@ -1690,7 +1690,7 @@ Create a new bookmark at point.
 @item @kbd{a} (@code{majutsu-bookmark-advance})
 @kindex a
 @findex majutsu-bookmark-advance
-Advance bookmarks using jj's configured default selection and target.
+Advance bookmarks using jj's configured default selection and target revset.
 @item @kbd{A} (@code{majutsu-bookmark-advance-to})
 @kindex A
 @findex majutsu-bookmark-advance-to
@@ -1698,7 +1698,7 @@ Advance bookmarks using jj's default selection to an explicit target revset.
 @item @kbd{p} (@code{majutsu-bookmark-advance-patterns})
 @kindex p
 @findex majutsu-bookmark-advance-patterns
-Advance specific bookmark name(s)/pattern(s) using jj's configured default target.
+Advance specific bookmark name(s)/pattern(s) using jj's configured default target revset.
 @item @kbd{s} (@code{majutsu-bookmark-set})
 @kindex s
 @findex majutsu-bookmark-set

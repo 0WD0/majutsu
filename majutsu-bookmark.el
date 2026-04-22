@@ -307,7 +307,7 @@ CANDIDATES defaults to known Git remote names."
                 ((stringp names) (list names))
                 (t names))))
     (when names
-      (apply #'majutsu-run-jj (append (list "bookmark" "create") names (list "-r" revset))))))
+      (majutsu-run-jj "bookmark" "create" names "-r" revset))))
 
 ;;;###autoload
 (defun majutsu-bookmark-delete (names)
@@ -316,7 +316,7 @@ CANDIDATES defaults to known Git remote names."
                       "Delete bookmark(s)/pattern(s) (propagates on push)")))
   (if (null names)
       (message "No bookmark name/pattern provided")
-    (when (zerop (apply #'majutsu-run-jj (append '("bookmark" "delete") names)))
+    (when (zerop (majutsu-run-jj "bookmark" "delete" names))
       (message "Deleted bookmark(s): %s" (string-join names ", ")))))
 
 ;;;###autoload
@@ -329,7 +329,7 @@ CANDIDATES defaults to known Git remote names."
                       nil)))
   (if (null names)
       (message "No bookmark name/pattern provided")
-    (when (zerop (apply #'majutsu-run-jj (append '("bookmark" "forget") names)))
+    (when (zerop (majutsu-run-jj "bookmark" "forget" names))
       (message "Forgot bookmark(s): %s" (string-join names ", ")))))
 
 ;;;###autoload
@@ -346,10 +346,9 @@ CANDIDATES defaults to known Git remote names."
                            (majutsu--bookmark-git-remote-candidates))))
     (if (null bookmark-patterns)
         (message "No bookmark name/pattern provided")
-      (when (zerop (apply #'majutsu-run-jj
-                          (append (list "bookmark" "track")
-                                  bookmark-patterns
-                                  (majutsu--bookmark--remote-args remote-patterns))))
+      (when (zerop (majutsu-run-jj "bookmark" "track"
+                                   bookmark-patterns
+                                   (majutsu--bookmark--remote-args remote-patterns)))
         (message "Tracking remote bookmark(s): %s%s"
                  (string-join bookmark-patterns ", ")
                  (if remote-patterns
@@ -367,11 +366,6 @@ With prefix ALL, include remote bookmarks."
   (majutsu-setup-buffer #'majutsu-bookmark-list-mode nil
     :buffer "*Majutsu Bookmarks*"
     (majutsu-bookmark--list-all (and all t))))
-
-(defun majutsu-bookmark--list-args ()
-  "Return arguments for `jj bookmark list'."
-  (append '("bookmark" "list" "--quiet")
-          (and majutsu-bookmark--list-all '("--all-remotes"))))
 
 (defun majutsu-bookmark--line-name (line)
   "Return the bookmark name parsed from LINE."
@@ -406,7 +400,8 @@ With prefix ALL, include remote bookmarks."
   (majutsu--assert-mode 'majutsu-bookmark-list-mode)
   (magit-insert-section (bookmark-list)
     (majutsu-jj-wash #'majutsu-bookmark--wash-list nil
-      (majutsu-bookmark--list-args))))
+      (append '("bookmark" "list" "--quiet")
+              (and majutsu-bookmark--list-all '("--all-remotes"))))))
 
 (defvar-keymap majutsu-bookmark-list-mode-map
   :doc "Keymap for `majutsu-bookmark-list-mode'."
@@ -425,47 +420,46 @@ This is a compatibility wrapper around `majutsu-read-bookmark-patterns'."
   (majutsu-read-bookmark-patterns prompt init-input history))
 
 ;;;###autoload
-(defun majutsu-bookmark-advance (&optional arg1 arg2)
-  "Advance bookmarks using jj's configured default selection.
+(defun majutsu-bookmark-advance (&optional names revset)
+  "Advance bookmark name patterns NAMES to REVSET.
+When NAMES is nil, use jj's configured default selection.  When REVSET
+is nil, use jj's configured default target revset.  Interactively, this
+uses both defaults.
 
-If ARG1 is a string, use it as the target revset.  For backward
-compatibility, if ARG2 is non-nil, use ARG2 as the target revset and
-ignore ARG1.  Use `majutsu-bookmark-advance-patterns' for explicit
-bookmark-name/pattern selection."
+NAMES may be a string or a list of strings.  Use
+`majutsu-bookmark-advance-to' and `majutsu-bookmark-advance-patterns' as
+convenience wrappers for the common interactive forms."
   (interactive)
-  (let ((commit (or arg2 (and (stringp arg1) arg1))))
-    (apply #'majutsu-run-jj
-           (append '("bookmark" "advance")
-                   (and commit (list "-t" commit))))))
+  (let ((names (cond
+                ((null names) nil)
+                ((stringp names) (list names))
+                (t names))))
+    (majutsu-run-jj "bookmark" "advance" names (and revset (list "-t" revset)))))
 
 ;;;###autoload
-(defun majutsu-bookmark-advance-to (commit)
-  "Advance bookmarks using jj's default selection to COMMIT."
+(defun majutsu-bookmark-advance-to (revset)
+  "Advance bookmarks using jj's default selection to REVSET."
   (interactive (list (majutsu-read-revset "Advance to revset")))
-  (majutsu-bookmark-advance commit))
+  (majutsu-bookmark-advance nil revset))
 
 ;;;###autoload
 (defun majutsu-bookmark-advance-patterns (names)
-  "Advance bookmark name patterns NAMES using jj's default target."
+  "Advance bookmark name patterns NAMES using jj's default target revset."
   (interactive (list (majutsu-read-bookmark-patterns
                       "Advance bookmark name(s)/pattern(s)")))
   (if names
-      (majutsu-run-jj "bookmark" "advance" names)
+      (majutsu-bookmark-advance names)
     (message "No bookmark name/pattern provided")))
 
 (defun majutsu--bookmark-move (names commit &optional allow-backwards)
   "Internal helper to move bookmark(s) NAMES to COMMIT.
 When ALLOW-BACKWARDS is non-nil, include `--allow-backwards'."
   (when names
-    (let ((args (append '("bookmark" "move")
-                        (and allow-backwards '("--allow-backwards"))
-                        (list "-t" commit)
-                        names)))
-      (when (zerop (apply #'majutsu-run-jj args))
-        (message (if allow-backwards
-                     "Moved bookmark(s) (allow backwards) to %s: %s"
-                   "Moved bookmark(s) to %s: %s")
-                 commit (string-join names ", "))))))
+    (when (zerop (majutsu-run-jj "bookmark" "move" (and allow-backwards '("--allow-backwards")) "-t" commit names))
+      (message (if allow-backwards
+                   "Moved bookmark(s) (allow backwards) to %s: %s"
+                 "Moved bookmark(s) to %s: %s")
+               commit (string-join names ", ")))))
 
 ;;;###autoload
 (defun majutsu-bookmark-move (names commit &optional allow-backwards)
@@ -499,9 +493,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
           (names (majutsu-read-bookmark-names "Set bookmark(s)"))
           (rev (majutsu-read-revset "Target revision" at)))
      (list names rev)))
-  (when (and names
-             (zerop (apply #'majutsu-run-jj
-                           (append '("bookmark" "set") names (list "-r" commit)))))
+  (when (and names (zerop (majutsu-run-jj "bookmark" "set" names (list "-r" commit))))
     (message "Set bookmark(s) to %s: %s" commit (string-join names ", "))))
 
 ;;;###autoload
@@ -522,10 +514,7 @@ REMOTES are remote name patterns passed via repeated `--remote`."
   (defvar crm-separator)
   (let* ((remotes (seq-filter (lambda (s) (not (string-empty-p s))) (or remotes '()))))
     (when bookmarks
-      (when (zerop (apply #'majutsu-run-jj
-                          (append (list "bookmark" "untrack")
-                                  bookmarks
-                                  (majutsu--bookmark--remote-args remotes))))
+      (when (zerop (majutsu-run-jj "bookmark" "untrack" bookmarks (majutsu--bookmark--remote-args remotes)))
         (message "Untracked: %s%s"
                  (string-join bookmarks ", ")
                  (if remotes
