@@ -214,25 +214,28 @@ Insert Marginalia's alignment marker before the first separator."
       'marginalia-documentation))))
 
 (defun majutsu-marginalia-format-revision (cand)
-  "Return compact popup suffix text for revision candidate CAND.
-This is intended for completion UIs such as Corfu.  Keep this compact and
-single-block; richer multi-column formatting belongs in the minibuffer via
-`majutsu-marginalia-annotate-revision'."
+  "Return plain suffix text for revision candidate CAND.
+This formatter is shared by CAPF popups and moved-to-minibuffer UIs, so it
+should stay compact but keep a stable kind column for readability."
   (or (when-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-revision cand)))
-        (majutsu-marginalia--join-fields
-         (majutsu-marginalia--field
+        (concat
+         marginalia-separator
+         (majutsu-marginalia--column
           (or (majutsu-marginalia--revision-kind-label (plist-get entry :kind))
               "revset")
-          'marginalia-key)
-         (majutsu-marginalia--field
-          (or (plist-get entry :help)
-              (plist-get entry :tag)
-              (and (not (plist-get entry :hidden))
-                   (majutsu-marginalia--orig-annotation cand)))
-          'marginalia-documentation)))
+          12 'marginalia-key)
+         marginalia-separator
+         (or (majutsu-marginalia--field
+              (or (plist-get entry :help)
+                  (plist-get entry :tag)
+                  (and (not (plist-get entry :hidden))
+                       (majutsu-marginalia--orig-annotation cand)))
+              'marginalia-documentation)
+             "")))
       (and-let* ((annotation (majutsu-marginalia--orig-annotation cand)))
-        (string-trim-left annotation))
-      (majutsu-marginalia--field "revset" 'marginalia-key)))
+        (concat marginalia-separator (string-trim-left annotation)))
+      (concat marginalia-separator
+              (majutsu-marginalia--field "revset" 'marginalia-key))))
 
 (defun majutsu-marginalia-annotate-revision (cand)
   "Annotate revision candidate CAND."
