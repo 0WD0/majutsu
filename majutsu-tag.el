@@ -171,12 +171,11 @@ When ALLOW-MOVE is non-nil, pass `--allow-move'."
           (allow-move current-prefix-arg))
      (list names revision allow-move)))
   (when names
-    (let ((args (append '("tag" "set")
-                        (and allow-move '("--allow-move"))
-                        (list "-r" revision)
-                        names)))
-      (when (zerop (apply #'majutsu-run-jj args))
-        (message "Set tag(s) at %s: %s" revision (string-join names ", "))))))
+    (when (zerop (majutsu-run-jj "tag" "set"
+                                 (and allow-move '("--allow-move"))
+                                 "-r" revision
+                                 names))
+      (message "Set tag(s) at %s: %s" revision (string-join names ", ")))))
 
 ;;;###autoload
 (defun majutsu-tag-delete (names)
@@ -185,7 +184,7 @@ NAMES are passed as jj string patterns."
   (interactive
    (list (majutsu-tag--read-patterns "Delete tag(s)/pattern(s)")))
   (when names
-    (when (zerop (apply #'majutsu-run-jj (append '("tag" "delete") names)))
+    (when (zerop (majutsu-run-jj "tag" "delete" names))
       (message "Deleted tag(s): %s" (string-join names ", ")))))
 
 ;;;###autoload
