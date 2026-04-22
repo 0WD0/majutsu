@@ -318,6 +318,21 @@ This mirrors Magit's behavior."
                                  "--index" "3" "--" "jj" "log" "-r" "ma")))
       (should-not seen-complete))))
 
+(ert-deftest majutsu-jj--machine-completion-payload/identifies-workspaces ()
+  "Machine-readable completion should classify `<workspace>@` refs correctly."
+  (let ((majutsu-jj-executable "/usr/bin/jj"))
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (_program _infile destination _display &rest _args)
+                 (when (eq destination t)
+                   (insert "[{\"value\":\"second@\",\"help\":\"Workspace target\",\"tag\":\"--revisions <REVSETS>\",\"display_order\":0,\"hidden\":false}]") )
+                 0)))
+      (let* ((payload (majutsu-jj--machine-completion-payload
+                       '("diff" "-r" "") 'majutsu-revision))
+             (entry (gethash "second@" (plist-get payload :entries))))
+        (should (equal (plist-get payload :category) 'majutsu-revision))
+        (should (equal (plist-get entry :help) "Workspace target"))
+        (should (eq (plist-get entry :kind) 'workspace))))))
+
 (ert-deftest majutsu-jj-completion-items/falls-back-to-fish-completion ()
   "Native completion should fall back to fish output on older jj versions."
   (let ((majutsu-jj-executable "/usr/bin/jj")
@@ -498,6 +513,30 @@ This mirrors Magit's behavior."
         (should (= (string-width label) 3))
         (should (eq (majutsu-jj--revision-company-kind (gethash "main" entries))
                     'reference))))))
+
+(ert-deftest majutsu-read-single-revset/uses-completing-read ()
+  "Single-revision reader should use ordinary `completing-read'."
+  (let (seen-history seen-default)
+    (let ((annotations (make-hash-table :test #'equal)))
+      (puthash "main" " Main bookmark" annotations)
+      (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+                 (lambda (_args _category)
+                   (list :category 'majutsu-revision
+                         :candidates '("main")
+                         :annotations annotations)))
+                ((symbol-function 'majutsu-completion-prewarm-payload)
+                 (lambda (&rest _args)))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt table _predicate _require-match _initial hist def)
+                   (let ((metadata (funcall table "" nil 'metadata)))
+                     (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision)))
+                   (setq seen-history hist
+                         seen-default def)
+                   "main")))
+        (should (equal (majutsu-read-single-revset "Rev" "@" '("diff" "--from"))
+                       "main"))
+        (should (eq seen-history 'majutsu-read-revset-history))
+        (should (equal seen-default "@"))))))
 
 (ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
   "Revset reader should use plain minibuffer input and allow free-form text."

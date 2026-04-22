@@ -34,6 +34,7 @@
 (require 'smerge-mode)
 
 (declare-function majutsu-read-revset "majutsu-jj" (prompt &optional default completion-args))
+(declare-function majutsu-read-single-revset "majutsu-jj" (prompt &optional default completion-args history))
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
@@ -358,11 +359,18 @@ when some Transient call paths do not bind `transient-current-command'."
               (option (majutsu-diff--transient-jj-option-arg)))
     (append command (list option))))
 
+(defun majutsu-diff--transient-expression-revset-p ()
+  "Return non-nil if the active transient argument accepts a revset expression."
+  (member (majutsu-diff--transient-jj-option-arg)
+          '("-r" "--revisions" "--revision")))
+
 (defun majutsu-diff--transient-read-revset (prompt initial-input _history)
   (unless current-prefix-arg
-    (majutsu-read-revset prompt
-                         (or initial-input (majutsu-diff--transient-default-revset))
-                         (majutsu-diff--transient-revset-completion-args))))
+    (let ((default (or initial-input (majutsu-diff--transient-default-revset)))
+          (completion-args (majutsu-diff--transient-revset-completion-args)))
+      (if (majutsu-diff--transient-expression-revset-p)
+          (majutsu-read-revset prompt default completion-args)
+        (majutsu-read-single-revset prompt default completion-args)))))
 
 ;;; Arguments
 ;;;; Prefix Classes

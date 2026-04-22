@@ -218,15 +218,18 @@ remote prefix from DIRECTORY so the result remains remote."
     (_ (symbol-name source))))
 
 (defun majutsu-jj--machine-completion-kind (item)
-  "Return revision completion kind derived from machine-readable ITEM.
-This currently decodes jj's native revision candidate ordering."
-  (pcase (gethash "display_order" item)
-    (0 'bookmark)
-    (1 'tag)
-    (2 'change-id)
-    (3 'remote-bookmark)
-    (4 'revset-alias)
-    (_ nil)))
+  "Return revision completion kind derived from machine-readable ITEM."
+  (let ((value (gethash "value" item)))
+    (pcase (gethash "display_order" item)
+      (0 (if (and (stringp value)
+                  (string-suffix-p "@" value))
+             'workspace
+           'bookmark))
+      (1 'tag)
+      (2 'change-id)
+      (3 'remote-bookmark)
+      (4 'revset-alias)
+      (_ nil))))
 
 (defun majutsu-jj--machine-completion-entry (item)
   "Return structured completion entry parsed from machine-readable ITEM."
@@ -621,6 +624,36 @@ DEFAULT is inserted first in the candidate list when non-nil."
   "Install revset completion-at-point for the current minibuffer."
   (add-hook 'completion-at-point-functions
             #'majutsu-jj-revset-completion-at-point nil t))
+
+(defun majutsu-read-single-revset (prompt &optional default completion-args history)
+  "Prompt user with PROMPT to read a single revision selector.
+
+Unlike `majutsu-read-revset', this reader is intended for arguments such as
+`--from' and `--to' which accept one revision selector rather than a full
+revset expression.  When COMPLETION-ARGS is non-nil, use jj's native completer
+in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
+  (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
+         (payload (if completion-args
+                      (majutsu-jj--completion-payload
+                       (append completion-args '(""))
+                       'majutsu-revision)
+                    (majutsu-jj-revset-candidate-data default)))
+         (table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision
+                                                  default)
+                  (majutsu-jj--payload-table payload
+                                             'majutsu-revision default))))
+    (when payload
+      (majutsu-completion-prewarm-payload payload 'majutsu-revision nil default-directory))
+    (let ((value (completing-read (format-prompt prompt default)
+                                  table nil nil nil
+                                  (or history 'majutsu-read-revset-history)
+                                  default)))
+      (cond
+       ((not (string-empty-p value)) value)
+       ((and default (not (string-empty-p default))) default)
+       (t (user-error "Need non-empty input"))))))
 
 (defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.
