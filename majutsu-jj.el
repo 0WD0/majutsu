@@ -354,14 +354,25 @@ Each returned item is (CANDIDATE . HELP)."
 (defun majutsu-jj--revision-margin-label (entry)
   "Return a fixed-width short kind label for revision completion ENTRY."
   (pcase (plist-get entry :kind)
-    ('bookmark "Bm")
-    ('remote-bookmark "Rb")
+    ('bookmark "Bm ")
+    ('remote-bookmark "Rb ")
     ('tag "Tag")
-    ('workspace "Ws")
-    ('pseudo "@ ")
-    ('change-id "Ch")
-    ('revset-alias "Al")
-    (_ "  ")))
+    ('workspace "Ws ")
+    ('pseudo "@  ")
+    ('change-id "Ch ")
+    ('revset-alias "Al ")
+    (_ "   ")))
+
+(defun majutsu-jj--revision-company-kind (entry)
+  "Return Company/Corfu kind symbol for revision completion ENTRY."
+  (pcase (plist-get entry :kind)
+    ((or 'bookmark 'remote-bookmark) 'reference)
+    ('tag 'constant)
+    ('workspace 'module)
+    ('pseudo 'keyword)
+    ('change-id 'value)
+    ('revset-alias 'function)
+    (_ 'text)))
 
 (defun majutsu-jj--revision-margin-face (entry)
   "Return face used for revision completion ENTRY in Corfu margin."
@@ -408,7 +419,7 @@ Each returned item is (CANDIDATE . HELP)."
         (current-buffer)))))
 
 (with-eval-after-load 'corfu
-  (add-hook 'corfu-margin-formatters #'majutsu-jj--corfu-revision-margin-formatter))
+  (add-hook 'corfu-margin-formatters #'majutsu-jj--corfu-revision-margin-formatter t))
 
 (defun majutsu-jj--completion-candidates (payload default)
   "Return completion candidates from PAYLOAD, prepending DEFAULT if needed."
@@ -593,6 +604,10 @@ DEFAULT is inserted first in the candidate list when non-nil."
             :annotation-function (lambda (candidate)
                                    (and (hash-table-p annotations)
                                         (gethash candidate annotations)))
+            :company-kind (lambda (candidate)
+                            (majutsu-jj--revision-company-kind
+                             (and (hash-table-p entries)
+                                  (gethash candidate entries))))
             :company-doc-buffer (majutsu-jj--revision-doc-buffer-function entries)
             :majutsu-revision-entries entries))))
 
