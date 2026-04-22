@@ -21,6 +21,8 @@
 (require 'seq)
 (require 'subr-x)
 
+(declare-function majutsu-tag-at-point "majutsu-jj" ())
+
 (defvar-local majutsu-tag--list-all-remotes nil
   "Non-nil when the tag list includes remote tags.")
 
@@ -174,12 +176,14 @@ Return a list of plists with keys:
 (defvar majutsu-tag-pattern-history nil
   "Minibuffer history for tag name-pattern input.")
 
-(defun majutsu-tag--read-candidates (prompt history &optional require-match)
+(defun majutsu-tag--read-candidates (prompt history &optional require-match default)
   "Read tag candidates with PROMPT using HISTORY.
-If REQUIRE-MATCH is non-nil, require existing local tags."
-  (let ((payload (majutsu-tag-candidate-data)))
+If REQUIRE-MATCH is non-nil, require existing local tags.
+DEFAULT is preselected when non-nil."
+  (let ((default (or default (majutsu-tag-at-point)))
+        (payload (majutsu-tag-candidate-data)))
     (majutsu-completing-read-multiple-payload
-     prompt payload nil (or require-match 'any) nil history nil
+     prompt payload nil (or require-match 'any) nil history default
      'majutsu-tag nil default-directory)))
 
 (defun majutsu-tag--read-exact-names (prompt &optional require-match)

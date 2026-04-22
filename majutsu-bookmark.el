@@ -22,6 +22,8 @@
 (require 'seq)
 (require 'subr-x)
 
+(declare-function majutsu-bookmark-name-at-point "majutsu-jj" ())
+
 ;;; majutsu-bookmark
 (defun majutsu--extract-bookmark-names (text)
   "Extract bookmark names from jj command output TEXT."
@@ -245,7 +247,8 @@ SCOPE should be one of the scopes accepted by
   "Read one exact bookmark name using PROMPT.
 DEFAULT is preselected when non-nil.  If REQUIRE-MATCH is non-nil,
 require an existing local bookmark name."
-  (let ((payload (majutsu-bookmark-candidate-data nil default-directory)))
+  (let ((default (or default (majutsu-bookmark-name-at-point)))
+        (payload (majutsu-bookmark-candidate-data nil default-directory)))
     (majutsu-completing-read-payload prompt payload
                                      nil (or require-match 'any) nil
                                      'majutsu-bookmark-name-history
@@ -257,7 +260,8 @@ require an existing local bookmark name."
 CANDIDATES defaults to local bookmark names.  DEFAULT is preselected when
 non-nil.  If REQUIRE-MATCH is non-nil, require existing local bookmark
 names."
-  (let ((payload (majutsu-bookmark-candidate-data candidates default-directory)))
+  (let ((default (or default (majutsu-bookmark-name-at-point)))
+        (payload (majutsu-bookmark-candidate-data candidates default-directory)))
     (majutsu-completing-read-multiple-payload
      prompt payload
      nil (or require-match 'any) nil 'majutsu-bookmark-name-history
@@ -266,7 +270,8 @@ names."
 (defun majutsu-read-bookmark-pattern (prompt &optional default)
   "Read one bookmark name pattern using PROMPT.
 DEFAULT is preselected when non-nil."
-  (let ((payload (majutsu-bookmark-candidate-data nil default-directory)))
+  (let ((default (or default (majutsu-bookmark-at-point)))
+        (payload (majutsu-bookmark-candidate-data nil default-directory)))
     (majutsu-completing-read-payload prompt payload
                                      nil 'any nil
                                      'majutsu-bookmark-pattern-history
