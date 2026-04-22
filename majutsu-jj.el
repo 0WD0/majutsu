@@ -294,7 +294,7 @@ still allowing free-form revset expressions.
 When COMPLETION-ARGS is non-nil, use jj's native completer in that
 command context.  COMPLETION-ARGS are command-line arguments before the
 revset value being read."
-  (let* ((default (or default (magit-section-value-if 'jj-commit) "@"))
+  (let* ((default (or default (majutsu-target-revision-at-point) "@"))
          (table (if completion-args
                     (majutsu-jj--completion-table completion-args
                                                   'majutsu-revision
@@ -396,20 +396,13 @@ until an accessible directory is found.  Return nil if none is found."
 (defvar majutsu-buffer-blob-revision)
 (defvar majutsu-buffer-diff-range)
 
-(defun majutsu-revision-at-point ()
-  "Return the change-id at point.
-This checks multiple sources in order:
-1. Section value (jj-commit section)
-2. Blob buffer revision
-3. Diff/revision buffer revision"
-  (or (magit-section-value-if 'jj-commit)
-      (and (bound-and-true-p majutsu-buffer-blob-revision)
-           majutsu-buffer-blob-revision)
-      (and (derived-mode-p 'majutsu-diff-mode)
-           (bound-and-true-p majutsu-buffer-diff-range)
-           (let ((range majutsu-buffer-diff-range))
-             (or (and (equal (car range) "-r") (cadr range))
-                 (cdr (assoc "--revisions=" range)))))))
+(defvar majutsu-bookmark-faces
+  '(majutsu-log-bookmark-face)
+  "Faces used for JJ bookmark identifiers in Majutsu buffers.")
+
+(defvar majutsu-tag-faces
+  '(majutsu-log-tag-face)
+  "Faces used for JJ tag identifiers in Majutsu buffers.")
 
 (defvar majutsu-revision-faces
   '(majutsu-log-revision-face
@@ -419,6 +412,75 @@ This checks multiple sources in order:
     majutsu-log-tag-face)
   "Faces used for JJ revision identifiers in Majutsu buffers.")
 
+(defun majutsu-thing-at-point (thing &optional no-properties)
+  "Return THING at point.
+This thin wrapper exists so Majutsu can later extend point semantics
+without changing call sites."
+  (thing-at-point thing no-properties))
+
+(defun majutsu--normalize-at-point-value (value)
+  "Return VALUE without text properties, or nil when VALUE is nil."
+  (and value (substring-no-properties value)))
+
+(defun majutsu--faces-at-point (&optional pos)
+  "Return all faces at POS as a list."
+  (let ((faces (or (get-text-property (or pos (point)) 'font-lock-face)
+                   (get-text-property (or pos (point)) 'face))))
+    (cond
+     ((null faces) nil)
+     ((listp faces) faces)
+     (t (list faces)))))
+
+(defun majutsu--face-at-point-p (faces &optional pos)
+  "Return non-nil when any of FACES appears at POS."
+  (let ((faces (ensure-list faces)))
+    (seq-some (lambda (face)
+                (memq face (majutsu--faces-at-point pos)))
+              faces)))
+
+(defun majutsu--regexp-char-class (chars)
+  "Return CHARS escaped for use inside a regexp character class."
+  (mapconcat (lambda (ch)
+               (if (memq ch '(?\[ ?\] ?\\ ?^ ?-))
+                   (concat "\\" (char-to-string ch))
+                 (char-to-string ch)))
+             chars
+             ""))
+
+(defun majutsu--diff-revision-at-point ()
+  "Return the revision implied by the current diff buffer, or nil."
+  (and (derived-mode-p 'majutsu-diff-mode)
+       (bound-and-true-p majutsu-buffer-diff-range)
+       (let ((range majutsu-buffer-diff-range))
+         (or (and (equal (car range) "-r") (cadr range))
+             (when-let* ((arg (seq-find (lambda (item)
+                                          (string-prefix-p "--revisions=" item))
+                                        range)))
+               (substring arg (length "--revisions=")))))))
+
+(defun majutsu-context-revision-at-point ()
+  "Return the contextual JJ revision at point.
+This prefers semantic section values over textual parsing."
+  (or (majutsu--normalize-at-point-value (magit-section-value-if 'jj-bookmark))
+      (majutsu--normalize-at-point-value (magit-section-value-if 'jj-tag))
+      (majutsu--normalize-at-point-value (magit-section-value-if 'jj-commit))
+      (and (bound-and-true-p majutsu-buffer-blob-revision)
+           (majutsu--normalize-at-point-value majutsu-buffer-blob-revision))
+      (majutsu--normalize-at-point-value (majutsu--diff-revision-at-point))))
+
+(defun majutsu-revision-at-point ()
+  "Return the contextual JJ revision at point.
+This compatibility wrapper preserves the historical Majutsu meaning of
+revision-at-point, which is based on buffer and section context."
+  (majutsu-context-revision-at-point))
+
+(defun majutsu-target-revision-at-point ()
+  "Return the most specific JJ revision target at point.
+Prefer a literal revision or ref under point, falling back to contextual
+Majutsu section or buffer state."
+  (or (majutsu-thing-at-point 'jj-revision t)
+      (majutsu-context-revision-at-point)))
+
 (defun majutsu-jj-revision-p (rev)
   "Return non-nil if REV names an existing JJ revision.
 Uses `jj log -r REV -G -T self.contained_in(\"REV\")' to verify."
@@ -427,14 +489,20 @@ Uses `jj log -r REV -G -T self.contained_in(\"REV\")' to verify."
                                      (majutsu-tpl `[:method [:self] :contained_in ,rev]))))
       (string= output "true"))))
 
+(defun majutsu--explicit-jj-revision-syntax-p (string)
+  "Return non-nil when STRING uses explicit JJ revision syntax."
+  (or (and (not (string-equal string "@"))
+           (= (cl-count ?@ string) 1))
+      (string-match-p "\\`[^/]+/[0-9]+\\'" string)))
+
 (put 'jj-revision 'thing-at-point #'majutsu-thingatpt--jj-revision)
 (defun majutsu-thingatpt--jj-revision (&optional disallow)
   "Return the JJ revision at point, or nil if none is found.
 Optional DISALLOW is a string of characters that should not appear
 in the revision identifier (used for recursive refinement)."
-  ;; Support change IDs, commit IDs, and references (bookmarks, tags, etc.)
   (and-let* ((bounds
-              (let ((c (concat "\s\n\t~^:?*[\\|()<>@" disallow)))
+              (let ((c (majutsu--regexp-char-class
+                        (concat " \n\t~^:?*[\\|()<>" disallow))))
                 (cl-letf
                     (((get 'jj-revision 'beginning-op)
                       (lambda ()
@@ -446,51 +514,33 @@ in the revision identifier (used for recursive refinement)."
                         (re-search-forward (format "\\=[^%s]*" c) nil t))))
                   (bounds-of-thing-at-point 'jj-revision))))
              (string (buffer-substring-no-properties (car bounds) (cdr bounds)))
-             ;; References are allowed to contain most punctuation,
-             ;; but if those appear at edges, they're likely delimiters.
              (string (thread-first string
-                                   (string-trim-left  "[(</\"'")
-                                   (string-trim-right "[])>\"'.,;:!]"))))
-    (let (disallow)
-      ;; Handle ranges (x..y) and special syntax
+                                   (string-trim-left  "[][()</\"']+")
+                                   (string-trim-right "[])>\"'.,;:!]+"))))
+    (let* ((revision-face (majutsu--face-at-point-p majutsu-revision-faces))
+           (explicit-syntax (majutsu--explicit-jj-revision-syntax-p string)))
       (when (or (string-match-p "\\.\\." string)
                 (string-match-p "/\\." string))
         (setq disallow (concat disallow ".")))
-      ;; Handle change offset syntax (xyz/0, xyz/1)
+      (when (> (cl-count ?@ string) 1)
+        (setq disallow (concat disallow "@")))
       (when (and (string-match-p "/[0-9]" string)
-                 (not (string-match-p "@" string)))
-        ;; Keep the slash for change offset, but disallow further slashes
+                 (> (cl-count ?/ string) 1))
         (setq disallow (concat disallow "/")))
-      ;; Handle remote references (name@remote)
-      (when (and (string-match-p "@" string)
-                 (not (string-equal string "@")))
-        ;; Allow one @ for remote refs, but not more
-        (unless (string-match-p "^@[a-zA-Z]" string)
-          (setq disallow (concat disallow "@"))))
       (if disallow
-          ;; Recurse with additional restrictions
           (majutsu-thingatpt--jj-revision disallow)
-        ;; Final validation
-        (and (not (string-match-p "^[\s\t\n]*$" string))
+        (and (not (string-match-p "\`[[:space:]]*\'" string))
              (or
-              ;; Check if it looks like a change ID (k-z range letters)
-              ;; Change IDs use k-z instead of 0-9a-f; default display is lowercase
-              (and (>= (length string) 1)
-                   (string-match-p "^[k-z]+$" string)
-                   ;; Shortest unique prefix can be as short as 1 char
+              (and (string-match-p "^[k-z]+$" string)
+                   (>= (length string) (if revision-face 1 4))
                    (majutsu-jj-revision-p string))
-              ;; Check if it looks like a commit ID (hex)
               (and (>= (length string) 4)
                    (string-match-p "^[0-9a-fA-F]+$" string)
                    (majutsu-jj-revision-p string))
-              ;; Check if it's @ (working copy)
               (string-equal string "@")
-              ;; Check if it's a bookmark/tag with proper face
-              (and (member (get-text-property (point) 'face)
-                           majutsu-revision-faces)
+              (and explicit-syntax
                    (majutsu-jj-revision-p string))
-              ;; Fallback: try to validate any non-empty string
-              (and (>= (length string) 1)
+              (and revision-face
                    (majutsu-jj-revision-p string)))
              string)))))
 
@@ -501,9 +551,21 @@ in the revision identifier (used for recursive refinement)."
                  (oref it value)))
     (jj-file (oref it value))))
 
-(defun majutsu-bookmarks-at-point (&optional bookmark-type)
-  "Return a list of bookmark names at point."
-  (let* ((rev (or (magit-section-value-if 'jj-commit) "@"))
+(defun majutsu-bookmark-name-at-point ()
+  "Return the bookmark name at point, or nil when none is found."
+  (or (majutsu--normalize-at-point-value (magit-section-value-if 'jj-bookmark))
+      (and (majutsu--face-at-point-p majutsu-bookmark-faces)
+           (majutsu-thing-at-point 'jj-revision t))))
+
+(defun majutsu-tag-at-point ()
+  "Return the tag name at point, or nil when none is found."
+  (or (majutsu--normalize-at-point-value (magit-section-value-if 'jj-tag))
+      (and (majutsu--face-at-point-p majutsu-tag-faces)
+           (majutsu-thing-at-point 'jj-revision t))))
+
+(defun majutsu-context-bookmarks-at-point (&optional bookmark-type)
+  "Return bookmark names for the contextual revision at point."
+  (let* ((rev (or (majutsu-context-revision-at-point) "@"))
          (args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
                          "-T" ,(pcase bookmark-type
                                  ('remote "remote_bookmarks")
@@ -513,11 +575,23 @@ in the revision identifier (used for recursive refinement)."
          (bookmarks (split-string (string-join lines "\n") " " t)))
     (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
 
-(defun majutsu-bookmark-at-point ()
-  "Return a comma-separated string of bookmark names at point."
-  (let ((bookmarks (majutsu-bookmarks-at-point)))
+(defun majutsu-context-bookmark-patterns-at-point (&optional bookmark-type)
+  "Return contextual bookmark patterns for the revision at point."
+  (let ((bookmarks (majutsu-context-bookmarks-at-point bookmark-type)))
     (when bookmarks
       (string-join bookmarks ","))))
+
+(defun majutsu-bookmarks-at-point (&optional bookmark-type)
+  "Return bookmark names for the contextual revision at point.
+This compatibility wrapper preserves the historical Majutsu behavior."
+  (majutsu-context-bookmarks-at-point bookmark-type))
+
+(defun majutsu-bookmark-at-point (&optional bookmark-type)
+  "Return the most specific bookmark default at point.
+Prefer the exact bookmark under point; otherwise return contextual
+bookmark patterns for the surrounding revision."
+  (or (majutsu-bookmark-name-at-point)
+      (majutsu-context-bookmark-patterns-at-point bookmark-type)))
 
 ;;; Errors
 

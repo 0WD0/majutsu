@@ -409,4 +409,67 @@ This mirrors Magit's behavior."
         (should (null seen-default))
         (should (eq seen-category 'majutsu-revision))))))
 
+(ert-deftest majutsu-thingatpt-jj-revision/accepts-remote-ref-without-face ()
+  (with-temp-buffer
+    (insert "main@origin")
+    (cl-letf (((symbol-function 'majutsu-jj-revision-p)
+               (lambda (rev)
+                 (equal rev "main@origin"))))
+      (goto-char 2)
+      (should (equal (majutsu-thing-at-point 'jj-revision t) "main@origin"))
+      (goto-char 8)
+      (should (equal (majutsu-thing-at-point 'jj-revision t) "main@origin")))))
+
+(ert-deftest majutsu-thingatpt-jj-revision/rejects-plain-bookmark-without-face ()
+  (with-temp-buffer
+    (insert "main")
+    (goto-char 2)
+    (cl-letf (((symbol-function 'majutsu-jj-revision-p)
+               (lambda (rev)
+                 (equal rev "main"))))
+      (should-not (majutsu-thing-at-point 'jj-revision t)))))
+
+(ert-deftest majutsu-thingatpt-jj-revision/accepts-font-lock-faced-bookmark ()
+  (with-temp-buffer
+    (insert (propertize "main"
+                        'font-lock-face 'majutsu-log-bookmark-face))
+    (goto-char 2)
+    (cl-letf (((symbol-function 'majutsu-jj-revision-p)
+               (lambda (rev)
+                 (equal rev "main"))))
+      (should (equal (majutsu-thing-at-point 'jj-revision t) "main")))))
+
+(ert-deftest majutsu-context-revision-at-point/uses-diff-revisions-range ()
+  (with-temp-buffer
+    (let ((majutsu-buffer-diff-range '("--revisions=main@origin")))
+      (cl-letf (((symbol-function 'derived-mode-p)
+                 (lambda (&rest modes)
+                   (memq 'majutsu-diff-mode modes))))
+        (should (equal (majutsu-context-revision-at-point)
+                       "main@origin"))))))
+
+(ert-deftest majutsu-target-revision-at-point/prefers-literal-thing ()
+  (cl-letf (((symbol-function 'majutsu-thing-at-point)
+             (lambda (_thing &optional _no-properties)
+               "main@origin"))
+            ((symbol-function 'majutsu-context-revision-at-point)
+             (lambda () "context")))
+    (should (equal (majutsu-target-revision-at-point) "main@origin"))))
+
+
+(ert-deftest majutsu-read-revset/defaults-to-target-revision-at-point ()
+  (let (seen-default)
+    (cl-letf (((symbol-function 'majutsu-target-revision-at-point)
+               (lambda () "main@origin"))
+              ((symbol-function 'majutsu-jj-revset-candidate-data)
+               (lambda (_default)
+                 (list :category 'majutsu-revision
+                       :candidates '("main@origin"))))
+              ((symbol-function 'read-from-minibuffer)
+               (lambda (_prompt _initial _keymap _read _hist default &optional _inherit)
+                 (setq seen-default default)
+                 "")))
+      (should (equal (majutsu-read-revset "Rev") "main@origin"))
+      (should (equal seen-default "main@origin")))))
+
 (provide 'majutsu-jj-test)

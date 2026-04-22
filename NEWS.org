@@ -57,6 +57,10 @@
   Majutsu-owned completion faces and separator settings for structured
   suffixes, and no longer fabricate generic fallback suffixes for candidates
   without structured metadata.
+- Thing-at-point: Add a dedicated JJ revision target layer so revset readers
+  and commands such as ~majutsu-edit-changeset~ and ~majutsu-new-dwim~ prefer
+  the literal revision/ref under point, while bookmark/tag readers now default
+  to exact refs at point before falling back to contextual revision data.
 - Workspace: Workspace lists now show resolved roots when available and
   treat unavailable roots as empty data instead of raw jj errors. Internally
   this now uses one structured =jj workspace list -T= parse pipeline.

@@ -127,19 +127,21 @@
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0)))
       (majutsu-bookmark-advance)
-      (should (equal called '("bookmark" "advance"))))))
+      (should (equal (seq-remove #'null (flatten-tree called))
+                     '("bookmark" "advance"))))))
 
 (ert-deftest majutsu-bookmark-advance-to/builds-target-args ()
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0)))
       (majutsu-bookmark-advance-to "@")
-      (should (equal called '("bookmark" "advance" "-t" "@"))))))
+      (should (equal (seq-remove #'null (flatten-tree called))
+                     '("bookmark" "advance" "-t" "@"))))))
 
 (ert-deftest majutsu-read-bookmark-name/uses-name-history ()
   (let (seen-history seen-category)
@@ -156,6 +158,29 @@
       (should (equal (majutsu-read-bookmark-name "Bookmark") "main"))
       (should (eq seen-history 'majutsu-bookmark-name-history))
       (should (eq seen-category 'majutsu-bookmark)))))
+
+(ert-deftest majutsu-bookmark-at-point/prefers-exact-bookmark-over-context-patterns ()
+  (cl-letf (((symbol-function 'majutsu-bookmark-name-at-point)
+             (lambda () "main"))
+            ((symbol-function 'majutsu-context-bookmark-patterns-at-point)
+             (lambda (&optional _bookmark-type)
+               "context")))
+    (should (equal (majutsu-bookmark-at-point) "main"))))
+
+(ert-deftest majutsu-read-bookmark-name/defaults-to-exact-bookmark-at-point ()
+  (let (seen-default)
+    (cl-letf (((symbol-function 'majutsu-bookmark-name-at-point)
+               (lambda () "main"))
+              ((symbol-function 'majutsu-bookmark-candidate-data)
+               (lambda (&optional _candidates _directory)
+                 (list :candidates '("main")
+                       :entries (make-hash-table :test #'equal))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _collection _predicate _require-match _initial _hist default)
+                 (setq seen-default default)
+                 "main")))
+      (should (equal (majutsu-read-bookmark-name "Bookmark") "main"))
+      (should (equal seen-default "main")))))
 
 (ert-deftest majutsu-read-bookmark-patterns/filters-empty-input-and-uses-history ()
   (let (seen-history seen-category)
@@ -199,20 +224,20 @@
                (lambda (_type) "@"))
               ((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0)))
       (majutsu-bookmark-create '("main" "feature"))
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "create" "main" "feature" "-r" "@"))))))
 
 (ert-deftest majutsu-bookmark-advance-patterns/builds-name-args ()
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0)))
       (majutsu-bookmark-advance-patterns '("main" "glob:\"feat*\""))
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "advance"
                        "main" "glob:\"feat*\""))))))
 
@@ -220,10 +245,10 @@
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0)))
       (majutsu-bookmark-set '("main" "feature") "@")
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "set" "main" "feature" "-r" "@"))))))
 
 (ert-deftest majutsu-bookmark-track/reads-patterns-and-calls-jj ()
@@ -244,11 +269,11 @@
                   (t nil))))
               ((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0))
               ((symbol-function 'message) (lambda (&rest _args) nil)))
       (majutsu-bookmark-track)
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "track"
                        "main" "glob:\"feat*\""
                        "--remote" "origin"
@@ -258,11 +283,11 @@
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0))
               ((symbol-function 'message) (lambda (&rest _args) nil)))
       (majutsu-bookmark-delete '("main" "glob:\"feat*\""))
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "delete"
                        "main" "glob:\"feat*\""))))))
 
@@ -270,11 +295,11 @@
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0))
               ((symbol-function 'message) (lambda (&rest _args) nil)))
       (majutsu-bookmark-forget '("main" "glob:\"feat*\""))
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "forget"
                        "main" "glob:\"feat*\""))))))
 
@@ -282,11 +307,11 @@
   (let (called)
     (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
-                 (setq called (flatten-tree args))
+                 (setq called args)
                  0))
               ((symbol-function 'message) (lambda (&rest _args) nil)))
       (majutsu-bookmark-untrack '("main" "glob:\"ci/*\"") '("origin" "upstream"))
-      (should (equal called
+      (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "untrack"
                        "main" "glob:\"ci/*\""
                        "--remote" "origin"
