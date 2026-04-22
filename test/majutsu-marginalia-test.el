@@ -95,6 +95,8 @@
        'majutsu-revision (list :entries entries) nil default-directory)
       (let ((dev (majutsu-marginalia-format-revision "dev"))
             (tramp (majutsu-marginalia-format-revision "feat/tramp")))
+        (should (string-prefix-p "  " dev))
+        (should (string-prefix-p "  " tramp))
         (should (string-match-p "bookmark" dev))
         (should (string-match-p "short" dev))
         (should (string-match-p "bookmark" tramp))
