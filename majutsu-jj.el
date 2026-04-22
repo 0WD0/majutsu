@@ -541,6 +541,8 @@ DEFAULT is inserted first in the candidate list when non-nil."
   "Return completion data for the revset expression at point."
   (let* ((input (majutsu-jj--revset-minibuffer-input))
          (payload (majutsu-jj--revset-completion-payload input))
+         (entries (plist-get payload :entries))
+         (annotations (plist-get payload :annotations))
          (table (majutsu-jj--payload-table
                  payload 'majutsu-revision
                  majutsu-jj--revset-completion-default)))
@@ -548,7 +550,13 @@ DEFAULT is inserted first in the candidate list when non-nil."
      payload 'majutsu-revision input default-directory)
     (when (plist-get payload :candidates)
       (list (minibuffer-prompt-end) (point) table
-            :exclusive 'no))))
+            :exclusive 'no
+            :category 'majutsu-revision
+            :annotation-function (lambda (candidate)
+                                   (and (hash-table-p annotations)
+                                        (gethash candidate annotations)))
+            :affixation-function (majutsu-jj--revision-affixation-function
+                                  entries annotations)))))
 
 (defun majutsu-jj-revset-complete ()
   "Complete the revset expression at point using jj's native completer."
