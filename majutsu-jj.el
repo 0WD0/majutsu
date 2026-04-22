@@ -29,6 +29,8 @@
 (require 'with-editor)
 (require 'majutsu-base)
 
+(eval-when-compile (require 'majutsu-template))
+
 (autoload 'majutsu-process-file "majutsu-process" nil nil)
 
 ;;; Options
