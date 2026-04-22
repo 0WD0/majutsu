@@ -214,11 +214,22 @@ Insert Marginalia's alignment marker before the first separator."
       'marginalia-documentation))))
 
 (defun majutsu-marginalia-format-revision (cand)
-  "Return plain suffix text for revision candidate CAND.
-This is intended for completion UIs such as Corfu which already handle
-candidate alignment themselves."
-  (or (and-let* ((fields (majutsu-marginalia--revision-fields cand)))
-        (apply #'majutsu-marginalia--join-fields fields))
+  "Return compact popup suffix text for revision candidate CAND.
+This is intended for completion UIs such as Corfu.  Keep this compact and
+single-block; richer multi-column formatting belongs in the minibuffer via
+`majutsu-marginalia-annotate-revision'."
+  (or (when-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-revision cand)))
+        (majutsu-marginalia--join-fields
+         (majutsu-marginalia--field
+          (or (majutsu-marginalia--revision-kind-label (plist-get entry :kind))
+              "revset")
+          'marginalia-key)
+         (majutsu-marginalia--field
+          (or (plist-get entry :help)
+              (plist-get entry :tag)
+              (and (not (plist-get entry :hidden))
+                   (majutsu-marginalia--orig-annotation cand)))
+          'marginalia-documentation)))
       (and-let* ((annotation (majutsu-marginalia--orig-annotation cand)))
         (string-trim-left annotation))
       (majutsu-marginalia--field "revset" 'marginalia-key)))
