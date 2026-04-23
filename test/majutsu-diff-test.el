@@ -236,6 +236,15 @@
         (when (buffer-live-p diff-buf)
           (kill-buffer diff-buf))))))
 
+(ert-deftest majutsu-diff-dwim/prefers-literal-revision-at-point ()
+  (cl-letf (((symbol-function 'majutsu-thing-at-point)
+             (lambda (_thing &optional _no-properties)
+               "main@origin"))
+            ((symbol-function 'majutsu-revision-at-point)
+             (lambda () "context")))
+    (should (equal (majutsu-diff--dwim)
+                   '(revision . "main@origin")))))
+
 (ert-deftest majutsu-diff-refine-hunk-default-disabled ()
   "Diff refinement should be disabled by default."
   (with-temp-buffer

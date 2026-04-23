@@ -708,9 +708,8 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
 (ert-deftest majutsu-ediff-test-resolve-file-dwim-uses-commit-revision ()
   "Resolve DWIM should query conflicted files at commit section revision."
   (let (asked-rev)
-    (cl-letf (((symbol-function 'magit-section-value-if)
-               (lambda (type)
-                 (when (eq type 'jj-commit) "abc123")))
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
+               (lambda () "abc123"))
               ((symbol-function 'majutsu-ediff--read-conflicted-file)
                (lambda (&optional rev)
                  (setq asked-rev rev)

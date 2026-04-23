@@ -12,6 +12,33 @@
 (require 'cl-lib)
 (require 'majutsu-tag)
 
+(ert-deftest majutsu-tag-section-map/remaps-visit-thing-to-edit ()
+  (should (eq (lookup-key majutsu-tag-section-map
+                          [remap majutsu-visit-thing])
+              #'majutsu-edit-changeset)))
+
+(ert-deftest majutsu-tag-wash-list/uses-plain-section-values ()
+  (with-temp-buffer
+    (majutsu-tag-list-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t))
+      (magit-insert-section (tag-list)
+        (insert "v1.0: qpvuntsm\n")
+        (majutsu-tag--wash-list nil))
+      (let* ((sections (cons magit-root-section
+                             (append (oref magit-root-section children)
+                                     (apply #'append
+                                            (mapcar (lambda (section)
+                                                      (oref section children))
+                                                    (oref magit-root-section children))))))
+             (section (seq-find (lambda (section)
+                                  (eq (oref section type) 'jj-tag))
+                                sections))
+             (value (oref section value)))
+        (should section)
+        (should (equal value "v1.0"))
+        (should-not (text-properties-at 0 value))))))
+
 (ert-deftest majutsu-tag-get-tag-names/local-args ()
   (let (seen-args)
     (cl-letf (((symbol-function 'majutsu-jj-lines)

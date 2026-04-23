@@ -294,7 +294,10 @@ still allowing free-form revset expressions.
 When COMPLETION-ARGS is non-nil, use jj's native completer in that
 command context.  COMPLETION-ARGS are command-line arguments before the
 revset value being read."
-  (let* ((default (or default (majutsu-target-revision-at-point) "@"))
+  (let* ((default (or default
+                      (majutsu-thing-at-point 'jj-revision t)
+                      (majutsu-revision-at-point)
+                      "@"))
          (table (if completion-args
                     (majutsu-jj--completion-table completion-args
                                                   'majutsu-revision
@@ -418,10 +421,6 @@ This thin wrapper exists so Majutsu can later extend point semantics
 without changing call sites."
   (thing-at-point thing no-properties))
 
-(defun majutsu--normalize-at-point-value (value)
-  "Return VALUE without text properties, or nil when VALUE is nil."
-  (and value (substring-no-properties value)))
-
 (defun majutsu--faces-at-point (&optional pos)
   "Return all faces at POS as a list."
   (let ((faces (or (get-text-property (or pos (point)) 'font-lock-face)
@@ -458,28 +457,26 @@ without changing call sites."
                                         range)))
                (substring arg (length "--revisions=")))))))
 
-(defun majutsu-context-revision-at-point ()
-  "Return the contextual JJ revision at point.
-This prefers semantic section values over textual parsing."
-  (or (majutsu--normalize-at-point-value (magit-section-value-if 'jj-bookmark))
-      (majutsu--normalize-at-point-value (magit-section-value-if 'jj-tag))
-      (majutsu--normalize-at-point-value (magit-section-value-if 'jj-commit))
-      (and (bound-and-true-p majutsu-buffer-blob-revision)
-           (majutsu--normalize-at-point-value majutsu-buffer-blob-revision))
-      (majutsu--normalize-at-point-value (majutsu--diff-revision-at-point))))
+(defun majutsu--section-revision-at-point ()
+  "Return the section value at point when it identifies a JJ revision."
+  (magit-section-case
+    (jj-bookmark (oref it value))
+    (jj-tag (oref it value))
+    (jj-commit (oref it value))))
+
+(defun majutsu--buffer-revision-at-point ()
+  "Return the revision implied by the surrounding Majutsu buffer."
+  (or (and (bound-and-true-p majutsu-buffer-blob-revision)
+           majutsu-buffer-blob-revision)
+      (majutsu--diff-revision-at-point)))
 
 (defun majutsu-revision-at-point ()
-  "Return the contextual JJ revision at point.
-This compatibility wrapper preserves the historical Majutsu meaning of
-revision-at-point, which is based on buffer and section context."
-  (majutsu-context-revision-at-point))
-
-(defun majutsu-target-revision-at-point ()
-  "Return the most specific JJ revision target at point.
-Prefer a literal revision or ref under point, falling back to contextual
-Majutsu section or buffer state."
-  (or (majutsu-thing-at-point 'jj-revision t)
-      (majutsu-context-revision-at-point)))
+  "Return the JJ revision at point.
+Prefer semantic section values, then textual JJ revision syntax, then
+buffer-implied revisions such as blob and diff contexts."
+  (or (majutsu--section-revision-at-point)
+      (majutsu-thing-at-point 'jj-revision t)
+      (majutsu--buffer-revision-at-point)))
 
 (defun majutsu-jj-revision-p (rev)
   "Return non-nil if REV names an existing JJ revision.
@@ -551,47 +548,17 @@ in the revision identifier (used for recursive refinement)."
                  (oref it value)))
     (jj-file (oref it value))))
 
-(defun majutsu-bookmark-name-at-point ()
+(defun majutsu-bookmark-at-point (&optional _bookmark-type)
   "Return the bookmark name at point, or nil when none is found."
-  (or (majutsu--normalize-at-point-value (magit-section-value-if 'jj-bookmark))
+  (or (magit-section-value-if 'jj-bookmark)
       (and (majutsu--face-at-point-p majutsu-bookmark-faces)
            (majutsu-thing-at-point 'jj-revision t))))
 
 (defun majutsu-tag-at-point ()
   "Return the tag name at point, or nil when none is found."
-  (or (majutsu--normalize-at-point-value (magit-section-value-if 'jj-tag))
+  (or (magit-section-value-if 'jj-tag)
       (and (majutsu--face-at-point-p majutsu-tag-faces)
            (majutsu-thing-at-point 'jj-revision t))))
-
-(defun majutsu-context-bookmarks-at-point (&optional bookmark-type)
-  "Return bookmark names for the contextual revision at point."
-  (let* ((rev (or (majutsu-context-revision-at-point) "@"))
-         (args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
-                         "-T" ,(pcase bookmark-type
-                                 ('remote "remote_bookmarks")
-                                 ('local "local_bookmarks")
-                                 (_ "bookmarks")))))
-         (lines (apply #'majutsu-jj-lines args))
-         (bookmarks (split-string (string-join lines "\n") " " t)))
-    (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
-
-(defun majutsu-context-bookmark-patterns-at-point (&optional bookmark-type)
-  "Return contextual bookmark patterns for the revision at point."
-  (let ((bookmarks (majutsu-context-bookmarks-at-point bookmark-type)))
-    (when bookmarks
-      (string-join bookmarks ","))))
-
-(defun majutsu-bookmarks-at-point (&optional bookmark-type)
-  "Return bookmark names for the contextual revision at point.
-This compatibility wrapper preserves the historical Majutsu behavior."
-  (majutsu-context-bookmarks-at-point bookmark-type))
-
-(defun majutsu-bookmark-at-point (&optional bookmark-type)
-  "Return the most specific bookmark default at point.
-Prefer the exact bookmark under point; otherwise return contextual
-bookmark patterns for the surrounding revision."
-  (or (majutsu-bookmark-name-at-point)
-      (majutsu-context-bookmark-patterns-at-point bookmark-type)))
 
 ;;; Errors
 

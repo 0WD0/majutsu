@@ -22,6 +22,13 @@
 (require 'subr-x)
 
 (declare-function majutsu-tag-at-point "majutsu-jj" ())
+(declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
+
+;;; Section Keymaps
+
+(defvar-keymap majutsu-tag-section-map
+  :doc "Keymap for `jj-tag' sections."
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
 
 (defvar-local majutsu-tag--list-all-remotes nil
   "Non-nil when the tag list includes remote tags.")

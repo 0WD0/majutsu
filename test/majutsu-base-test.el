@@ -12,6 +12,12 @@
 (require 'cl-lib)
 (require 'majutsu-base)
 
+(ert-deftest majutsu-base-registers-bookmark-and-tag-section-types ()
+  (should (eq (alist-get 'jj-bookmark magit--section-type-alist)
+              'majutsu-bookmark-section))
+  (should (eq (alist-get 'jj-tag magit--section-type-alist)
+              'majutsu-tag-section)))
+
 (ert-deftest majutsu-completing-read/empty-optional-returns-nil ()
   (cl-letf (((symbol-function 'completing-read)
              (lambda (&rest _args)

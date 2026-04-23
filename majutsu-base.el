@@ -111,6 +111,12 @@ for a class of actions that would normally ask for confirmation."
             :documentation "Selection overlay used by transient UIs.")
    (keymap :initform 'majutsu-commit-section-map)))
 
+(defclass majutsu-bookmark-section (magit-section)
+  ((keymap :initform 'majutsu-bookmark-section-map)))
+
+(defclass majutsu-tag-section (magit-section)
+  ((keymap :initform 'majutsu-tag-section-map)))
+
 (defclass majutsu-diff-section (magit-section)
   ((keymap :initform 'majutsu-diff-section-map))
   :abstract t)
@@ -134,9 +140,11 @@ for a class of actions that would normally ask for confirmation."
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
    (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
 
-(setf (alist-get 'jj-commit magit--section-type-alist) 'majutsu-commit-section)
-(setf (alist-get 'jj-file   magit--section-type-alist) 'majutsu-file-section)
-(setf (alist-get 'jj-hunk   magit--section-type-alist) 'majutsu-hunk-section)
+(setf (alist-get 'jj-commit   magit--section-type-alist) 'majutsu-commit-section)
+(setf (alist-get 'jj-bookmark magit--section-type-alist) 'majutsu-bookmark-section)
+(setf (alist-get 'jj-tag      magit--section-type-alist) 'majutsu-tag-section)
+(setf (alist-get 'jj-file     magit--section-type-alist) 'majutsu-file-section)
+(setf (alist-get 'jj-hunk     magit--section-type-alist) 'majutsu-hunk-section)
 
 ;; Workspace sections (`jj workspace list`)
 
