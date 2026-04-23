@@ -1437,10 +1437,10 @@ With prefix STYLE, cycle between `all' and `t'."
   "Show changes for the thing at point."
   (interactive (majutsu-diff-arguments))
   (let* ((rev (pcase (majutsu-diff--dwim)
-                (`(commit . ,rev) rev)
+                (`(,_ . ,rev) rev)
                 (_ "@")))
          (range (or range
-                    (list (concat "--revisions=" (substring-no-properties rev))))))
+                    (list (concat "--revisions=" rev)))))
     (majutsu-diff-setup-buffer args range filesets)))
 
 ;;;###autoload
@@ -1456,9 +1456,9 @@ REVSET is passed to jj diff using `--revisions='."
 ;; TODO: implement more DWIM cases
 (defun majutsu-diff--dwim ()
   "Return information for performing DWIM diff."
-  (if-let* ((rev (magit-section-value-if 'jj-commit)))
-      (cons 'commit rev)
-    nil))
+  (when-let* ((rev (or (majutsu-thing-at-point 'jj-revision t)
+                       (majutsu-revision-at-point))))
+    (cons 'revision rev)))
 
 (defun majutsu-diff-setup-buffer (args range filesets &optional locked)
   "Display a diff buffer configured by ARGS, RANGE and FILESETS."

@@ -606,7 +606,7 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
             (range (majutsu-ediff--current-range)))
        (majutsu-ediff-compare (car range) (cdr range) file)))
     (jj-commit
-     (majutsu-ediff-show-revision (substring-no-properties (oref it value))))
+     (majutsu-ediff-show-revision (oref it value)))
     (t
      (let* ((range (majutsu-ediff--current-range))
             (file (majutsu-file-at-point)))

@@ -63,10 +63,12 @@
   editing revset expressions. The optional Marginalia integration now shows
   richer bookmark, tag, remote, workspace, revision, and file annotations based
   on structured completion payloads.
-- Thing-at-point: Add a dedicated JJ revision target layer so revset readers
-  and commands such as ~majutsu-edit-changeset~ and ~majutsu-new-dwim~ prefer
-  the literal revision/ref under point, while bookmark/tag readers now default
-  to exact refs at point before falling back to contextual revision data.
+- Thing-at-point: Rework JJ at-point accessors in a more Magit-like style.
+  Revset readers and commands such as ~majutsu-edit-changeset~,
+  ~majutsu-new-dwim~, and ~majutsu-diff-dwim~ now prefer a literal
+  revision/ref under point where appropriate, while bookmark/tag readers
+  default to exact refs at point before falling back to revision-based
+  bookmark patterns.
 - Workspace: Workspace lists now show resolved roots when available and
   treat unavailable roots as empty data instead of raw jj errors. Internally
   this now uses one structured =jj workspace list -T= parse pipeline.
