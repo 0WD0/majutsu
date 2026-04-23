@@ -22,7 +22,15 @@
 (require 'seq)
 (require 'subr-x)
 
-(declare-function majutsu-bookmark-name-at-point "majutsu-jj" ())
+(declare-function majutsu-bookmark-at-point "majutsu-jj" (&optional bookmark-type))
+(declare-function majutsu-revision-at-point "majutsu-jj" ())
+(declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
+
+;;; Section Keymaps
+
+(defvar-keymap majutsu-bookmark-section-map
+  :doc "Keymap for `jj-bookmark' sections."
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
 
 ;;; majutsu-bookmark
 (defun majutsu--extract-bookmark-names (text)
@@ -243,11 +251,32 @@ SCOPE should be one of the scopes accepted by
   "Return bookmark name candidates for `jj bookmark untrack'."
   (majutsu--bookmark-base-names-from-scope 'remote-tracked))
 
+(defun majutsu--bookmarks-for-revision (rev &optional bookmark-type)
+  "Return bookmark names for REV.
+BOOKMARK-TYPE is forwarded to jj's bookmark template fields."
+  (let* ((args (append `("show" ,rev "--no-patch" "--ignore-working-copy"
+                         "-T" ,(pcase bookmark-type
+                                 ('remote "remote_bookmarks")
+                                 ('local "local_bookmarks")
+                                 (_ "bookmarks")))))
+         (lines (apply #'majutsu-jj-lines args))
+         (bookmarks (split-string (string-join lines "\n") " " t)))
+    (mapcar (lambda (s) (string-remove-suffix "*" s)) bookmarks)))
+
+(defun majutsu--bookmark-patterns-for-revision-at-point (&optional bookmark-type)
+  "Return bookmark patterns for the revision at point.
+When no revision is available, fall back to the working copy revision @."
+  (let ((bookmarks (majutsu--bookmarks-for-revision
+                    (or (majutsu-revision-at-point) "@")
+                    bookmark-type)))
+    (when bookmarks
+      (string-join bookmarks ","))))
+
 (defun majutsu-read-bookmark-name (prompt &optional default require-match)
   "Read one exact bookmark name using PROMPT.
 DEFAULT is preselected when non-nil.  If REQUIRE-MATCH is non-nil,
 require an existing local bookmark name."
-  (let ((default (or default (majutsu-bookmark-name-at-point)))
+  (let ((default (or default (majutsu-bookmark-at-point)))
         (payload (majutsu-bookmark-candidate-data nil default-directory)))
     (majutsu-completing-read-payload prompt payload
                                      nil (or require-match 'any) nil
@@ -260,7 +289,7 @@ require an existing local bookmark name."
 CANDIDATES defaults to local bookmark names.  DEFAULT is preselected when
 non-nil.  If REQUIRE-MATCH is non-nil, require existing local bookmark
 names."
-  (let ((default (or default (majutsu-bookmark-name-at-point)))
+  (let ((default (or default (majutsu-bookmark-at-point)))
         (payload (majutsu-bookmark-candidate-data candidates default-directory)))
     (majutsu-completing-read-multiple-payload
      prompt payload
@@ -270,7 +299,9 @@ names."
 (defun majutsu-read-bookmark-pattern (prompt &optional default)
   "Read one bookmark name pattern using PROMPT.
 DEFAULT is preselected when non-nil."
-  (let ((default (or default (majutsu-bookmark-at-point)))
+  (let ((default (or default
+                     (majutsu-bookmark-at-point)
+                     (majutsu--bookmark-patterns-for-revision-at-point)))
         (payload (majutsu-bookmark-candidate-data nil default-directory)))
     (majutsu-completing-read-payload prompt payload
                                      nil 'any nil
@@ -282,7 +313,9 @@ DEFAULT is preselected when non-nil."
   "Read bookmark name patterns with PROMPT.
 CANDIDATES defaults to local bookmark names.  DEFAULT defaults to the
 bookmark(s) at point."
-  (let* ((default (or default (majutsu-bookmark-at-point)))
+  (let* ((default (or default
+                      (majutsu-bookmark-at-point)
+                      (majutsu--bookmark-patterns-for-revision-at-point)))
          (payload (majutsu-bookmark-candidate-data candidates default-directory)))
     (majutsu-completing-read-multiple-payload
      prompt payload
