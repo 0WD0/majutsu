@@ -14,22 +14,6 @@
 (require 'cl-lib)
 (require 'majutsu-git)
 
-(ert-deftest majutsu-git-remote-candidate-data/parses-fetch-and-push-urls ()
-  (cl-letf (((symbol-function 'majutsu-jj-lines)
-             (lambda (&rest _args)
-               '("origin git@github.com:0WD0/majutsu.git"
-                 "rad rad://z4fugm4aenykjpk8tpvvqjvwtzvwj (push: rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk...)"))))
-    (let* ((payload (majutsu-git-remote-candidate-data))
-           (entries (plist-get payload :entries))
-           (origin (gethash "origin" entries))
-           (rad (gethash "rad" entries)))
-      (should (equal (plist-get payload :candidates) '("origin" "rad")))
-      (should (equal (plist-get origin :fetch-url) "git@github.com:0WD0/majutsu.git"))
-      (should (equal (plist-get rad :fetch-url)
-                     "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj"))
-      (should (equal (plist-get rad :push-url)
-                     "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk...")))))
-
 (ert-deftest majutsu-git--expand-option-arg/strips-tramp-prefix ()
   "--git-repo option paths should be converted to host-local paths."
   (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
@@ -133,72 +117,6 @@
       (majutsu-git-root)
       (should (equal copied "/ssh:demo:/home/demo/repo/.git")))))
 
-(ert-deftest majutsu-git-read-remote/uses-history-and-category ()
-  (let (seen-history seen-category)
-    (cl-letf (((symbol-function 'majutsu-git-remote-candidate-data)
-               (lambda (&optional _directory)
-                 (list :candidates '("origin" "upstream")
-                       :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
-                 "origin")))
-      (should (equal (majutsu-git--read-remote "Remote") "origin"))
-      (should (eq seen-history 'majutsu-remote-name-history))
-      (should (eq seen-category 'majutsu-remote)))))
-
-(ert-deftest majutsu-git-read-remote/defaults-to-remote-at-point ()
-  "Existing-remote readers should default to the remote section at point."
-  (let (seen-default)
-    (cl-letf (((symbol-function 'majutsu-git-remote-candidate-data)
-               (lambda (&optional _directory)
-                 (list :candidates '("origin" "upstream")
-                       :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'magit-section-value-if)
-               (lambda (_type) "upstream"))
-              ((symbol-function 'majutsu-completing-read-payload)
-               (lambda (_prompt _payload _predicate _require-match _initial
-                                _history default _category _context _directory)
-                 (setq seen-default default)
-                 default)))
-      (should (equal (majutsu-git--read-remote "Remote" t) "upstream"))
-      (should (equal seen-default "upstream")))))
-
-(ert-deftest majutsu-git-read-remote/requires-existing-remote-when-requested ()
-  "Commands that need an existing remote should fail before prompting if none exist."
-  (cl-letf (((symbol-function 'majutsu-git-remote-candidate-data)
-             (lambda (&optional _directory)
-               (list :candidates nil :entries (make-hash-table :test #'equal)))))
-    (should-error (majutsu-git--read-remote "Remote" t)
-                  :type 'user-error)))
-
-(ert-deftest majutsu-git-read-new-remote/defaults-origin-when-empty ()
-  "Adding the first remote should offer origin as the default name."
-  (let (seen-default)
-    (cl-letf (((symbol-function 'majutsu-git-remote-candidate-data)
-               (lambda (&optional _directory)
-                 (list :candidates nil :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'majutsu-completing-read-payload)
-               (lambda (_prompt _payload _predicate _require-match _initial
-                                _history default _category _context _directory)
-                 (setq seen-default default)
-                 "origin")))
-      (should (equal (majutsu-git--read-new-remote "Remote name") "origin"))
-      (should (equal seen-default "origin")))))
-
-(ert-deftest majutsu-git-read-new-remote/rejects-existing-name ()
-  "Remote add should treat REMOTE as a new positional, not an existing choice."
-  (cl-letf (((symbol-function 'majutsu-git-remote-candidate-data)
-             (lambda (&optional _directory)
-               (list :candidates '("origin")
-                     :entries (make-hash-table :test #'equal))))
-            ((symbol-function 'majutsu-completing-read-payload)
-             (lambda (&rest _args) "origin")))
-    (should-error (majutsu-git--read-new-remote "Remote name")
-                  :type 'user-error)))
-
 (ert-deftest majutsu-git-url-or-path-arg/converts-only-local-paths ()
   "Git remote URL/path values should preserve URLs but localize Emacs paths."
   (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
@@ -259,7 +177,7 @@
 (ert-deftest majutsu-git-remote-add/passes-add-arguments ()
   "Remote add should pass options followed by REMOTE and URL positionals."
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-git--read-new-remote)
+    (cl-letf (((symbol-function 'majutsu-read-new-remote-name)
                (lambda (&rest _args) "origin"))
               ((symbol-function 'majutsu-git--read-url-or-path)
                (lambda (&rest _args) "https://example.invalid/fetch.git"))
@@ -281,7 +199,7 @@
 (ert-deftest majutsu-git-remote-add/localizes-path-positionals-and-options ()
   "Remote add should pass host-local paths for URL and --push-url."
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-git--read-new-remote)
+    (cl-letf (((symbol-function 'majutsu-read-new-remote-name)
                (lambda (&rest _args) "local"))
               ((symbol-function 'majutsu-git--read-url-or-path)
                (lambda (&rest _args) "/ssh:demo:/srv/git/fetch.git"))
@@ -307,7 +225,7 @@
 (ert-deftest majutsu-git-remote-set-url/passes-fetch-and-push-arguments ()
   "Remote set-url should pass fetch/push-specific transient arguments."
   (let (seen-args seen-require-match)
-    (cl-letf (((symbol-function 'majutsu-git--read-remote)
+    (cl-letf (((symbol-function 'majutsu-read-remote-name)
                (lambda (_prompt &optional require-match _default)
                  (setq seen-require-match require-match)
                  "origin"))
@@ -331,7 +249,7 @@
 (ert-deftest majutsu-git-remote-set-url/prompts-for-positional-fetch-url ()
   "Remote set-url should prompt for the URL positional when no option is set."
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-git--read-remote)
+    (cl-letf (((symbol-function 'majutsu-read-remote-name)
                (lambda (&rest _args) "origin"))
               ((symbol-function 'majutsu-git--read-url-or-path)
                (lambda (&rest _args) "/ssh:demo:/srv/git/fetch.git"))
@@ -351,11 +269,11 @@
 (ert-deftest majutsu-git-remote-rename/requires-old-and-new-remote-readers ()
   "Remote rename should read an existing OLD and a new NEW positional."
   (let (seen-args seen-old-require-match seen-new-prompt)
-    (cl-letf (((symbol-function 'majutsu-git--read-remote)
+    (cl-letf (((symbol-function 'majutsu-read-remote-name)
                (lambda (_prompt &optional require-match _default)
                  (setq seen-old-require-match require-match)
                  "origin"))
-              ((symbol-function 'majutsu-git--read-new-remote)
+              ((symbol-function 'majutsu-read-new-remote-name)
                (lambda (prompt)
                  (setq seen-new-prompt prompt)
                  "upstream"))

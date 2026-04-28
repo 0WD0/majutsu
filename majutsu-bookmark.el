@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-remote)
 
 (require 'json)
 (require 'seq)
@@ -70,17 +71,6 @@ Splits at the last \"@\"."
                               lines))))
     (delete-dups (seq-filter #'stringp names))))
 
-(defun majutsu--bookmark-git-remote-candidates ()
-  "Return Git remote names for completion."
-  (let* ((lines (majutsu-jj-lines "git" "remote" "list"))
-         (names (delq nil
-                      (mapcar (lambda (line)
-                                (unless (string-match-p "\\`\\(Error\\|error\\|fatal\\):" line)
-                                  (when (string-match "\\`\\([^ \t]+\\)" line)
-                                    (match-string 1 line))))
-                              lines))))
-    (delete-dups names)))
-
 (defun majutsu--get-bookmark-names (&optional scope)
   "Return bookmark names for completion.
 
@@ -119,9 +109,6 @@ SCOPE controls what to return:
 
 (defvar majutsu-bookmark-pattern-history nil
   "Minibuffer history for bookmark name-pattern input.")
-
-(defvar majutsu-remote-pattern-history nil
-  "Minibuffer history for remote name-pattern input.")
 
 (defconst majutsu-bookmark--completion-field-separator (string 31)
   "Separator inserted between bookmark completion fields.")
@@ -322,19 +309,6 @@ bookmark(s) at point."
      nil nil nil 'majutsu-bookmark-pattern-history
      default 'majutsu-bookmark nil default-directory)))
 
-(defun majutsu-read-remote-patterns (prompt &optional candidates)
-  "Read remote name patterns with PROMPT.
-CANDIDATES defaults to known Git remote names."
-  (let ((payload (majutsu-git-remote-candidate-data default-directory)))
-    (unless (plist-get payload :candidates)
-      (setq payload (plist-put payload :candidates
-                               (or candidates
-                                   (majutsu--bookmark-git-remote-candidates)))))
-    (majutsu-completing-read-multiple-payload
-     prompt payload
-     nil nil nil 'majutsu-remote-pattern-history
-     nil 'majutsu-remote nil default-directory)))
-
 ;;;###autoload
 (defun majutsu-bookmark-create (&optional names)
   "Create bookmarks NAMES at the current contextual revision."
@@ -381,7 +355,7 @@ CANDIDATES defaults to known Git remote names."
                              nil))
          (remote-patterns (majutsu-read-remote-patterns
                            "Remote(s)/pattern(s) (empty = all)"
-                           (majutsu--bookmark-git-remote-candidates))))
+                           (majutsu-remote-names))))
     (if (null bookmark-patterns)
         (message "No bookmark name/pattern provided")
       (when (zerop (majutsu-run-jj "bookmark" "track"
@@ -548,7 +522,7 @@ REMOTES are remote name patterns passed via repeated `--remote`."
           nil)
          (majutsu-read-remote-patterns
           "Remote(s)/pattern(s) (empty = all)"
-          (majutsu--bookmark-git-remote-candidates))))
+          (majutsu-remote-names))))
   (defvar crm-separator)
   (let* ((remotes (seq-filter (lambda (s) (not (string-empty-p s))) (or remotes '()))))
     (when bookmarks
