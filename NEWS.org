@@ -53,9 +53,17 @@
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
   continue to use Transient's normal storage.
-- Git: Remote management now exposes command-specific options: =remote add=
-  supports =--fetch-tags= and =--push-url=, while =remote set-url= supports
-  explicit =--fetch= and =--push= URL updates.
+- Git: Remote management now follows the upstream =remote add [OPTIONS]
+  REMOTE URL= shape more closely: adding a remote prompts for a new remote name
+  and URL/path positional, rejects existing names, and exposes =--fetch-tags=
+  and =--push-url=. =remote remove=, =rename=, and =set-url= now read existing
+  remotes more carefully and default to the remote at point in remote-list
+  buffers. =remote set-url= supports explicit =--fetch= and =--push= URL
+  updates.
+- Git: Expose simple upstream options that were missing from the transients:
+  repeated fetch remotes/branches, repeated clone branches, and repeated
+  =git push --option= values. Clone sources now use the same URL/path handling
+  as remote URLs.
 - Log: The log transient's =-r/--revision= filter is now a normal transient
   argument stored with the rest of the log arguments. It uses Majutsu's standard
   revset expression reader like diff =-r=, prefills the current filter for
