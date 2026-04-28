@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-remote)
 
 (require 'seq)
 (require 'subr-x)
@@ -29,79 +30,8 @@
   "Start `jj git ARGS' asynchronously, for side-effects."
   (majutsu-start-jj (append '("git") args) success-msg finish-callback))
 
-(defun majutsu-git--parse-remote-list-line (line)
-  "Parse one `jj git remote list` LINE into a plist."
-  (let ((raw (string-trim (substring-no-properties (or line "")))))
-    (when (and (not (string-empty-p raw))
-               (string-match "\\`\\([^ \\t]+\\)[ \\t]+\\(.+?\\)\\(?:[ \\t]+(push: \\(.*\\))\\)?\\'" raw))
-      (list :name (match-string 1 raw)
-            :fetch-url (string-trim (match-string 2 raw))
-            :push-url (when-let* ((push (match-string 3 raw)))
-                        (string-trim push))))))
-
-(defun majutsu-git-remote-candidate-data (&optional directory)
-  "Return completion payload for Git remote names in DIRECTORY."
-  (let ((default-directory (or directory default-directory))
-        (entries (make-hash-table :test #'equal))
-        candidates)
-    (condition-case _
-        (dolist (line (or (majutsu-jj-lines "git" "remote" "list") '()))
-          (when-let* ((entry (majutsu-git--parse-remote-list-line line))
-                      (name (plist-get entry :name)))
-            (unless (gethash name entries)
-              (setq candidates (append candidates (list name))))
-            (puthash name entry entries)))
-      (error nil))
-    (list :category 'majutsu-remote
-          :candidates candidates
-          :entries entries)))
-
-(defun majutsu-git--remote-names (&optional directory)
-  "Return a list of Git remote names for DIRECTORY."
-  (plist-get (majutsu-git-remote-candidate-data directory) :candidates))
-
-(defvar majutsu-remote-name-history nil
-  "Minibuffer history for exact remote-name input.")
-
 (defvar majutsu-git-url-history nil
   "Minibuffer history for Git remote URLs and paths.")
-
-(defun majutsu-git--remote-at-point ()
-  "Return the Git remote name at point, if any."
-  (magit-section-value-if 'jj-git-remote))
-
-(defun majutsu-git--read-remote (prompt &optional require-match default)
-  "Read a Git remote name with PROMPT.
-If REQUIRE-MATCH is non-nil, require an existing remote name.  DEFAULT
-is preselected when non-nil."
-  (let* ((root (ignore-errors (majutsu--toplevel-safe)))
-         (payload (majutsu-git-remote-candidate-data root))
-         (candidates (plist-get payload :candidates))
-         (default (or default (majutsu-git--remote-at-point))))
-    (cond
-     (candidates)
-     (require-match
-      (user-error "No Git remotes"))
-     (t
-      (setq payload (plist-put payload :candidates '("origin")))))
-    (majutsu-completing-read-payload prompt payload
-                                     nil (or require-match 'any) nil
-                                     'majutsu-remote-name-history
-                                     default 'majutsu-remote nil
-                                     (or root default-directory))))
-
-(defun majutsu-git--read-new-remote (prompt)
-  "Read a new Git remote name with PROMPT."
-  (let* ((root (ignore-errors (majutsu--toplevel-safe)))
-         (payload (majutsu-git-remote-candidate-data root))
-         (remotes (plist-get payload :candidates))
-         (remote (majutsu-completing-read-payload
-                  prompt payload nil 'any nil 'majutsu-remote-name-history
-                  (unless remotes "origin") 'majutsu-remote nil
-                  (or root default-directory))))
-    (when (member remote remotes)
-      (user-error "Remote already exists: %s" remote))
-    remote))
 
 (defun majutsu-git--read-url-or-path (prompt)
   "Read a Git URL or local path with PROMPT."
@@ -217,7 +147,7 @@ is preselected when non-nil."
   (let* ((args (mapcar (lambda (arg)
                          (majutsu-git--expand-url-option-arg arg "--push-url="))
                        args))
-         (remote (majutsu-git--read-new-remote "Remote name"))
+         (remote (majutsu-read-new-remote-name "Remote name"))
          (url (majutsu-git--url-or-path-arg
                (majutsu-git--read-url-or-path (format "URL for %s" remote))))
          (exit (majutsu-run-jj
@@ -228,7 +158,7 @@ is preselected when non-nil."
 (defun majutsu-git-remote-remove ()
   "Remove a Git remote and forget its bookmarks."
   (interactive)
-  (let* ((remote (majutsu-git--read-remote "Remove remote" t))
+  (let* ((remote (majutsu-read-remote-name "Remove remote" t))
          (cmd-args (list "remote" "remove" remote))
          (exit (majutsu-run-jj "git" cmd-args)))
     (when (zerop exit)
@@ -237,8 +167,8 @@ is preselected when non-nil."
 (defun majutsu-git-remote-rename ()
   "Rename a Git remote."
   (interactive)
-  (let* ((old (majutsu-git--read-remote "Rename remote" t))
-         (new (majutsu-git--read-new-remote (format "New name for %s" old)))
+  (let* ((old (majutsu-read-remote-name "Rename remote" t))
+         (new (majutsu-read-new-remote-name (format "New name for %s" old)))
          (cmd-args (list "remote" "rename" old new))
          (exit (majutsu-run-jj "git" cmd-args)))
     (when (zerop exit)
@@ -247,7 +177,7 @@ is preselected when non-nil."
 (defun majutsu-git-remote-set-url (args)
   "Set URL of a Git remote."
   (interactive (list (transient-args 'majutsu-git-remote-set-url-transient)))
-  (when-let* ((remote (majutsu-git--read-remote "Set URL for remote" t))
+  (when-let* ((remote (majutsu-read-remote-name "Set URL for remote" t))
               (args (or args
                         (list (majutsu-git--read-url-or-path
                                (format "Fetch URL for %s" remote))))))
@@ -366,7 +296,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :argument "--remote="
   :multi-value 'repeat
   :prompt "Remote: "
-  :choices #'majutsu-git--remote-names)
+  :choices #'majutsu-remote-names)
 
 (transient-define-argument majutsu-git-fetch:--branch ()
   :description "Branch"
@@ -455,7 +385,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [:description "JJ Git Push"
    :class transient-columns
    ["Arguments"
-    ("-R" "Remote" "--remote=" :choices #'majutsu-git--remote-names)
+    ("-R" "Remote" "--remote=" :choices #'majutsu-remote-names)
     (majutsu-git-push:-b)
     ("-a" "All bookmarks" "--all")
     ("-t" "Tracked only" "--tracked")

@@ -51,6 +51,10 @@
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
   continue to use Transient's normal storage.
+- Remotes: Add shared remote readers and completion payloads for exact remote
+  names, new remote names, and remote name patterns. Git and bookmark commands
+  now use the same remote history, completion category, remote-list parsing,
+  and remote-at-point defaulting.
 - Git: Remote management now follows the upstream =remote add [OPTIONS]
   REMOTE URL= shape more closely: adding a remote prompts for a new remote name
   and URL/path positional, rejects existing names, and exposes =--fetch-tags=
