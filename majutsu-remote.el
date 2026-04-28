@@ -90,6 +90,10 @@ is preselected when non-nil; otherwise the remote section at point is used."
                                      default 'majutsu-remote nil
                                      (or root default-directory))))
 
+(defun majutsu-transient-read-remote-name (prompt initial-input _history)
+  "Read a named Git remote for a transient option."
+  (majutsu-read-remote-name prompt t initial-input))
+
 (defun majutsu-read-new-remote-name (prompt &optional default)
   "Read a new Git remote name with PROMPT.
 DEFAULT is preselected when non-nil.  When there are no remotes, `origin' is
@@ -105,6 +109,23 @@ used as the default.  Existing remote names are rejected."
     (when (member remote remotes)
       (user-error "Remote already exists: %s" remote))
     remote))
+
+(defun majutsu-read-remote-pattern (prompt &optional initial-input history default candidates)
+  "Read one remote name pattern with PROMPT.
+INITIAL-INPUT is inserted for editing.  HISTORY defaults to
+`majutsu-remote-pattern-history'.  DEFAULT is preselected when non-nil.
+CANDIDATES defaults to known Git remote names."
+  (let ((payload (majutsu-remote-candidate-data default-directory)))
+    (unless (plist-get payload :candidates)
+      (setq payload (plist-put payload :candidates candidates)))
+    (majutsu-completing-read-payload
+     prompt payload
+     nil 'any initial-input (or history 'majutsu-remote-pattern-history)
+     default 'majutsu-remote nil default-directory)))
+
+(defun majutsu-transient-read-remote-pattern (prompt initial-input _history)
+  "Read a Git remote name pattern for a transient option."
+  (majutsu-read-remote-pattern prompt initial-input nil initial-input))
 
 (defun majutsu-read-remote-patterns (prompt &optional candidates default)
   "Read remote name patterns with PROMPT.
