@@ -254,6 +254,45 @@
   (or (ignore-errors (majutsu-get "revsets.arrange"))
       majutsu-arrange--default-revset))
 
+(defun majutsu-arrange--normalize-revsets (revsets)
+  "Return one revset expression for REVSETS.
+
+REVSETS may be nil, a single revset string, or a list of revset strings.
+A list is treated like `jj arrange [REVSETS]...': the individual revsets are
+unioned together.  Nil or an empty list uses `revsets.arrange' with the built-in
+fallback."
+  (let* ((items (cond
+                 ((null revsets) nil)
+                 ((stringp revsets) (list revsets))
+                 ((listp revsets) revsets)
+                 (t (user-error "Invalid arrange revsets: %S" revsets))))
+         (items (delq nil
+                      (mapcar (lambda (revset)
+                                (when (stringp revset)
+                                  (let ((trimmed (string-trim revset)))
+                                    (unless (string-empty-p trimmed)
+                                      trimmed))))
+                              items)))
+         (items (or items (list (majutsu-arrange--configured-default-revset)))))
+    (if (cdr items)
+        (string-join (mapcar (lambda (revset) (format "(%s)" revset))
+                             items)
+                     " | ")
+      (car items))))
+
+(defun majutsu-arrange--read-revsets ()
+  "Read one or more arrange revsets from the minibuffer."
+  (let ((revsets (list (majutsu-read-revset
+                        "Arrange revset"
+                        (majutsu-arrange--configured-default-revset)
+                        '("arrange"))))
+        next)
+    (while (setq next (majutsu-read-optional-revset
+                       "Additional arrange revset (empty to finish)"
+                       nil nil 'majutsu-read-revset-history '("arrange")))
+      (push next revsets))
+    (nreverse revsets)))
+
 (defun majutsu-arrange--load-nodes (revset role)
   "Load arrange nodes for REVSET and assign ROLE."
   (when (and revset (not (string-empty-p revset)))
@@ -360,11 +399,14 @@
           (car (majutsu-arrange-session-current-order session))))
   session)
 
-(defun majutsu-arrange-build-session (revset &optional directory)
-  "Build an arrange session for REVSET in DIRECTORY."
+(defun majutsu-arrange-build-session (revsets &optional directory)
+  "Build an arrange session for REVSETS in DIRECTORY.
+
+REVSETS may be nil, a single revset string, or a list of revset strings.  A list
+matches `jj arrange [REVSETS]...' by arranging the union of all revsets."
   (let* ((root (majutsu--toplevel-safe directory))
          (default-directory root)
-         (revset (or revset (majutsu-arrange--configured-default-revset)))
+         (revset (majutsu-arrange--normalize-revsets revsets))
          (target-nodes (majutsu-arrange--load-nodes revset 'target)))
     (majutsu-arrange--validate-target-revset revset target-nodes)
     (let* ((target-ids (mapcar #'majutsu-arrange-node-id target-nodes))
@@ -1356,21 +1398,23 @@ If the current selection is outside SUBJECT, use it as the anchor."
             #'majutsu-arrange--kill-buffer-query nil t))
 
 ;;;###autoload
-(defun majutsu-arrange (&optional revset)
-  "Open a Majutsu arrange buffer for REVSET."
+(defun majutsu-arrange (&optional revsets)
+  "Open a Majutsu arrange buffer for REVSETS.
+
+REVSETS may be nil, a single revset string, or a list of revset strings.  A list
+matches `jj arrange [REVSETS]...' by arranging the union of all revsets.  With a
+prefix argument, prompt for one or more revsets."
   (interactive
    (list (and current-prefix-arg
-              (majutsu-read-revset "Arrange revset"
-                                    (majutsu-arrange--configured-default-revset)
-                                    '("arrange")))))
+              (majutsu-arrange--read-revsets))))
   (let* ((root (majutsu--toplevel-safe))
          (default-directory root)
-         (revset (or revset (majutsu-arrange--configured-default-revset)))
+         (revsets (or revsets (majutsu-arrange--configured-default-revset)))
          (repo (file-name-nondirectory (directory-file-name root))))
     (majutsu-setup-buffer #'majutsu-arrange-mode nil
       :buffer (format "*majutsu-arrange: %s*" repo)
       :directory root
-      (majutsu-arrange--session (majutsu-arrange-build-session revset root)))))
+      (majutsu-arrange--session (majutsu-arrange-build-session revsets root)))))
 
 (provide 'majutsu-arrange)
 ;;; majutsu-arrange.el ends here
