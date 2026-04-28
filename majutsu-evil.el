@@ -280,7 +280,19 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     "gk"   #'majutsu-annotate-previous-chunk
     "gK"   #'majutsu-annotate-previous-chunk-same-commit
     "c"    #'majutsu-annotate-cycle-style
-    "q"    #'majutsu-annotate-quit))
+    "q"    #'majutsu-annotate-quit)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-arrange-mode-map
+    (kbd "j") #'majutsu-arrange-next
+    (kbd "k") #'majutsu-arrange-previous
+    (kbd "J") #'majutsu-arrange-swap-down
+    (kbd "K") #'majutsu-arrange-swap-up
+    (kbd "a") #'majutsu-arrange-mark-abandon
+    (kbd "p") #'majutsu-arrange-mark-keep
+    (kbd "c") #'majutsu-arrange-apply
+    (kbd "q") #'majutsu-arrange-cancel
+    (kbd "g r") #'majutsu-arrange-reload
+    (kbd "RET") #'majutsu-arrange-show))
 
 ;;;###autoload
 (defun majutsu-evil-setup ()
