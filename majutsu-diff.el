@@ -427,7 +427,7 @@ list of filesets (path filters)."
     (when (eq major-mode mode)
       (majutsu-diff--set-buffer-args args))))
 
-(cl-defmethod majutsu-transient-save-repository-default ((obj majutsu-diff-prefix))
+(cl-defmethod majutsu-transient--save-repository-defaults ((obj majutsu-diff-prefix))
   (let* ((obj (oref obj prototype))
          (mode (or (oref obj major-mode) major-mode))
          (args (car (transient-args (oref obj command)))))
