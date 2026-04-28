@@ -27,6 +27,14 @@
 (defvar majutsu-remote-pattern-history nil
   "Minibuffer history for remote name-pattern input.")
 
+(defun majutsu-remote--validate-new-name (remote)
+  "Signal a user error if REMOTE is not a valid new jj Git remote name."
+  (cond
+   ((string= remote "git")
+    (user-error "Git remote named 'git' is reserved for local Git repository"))
+   ((string-match-p "/" remote)
+    (user-error "Git remotes with slashes are incompatible with jj: %s" remote))))
+
 (defun majutsu-remote--parse-list-line (line)
   "Parse one `jj git remote list` LINE into a plist."
   (let ((raw (string-trim (substring-no-properties (or line "")))))
@@ -93,6 +101,7 @@ used as the default.  Existing remote names are rejected."
                   prompt payload nil 'any nil 'majutsu-remote-name-history
                   (or default (unless remotes "origin")) 'majutsu-remote nil
                   (or root default-directory))))
+    (majutsu-remote--validate-new-name remote)
     (when (member remote remotes)
       (user-error "Remote already exists: %s" remote))
     remote))
