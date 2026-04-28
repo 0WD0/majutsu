@@ -142,6 +142,8 @@ Majutsu organizes information into collapsible sections. You can use ~TAB~ to to
 ** Transient Menus
 Commands in Majutsu are grouped into "transient" menus. These popups allow you to select options and flags before executing a command. For example, pressing ~r~ opens the Rebase transient.
 
+Some transients support saved defaults. Global defaults follow Transient's normal storage; repository-local defaults use jj's secure repo =config-id= as the stable project key, so they survive moving the workspace. Where available, ~W~ saves the current transient arguments as defaults for the current jj repository only. This is intended for project-shaped UI policy such as log filters, diff format, and Git sync remotes, not for one-off destructive targets.
+
 ** Visual Selection System
 For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
 
@@ -169,6 +171,7 @@ Useful transient entries include:
 - Key: -v :: Toggle reverse order.
 - Key: -G :: Toggle the ASCII graph.
 - Key: -- :: Add fileset/path filters to limit the log to matching files.
+- Key: W :: Save the current log arguments as defaults for this jj repository.
 
 *** Revset Builder
 While you can type revsets manually, Majutsu's selection system allows you to build them interactively. Commands that require a revset will often default to the revision at point or your current selection.
@@ -320,6 +323,7 @@ Useful transient entries include:
 - Key: -s :: Toggle summary output.
 - Key: -c :: Set context line count.
 - Key: -b / -w :: Ignore whitespace amount / ignore all whitespace.
+- Key: W :: Save the current diff arguments as defaults for this jj repository.
 
 **** Understanding =--revisions=
 The =--revisions= argument accepts any revset that forms a /contiguous/ set of commits. "Contiguous" means no gaps in the DAG, but *forks and merges are allowed*.
@@ -477,7 +481,7 @@ Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 Runs: =jj rebase -s SRC -o DEST=
 
 ** Arranging History
-- Key: h in the dispatcher (majutsu-arrange) :: Open an Emacs-native arrange buffer for editing a =jj arrange=-style graph rewrite plan. With a prefix argument, prompt for one or more =REVSETS=, matching =jj arrange [REVSETS]...= by arranging their union.
+- Key: h in the dispatcher (majutsu-arrange) :: Open an Emacs-native arrange buffer for editing a =jj arrange=-style graph rewrite plan. With a prefix argument, prompt with Majutsu's standard revset expression reader; type a union expression such as =A | B= to arrange multiple sets.
 - Key: j / k :: Move the selected target revision.
 - Key: m / M :: Toggle or clear explicit subject marks.
 - Key: S :: Cycle the move subject scope (=subdag=, =stack=, =single=, =marked=, =branch=).
@@ -711,6 +715,7 @@ selection, while set/delete prompts still allow entering string patterns manuall
 - Key: -c :: Push a specific change.
 - Key: -r :: Push specific revision(s).
 - Key: -y :: Show what would be pushed without pushing (=--dry-run=).
+- Key: W :: Save stable push options as defaults for this jj repository. Majutsu remembers sync policy such as =--remote=, =--all=, =--tracked=, =--deleted=, =--allow-empty-description=, and =--allow-private=, but does not remember one-off targets like =--bookmark=, =--change=, =--revisions=, =--named=, or =--dry-run=.
 Runs: =jj git push=
 
 ** Fetching
@@ -719,6 +724,7 @@ Runs: =jj git push=
 - Key: -B :: Fetch a specific branch.
 - Key: -t :: Fetch only tracked bookmarks.
 - Key: -A :: Fetch from all remotes.
+- Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not branch-specific =--branch= selections.
 Runs: =jj git fetch=
 
 ** Remotes

@@ -50,16 +50,13 @@ Returns an (ARGS FILESETS) pair.  USE-BUFFER-ARGS follows
          (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
            (list (buffer-local-value 'majutsu-buffer-log-args buf)
                  (buffer-local-value 'majutsu-buffer-log-filesets buf)))))
-   ((plist-member (symbol-plist mode) 'majutsu-log-current-arguments)
-    (list (get mode 'majutsu-log-current-arguments)
-          (get mode 'majutsu-log-current-filesets)))
-   ((when-let* ((elt (assq (intern (format "majutsu-log:%s" mode))
-                           transient-values)))
-      (list (cdr elt)
-            (get mode 'majutsu-log-current-filesets))))
    (t
-    (list (get mode 'majutsu-log-default-arguments)
-          (get mode 'majutsu-log-default-filesets)))))
+    (list (majutsu-transient-default-value
+           'majutsu-log mode
+           'majutsu-log-current-arguments
+           'majutsu-log-default-arguments)
+          (or (get mode 'majutsu-log-current-filesets)
+              (get mode 'majutsu-log-default-filesets))))))
 
 (defun majutsu-log--set-value (mode args filesets &optional save)
   "Set current log values for MODE.
@@ -72,10 +69,15 @@ When SAVE is non-nil, also persist ARGS using `transient-values'."
                            (or (null s)
                                (and (stringp s) (string-empty-p s))))
                          (flatten-tree filesets))))
-  (put mode 'majutsu-log-current-arguments args)
+  (if-let* ((config-id (majutsu-repository-config-id)))
+      (majutsu-transient-put-repository-current-value
+       'majutsu-log mode args config-id)
+    (put mode 'majutsu-log-current-arguments args))
   (put mode 'majutsu-log-current-filesets filesets)
   (when save
-    (setf (alist-get (intern (format "majutsu-log:%s" mode)) transient-values) args)
+    (setf (alist-get (majutsu-transient-global-default-key 'majutsu-log mode)
+                     transient-values)
+          args)
     (transient-save-values))
   (when (eq major-mode mode)
     (setq-local majutsu-buffer-log-args args)
@@ -2051,6 +2053,19 @@ offer to create one using `jj git init`."
       (transient--history-push obj)
       (majutsu-refresh))))
 
+(cl-defmethod majutsu-transient-save-repository-default ((obj majutsu-log-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
+      (majutsu-transient-save-repository-value 'majutsu-log mode args)
+      (put mode 'majutsu-log-current-filesets files)
+      (transient--history-push obj)
+      (when (eq major-mode mode)
+        (setq-local majutsu-buffer-log-args args)
+        (setq-local majutsu-buffer-log-filesets files))
+      (majutsu-refresh)
+      (message "Saved log arguments as repository defaults"))))
+
 (transient-define-argument majutsu-log:-r ()
   :description "Revisions"
   :class 'transient-option
@@ -2110,6 +2125,8 @@ offer to create one using `jj git init`."
     ("g" "buffer" majutsu-log-transient)
     ("s" "buffer and set defaults" transient-set-and-exit)
     ("w" "buffer and save defaults" transient-save-and-exit)
+    ("W" "buffer and save repo defaults" majutsu-transient-save-repository-defaults
+     :transient t)
     ("0" "Reset options" majutsu-log-transient-reset :transient t)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
