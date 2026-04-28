@@ -63,22 +63,28 @@
     (should (equal (majutsu-arrange--normalize-revsets '("@" "mine()"))
                    "(@) | (mine())"))))
 
-(ert-deftest majutsu-arrange-read-revsets/repeats-until-empty ()
-  "Prefix reader should accept multiple jj arrange REVSETS."
-  (let ((optional-values '("mine()" nil)) seen-first seen-optionals)
-    (cl-letf (((symbol-function 'majutsu-arrange--configured-default-revset)
+(ert-deftest majutsu-arrange-interactive-prefix/uses-standard-revset-reader ()
+  "Prefix command should use Majutsu's standard revset expression reader."
+  (let (seen-reader seen-bindings)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-arrange--configured-default-revset)
                (lambda () "default()"))
               ((symbol-function 'majutsu-read-revset)
                (lambda (prompt default completion-args)
-                 (setq seen-first (list prompt default completion-args))
-                 "@"))
-              ((symbol-function 'majutsu-read-optional-revset)
-               (lambda (&rest args)
-                 (push args seen-optionals)
-                 (pop optional-values))))
-      (should (equal (majutsu-arrange--read-revsets) '("@" "mine()"))))
-    (should (equal seen-first '("Arrange revset" "default()" ("arrange"))))
-    (should (= (length seen-optionals) 2))))
+                 (setq seen-reader (list prompt default completion-args))
+                 "@ | mine()"))
+              ((symbol-function 'majutsu-arrange-build-session)
+               (lambda (revsets root) (list :session revsets root)))
+              ((symbol-function 'majutsu-setup-buffer-internal)
+               (lambda (_mode _locked bindings &rest _keys)
+                 (setq seen-bindings bindings)
+                 'arrange-buffer)))
+      (let ((current-prefix-arg '(4)))
+        (should (eq (call-interactively #'majutsu-arrange) 'arrange-buffer))))
+    (should (equal seen-reader '("Arrange revsets" "default()" ("arrange"))))
+    (should (equal seen-bindings
+                   '((majutsu-arrange--session (:session ("@ | mine()") "/repo/")))))))
 
 (ert-deftest majutsu-arrange-parse-node-line ()
   "Machine template lines should parse into arrange nodes."
@@ -344,8 +350,6 @@
   (let (seen-mode seen-locked seen-bindings seen-keys)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _directory) "/repo/"))
-              ((symbol-function 'majutsu-arrange--configured-default-revset)
-               (lambda () "revset"))
               ((symbol-function 'majutsu-arrange-build-session)
                (lambda (revset root) (list :session revset root)))
               ((symbol-function 'majutsu-setup-buffer-internal)
@@ -360,7 +364,7 @@
     (should (eq seen-mode #'majutsu-arrange-mode))
     (should-not seen-locked)
     (should (equal seen-bindings
-                   '((majutsu-arrange--session (:session "revset" "/repo/")))))
+                   '((majutsu-arrange--session (:session nil "/repo/")))))
     (should (equal seen-keys
                    '(:buffer "*majutsu-arrange: repo*" :directory "/repo/")))))
 
@@ -375,7 +379,7 @@
                (lambda (_mode _locked bindings &rest _keys)
                  (setq seen-bindings bindings)
                  'arrange-buffer)))
-      (should (eq (majutsu-arrange '("@" "mine()")) 'arrange-buffer)))
+      (should (eq (majutsu-arrange "@" "mine()") 'arrange-buffer)))
     (should (equal seen-bindings
                    '((majutsu-arrange--session (:session ("@" "mine()") "/repo/")))))))
 
