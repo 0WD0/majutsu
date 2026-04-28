@@ -476,7 +476,7 @@ Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 Runs: =jj rebase -s SRC -o DEST=
 
 ** Arranging History
-- Key: h in the dispatcher (majutsu-arrange) :: Open an Emacs-native arrange buffer for editing a =jj arrange=-style graph rewrite plan. With a prefix argument, prompt for one or more =REVSETS=, matching =jj arrange [REVSETS]...= by arranging their union.
+- Key: h in the dispatcher (majutsu-arrange) :: Open an Emacs-native arrange buffer for editing a =jj arrange=-style graph rewrite plan. With a prefix argument, prompt with Majutsu's standard revset expression reader; type a union expression such as =A | B= to arrange multiple sets.
 - Key: j / k :: Move the selected target revision.
 - Key: m / M :: Toggle or clear explicit subject marks.
 - Key: S :: Cycle the move subject scope (=subdag=, =stack=, =single=, =marked=, =branch=).
