@@ -32,6 +32,11 @@
   "Face used for the selected arrange node."
   :group 'majutsu)
 
+(defface majutsu-arrange-subject-face
+  '((t :inherit region))
+  "Face used for nodes in the active arrange subject."
+  :group 'majutsu)
+
 (defface majutsu-arrange-context-face
   '((t :inherit shadow))
   "Face used for external context nodes in arrange buffers."
@@ -67,6 +72,15 @@
   action
   role)
 
+(cl-defstruct (majutsu-arrange-subject
+               (:constructor majutsu-arrange-subject-create))
+  ids
+  roots
+  heads
+  incoming-edges
+  outgoing-edges
+  scope)
+
 (cl-defstruct (majutsu-arrange-session
                (:constructor majutsu-arrange-session-create))
   root
@@ -79,6 +93,9 @@
   head-order
   current-order
   selected-id
+  marked-ids
+  subject-scope
+  preview-anchor-ids
   operations
   dirty-p
   applying-p)
@@ -89,7 +106,8 @@
   final-parents
   final-actions
   operations
-  affected-ids)
+  affected-ids
+  command-preview)
 
 (defvar-local majutsu-arrange--session nil
   "Buffer-local arrange session.")
@@ -154,6 +172,11 @@
   (if (member item list)
       list
     (append list (list item))))
+
+(defun majutsu-arrange--append-unique (list items)
+  "Append ITEMS to LIST while preserving first occurrence order."
+  (dolist (item items list)
+    (setq list (majutsu-arrange--push-unique item list))))
 
 (defun majutsu-arrange--session ()
   "Return the current arrange session or signal an error."
@@ -368,6 +391,9 @@
                      :head-order nil
                      :current-order nil
                      :selected-id (car target-ids)
+                     :marked-ids nil
+                     :subject-scope 'subdag
+                     :preview-anchor-ids nil
                      :operations nil
                      :dirty-p nil
                      :applying-p nil)))
@@ -430,6 +456,272 @@
                  (push node-id children)))
              (majutsu-arrange-session-nodes session))
     (nreverse children)))
+
+(defun majutsu-arrange--target-children-of (session id)
+  "Return target node ids whose current parent list contains ID."
+  (seq-filter (lambda (child) (majutsu-arrange--target-id-p session child))
+              (majutsu-arrange--children-of session id)))
+
+(defun majutsu-arrange--ids-in-current-order (session ids)
+  "Return IDS sorted by SESSION's current target order."
+  (let ((set (majutsu-arrange--id-set ids))
+        ordered)
+    (dolist (id (majutsu-arrange-session-current-order session))
+      (when (gethash id set)
+        (push id ordered)))
+    (nreverse ordered)))
+
+(defun majutsu-arrange--descendant-ids (session id)
+  "Return target-local descendants of ID, including ID."
+  (let ((seen (make-hash-table :test #'equal))
+        result)
+    (cl-labels ((visit
+                  (node-id)
+                  (unless (gethash node-id seen)
+                    (puthash node-id t seen)
+                    (push node-id result)
+                    (dolist (child (majutsu-arrange--target-children-of session node-id))
+                      (visit child)))))
+      (visit id))
+    (majutsu-arrange--ids-in-current-order session (nreverse result))))
+
+(defun majutsu-arrange--stack-ids (session id)
+  "Return the target-local linear stack around ID."
+  (let ((ids (list id))
+        (cursor id)
+        done)
+    (while (not done)
+      (let ((children (majutsu-arrange--target-children-of session cursor)))
+        (if (not (= (length children) 1))
+            (setq done t)
+          (let* ((child (car children))
+                 (child-node (majutsu-arrange--node session child))
+                 (target-parents (seq-filter
+                                  (lambda (parent)
+                                    (majutsu-arrange--target-id-p session parent))
+                                  (majutsu-arrange-node-parents child-node))))
+            (if (not (and (= (length target-parents) 1)
+                          (equal (car target-parents) cursor)))
+                (setq done t)
+              (push child ids)
+              (setq cursor child))))))
+    (setq cursor id
+          done nil)
+    (while (not done)
+      (let* ((node (majutsu-arrange--node session cursor))
+             (parents (seq-filter
+                       (lambda (parent)
+                         (majutsu-arrange--target-id-p session parent))
+                       (majutsu-arrange-node-parents node))))
+        (if (not (= (length parents) 1))
+            (setq done t)
+          (let* ((parent (car parents))
+                 (parent-children (majutsu-arrange--target-children-of session parent)))
+            (if (not (and (= (length parent-children) 1)
+                          (equal (car parent-children) cursor)))
+                (setq done t)
+              (setq ids (append ids (list parent)))
+              (setq cursor parent))))))
+    (majutsu-arrange--ids-in-current-order session ids)))
+
+(defun majutsu-arrange--raw-subject-ids (session &optional scope)
+  "Return current subject ids in SESSION for SCOPE without validation."
+  (let* ((scope (or scope
+                    (majutsu-arrange-session-subject-scope session)
+                    'subdag))
+         (selected (majutsu-arrange--current-id session))
+         (marked (majutsu-arrange-session-marked-ids session)))
+    (pcase scope
+      ('single (list selected))
+      ('stack (majutsu-arrange--stack-ids session selected))
+      ('subdag (majutsu-arrange--descendant-ids session selected))
+      ('branch (majutsu-arrange--descendant-ids session selected))
+      ('marked (if marked
+                   (majutsu-arrange--ids-in-current-order session marked)
+                 (list selected)))
+      (_ (list selected)))))
+
+(defun majutsu-arrange--connected-ids-p (session ids)
+  "Return non-nil when IDS are connected in SESSION's current graph."
+  (or (null ids)
+      (let* ((id-set (majutsu-arrange--id-set ids))
+             (seen (make-hash-table :test #'equal))
+             (queue (list (car ids))))
+        (while queue
+          (let ((id (pop queue)))
+            (unless (gethash id seen)
+              (puthash id t seen)
+              (when-let* ((node (majutsu-arrange--node session id)))
+                (dolist (parent (majutsu-arrange-node-parents node))
+                  (when (and (gethash parent id-set)
+                             (not (gethash parent seen)))
+                    (push parent queue))))
+              (dolist (child (majutsu-arrange--children-of session id))
+                (when (and (gethash child id-set)
+                           (not (gethash child seen)))
+                  (push child queue))))))
+        (seq-every-p (lambda (id) (gethash id seen)) ids))))
+
+(defun majutsu-arrange--validate-subject-ids (session ids)
+  "Validate IDS as a movable arrange subject in SESSION."
+  (unless ids
+    (user-error "No arrange subject selected"))
+  (dolist (id ids)
+    (unless (majutsu-arrange--target-id-p session id)
+      (user-error "Arrange subject contains non-target revision %s" id)))
+  (unless (majutsu-arrange--connected-ids-p session ids)
+    (user-error "Arrange subject must be connected"))
+  ids)
+
+(defun majutsu-arrange--subject-edges (session ids)
+  "Return (ROOTS HEADS INCOMING OUTGOING) for subject IDS in SESSION."
+  (let* ((id-set (majutsu-arrange--id-set ids))
+         roots heads incoming outgoing)
+    (dolist (id ids)
+      (let* ((node (majutsu-arrange--node session id))
+             (parents (and node (majutsu-arrange-node-parents node)))
+             (internal-parent-p nil))
+        (dolist (parent parents)
+          (if (gethash parent id-set)
+              (setq internal-parent-p t)
+            (push (cons id parent) incoming)))
+        (unless internal-parent-p
+          (push id roots))
+        (let ((internal-child-p nil))
+          (dolist (child (majutsu-arrange--children-of session id))
+            (if (gethash child id-set)
+                (setq internal-child-p t)
+              (push (cons child id) outgoing)))
+          (unless internal-child-p
+            (push id heads)))))
+    (list (nreverse roots) (nreverse heads)
+          (nreverse incoming) (nreverse outgoing))))
+
+(defun majutsu-arrange--make-subject (session &optional scope ids)
+  "Build and validate an arrange subject for SESSION.
+Use SCOPE and IDS when non-nil; otherwise use SESSION's current subject state."
+  (let* ((scope (or scope
+                    (majutsu-arrange-session-subject-scope session)
+                    'subdag))
+         (ids (majutsu-arrange--validate-subject-ids
+               session
+               (or ids (majutsu-arrange--raw-subject-ids session scope))))
+         (edges (majutsu-arrange--subject-edges session ids)))
+    (majutsu-arrange-subject-create
+     :ids ids
+     :roots (nth 0 edges)
+     :heads (nth 1 edges)
+     :incoming-edges (nth 2 edges)
+     :outgoing-edges (nth 3 edges)
+     :scope scope)))
+
+(defun majutsu-arrange--current-subject-ids (session)
+  "Return the current subject ids for rendering SESSION."
+  (ignore-errors
+    (majutsu-arrange-subject-ids (majutsu-arrange--make-subject session))))
+
+(defun majutsu-arrange--replace-parent-set (parents parent-set replacements)
+  "Return PARENTS with members of PARENT-SET replaced by REPLACEMENTS."
+  (let (result)
+    (dolist (parent parents)
+      (if (gethash parent parent-set)
+          (setq result (majutsu-arrange--append-unique result replacements))
+        (setq result (majutsu-arrange--push-unique parent result))))
+    result))
+
+(defun majutsu-arrange--subject-old-root-parents (subject)
+  "Return SUBJECT's old root parents outside the subject."
+  (let (parents)
+    (dolist (edge (majutsu-arrange-subject-incoming-edges subject))
+      (setq parents (majutsu-arrange--push-unique (cdr edge) parents)))
+    parents))
+
+(defun majutsu-arrange--detach-subject (session subject)
+  "Fill the old hole left by moving SUBJECT in SESSION."
+  (let ((subject-set (majutsu-arrange--id-set
+                      (majutsu-arrange-subject-ids subject)))
+        (head-set (majutsu-arrange--id-set
+                   (majutsu-arrange-subject-heads subject)))
+        (old-root-parents (majutsu-arrange--subject-old-root-parents subject)))
+    (maphash
+     (lambda (id node)
+       (unless (or (gethash id subject-set)
+                   (eq (majutsu-arrange-node-role node) 'external-parent))
+         (setf (majutsu-arrange-node-parents node)
+               (majutsu-arrange--replace-parent-set
+                (majutsu-arrange-node-parents node)
+                head-set old-root-parents))))
+     (majutsu-arrange-session-nodes session))))
+
+(defun majutsu-arrange--set-subject-root-parents (session subject parents)
+  "Set SUBJECT root parents to PARENTS in SESSION."
+  (dolist (root (majutsu-arrange-subject-roots subject))
+    (when-let* ((node (majutsu-arrange--node session root)))
+      (setf (majutsu-arrange-node-parents node) (copy-sequence parents)))))
+
+(defun majutsu-arrange--ensure-anchors (session subject anchor-ids)
+  "Validate ANCHOR-IDS for moving SUBJECT in SESSION."
+  (unless anchor-ids
+    (user-error "No arrange anchor selected"))
+  (let ((subject-set (majutsu-arrange--id-set
+                      (majutsu-arrange-subject-ids subject))))
+    (dolist (anchor anchor-ids)
+      (unless (majutsu-arrange--node session anchor)
+        (user-error "Arrange anchor %s is unavailable" anchor))
+      (when (gethash anchor subject-set)
+        (user-error "Arrange anchor must be outside the subject"))))
+  anchor-ids)
+
+(defun majutsu-arrange--move-subject-onto (session subject parent-ids)
+  "Move SUBJECT onto PARENT-IDS in SESSION, preserving internal edges."
+  (majutsu-arrange--ensure-anchors session subject parent-ids)
+  (majutsu-arrange--detach-subject session subject)
+  (majutsu-arrange--set-subject-root-parents session subject parent-ids)
+  (majutsu-arrange--refresh-derived-order session))
+
+(defun majutsu-arrange--insert-subject-after (session subject anchor-ids)
+  "Insert SUBJECT after ANCHOR-IDS in SESSION, preserving internal edges."
+  (majutsu-arrange--ensure-anchors session subject anchor-ids)
+  (let ((subject-set (majutsu-arrange--id-set
+                      (majutsu-arrange-subject-ids subject)))
+        (anchor-set (majutsu-arrange--id-set anchor-ids))
+        (heads (majutsu-arrange-subject-heads subject)))
+    (majutsu-arrange--detach-subject session subject)
+    (maphash
+     (lambda (id node)
+       (unless (or (gethash id subject-set)
+                   (eq (majutsu-arrange-node-role node) 'external-parent))
+         (setf (majutsu-arrange-node-parents node)
+               (majutsu-arrange--replace-parent-set
+                (majutsu-arrange-node-parents node)
+                anchor-set heads))))
+     (majutsu-arrange-session-nodes session))
+    (majutsu-arrange--set-subject-root-parents session subject anchor-ids)
+    (majutsu-arrange--refresh-derived-order session)))
+
+(defun majutsu-arrange--insert-subject-before (session subject anchor-ids)
+  "Insert SUBJECT before ANCHOR-IDS in SESSION, preserving internal edges."
+  (majutsu-arrange--ensure-anchors session subject anchor-ids)
+  (let ((heads (majutsu-arrange-subject-heads subject))
+        (subject-set (majutsu-arrange--id-set
+                      (majutsu-arrange-subject-ids subject)))
+        (old-root-parents (majutsu-arrange--subject-old-root-parents subject))
+        (new-root-parents nil))
+    (dolist (anchor anchor-ids)
+      (when-let* ((node (majutsu-arrange--node session anchor)))
+        (dolist (parent (majutsu-arrange-node-parents node))
+          (if (gethash parent subject-set)
+              (setq new-root-parents
+                    (majutsu-arrange--append-unique
+                     new-root-parents old-root-parents))
+            (setq new-root-parents
+                  (majutsu-arrange--push-unique parent new-root-parents))))))
+    (majutsu-arrange--detach-subject session subject)
+    (majutsu-arrange--set-subject-root-parents session subject new-root-parents)
+    (dolist (anchor anchor-ids)
+      (when-let* ((node (majutsu-arrange--node session anchor)))
+        (setf (majutsu-arrange-node-parents node) (copy-sequence heads))))
+    (majutsu-arrange--refresh-derived-order session)))
 
 (defun majutsu-arrange-swap-down ()
   "Swap the selected commit with its unique target parent."
@@ -503,16 +795,144 @@
   (interactive)
   (majutsu-arrange--set-action 'keep))
 
+(defun majutsu-arrange-toggle-mark ()
+  "Toggle the selected target revision in the explicit arrange subject."
+  (interactive)
+  (let* ((session (majutsu-arrange--session))
+         (id (majutsu-arrange--current-id session))
+         (marked (majutsu-arrange-session-marked-ids session)))
+    (if (member id marked)
+        (setf (majutsu-arrange-session-marked-ids session)
+              (remove id marked))
+      (setf (majutsu-arrange-session-marked-ids session)
+            (majutsu-arrange--push-unique id marked)))
+    (setf (majutsu-arrange-session-subject-scope session) 'marked)
+    (majutsu-arrange--rerender)))
+
+(defun majutsu-arrange-clear-marks ()
+  "Clear the explicit arrange subject marks."
+  (interactive)
+  (let ((session (majutsu-arrange--session)))
+    (setf (majutsu-arrange-session-marked-ids session) nil)
+    (when (eq (majutsu-arrange-session-subject-scope session) 'marked)
+      (setf (majutsu-arrange-session-subject-scope session) 'subdag))
+    (majutsu-arrange--rerender)))
+
+(defun majutsu-arrange-cycle-subject-scope ()
+  "Cycle the arrange subject scope."
+  (interactive)
+  (let* ((session (majutsu-arrange--session))
+         (scopes (if (majutsu-arrange-session-marked-ids session)
+                     '(subdag stack single marked branch)
+                   '(subdag stack single branch)))
+         (current (or (majutsu-arrange-session-subject-scope session) 'subdag))
+         (tail (cdr (memq current scopes))))
+    (setf (majutsu-arrange-session-subject-scope session)
+          (or (car tail) (car scopes)))
+    (message "Arrange subject scope: %s"
+             (majutsu-arrange-session-subject-scope session))
+    (majutsu-arrange--rerender)))
+
+(defun majutsu-arrange--anchor-candidates (session subject)
+  "Return completion candidates for anchors outside SUBJECT in SESSION."
+  (let ((subject-set (majutsu-arrange--id-set
+                      (majutsu-arrange-subject-ids subject)))
+        candidates)
+    (dolist (id (majutsu-arrange--display-order session))
+      (unless (gethash id subject-set)
+        (when-let* ((node (majutsu-arrange--node session id)))
+          (push (cons (format "%s  %-8s  %s"
+                              (pcase (majutsu-arrange-node-role node)
+                                ('target "target ")
+                                ('external-parent "parent ")
+                                ('external-child "child  ")
+                                (_ "node   "))
+                              (or (majutsu-arrange-node-short-change-id node)
+                                  (majutsu-arrange-node-short-commit-id node)
+                                  "")
+                              (or (majutsu-arrange-node-description node) ""))
+                      id)
+                candidates))))
+    (nreverse candidates)))
+
+(defun majutsu-arrange--read-anchor-ids (session subject prompt)
+  "Read anchor ids for SUBJECT in SESSION with PROMPT.
+If the current selection is outside SUBJECT, use it as the anchor."
+  (let* ((selected (majutsu-arrange-session-selected-id session))
+         (subject-set (majutsu-arrange--id-set
+                       (majutsu-arrange-subject-ids subject))))
+    (if (and selected (not (gethash selected subject-set)))
+        (list selected)
+      (let* ((candidates (majutsu-arrange--anchor-candidates session subject))
+             (choice (completing-read prompt candidates nil t)))
+        (list (cdr (assoc choice candidates)))))))
+
+(defun majutsu-arrange--move-subject-command (operation anchor-prompt mutator)
+  "Apply OPERATION using anchor read by ANCHOR-PROMPT and graph MUTATOR."
+  (let* ((session (majutsu-arrange--session))
+         (subject (majutsu-arrange--make-subject session))
+         (anchors (majutsu-arrange--read-anchor-ids session subject anchor-prompt)))
+    (funcall mutator session subject anchors)
+    (majutsu-arrange--record-operation
+     session
+     (list operation
+           (copy-sequence (majutsu-arrange-subject-ids subject))
+           (copy-sequence anchors)))
+    (majutsu-arrange--mark-dirty session)
+    (majutsu-arrange--rerender)))
+
+(defun majutsu-arrange-move-onto ()
+  "Move the current arrange subject onto selected parent revisions."
+  (interactive)
+  (majutsu-arrange--move-subject-command
+   :move-onto
+   "Move subject onto: "
+   #'majutsu-arrange--move-subject-onto))
+
+(defun majutsu-arrange-insert-after ()
+  "Insert the current arrange subject after selected anchor revisions."
+  (interactive)
+  (majutsu-arrange--move-subject-command
+   :insert-after
+   "Insert subject after: "
+   #'majutsu-arrange--insert-subject-after))
+
+(defun majutsu-arrange-insert-before ()
+  "Insert the current arrange subject before selected anchor revisions."
+  (interactive)
+  (majutsu-arrange--move-subject-command
+   :insert-before
+   "Insert subject before: "
+   #'majutsu-arrange--insert-subject-before))
+
 ;;; Plan and CLI backend
+
+(defun majutsu-arrange--parent-changed-ids (session)
+  "Return node ids whose planned parents differ from the loaded graph."
+  (let (ids)
+    (maphash
+     (lambda (id node)
+       (unless (eq (majutsu-arrange-node-role node) 'external-parent)
+         (unless (equal (majutsu-arrange-node-parents node)
+                        (majutsu-arrange-node-original-parents node))
+           (setq ids (majutsu-arrange--push-unique id ids)))))
+     (majutsu-arrange-session-nodes session))
+    ids))
 
 (defun majutsu-arrange--affected-ids (session)
   "Return arrange node ids affected by SESSION's plan."
-  (let (ids)
+  (let ((ids (majutsu-arrange--parent-changed-ids session)))
     (dolist (operation (majutsu-arrange-session-operations session))
       (pcase operation
         (`(:swap ,parent ,child)
          (setq ids (majutsu-arrange--push-unique parent ids))
-         (setq ids (majutsu-arrange--push-unique child ids)))))
+         (setq ids (majutsu-arrange--push-unique child ids)))
+        (`(:move-onto ,subject-ids ,_parent-ids)
+         (setq ids (majutsu-arrange--append-unique ids subject-ids)))
+        (`(:insert-after ,subject-ids ,_anchor-ids)
+         (setq ids (majutsu-arrange--append-unique ids subject-ids)))
+        (`(:insert-before ,subject-ids ,_anchor-ids)
+         (setq ids (majutsu-arrange--append-unique ids subject-ids)))))
     (dolist (id (majutsu-arrange-session-target-ids session))
       (when-let* ((node (majutsu-arrange--node session id)))
         (when (eq (majutsu-arrange-node-action node) 'abandon)
@@ -532,13 +952,28 @@
      :final-parents parents
      :final-actions actions
      :operations (copy-sequence (majutsu-arrange-session-operations session))
-     :affected-ids (majutsu-arrange--affected-ids session))))
+     :affected-ids (majutsu-arrange--affected-ids session)
+     :command-preview (majutsu-arrange--compile-commands session))))
 
 (defun majutsu-arrange--node-change-id (session id)
   "Return SESSION node ID's change id."
   (or (and-let* ((node (majutsu-arrange--node session id)))
         (majutsu-arrange-node-change-id node))
       (user-error "Arrange node %s is unavailable" id)))
+
+(defun majutsu-arrange--subject-revset (session ids)
+  "Return an exact revset for subject IDS in SESSION."
+  (string-join (mapcar (lambda (id)
+                         (majutsu-arrange--node-change-id session id))
+                       ids)
+               " | "))
+
+(defun majutsu-arrange--destination-args (session flag ids)
+  "Return repeated destination FLAG arguments for IDS in SESSION."
+  (let (args)
+    (dolist (id ids (nreverse args))
+      (push flag args)
+      (push (majutsu-arrange--node-change-id session id) args))))
 
 (defun majutsu-arrange--compile-commands (session)
   "Compile SESSION's plan to a CLI replay command list."
@@ -550,6 +985,24 @@
                      "-r" (majutsu-arrange--node-change-id session parent)
                      "-A" (majutsu-arrange--node-change-id session child)
                      "--keep-divergent")
+               commands))
+        (`(:move-onto ,subject-ids ,parent-ids)
+         (push (append (list "rebase"
+                             "-r" (majutsu-arrange--subject-revset session subject-ids))
+                       (majutsu-arrange--destination-args session "-o" parent-ids)
+                       (list "--keep-divergent"))
+               commands))
+        (`(:insert-after ,subject-ids ,anchor-ids)
+         (push (append (list "rebase"
+                             "-r" (majutsu-arrange--subject-revset session subject-ids))
+                       (majutsu-arrange--destination-args session "-A" anchor-ids)
+                       (list "--keep-divergent"))
+               commands))
+        (`(:insert-before ,subject-ids ,anchor-ids)
+         (push (append (list "rebase"
+                             "-r" (majutsu-arrange--subject-revset session subject-ids))
+                       (majutsu-arrange--destination-args session "-B" anchor-ids)
+                       (list "--keep-divergent"))
                commands))))
     (let (abandon)
       (dolist (id (majutsu-arrange-session-target-ids session))
@@ -560,15 +1013,43 @@
         (push (cons "abandon" (nreverse abandon)) commands)))
     (nreverse commands)))
 
-(defun majutsu-arrange--affected-change-ids (session)
-  "Return affected change ids for SESSION."
+(defun majutsu-arrange--command-argument-ids (session)
+  "Return node ids used as CLI command arguments for SESSION."
+  (let (ids)
+    (dolist (operation (majutsu-arrange-session-operations session))
+      (pcase operation
+        (`(:swap ,parent ,child)
+         (setq ids (majutsu-arrange--push-unique parent ids))
+         (setq ids (majutsu-arrange--push-unique child ids)))
+        (`(:move-onto ,subject-ids ,parent-ids)
+         (setq ids (majutsu-arrange--append-unique ids subject-ids))
+         (setq ids (majutsu-arrange--append-unique ids parent-ids)))
+        (`(:insert-after ,subject-ids ,anchor-ids)
+         (setq ids (majutsu-arrange--append-unique ids subject-ids))
+         (setq ids (majutsu-arrange--append-unique ids anchor-ids)))
+        (`(:insert-before ,subject-ids ,anchor-ids)
+         (setq ids (majutsu-arrange--append-unique ids subject-ids))
+         (setq ids (majutsu-arrange--append-unique ids anchor-ids)))))
+    (dolist (id (majutsu-arrange-session-target-ids session))
+      (when-let* ((node (majutsu-arrange--node session id)))
+        (when (eq (majutsu-arrange-node-action node) 'abandon)
+          (setq ids (majutsu-arrange--push-unique id ids)))))
+    ids))
+
+(defun majutsu-arrange--change-ids-for (session ids)
+  "Return change ids for IDS in SESSION."
   (let (change-ids)
-    (dolist (id (majutsu-arrange--affected-ids session))
+    (dolist (id ids)
       (setq change-ids
             (majutsu-arrange--push-unique
              (majutsu-arrange--node-change-id session id)
              change-ids)))
     change-ids))
+
+(defun majutsu-arrange--affected-change-ids (session)
+  "Return affected change ids for SESSION."
+  (majutsu-arrange--change-ids-for session
+                                   (majutsu-arrange--affected-ids session)))
 
 (defun majutsu-arrange--ensure-current-operation (session)
   "Signal an error if SESSION is stale."
@@ -594,12 +1075,15 @@
   (unless commands
     (user-error "No arrange changes to apply"))
   (majutsu-arrange--ensure-current-operation session)
-  (let ((change-ids (majutsu-arrange--affected-change-ids session)))
-    (when-let* ((ambiguous (majutsu-arrange--ambiguous-change-ids change-ids)))
+  (let ((argument-change-ids
+         (majutsu-arrange--change-ids-for
+          session (majutsu-arrange--command-argument-ids session)))
+        (affected-change-ids (majutsu-arrange--affected-change-ids session)))
+    (when-let* ((ambiguous (majutsu-arrange--ambiguous-change-ids argument-change-ids)))
       (user-error "Cannot apply arrange plan with ambiguous change ids: %s"
                   (string-join ambiguous ", ")))
-    (when change-ids
-      (let ((revset (string-join change-ids " | ")))
+    (when affected-change-ids
+      (let ((revset (string-join affected-change-ids " | ")))
         (when-let* ((immutable (majutsu-arrange--first-revset-commit
                                 (format "(%s) & immutable()" revset))))
           (user-error "Cannot rewrite immutable revision %s" immutable))))))
@@ -717,6 +1201,7 @@
   "Return propertized display line for node ID in SESSION."
   (let* ((node (majutsu-arrange--node session id))
          (selected (equal id (majutsu-arrange-session-selected-id session)))
+         (subject (member id (majutsu-arrange--current-subject-ids session)))
          (marker (if selected "▶" " "))
          (glyph (majutsu-arrange--node-glyph node))
          (action (majutsu-arrange--node-action-label node))
@@ -731,7 +1216,11 @@
                        short
                        description)))
     (add-text-properties 0 (length line)
-                         (list 'face (majutsu-arrange--node-face node selected)
+                         (list 'face (delq nil
+                                           (cons (and subject
+                                                      'majutsu-arrange-subject-face)
+                                                 (majutsu-arrange--node-face
+                                                  node selected)))
                                'majutsu-arrange-id id)
                          line)
     line))
@@ -765,7 +1254,13 @@
     (magit-insert-section (arrange)
       (magit-insert-heading
         (format "Arrange: %s  [%s]" (majutsu-arrange-session-revset session) status))
-      (insert "Keys: j/k move  J/K swap  a abandon  p keep  c apply  q cancel  G reload\n\n")
+      (insert (format "Subject: %s%s\n"
+                      (or (majutsu-arrange-session-subject-scope session) 'subdag)
+                      (if (majutsu-arrange-session-marked-ids session)
+                          (format "  marks:%d"
+                                  (length (majutsu-arrange-session-marked-ids session)))
+                        "")))
+      (insert "Keys: j/k move  S scope  m mark  A/B/o move DAG  J/K swap  a abandon  p keep  c apply  q cancel\n\n")
       (dolist (id (majutsu-arrange--display-order session))
         (majutsu-arrange--insert-node session id))
       (insert "\n"))))
@@ -836,6 +1331,12 @@
   "C-p" #'majutsu-arrange-previous
   "J" #'majutsu-arrange-swap-down
   "K" #'majutsu-arrange-swap-up
+  "m" #'majutsu-arrange-toggle-mark
+  "M" #'majutsu-arrange-clear-marks
+  "S" #'majutsu-arrange-cycle-subject-scope
+  "A" #'majutsu-arrange-insert-after
+  "B" #'majutsu-arrange-insert-before
+  "o" #'majutsu-arrange-move-onto
   "a" #'majutsu-arrange-mark-abandon
   "p" #'majutsu-arrange-mark-keep
   "c" #'majutsu-arrange-apply

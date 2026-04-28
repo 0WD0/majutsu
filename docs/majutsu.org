@@ -521,11 +521,14 @@ Runs: =jj rebase -s SRC -o DEST=
 ** Arranging History
 - Key: h in the dispatcher (majutsu-arrange) :: Open an Emacs-native arrange buffer for editing a =jj arrange=-style graph rewrite plan.
 - Key: j / k :: Move the selected target revision.
-- Key: J / K :: Swap the selected revision with its unique target parent or child.
+- Key: m / M :: Toggle or clear explicit subject marks.
+- Key: S :: Cycle the move subject scope (=subdag=, =stack=, =single=, =marked=, =branch=).
+- Key: A / B / o :: Move the current subject after, before, or onto an anchor while preserving internal DAG edges. Mark a subject, move to an anchor, then press one of these keys; otherwise Majutsu prompts for an anchor.
+- Key: J / K :: Compatibility swap with the selected revision's unique target parent or child.
 - Key: a / p :: Mark the selected revision to abandon or keep.
 - Key: c / C-c C-c :: Apply the plan using the CLI replay backend.
 - Key: q / C-c C-k :: Cancel and discard the plan.
-Majutsu loads target revisions plus external parent/child context. The first backend only exposes constrained graph-neighbor swaps and keep/abandon actions, matching what it can safely replay with =jj rebase= and =jj abandon=.
+Majutsu loads target revisions plus external parent/child context. DAG-preserving moves compile to =jj rebase -r= so dependencies inside the moved subject are preserved; keep/abandon uses =jj abandon=.
 
 ** Duplicating
 - Key: ? y (majutsu-duplicate) :: Open the Duplicate transient. Allows selecting source revisions and destination.
