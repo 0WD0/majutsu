@@ -756,6 +756,58 @@
         (majutsu-log-copy-commit-id))
       (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
 
+(ert-deftest majutsu-log-transient-read-revset/uses-standard-revset-reader ()
+  "Log -r should use the standard revset expression reader."
+  (let (seen-reader
+        current-prefix-arg)
+    (cl-letf (((symbol-function 'majutsu-log--transient-default-revset)
+               (lambda () "@"))
+              ((symbol-function 'majutsu-read-revset)
+               (lambda (prompt default completion-args)
+                 (setq seen-reader (list prompt default completion-args))
+                 "new() | mine()")))
+      (should (equal (majutsu-log--transient-read-revset "Revisions: " nil nil)
+                     "new() | mine()"))
+      (should (equal seen-reader '("Revisions: " "@" ("log" "-r")))))))
+
+(ert-deftest majutsu-log--r-argument/uses-standard-revset-reader ()
+  "The log -r infix should be a normal transient argument."
+  (let ((obj (seq-find (lambda (suffix)
+                         (equal (oref suffix key) "-r"))
+                       (transient-suffixes 'majutsu-log-transient))))
+    (should obj)
+    (should (eq (oref obj reader) #'majutsu-log--transient-read-revset))
+    (should (equal (oref obj argument) "--revision="))))
+
+(ert-deftest majutsu-log-build-args/uses-revision-argument-directly ()
+  "Log -r should live in ARGS instead of a separate revset field."
+  (let ((majutsu-log--compiled-template-cache '(:template "TPL")))
+    (unwind-protect
+        (progn
+          (majutsu-log--set-value
+           'majutsu-log-mode '("--revision=mine()" "--no-graph") '("src"))
+          (should (equal (majutsu-log--build-args)
+                         '("log" "--revision=mine()" "--no-graph" "-T" "TPL" "src"))))
+      (majutsu-log--set-value 'majutsu-log-mode nil nil))))
+
+(ert-deftest majutsu-log-transient-clear-revisions/removes-revision-argument ()
+  "Clearing log revisions should remove the ordinary -r argument."
+  (let (redisplayed)
+    (unwind-protect
+        (with-temp-buffer
+          (majutsu-log-mode)
+          (majutsu-log--set-value
+           'majutsu-log-mode '("--revision=old()" "--no-graph") '("file"))
+          (cl-letf (((symbol-function 'majutsu-log-transient--redisplay)
+                     (lambda () (setq redisplayed t))))
+            (majutsu-log-transient-clear-revisions))
+          (pcase-let ((`(,args ,filesets)
+                       (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+            (should (equal args '("--no-graph")))
+            (should (equal filesets '("file")))))
+      (majutsu-log--set-value 'majutsu-log-mode nil nil))
+    (should redisplayed)))
+
 (ert-deftest majutsu-log-copy-transient-has-copy-actions ()
   "Log copy transient should expose visible and hidden-field copy commands."
   (should (transient-get-suffix 'majutsu-log-copy-transient "s"))
