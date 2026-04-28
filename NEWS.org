@@ -49,6 +49,9 @@
 
 ** Changed
 
+- Log: The log transient's =-r/--revision= filter is now a normal transient
+  argument stored with the rest of the log arguments, and it uses Majutsu's
+  standard revset expression reader like diff =-r=.
 - Completion: Standardize history-aware readers and completion categories for
   revsets, bookmark/tag names and patterns, remote names/patterns,
   workspace names, and repo-relative file paths using structured completion
