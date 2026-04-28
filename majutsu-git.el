@@ -301,7 +301,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-argument majutsu-git-fetch:--branch ()
   :description "Branch"
   :class 'transient-option
-  :key "-B"
+  :key "-b"
   :argument "--branch="
   :multi-value 'repeat
   :prompt "Branch: ")
@@ -309,7 +309,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-argument majutsu-git-clone:--branch ()
   :description "Branch"
   :class 'transient-option
-  :key "-B"
+  :key "-b"
   :argument "--branch="
   :multi-value 'repeat
   :prompt "Branch: ")

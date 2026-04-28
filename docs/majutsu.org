@@ -721,7 +721,7 @@ Runs: =jj git push=
 ** Fetching
 - Key: f (majutsu-git-fetch-transient) :: Open the Fetch transient to pull changes from a remote.
 - Key: -R :: Fetch from a specific remote; may be repeated.
-- Key: -B :: Fetch a specific branch; may be repeated.
+- Key: -b :: Fetch a specific branch; may be repeated.
 - Key: -t :: Fetch only tracked bookmarks.
 - Key: -A :: Fetch from all remotes.
 - Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not branch-specific =--branch= selections.
