@@ -126,9 +126,9 @@
       (should (eq seen-category 'majutsu-remote))
       (should (eq (car prewarm) 'majutsu-remote)))))
 
-(ert-deftest majutsu-git-push-remembered-args/keeps-stable-sync-policy ()
+(ert-deftest majutsu-git-push-repo-args/keeps-stable-sync-policy ()
   "Push repo defaults should omit target-specific arguments."
-  (should (equal (majutsu-git-push--remembered-args
+  (should (equal (majutsu-git-push--repo-args
                   '("--remote=upstream" "--bookmark=main" "--all"
                     "--tracked" "--deleted" "--allow-private"
                     "--allow-empty-description" "--revisions=mine()"
@@ -136,9 +136,9 @@
                  '("--remote=upstream" "--all" "--tracked" "--deleted"
                    "--allow-private" "--allow-empty-description"))))
 
-(ert-deftest majutsu-git-fetch-remembered-args/keeps-stable-sync-policy ()
+(ert-deftest majutsu-git-fetch-repo-args/keeps-stable-sync-policy ()
   "Fetch repo defaults should omit branch-specific arguments."
-  (should (equal (majutsu-git-fetch--remembered-args
+  (should (equal (majutsu-git-fetch--repo-args
                   '("--remote=upstream" "--branch=main"
                     "--tracked" "--all-remotes"))
                  '("--remote=upstream" "--tracked" "--all-remotes"))))
@@ -163,8 +163,8 @@
             '("--remote=upstream" "--tracked"))
       (let ((obj (make-instance 'majutsu-repository-transient-prefix
                                 :command 'majutsu-git-push-transient
-                                :namespace 'majutsu-git
-                                :defaults-key 'majutsu-git-push)))
+                                :repo-namespace 'majutsu-git
+                                :repo-key 'majutsu-git-push)))
         (transient-init-value obj)
         (should (equal (oref obj value)
                        '("--remote=upstream" "--tracked")))))))
@@ -176,9 +176,9 @@
          (prototype (make-instance
                      'majutsu-repository-transient-prefix
                      :command 'majutsu-git-push-transient
-                     :namespace 'majutsu-git
-                     :defaults-key 'majutsu-git-push
-                     :remember-args #'majutsu-git-push--remembered-args))
+                     :repo-namespace 'majutsu-git
+                     :repo-key 'majutsu-git-push
+                     :repo-filter #'majutsu-git-push--repo-args))
          (transient--prefix (make-instance
                              'majutsu-repository-transient-prefix
                              :command 'majutsu-git-push-transient

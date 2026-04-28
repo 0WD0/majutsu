@@ -254,30 +254,19 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :multi-value 'repeat
   :reader #'majutsu-read-bookmark-patterns)
 
-(defun majutsu-git--remember-arg-p (arg prefixes flags)
-  "Return non-nil if ARG should be remembered.
-PREFIXES are option prefixes with values; FLAGS are exact switches."
-  (and (stringp arg)
-       (or (member arg flags)
-           (seq-some (lambda (prefix)
-                       (string-prefix-p prefix arg))
-                     prefixes))))
-
-(defun majutsu-git-push--remembered-args (args)
-  "Return stable `jj git push' ARGS suitable for defaults."
+(defun majutsu-git-push--repo-args (args)
+  "Keep only stable `jj git push' ARGS for repository defaults."
   (seq-filter (lambda (arg)
-                (majutsu-git--remember-arg-p
-                 arg '("--remote=")
-                 '("--all" "--tracked" "--deleted"
-                   "--allow-empty-description" "--allow-private")))
+                (or (string-prefix-p "--remote=" arg)
+                    (member arg '("--all" "--tracked" "--deleted"
+                                  "--allow-empty-description" "--allow-private"))))
               args))
 
-(defun majutsu-git-fetch--remembered-args (args)
-  "Return stable `jj git fetch' ARGS suitable for defaults."
+(defun majutsu-git-fetch--repo-args (args)
+  "Keep only stable `jj git fetch' ARGS for repository defaults."
   (seq-filter (lambda (arg)
-                (majutsu-git--remember-arg-p
-                 arg '("--remote=")
-                 '("--tracked" "--all-remotes")))
+                (or (string-prefix-p "--remote=" arg)
+                    (member arg '("--tracked" "--all-remotes"))))
               args))
 
 ;;; Git Transients
@@ -306,9 +295,9 @@ PREFIXES are option prefixes with values; FLAGS are exact switches."
   "Transient for jj git push."
   :man-page "jj-git-push"
   :class 'majutsu-repository-transient-prefix
-  :namespace 'majutsu-git
-  :defaults-key 'majutsu-git-push
-  :remember-args #'majutsu-git-push--remembered-args
+  :repo-namespace 'majutsu-git
+  :repo-key 'majutsu-git-push
+  :repo-filter #'majutsu-git-push--repo-args
   [:description "JJ Git Push"
    :class transient-columns
    ["Arguments"
@@ -332,9 +321,9 @@ PREFIXES are option prefixes with values; FLAGS are exact switches."
   "Transient for jj git fetch."
   :man-page "jj-git-fetch"
   :class 'majutsu-repository-transient-prefix
-  :namespace 'majutsu-git
-  :defaults-key 'majutsu-git-fetch
-  :remember-args #'majutsu-git-fetch--remembered-args
+  :repo-namespace 'majutsu-git
+  :repo-key 'majutsu-git-fetch
+  :repo-filter #'majutsu-git-fetch--repo-args
   [:description "JJ Git Fetch"
    :class transient-columns
    ["Arguments"
