@@ -177,10 +177,14 @@
 (defun majutsu-git-remote-set-url (args)
   "Set URL of a Git remote."
   (interactive (list (transient-args 'majutsu-git-remote-set-url-transient)))
-  (when-let* ((remote (majutsu-read-remote-name "Set URL for remote" t))
-              (args (or args
-                        (list (majutsu-git--read-url-or-path
-                               (format "Fetch URL for %s" remote))))))
+  (let* ((remote (cl-loop for arg in args
+                          when (string-prefix-p "--remote=" arg)
+                          return (substring arg 9)))
+         (args (cl-loop for arg in args
+                        unless (string-prefix-p "--remote=" arg)
+                        collect arg)))
+    (unless remote
+      (user-error "Remote is required"))
     (let* ((args (mapcar #'majutsu-git--expand-remote-url-arg args))
            (exit (majutsu-run-jj
                   "git" (append '("remote" "set-url") (list remote) args))))
@@ -346,6 +350,14 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :prompt "Push URL: "
   :reader #'majutsu-git--transient-read-url-or-path)
 
+(transient-define-argument majutsu-git-remote-set-url:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-name)
+
 (defun majutsu-git-push--repo-args (args)
   "Keep only stable `jj git push' ARGS for repository defaults."
   (seq-filter (lambda (arg)
@@ -447,6 +459,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [:description "JJ Git Remote Set URL"
    :class transient-columns
    ["Arguments"
+    (majutsu-git-remote-set-url:--remote)
     (majutsu-git-remote-set-url:--fetch)
     (majutsu-git-remote-set-url:--push)]
    [("u" "Set URL" majutsu-git-remote-set-url)
