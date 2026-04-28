@@ -842,19 +842,19 @@
       (put mode 'majutsu-test-current-repository-values nil))
     (should saved)))
 
-(ert-deftest majutsu-log-transient-read-revset/uses-standard-revset-reader ()
-  "Log -r should use the standard revset expression reader."
+(ert-deftest majutsu-log-transient-read-revset/prefills-current-value ()
+  "Log -r should prefill the current value and let empty input clear it."
   (let (seen-reader
         current-prefix-arg)
-    (cl-letf (((symbol-function 'majutsu-log--transient-default-revset)
-               (lambda () "@"))
-              ((symbol-function 'majutsu-read-revset)
-               (lambda (prompt default completion-args)
-                 (setq seen-reader (list prompt default completion-args))
+    (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+               (lambda (prompt default initial-input history completion-args)
+                 (setq seen-reader (list prompt default initial-input history completion-args))
                  "new() | mine()")))
-      (should (equal (majutsu-log--transient-read-revset "Revisions: " nil nil)
+      (should (equal (majutsu-log--transient-read-revset
+                      "Revisions: " "old()" 'history)
                      "new() | mine()"))
-      (should (equal seen-reader '("Revisions: " "@" ("log" "-r")))))))
+      (should (equal seen-reader
+                     '("Revisions: " nil "old()" history ("log" "-r")))))))
 
 (ert-deftest majutsu-log--r-argument/uses-standard-revset-reader ()
   "The log -r infix should be a normal transient argument."
@@ -878,23 +878,13 @@
                            '("log" "--revision=mine()" "--no-graph" "-T" "TPL" "src"))))
         (majutsu-log--set-value 'majutsu-log-mode nil nil)))))
 
-(ert-deftest majutsu-log-transient-clear-revisions/removes-revision-argument ()
-  "Clearing log revisions should remove the ordinary -r argument."
-  (let (redisplayed)
-    (unwind-protect
-        (with-temp-buffer
-          (majutsu-log-mode)
-          (majutsu-log--set-value
-           'majutsu-log-mode '("--revision=old()" "--no-graph") '("file"))
-          (cl-letf (((symbol-function 'majutsu-log-transient--redisplay)
-                     (lambda () (setq redisplayed t))))
-            (majutsu-log-transient-clear-revisions))
-          (pcase-let ((`(,args ,filesets)
-                       (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-            (should (equal args '("--no-graph")))
-            (should (equal filesets '("file")))))
-      (majutsu-log--set-value 'majutsu-log-mode nil nil))
-    (should redisplayed)))
+(ert-deftest majutsu-log-transient-read-revset/empty-input-clears ()
+  "Empty log -r input should clear the ordinary revision argument."
+  (let (current-prefix-arg)
+    (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+               (lambda (&rest _args) nil)))
+      (should-not (majutsu-log--transient-read-revset
+                   "Revisions: " "old()" 'history)))))
 
 (ert-deftest majutsu-log-repo-default-action/is-available ()
   "The log transient should expose generic repository-local defaults."
@@ -902,6 +892,11 @@
     (should suffix)
     (should (eq (plist-get (cdr suffix) :command)
                 'majutsu-transient-save-repository-defaults))))
+
+(ert-deftest majutsu-log-transient/does-not-need-clear-revisions-action ()
+  "Log -r clears through empty input, so there is no separate R action."
+  (should-not (ignore-errors
+                (transient-get-suffix 'majutsu-log-transient "R"))))
 
 (ert-deftest majutsu-log-copy-transient-has-copy-actions ()
   "Log copy transient should expose visible and hidden-field copy commands."
