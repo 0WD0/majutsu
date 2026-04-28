@@ -1938,34 +1938,14 @@ offer to create one using `jj git init`."
 
 ;;; Commands
 
-(defun majutsu-log--transient-default-revset ()
-  "Return the default revset for the log revision infix."
-  (or (magit-section-value-if 'jj-commit) "@"))
+(defun majutsu-log--transient-read-revset (prompt initial-input history)
+  "Read a log revision argument.
 
-(defun majutsu-log--transient-read-revset (prompt initial-input _history)
-  "Read a log revision argument using the standard revset reader."
+INITIAL-INPUT is the current revision filter and is inserted into the
+minibuffer for editing.  Empty input clears the filter."
   (unless current-prefix-arg
-    (majutsu-read-revset
-     prompt
-     (or initial-input (majutsu-log--transient-default-revset))
-     '("log" "-r"))))
-
-(defun majutsu-log-transient-clear-revisions ()
-  "Clear the log revision argument."
-  (interactive)
-  (when (boundp 'transient--suffixes)
-    (dolist (obj transient--suffixes)
-      (when (and (slot-exists-p obj 'argument)
-                 (slot-boundp obj 'argument)
-                 (equal (oref obj argument) "--revision="))
-        (transient-infix-set obj nil))))
-  (pcase-let ((`(,args ,filesets)
-               (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-    (majutsu-log--set-value
-     'majutsu-log-mode
-     (majutsu-log--args-remove-options args '("--revision" "--revisions" "-r"))
-     filesets))
-  (majutsu-log-transient--redisplay))
+    (majutsu-read-optional-revset
+     prompt nil initial-input history '("log" "-r"))))
 
 (defun majutsu-log-transient-reset ()
   "Reset log options to defaults."
@@ -2040,7 +2020,7 @@ offer to create one using `jj git init`."
   :class 'transient-option
   :shortarg "-r"
   :argument "--revision="
-  :prompt "Revisions: "
+  :prompt "Revisions"
   :always-read t
   :reader #'majutsu-log--transient-read-revset)
 
@@ -2084,10 +2064,7 @@ offer to create one using `jj git init`."
     (majutsu-log:-r)
     (majutsu-log:--limit)
     (majutsu-log:--reversed)
-    (majutsu-log:--no-graph)
-    ("R" "Clear revisions" majutsu-log-transient-clear-revisions
-     :transient t)
-    ]
+    (majutsu-log:--no-graph)]
    ["Paths"
     (majutsu-log:--)]
    ["Actions"
