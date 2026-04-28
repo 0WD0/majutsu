@@ -7,6 +7,9 @@
 
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
+- Arrange: Add initial ~majutsu-arrange-mode~ for editing =jj arrange=-style
+  graph rewrite plans with target/context loading, keep/abandon marking,
+  graph-neighbor swaps, and a conservative CLI replay backend.
 - Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
   plus ~majutsu-bookmark-advance-to~ for the explicit =--to= form and
   ~majutsu-bookmark-advance-patterns~ for explicit bookmark
