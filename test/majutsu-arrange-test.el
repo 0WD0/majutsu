@@ -53,6 +53,33 @@
       :dirty-p nil
       :applying-p nil))))
 
+(ert-deftest majutsu-arrange-normalize-revsets ()
+  "Arrange revsets should match jj's repeated REVSETS union semantics."
+  (cl-letf (((symbol-function 'majutsu-arrange--configured-default-revset)
+             (lambda () "default()")))
+    (should (equal (majutsu-arrange--normalize-revsets nil) "default()"))
+    (should (equal (majutsu-arrange--normalize-revsets '("" "  ")) "default()"))
+    (should (equal (majutsu-arrange--normalize-revsets "@") "@"))
+    (should (equal (majutsu-arrange--normalize-revsets '("@" "mine()"))
+                   "(@) | (mine())"))))
+
+(ert-deftest majutsu-arrange-read-revsets/repeats-until-empty ()
+  "Prefix reader should accept multiple jj arrange REVSETS."
+  (let ((optional-values '("mine()" nil)) seen-first seen-optionals)
+    (cl-letf (((symbol-function 'majutsu-arrange--configured-default-revset)
+               (lambda () "default()"))
+              ((symbol-function 'majutsu-read-revset)
+               (lambda (prompt default completion-args)
+                 (setq seen-first (list prompt default completion-args))
+                 "@"))
+              ((symbol-function 'majutsu-read-optional-revset)
+               (lambda (&rest args)
+                 (push args seen-optionals)
+                 (pop optional-values))))
+      (should (equal (majutsu-arrange--read-revsets) '("@" "mine()"))))
+    (should (equal seen-first '("Arrange revset" "default()" ("arrange"))))
+    (should (= (length seen-optionals) 2))))
+
 (ert-deftest majutsu-arrange-parse-node-line ()
   "Machine template lines should parse into arrange nodes."
   (let* ((line (string-join
@@ -336,6 +363,21 @@
                    '((majutsu-arrange--session (:session "revset" "/repo/")))))
     (should (equal seen-keys
                    '(:buffer "*majutsu-arrange: repo*" :directory "/repo/")))))
+
+(ert-deftest majutsu-arrange-entrypoint/passes-explicit-revsets-list ()
+  "Entry command should preserve explicit repeated REVSETS for session loading."
+  (let (seen-bindings)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-arrange-build-session)
+               (lambda (revsets root) (list :session revsets root)))
+              ((symbol-function 'majutsu-setup-buffer-internal)
+               (lambda (_mode _locked bindings &rest _keys)
+                 (setq seen-bindings bindings)
+                 'arrange-buffer)))
+      (should (eq (majutsu-arrange '("@" "mine()")) 'arrange-buffer)))
+    (should (equal seen-bindings
+                   '((majutsu-arrange--session (:session ("@" "mine()") "/repo/")))))))
 
 (ert-deftest majutsu-arrange-make-plan/captures-final-state ()
   "Plan objects should carry final parents, actions, operations, and affected ids."
