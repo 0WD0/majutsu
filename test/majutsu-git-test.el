@@ -161,8 +161,8 @@
   "Git transients should expose simple upstream jj options."
   (should (transient-get-suffix 'majutsu-git-push-transient "-o"))
   (should (transient-get-suffix 'majutsu-git-fetch-transient "-R"))
-  (should (transient-get-suffix 'majutsu-git-fetch-transient "-B"))
-  (should (transient-get-suffix 'majutsu-git-clone-transient "-B")))
+  (should (transient-get-suffix 'majutsu-git-fetch-transient "-b"))
+  (should (transient-get-suffix 'majutsu-git-clone-transient "-b")))
 
 (ert-deftest majutsu-git-remote-transients/split-command-specific-options ()
   "Remote add/set-url options should live on command-specific transients."
