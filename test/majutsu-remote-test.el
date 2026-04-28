@@ -100,6 +100,17 @@
     (should-error (majutsu-read-new-remote-name "Remote name")
                   :type 'user-error)))
 
+(ert-deftest majutsu-read-new-remote-name/rejects-jj-incompatible-names ()
+  "New remote readers should mirror jj's simple remote-name restrictions."
+  (dolist (remote '("git" "team/origin"))
+    (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
+               (lambda (&optional _directory)
+                 (list :candidates nil :entries (make-hash-table :test #'equal))))
+              ((symbol-function 'majutsu-completing-read-payload)
+               (lambda (&rest _args) remote)))
+      (should-error (majutsu-read-new-remote-name "Remote name")
+                    :type 'user-error))))
+
 (ert-deftest majutsu-read-remote-patterns/uses-remote-history ()
   (let (seen-history seen-category prewarm)
     (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
