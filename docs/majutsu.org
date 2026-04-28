@@ -713,14 +713,15 @@ selection, while set/delete prompts still allow entering string patterns manuall
 - Key: -b :: Push specific bookmark(s).
 - Key: -c :: Push a specific change.
 - Key: -r :: Push specific revision(s).
+- Key: -o :: Pass a Git push option; may be repeated.
 - Key: -y :: Show what would be pushed without pushing (=--dry-run=).
-- Key: W :: Save stable push options as defaults for this jj repository. Majutsu remembers sync policy such as =--remote=, =--all=, =--tracked=, =--deleted=, =--allow-empty-description=, and =--allow-private=, but does not remember one-off targets like =--bookmark=, =--change=, =--revisions=, =--named=, or =--dry-run=.
+- Key: W :: Save stable push options as defaults for this jj repository. Majutsu remembers sync policy such as =--remote=, =--all=, =--tracked=, =--deleted=, =--allow-empty-description=, and =--allow-private=, but does not remember one-off targets like =--bookmark=, =--change=, =--revisions=, =--named=, =--option=, or =--dry-run=.
 Runs: =jj git push=
 
 ** Fetching
 - Key: f (majutsu-git-fetch-transient) :: Open the Fetch transient to pull changes from a remote.
-- Key: -R :: Fetch from a specific remote.
-- Key: -B :: Fetch a specific branch.
+- Key: -R :: Fetch from a specific remote; may be repeated.
+- Key: -B :: Fetch a specific branch; may be repeated.
 - Key: -t :: Fetch only tracked bookmarks.
 - Key: -A :: Fetch from all remotes.
 - Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not branch-specific =--branch= selections.
@@ -729,13 +730,13 @@ Runs: =jj git fetch=
 ** Remotes
 - Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.
 - Key: l (majutsu-git-remote-list) :: List remotes.
-- Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote. The add transient exposes =--fetch-tags= and =--push-url=.
-- Key: d (majutsu-git-remote-remove) :: Remove a remote.
-- Key: r (majutsu-git-remote-rename) :: Rename a remote.
-- Key: u (majutsu-git-remote-set-url-transient) :: Set remote URLs. With no option, Majutsu prompts for the fetch URL; use =--fetch= and/or =--push= to set them explicitly.
+- Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote as =jj git remote add [OPTIONS] REMOTE URL=. Majutsu prompts for a new remote name, rejects names that already exist, prompts for the URL/path positional, and exposes =--fetch-tags= and =--push-url=.
+- Key: d (majutsu-git-remote-remove) :: Remove an existing remote. In the remote list buffer, the remote at point is used as the default.
+- Key: r (majutsu-git-remote-rename) :: Rename an existing remote to a new remote name.
+- Key: u (majutsu-git-remote-set-url-transient) :: Set remote URLs. With no option, Majutsu prompts for the fetch URL/path positional; use =--fetch= and/or =--push= to set them explicitly. In the remote list buffer, the remote at point is used as the default.
 
 ** Clone and Init
-- Key: c (majutsu-git-clone-transient) :: Clone a Git repository into a jj repo.
+- Key: c (majutsu-git-clone-transient) :: Clone a Git repository into a jj repo. Source may be a URL or path; =--branch= can be repeated.
 - Key: i (majutsu-git-init-transient) :: Initialize a new Git-backed jj repository.
 
 ** Export and Import
