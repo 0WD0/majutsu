@@ -244,38 +244,63 @@
                               "local"
                               "/srv/git/fetch.git")))))))
 
-(ert-deftest majutsu-git-remote-set-url/passes-fetch-and-push-arguments ()
-  "Remote set-url should pass fetch/push-specific transient arguments."
-  (let (seen-args seen-require-match)
-    (cl-letf (((symbol-function 'majutsu-read-remote-name)
-               (lambda (_prompt &optional require-match _default)
-                 (setq seen-require-match require-match)
-                 "origin"))
-              ((symbol-function 'majutsu-git--read-url-or-path)
-               (lambda (&rest _args)
-                 (ert-fail "Should not prompt when transient args are present")))
-              ((symbol-function 'majutsu-run-jj)
+(ert-deftest majutsu-git-remote-set-url/reads-remote-from-transient-args ()
+  "Remote set-url should extract --remote= from transient and pass as positional."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
                  (setq seen-args args)
                  0))
               ((symbol-function 'message)
                (lambda (&rest _args) nil)))
-      (majutsu-git-remote-set-url '("--fetch=https://example.invalid/fetch.git"
-                                    "--push=https://example.invalid/push.git"))
-      (should seen-require-match)
+      (majutsu-git-remote-set-url '("--remote=origin"
+                                    "--fetch=https://example.invalid/fetch.git"))
       (should (equal seen-args
                      '("git" ("remote" "set-url" "origin"
+                              "--fetch=https://example.invalid/fetch.git")))))))
+
+(ert-deftest majutsu-git-remote-set-url/signals-when-remote-missing ()
+  "Remote set-url should signal an error when --remote= is absent."
+  (should-error
+   (cl-letf (((symbol-function 'user-error)
+              (lambda (&rest _args)
+                (signal 'user-error nil))))
+     (majutsu-git-remote-set-url '("--fetch=https://example.invalid/fetch.git")))))
+
+(ert-deftest majutsu-git-remote-set-url/applies-no-url-args-as-no-op ()
+  "Remote set-url should call jj without URL args when none given."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (majutsu-git-remote-set-url '("--remote=upstream"))
+      (should (equal seen-args
+                     '("git" ("remote" "set-url" "upstream")))))))
+
+(ert-deftest majutsu-git-remote-set-url/passes-fetch-and-push-arguments ()
+  "Remote set-url should pass --fetch and --push through to jj."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (majutsu-git-remote-set-url '("--remote=mirror"
+                                    "--fetch=https://example.invalid/fetch.git"
+                                    "--push=https://example.invalid/push.git"))
+      (should (equal seen-args
+                     '("git" ("remote" "set-url" "mirror"
                               "--fetch=https://example.invalid/fetch.git"
                               "--push=https://example.invalid/push.git")))))))
 
-(ert-deftest majutsu-git-remote-set-url/prompts-for-positional-fetch-url ()
-  "Remote set-url should prompt for the URL positional when no option is set."
+(ert-deftest majutsu-git-remote-set-url/converts-local-path-url-args ()
+  "Remote set-url should convert Emacs paths in URL args."
   (let (seen-args)
-    (cl-letf (((symbol-function 'majutsu-read-remote-name)
-               (lambda (&rest _args) "origin"))
-              ((symbol-function 'majutsu-git--read-url-or-path)
-               (lambda (&rest _args) "/ssh:demo:/srv/git/fetch.git"))
-              ((symbol-function 'majutsu-convert-filename-for-jj)
+    (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
                (lambda (_path) "/srv/git/fetch.git"))
               ((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)
@@ -283,10 +308,11 @@
                  0))
               ((symbol-function 'message)
                (lambda (&rest _args) nil)))
-      (majutsu-git-remote-set-url nil)
+      (majutsu-git-remote-set-url '("--remote=origin"
+                                    "--fetch=/ssh:demo:/srv/git/fetch.git"))
       (should (equal seen-args
                      '("git" ("remote" "set-url" "origin"
-                              "/srv/git/fetch.git")))))))
+                              "--fetch=/srv/git/fetch.git")))))))
 
 (ert-deftest majutsu-git-remote-rename/requires-old-and-new-remote-readers ()
   "Remote rename should read an existing OLD and a new NEW positional."
