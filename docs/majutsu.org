@@ -163,7 +163,8 @@ Each revision in the log is a section. The visible anchor line is built from fie
   Open the log options transient.
 
 Useful transient entries include:
-- Key: r :: Set a revset filter (e.g., =all()= or =mine()=).
+- Key: -r :: Set a revset filter with Majutsu's standard revset expression reader (e.g., =all()=, =mine()=, or =A | B=).
+- Key: R :: Clear the revset filter.
 - Key: -n :: Limit the number of revisions shown.
 - Key: -v :: Toggle reverse order.
 - Key: -G :: Toggle the ASCII graph.

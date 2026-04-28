@@ -31,7 +31,7 @@
 (defun majutsu-log--get-value (mode &optional use-buffer-args)
   "Get log arguments for MODE.
 
-Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
+Returns an (ARGS FILESETS) pair.  USE-BUFFER-ARGS follows
 `majutsu-prefix-use-buffer-arguments' or
 `majutsu-direct-use-buffer-arguments'."
   (setq use-buffer-args
@@ -45,28 +45,23 @@ Returns (args revsets filesets) triple.  USE-BUFFER-ARGS follows
    ((and (memq use-buffer-args '(always selected current))
          (eq major-mode mode))
     (list majutsu-buffer-log-args
-          majutsu-buffer-log-revsets
           majutsu-buffer-log-filesets))
    ((and (memq use-buffer-args '(always selected))
          (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
            (list (buffer-local-value 'majutsu-buffer-log-args buf)
-                 (buffer-local-value 'majutsu-buffer-log-revsets buf)
                  (buffer-local-value 'majutsu-buffer-log-filesets buf)))))
    ((plist-member (symbol-plist mode) 'majutsu-log-current-arguments)
     (list (get mode 'majutsu-log-current-arguments)
-          (get mode 'majutsu-log-current-revsets)
           (get mode 'majutsu-log-current-filesets)))
    ((when-let* ((elt (assq (intern (format "majutsu-log:%s" mode))
                            transient-values)))
       (list (cdr elt)
-            (get mode 'majutsu-log-current-revsets)
             (get mode 'majutsu-log-current-filesets))))
    (t
     (list (get mode 'majutsu-log-default-arguments)
-          (get mode 'majutsu-log-default-revsets)
           (get mode 'majutsu-log-default-filesets)))))
 
-(defun majutsu-log--set-value (mode args revsets filesets &optional save)
+(defun majutsu-log--set-value (mode args filesets &optional save)
   "Set current log values for MODE.
 
 When SAVE is non-nil, also persist ARGS using `transient-values'."
@@ -78,14 +73,12 @@ When SAVE is non-nil, also persist ARGS using `transient-values'."
                                (and (stringp s) (string-empty-p s))))
                          (flatten-tree filesets))))
   (put mode 'majutsu-log-current-arguments args)
-  (put mode 'majutsu-log-current-revsets revsets)
   (put mode 'majutsu-log-current-filesets filesets)
   (when save
     (setf (alist-get (intern (format "majutsu-log:%s" mode)) transient-values) args)
     (transient-save-values))
   (when (eq major-mode mode)
     (setq-local majutsu-buffer-log-args args)
-    (setq-local majutsu-buffer-log-revsets revsets)
     (setq-local majutsu-buffer-log-filesets filesets))
   nil)
 
@@ -107,24 +100,62 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
 (defun majutsu-log--args-member-p (args flag)
   (and args (member flag args)))
 
-(defun majutsu-log--args-get-option (args opt)
-  "Return OPT's value from ARGS, or nil.
-Only supports simple OPT VALUE pairs."
-  (let ((pos (seq-position args opt #'equal)))
-    (and pos
-         (nth (1+ pos) args))))
+(defun majutsu-log--args-option-match (arg options)
+  "Return how ARG matches any of OPTIONS.
+The return value is (separate) for `--opt VALUE' style arguments,
+or (inline VALUE) for `--opt=VALUE' and short `-oVALUE' forms."
+  (when (stringp arg)
+    (seq-some
+     (lambda (opt)
+       (cond
+        ((equal arg opt)
+         '(separate))
+        ((string-prefix-p (concat opt "=") arg)
+         (list 'inline (substring arg (1+ (length opt)))))
+        ((and (= (length opt) 2)
+              (string-prefix-p opt arg)
+              (> (length arg) 2))
+         (list 'inline (substring arg 2)))))
+     options)))
 
-(defun majutsu-log--args-remove-option (args opt &optional takes-value)
-  "Return ARGS with OPT removed.
-When TAKES-VALUE is non-nil, also remove the following element."
-  (let ((out nil))
+(defun majutsu-log--args-option-values (args options)
+  "Return all values for OPTIONS found in ARGS."
+  (let ((options (ensure-list options))
+        out)
     (while args
-      (let ((a (pop args)))
-        (if (equal a opt)
-            (when takes-value
-              (pop args))
-          (push a out))))
+      (let* ((arg (pop args))
+             (match (majutsu-log--args-option-match arg options)))
+        (pcase match
+          ('(separate)
+           (when args
+             (push (pop args) out)))
+          (`(inline ,value)
+           (push value out)))))
     (nreverse out)))
+
+(defun majutsu-log--args-get-option (args options)
+  "Return the first value for OPTIONS found in ARGS."
+  (car (majutsu-log--args-option-values args options)))
+
+(defun majutsu-log--args-remove-options (args options)
+  "Return ARGS with OPTIONS and their values removed."
+  (let ((options (ensure-list options))
+        out)
+    (while args
+      (let* ((arg (pop args))
+             (match (majutsu-log--args-option-match arg options)))
+        (pcase match
+          ('(separate)
+           (pop args))
+          (`(inline ,_value)
+           nil)
+          (_
+           (push arg out)))))
+    (nreverse out)))
+
+(defun majutsu-log--revision-values (args)
+  "Return `jj log -r/--revision' values from ARGS."
+  (majutsu-log--args-option-values args '("--revision" "--revisions" "-r")))
 
 (defun majutsu-log--args-toggle-flag (args flag)
   (if (member flag args)
@@ -133,19 +164,24 @@ When TAKES-VALUE is non-nil, also remove the following element."
 
 (defun majutsu-log--args-set-option (args opt value)
   "Set OPT to VALUE inside ARGS (removing existing OPT)."
-  (setq args (majutsu-log--args-remove-option args opt t))
+  (setq args (majutsu-log--args-remove-options args (string-remove-suffix "=" opt)))
   (if value
-      (append args (list opt value))
+      (append args (if (string-suffix-p "=" opt)
+                       (list (concat opt value))
+                     (list opt value)))
     args))
 
 (defun majutsu-log--summary-parts ()
   "Return a list of human-readable fragments describing current log buffer."
-  (pcase-let* ((`(,args ,revsets ,filesets)
+  (pcase-let* ((`(,args ,filesets)
                 (majutsu-log--get-value 'majutsu-log-mode 'current))
                (parts '()))
-    (when revsets
-      (push (format "rev=%s" revsets) parts))
-    (when-let* ((limit (majutsu-log--args-get-option args "-n")))
+    (when-let* ((revsets (majutsu-log--revision-values args)))
+      (push (if (= (length revsets) 1)
+                (format "rev=%s" (car revsets))
+              (format "revs=%s" (string-join revsets " | ")))
+            parts))
+    (when-let* ((limit (majutsu-log--args-get-option args '("--limit" "-n"))))
       (push (format "limit=%s" limit) parts))
     (when (majutsu-log--args-member-p args "--reversed")
       (push "reversed" parts))
@@ -606,12 +642,10 @@ Returns a plist with :template, :columns, and :module-columns."
 
 (defun majutsu-log--build-args ()
   "Build argument list for `jj log' using current log variables."
-  (pcase-let ((`(,args ,revsets ,filesets)
+  (pcase-let ((`(,args ,filesets)
                (majutsu-log--get-value 'majutsu-log-mode 'current)))
     (let ((cmd '("log")))
       (setq cmd (append cmd args))
-      (when revsets
-        (setq cmd (append cmd (list "-r" revsets))))
       (setq cmd (append cmd (list "-T" (plist-get (majutsu-log--ensure-template) :template))))
       (setq cmd (append cmd filesets))
       cmd)))
@@ -1829,7 +1863,6 @@ Return non-nil when the section could be located."
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-log-mode))
   (list majutsu-buffer-log-args
-        majutsu-buffer-log-revsets
         majutsu-buffer-log-filesets))
 
 (defun majutsu-log-render ()
@@ -1870,11 +1903,10 @@ mutating the wrong buffer."
 
 When LOCKED is non-nil, avoid reusing existing unlocked log buffers."
   (with-current-buffer
-      (pcase-let ((`(,args ,revsets ,filesets)
+      (pcase-let ((`(,args ,filesets)
                    (majutsu-log--get-value 'majutsu-log-mode 'direct)))
         (majutsu-setup-buffer #'majutsu-log-mode locked
           (majutsu-buffer-log-args (copy-sequence args))
-          (majutsu-buffer-log-revsets revsets)
           (majutsu-buffer-log-filesets (copy-sequence filesets))))
     (when commit
       (unless (majutsu--goto-log-entry commit)
@@ -1927,30 +1959,39 @@ offer to create one using `jj git init`."
 
 ;;; Commands
 
-(defun majutsu-log-transient-set-revisions ()
-  "Prompt for a revset and store it in the current log variables."
-  (interactive)
-  (let* ((current (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-         (input (majutsu-read-optional-revset
-                 "Revset (empty to clear)" nil current
-                 'majutsu-read-revset-history)))
-    (pcase-let ((`(,args ,_revsets ,filesets)
-                 (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-      (majutsu-log--set-value 'majutsu-log-mode args input filesets))
-    (majutsu-log-transient--redisplay)))
+(defun majutsu-log--transient-default-revset ()
+  "Return the default revset for the log revision infix."
+  (or (magit-section-value-if 'jj-commit) "@"))
+
+(defun majutsu-log--transient-read-revset (prompt initial-input _history)
+  "Read a log revision argument using the standard revset reader."
+  (unless current-prefix-arg
+    (majutsu-read-revset
+     prompt
+     (or initial-input (majutsu-log--transient-default-revset))
+     '("log" "-r"))))
 
 (defun majutsu-log-transient-clear-revisions ()
-  "Clear the stored revset."
+  "Clear the log revision argument."
   (interactive)
-  (pcase-let ((`(,args ,_revsets ,filesets)
+  (when (boundp 'transient--suffixes)
+    (dolist (obj transient--suffixes)
+      (when (and (slot-exists-p obj 'argument)
+                 (slot-boundp obj 'argument)
+                 (equal (oref obj argument) "--revision="))
+        (transient-infix-set obj nil))))
+  (pcase-let ((`(,args ,filesets)
                (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-    (majutsu-log--set-value 'majutsu-log-mode args nil filesets))
+    (majutsu-log--set-value
+     'majutsu-log-mode
+     (majutsu-log--args-remove-options args '("--revision" "--revisions" "-r"))
+     filesets))
   (majutsu-log-transient--redisplay))
 
 (defun majutsu-log-transient-reset ()
   "Reset log options to defaults."
   (interactive)
-  (majutsu-log--set-value 'majutsu-log-mode nil nil nil)
+  (majutsu-log--set-value 'majutsu-log-mode nil nil)
   (if (fboundp 'transient-reset)
       (transient-reset)
     (majutsu-log-transient--redisplay)))
@@ -1990,29 +2031,34 @@ offer to create one using `jj git init`."
           (cdr (assoc "--" args)))))
 
 (cl-defmethod transient-init-value ((obj majutsu-log-prefix))
-  (pcase-let ((`(,args ,_revsets ,filesets)
+  (pcase-let ((`(,args ,filesets)
                (majutsu-log--get-value (oref obj major-mode) 'prefix)))
     (oset obj value (if filesets `(("--" ,@filesets) ,@args) args))))
 
 (cl-defmethod transient-set-value ((obj majutsu-log-prefix))
   (let* ((obj (oref obj prototype))
          (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,files) (transient-args (oref obj command)))
-                (`(,_old-args ,revsets ,_filesets)
-                 (majutsu-log--get-value mode 'direct)))
-      (majutsu-log--set-value mode args revsets files)
+    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
+      (majutsu-log--set-value mode args files)
       (transient--history-push obj)
       (majutsu-refresh))))
 
 (cl-defmethod transient-save-value ((obj majutsu-log-prefix))
   (let* ((obj (oref obj prototype))
          (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,files) (transient-args (oref obj command)))
-                (`(,_old-args ,revsets ,_filesets)
-                 (majutsu-log--get-value mode 'direct)))
-      (majutsu-log--set-value mode args revsets files t)
+    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
+      (majutsu-log--set-value mode args files t)
       (transient--history-push obj)
       (majutsu-refresh))))
+
+(transient-define-argument majutsu-log:-r ()
+  :description "Revisions"
+  :class 'transient-option
+  :key "-r"
+  :argument "--revision="
+  :prompt "Revisions: "
+  :always-read t
+  :reader #'majutsu-log--transient-read-revset)
 
 (transient-define-argument majutsu-log:--limit ()
   :description "Limit"
@@ -2051,17 +2097,11 @@ offer to create one using `jj git init`."
   [:description majutsu-log--transient-description
    :class transient-columns
    ["Revisions"
-    ("r" "Set revset" majutsu-log-transient-set-revisions
-     :description (lambda ()
-                    (majutsu-log--value-desc
-                     "Set revset"
-                     (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct))))
-     :transient t)
+    (majutsu-log:-r)
     (majutsu-log:--limit)
     (majutsu-log:--reversed)
     (majutsu-log:--no-graph)
-    ("R" "Clear revset" majutsu-log-transient-clear-revisions
-     :if (lambda () (cadr (majutsu-log--get-value 'majutsu-log-mode 'direct)))
+    ("R" "Clear revisions" majutsu-log-transient-clear-revisions
      :transient t)
     ]
    ["Paths"
