@@ -239,6 +239,12 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "k") #'majutsu-arrange-previous
     (kbd "J") #'majutsu-arrange-swap-down
     (kbd "K") #'majutsu-arrange-swap-up
+    (kbd "m") #'majutsu-arrange-toggle-mark
+    (kbd "M") #'majutsu-arrange-clear-marks
+    (kbd "S") #'majutsu-arrange-cycle-subject-scope
+    (kbd "A") #'majutsu-arrange-insert-after
+    (kbd "B") #'majutsu-arrange-insert-before
+    (kbd "o") #'majutsu-arrange-move-onto
     (kbd "a") #'majutsu-arrange-mark-abandon
     (kbd "p") #'majutsu-arrange-mark-keep
     (kbd "c") #'majutsu-arrange-apply
