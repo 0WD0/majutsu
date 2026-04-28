@@ -161,8 +161,30 @@
   "Git transients should expose simple upstream jj options."
   (should (transient-get-suffix 'majutsu-git-push-transient "-o"))
   (should (transient-get-suffix 'majutsu-git-fetch-transient "-R"))
-  (should (transient-get-suffix 'majutsu-git-fetch-transient "-B"))
-  (should (transient-get-suffix 'majutsu-git-clone-transient "-B")))
+  (should (transient-get-suffix 'majutsu-git-fetch-transient "-b"))
+  (should (transient-get-suffix 'majutsu-git-clone-transient "-b")))
+
+(defun majutsu-git-test--suffix-reader (suffix)
+  "Return the reader configured for transient SUFFIX."
+  (or (plist-get (cdr suffix) :reader)
+      (when-let* ((command (plist-get (cdr suffix) :command))
+                  (prototype (get command 'transient--suffix)))
+        (oref prototype reader))))
+
+(ert-deftest majutsu-git-transients/use-shared-remote-readers ()
+  "Push/fetch/clone remote options should use the correct remote readers."
+  (let* ((push-remote (transient-get-suffix 'majutsu-git-push-transient "-R"))
+         (fetch-remote (transient-get-suffix 'majutsu-git-fetch-transient "-R"))
+         (clone-remote (transient-get-suffix 'majutsu-git-clone-transient "-R"))
+         (push-reader (majutsu-git-test--suffix-reader push-remote))
+         (fetch-reader (majutsu-git-test--suffix-reader fetch-remote))
+         (clone-reader (majutsu-git-test--suffix-reader clone-remote)))
+    (should (or (eq push-reader 'majutsu-transient-read-remote-name)
+                (equal push-reader '(function majutsu-transient-read-remote-name))))
+    (should (or (eq fetch-reader 'majutsu-transient-read-remote-pattern)
+                (equal fetch-reader '(function majutsu-transient-read-remote-pattern))))
+    (should (or (eq clone-reader 'majutsu-transient-read-remote-name)
+                (equal clone-reader '(function majutsu-transient-read-remote-name))))))
 
 (ert-deftest majutsu-git-remote-transients/split-command-specific-options ()
   "Remote add/set-url options should live on command-specific transients."

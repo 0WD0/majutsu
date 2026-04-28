@@ -241,14 +241,6 @@ Prompts for SOURCE and optional DEST; uses ARGS."
       (kill-new dir)
       (message "Git root: %s (copied)" dir))))
 
-(transient-define-argument majutsu-git-push:-b ()
-  :description "Bookmark"
-  :class 'transient-option
-  :shortarg "-b"
-  :argument "--bookmark="
-  :multi-value 'repeat
-  :reader #'majutsu-read-bookmark-patterns)
-
 (defun majutsu-git-push--read-revset (prompt initial-input _history)
   "Read revset for `jj git push --revision='."
   (majutsu-read-revset prompt initial-input '("git" "push" "-r")))
@@ -296,23 +288,39 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :argument "--remote="
   :multi-value 'repeat
   :prompt "Remote: "
-  :choices #'majutsu-remote-names)
+  :reader #'majutsu-transient-read-remote-pattern)
 
-(transient-define-argument majutsu-git-fetch:--branch ()
+(transient-define-argument majutsu-git-push:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-name)
+
+(transient-define-argument majutsu-git-clone:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-name)
+
+(transient-define-argument majutsu-git:--branch ()
   :description "Branch"
   :class 'transient-option
-  :key "-B"
+  :shortarg "-b"
   :argument "--branch="
   :multi-value 'repeat
   :prompt "Branch: ")
 
-(transient-define-argument majutsu-git-clone:--branch ()
-  :description "Branch"
+(transient-define-argument majutsu-git:--bookmark ()
+  :description "Bookmark"
   :class 'transient-option
-  :key "-B"
-  :argument "--branch="
+  :shortarg "-b"
+  :argument "--bookmark="
   :multi-value 'repeat
-  :prompt "Branch: ")
+  :reader #'majutsu-read-bookmark-patterns)
 
 (transient-define-argument majutsu-git-remote-add:--push-url ()
   :description "Push URL"
@@ -385,8 +393,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [:description "JJ Git Push"
    :class transient-columns
    ["Arguments"
-    ("-R" "Remote" "--remote=" :choices #'majutsu-remote-names)
-    (majutsu-git-push:-b)
+    (majutsu-git-push:--remote)
+    (majutsu-git:--bookmark)
     ("-a" "All bookmarks" "--all")
     ("-t" "Tracked only" "--tracked")
     ("-D" "Deleted" "--deleted")
@@ -413,7 +421,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
    :class transient-columns
    ["Arguments"
     (majutsu-git-fetch:--remote)
-    (majutsu-git-fetch:--branch)
+    (majutsu-git:--branch)
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)
@@ -463,12 +471,12 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [:description "JJ Git Clone"
    :class transient-columns
    ["Arguments"
-    ("-R" "Remote name" "--remote=")
+    (majutsu-git-clone:--remote)
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
-    ("-d" "Depth" "--depth=")
+    ("-d" "Depth" "--depth=" :reader #'transient-read-number-N+)
     ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))
-    (majutsu-git-clone:--branch)]
+    (majutsu-git:--branch)]
    [("c" "Clone" majutsu-git-clone)
     ("q" "Quit" transient-quit-one)]])
 
