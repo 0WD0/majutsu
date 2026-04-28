@@ -756,6 +756,92 @@
         (majutsu-log-copy-commit-id))
       (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
 
+(ert-deftest majutsu-repository-config-id/reads-jj-config-id-file ()
+  "Repository identity should use jj's secure repo config id."
+  (let* ((root (file-name-as-directory (make-temp-file "majutsu-repo" t)))
+         (config-id "0123456789abcdefabcd")
+         (config-file (expand-file-name ".jj/repo/config-id" root)))
+    (unwind-protect
+        (progn
+          (make-directory (file-name-directory config-file) t)
+          (write-region config-id nil config-file nil 'silent)
+          (cl-letf (((symbol-function 'majutsu-toplevel)
+                     (lambda (&optional _directory) root)))
+            (should (equal (majutsu-repository-config-id) config-id))))
+      (delete-directory root t))))
+
+(ert-deftest majutsu-repository-config-id/create-delegates-to-jj ()
+  "Creating repository identity should ask jj, then read config-id."
+  (let* ((dir (file-name-as-directory (make-temp-file "majutsu-repo" t)))
+         (file (expand-file-name "config-id" dir))
+         (config-id "fedcba9876543210abcd")
+         seen-command)
+    (unwind-protect
+        (cl-letf (((symbol-function 'majutsu-repository-config-id-file)
+                   (lambda (&optional _root) file))
+                  ((symbol-function 'majutsu-jj-string)
+                   (lambda (&rest args)
+                     (setq seen-command args)
+                     (write-region config-id nil file nil 'silent)
+                     "/tmp/unused/config.toml")))
+          (should (equal (majutsu-repository-config-id t) config-id))
+          (should (equal seen-command '("config" "path" "--repo"))))
+      (delete-directory dir t))))
+
+(ert-deftest majutsu-transient-default-value/prefers-repository-defaults ()
+  "Generic transient defaults should prefer repo-local values."
+  (let ((transient-values nil)
+        (config-id "0123456789abcdefabcd")
+        (mode 'majutsu-test-mode))
+    (unwind-protect
+        (cl-letf (((symbol-function 'majutsu-repository-config-id)
+                   (lambda (&optional _create) config-id)))
+          (put mode 'majutsu-test-default-arguments '("default"))
+          (put mode 'majutsu-test-current-arguments '("global-session"))
+          (setf (alist-get (majutsu-transient-global-default-key 'majutsu-test mode)
+                           transient-values)
+                '("global-saved"))
+          (setf (alist-get (majutsu-transient-repository-default-key 'majutsu-test mode)
+                           transient-values)
+                '("repo-saved"))
+          (should (equal (majutsu-transient-default-value
+                          'majutsu-test mode
+                          'majutsu-test-current-arguments
+                          'majutsu-test-default-arguments)
+                         '("repo-saved")))
+          (majutsu-transient-put-repository-current-value
+           'majutsu-test mode '("repo-session") config-id)
+          (should (equal (majutsu-transient-default-value
+                          'majutsu-test mode
+                          'majutsu-test-current-arguments
+                          'majutsu-test-default-arguments)
+                         '("repo-session"))))
+      (put mode 'majutsu-test-current-repository-values nil)
+      (put mode 'majutsu-test-current-arguments nil)
+      (put mode 'majutsu-test-default-arguments nil))))
+
+(ert-deftest majutsu-transient-save-repository-value/persists-under-repo-key ()
+  "Repository-local transient saves should use the generic repo key."
+  (let ((transient-values nil)
+        (config-id "0123456789abcdefabcd")
+        (mode 'majutsu-test-mode)
+        saved)
+    (unwind-protect
+        (cl-letf (((symbol-function 'majutsu-repository-config-id)
+                   (lambda (&optional _create) config-id))
+                  ((symbol-function 'transient-save-values)
+                   (lambda () (setq saved t))))
+          (majutsu-transient-save-repository-value
+           'majutsu-test mode '("--revision=mine()"))
+          (let ((key (majutsu-transient-repository-default-key 'majutsu-test mode)))
+            (should (equal (cdr (assq key transient-values))
+                           '("--revision=mine()")))
+            (should (equal (majutsu-transient-repository-current-value
+                            'majutsu-test mode config-id)
+                           '("--revision=mine()")))))
+      (put mode 'majutsu-test-current-repository-values nil))
+    (should saved)))
+
 (ert-deftest majutsu-log-transient-read-revset/uses-standard-revset-reader ()
   "Log -r should use the standard revset expression reader."
   (let (seen-reader
@@ -809,6 +895,13 @@
             (should (equal filesets '("file")))))
       (majutsu-log--set-value 'majutsu-log-mode nil nil))
     (should redisplayed)))
+
+(ert-deftest majutsu-log-repo-default-action/is-available ()
+  "The log transient should expose generic repository-local defaults."
+  (let ((suffix (transient-get-suffix 'majutsu-log-transient "W")))
+    (should suffix)
+    (should (eq (plist-get (cdr suffix) :command)
+                'majutsu-transient-save-repository-defaults))))
 
 (ert-deftest majutsu-log-copy-transient-has-copy-actions ()
   "Log copy transient should expose visible and hidden-field copy commands."

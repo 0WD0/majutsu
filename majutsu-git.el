@@ -21,6 +21,8 @@
 (require 'seq)
 (require 'subr-x)
 
+(declare-function majutsu-repository-transient-prefix "majutsu-core")
+
 ;;; majutsu-git
 
 (defun majutsu-git--start (args &optional success-msg finish-callback)
@@ -252,6 +254,21 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :multi-value 'repeat
   :reader #'majutsu-read-bookmark-patterns)
 
+(defun majutsu-git-push--repo-args (args)
+  "Keep only stable `jj git push' ARGS for repository defaults."
+  (seq-filter (lambda (arg)
+                (or (string-prefix-p "--remote=" arg)
+                    (member arg '("--all" "--tracked" "--deleted"
+                                  "--allow-empty-description" "--allow-private"))))
+              args))
+
+(defun majutsu-git-fetch--repo-args (args)
+  "Keep only stable `jj git fetch' ARGS for repository defaults."
+  (seq-filter (lambda (arg)
+                (or (string-prefix-p "--remote=" arg)
+                    (member arg '("--tracked" "--all-remotes"))))
+              args))
+
 ;;; Git Transients
 
 ;;;###autoload(autoload 'majutsu-git-transient "majutsu-git" nil t)
@@ -277,6 +294,10 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
   :man-page "jj-git-push"
+  :class 'majutsu-repository-transient-prefix
+  :repo-namespace 'majutsu-git
+  :repo-key 'majutsu-git-push
+  :repo-filter #'majutsu-git-push--repo-args
   [:description "JJ Git Push"
    :class transient-columns
    ["Arguments"
@@ -292,11 +313,17 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-N" "Named X=REV" "--named=")
     ("-y" "Dry run" "--dry-run")]
    [("p" "Push" majutsu-git-push)
+    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
+     :transient t)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
   :man-page "jj-git-fetch"
+  :class 'majutsu-repository-transient-prefix
+  :repo-namespace 'majutsu-git
+  :repo-key 'majutsu-git-fetch
+  :repo-filter #'majutsu-git-fetch--repo-args
   [:description "JJ Git Fetch"
    :class transient-columns
    ["Arguments"
@@ -305,6 +332,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)
+    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
+     :transient t)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-remote-transient ()

@@ -320,7 +320,10 @@ list of filesets (path filters)."
   (let* ((obj (oref obj prototype))
          (mode (or (oref obj major-mode) major-mode))
          (args (car (transient-args (oref obj command)))))
-    (put mode 'majutsu-diff-current-arguments args)
+    (if-let* ((config-id (majutsu-repository-config-id)))
+        (majutsu-transient-put-repository-current-value
+         'majutsu-diff mode args config-id)
+      (put mode 'majutsu-diff-current-arguments args))
     (transient--history-push obj)
     (when (eq major-mode mode)
       (majutsu-diff--set-buffer-args args))))
@@ -328,7 +331,7 @@ list of filesets (path filters)."
 (cl-defmethod transient-save-value ((obj majutsu-diff-prefix))
   (let* ((obj (oref obj prototype))
          (mode (or (oref obj major-mode) major-mode))
-         (key (intern (format "majutsu-diff:%s" mode)))
+         (key (majutsu-transient-global-default-key 'majutsu-diff mode))
          (args (car (transient-args (oref obj command)))))
     (put mode 'majutsu-diff-current-arguments args)
     (setf (alist-get key transient-values) args)
@@ -336,6 +339,16 @@ list of filesets (path filters)."
     (transient--history-push obj)
     (when (eq major-mode mode)
       (majutsu-diff--set-buffer-args args))))
+
+(cl-defmethod majutsu-transient--save-repository-defaults ((obj majutsu-diff-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (args (car (transient-args (oref obj command)))))
+    (majutsu-transient-save-repository-value 'majutsu-diff mode args)
+    (transient--history-push obj)
+    (when (eq major-mode mode)
+      (majutsu-diff--set-buffer-args args))
+    (message "Saved diff arguments as repository defaults")))
 
 ;;;; Argument Access
 
@@ -361,13 +374,11 @@ list of filesets (path filters)."
                       (when-let* ((buf (majutsu--get-mode-buffer
                                         mode (eq use-buffer-args 'selected))))
                         (buffer-local-value 'majutsu-buffer-diff-args buf))))
-                ((plist-member (symbol-plist mode) 'majutsu-diff-current-arguments)
-                 (get mode 'majutsu-diff-current-arguments))
-                ((when-let* ((elt (assq (intern (format "majutsu-diff:%s" mode))
-                                        transient-values)))
-                   (cdr elt)))
                 (t
-                 (get mode 'majutsu-diff-default-arguments))))
+                 (majutsu-transient-default-value
+                  'majutsu-diff mode
+                  'majutsu-diff-current-arguments
+                  'majutsu-diff-default-arguments))))
          (range (and use-current majutsu-buffer-diff-range))
          (filesets (and use-current majutsu-buffer-diff-filesets)))
     (list args range filesets)))
@@ -379,7 +390,10 @@ list of filesets (path filters)."
               (or (majutsu-diff--remembered-args args)
                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
   (majutsu-diff--sync-backend majutsu-buffer-diff-args)
-  (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args))
+  (if-let* ((config-id (majutsu-repository-config-id)))
+      (majutsu-transient-put-repository-current-value
+       'majutsu-diff 'majutsu-diff-mode majutsu-buffer-diff-args config-id)
+    (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args)))
 
 (defun majutsu-diff-arguments (&optional mode)
   "Return the current diff arguments.
@@ -1421,6 +1435,7 @@ REVSET is passed to jj diff using `--revisions='."
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
+    ("W" "Save as repo default" majutsu-transient-save-repository-defaults :transient t)
     ("g" "Refresh" majutsu-refresh :transient t)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
@@ -1535,12 +1550,13 @@ REVSET is passed to jj diff using `--revisions='."
   :argument "--ignore-all-space")
 
 (defun majutsu-diff-save-arguments ()
-  "Save current transient arguments as defaults."
+  "Save current transient arguments as global defaults."
   (interactive)
-  (unless (object-of-class-p transient--prefix 'majutsu-diff-prefix)
+  (unless (and transient--prefix
+               (object-of-class-p transient--prefix 'majutsu-diff-prefix))
     (user-error "Not in a Majutsu diff transient"))
   (transient-save-value transient--prefix)
-  (message "Saved diff arguments as defaults"))
+  (message "Saved diff arguments as global defaults"))
 
 (defun majutsu-diff-refresh ()
   "Refresh diff buffer with current transient arguments."

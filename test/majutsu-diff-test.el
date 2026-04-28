@@ -179,6 +179,13 @@
                          "main | dev"))
           (should (equal seen (list "@" expected-completion-args))))))))
 
+(ert-deftest majutsu-diff-repo-default-action/is-available ()
+  "The diff transient should expose generic repository-local defaults."
+  (let ((suffix (transient-get-suffix 'majutsu-diff "W")))
+    (should suffix)
+    (should (eq (plist-get (cdr suffix) :command)
+                'majutsu-transient-save-repository-defaults))))
+
 (ert-deftest majutsu-diff--r-argument/uses-native-revset-reader ()
   "The `-r' diff infix should use the native revset reader."
   (let ((obj (seq-find (lambda (suffix)

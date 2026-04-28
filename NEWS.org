@@ -49,6 +49,10 @@
 
 ** Changed
 
+- Transients: Add a generic repository-local defaults layer keyed by jj's
+  secure repo =config-id=. Log, diff, and Git sync transients can save current
+  arguments as defaults for only the current repository, while global defaults
+  continue to use Transient's normal storage.
 - Log: The log transient's =-r/--revision= filter is now a normal transient
   argument stored with the rest of the log arguments, and it uses Majutsu's
   standard revset expression reader like diff =-r=.

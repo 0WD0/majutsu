@@ -50,16 +50,13 @@ Returns an (ARGS FILESETS) pair.  USE-BUFFER-ARGS follows
          (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
            (list (buffer-local-value 'majutsu-buffer-log-args buf)
                  (buffer-local-value 'majutsu-buffer-log-filesets buf)))))
-   ((plist-member (symbol-plist mode) 'majutsu-log-current-arguments)
-    (list (get mode 'majutsu-log-current-arguments)
-          (get mode 'majutsu-log-current-filesets)))
-   ((when-let* ((elt (assq (intern (format "majutsu-log:%s" mode))
-                           transient-values)))
-      (list (cdr elt)
-            (get mode 'majutsu-log-current-filesets))))
    (t
-    (list (get mode 'majutsu-log-default-arguments)
-          (get mode 'majutsu-log-default-filesets)))))
+    (list (majutsu-transient-default-value
+           'majutsu-log mode
+           'majutsu-log-current-arguments
+           'majutsu-log-default-arguments)
+          (or (get mode 'majutsu-log-current-filesets)
+              (get mode 'majutsu-log-default-filesets))))))
 
 (defun majutsu-log--set-value (mode args filesets &optional save)
   "Set current log values for MODE.
@@ -72,10 +69,15 @@ When SAVE is non-nil, also persist ARGS using `transient-values'."
                            (or (null s)
                                (and (stringp s) (string-empty-p s))))
                          (flatten-tree filesets))))
-  (put mode 'majutsu-log-current-arguments args)
+  (if-let* ((config-id (majutsu-repository-config-id)))
+      (majutsu-transient-put-repository-current-value
+       'majutsu-log mode args config-id)
+    (put mode 'majutsu-log-current-arguments args))
   (put mode 'majutsu-log-current-filesets filesets)
   (when save
-    (setf (alist-get (intern (format "majutsu-log:%s" mode)) transient-values) args)
+    (setf (alist-get (majutsu-transient-global-default-key 'majutsu-log mode)
+                     transient-values)
+          args)
     (transient-save-values))
   (when (eq major-mode mode)
     (setq-local majutsu-buffer-log-args args)
@@ -587,12 +589,8 @@ Returns a plist with :template, :columns, and :module-columns."
       (- (point) (length token)))))
 
 (defun majutsu-log--parse-trailing-payloads (payload)
-  "Parse trailing payload segments from PAYLOAD string.
-
-PAYLOAD is expected to start with either `majutsu-log--entry-tail-token'
-(new format) or `majutsu-log--entry-body-token' (legacy format)."
-  (cond
-   ((string-prefix-p majutsu-log--entry-tail-token payload)
+  "Parse tail, body, and metadata segments from PAYLOAD."
+  (when (string-prefix-p majutsu-log--entry-tail-token payload)
     (let* ((tail-start (length majutsu-log--entry-tail-token))
            (body-pos (string-match (regexp-quote majutsu-log--entry-body-token)
                                    payload tail-start))
@@ -611,22 +609,7 @@ PAYLOAD is expected to start with either `majutsu-log--entry-tail-token'
                                    meta-pos)
                   :metadata (substring payload
                                        (+ meta-pos (length majutsu-log--entry-meta-token))
-                                       end-pos)))))))
-   ((string-prefix-p majutsu-log--entry-body-token payload)
-    (let* ((body-start (length majutsu-log--entry-body-token))
-           (meta-pos (string-match (regexp-quote majutsu-log--entry-meta-token)
-                                   payload body-start))
-           (end-pos (and meta-pos
-                         (string-match (regexp-quote majutsu-log--entry-end-token)
-                                       payload (+ meta-pos (length majutsu-log--entry-meta-token))))))
-      (when (and meta-pos end-pos)
-        (let ((trailing (substring payload (+ end-pos (length majutsu-log--entry-end-token)))))
-          (when (string-empty-p trailing)
-            (list :tail ""
-                  :body (substring payload body-start meta-pos)
-                  :metadata (substring payload
-                                       (+ meta-pos (length majutsu-log--entry-meta-token))
-                                       end-pos)))))))))
+                                       end-pos))))))))
 
 (defun majutsu-log--split-module-values (payload count)
   "Split PAYLOAD into COUNT field values using `majutsu-log--field-separator'."
@@ -782,12 +765,8 @@ Returns entry plist and moves point past the consumed entry, or nil."
                  (content-start (if first-line
                                     (+ start-pos (length majutsu-log--entry-start-token))
                                   prefix-end))
-                 (tail-pos (majutsu-log--line-token-position
-                            majutsu-log--entry-tail-token bol eol content-start))
-                 (body-pos (and (null tail-pos)
-                                (majutsu-log--line-token-position
-                                 majutsu-log--entry-body-token bol eol content-start)))
-                 (segment-pos (or tail-pos body-pos)))
+                 (segment-pos (majutsu-log--line-token-position
+                               majutsu-log--entry-tail-token bol eol content-start)))
             (if segment-pos
                 (progn
                   (push prefix heading-prefixes)
@@ -1903,9 +1882,7 @@ offer to create one using `jj git init`."
   "Reset log options to defaults."
   (interactive)
   (majutsu-log--set-value 'majutsu-log-mode nil nil)
-  (if (fboundp 'transient-reset)
-      (transient-reset)
-    (majutsu-log-transient--redisplay)))
+  (transient-reset))
 
 (defun majutsu-log--toggle-desc (label flag)
   "Return LABEL annotated with ON/OFF state for FLAG in log args."
@@ -1925,6 +1902,7 @@ offer to create one using `jj git init`."
       (transient-redisplay)
     (when (fboundp 'transient--redisplay)
       (transient--redisplay))))
+
 
 ;;; Arguments
 ;;;; Prefix Classes
@@ -1961,6 +1939,19 @@ offer to create one using `jj git init`."
       (majutsu-log--set-value mode args files t)
       (transient--history-push obj)
       (majutsu-refresh))))
+
+(cl-defmethod majutsu-transient--save-repository-defaults ((obj majutsu-log-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
+      (majutsu-transient-save-repository-value 'majutsu-log mode args)
+      (put mode 'majutsu-log-current-filesets files)
+      (transient--history-push obj)
+      (when (eq major-mode mode)
+        (setq-local majutsu-buffer-log-args args)
+        (setq-local majutsu-buffer-log-filesets files))
+      (majutsu-refresh)
+      (message "Saved log arguments as repository defaults"))))
 
 (transient-define-argument majutsu-log:-r ()
   :description "Revisions"
@@ -2021,6 +2012,8 @@ offer to create one using `jj git init`."
     ("g" "buffer" majutsu-log-transient)
     ("s" "buffer and set defaults" transient-set-and-exit)
     ("w" "buffer and save defaults" transient-save-and-exit)
+    ("W" "buffer and save repo defaults" majutsu-transient-save-repository-defaults
+     :transient t)
     ("0" "Reset options" majutsu-log-transient-reset :transient t)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
