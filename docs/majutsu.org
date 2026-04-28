@@ -729,10 +729,10 @@ Runs: =jj git fetch=
 ** Remotes
 - Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.
 - Key: l (majutsu-git-remote-list) :: List remotes.
-- Key: a (majutsu-git-remote-add) :: Add a new Git remote.
+- Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote. The add transient exposes =--fetch-tags= and =--push-url=.
 - Key: d (majutsu-git-remote-remove) :: Remove a remote.
-- Key: n (majutsu-git-remote-rename) :: Rename a remote.
-- Key: u (majutsu-git-remote-set-url) :: Set a remote URL.
+- Key: r (majutsu-git-remote-rename) :: Rename a remote.
+- Key: u (majutsu-git-remote-set-url-transient) :: Set remote URLs. With no option, Majutsu prompts for the fetch URL; use =--fetch= and/or =--push= to set them explicitly.
 
 ** Clone and Init
 - Key: c (majutsu-git-clone-transient) :: Clone a Git repository into a jj repo.

@@ -151,6 +151,59 @@
       (should (eq (plist-get (cdr suffix) :command)
                   'majutsu-transient-save-repository-defaults)))))
 
+(ert-deftest majutsu-git-remote-transients/split-command-specific-options ()
+  "Remote add/set-url options should live on command-specific transients."
+  (should (transient-get-suffix 'majutsu-git-remote-transient "a"))
+  (should-not (ignore-errors
+                (transient-get-suffix 'majutsu-git-remote-transient "-T")))
+  (should (transient-get-suffix 'majutsu-git-remote-add-transient "-T"))
+  (should (transient-get-suffix 'majutsu-git-remote-add-transient "-P"))
+  (should (transient-get-suffix 'majutsu-git-remote-set-url-transient "-f"))
+  (should (transient-get-suffix 'majutsu-git-remote-set-url-transient "-p")))
+
+(ert-deftest majutsu-git-remote-add/passes-add-arguments ()
+  "Remote add should pass add-specific transient arguments."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'majutsu-git--read-remote)
+               (lambda (&rest _args) "origin"))
+              ((symbol-function 'read-string)
+               (lambda (&rest _args) "https://example.invalid/fetch.git"))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (majutsu-git-remote-add '("--fetch-tags=all"
+                                "--push-url=https://example.invalid/push.git"))
+      (should (equal seen-args
+                     '("git" ("remote" "add"
+                              "--fetch-tags=all"
+                              "--push-url=https://example.invalid/push.git"
+                              "origin"
+                              "https://example.invalid/fetch.git")))))))
+
+(ert-deftest majutsu-git-remote-set-url/passes-fetch-and-push-arguments ()
+  "Remote set-url should pass fetch/push-specific transient arguments."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'majutsu-git--read-remote)
+               (lambda (&rest _args) "origin"))
+              ((symbol-function 'read-string)
+               (lambda (&rest _args)
+                 (ert-fail "Should not prompt when transient args are present")))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (majutsu-git-remote-set-url '("--fetch=https://example.invalid/fetch.git"
+                                    "--push=https://example.invalid/push.git"))
+      (should (equal seen-args
+                     '("git" ("remote" "set-url" "origin"
+                              "--fetch=https://example.invalid/fetch.git"
+                              "--push=https://example.invalid/push.git")))))))
+
 (ert-deftest majutsu-git-push-transient/uses-repository-defaults ()
   "Git sync transients should read defaults via the generic repo layer."
   (let ((transient-values nil)
