@@ -156,4 +156,24 @@
       (should (eq seen-category 'majutsu-remote))
       (should (eq (car prewarm) 'majutsu-remote)))))
 
+(ert-deftest majutsu-transient-read-remote-patterns/forwards-initial-and-history ()
+  "Transient repeat remote reader should preserve Transient's edit state."
+  (let (seen-initial seen-history)
+    (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
+               (lambda (&optional _directory)
+                 (list :candidates '("origin" "gerrit")
+                       :entries (make-hash-table :test #'equal))))
+              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
+               (lambda (&rest _args)))
+              ((symbol-function 'completing-read-multiple)
+               (lambda (_prompt _collection _predicate _require-match initial hist _default)
+                 (setq seen-initial initial
+                       seen-history hist)
+                 '("gerrit"))))
+      (should (equal (majutsu-transient-read-remote-patterns
+                      "Remote" "gerri" 'transient-history)
+                     '("gerrit")))
+      (should (equal seen-initial "gerri"))
+      (should (eq seen-history 'transient-history)))))
+
 ;;; majutsu-remote-test.el ends here
