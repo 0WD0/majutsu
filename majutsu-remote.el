@@ -127,17 +127,21 @@ CANDIDATES defaults to known Git remote names."
   "Read a Git remote name pattern for a transient option."
   (majutsu-read-remote-pattern prompt initial-input nil initial-input))
 
-(defun majutsu-read-remote-patterns (prompt &optional candidates default)
+(defun majutsu-read-remote-patterns (prompt &optional candidates default initial-input history)
   "Read remote name patterns with PROMPT.
 CANDIDATES defaults to known Git remote names.  DEFAULT is preselected when
-non-nil."
+non-nil.  INITIAL-INPUT and HISTORY are forwarded to the minibuffer."
   (let ((payload (majutsu-remote-candidate-data default-directory)))
     (unless (plist-get payload :candidates)
       (setq payload (plist-put payload :candidates candidates)))
     (majutsu-completing-read-multiple-payload
      prompt payload
-     nil nil nil 'majutsu-remote-pattern-history
+     nil nil initial-input (or history 'majutsu-remote-pattern-history)
      default 'majutsu-remote nil default-directory)))
+
+(defun majutsu-transient-read-remote-patterns (prompt initial-input history)
+  "Read Git remote name patterns for a repeat transient option."
+  (majutsu-read-remote-patterns prompt nil nil initial-input history))
 
 (provide 'majutsu-remote)
 ;;; majutsu-remote.el ends here

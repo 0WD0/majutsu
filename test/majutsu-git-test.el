@@ -181,10 +181,31 @@
          (clone-reader (majutsu-git-test--suffix-reader clone-remote)))
     (should (or (eq push-reader 'majutsu-transient-read-remote-name)
                 (equal push-reader '(function majutsu-transient-read-remote-name))))
-    (should (or (eq fetch-reader 'majutsu-transient-read-remote-pattern)
-                (equal fetch-reader '(function majutsu-transient-read-remote-pattern))))
+    (should (or (eq fetch-reader 'majutsu-transient-read-remote-patterns)
+                (equal fetch-reader '(function majutsu-transient-read-remote-patterns))))
     (should (or (eq clone-reader 'majutsu-transient-read-remote-name)
                 (equal clone-reader '(function majutsu-transient-read-remote-name))))))
+
+(ert-deftest majutsu-git-fetch-remote-reader/returns-repeat-values ()
+  "Fetch remote reader should return a list for Transient's repeat option."
+  (let* ((suffix (transient-get-suffix 'majutsu-git-fetch-transient "-R"))
+         (reader (majutsu-git-test--suffix-reader suffix)))
+    (cl-letf (((symbol-function 'majutsu-read-remote-patterns)
+               (lambda (prompt candidates default initial-input history)
+                 (should (equal prompt "Remote: "))
+                 (should-not candidates)
+                 (should-not default)
+                 (should (equal initial-input "gerri"))
+                 (should (eq history 'test-history))
+                 '("gerrit"))))
+      (let* ((value (funcall reader "Remote: " "gerri" 'test-history))
+             (obj (make-instance 'transient-option
+                                  :argument "--remote="
+                                  :multi-value 'repeat)))
+        (oset obj value value)
+        (should (equal value '("gerrit")))
+        (should (equal (transient-infix-value obj)
+                       '("--remote=gerrit")))))))
 
 (ert-deftest majutsu-git-remote-transients/split-command-specific-options ()
   "Remote add/set-url options should live on command-specific transients."
