@@ -115,13 +115,18 @@ the heading of each process section."
             (setq file (concat remote file)))
           file)))))
 
+(defun majutsu-process-remember-with-editor-file-root (file root)
+  "Remember ROOT as the repository root for with-editor FILE."
+  (when (and file root)
+    (puthash file (file-name-as-directory root)
+             majutsu-process--with-editor-file-roots)))
+
 (defun majutsu-process--remember-with-editor-file-root (process line)
   "Remember repository root for with-editor control LINE from PROCESS."
   (when-let* ((file (majutsu-process--with-editor-open-file process line))
               (root (or (and process (process-get process 'default-dir))
                         default-directory)))
-    (puthash file (file-name-as-directory root)
-             majutsu-process--with-editor-file-roots)))
+    (majutsu-process-remember-with-editor-file-root file root)))
 
 (defun majutsu-process-with-editor-file-root (file)
   "Return the repository root recorded for with-editor FILE."

@@ -26,6 +26,8 @@
 (require 'cl-lib)
 
 (autoload 'majutsu-diff-revset "majutsu-diff" nil t)
+(declare-function majutsu-process-remember-with-editor-file-root
+                  "majutsu-process" (file root))
 
 (defvar recentf-exclude)
 (defvar better-jumper-ignored-file-patterns)
@@ -469,19 +471,42 @@ Save the current description before searching."
               (dir (process-get client 'server-client-directory)))
     (file-name-as-directory dir)))
 
+(defun majutsu-jjdescription--remember-server-visit-roots (files proc &optional _nowait)
+  "Remember repository roots for JJ description FILES opened by PROC.
+
+This runs before `server-visit-files' visits files.  At that point
+Emacsclient has already recorded its working directory on PROC, but the
+visited buffer does not exist yet.  Remembering the root here makes it
+available to `majutsu-jjdescription-setup' in `find-file-hook'."
+  (when-let* ((dir (process-get proc 'server-client-directory))
+              (root (let ((default-directory (file-name-as-directory dir)))
+                      (ignore-errors (majutsu-toplevel default-directory)))))
+    (pcase-dolist (`(,file . ,_) files)
+      (when (and file (string-match-p majutsu-jjdescription-regexp file))
+        (majutsu-process-remember-with-editor-file-root file root)))))
+
 (defun majutsu-jjdescription--repository-root ()
   "Return the repository root associated with this JJ description buffer."
-  (or majutsu--default-directory
-      (and buffer-file-name
+  (or (and buffer-file-name
            (majutsu-process-with-editor-file-root buffer-file-name))
       (majutsu-jjdescription--server-client-root)
+      majutsu--default-directory
       (ignore-errors (majutsu-toplevel default-directory))))
+
+(defun majutsu-jjdescription--bind-repository-root ()
+  "Bind this JJ description buffer to its associated repository root."
+  (when-let* ((root (majutsu-jjdescription--repository-root)))
+    (setq-local default-directory root)
+    (setq-local majutsu--default-directory root)
+    (when buffer-file-name
+      (majutsu-process-forget-with-editor-file-root buffer-file-name))
+    root))
 
 (defun majutsu-jjdescription-show-diff ()
   "Show the diff for the described JJ change."
   (interactive)
   (let ((default-directory
-         (or (majutsu-jjdescription--repository-root)
+         (or (majutsu-jjdescription--bind-repository-root)
              (user-error "No repository associated with this JJ description buffer"))))
     (majutsu-diff-revset (or (majutsu-jjdescription--change-id) "@"))))
 
@@ -525,18 +550,15 @@ Save the current description before searching."
     (setq-local majutsu-jjdescription--font-lock-keywords nil)
     (font-lock-flush)))
 
-(defcustom majutsu-jjdescription-setup-hook nil
+(defcustom majutsu-jjdescription-setup-hook (list #'bug-reference-mode)
   "Hook run after setting up a JJ description buffer."
   :group 'majutsu
-  :type 'hook)
+  :type 'hook
+  :options '(bug-reference-mode))
 
 (defun majutsu-jjdescription-setup ()
   "Set up the current buffer for editing a JJ description."
-  (when-let* ((root (majutsu-jjdescription--repository-root)))
-    (setq-local default-directory root)
-    (setq-local majutsu--default-directory root)
-    (when buffer-file-name
-      (majutsu-process-forget-with-editor-file-root buffer-file-name)))
+  (majutsu-jjdescription--bind-repository-root)
 
   ;; Apply major-mode with pre-enabled modes (like git-commit does)
   (when majutsu-jjdescription-major-mode
@@ -585,6 +607,18 @@ Save the current description before searching."
     (majutsu-jjdescription-setup-comments)
     (majutsu-jjdescription-setup-font-lock)))
 
+(defun majutsu-jjdescription--set-global-hooks (enable)
+  "Add or remove hooks and advice for `global-majutsu-jjdescription-mode'."
+  (let ((action (if enable #'add-hook #'remove-hook)))
+    (funcall action 'find-file-hook #'majutsu-jjdescription-setup-check-buffer)
+    (funcall action 'after-change-major-mode-hook
+             #'majutsu-jjdescription-setup-font-lock-in-buffer))
+  (if enable
+      (advice-add 'server-visit-files :before
+                  #'majutsu-jjdescription--remember-server-visit-roots)
+    (advice-remove 'server-visit-files
+                   #'majutsu-jjdescription--remember-server-visit-roots)))
+
 (define-minor-mode global-majutsu-jjdescription-mode
   "Edit JJ description buffers.
 
@@ -597,19 +631,8 @@ when a JJ description file is opened."
   :initialize
   (lambda (symbol exp)
     (custom-initialize-default symbol exp)
-    (when global-majutsu-jjdescription-mode
-      (add-hook 'find-file-hook #'majutsu-jjdescription-setup-check-buffer)
-      (add-hook 'after-change-major-mode-hook
-                #'majutsu-jjdescription-setup-font-lock-in-buffer)))
-  (cond
-   (global-majutsu-jjdescription-mode
-    (add-hook 'find-file-hook #'majutsu-jjdescription-setup-check-buffer)
-    (add-hook 'after-change-major-mode-hook
-              #'majutsu-jjdescription-setup-font-lock-in-buffer))
-   (t
-    (remove-hook 'find-file-hook #'majutsu-jjdescription-setup-check-buffer)
-    (remove-hook 'after-change-major-mode-hook
-                 #'majutsu-jjdescription-setup-font-lock-in-buffer))))
+    (majutsu-jjdescription--set-global-hooks (symbol-value symbol)))
+  (majutsu-jjdescription--set-global-hooks global-majutsu-jjdescription-mode))
 
 ;;; _
 (provide 'majutsu-jjdescription)

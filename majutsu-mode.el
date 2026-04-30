@@ -28,6 +28,35 @@
 (require 'seq)
 (require 'subr-x)
 
+(autoload 'bug-reference-mode "bug-reference" nil t)
+(declare-function bug-reference-maybe-setup-from-vc "bug-reference"
+                  (url url-rx bug-rx bug-url-fmt))
+(declare-function bug-reference--setup-from-vc-alist "bug-reference"
+                  (&optional rebuild))
+(declare-function bug-reference-push-button "bug-reference"
+                  (&optional pos use-mouse-action))
+(defvar bug-reference-auto-setup-functions)
+(defvar bug-reference-map)
+(defvar bug-reference-setup-from-vc-alist)
+(defvar majutsu-jjdescription-mode)
+
+;;; Options
+
+(defcustom majutsu-mode-hook nil
+  "Hook run after entering `majutsu-mode' or one of its derived modes."
+  :group 'majutsu
+  :type 'hook
+  :options (list #'bug-reference-mode))
+
+(defcustom majutsu-bug-reference-remote-names '("upstream" "origin")
+  "Git remote names preferred for `bug-reference-mode' auto-setup.
+
+When Majutsu sets up bug references from JJ Git remotes, URLs from
+these remotes are tried first, in order.  Remaining remotes are tried
+afterward."
+  :group 'majutsu
+  :type '(repeat string))
+
 ;;; Keymap
 
 (defvar-keymap majutsu-mode-map
@@ -155,6 +184,51 @@ ever displayed in the selected window, then delete that window."
       (quit-window kill-buffer)
       (when (window-live-p window)
         (delete-window window)))))
+
+;;; Bug references
+
+(defun majutsu-bug-reference--git-remote-alist (&optional directory)
+  "Return JJ Git remotes as (NAME . URL) pairs for DIRECTORY."
+  (let ((default-directory (or directory default-directory)))
+    (mapcar (lambda (line)
+              (pcase-let ((`(,name ,url . ,_)
+                           (split-string (string-trim line) "[ \t]+" t)))
+                (and name url (cons name url))))
+            (majutsu-jj-lines "git" "remote" "list"))))
+
+(defun majutsu-bug-reference--git-remote-urls (&optional directory)
+  "Return JJ Git remote URLs for DIRECTORY in preferred setup order."
+  (let* ((remotes (delq nil (majutsu-bug-reference--git-remote-alist directory)))
+         (preferred (delq nil (mapcar (lambda (name)
+                                        (cdr (assoc name remotes)))
+                                      majutsu-bug-reference-remote-names))))
+    (append preferred
+            (seq-remove (lambda (url) (member url preferred))
+                        (mapcar #'cdr remotes)))))
+
+(defun majutsu-bug-reference-try-setup (&optional _ignored)
+  "Try to set up `bug-reference-mode' from JJ Git remotes.
+
+This is used by `bug-reference-auto-setup-functions' for buffers managed
+by Majutsu, including JJ description buffers."
+  (when (or (derived-mode-p 'majutsu-mode)
+            (bound-and-true-p majutsu-jjdescription-mode))
+    (when-let* ((root (or majutsu--default-directory
+                          (majutsu-toplevel)))
+                (_ (file-directory-p root)))
+      (seq-some
+       (lambda (url)
+         (seq-some (lambda (config)
+                     (apply #'bug-reference-maybe-setup-from-vc url config))
+                   (append bug-reference-setup-from-vc-alist
+                           (bug-reference--setup-from-vc-alist))))
+       (majutsu-bug-reference--git-remote-urls root)))))
+
+(with-eval-after-load 'bug-reference
+  (add-hook 'bug-reference-auto-setup-functions
+            #'majutsu-bug-reference-try-setup t)
+  (keymap-set bug-reference-map "<remap> <majutsu-visit-thing>"
+              #'bug-reference-push-button))
 
 ;;; Visit
 

@@ -1788,6 +1788,12 @@ Return non-nil when the section could be located."
 
 ;;; Log Mode
 
+(defcustom majutsu-log-mode-hook (list #'bug-reference-mode)
+  "Hook run after entering `majutsu-log-mode'."
+  :group 'majutsu
+  :type 'hook
+  :options '(bug-reference-mode))
+
 ;;;###autoload(autoload 'majutsu-log-copy-transient "majutsu-log" nil t)
 (transient-define-prefix majutsu-log-copy-transient ()
   "Transient for semantic copy commands in `majutsu-log-mode'."

@@ -5,6 +5,8 @@
 
 ** Added
 
+- Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
+  description buffers, including JJ Git remote based auto-setup.
 - Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
   plus ~majutsu-bookmark-advance-to~ for the explicit =--to= form and
   ~majutsu-bookmark-advance-patterns~ for explicit bookmark
