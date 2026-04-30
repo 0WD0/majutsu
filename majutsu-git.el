@@ -23,6 +23,7 @@
 (require 'subr-x)
 
 (declare-function majutsu-repository-transient-prefix "majutsu-core")
+(declare-function majutsu-transient-read-remote-patterns "majutsu-remote")
 
 ;;; majutsu-git
 
@@ -292,7 +293,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :argument "--remote="
   :multi-value 'repeat
   :prompt "Remote: "
-  :reader #'majutsu-transient-read-remote-pattern)
+  :reader #'majutsu-transient-read-remote-patterns)
 
 (transient-define-argument majutsu-git-push:--remote ()
   :description "Remote"
