@@ -84,7 +84,6 @@
                     (eq (nth 1 call) majutsu-op-show-mode-map)
                     (equal (nth 2 call)
                            (list (kbd "RET") #'majutsu-op-show-default-action
-                                 (kbd "d") #'majutsu-op-show-diff-at-point
                                  (kbd "v") #'majutsu-op-show-evolog-at-point))))
              calls))
     (should (seq-some
@@ -93,7 +92,6 @@
                     (eq (nth 1 call) majutsu-op-diff-mode-map)
                     (equal (nth 2 call)
                            (list (kbd "RET") #'majutsu-op-show-default-action
-                                 (kbd "d") #'majutsu-op-show-diff-at-point
                                  (kbd "v") #'majutsu-op-show-evolog-at-point))))
              calls))))
 
