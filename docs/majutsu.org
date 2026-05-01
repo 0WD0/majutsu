@@ -296,16 +296,16 @@ Older column keys like ~:align~ and ~:visible~ are no longer part of the log col
 The historical ~right-margin~ placement has been replaced by the ~tail~ module, which renders real text on the anchor line with right alignment.
 Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
 
-*** Copying From Log Buffers
-Majutsu now provides both default copy filtering and explicit semantic copy commands. These commands are available through the dispatcher copy submenu and via ~M-x~.
+*** Copying From Structured Row Buffers
+Majutsu now provides both default copy filtering and explicit semantic copy commands for structured row buffers such as ~majutsu-log-mode~ and ~majutsu-evolog-mode~. These commands are available through the dispatcher copy submenu and via ~M-x~.
 
-- Key: ? w s (majutsu-copy-section-value) :: Copy the current section's stable value (for ~jj-commit~, this is the revision id at point). If the region is active, it falls back to ordinary region copy.
-- Key: ? w f (majutsu-log-copy-field) :: Copy the rendered field value at point.
-- Key: ? w F (majutsu-log-copy-entry-field) :: Choose any canonical field stored on the current entry, including hidden metadata that is not visible in the current layout.
-- Key: ? w h (majutsu-log-copy-commit-id) :: Copy the current entry's commit hash from hidden metadata.
-- Key: ? w m (majutsu-log-copy-module) :: Copy the rendered visible module at point (~heading~, ~tail~, or ~body~), without graph-prefix or tail-spacer decoration.
+- Key: ? w s (majutsu-copy-section-value) :: Copy the current section's stable value (for ~jj-commit~, this is the revision id at point; for evolog entries, this is the commit id). If the region is active, it falls back to ordinary region copy.
+- Key: ? w f (majutsu-row-copy-field) :: Copy the rendered field value at point.
+- Key: ? w F (majutsu-row-copy-entry-field) :: Choose any canonical field stored on the current entry, including hidden metadata that is not visible in the current layout.
+- Key: ? w h (majutsu-row-copy-commit-id) :: Copy the current entry's commit hash from hidden metadata.
+- Key: ? w m (majutsu-row-copy-module) :: Copy the rendered visible module at point (~heading~, ~tail~, or ~body~), without graph-prefix or tail-spacer decoration.
 
-This keeps ordinary Emacs copying predictable while still offering precise log-aware copy operations when you want semantic rather than purely visual text.
+This keeps ordinary Emacs copying predictable while still offering precise row-aware copy operations when you want semantic rather than purely visual text.
 
 ** Diffing
 *** Diff Transient
@@ -433,7 +433,7 @@ Resolve entry points are available both from the Ediff transient and as direct c
 - Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation.
   Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= for the point-specific default action and =v= to open that change's evolution log. Commit lines behave like normal =jj-commit= sections, while =d= keeps the ordinary Majutsu diff command from the parent mode.
 - Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to=, reusing the same sectionized changed commit/ref view.
-- Command: majutsu-evolog :: View =jj evolog --no-graph= as structured sections for a revision/change. Press =RET= or =d= on an entry to open that entry's native =inter_diff()= patch in =majutsu-evolog-show-mode=.
+- Command: majutsu-evolog :: View =jj evolog= with its graph preserved and each entry parsed through Majutsu's structured row protocol. Entries render as compact =jj= evolog sections; full change, commit, and optional operation IDs are kept as hidden metadata and are available through the shared ~? w~ copy submenu. =RET= and =d= currently use the ordinary parent-mode behavior rather than an evolog-specific patch action.
 - Commands: majutsu-op-restore / majutsu-op-revert :: Restore to an operation or revert an individual operation after confirmation.
 
 * Manipulating
