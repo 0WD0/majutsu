@@ -60,17 +60,30 @@
 (defconst majutsu-op--log-template
   (majutsu-tpl
    [:concat
-    [:separate "\x1e"
-               [:id]
-               [:label "id short" [:id :short]]
-               [:label "user" [:user]]
-               [:label "workspace_name" [:workspace_name]]
-               [:label "time end ago" [:method [:time :end] :ago]]
-               [:if [:snapshot]
-                   [:label "snapshot" "snapshot"]
-                 "op"]
-               [:label "description first_line"
-                       [:method [:description] :first_line]]]
+    [:id]
+    "\x1e"
+    [:label "id short" [:id :short]]
+    "\x1e"
+    [:if [:current_operation]
+        [:label "current_operation" "@"]
+      ""]
+    "\x1e"
+    [:label "user" [:user]]
+    "\x1e"
+    [:label "workspace_name" [:workspace_name]]
+    "\x1e"
+    [:label "time end" [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
+    "\x1e"
+    [:label "time end ago" [:method [:time :end] :ago]]
+    "\x1e"
+    [:label "time duration" [:method [:time] :duration]]
+    "\x1e"
+    [:if [:snapshot]
+        [:label "snapshot" "snapshot"]
+      "op"]
+    "\x1e"
+    [:label "description first_line"
+            [:method [:description] :first_line]]
     "\n"]
    'Operation)
   "Template used by `majutsu-op-log'.")
@@ -135,14 +148,18 @@
 
 (defun majutsu-op--parse-log-line (line)
   "Parse one operation log LINE into a plist."
-  (when-let* ((fields (majutsu-op--split-record line 7)))
-    (pcase-let ((`(,op-id ,op-id-short ,user ,workspace ,time ,kind ,description)
+  (when-let* ((fields (majutsu-op--split-record line 10)))
+    (pcase-let ((`(,op-id ,op-id-short ,current ,user ,workspace
+                  ,time ,time-ago ,duration ,kind ,description)
                  fields))
       (list :op-id (majutsu-op--machine-field op-id)
             :op-id-short (majutsu-op--display-field op-id-short)
+            :current (majutsu-op--machine-field current)
             :user (majutsu-op--display-field user)
             :workspace (majutsu-op--display-field workspace)
             :time (majutsu-op--display-field time)
+            :time-ago (majutsu-op--display-field time-ago)
+            :duration (majutsu-op--display-field duration)
             :kind (majutsu-op--machine-field kind)
             :desc (majutsu-op--display-field description)))))
 
@@ -430,6 +447,25 @@ stored without ANSI escapes."
           (setq majutsu-op-log--cached-entries entries))
         entries))))
 
+(defun majutsu-op--log-current-marker (entry)
+  "Return the current-operation marker for ENTRY."
+  (if (string-empty-p (plist-get entry :current))
+      " "
+    (propertize "@" 'face 'font-lock-warning-face)))
+
+(defun majutsu-op--format-log-entry (entry)
+  "Return the display line for one operation log ENTRY."
+  (format "%s %-12s %-8s %-18s %-14s %-19s %-13s %-14s %s"
+          (majutsu-op--log-current-marker entry)
+          (plist-get entry :op-id-short)
+          (plist-get entry :kind)
+          (plist-get entry :user)
+          (plist-get entry :workspace)
+          (plist-get entry :time)
+          (plist-get entry :time-ago)
+          (plist-get entry :duration)
+          (plist-get entry :desc)))
+
 (defun majutsu-op-log-insert-entries ()
   "Insert operation log entries."
   (magit-insert-section (jj-op-log)
@@ -437,14 +473,7 @@ stored without ANSI escapes."
     (dolist (entry (majutsu-parse-op-log-entries))
       (let ((op-id (plist-get entry :op-id)))
         (magit-insert-section (jj-op op-id t)
-          (magit-insert-heading
-            (format "%-12s %-18s %-14s %-12s %s"
-                    (plist-get entry :op-id-short)
-                    (plist-get entry :user)
-                    (plist-get entry :workspace)
-                    (plist-get entry :time)
-                    (plist-get entry :desc)))
-          (insert "\n"))))))
+          (magit-insert-heading (majutsu-op--format-log-entry entry)))))))
 
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
