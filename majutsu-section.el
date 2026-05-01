@@ -256,5 +256,20 @@ sections up to the absolute value of that, not just surrounding sections."
             (majutsu-section-toggle section)))
       (majutsu-section-toggle section))))
 
+;;;###autoload
+(defun majutsu-copy-section-value ()
+  "Copy the current section's stable value.
+
+When the region is active, copy it literally using `copy-region-as-kill'."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (if-let* ((section (magit-current-section))
+              (value (oref section value)))
+        (progn
+          (kill-new (format "%s" value))
+          (message "%s" value))
+      (user-error "No section value at point"))))
+
 (provide 'majutsu-section)
 ;;; majutsu-section.el ends here
