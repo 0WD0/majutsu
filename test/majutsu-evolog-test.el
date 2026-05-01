@@ -9,23 +9,26 @@
 (require 'ert)
 (require 'majutsu-evolog)
 
-(defun majutsu-evolog-test--entry-line (&optional change-id change-short commit-id commit-short op-id op-short)
-  "Return one structured evolog entry line for tests."
-  (string-join (list (or change-id "change-full")
-                     (or change-short "change-short")
-                     (or commit-id "commit-full")
-                     (or commit-short "commit-short")
-                     "author@example.com"
-                     "2 minutes ago"
-                     ""
-                     "conflict"
-                     "empty"
-                     ""
-                     "description"
-                     (or op-id "op-full")
-                     (or op-short "op-short")
-                     "operation description")
-               majutsu-evolog--field-separator))
+(defun majutsu-evolog-test--entry-line (&optional change-id change-short commit-id commit-short op-id op-short graph-prefix)
+  "Return one graph-prefixed structured evolog entry line for tests."
+  (concat (or graph-prefix "@  ")
+          (majutsu-graph-record--start-token majutsu-evolog--record-name)
+          (string-join (list (or change-id "change-full")
+                             (or change-short "change-short")
+                             (or commit-id "commit-full")
+                             (or commit-short "commit-short")
+                             "author@example.com"
+                             "2 minutes ago"
+                             ""
+                             "conflict"
+                             "empty"
+                             ""
+                             "description"
+                             (or op-id "op-full")
+                             (or op-short "op-short")
+                             "operation description")
+                       majutsu-evolog--field-separator)
+          (majutsu-graph-record--end-token majutsu-evolog--record-name)))
 
 (ert-deftest majutsu-evolog-entry-template/carries-full-ids-and-option-operation ()
   "Evolog template should carry entry ids and optional operation fields."
@@ -35,28 +38,34 @@
                           majutsu-evolog--entry-template))
   (should (string-match-p "self.operation()"
                           majutsu-evolog--entry-template))
+  (should (string-match-p (regexp-quote "\\x1DGR:evolog:S")
+                          majutsu-evolog--entry-template))
   (should-not (string-match-p "separate("
                               majutsu-evolog--entry-template)))
 
 (ert-deftest majutsu-evolog-parse-entry-line/keeps-full-and-display-ids ()
   "Evolog parser should keep full ids and display fields separately."
-  (let* ((line (string-join
-                (list "change-full"
-                      (propertize "change-short" 'font-lock-face 'success)
-                      "commit-full"
-                      (propertize "commit-short" 'font-lock-face 'warning)
-                      "author@example.com"
-                      "2 minutes ago"
-                      "hidden"
-                      ""
-                      "empty"
-                      ""
-                      "description"
-                      ""
-                      ""
-                      "")
-                majutsu-evolog--field-separator))
+  (let* ((line (concat "○  "
+                       (majutsu-graph-record--start-token majutsu-evolog--record-name)
+                       (string-join
+                        (list "change-full"
+                              (propertize "change-short" 'font-lock-face 'success)
+                              "commit-full"
+                              (propertize "commit-short" 'font-lock-face 'warning)
+                              "author@example.com"
+                              "2 minutes ago"
+                              "hidden"
+                              ""
+                              "empty"
+                              ""
+                              "description"
+                              ""
+                              ""
+                              "")
+                        majutsu-evolog--field-separator)
+                       (majutsu-graph-record--end-token majutsu-evolog--record-name)))
          (entry (majutsu-evolog--parse-entry-line line)))
+    (should (equal (plist-get entry :graph-prefix) "○  "))
     (should (equal (plist-get entry :change-id) "change-full"))
     (should (equal (plist-get entry :commit-id) "commit-full"))
     (should (equal (plist-get entry :change-id-short) "change-short"))
@@ -76,6 +85,7 @@
                (cl-position "evolog" args :test #'equal)))
     (should (member "--limit=2" args))
     (should (member "--reversed" args))
+    (should-not (member "--no-graph" args))
     (should (equal (last args 4)
                    (list "-r" "@" "-T" majutsu-evolog--entry-template)))))
 

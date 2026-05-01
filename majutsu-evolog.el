@@ -9,52 +9,42 @@
 
 (require 'majutsu)
 (require 'majutsu-diff)
+(require 'majutsu-graph-record)
 (require 'seq)
 (require 'subr-x)
 
 (declare-function majutsu-jj-buffer-string "majutsu-jj" (&rest args))
 (declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
 
-(defconst majutsu-evolog--field-separator "\x1e"
+(defconst majutsu-evolog--field-separator majutsu-graph-record-field-separator
   "Field separator used by Majutsu evolog templates.")
 
+(defconst majutsu-evolog--record-name "evolog"
+  "Graph record protocol name for evolog entries.")
+
 (defconst majutsu-evolog--entry-template
-  (majutsu-tpl
-   [:concat
-    [:commit :change_id]
-    "\x1e"
-    [:label "change_id" [:commit :change_id :short]]
-    "\x1e"
-    [:commit :commit_id]
-    "\x1e"
-    [:label "commit_id" [:commit :commit_id :short]]
-    "\x1e"
-    [:label "author email" [:commit :author :email]]
-    "\x1e"
-    [:label "time ago" [:commit :committer :timestamp :ago]]
-    "\x1e"
-    [:if [:commit :hidden] "hidden" ""]
-    "\x1e"
-    [:if [:commit :conflict] "conflict" ""]
-    "\x1e"
-    [:if [:commit :empty] "empty" ""]
-    "\x1e"
-    [:if [:commit :root] "root" ""]
-    "\x1e"
-    [:coalesce
-     [:if [:commit :description]
-         [:commit :description :first_line]]
-     [:if [:commit :empty] "(empty)"]
-     "(no description set)"]
-    "\x1e"
-    [:if [:operation] [:operation :id] ""]
-    "\x1e"
-    [:if [:operation] [:label "operation_id" [:operation :id :short]] ""]
-    "\x1e"
-    [:if [:operation]
-        [:operation :description :first_line]
-      ""]
-    "\n"]
+  (majutsu-graph-record-template
+   majutsu-evolog--record-name
+   '([:commit :change_id]
+     [:label "change_id" [:commit :change_id :short]]
+     [:commit :commit_id]
+     [:label "commit_id" [:commit :commit_id :short]]
+     [:label "author email" [:commit :author :email]]
+     [:label "time ago" [:commit :committer :timestamp :ago]]
+     [:if [:commit :hidden] "hidden" ""]
+     [:if [:commit :conflict] "conflict" ""]
+     [:if [:commit :empty] "empty" ""]
+     [:if [:commit :root] "root" ""]
+     [:coalesce
+      [:if [:commit :description]
+          [:commit :description :first_line]]
+      [:if [:commit :empty] "(empty)"]
+      "(no description set)"]
+     [:if [:operation] [:operation :id] ""]
+     [:if [:operation] [:label "operation_id" [:operation :id :short]] ""]
+     [:if [:operation]
+         [:operation :description :first_line]
+       ""])
    'CommitEvolutionEntry)
   "Template used by `majutsu-evolog'.")
 
@@ -92,20 +82,22 @@
        (not (string-empty-p
              (string-trim (substring-no-properties field))))))
 
-(defun majutsu-evolog--split-record (line expected)
-  "Split LINE into EXPECTED fields, or return nil when malformed."
-  (let ((fields (split-string line majutsu-evolog--field-separator)))
-    (and (= (length fields) expected) fields)))
+(defun majutsu-evolog--split-record (payload expected)
+  "Split PAYLOAD into EXPECTED fields, or return nil when malformed."
+  (majutsu-graph-record-split-fields payload expected))
 
-(defun majutsu-evolog--parse-entry-line (line)
-  "Parse one evolog LINE into a plist."
-  (when-let* ((fields (majutsu-evolog--split-record line 14)))
+(defun majutsu-evolog--parse-entry-record (record)
+  "Parse one evolog graph RECORD into a plist."
+  (when-let* ((fields (majutsu-evolog--split-record (plist-get record :payload) 14)))
     (pcase-let ((`(,change-id ,change-id-short ,commit-id ,commit-id-short
                    ,author-email ,time-ago ,hidden ,conflict ,empty ,root
                    ,description ,operation-id ,operation-id-short
                    ,operation-description)
                  fields))
-      (list :change-id (majutsu-evolog--machine-field change-id)
+      (list :graph-prefix (majutsu-evolog--display-field
+                           (plist-get record :graph-prefix))
+            :suffix-lines (plist-get record :suffix-lines)
+            :change-id (majutsu-evolog--machine-field change-id)
             :change-id-short (majutsu-evolog--machine-field change-id-short)
             :change-id-short-display (majutsu-evolog--display-field change-id-short)
             :commit-id (majutsu-evolog--machine-field commit-id)
@@ -123,6 +115,12 @@
             :operation-id-short-display (majutsu-evolog--display-field operation-id-short)
             :operation-description (majutsu-evolog--display-field operation-description)))))
 
+(defun majutsu-evolog--parse-entry-line (line)
+  "Parse one evolog LINE into a plist."
+  (when-let* ((record (majutsu-graph-record-parse-line
+                       majutsu-evolog--record-name line)))
+    (majutsu-evolog--parse-entry-record record)))
+
 (defun majutsu-evolog--parse-output (output)
   "Parse evolog OUTPUT into entry plists."
   (delq nil
@@ -132,7 +130,7 @@
 (defun majutsu-evolog--command-args (revset &optional args)
   "Return jj arguments for evolog REVSET with ARGS."
   (append majutsu-evolog--read-only-global-args
-          '("evolog" "--no-graph")
+          '("evolog")
           (or args majutsu-evolog--args)
           (list "-r" revset "-T" majutsu-evolog--entry-template)))
 
@@ -186,15 +184,17 @@ When OUTPUT is nil, run jj in BUF or the current buffer and cache the result."
 
 (defun majutsu-evolog--format-entry-heading (entry)
   "Return the heading line for one evolog ENTRY."
-  (string-join
-   (delq nil
-         (list (plist-get entry :change-id-short-display)
-               (plist-get entry :commit-id-short-display)
-               (let ((flags (majutsu-evolog--entry-flags entry)))
-                 (unless (string-empty-p flags)
-                   (propertize flags 'face 'font-lock-warning-face)))
-               (plist-get entry :description)))
-   " "))
+  (concat
+   (plist-get entry :graph-prefix)
+   (string-join
+    (delq nil
+          (list (plist-get entry :change-id-short-display)
+                (plist-get entry :commit-id-short-display)
+                (let ((flags (majutsu-evolog--entry-flags entry)))
+                  (unless (string-empty-p flags)
+                    (propertize flags 'face 'font-lock-warning-face)))
+                (plist-get entry :description)))
+    " ")))
 
 (defun majutsu-evolog--insert-entry-body (entry)
   "Insert multiline evolog body for ENTRY."
@@ -209,13 +209,18 @@ When OUTPUT is nil, run jj in BUF or the current buffer and cache the result."
                                   (plist-get entry :operation-description))))
 
 (defun majutsu-evolog--wash-entry ()
-  "Wash the current raw evolog line into one `jj-evolog-entry' section."
-  (let* ((line (majutsu-evolog--line-string))
-         (entry (majutsu-evolog--parse-entry-line line)))
-    (majutsu-evolog--delete-line)
-    (when entry
+  "Wash the current raw evolog record into one `jj-evolog-entry' section."
+  (when-let* ((record (majutsu-graph-record-parse-at-point
+                       majutsu-evolog--record-name))
+              (entry (majutsu-evolog--parse-entry-record record)))
+    (let ((beg (plist-get record :beg))
+          (end (plist-get record :end)))
+      (delete-region beg end)
+      (goto-char beg)
       (magit-insert-section (jj-evolog-entry entry)
         (magit-insert-heading (majutsu-evolog--format-entry-heading entry))
+        (dolist (line (plist-get entry :suffix-lines))
+          (insert line "\n"))
         (majutsu-evolog--insert-entry-body entry))
       entry)))
 
@@ -224,8 +229,9 @@ When OUTPUT is nil, run jj in BUF or the current buffer and cache the result."
   (let (entries)
     (goto-char (point-min))
     (while (not (eobp))
-      (when-let* ((entry (majutsu-evolog--wash-entry)))
-        (push entry entries)))
+      (if-let* ((entry (majutsu-evolog--wash-entry)))
+          (push entry entries)
+        (magit-delete-line)))
     (setq majutsu-evolog--cached-entries (nreverse entries))))
 
 (defun majutsu-evolog--insert-entries ()
