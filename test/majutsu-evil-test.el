@@ -46,7 +46,8 @@
       (let ((majutsu-evil-initial-state 'normal))
         (majutsu-evil--set-initial-state)))
     (should (member '(majutsu-op-log-mode normal) calls))
-    (should (member '(majutsu-op-show-mode normal) calls))))
+    (should (member '(majutsu-op-show-mode normal) calls))
+    (should (member '(majutsu-op-diff-mode normal) calls))))
 
 (ert-deftest majutsu-evil-test-op-mode-keybindings ()
   "Operation mode maps should receive Evil-specific bindings."
@@ -81,6 +82,15 @@
              (lambda (call)
                (and (eq (nth 0 call) 'normal)
                     (eq (nth 1 call) majutsu-op-show-mode-map)
+                    (equal (nth 2 call)
+                           (list (kbd "RET") #'majutsu-op-show-default-action
+                                 (kbd "d") #'majutsu-op-show-diff-at-point
+                                 (kbd "v") #'majutsu-op-show-evolog-at-point))))
+             calls))
+    (should (seq-some
+             (lambda (call)
+               (and (eq (nth 0 call) 'normal)
+                    (eq (nth 1 call) majutsu-op-diff-mode-map)
                     (equal (nth 2 call)
                            (list (kbd "RET") #'majutsu-op-show-default-action
                                  (kbd "d") #'majutsu-op-show-diff-at-point
