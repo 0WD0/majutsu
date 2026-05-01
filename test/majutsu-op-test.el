@@ -264,6 +264,33 @@
       (should (equal (nth 3 captured)
                      '(:buffer "*majutsu-op: repo*" :directory "/repo/"))))))
 
+(ert-deftest majutsu-op-log/defaults-to-mode-arguments ()
+  "Operation log should fall back to per-mode default arguments."
+  (let (captured)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-setup-buffer-internal)
+               (lambda (mode locked bindings &rest kwargs)
+                 (setq captured (list mode locked bindings kwargs))
+                 'buffer)))
+      (should (eq (majutsu-op-log nil) 'buffer))
+      (should (equal (nth 2 captured)
+                     `((majutsu-op-log--args
+                        ,(get 'majutsu-op-log-mode
+                              'majutsu-op-log-default-arguments))))))))
+
+(ert-deftest majutsu-op-log-mode/default-limit-stored-on-symbol ()
+  "Operation log mode should store --limit=64 as its default argument."
+  (should (equal (get 'majutsu-op-log-mode 'majutsu-op-log-default-arguments)
+                 '("--limit=64"))))
+
+(ert-deftest majutsu-op-log-transient/init-value-uses-mode-defaults ()
+  "Operation log transient should display the mode default limit."
+  (let ((obj (make-instance 'majutsu-op-log-prefix
+                            :command 'majutsu-op-log-transient)))
+    (transient-init-value obj)
+    (should (equal (oref obj value) '("--limit=64")))))
+
 (ert-deftest majutsu-op-show/passes-operation-binding-to-buffer-setup ()
   "majutsu-op-show should pass operation as a buffer-local binding."
   (let (captured)
@@ -343,13 +370,13 @@
                (concat "From operation: old\n  To operation: new\n\n"
                        "Changed commits:\n"
                        "+ " (majutsu-op-test--summary
-                              "change-full" "change-short"
-                              "commit-full" "commit-short") "\n\n"
+                             "change-full" "change-short"
+                             "commit-full" "commit-short") "\n\n"
                        "Changed local bookmarks:\n"
                        "main:\n"
                        "+ (added) " (majutsu-op-test--summary
-                                      "ref-change-full" "ref-change-short"
-                                      "ref-commit-full" "ref-commit-short") "\n"
+                                     "ref-change-full" "ref-change-short"
+                                     "ref-commit-full" "ref-commit-short") "\n"
                        "- (absent)\n"))))
     (with-temp-buffer
       (majutsu-op-show-mode)
