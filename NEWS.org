@@ -55,6 +55,10 @@
   to open an evolution log; its entries can open jj's native Git-format
   inter-diff with ~RET~.
 
+- Gerrit upload transient ::
+  The Git dispatcher now exposes a =jj gerrit upload= transient with revision
+  selection, review metadata, state flags, and repository-local defaults.
+
 ** Changed
 
 - Evil dispatcher entries show Evil-facing keys ::

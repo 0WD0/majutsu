@@ -157,6 +157,7 @@ Git Integration
 * Git Transient::
 * Pushing::
 * Fetching::
+* Gerrit Upload::
 * Remotes::
 * Clone and Init::
 * Export and Import::
@@ -1872,6 +1873,7 @@ selection@comma{} while set/delete prompts still allow entering string patterns 
 * Git Transient::
 * Pushing::
 * Fetching::
+* Gerrit Upload::
 * Remotes::
 * Clone and Init::
 * Export and Import::
@@ -1947,6 +1949,41 @@ Fetch from all remotes.
 Save stable fetch options as defaults for this jj repository. Majutsu remembers @samp{--remote}@comma{} @samp{--tracked}@comma{} and @samp{--all-remotes}@comma{} but not branch-specific @samp{--branch} selections.
 @end table
 Runs: @samp{jj git fetch}
+
+@node Gerrit Upload
+@section Gerrit Upload
+
+@table @asis
+@item @kbd{u} (@code{majutsu-gerrit-upload-transient})
+@kindex u
+@findex majutsu-gerrit-upload-transient
+Open the Gerrit upload transient.
+@item @kbd{-r}
+@kindex -r
+Upload specific revision(s).
+@item @kbd{r}
+@kindex r
+Toggle the revision at point into or out of the upload selection. If no revision is selected@comma{} Majutsu leaves revision selection to @samp{jj gerrit upload}@comma{} which uses its own @@/@@- default.
+@item @kbd{-b}
+@kindex -b
+Target remote branch (@samp{--remote-branch}).
+@item @kbd{-R}
+@kindex -R
+Gerrit remote (@samp{--remote}).
+@item @kbd{-n}
+@kindex -n
+Preview without pushing (@samp{--dry-run}).
+@item
+Review options include reviewers@comma{} CCs@comma{} labels@comma{} topic@comma{} hashtags@comma{} and a patch set message.
+@item
+State/notification options include change edit@comma{} WIP/ready@comma{} private/remove-private@comma{} publishing comments@comma{} notification policy@comma{} and attention-set handling.
+@item
+Advanced options expose submit@comma{} skip validation@comma{} merged uploads@comma{} deadlines@comma{} custom keyed values@comma{} and trace values.
+@item @kbd{W}
+@kindex W
+Save stable upload options as defaults for this jj repository. Majutsu remembers @samp{--remote}@comma{} @samp{--remote-branch}@comma{} @samp{--notify}@comma{} and @samp{--ignore-attention-set}@comma{} but not revisions@comma{} dry-run@comma{} metadata@comma{} state@comma{} or submit-related flags.
+@end table
+Runs: @samp{jj gerrit upload}
 
 @node Remotes
 @section Remotes
