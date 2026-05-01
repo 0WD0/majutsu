@@ -7,9 +7,10 @@
 
 - Operations: Add ~majutsu-op-transient~ on ~X~, dedicated ~op log~ / ~op diff~
   transients, a color-preserving structured multiline ~jj op log~ view, expanded
-  sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, and ~op restore~ /
-  ~op revert~ actions. Read-only operation views use =--at-op=@
-  --ignore-working-copy= to avoid snapshotting while browsing.
+  sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, ~majutsu-evolog~ /
+  ~majutsu-evolog-show~ evolution views, and ~op restore~ / ~op revert~ actions.
+  Read-only operation/evolution views use =--at-op=@ --ignore-working-copy= to
+  avoid snapshotting while browsing.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
 - Arrange: Add initial ~majutsu-arrange-mode~ for editing =jj arrange=-style
@@ -52,8 +53,8 @@
 - Template DSL: Add first-class anonymous functions, concise
   ~[:|arg| body]~ syntax, compile-time lambda application, and
   ~majutsu-template-defspecial~.
-- JJ helpers: Add color-preserving jj output helpers for structured buffers
-  that need ANSI labels instead of the plain-text ~majutsu-jj-lines~ path.
+- JJ helpers: Add ~majutsu-jj-buffer-string~ for callers that need full
+  plain-text command output instead of line-oriented ~majutsu-jj-lines~.
 
 ** Changed
 
