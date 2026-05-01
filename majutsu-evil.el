@@ -18,7 +18,6 @@
 
 (require 'majutsu)
 
-(declare-function majutsu-evolog-show-at-point "majutsu-evolog" ())
 (declare-function majutsu-op-log-show-at-point "majutsu-op" ())
 (declare-function majutsu-op-show-default-action "majutsu-op" ())
 (declare-function majutsu-op-show-diff-at-point "majutsu-op" ())
@@ -117,7 +116,6 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
                     majutsu-op-show-mode
                     majutsu-op-diff-mode
                     majutsu-evolog-mode
-                    majutsu-evolog-show-mode
                     majutsu-diff-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
@@ -226,10 +224,6 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-diff-mode-map
     (kbd "RET") #'majutsu-op-show-default-action
     (kbd "v") #'majutsu-op-show-evolog-at-point)
-
-  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-evolog-mode-map
-    (kbd "RET") #'majutsu-evolog-show-at-point
-    (kbd "d") #'majutsu-evolog-show-at-point)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-arrange-mode-map
     (kbd "j") #'majutsu-arrange-next
