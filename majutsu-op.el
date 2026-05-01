@@ -423,6 +423,8 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 ;;;###autoload(autoload 'majutsu-op-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-transient ()
   "Transient for jj operation commands."
+  :man-page "jj-operation"
+  :transient-non-suffix t
   [["History"
     ("l" "Log..." majutsu-op-log-transient)
     ("s" "Show" majutsu-op-show)
@@ -594,6 +596,8 @@ stored without ANSI escapes."
 ;;;###autoload(autoload 'majutsu-op-log-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-log-transient ()
   "Transient for jj operation log."
+  :man-page "jj-operation-log"
+  :transient-non-suffix t
   :class 'majutsu-op-log-prefix
   [:description "JJ Operation Log"
    ["Options"
@@ -948,6 +952,8 @@ stored without ANSI escapes."
 ;;;###autoload(autoload 'majutsu-op-diff-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-diff-transient ()
   "Transient for jj operation diff."
+  :man-page "jj-operation-diff"
+  :transient-non-suffix t
   :incompatible '(("--operation=" "--from=")
                   ("--operation=" "--to="))
   [:description "JJ Operation Diff"
