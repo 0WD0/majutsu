@@ -8,8 +8,7 @@
 - Operations: Add ~majutsu-op-transient~ on ~X~, dedicated ~op log~ / ~op diff~
   transients, a color-preserving structured multiline ~jj op log~ view, expanded
   sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, graph-preserving
-  ~majutsu-evolog~ / ~majutsu-evolog-show~ evolution views, and ~op restore~ /
-  ~op revert~ actions.
+  ~majutsu-evolog~ view, and ~op restore~ / ~op revert~ actions.
   Read-only operation/evolution views use =--at-op=@ --ignore-working-copy= to
   avoid snapshotting while browsing.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
@@ -56,7 +55,8 @@
   ~majutsu-template-defspecial~.
 - JJ helpers: Add ~majutsu-jj-buffer-string~ for callers that need full
   plain-text command output instead of line-oriented ~majutsu-jj-lines~, plus
-  ~majutsu-graph-record~ helpers for graph-prefixed structured template output.
+  ~majutsu-graph-record~ helpers for graph-prefixed template output with hidden
+  metadata.
 
 ** Changed
 

@@ -13,21 +13,21 @@
   "Return one graph-record wrapped evolog test entry with DISPLAY."
   (concat "○  "
           (majutsu-graph-record--start-token majutsu-evolog--record-name)
-          "change-full" majutsu-graph-record-field-separator
-          "commit-full" majutsu-graph-record-field-separator
-          "op-full"
-          (majutsu-graph-record--payload-token majutsu-evolog--record-name)
           (or display
               (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
                       "│  feat(op): phase1\n"
                       "│  -- operation 86978b4db954 describe commit 8794efe3"))
+          (majutsu-graph-record--metadata-token majutsu-evolog--record-name)
+          "change-full" majutsu-graph-record-field-separator
+          "commit-full" majutsu-graph-record-field-separator
+          "op-full"
           (majutsu-graph-record--end-token majutsu-evolog--record-name)))
 
 (ert-deftest majutsu-evolog-entry-template/rebuilds-default-compact-with-graph-record ()
   "Evolog template should rebuild builtin_evolog_compact using graph-record."
   (should (string-match-p (regexp-quote "\\x1DGR:evolog:S")
                           majutsu-evolog--entry-template))
-  (should (string-match-p (regexp-quote "\\x1DGR:evolog:P")
+  (should (string-match-p (regexp-quote "\\x1DGR:evolog:M")
                           majutsu-evolog--entry-template))
   (should (string-match-p "self.commit().change_id().shortest(8)"
                           majutsu-evolog--entry-template))

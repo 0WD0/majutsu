@@ -34,7 +34,7 @@
                 [:concat [:commit :change_id :shortest 8]
                          ,majutsu-evolog--change-offset-template]]]
     [:commit :change_id :shortest 8]]
-  "Template fragment equivalent to jj's format_short_change_id_with_change_offset(commit).")
+  "Template fragment equivalent to jj's short change-id formatter.")
 
 (defconst majutsu-evolog--commit-labels-template
   '[:separate " "
@@ -88,7 +88,7 @@
        [:concat ,majutsu-evolog--commit-header-template
                 "\n"
                 ,majutsu-evolog--description-template]]]
-  "Template fragment equivalent to builtin_log_compact(commit), without final newline.")
+  "Template fragment equivalent to compact log for one evolog commit.")
 
 (defconst majutsu-evolog--operation-line-template
   '[:if [:operation]

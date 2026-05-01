@@ -3,9 +3,9 @@
 ;;; Commentary:
 
 ;; Helpers for jj commands whose template output is prefixed by jj's graph
-;; renderer.  The template starts with a control token, so the text before that
-;; token belongs to the graph prefix, while the text after it is Majutsu-owned
-;; structured payload.
+;; renderer.  This mirrors the core idea of `majutsu-log': a visible graph
+;; payload is followed by hidden machine metadata in the same graph entry, with
+;; Majutsu-owned tokens marking record boundaries.
 
 ;;; Code:
 
@@ -22,9 +22,9 @@
   "Return the start token for graph record NAME."
   (concat majutsu-graph-record--marker "GR:" name ":S"))
 
-(defun majutsu-graph-record--payload-token (name)
-  "Return the payload token for graph record NAME."
-  (concat majutsu-graph-record--marker "GR:" name ":P"))
+(defun majutsu-graph-record--metadata-token (name)
+  "Return the metadata token for graph record NAME."
+  (concat majutsu-graph-record--marker "GR:" name ":M"))
 
 (defun majutsu-graph-record--end-token (name)
   "Return the end token for graph record NAME."
@@ -39,20 +39,19 @@
       (push value out))
     (nreverse out)))
 
-(defun majutsu-graph-record-template (name fields self-type &optional display)
-  "Return a jj template for graph record NAME with FIELDS and SELF-TYPE.
-FIELDS are hidden Majutsu template DSL forms.  Empty fields are preserved
-because the separator is emitted explicitly between all fields.  DISPLAY is an
-optional visible template payload; when present it may contain newlines and is
-separated from hidden fields by a payload token."
+(defun majutsu-graph-record-template (name fields self-type display)
+  "Return a jj template for graph record NAME.
+DISPLAY is the visible graph payload.  FIELDS are hidden machine-readable
+metadata fields emitted after DISPLAY and a metadata token.  Empty fields are
+preserved because the separator is emitted explicitly between all fields."
   (majutsu-template-compile
    `[:concat
      ,(majutsu-graph-record--start-token name)
+     ,display
+     ,(majutsu-graph-record--metadata-token name)
      ,@(majutsu-graph-record--interpose
         majutsu-graph-record-field-separator
         fields)
-     ,@(when display
-         (list (majutsu-graph-record--payload-token name) display))
      ,(majutsu-graph-record--end-token name)
      "\n"]
    self-type))
@@ -66,87 +65,90 @@ separated from hidden fields by a payload token."
   "Return TOKEN position in STRING at START, or nil."
   (string-match-p (regexp-quote token) string (or start 0)))
 
-(defun majutsu-graph-record-parse-line (name line)
-  "Parse one graph record NAME from LINE.
-Return a plist with `:graph-prefix' and `:payload', preserving text
-properties, or nil when LINE does not contain a complete record."
-  (let* ((start-token (majutsu-graph-record--start-token name))
-         (end-token (majutsu-graph-record--end-token name))
-         (start (majutsu-graph-record--token-position start-token line))
-         (payload-start (and start (+ start (length start-token))))
-         (end (and payload-start
-                   (majutsu-graph-record--token-position end-token line payload-start))))
-    (when (and start end)
-      (list :graph-prefix (substring line 0 start)
-            :payload (substring line payload-start end)))))
-
 (defun majutsu-graph-record--line-string ()
   "Return the current line, preserving text properties and omitting newline."
   (buffer-substring (line-beginning-position) (line-end-position)))
 
 (defun majutsu-graph-record-line-at-point-p (name)
   "Return non-nil when point is on a graph record NAME line."
-  (majutsu-graph-record-parse-line name (majutsu-graph-record--line-string)))
+  (let* ((line (majutsu-graph-record--line-string))
+         (token (majutsu-graph-record--start-token name)))
+    (majutsu-graph-record--token-position token line)))
 
-(defun majutsu-graph-record--join-lines (lines)
-  "Join LINES with literal newlines, preserving string properties."
+(defun majutsu-graph-record--join-prefixed-lines (lines)
+  "Join LINES of (PREFIX . CONTENT), preserving string properties."
   (if (null lines)
       ""
-    (let ((out (car lines)))
+    (let* ((first (car lines))
+           (out (concat (car first) (cdr first))))
       (dolist (line (cdr lines) out)
-        (setq out (concat out "\n" line))))))
+        (setq out (concat out "\n" (car line) (cdr line)))))))
+
+(defun majutsu-graph-record--line-prefix-pair (line prefix-width)
+  "Split LINE into (PREFIX . CONTENT) using PREFIX-WIDTH."
+  (let* ((width (max 0 (min prefix-width (length (or line "")))))
+         (text (or line "")))
+    (cons (substring text 0 width)
+          (substring text width))))
 
 (defun majutsu-graph-record-parse-at-point (name)
   "Parse graph record NAME at point.
-Return a plist containing `:beg', `:end', `:graph-prefix', `:payload', and
-`:display'.  `:payload' is the hidden field payload.  `:display' is the visible
-text with jj graph prefixes preserved and record tokens removed.  Point moves
-to the end of the consumed raw record region."
+Return a plist containing `:beg', `:end', `:graph-prefix', `:payload',
+`:display-lines', and `:display'.  `:payload' contains hidden metadata fields.
+`:display' is the visible text with jj graph prefixes preserved and record
+tokens removed.  Point moves to the end of the consumed raw record region."
   (let* ((beg (line-beginning-position))
          (start-token (majutsu-graph-record--start-token name))
-         (payload-token (majutsu-graph-record--payload-token name))
+         (metadata-token (majutsu-graph-record--metadata-token name))
          (end-token (majutsu-graph-record--end-token name))
-         (line (majutsu-graph-record--line-string))
-         (start (majutsu-graph-record--token-position start-token line))
-         display-start end fields display-lines)
+         (bol beg)
+         (start (majutsu-graph-record--token-position start-token
+                                                      (majutsu-graph-record--line-string))))
     (when start
-      (let* ((graph-prefix (substring line 0 start))
-             (after-start (+ start (length start-token)))
-             (payload-pos (majutsu-graph-record--token-position
-                           payload-token line after-start)))
-        (when payload-pos
-          (setq fields (substring line after-start payload-pos)
-                display-start (+ payload-pos (length payload-token))))
-        (setq end (majutsu-graph-record--token-position
-                   end-token line (or display-start after-start)))
-        (if end
-            (progn
-              (setq fields (or fields (substring line after-start end)))
-              (when display-start
-                (push (concat graph-prefix (substring line display-start end))
-                      display-lines))
-              (forward-line 1))
-          (setq fields (or fields (substring line after-start))
-                display-lines (and display-start
-                                   (list (concat graph-prefix
-                                                 (substring line display-start)))))
-          (forward-line 1)
-          (while (and (not (eobp)) (not end))
-            (setq line (majutsu-graph-record--line-string)
-                  end (majutsu-graph-record--token-position end-token line))
-            (if end
-                (progn
-                  (push (substring line 0 end) display-lines)
-                  (forward-line 1))
-              (push line display-lines)
-              (forward-line 1))))
-        (when end
+      (let* ((indent start)
+             (graph-prefix (buffer-substring bol (+ bol start)))
+             (first-line t)
+             display-lines payload done)
+        (while (and (not done) (not (eobp)))
+          (setq bol (line-beginning-position))
+          (let* ((line (majutsu-graph-record--line-string))
+                 (prefix-end (min indent (length line)))
+                 (prefix (substring line 0 prefix-end))
+                 (content-start (if first-line
+                                    (+ start (length start-token))
+                                  prefix-end))
+                 (metadata-pos (majutsu-graph-record--token-position
+                                metadata-token line content-start)))
+            (if metadata-pos
+                (let* ((visible (substring line content-start metadata-pos))
+                       (payload-start (+ metadata-pos (length metadata-token)))
+                       (end-pos (majutsu-graph-record--token-position
+                                 end-token line payload-start)))
+                  (unless (and (string-empty-p visible)
+                               (string-empty-p prefix))
+                    (push (cons prefix visible) display-lines))
+                  (when end-pos
+                    (setq payload (substring line payload-start end-pos)
+                          done t)
+                    (forward-line 1)))
+              (push (cons prefix (substring line content-start)) display-lines)
+              (forward-line 1)))
+          (setq first-line nil))
+        (when done
+          (while (and (not (eobp))
+                      (not (majutsu-graph-record-line-at-point-p name)))
+            (push (majutsu-graph-record--line-prefix-pair
+                   (majutsu-graph-record--line-string) indent)
+                  display-lines)
+            (forward-line 1))
+          (setq display-lines (nreverse display-lines))
           (list :beg beg
                 :end (point)
                 :graph-prefix graph-prefix
-                :payload fields
-                :display (majutsu-graph-record--join-lines
-                          (nreverse display-lines))))))))
+                :payload payload
+                :display-lines display-lines
+                :display (majutsu-graph-record--join-prefixed-lines
+                          display-lines)))))))
 
 (provide 'majutsu-graph-record)
 ;;; majutsu-graph-record.el ends here
