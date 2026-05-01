@@ -541,6 +541,43 @@ stored without ANSI escapes."
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer))
 
+(put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments
+     '("--limit=64"))
+
+(defclass majutsu-op-log-prefix (transient-prefix)
+  ((major-mode :initform 'majutsu-op-log-mode)))
+
+(cl-defmethod transient-init-value ((obj majutsu-op-log-prefix))
+  (oset obj value
+        (majutsu-transient-default-value
+         'majutsu-op-log
+         (oref obj major-mode)
+         'majutsu-op-log-current-arguments
+         'majutsu-op-log-default-arguments)))
+
+(cl-defmethod transient-set-value ((obj majutsu-op-log-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (args (transient-args (oref obj command))))
+    (put mode 'majutsu-op-log-current-arguments args)
+    (transient--history-push obj)
+    (when (eq major-mode mode)
+      (setq-local majutsu-op-log--args args))))
+
+(cl-defmethod transient-save-value ((obj majutsu-op-log-prefix))
+  (let* ((obj (oref obj prototype))
+         (mode (or (oref obj major-mode) major-mode))
+         (args (transient-args (oref obj command))))
+    (put mode 'majutsu-op-log-current-arguments args)
+    (setf (alist-get (majutsu-transient-global-default-key
+                      'majutsu-op-log mode)
+                     transient-values)
+          args)
+    (transient-save-values)
+    (transient--history-push obj)
+    (when (eq major-mode mode)
+      (setq-local majutsu-op-log--args args))))
+
 (transient-define-argument majutsu-op-log:--limit ()
   :description "Limit"
   :class 'transient-option
@@ -557,6 +594,7 @@ stored without ANSI escapes."
 ;;;###autoload(autoload 'majutsu-op-log-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-log-transient ()
   "Transient for jj operation log."
+  :class 'majutsu-op-log-prefix
   [:description "JJ Operation Log"
    ["Options"
     (majutsu-op-log:--limit)
@@ -564,13 +602,18 @@ stored without ANSI escapes."
    ["Actions"
     ("l" "Open log" majutsu-op-log)
     ("RET" "Open log" majutsu-op-log)
+    ("s" "Save as default" transient-save-and-exit)
     ("q" "Quit" transient-quit-one)]])
 
 ;;;###autoload
 (defun majutsu-op-log (&optional args)
   "Open the Majutsu operation log with ARGS."
-  (interactive (list (majutsu-op-log-arguments)))
-  (let* ((root (majutsu--toplevel-safe))
+  (interactive (list (or (majutsu-op-log-arguments)
+                         (get 'majutsu-op-log-mode
+                              'majutsu-op-log-default-arguments))))
+  (let* ((args (or args (get 'majutsu-op-log-mode
+                             'majutsu-op-log-default-arguments)))
+         (root (majutsu--toplevel-safe))
          (repo (file-name-nondirectory (directory-file-name root))))
     (majutsu-setup-buffer #'majutsu-op-log-mode nil
       :buffer (format "*majutsu-op: %s*" repo)
