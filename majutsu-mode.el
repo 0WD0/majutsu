@@ -81,6 +81,7 @@ afterward."
   "b"   'majutsu-bookmark
   "y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
+  "X"   'majutsu-op-transient
   "Z"   'majutsu-workspace
   "%"   'majutsu-workspace
   "a"   'majutsu-absorb

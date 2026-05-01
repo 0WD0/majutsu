@@ -71,6 +71,27 @@
     (should (equal (majutsu-jj-lines "log" "-r" "@")
                    '("line1" "line2")))))
 
+(ert-deftest majutsu-jj-colored-string/forces-color-always ()
+  "majutsu-jj-colored-string should preserve colored output by forcing color."
+  (let ((majutsu-jj-global-arguments '("--no-pager" "--color=never"))
+        seen-args)
+    (cl-letf (((symbol-function 'majutsu--jj-insert)
+               (lambda (_return-error &rest _args)
+                 (setq seen-args majutsu-jj-global-arguments)
+                 (insert "\e[31mred\e[0m")
+                 0)))
+      (should (equal (majutsu-jj-colored-string "log" "-r" "@")
+                     "\e[31mred\e[0m"))
+      (should (member "--color=always" seen-args))
+      (should-not (member "--color=never" seen-args)))))
+
+(ert-deftest majutsu-jj-ansi-helpers/strip-and-apply ()
+  "ANSI helpers should support machine parsing and display rendering."
+  (should (equal (majutsu-jj-strip-ansi "\e[31mred\e[0m") "red"))
+  (let ((rendered (majutsu-jj-apply-ansi "\e[31mred\e[0m")))
+    (should (equal rendered "red"))
+    (should (get-text-property 0 'font-lock-face rendered))))
+
 ;; Tests for majutsu-jj-items
 
 (ert-deftest majutsu-jj-items/splits-by-null-bytes ()

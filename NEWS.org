@@ -5,6 +5,9 @@
 
 ** Added
 
+- Operations: Add ~majutsu-op-transient~ on ~X~, a color-preserving structured
+  ~jj op log~ view, and an initial ~majutsu-op-show~ buffer for operation
+  metadata, tags, and repository changes.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
 - Arrange: Add initial ~majutsu-arrange-mode~ for editing =jj arrange=-style
@@ -47,6 +50,8 @@
 - Template DSL: Add first-class anonymous functions, concise
   ~[:|arg| body]~ syntax, compile-time lambda application, and
   ~majutsu-template-defspecial~.
+- JJ helpers: Add color-preserving jj output helpers for structured buffers
+  that need ANSI labels instead of the plain-text ~majutsu-jj-lines~ path.
 
 ** Changed
 
