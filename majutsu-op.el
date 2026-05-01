@@ -20,6 +20,8 @@
 (require 'subr-x)
 (require 'transient)
 
+(declare-function majutsu-diff-revset "majutsu-diff" (revset &optional args range filesets))
+(declare-function majutsu-evolog "majutsu-evolog" (revset))
 (declare-function majutsu-jj-apply-ansi "majutsu-jj" (string))
 (declare-function majutsu-jj-colored-string "majutsu-jj" (&rest args))
 (declare-function majutsu-jj-strip-ansi "majutsu-jj" (string))
@@ -96,19 +98,25 @@
 (defconst majutsu-op--commit-summary-template
   (majutsu-tpl
    [:concat
-    [:separate "\x1e"
-               [:change_id]
-               [:change_id :short]
-               [:commit_id]
-               [:commit_id :short]
-               [:if [:hidden] "hidden" ""]
-               [:if [:conflict] "conflict" ""]
-               [:if [:empty] "empty" ""]
-               [:coalesce
-                [:if [:description]
-                     [:method [:description] :first_line]]
-                [:if [:empty] "(empty)"]
-                "(no description set)"]]]
+    [:change_id]
+    "\x1e"
+    [:change_id :short]
+    "\x1e"
+    [:commit_id]
+    "\x1e"
+    [:commit_id :short]
+    "\x1e"
+    [:if [:hidden] "hidden" ""]
+    "\x1e"
+    [:if [:conflict] "conflict" ""]
+    "\x1e"
+    [:if [:empty] "empty" ""]
+    "\x1e"
+    [:coalesce
+     [:if [:description]
+         [:method [:description] :first_line]]
+     [:if [:empty] "(empty)"]
+     "(no description set)"]]
    'Commit)
   "Template injected as `templates.commit_summary' for operation diffs.")
 
@@ -160,6 +168,193 @@
         (mapcar #'majutsu-op--parse-log-line
                 (split-string (or output "") "\n" t))))
 
+(defun majutsu-op--nonempty-field-p (field)
+  "Return non-nil when FIELD is present and non-empty."
+  (and field (not (string-empty-p (string-trim field)))))
+
+(defun majutsu-op--ansi-sequence-end (string start)
+  "Return the index after the ANSI escape sequence at START in STRING."
+  (let ((index (1+ start))
+        (length (length string)))
+    (if (and (< index length) (= (aref string index) ?\[))
+        (progn
+          (setq index (1+ index))
+          (while (and (< index length)
+                      (not (and (>= (aref string index) ?@)
+                                (<= (aref string index) ?~))))
+            (setq index (1+ index)))
+          (min length (1+ index)))
+      (min length (1+ index)))))
+
+(defun majutsu-op--drop-visible-prefix (string count)
+  "Drop COUNT visible characters from STRING, ignoring ANSI escapes."
+  (let ((index 0)
+        (visible 0)
+        (length (length string)))
+    (while (and (< index length) (< visible count))
+      (if (= (aref string index) ?\e)
+          (setq index (majutsu-op--ansi-sequence-end string index))
+        (setq index (1+ index)
+              visible (1+ visible))))
+    (substring string index)))
+
+(defun majutsu-op--parse-commit-summary (plain-summary &optional colored-summary)
+  "Parse a structured commit PLAIN-SUMMARY and optional COLORED-SUMMARY."
+  (when-let* ((fields (majutsu-op--split-record plain-summary 8)))
+    (pcase-let* ((`(,change-id ,change-id-short ,commit-id ,commit-id-short
+                    ,hidden ,conflict ,empty ,_description)
+                  fields)
+                 (display-fields (or (majutsu-op--split-record
+                                      (or colored-summary plain-summary) 8)
+                                     fields))
+                 (`(,_ ,change-id-short-display ,_ ,commit-id-short-display
+                    ,_ ,_ ,_ ,description-display)
+                  display-fields))
+      (list :change-id (majutsu-op--machine-field change-id)
+            :change-id-short (majutsu-op--machine-field change-id-short)
+            :change-id-short-display (majutsu-op--display-field change-id-short-display)
+            :commit-id (majutsu-op--machine-field commit-id)
+            :commit-id-short (majutsu-op--machine-field commit-id-short)
+            :commit-id-short-display (majutsu-op--display-field commit-id-short-display)
+            :hidden (majutsu-op--nonempty-field-p hidden)
+            :conflict (majutsu-op--nonempty-field-p conflict)
+            :empty (majutsu-op--nonempty-field-p empty)
+            :description (majutsu-op--display-field description-display)))))
+
+(defun majutsu-op--diff-strip-prefix (payload)
+  "Return (PREFIX TARGET OFFSET) for a diff marker PAYLOAD."
+  (if (string-match "\\`\\(tracked\\|untracked\\|(added)\\|(removed)\\) \\(.*\\)\\'" payload)
+      (list (match-string 1 payload)
+            (match-string 2 payload)
+            (match-beginning 2))
+    (list nil payload 0)))
+
+(defun majutsu-op--diff-group-kind (plain-line)
+  "Return the operation diff group kind for PLAIN-LINE, or nil."
+  (let ((line (string-trim plain-line)))
+    (cond
+     ((string= line "Changed commits:") 'commits)
+     ((string-match-p "\\`Changed working copy .+:\\'" line) 'working-copy)
+     ((string= line "Changed local bookmarks:") 'local-bookmarks)
+     ((string= line "Changed local tags:") 'local-tags)
+     ((string= line "Changed remote bookmarks:") 'remote-bookmarks)
+     ((string= line "Changed remote tags:") 'remote-tags)
+     ((string-match-p "\\`Changed .+:\\'" line) 'changed))))
+
+(defun majutsu-op--diff-ref-group-p (kind)
+  "Return non-nil when KIND contains named ref entries."
+  (memq kind '(local-bookmarks local-tags remote-bookmarks remote-tags)))
+
+(defun majutsu-op--diff-operation-header-p (plain-line)
+  "Return non-nil when PLAIN-LINE is an op-diff from/to header."
+  (string-match-p "\\`\\(?:From\\|To\\) operation:" (string-trim-left plain-line)))
+
+(defun majutsu-op--diff-elision-line-p (plain-line)
+  "Return non-nil when PLAIN-LINE is an op-diff elision line."
+  (string-match-p "\\`(Elided " (string-trim plain-line)))
+
+(defun majutsu-op--diff-warning-line-p (plain-line)
+  "Return non-nil when PLAIN-LINE is a jj warning."
+  (string-prefix-p "Warning:" (string-trim-left plain-line)))
+
+(defun majutsu-op--diff-ref-header-p (plain-line group-kind)
+  "Return non-nil when PLAIN-LINE names a ref in GROUP-KIND."
+  (and (majutsu-op--diff-ref-group-p group-kind)
+       (not (string-match-p "[+-] " plain-line))
+       (string-suffix-p ":" (string-trim plain-line))))
+
+(defun majutsu-op--parse-diff-marker-line (plain-line colored-line group-kind ref-name)
+  "Parse a marker PLAIN-LINE/COLORED-LINE in GROUP-KIND under REF-NAME."
+  (when (and group-kind (string-match "\\([+-]\\) \\(.*\\)\\'" plain-line))
+    (let* ((marker (match-string 1 plain-line))
+           (payload (match-string 2 plain-line))
+           (payload-start (match-beginning 2))
+           (line-type (if (memq group-kind '(commits working-copy))
+                          'commit-line
+                        'ref-line)))
+      (pcase-let* ((`(,prefix ,target ,target-offset)
+                    (majutsu-op--diff-strip-prefix payload))
+                   (summary-start (+ payload-start target-offset))
+                   (colored-summary (majutsu-op--drop-visible-prefix
+                                     colored-line summary-start))
+                   (base (list :marker marker
+                               :prefix prefix
+                               :group-kind group-kind
+                               :ref-name ref-name)))
+        (if (string= target "(absent)")
+            (list :type line-type
+                  :text colored-line
+                  :value (append base '(:absent t)))
+          (if-let* ((summary (majutsu-op--parse-commit-summary
+                              target colored-summary)))
+              (list :type line-type
+                    :text colored-line
+                    :value (append base summary))
+            (list :type 'raw-line :text colored-line)))))))
+
+(defun majutsu-op--parse-diff-output (output)
+  "Parse colored jj op diff OUTPUT into renderable nodes."
+  (let (nodes group-title group-text group-kind group-children ref-name ref-text ref-children)
+    (cl-labels
+        ((finish-ref
+           ()
+           (when ref-name
+             (push (list :type 'ref
+                         :name ref-name
+                         :text ref-text
+                         :children (nreverse ref-children))
+                   group-children)
+             (setq ref-name nil
+                   ref-text nil
+                   ref-children nil)))
+         (finish-group
+           ()
+           (finish-ref)
+           (when group-title
+             (push (list :type 'group
+                         :title group-title
+                         :text group-text
+                         :kind group-kind
+                         :children (nreverse group-children))
+                   nodes)
+             (setq group-title nil
+                   group-text nil
+                   group-kind nil
+                   group-children nil)))
+         (add-node
+           (node)
+           (cond
+            (ref-name (push node ref-children))
+            (group-title (push node group-children))
+            (t (push node nodes)))))
+      (dolist (colored-line (split-string (or output "") "\n"))
+        (let* ((plain-line (majutsu-jj-strip-ansi colored-line))
+               (trimmed (string-trim plain-line)))
+          (cond
+           ((string-empty-p trimmed))
+           ((majutsu-op--diff-operation-header-p plain-line))
+           ((majutsu-op--diff-group-kind plain-line)
+            (finish-group)
+            (setq group-title trimmed
+                  group-text colored-line
+                  group-kind (majutsu-op--diff-group-kind plain-line)))
+           ((majutsu-op--diff-warning-line-p plain-line)
+            (add-node (list :type 'warning :text colored-line)))
+           ((majutsu-op--diff-elision-line-p plain-line)
+            (add-node (list :type 'elision :text colored-line)))
+           ((majutsu-op--diff-ref-header-p plain-line group-kind)
+            (finish-ref)
+            (setq ref-name (string-remove-suffix ":" trimmed)
+                  ref-text colored-line))
+           ((majutsu-op--parse-diff-marker-line
+             plain-line colored-line group-kind ref-name)
+            (add-node (majutsu-op--parse-diff-marker-line
+                       plain-line colored-line group-kind ref-name)))
+           (t
+            (add-node (list :type 'raw-line :text colored-line))))))
+      (finish-group)
+      (nreverse nodes))))
+
 (defun majutsu-op--commit-summary-config-arg ()
   "Return a jj --config argument for operation commit summaries."
   (concat "templates.commit_summary=" majutsu-op--commit-summary-template))
@@ -168,6 +363,24 @@
   "Return the operation id at point, or nil."
   (or (magit-section-value-if 'jj-op)
       (magit-section-value-if 'jj-op-show)))
+
+(defun majutsu-op--diff-line-at-point ()
+  "Return the parsed operation diff line value at point, or nil."
+  (or (magit-section-value-if 'jj-op-commit-line)
+      (magit-section-value-if 'jj-op-ref-line)))
+
+(defun majutsu-op--diff-line-commit-revset (line)
+  "Return a commit-id revset for parsed operation diff LINE."
+  (when-let* ((commit-id (and (not (plist-get line :absent))
+                              (plist-get line :commit-id))))
+    (format "commit_id(%s)" commit-id)))
+
+(defun majutsu-op--diff-line-evolog-revset (line)
+  "Return an evolog revset for parsed operation diff LINE."
+  (when-let* ((change-id (and (not (plist-get line :absent))
+                              (plist-get line :change-id)))
+              (commit-id (plist-get line :commit-id)))
+    (format "change_id(%s) | commit_id(%s)" change-id commit-id)))
 
 (defun majutsu-op--read-operation (prompt)
   "Read an operation id with PROMPT, defaulting to point or @."
@@ -312,6 +525,83 @@ stored without ANSI escapes."
       (unless (string-suffix-p "\n" text)
         (insert "\n")))))
 
+(defun majutsu-op--diff-line-marker (marker)
+  "Return display text for diff line MARKER."
+  (propertize marker 'face (if (string= marker "+") 'diff-added 'diff-removed)))
+
+(defun majutsu-op--diff-line-flags (value)
+  "Return display flag text for parsed diff line VALUE."
+  (let ((flags (delq nil (list (and (plist-get value :hidden) "hidden")
+                               (and (plist-get value :conflict) "conflict")
+                               (and (plist-get value :empty) "empty")))))
+    (unless (null flags)
+      (concat " "
+              (mapconcat (lambda (flag) (format "(%s)" flag)) flags " ")))))
+
+(defun majutsu-op--format-diff-line (value)
+  "Return display text for parsed operation diff line VALUE."
+  (let ((prefix (plist-get value :prefix)))
+    (concat (majutsu-op--diff-line-marker (plist-get value :marker))
+            " "
+            (when prefix
+              (concat (propertize prefix 'face 'font-lock-keyword-face) " "))
+            (if (plist-get value :absent)
+                (propertize "(absent)" 'face 'shadow)
+              (concat (plist-get value :change-id-short-display)
+                      " "
+                      (plist-get value :commit-id-short-display)
+                      (or (majutsu-op--diff-line-flags value) "")
+                      " "
+                      (plist-get value :description))))))
+
+(defun majutsu-op--node-display-text (node)
+  "Return NODE text with ANSI colors applied."
+  (majutsu-jj-apply-ansi (plist-get node :text)))
+
+(defun majutsu-op--insert-diff-node (node)
+  "Insert one parsed operation diff NODE."
+  (pcase (plist-get node :type)
+    ('group
+     (magit-insert-section (jj-op-group (list :kind (plist-get node :kind)
+                                              :title (plist-get node :title))
+                                        t)
+       (magit-insert-heading (majutsu-op--node-display-text node))
+       (dolist (child (plist-get node :children))
+         (majutsu-op--insert-diff-node child))))
+    ('ref
+     (magit-insert-section (jj-op-ref (plist-get node :name) t)
+       (magit-insert-heading (majutsu-op--node-display-text node))
+       (dolist (child (plist-get node :children))
+         (majutsu-op--insert-diff-node child))))
+    ('commit-line
+     (magit-insert-section (jj-op-commit-line (plist-get node :value) t)
+       (magit-insert-heading (majutsu-op--format-diff-line
+                              (plist-get node :value)))))
+    ('ref-line
+     (magit-insert-section (jj-op-ref-line (plist-get node :value) t)
+       (magit-insert-heading (majutsu-op--format-diff-line
+                              (plist-get node :value)))))
+    ('warning
+     (magit-insert-section (jj-op-warning nil t)
+       (magit-insert-heading (propertize (majutsu-op--node-display-text node)
+                                         'face 'font-lock-warning-face))))
+    ('elision
+     (magit-insert-section (jj-op-elision nil t)
+       (magit-insert-heading (propertize (string-trim-left
+                                          (majutsu-op--node-display-text node))
+                                         'face 'shadow))))
+    (_
+     (magit-insert-section (jj-op-raw-line nil t)
+       (magit-insert-heading (majutsu-op--node-display-text node))))))
+
+(defun majutsu-op--insert-operation-diff-output (output)
+  "Insert parsed operation diff OUTPUT."
+  (let ((nodes (majutsu-op--parse-diff-output output)))
+    (if nodes
+        (dolist (node nodes)
+          (majutsu-op--insert-diff-node node))
+      (insert (propertize "No repository changes\n" 'face 'shadow)))))
+
 (defun majutsu-op-show-refresh-buffer ()
   "Refresh the current operation show buffer."
   (interactive)
@@ -343,12 +633,38 @@ stored without ANSI escapes."
             (majutsu-op--insert-colored-block tags))))
       (magit-insert-section (jj-op-diff op-id t)
         (magit-insert-heading "Repository Changes")
-        (majutsu-op--insert-colored-block
+        (majutsu-op--insert-operation-diff-output
          (majutsu-op--operation-diff-output op-id))))))
+
+(defun majutsu-op-show-diff-at-point ()
+  "Open the ordinary commit diff for the operation diff line at point."
+  (interactive)
+  (if-let* ((line (majutsu-op--diff-line-at-point))
+            (revset (majutsu-op--diff-line-commit-revset line)))
+      (majutsu-diff-revset revset)
+    (user-error "No changed commit at point")))
+
+(defun majutsu-op-show-default-action ()
+  "Run the default action for the operation show section at point."
+  (interactive)
+  (majutsu-op-show-diff-at-point))
+
+(defun majutsu-op-show-evolog-at-point ()
+  "Open evolog for the operation diff line at point."
+  (interactive)
+  (if-let* ((line (majutsu-op--diff-line-at-point))
+            (revset (majutsu-op--diff-line-evolog-revset line)))
+      (if (fboundp 'majutsu-evolog)
+          (funcall #'majutsu-evolog revset)
+        (user-error "Evolog support is not implemented yet"))
+    (user-error "No changed commit at point")))
 
 (defvar-keymap majutsu-op-show-mode-map
   :doc "Keymap for `majutsu-op-show-mode'."
-  :parent majutsu-mode-map)
+  :parent majutsu-mode-map
+  "RET" 'majutsu-op-show-default-action
+  "d" 'majutsu-op-show-diff-at-point
+  "v" 'majutsu-op-show-evolog-at-point)
 
 (define-derived-mode majutsu-op-show-mode majutsu-mode "Majutsu Op Show"
   "Major mode for viewing one jj operation."
