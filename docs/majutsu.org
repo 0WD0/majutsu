@@ -431,8 +431,10 @@ Resolve entry points are available both from the Ediff transient and as direct c
 
 ** Operations (Experimental)
 - Key: X (majutsu-op-transient) :: Open the operation dispatcher.
-- Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors. Press =RET= or =d= on an operation to show details.
-- Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= or =d= on a line to open its ordinary commit diff.
+- Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors.
+  Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first tag line such as =args:=. Press =RET= or =d= on an operation to show details.
+- Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation.
+  Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= or =d= on a line to open its ordinary commit diff.
 
 * Manipulating
 ** Creating Changes
