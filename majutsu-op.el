@@ -84,6 +84,8 @@
     "\x1e"
     [:label "description first_line"
             [:method [:description] :first_line]]
+    "\x1e"
+    [:label "tags first_line" [:method [:tags] :first_line]]
     "\n"]
    'Operation)
   "Template used by `majutsu-op-log'.")
@@ -148,9 +150,9 @@
 
 (defun majutsu-op--parse-log-line (line)
   "Parse one operation log LINE into a plist."
-  (when-let* ((fields (majutsu-op--split-record line 10)))
+  (when-let* ((fields (majutsu-op--split-record line 11)))
     (pcase-let ((`(,op-id ,op-id-short ,current ,user ,workspace
-                  ,time ,time-ago ,duration ,kind ,description)
+                  ,time ,time-ago ,duration ,kind ,description ,tags)
                  fields))
       (list :op-id (majutsu-op--machine-field op-id)
             :op-id-short (majutsu-op--display-field op-id-short)
@@ -161,7 +163,8 @@
             :time-ago (majutsu-op--display-field time-ago)
             :duration (majutsu-op--display-field duration)
             :kind (majutsu-op--machine-field kind)
-            :desc (majutsu-op--display-field description)))))
+            :desc (majutsu-op--display-field description)
+            :tags (majutsu-op--display-field tags)))))
 
 (defun majutsu-op--parse-show-line (line)
   "Parse one operation metadata LINE into a plist."
@@ -449,22 +452,31 @@ stored without ANSI escapes."
 
 (defun majutsu-op--log-current-marker (entry)
   "Return the current-operation marker for ENTRY."
-  (if (string-empty-p (plist-get entry :current))
+  (if (string-empty-p (or (plist-get entry :current) ""))
       " "
     (propertize "@" 'face 'font-lock-warning-face)))
 
-(defun majutsu-op--format-log-entry (entry)
-  "Return the display line for one operation log ENTRY."
-  (format "%s %-12s %-8s %-18s %-14s %-19s %-13s %-14s %s"
+(defun majutsu-op--format-log-entry-heading (entry)
+  "Return the heading line for one operation log ENTRY."
+  (format "%s %-12s %-8s %s"
           (majutsu-op--log-current-marker entry)
           (plist-get entry :op-id-short)
           (plist-get entry :kind)
-          (plist-get entry :user)
-          (plist-get entry :workspace)
-          (plist-get entry :time)
-          (plist-get entry :time-ago)
-          (plist-get entry :duration)
           (plist-get entry :desc)))
+
+(defun majutsu-op--insert-log-entry-body (entry)
+  "Insert multiline operation log body for ENTRY."
+  (majutsu-op--insert-field "Id" (plist-get entry :op-id))
+  (majutsu-op--insert-field "User" (plist-get entry :user))
+  (majutsu-op--insert-field "Workspace" (plist-get entry :workspace))
+  (majutsu-op--insert-field
+   "Time"
+   (format "%s (%s), lasted %s"
+           (plist-get entry :time)
+           (plist-get entry :time-ago)
+           (plist-get entry :duration)))
+  (when (majutsu-op--nonempty-field-p (plist-get entry :tags))
+    (majutsu-op--insert-colored-block (plist-get entry :tags))))
 
 (defun majutsu-op-log-insert-entries ()
   "Insert operation log entries."
@@ -472,8 +484,9 @@ stored without ANSI escapes."
     (magit-insert-heading "Operation Log")
     (dolist (entry (majutsu-parse-op-log-entries))
       (let ((op-id (plist-get entry :op-id)))
-        (magit-insert-section (jj-op op-id t)
-          (magit-insert-heading (majutsu-op--format-log-entry entry)))))))
+        (magit-insert-section (jj-op op-id)
+          (magit-insert-heading (majutsu-op--format-log-entry-heading entry))
+          (majutsu-op--insert-log-entry-body entry))))))
 
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
@@ -593,35 +606,34 @@ stored without ANSI escapes."
   (pcase (plist-get node :type)
     ('group
      (magit-insert-section (jj-op-group (list :kind (plist-get node :kind)
-                                              :title (plist-get node :title))
-                                        t)
+                                              :title (plist-get node :title)))
        (magit-insert-heading (majutsu-op--node-display-text node))
        (dolist (child (plist-get node :children))
          (majutsu-op--insert-diff-node child))))
     ('ref
-     (magit-insert-section (jj-op-ref (plist-get node :name) t)
+     (magit-insert-section (jj-op-ref (plist-get node :name))
        (magit-insert-heading (majutsu-op--node-display-text node))
        (dolist (child (plist-get node :children))
          (majutsu-op--insert-diff-node child))))
     ('commit-line
-     (magit-insert-section (jj-op-commit-line (plist-get node :value) t)
+     (magit-insert-section (jj-op-commit-line (plist-get node :value))
        (magit-insert-heading (majutsu-op--format-diff-line
                               (plist-get node :value)))))
     ('ref-line
-     (magit-insert-section (jj-op-ref-line (plist-get node :value) t)
+     (magit-insert-section (jj-op-ref-line (plist-get node :value))
        (magit-insert-heading (majutsu-op--format-diff-line
                               (plist-get node :value)))))
     ('warning
-     (magit-insert-section (jj-op-warning nil t)
+     (magit-insert-section (jj-op-warning nil)
        (magit-insert-heading (propertize (majutsu-op--node-display-text node)
                                          'face 'font-lock-warning-face))))
     ('elision
-     (magit-insert-section (jj-op-elision nil t)
+     (magit-insert-section (jj-op-elision nil)
        (magit-insert-heading (propertize (string-trim-left
                                           (majutsu-op--node-display-text node))
                                          'face 'shadow))))
     (_
-     (magit-insert-section (jj-op-raw-line nil t)
+     (magit-insert-section (jj-op-raw-line nil)
        (magit-insert-heading (majutsu-op--node-display-text node))))))
 
 (defun majutsu-op--insert-operation-diff-output (output)
@@ -640,10 +652,10 @@ stored without ANSI escapes."
          (metadata (majutsu-op--show-metadata operation))
          (op-id (plist-get metadata :op-id)))
     (setq majutsu-op-show--operation op-id)
-    (magit-insert-section (jj-op-show op-id t)
+    (magit-insert-section (jj-op-show op-id)
       (magit-insert-heading
         (format "Operation %s" (plist-get metadata :op-id-short)))
-      (magit-insert-section (jj-op-show-metadata op-id t)
+      (magit-insert-section (jj-op-show-metadata op-id)
         (magit-insert-heading "Metadata")
         (majutsu-op--insert-field "User" (plist-get metadata :user))
         (majutsu-op--insert-field "Workspace" (plist-get metadata :workspace))
@@ -653,15 +665,15 @@ stored without ANSI escapes."
         (majutsu-op--insert-field "Kind" (plist-get metadata :kind)))
       (let ((description (majutsu-op--operation-body op-id "self.description()")))
         (unless (string-empty-p (string-trim (majutsu-jj-strip-ansi description)))
-          (magit-insert-section (jj-op-show-description op-id t)
+          (magit-insert-section (jj-op-show-description op-id)
             (magit-insert-heading "Description")
             (majutsu-op--insert-colored-block description))))
       (let ((tags (majutsu-op--operation-body op-id "self.tags()")))
         (unless (string-empty-p (string-trim (majutsu-jj-strip-ansi tags)))
-          (magit-insert-section (jj-op-show-tags op-id t)
+          (magit-insert-section (jj-op-show-tags op-id)
             (magit-insert-heading "Tags")
             (majutsu-op--insert-colored-block tags))))
-      (magit-insert-section (jj-op-diff op-id t)
+      (magit-insert-section (jj-op-diff op-id)
         (magit-insert-heading "Repository Changes")
         (majutsu-op--insert-operation-diff-output
          (majutsu-op--operation-diff-output op-id))))))
