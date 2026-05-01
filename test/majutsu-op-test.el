@@ -66,6 +66,8 @@
                           majutsu-op--commit-summary-template))
   (should (string-match-p "self.commit_id().short()"
                           majutsu-op--commit-summary-template))
+  (should-not (string-match-p (regexp-quote "\"(empty)\"")
+                              majutsu-op--commit-summary-template))
   (should-not (string-match-p "separate(" majutsu-op--commit-summary-template)))
 
 (ert-deftest majutsu-op-parse-log-entries/strips-machine-id-and-keeps-display-face ()
@@ -107,6 +109,41 @@
   "Malformed records should be ignored instead of creating bad sections."
   (should-not (majutsu-parse-op-log-entries nil "only-one-field\n")))
 
+(ert-deftest majutsu-op-log-command-args/uses-read-only-top-level-args ()
+  "Operation log command args should avoid snapshotting the working copy."
+  (let ((args (majutsu-op--log-command-args '("--limit=2" "--reversed"))))
+    (should (member "--at-op=@" args))
+    (should (member "--ignore-working-copy" args))
+    (should (< (cl-position "--at-op=@" args :test #'equal)
+               (cl-position "op" args :test #'equal)))
+    (should (member "--limit=2" args))
+    (should (member "--reversed" args))))
+
+(ert-deftest majutsu-op-parse-log-entries/uses-buffer-args-for-jj-call ()
+  "Operation log parser should pass remembered buffer args to jj."
+  (let (captured)
+    (cl-letf (((symbol-function 'majutsu-jj-colored-string)
+               (lambda (&rest args)
+                 (setq captured args)
+                 (concat "full" majutsu-op--field-separator
+                         "short" majutsu-op--field-separator
+                         "" majutsu-op--field-separator
+                         "user" majutsu-op--field-separator
+                         "workspace" majutsu-op--field-separator
+                         "time" majutsu-op--field-separator
+                         "ago" majutsu-op--field-separator
+                         "duration" majutsu-op--field-separator
+                         "op" majutsu-op--field-separator
+                         "desc" majutsu-op--field-separator
+                         "args: jj op\n"))))
+      (with-temp-buffer
+        (majutsu-op-log-mode)
+        (setq majutsu-op-log--args '("--limit=2" "--reversed"))
+        (should (majutsu-parse-op-log-entries))
+        (should (equal captured
+                       (majutsu-op--log-command-args
+                        '("--limit=2" "--reversed"))))))))
+
 (ert-deftest majutsu-op-log-insert-entries/renders-multiline-expanded-entries ()
   "Operation log entries should render useful multiline details by default."
   (let ((entry (list :op-id "full-id"
@@ -147,6 +184,21 @@
     (should (equal (plist-get entry :op-id-short) "short-id"))
     (should (equal (plist-get entry :start-time) "start"))
     (should (equal (plist-get entry :desc) "desc"))))
+
+(ert-deftest majutsu-op-show-output/uses-read-only-top-level-args ()
+  "Operation show metadata/body commands should avoid working-copy snapshots."
+  (let (captured)
+    (cl-letf (((symbol-function 'majutsu-jj-colored-string)
+               (lambda (&rest args)
+                 (setq captured args)
+                 "")))
+      (majutsu-op--show-output "abc" "template")
+      (should (member "--at-op=@" captured))
+      (should (member "--ignore-working-copy" captured))
+      (should (< (cl-position "--at-op=@" captured :test #'equal)
+                 (cl-position "op" captured :test #'equal)))
+      (should (equal (last captured 6)
+                     '("op" "show" "abc" "--no-op-diff" "-T" "template"))))))
 
 (ert-deftest majutsu-op-parse-diff-output/parses-colored-commit-line ()
   "Operation diff parser should use plain marker detection and colored fields."
@@ -194,6 +246,23 @@
     (should (string-match-p "change-short commit-short" line))
     (should-not (string-match-p (regexp-quote majutsu-op--field-separator)
                                 line))))
+
+(ert-deftest majutsu-op-log/passes-args-binding-to-buffer-setup ()
+  "majutsu-op-log should remember transient args in the buffer."
+  (let (captured)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-setup-buffer-internal)
+               (lambda (mode locked bindings &rest kwargs)
+                 (setq captured (list mode locked bindings kwargs))
+                 'buffer)))
+      (should (eq (majutsu-op-log '("--limit=2" "--reversed")) 'buffer))
+      (should (eq (nth 0 captured) #'majutsu-op-log-mode))
+      (should-not (nth 1 captured))
+      (should (equal (nth 2 captured)
+                     '((majutsu-op-log--args ("--limit=2" "--reversed")))))
+      (should (equal (nth 3 captured)
+                     '(:buffer "*majutsu-op: repo*" :directory "/repo/"))))))
 
 (ert-deftest majutsu-op-show/passes-operation-binding-to-buffer-setup ()
   "majutsu-op-show should pass operation as a buffer-local binding."
@@ -330,12 +399,105 @@
   (should (eq (lookup-key majutsu-op-show-mode-map (kbd "v"))
               'majutsu-op-show-evolog-at-point)))
 
-(ert-deftest majutsu-op-transient/exposes-log-show-undo-redo ()
-  "Operation transient should expose initial operation actions."
+(ert-deftest majutsu-op-diff-command-args/uses-read-only-top-level-args ()
+  "Operation diff command args should avoid snapshotting the working copy."
+  (let ((args (majutsu-op--diff-command-args '("--operation=abc"))))
+    (should (member "--at-op=@" args))
+    (should (member "--ignore-working-copy" args))
+    (should (member "--config" args))
+    (should (< (cl-position "--at-op=@" args :test #'equal)
+               (cl-position "op" args :test #'equal)))
+    (should (member "--operation=abc" args))))
+
+(ert-deftest majutsu-op-diff/passes-args-binding-to-buffer-setup ()
+  "majutsu-op-diff should remember diff args in the buffer."
+  (let (captured)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-op-diff--buffer-name)
+               (lambda () "*op-diff*"))
+              ((symbol-function 'majutsu-setup-buffer-internal)
+               (lambda (mode locked bindings &rest kwargs)
+                 (setq captured (list mode locked bindings kwargs))
+                 'buffer)))
+      (should (eq (majutsu-op-diff '("--from=a" "--to=b")) 'buffer))
+      (should (eq (nth 0 captured) #'majutsu-op-diff-mode))
+      (should-not (nth 1 captured))
+      (should (equal (nth 2 captured)
+                     '((majutsu-op-diff--args ("--from=a" "--to=b")))))
+      (should (equal (nth 3 captured)
+                     '(:buffer "*op-diff*" :directory "/repo/"))))))
+
+(ert-deftest majutsu-op-diff-refresh-buffer/renders-parsed-diff ()
+  "Operation diff refresh should reuse the parsed operation diff sections."
+  (cl-letf (((symbol-function 'majutsu-op--diff-output)
+             (lambda (_args)
+               (concat "Changed commits:\n+ "
+                       (majutsu-op-test--summary)
+                       "\n"))))
+    (with-temp-buffer
+      (majutsu-op-diff-mode)
+      (setq majutsu-op-diff--args '("--operation=abc"))
+      (let ((inhibit-read-only t))
+        (majutsu-op-diff-refresh-buffer))
+      (let ((content (buffer-substring-no-properties (point-min) (point-max))))
+        (should (string-match-p "Operation Diff abc" content))
+        (should (string-match-p "change-short commit-short" content))))))
+
+(ert-deftest majutsu-op-restore/runs-confirmed-command ()
+  "Operation restore should run jj op restore after confirmation."
+  (let (command refreshed)
+    (cl-letf (((symbol-function 'majutsu-confirm)
+               (lambda (&rest _) t))
+              ((symbol-function 'majutsu-call-jj)
+               (lambda (&rest args)
+                 (setq command args)
+                 0))
+              ((symbol-function 'majutsu-refresh)
+               (lambda ()
+                 (setq refreshed t))))
+      (majutsu-op-restore "abc")
+      (should (equal command '("op" "restore" "abc")))
+      (should refreshed))))
+
+(ert-deftest majutsu-op-revert/runs-confirmed-command ()
+  "Operation revert should run jj op revert after confirmation."
+  (let (command refreshed)
+    (cl-letf (((symbol-function 'majutsu-confirm)
+               (lambda (&rest _) t))
+              ((symbol-function 'majutsu-call-jj)
+               (lambda (&rest args)
+                 (setq command args)
+                 0))
+              ((symbol-function 'majutsu-refresh)
+               (lambda ()
+                 (setq refreshed t))))
+      (majutsu-op-revert "abc")
+      (should (equal command '("op" "revert" "abc")))
+      (should refreshed))))
+
+(ert-deftest majutsu-op-transient/exposes-operation-family-actions ()
+  "Operation transient should expose operation family actions."
   (should (transient-get-suffix 'majutsu-op-transient "l"))
   (should (transient-get-suffix 'majutsu-op-transient "s"))
+  (should (transient-get-suffix 'majutsu-op-transient "d"))
   (should (transient-get-suffix 'majutsu-op-transient "u"))
-  (should (transient-get-suffix 'majutsu-op-transient "r")))
+  (should (transient-get-suffix 'majutsu-op-transient "r"))
+  (should (transient-get-suffix 'majutsu-op-transient "R"))
+  (should (transient-get-suffix 'majutsu-op-transient "V")))
+
+(ert-deftest majutsu-op-log-transient/exposes-log-options ()
+  "Operation log transient should expose log-specific options."
+  (should (transient-get-suffix 'majutsu-op-log-transient "-n"))
+  (should (transient-get-suffix 'majutsu-op-log-transient "-r"))
+  (should (transient-get-suffix 'majutsu-op-log-transient "l")))
+
+(ert-deftest majutsu-op-diff-transient/exposes-diff-selection ()
+  "Operation diff transient should expose operation range options."
+  (should (transient-get-suffix 'majutsu-op-diff-transient "-o"))
+  (should (transient-get-suffix 'majutsu-op-diff-transient "-f"))
+  (should (transient-get-suffix 'majutsu-op-diff-transient "-t"))
+  (should (transient-get-suffix 'majutsu-op-diff-transient "d")))
 
 (ert-deftest majutsu-op-log-mode-map/show-at-point ()
   "Operation log mode should make RET open operation details."
