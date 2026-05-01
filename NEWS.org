@@ -7,8 +7,8 @@
 
 - Operations: Add ~majutsu-op-transient~ on ~X~, dedicated ~op log~ / ~op diff~
   transients, a color-preserving structured multiline ~jj op log~ view, expanded
-  sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, ~majutsu-evolog~ /
-  ~majutsu-evolog-show~ evolution views, and ~op restore~ / ~op revert~ actions.
+  sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, graph-preserving
+  ~majutsu-evolog~ view, and ~op restore~ / ~op revert~ actions.
   Read-only operation/evolution views use =--at-op=@ --ignore-working-copy= to
   avoid snapshotting while browsing.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
@@ -37,9 +37,9 @@
   or frame.
 - Log: Add visible DAG relation navigation. ~[~ jumps to a parent revision and
   ~]~ jumps to a child revision, prompting when multiple visible targets exist.
-- Log: Add semantic copy commands under the log dispatcher copy submenu for
-  section values, rendered fields, hidden entry fields, commit hashes, and
-  visible modules.
+- Log/Evolog: Add shared graph-entry copy commands under the dispatcher copy
+  submenu for section values, rendered fields, hidden entry fields, commit
+  hashes, and visible modules.
 - JJ descriptions: Add save/history/search/diff commands for description
   buffers, including ~majutsu-jjdescription-save-message~,
   ~majutsu-jjdescription-prev-message~,

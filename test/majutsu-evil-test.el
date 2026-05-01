@@ -49,11 +49,10 @@
     (should (member '(majutsu-op-log-mode normal) calls))
     (should (member '(majutsu-op-show-mode normal) calls))
     (should (member '(majutsu-op-diff-mode normal) calls))
-    (should (member '(majutsu-evolog-mode normal) calls))
-    (should (member '(majutsu-evolog-show-mode normal) calls))))
+    (should (member '(majutsu-evolog-mode normal) calls))))
 
-(ert-deftest majutsu-evil-test-op-and-evolog-mode-keybindings ()
-  "Operation and evolog mode maps should receive Evil-specific bindings."
+(ert-deftest majutsu-evil-test-op-mode-keybindings ()
+  "Operation mode maps should receive Evil-specific bindings."
   (let ((featurep-original (symbol-function 'featurep))
         calls)
     (cl-letf (((symbol-function 'featurep)
@@ -96,14 +95,6 @@
                     (equal (nth 2 call)
                            (list (kbd "RET") #'majutsu-op-show-default-action
                                  (kbd "v") #'majutsu-op-show-evolog-at-point))))
-             calls))
-    (should (seq-some
-             (lambda (call)
-               (and (eq (nth 0 call) 'normal)
-                    (eq (nth 1 call) majutsu-evolog-mode-map)
-                    (equal (nth 2 call)
-                           (list (kbd "RET") #'majutsu-evolog-show-at-point
-                                 (kbd "d") #'majutsu-evolog-show-at-point))))
              calls))))
 
 (provide 'majutsu-evil-test)
