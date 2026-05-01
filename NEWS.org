@@ -46,6 +46,10 @@
 - Template DSL: Add first-class anonymous functions, concise
   ~[:|arg| body]~ syntax, compile-time lambda application, and
   ~majutsu-template-defspecial~.
+- Gerrit: Add a ~jj gerrit upload~ transient under the Git dispatcher, with
+  revision selection/toggle overlays, remote/branch targeting, review metadata,
+  state, notification, advanced upload flags, and repository-local defaults for
+  stable upload policy.
 
 ** Changed
 
