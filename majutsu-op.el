@@ -17,6 +17,7 @@
 
 (require 'cl-lib)
 (require 'majutsu)
+(require 'seq)
 (require 'subr-x)
 (require 'transient)
 
@@ -112,26 +113,18 @@
 
 (defconst majutsu-op--commit-summary-template
   (majutsu-tpl
-   [:concat
-    [:change_id]
-    "\x1e"
-    [:change_id :short]
-    "\x1e"
-    [:commit_id]
-    "\x1e"
-    [:commit_id :short]
-    "\x1e"
-    [:if [:hidden] "hidden" ""]
-    "\x1e"
-    [:if [:conflict] "conflict" ""]
-    "\x1e"
-    [:if [:empty] "empty" ""]
-    "\x1e"
-    [:coalesce
-     [:if [:description]
-         [:method [:description] :first_line]]
-     [:if [:empty] "(empty)"]
-     "(no description set)"]]
+   [:join "\x1e"
+          [:change_id]
+          [:change_id :short]
+          [:commit_id]
+          [:commit_id :short]
+          [:if [:hidden] "hidden"]
+          [:if [:conflict] "conflict"]
+          [:if [:empty] "empty"]
+          [:coalesce
+           [:if [:description]
+               [:description :first_line]]
+           "(no description set)"]]
    'Commit)
   "Template injected as `templates.commit_summary' for operation diffs.")
 
@@ -409,11 +402,21 @@
                              nil nil default)))
     (if (string-empty-p value) default value)))
 
+(defconst majutsu-op--read-only-global-args
+  '("--at-op=@" "--ignore-working-copy")
+  "Top-level jj arguments for read-only operation queries.")
+
 (defun majutsu-op--shorten-id (id)
   "Return a short display prefix for operation ID."
   (if (> (length id) 12)
       (substring id 0 12)
     id))
+
+(defun majutsu-op--transient-read-operation (prompt initial-input history)
+  "Read an operation for a transient option.
+PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
+  (read-string prompt initial-input history
+               (or (majutsu-op--operation-at-point) "@")))
 
 ;;; op transient
 
@@ -421,16 +424,35 @@
 (transient-define-prefix majutsu-op-transient ()
   "Transient for jj operation commands."
   [["History"
-    ("l" "Log" majutsu-op-log)
-    ("s" "Show" majutsu-op-show)]
+    ("l" "Log..." majutsu-op-log-transient)
+    ("s" "Show" majutsu-op-show)
+    ("d" "Diff..." majutsu-op-diff-transient)]
    ["State"
     ("u" "Undo" majutsu-undo)
-    ("r" "Redo" majutsu-redo)]])
+    ("r" "Redo" majutsu-redo)
+    ("R" "Restore" majutsu-op-restore)
+    ("V" "Revert" majutsu-op-revert)]])
 
 ;;; op log
 
+(defvar-local majutsu-op-log--args nil
+  "Arguments used for the current operation log buffer.")
+
 (defvar-local majutsu-op-log--cached-entries nil
   "Cached operation log entries.")
+
+(defun majutsu-op-log-arguments ()
+  "Return operation log arguments from the active transient, if any."
+  (if (eq transient-current-command 'majutsu-op-log-transient)
+      (transient-args 'majutsu-op-log-transient)
+    '()))
+
+(defun majutsu-op--log-command-args (&optional args)
+  "Return jj arguments for operation log ARGS."
+  (append majutsu-op--read-only-global-args
+          '("op" "log" "--no-graph")
+          (or args majutsu-op-log--args)
+          (list "-T" majutsu-op--log-template)))
 
 (defun majutsu-parse-op-log-entries (&optional buf log-output)
   "Parse jj operation log output.
@@ -443,8 +465,8 @@ stored without ANSI escapes."
         majutsu-op-log--cached-entries
       (let ((entries (majutsu-op--parse-log-output
                       (or log-output
-                          (majutsu-jj-colored-string
-                           "op" "log" "--no-graph" "-T" majutsu-op--log-template)))))
+                          (apply #'majutsu-jj-colored-string
+                                 (majutsu-op--log-command-args))))))
         (unless log-output
           (setq majutsu-op-log--cached-entries entries))
         entries))))
@@ -518,15 +540,61 @@ stored without ANSI escapes."
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer))
 
+(transient-define-argument majutsu-op-log:--limit ()
+  :description "Limit"
+  :class 'transient-option
+  :shortarg "-n"
+  :argument "--limit="
+  :reader #'transient-read-number-N+)
+
+(transient-define-argument majutsu-op-log:--reversed ()
+  :description "Reverse order"
+  :class 'transient-switch
+  :key "-r"
+  :argument "--reversed")
+
+;;;###autoload(autoload 'majutsu-op-log-transient "majutsu-op" nil t)
+(transient-define-prefix majutsu-op-log-transient ()
+  "Transient for jj operation log."
+  [:description "JJ Operation Log"
+   ["Options"
+    (majutsu-op-log:--limit)
+    (majutsu-op-log:--reversed)]
+   ["Actions"
+    ("l" "Open log" majutsu-op-log)
+    ("RET" "Open log" majutsu-op-log)
+    ]])
+
 ;;;###autoload
-(defun majutsu-op-log ()
-  "Open the Majutsu operation log."
-  (interactive)
+(defun majutsu-op-log (&optional args)
+  "Open the Majutsu operation log with ARGS."
+  (interactive (list (majutsu-op-log-arguments)))
   (let* ((root (majutsu--toplevel-safe))
          (repo (file-name-nondirectory (directory-file-name root))))
     (majutsu-setup-buffer #'majutsu-op-log-mode nil
       :buffer (format "*majutsu-op: %s*" repo)
-      :directory root)))
+      :directory root
+      (majutsu-op-log--args args))))
+
+;;; op restore/revert
+
+(defun majutsu-op-restore (operation)
+  "Restore repository state to OPERATION by running jj op restore."
+  (interactive (list (majutsu-op--read-operation "Restore to operation")))
+  (if (not (majutsu-confirm 'op-restore
+                            (format "Restore repository state to operation %s? " operation)))
+      (message "Operation restore canceled")
+    (when (zerop (majutsu-run-jj "op" "restore" operation))
+      (majutsu-refresh))))
+
+(defun majutsu-op-revert (operation)
+  "Revert OPERATION by running jj op revert."
+  (interactive (list (majutsu-op--read-operation "Revert operation")))
+  (if (not (majutsu-confirm 'op-revert
+                            (format "Revert operation %s? " operation)))
+      (message "Operation revert canceled")
+    (when (zerop (majutsu-run-jj "op" "revert" operation))
+      (majutsu-refresh))))
 
 ;;; op show
 
@@ -535,8 +603,9 @@ stored without ANSI escapes."
 
 (defun majutsu-op--show-output (operation template)
   "Return colored `jj op show' output for OPERATION rendered with TEMPLATE."
-  (majutsu-jj-colored-string
-   "op" "show" operation "--no-op-diff" "-T" template))
+  (apply #'majutsu-jj-colored-string
+         (append majutsu-op--read-only-global-args
+                 (list "op" "show" operation "--no-op-diff" "-T" template))))
 
 (defun majutsu-op--show-metadata (operation)
   "Return metadata plist for OPERATION."
@@ -549,11 +618,22 @@ stored without ANSI escapes."
   "Return colored body output for OPERATION rendered with TEMPLATE."
   (majutsu-op--show-output operation template))
 
+(defun majutsu-op--diff-command-args (args)
+  "Return jj arguments for operation diff ARGS."
+  (append majutsu-op--read-only-global-args
+          (list "--config" (majutsu-op--commit-summary-config-arg)
+                "op" "diff" "--no-graph")
+          args))
+
 (defun majutsu-op--operation-diff-output (operation)
   "Return colored operation diff output for OPERATION."
-  (majutsu-jj-colored-string
-   "--config" (majutsu-op--commit-summary-config-arg)
-   "op" "diff" "--operation" operation "--no-graph"))
+  (apply #'majutsu-jj-colored-string
+         (majutsu-op--diff-command-args (list "--operation" operation))))
+
+(defun majutsu-op--diff-output (args)
+  "Return colored operation diff output for ARGS."
+  (apply #'majutsu-jj-colored-string
+         (majutsu-op--diff-command-args args)))
 
 (defun majutsu-op--insert-field (label value)
   "Insert metadata LABEL and VALUE."
@@ -728,6 +808,113 @@ stored without ANSI escapes."
       :buffer (majutsu-op-show--buffer-name operation)
       :directory root
       (majutsu-op-show--operation operation))))
+
+;;; op diff
+
+(defvar-local majutsu-op-diff--args nil
+  "Arguments used for the current operation diff buffer.")
+
+(defun majutsu-op--diff-arg-value (prefix args)
+  "Return the value for PREFIX in ARGS."
+  (seq-some (lambda (arg)
+              (and (string-prefix-p prefix arg)
+                   (substring arg (length prefix))))
+            args))
+
+(defun majutsu-op--diff-buffer-heading (args)
+  "Return a heading for operation diff ARGS."
+  (cond
+   ((majutsu-op--diff-arg-value "--operation=" args)
+    (format "Operation Diff %s"
+            (majutsu-op--diff-arg-value "--operation=" args)))
+   ((or (majutsu-op--diff-arg-value "--from=" args)
+        (majutsu-op--diff-arg-value "--to=" args))
+    (format "Operation Diff %s..%s"
+            (or (majutsu-op--diff-arg-value "--from=" args) "@-")
+            (or (majutsu-op--diff-arg-value "--to=" args) "@")))
+   (t "Operation Diff")))
+
+(defun majutsu-op-diff-arguments ()
+  "Return operation diff arguments from the active transient, if any."
+  (if (eq transient-current-command 'majutsu-op-diff-transient)
+      (transient-args 'majutsu-op-diff-transient)
+    (list (concat "--operation="
+                  (majutsu-op--read-operation "Diff operation")))))
+
+(defun majutsu-op-diff-refresh-buffer ()
+  "Refresh the current operation diff buffer."
+  (interactive)
+  (majutsu--assert-mode 'majutsu-op-diff-mode)
+  (let ((args (or majutsu-op-diff--args '())))
+    (magit-insert-section (jj-op-diff-buffer args)
+      (magit-insert-heading (majutsu-op--diff-buffer-heading args))
+      (majutsu-op--insert-operation-diff-output
+       (majutsu-op--diff-output args)))))
+
+(defvar-keymap majutsu-op-diff-mode-map
+  :doc "Keymap for `majutsu-op-diff-mode'."
+  :parent majutsu-op-show-mode-map)
+
+(define-derived-mode majutsu-op-diff-mode majutsu-mode "Majutsu Op Diff"
+  "Major mode for comparing jj operations."
+  :group 'majutsu
+  (setq-local line-number-mode nil)
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
+
+(defun majutsu-op-diff--buffer-name ()
+  "Return buffer name for operation diff."
+  (let* ((root (majutsu--toplevel-safe))
+         (repo (file-name-nondirectory (directory-file-name root))))
+    (format "*majutsu-op-diff: %s*" repo)))
+
+;;;###autoload
+(defun majutsu-op-diff (&optional args)
+  "Open an operation diff buffer with ARGS."
+  (interactive (list (majutsu-op-diff-arguments)))
+  (let ((root (majutsu--toplevel-safe)))
+    (majutsu-setup-buffer #'majutsu-op-diff-mode nil
+      :buffer (majutsu-op-diff--buffer-name)
+      :directory root
+      (majutsu-op-diff--args args))))
+
+(transient-define-argument majutsu-op-diff:--operation ()
+  :description "Operation"
+  :class 'transient-option
+  :key "-o"
+  :argument "--operation="
+  :prompt "Operation: "
+  :reader #'majutsu-op--transient-read-operation)
+
+(transient-define-argument majutsu-op-diff:--from ()
+  :description "From operation"
+  :class 'transient-option
+  :key "-f"
+  :argument "--from="
+  :prompt "From operation: "
+  :reader #'majutsu-op--transient-read-operation)
+
+(transient-define-argument majutsu-op-diff:--to ()
+  :description "To operation"
+  :class 'transient-option
+  :key "-t"
+  :argument "--to="
+  :prompt "To operation: "
+  :reader #'majutsu-op--transient-read-operation)
+
+;;;###autoload(autoload 'majutsu-op-diff-transient "majutsu-op" nil t)
+(transient-define-prefix majutsu-op-diff-transient ()
+  "Transient for jj operation diff."
+  :incompatible '(("--operation=" "--from=")
+                  ("--operation=" "--to="))
+  [:description "JJ Operation Diff"
+   ["Selection"
+    (majutsu-op-diff:--operation)
+    (majutsu-op-diff:--from)
+    (majutsu-op-diff:--to)]
+   ["Actions"
+    ("d" "Open diff" majutsu-op-diff)
+    ("RET" "Open diff" majutsu-op-diff)
+    ]])
 
 ;;; _
 (provide 'majutsu-op)
