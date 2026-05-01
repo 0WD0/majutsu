@@ -44,10 +44,13 @@
                      "\e[32mdescription\e[39m")
                majutsu-op--field-separator))
 
-(ert-deftest majutsu-op-log-template/carries-full-and-display-id ()
-  "Operation log template should carry full and display operation ids."
+(ert-deftest majutsu-op-log-template/carries-rich-line-fields ()
+  "Operation log template should carry ids, current marker, time, and duration."
   (should (string-match-p "self.id()" majutsu-op--log-template))
   (should (string-match-p "self.id().short()" majutsu-op--log-template))
+  (should (string-match-p "self.current_operation()" majutsu-op--log-template))
+  (should (string-match-p "self.time().end().format" majutsu-op--log-template))
+  (should (string-match-p "self.time().duration()" majutsu-op--log-template))
   (should (string-match-p "self.description().first_line()"
                           majutsu-op--log-template)))
 
@@ -71,9 +74,17 @@
                       majutsu-op--field-separator
                       "user"
                       majutsu-op--field-separator
+                      "@"
+                      majutsu-op--field-separator
+                      "user"
+                      majutsu-op--field-separator
                       "workspace"
                       majutsu-op--field-separator
+                      "2026-05-02 04:50:00"
+                      majutsu-op--field-separator
                       "2 minutes ago"
+                      majutsu-op--field-separator
+                      "3 milliseconds"
                       majutsu-op--field-separator
                       "op"
                       majutsu-op--field-separator
@@ -83,6 +94,9 @@
     (should (equal (plist-get entry :op-id) "full-operation-id"))
     (should (equal short "short-id"))
     (should (get-text-property 0 'font-lock-face short))
+    (should (equal (plist-get entry :current) "@"))
+    (should (equal (plist-get entry :time) "2026-05-02 04:50:00"))
+    (should (equal (plist-get entry :duration) "3 milliseconds"))
     (should (equal (plist-get entry :kind) "op"))
     (should (equal (plist-get entry :desc) "description"))))
 
