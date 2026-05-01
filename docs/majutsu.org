@@ -425,11 +425,14 @@ Resolve entry points are available both from the Ediff transient and as direct c
   Show the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output such as remote fetches.
 
 ** Operations (Experimental)
-- Key: X (majutsu-op-transient) :: Open the operation dispatcher.
+- Key: X (majutsu-op-transient) :: Open the operation dispatcher with log, show, diff, restore, revert, undo, and redo actions.
+- Command: majutsu-op-log-transient :: Open the operation-log menu. Supports =--limit= and =--reversed=.
 - Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors.
-  Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first tag line such as =args:=. Press =RET= or =d= on an operation to show details.
+  Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first tag line such as =args:=. Read-only operation views pass =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing. Press =RET= or =d= on an operation to show details.
 - Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation.
   Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= or =d= on a line to open its ordinary commit diff.
+- Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to=, reusing the same sectionized changed commit/ref view.
+- Commands: majutsu-op-restore / majutsu-op-revert :: Restore to an operation or revert an individual operation after confirmation.
 
 * Manipulating
 ** Creating Changes
