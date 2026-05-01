@@ -736,6 +736,9 @@
   (let ((meta (majutsu-template--lookup-method 'Operation "workspace_name")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'String)))
+  (let ((meta (majutsu-template--lookup-method 'CommitEvolutionEntry "operation")))
+    (should meta)
+    (should (equal (majutsu-template--fn-returns meta) '(:option Operation))))
   (let ((meta (majutsu-template--lookup-method 'Commit "git_head")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'Boolean)))
@@ -749,6 +752,13 @@
   (let ((meta (majutsu-template--lookup-method 'WorkspaceRef "root")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'Template))))
+
+(ert-deftest test-majutsu-template-evolog-operation-option-compiles ()
+  "CommitEvolutionEntry.operation should be usable as an optional value."
+  (mt--is (majutsu-template-compile
+           '[:if [:operation] [:operation :id :short] ""]
+           'CommitEvolutionEntry)
+          "if(self.operation(), self.operation().id().short(), \"\")"))
 
 (ert-deftest test-majutsu-template-method-dispatch-kinds ()
   (should (eq (majutsu-template--type-ref-dispatch-kind 'Commit) 'Commit))

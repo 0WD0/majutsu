@@ -1402,7 +1402,7 @@ bare keyword self dispatch."
      (root :returns Boolean :keyword t))
     (CommitEvolutionEntry
      (commit :returns Commit :keyword t)
-     (operation :returns Operation :keyword t)
+     (operation :returns (:option Operation) :keyword t)
      (predecessors :returns (:list Commit) :keyword t)
      (inter_diff :args ((files StringLiteral :optional t)) :returns TreeDiff))
     (ChangeId

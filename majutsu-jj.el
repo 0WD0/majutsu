@@ -698,6 +698,19 @@ programmatically (paths, IDs, names, etc.)."
                             majutsu-jj-global-arguments))))
      ,@body))
 
+(defmacro majutsu--with-color-always (&rest body)
+  "Execute BODY with `--color=always' in `majutsu-jj-global-arguments'.
+
+Replaces any existing `--color' flag so callers can consume jj's ANSI
+colored output even if the user customized `majutsu-jj-global-arguments'."
+  (declare (indent 0) (debug (body)))
+  `(let ((majutsu-jj-global-arguments
+          (cons "--color=always"
+                (seq-remove (lambda (arg)
+                              (string-prefix-p "--color" arg))
+                            majutsu-jj-global-arguments))))
+     ,@body))
+
 (defun majutsu-toplevel (&optional directory)
   "Return the workspace root for DIRECTORY or `default-directory'.
 
@@ -790,6 +803,29 @@ return nil or partial output depending on what was produced."
     (with-temp-buffer
       (apply #'majutsu-jj-insert args)
       (split-string (buffer-string) "\n" t))))
+
+(defun majutsu-jj-colored-string (&rest args)
+  "Run jj with ARGS and return the full colored output string."
+  (majutsu--with-color-always
+    (with-temp-buffer
+      (apply #'majutsu-jj-insert args)
+      (buffer-string))))
+
+(defun majutsu-jj-colored-lines (&rest args)
+  "Run jj with ARGS and return colored output as non-empty lines."
+  (split-string (apply #'majutsu-jj-colored-string args) "\n" t))
+
+(defun majutsu-jj-strip-ansi (string)
+  "Return STRING with ANSI escape sequences removed."
+  (ansi-color-filter-apply string))
+
+(defun majutsu-jj-apply-ansi (string)
+  "Return STRING with ANSI escapes converted to text properties."
+  (with-temp-buffer
+    (insert string)
+    (let ((ansi-color-apply-face-function #'ansi-color-apply-text-property-face))
+      (ansi-color-apply-on-region (point-min) (point-max)))
+    (buffer-string)))
 
 (defun majutsu-jj-items (&rest args)
   "Run jj with ARGS and return output split by null bytes.
