@@ -110,7 +110,8 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-new)
   (require 'majutsu-op)
   (require 'majutsu-workspace)
-  (require 'majutsu-conflict))
+  (require 'majutsu-conflict)
+  (require 'majutsu-gerrit))
 
 (with-eval-after-load 'evil
   (require 'majutsu-evil nil t))
