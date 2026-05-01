@@ -582,7 +582,8 @@ without changing call sites."
   (magit-section-case
     (jj-bookmark (oref it value))
     (jj-tag (oref it value))
-    (jj-commit (oref it value))))
+    (jj-commit (oref it value))
+    (jj-evolog-entry (oref it value))))
 
 (defun majutsu--buffer-revision-at-point ()
   "Return the revision implied by the surrounding Majutsu buffer."

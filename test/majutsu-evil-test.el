@@ -13,6 +13,7 @@
 (require 'seq)
 (require 'majutsu-conflict)
 (require 'majutsu-evil)
+(require 'majutsu-evolog)
 (require 'majutsu-op)
 
 (ert-deftest majutsu-evil-test-before-map-side-bindings ()
@@ -37,8 +38,8 @@
       (call-interactively command))
     (should (equal call '(4 nil)))))
 
-(ert-deftest majutsu-evil-test-initial-state-includes-op-modes ()
-  "Operation modes should get the configured Evil initial state."
+(ert-deftest majutsu-evil-test-initial-state-includes-op-and-evolog-modes ()
+  "Operation and evolog modes should get the configured Evil initial state."
   (let (calls)
     (cl-letf (((symbol-function 'evil-set-initial-state)
                (lambda (mode state)
@@ -47,10 +48,12 @@
         (majutsu-evil--set-initial-state)))
     (should (member '(majutsu-op-log-mode normal) calls))
     (should (member '(majutsu-op-show-mode normal) calls))
-    (should (member '(majutsu-op-diff-mode normal) calls))))
+    (should (member '(majutsu-op-diff-mode normal) calls))
+    (should (member '(majutsu-evolog-mode normal) calls))
+    (should (member '(majutsu-evolog-show-mode normal) calls))))
 
-(ert-deftest majutsu-evil-test-op-mode-keybindings ()
-  "Operation mode maps should receive Evil-specific bindings."
+(ert-deftest majutsu-evil-test-op-and-evolog-mode-keybindings ()
+  "Operation and evolog mode maps should receive Evil-specific bindings."
   (let ((featurep-original (symbol-function 'featurep))
         calls)
     (cl-letf (((symbol-function 'featurep)
@@ -93,6 +96,14 @@
                     (equal (nth 2 call)
                            (list (kbd "RET") #'majutsu-op-show-default-action
                                  (kbd "v") #'majutsu-op-show-evolog-at-point))))
+             calls))
+    (should (seq-some
+             (lambda (call)
+               (and (eq (nth 0 call) 'normal)
+                    (eq (nth 1 call) majutsu-evolog-mode-map)
+                    (equal (nth 2 call)
+                           (list (kbd "RET") #'majutsu-evolog-show-at-point
+                                 (kbd "d") #'majutsu-evolog-show-at-point))))
              calls))))
 
 (provide 'majutsu-evil-test)

@@ -437,6 +437,22 @@
           (majutsu-op-show-diff-at-point))
         (should (equal captured "commit_id(full-commit)"))))))
 
+(ert-deftest majutsu-op-show-evolog-at-point/uses-change-and-commit-id ()
+  "Evolog action should pass the union revset for rewritten/hidden changes."
+  (let ((value '(:marker "+" :change-id "full-change" :commit-id "full-commit")))
+    (with-temp-buffer
+      (majutsu-op-show-mode)
+      (let ((inhibit-read-only t))
+        (magit-insert-section (jj-op-commit-line value)
+          (magit-insert-heading "line")))
+      (goto-char (point-min))
+      (let (captured)
+        (cl-letf (((symbol-function 'majutsu-evolog)
+                   (lambda (revset &rest _)
+                     (setq captured revset))))
+          (majutsu-op-show-evolog-at-point))
+        (should (equal captured "change_id(full-change) | commit_id(full-commit)"))))))
+
 (ert-deftest majutsu-op-show-mode-map/line-actions ()
   "Operation show mode should expose line-level actions."
   (should (eq (lookup-key majutsu-op-show-mode-map (kbd "RET"))

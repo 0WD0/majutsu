@@ -24,7 +24,7 @@
 
 (declare-function majutsu-diff-revset "majutsu-diff" (revset &optional args range filesets))
 (declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
-(declare-function majutsu-evolog "majutsu-evolog" (revset))
+(declare-function majutsu-evolog "majutsu-evolog" (revset &optional args))
 (declare-function majutsu-jj-buffer-string "majutsu-jj" (&rest args))
 (declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
 

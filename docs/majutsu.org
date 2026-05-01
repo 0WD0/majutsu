@@ -435,8 +435,9 @@ Resolve entry points are available both from the Ediff transient and as direct c
 - Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors.
   Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first tag line such as =args:=. Read-only operation views pass =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing. Press =RET= or =d= on an operation to show details.
 - Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation.
-  Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= for the point-specific default action. Commit lines behave like normal =jj-commit= sections, while =d= keeps the ordinary Majutsu diff command from the parent mode.
+  Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= for the point-specific default action and =v= to open that change's evolution log. Commit lines behave like normal =jj-commit= sections, while =d= keeps the ordinary Majutsu diff command from the parent mode.
 - Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to=, reusing the same sectionized changed commit/ref view.
+- Command: majutsu-evolog :: View =jj evolog --no-graph= as structured sections for a revision/change. Press =RET= or =d= on an entry to open that entry's native =inter_diff()= patch in =majutsu-evolog-show-mode=.
 - Commands: majutsu-op-restore / majutsu-op-revert :: Restore to an operation or revert an individual operation after confirmation.
 
 * Manipulating
