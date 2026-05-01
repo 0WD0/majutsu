@@ -18,6 +18,7 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-op-transient "majutsu-op" ())
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
 (declare-function evil-normalize-keymaps "evil-core" (&optional state))
@@ -155,6 +156,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "V") nil
     (kbd "d") #'majutsu-diff
     (kbd "D") #'majutsu-diff-dwim
+    (kbd "X") #'majutsu-op-transient
     (kbd "*") #'majutsu-workspace
     (kbd "E") #'majutsu-ediff
     (kbd "?") #'majutsu-dispatch
