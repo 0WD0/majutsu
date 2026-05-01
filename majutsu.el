@@ -64,6 +64,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("Y" "Duplicate (dwim)"  majutsu-duplicate-dwim)
     (">" "Sparse"            majutsu-sparse)
     ("Z" "Workspaces"        majutsu-workspace)
+    ("X" "Operations"        majutsu-op-transient)
     ("C-/" "Undo"            majutsu-undo)
     ("C-?" "Redo"            majutsu-redo)]]
   ["Essential commands"
