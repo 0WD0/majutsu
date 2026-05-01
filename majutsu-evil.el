@@ -218,12 +218,10 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-show-mode-map
     (kbd "RET") #'majutsu-op-show-default-action
-    (kbd "d") #'majutsu-op-show-diff-at-point
     (kbd "v") #'majutsu-op-show-evolog-at-point)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-diff-mode-map
     (kbd "RET") #'majutsu-op-show-default-action
-    (kbd "d") #'majutsu-op-show-diff-at-point
     (kbd "v") #'majutsu-op-show-evolog-at-point)
 
   ;; majutsu-conflict-mode is a minor mode

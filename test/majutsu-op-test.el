@@ -33,15 +33,15 @@
                  majutsu-op--field-separator)))
 
 (defun majutsu-op-test--colored-summary ()
-  "Return a colored structured op diff commit summary for tests."
-  (string-join (list "\e[35mchange-full\e[39m"
-                     "\e[35mchange-short\e[39m"
-                     "\e[34mcommit-full\e[39m"
-                     "\e[34mcommit-short\e[39m"
+  "Return a face-propertized structured op diff commit summary for tests."
+  (string-join (list (propertize "change-full" 'font-lock-face 'font-lock-variable-name-face)
+                     (propertize "change-short" 'font-lock-face 'font-lock-variable-name-face)
+                     (propertize "commit-full" 'font-lock-face 'font-lock-function-name-face)
+                     (propertize "commit-short" 'font-lock-face 'font-lock-function-name-face)
                      ""
                      ""
                      "empty"
-                     "\e[32mdescription\e[39m")
+                     (propertize "description" 'font-lock-face 'font-lock-string-face))
                majutsu-op--field-separator))
 
 (ert-deftest majutsu-op-log-template/carries-rich-line-fields ()
@@ -72,9 +72,9 @@
 
 (ert-deftest majutsu-op-parse-log-entries/strips-machine-id-and-keeps-display-face ()
   "Parser should strip ANSI from machine ids and keep display field faces."
-  (let* ((raw (concat "\e[31mfull-operation-id\e[0m"
+  (let* ((raw (concat (propertize "full-operation-id" 'font-lock-face 'error)
                       majutsu-op--field-separator
-                      "\e[32mshort-id\e[0m"
+                      (propertize "short-id" 'font-lock-face 'success)
                       majutsu-op--field-separator
                       "@"
                       majutsu-op--field-separator
@@ -122,7 +122,7 @@
 (ert-deftest majutsu-op-parse-log-entries/uses-buffer-args-for-jj-call ()
   "Operation log parser should pass remembered buffer args to jj."
   (let (captured)
-    (cl-letf (((symbol-function 'majutsu-jj-colored-string)
+    (cl-letf (((symbol-function 'majutsu-jj-buffer-string)
                (lambda (&rest args)
                  (setq captured args)
                  (concat "full" majutsu-op--field-separator
@@ -157,8 +157,21 @@
                      :duration "3 milliseconds"
                      :desc "description"
                      :tags "args: jj op")))
-    (cl-letf (((symbol-function 'majutsu-parse-op-log-entries)
-               (lambda (&rest _) (list entry))))
+    (cl-letf (((symbol-function 'majutsu-jj-wash)
+               (lambda (washer _keep-error &rest _args)
+                 (insert (concat "full-id" majutsu-op--field-separator
+                                 "short-id" majutsu-op--field-separator
+                                 "@" majutsu-op--field-separator
+                                 "user" majutsu-op--field-separator
+                                 "workspace" majutsu-op--field-separator
+                                 "2026-05-02 04:50:00" majutsu-op--field-separator
+                                 "2 minutes ago" majutsu-op--field-separator
+                                 "3 milliseconds" majutsu-op--field-separator
+                                 "snapshot" majutsu-op--field-separator
+                                 "description" majutsu-op--field-separator
+                                 "args: jj op\n"))
+                 (funcall washer nil)
+                 0)))
       (with-temp-buffer
         (majutsu-op-log-mode)
         (let ((inhibit-read-only t))
@@ -188,7 +201,7 @@
 (ert-deftest majutsu-op-show-output/uses-read-only-top-level-args ()
   "Operation show metadata/body commands should avoid working-copy snapshots."
   (let (captured)
-    (cl-letf (((symbol-function 'majutsu-jj-colored-string)
+    (cl-letf (((symbol-function 'majutsu-jj-buffer-string)
                (lambda (&rest args)
                  (setq captured args)
                  "")))
@@ -202,7 +215,9 @@
 
 (ert-deftest majutsu-op-parse-diff-output/parses-colored-commit-line ()
   "Operation diff parser should use plain marker detection and colored fields."
-  (let* ((line (concat "\e[32m+\e[39m " (majutsu-op-test--colored-summary)))
+  (let* ((line (concat (propertize "+" 'font-lock-face 'diff-added)
+                       " "
+                       (majutsu-op-test--colored-summary)))
          (nodes (majutsu-op--parse-diff-output
                  (concat "From operation: from\n  To operation: to\n\n"
                          "Changed commits:\n" line "\n")))
@@ -328,11 +343,13 @@
                (if (string-match-p "tags" template)
                    "args: jj op\n"
                  "description body\n")))
-            ((symbol-function 'majutsu-op--operation-diff-output)
-             (lambda (_operation)
-               (concat "Changed commits:\n+ "
-                       (majutsu-op-test--summary)
-                       "\n"))))
+            ((symbol-function 'majutsu-jj-wash)
+             (lambda (washer _keep-error &rest _args)
+               (insert (concat "Changed commits:\n+ "
+                               (majutsu-op-test--summary)
+                               "\n"))
+               (funcall washer nil)
+               0)))
     (with-temp-buffer
       (majutsu-op-show-mode)
       (setq majutsu-op-show--operation "@")
@@ -366,19 +383,21 @@
                      :kind "op")))
             ((symbol-function 'majutsu-op--operation-body)
              (lambda (&rest _) ""))
-            ((symbol-function 'majutsu-op--operation-diff-output)
-             (lambda (_operation)
-               (concat "From operation: old\n  To operation: new\n\n"
-                       "Changed commits:\n"
-                       "+ " (majutsu-op-test--summary
-                             "change-full" "change-short"
-                             "commit-full" "commit-short") "\n\n"
-                       "Changed local bookmarks:\n"
-                       "main:\n"
-                       "+ (added) " (majutsu-op-test--summary
-                                     "ref-change-full" "ref-change-short"
-                                     "ref-commit-full" "ref-commit-short") "\n"
-                       "- (absent)\n"))))
+            ((symbol-function 'majutsu-jj-wash)
+             (lambda (washer _keep-error &rest _args)
+               (insert (concat "From operation: old\n  To operation: new\n\n"
+                               "Changed commits:\n"
+                               "+ " (majutsu-op-test--summary
+                                     "change-full" "change-short"
+                                     "commit-full" "commit-short") "\n\n"
+                               "Changed local bookmarks:\n"
+                               "main:\n"
+                               "+ (added) " (majutsu-op-test--summary
+                                             "ref-change-full" "ref-change-short"
+                                             "ref-commit-full" "ref-commit-short") "\n"
+                               "- (absent)\n"))
+               (funcall washer nil)
+               0)))
     (with-temp-buffer
       (majutsu-op-show-mode)
       (setq majutsu-op-show--operation "@")
@@ -423,7 +442,7 @@
   (should (eq (lookup-key majutsu-op-show-mode-map (kbd "RET"))
               'majutsu-op-show-default-action))
   (should (eq (lookup-key majutsu-op-show-mode-map (kbd "d"))
-              'majutsu-op-show-diff-at-point))
+              'majutsu-diff))
   (should (eq (lookup-key majutsu-op-show-mode-map (kbd "v"))
               'majutsu-op-show-evolog-at-point)))
 
@@ -458,11 +477,13 @@
 
 (ert-deftest majutsu-op-diff-refresh-buffer/renders-parsed-diff ()
   "Operation diff refresh should reuse the parsed operation diff sections."
-  (cl-letf (((symbol-function 'majutsu-op--diff-output)
-             (lambda (_args)
-               (concat "Changed commits:\n+ "
-                       (majutsu-op-test--summary)
-                       "\n"))))
+  (cl-letf (((symbol-function 'majutsu-jj-wash)
+             (lambda (washer _keep-error &rest _args)
+               (insert (concat "Changed commits:\n+ "
+                               (majutsu-op-test--summary)
+                               "\n"))
+               (funcall washer nil)
+               0)))
     (with-temp-buffer
       (majutsu-op-diff-mode)
       (setq majutsu-op-diff--args '("--operation=abc"))

@@ -25,9 +25,8 @@
 (declare-function majutsu-diff-revset "majutsu-diff" (revset &optional args range filesets))
 (declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
 (declare-function majutsu-evolog "majutsu-evolog" (revset))
-(declare-function majutsu-jj-apply-ansi "majutsu-jj" (string))
-(declare-function majutsu-jj-colored-string "majutsu-jj" (&rest args))
-(declare-function majutsu-jj-strip-ansi "majutsu-jj" (string))
+(declare-function majutsu-jj-buffer-string "majutsu-jj" (&rest args))
+(declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
 
 ;;; majutsu-undo
 
@@ -131,12 +130,8 @@
   "Template injected as `templates.commit_summary' for operation diffs.")
 
 (defun majutsu-op--machine-field (field)
-  "Return FIELD without ANSI escapes or surrounding whitespace."
-  (string-trim (majutsu-jj-strip-ansi (or field ""))))
-
-(defun majutsu-op--display-field (field)
-  "Return FIELD with ANSI escapes converted to text properties."
-  (majutsu-jj-apply-ansi (or field "")))
+  "Return FIELD without text properties or surrounding whitespace."
+  (string-trim (substring-no-properties (or field ""))))
 
 (defun majutsu-op--split-record (line expected)
   "Split LINE into EXPECTED fields, or return nil when malformed."
@@ -167,15 +162,15 @@
     (pcase-let ((`(,op-id ,op-id-short ,user ,workspace
                    ,start-time ,end-time ,duration ,kind ,description)
                  fields))
-      (list :op-id (majutsu-op--machine-field op-id)
-            :op-id-short (majutsu-op--display-field op-id-short)
-            :user (majutsu-op--display-field user)
-            :workspace (majutsu-op--display-field workspace)
-            :start-time (majutsu-op--display-field start-time)
-            :end-time (majutsu-op--display-field end-time)
-            :duration (majutsu-op--display-field duration)
-            :kind (majutsu-op--machine-field kind)
-            :desc (majutsu-op--display-field description)))))
+      (list :op-id       op-id
+            :op-id-short op-id-short
+            :user        user
+            :workspace   workspace
+            :start-time  start-time
+            :end-time    end-time
+            :duration    duration
+            :kind        kind
+            :desc        description))))
 
 (defun majutsu-op--parse-log-output (output)
   "Parse operation log OUTPUT into entry plists."
@@ -185,56 +180,30 @@
 
 (defun majutsu-op--nonempty-field-p (field)
   "Return non-nil when FIELD is present and non-empty."
-  (and field (not (string-empty-p (string-trim field)))))
+  (and field (not (string-empty-p (string-trim (substring-no-properties field))))))
 
-(defun majutsu-op--ansi-sequence-end (string start)
-  "Return the index after the ANSI escape sequence at START in STRING."
-  (let ((index (1+ start))
-        (length (length string)))
-    (if (and (< index length) (= (aref string index) ?\[))
-        (progn
-          (setq index (1+ index))
-          (while (and (< index length)
-                      (not (and (>= (aref string index) ?@)
-                                (<= (aref string index) ?~))))
-            (setq index (1+ index)))
-          (min length (1+ index)))
-      (min length (1+ index)))))
-
-(defun majutsu-op--drop-visible-prefix (string count)
-  "Drop COUNT visible characters from STRING, ignoring ANSI escapes."
-  (let ((index 0)
-        (visible 0)
-        (length (length string)))
-    (while (and (< index length) (< visible count))
-      (if (= (aref string index) ?\e)
-          (setq index (majutsu-op--ansi-sequence-end string index))
-        (setq index (1+ index)
-              visible (1+ visible))))
-    (substring string index)))
-
-(defun majutsu-op--parse-commit-summary (plain-summary &optional colored-summary)
-  "Parse a structured commit PLAIN-SUMMARY and optional COLORED-SUMMARY."
+(defun majutsu-op--parse-commit-summary (plain-summary &optional display-summary)
+  "Parse a structured commit PLAIN-SUMMARY and optional DISPLAY-SUMMARY."
   (when-let* ((fields (majutsu-op--split-record plain-summary 8)))
     (pcase-let* ((`(,change-id ,change-id-short ,commit-id ,commit-id-short
                     ,hidden ,conflict ,empty ,_description)
                   fields)
                  (display-fields (or (majutsu-op--split-record
-                                      (or colored-summary plain-summary) 8)
+                                      (or display-summary plain-summary) 8)
                                      fields))
                  (`(,_ ,change-id-short-display ,_ ,commit-id-short-display
                     ,_ ,_ ,_ ,description-display)
                   display-fields))
-      (list :change-id (majutsu-op--machine-field change-id)
-            :change-id-short (majutsu-op--machine-field change-id-short)
-            :change-id-short-display (majutsu-op--display-field change-id-short-display)
-            :commit-id (majutsu-op--machine-field commit-id)
-            :commit-id-short (majutsu-op--machine-field commit-id-short)
-            :commit-id-short-display (majutsu-op--display-field commit-id-short-display)
-            :hidden (majutsu-op--nonempty-field-p hidden)
-            :conflict (majutsu-op--nonempty-field-p conflict)
-            :empty (majutsu-op--nonempty-field-p empty)
-            :description (majutsu-op--display-field description-display)))))
+      (list :change-id               change-id
+            :change-id-short         change-id-short
+            :change-id-short-display change-id-short-display
+            :commit-id               commit-id
+            :commit-id-short         commit-id-short
+            :commit-id-short-display commit-id-short-display
+            :hidden                  (majutsu-op--nonempty-field-p hidden)
+            :conflict                (majutsu-op--nonempty-field-p conflict)
+            :empty                   (majutsu-op--nonempty-field-p empty)
+            :description             description-display))))
 
 (defun majutsu-op--diff-strip-prefix (payload)
   "Return (PREFIX TARGET OFFSET) for a diff marker PAYLOAD."
@@ -290,8 +259,7 @@
       (pcase-let* ((`(,prefix ,target ,target-offset)
                     (majutsu-op--diff-strip-prefix payload))
                    (summary-start (+ payload-start target-offset))
-                   (colored-summary (majutsu-op--drop-visible-prefix
-                                     colored-line summary-start))
+                   (display-summary (substring colored-line summary-start))
                    (base (list :marker marker
                                :prefix prefix
                                :group-kind group-kind
@@ -301,7 +269,7 @@
                   :text colored-line
                   :value (append base '(:absent t)))
           (if-let* ((summary (majutsu-op--parse-commit-summary
-                              target colored-summary)))
+                              target display-summary)))
               (list :type line-type
                     :text colored-line
                     :value (append base summary))
@@ -343,7 +311,7 @@
             (group-title (push node group-children))
             (t (push node nodes)))))
       (dolist (colored-line (split-string (or output "") "\n"))
-        (let* ((plain-line (majutsu-jj-strip-ansi colored-line))
+        (let* ((plain-line (substring-no-properties colored-line))
                (trimmed (string-trim plain-line)))
           (cond
            ((string-empty-p trimmed))
@@ -551,14 +519,13 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   "Parse jj operation log output.
 
 When LOG-OUTPUT is nil, run jj in BUF or the current buffer and cache the
-result.  Colored output is preserved in display fields, while machine ids are
-stored without ANSI escapes."
+result."
   (with-current-buffer (or buf (current-buffer))
     (if (and majutsu-op-log--cached-entries (not log-output))
         majutsu-op-log--cached-entries
       (let ((entries (majutsu-op--parse-log-output
                       (or log-output
-                          (apply #'majutsu-jj-colored-string
+                          (apply #'majutsu-jj-buffer-string
                                  (majutsu-op--log-command-args))))))
         (unless log-output
           (setq majutsu-op-log--cached-entries entries))
@@ -592,15 +559,36 @@ stored without ANSI escapes."
   (when (majutsu-op--nonempty-field-p (plist-get entry :tags))
     (majutsu-op--insert-colored-block (plist-get entry :tags))))
 
+(defun majutsu-op--wash-log-entry ()
+  "Wash the current raw operation log line into one `jj-op' section."
+  (let* ((line (majutsu-op--diff-line-string))
+         (entry (majutsu-op--parse-log-line line)))
+    (majutsu-op--delete-line)
+    (when entry
+      (let ((op-id (plist-get entry :op-id)))
+        (magit-insert-section (jj-op op-id)
+          (magit-insert-heading (majutsu-op--format-log-entry-heading entry))
+          (majutsu-op--insert-log-entry-body entry)))
+      entry)))
+
+(defun majutsu-op--wash-log-output (_args)
+  "Wash raw `jj op log` output in the current narrowed region."
+  (let (entries)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (when-let* ((entry (majutsu-op--wash-log-entry)))
+        (push entry entries)))
+    (setq majutsu-op-log--cached-entries (nreverse entries))))
+
 (defun majutsu-op-log-insert-entries ()
   "Insert operation log entries."
   (magit-insert-section (jj-op-log)
     (magit-insert-heading "Operation Log")
-    (dolist (entry (majutsu-parse-op-log-entries))
-      (let ((op-id (plist-get entry :op-id)))
-        (magit-insert-section (jj-op op-id)
-          (magit-insert-heading (majutsu-op--format-log-entry-heading entry))
-          (majutsu-op--insert-log-entry-body entry))))))
+    (setq majutsu-op-log--cached-entries nil)
+    (apply #'majutsu-jj-wash
+           #'majutsu-op--wash-log-output
+           'wash-anyway
+           (majutsu-op--log-command-args))))
 
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
@@ -820,8 +808,8 @@ stored without ANSI escapes."
   "Operation id shown in the current operation show buffer.")
 
 (defun majutsu-op--show-output (operation template)
-  "Return colored `jj op show' output for OPERATION rendered with TEMPLATE."
-  (apply #'majutsu-jj-colored-string
+  "Return plain `jj op show' output for OPERATION rendered with TEMPLATE."
+  (apply #'majutsu-jj-buffer-string
          (append majutsu-op--read-only-global-args
                  (list "op" "show" operation "--no-op-diff" "-T" template))))
 
@@ -843,24 +831,14 @@ stored without ANSI escapes."
                 "op" "diff" "--no-graph")
           args))
 
-(defun majutsu-op--operation-diff-output (operation)
-  "Return colored operation diff output for OPERATION."
-  (apply #'majutsu-jj-colored-string
-         (majutsu-op--diff-command-args (list "--operation" operation))))
-
-(defun majutsu-op--diff-output (args)
-  "Return colored operation diff output for ARGS."
-  (apply #'majutsu-jj-colored-string
-         (majutsu-op--diff-command-args args)))
-
 (defun majutsu-op--insert-field (label value)
   "Insert metadata LABEL and VALUE."
   (insert (propertize label 'face 'font-lock-keyword-face) ": " value "\n"))
 
 (defun majutsu-op--insert-colored-block (string)
-  "Insert STRING after applying ANSI colors."
-  (let ((text (majutsu-jj-apply-ansi (or string ""))))
-    (unless (string-empty-p (string-trim text))
+  "Insert STRING as a body block, preserving text properties."
+  (let ((text (or string "")))
+    (unless (string-empty-p (string-trim (substring-no-properties text)))
       (insert text)
       (unless (string-suffix-p "\n" text)
         (insert "\n")))))
@@ -895,8 +873,8 @@ stored without ANSI escapes."
                       (plist-get value :description))))))
 
 (defun majutsu-op--node-display-text (node)
-  "Return NODE text with ANSI colors applied."
-  (majutsu-jj-apply-ansi (plist-get node :text)))
+  "Return NODE text for display, preserving text properties."
+  (plist-get node :text))
 
 (defun majutsu-op--insert-diff-node (node)
   "Insert one parsed operation diff NODE."
@@ -940,13 +918,111 @@ stored without ANSI escapes."
      (magit-insert-section (jj-op-raw-line nil)
        (magit-insert-heading (majutsu-op--node-display-text node))))))
 
-(defun majutsu-op--insert-operation-diff-output (output)
-  "Insert parsed operation diff OUTPUT."
-  (let ((nodes (majutsu-op--parse-diff-output output)))
-    (if nodes
-        (dolist (node nodes)
-          (majutsu-op--insert-diff-node node))
-      (insert (propertize "No repository changes\n" 'face 'shadow)))))
+(defun majutsu-op--diff-line-string ()
+  "Return the current diff line, preserving text properties."
+  (buffer-substring (line-beginning-position) (line-end-position)))
+
+(defun majutsu-op--delete-line ()
+  "Delete current line, including trailing newline if present."
+  (delete-region (line-beginning-position)
+                 (min (point-max) (1+ (line-end-position)))))
+
+(defun majutsu-op--diff-group-boundary-p ()
+  "Return non-nil when point starts a new op-diff group or separator."
+  (or (eobp)
+      (let* ((line (majutsu-op--diff-line-string))
+             (plain (substring-no-properties line))
+             (trimmed (string-trim plain)))
+        (or (string-empty-p trimmed)
+            (majutsu-op--diff-operation-header-p plain)
+            (majutsu-op--diff-group-kind plain)))))
+
+(defun majutsu-op--diff-ref-boundary-p (group-kind)
+  "Return non-nil when point leaves the current ref block in GROUP-KIND."
+  (or (majutsu-op--diff-group-boundary-p)
+      (let* ((line (majutsu-op--diff-line-string))
+             (plain (substring-no-properties line)))
+        (majutsu-op--diff-ref-header-p plain group-kind))))
+
+(defun majutsu-op--wash-diff-line (group-kind &optional ref-name)
+  "Wash one operation diff line in GROUP-KIND under REF-NAME."
+  (let* ((colored-line (majutsu-op--diff-line-string))
+         (plain-line (substring-no-properties colored-line))
+         (trimmed (string-trim plain-line)))
+    (cond
+     ((string-empty-p trimmed)
+      (majutsu-op--delete-line))
+     ((majutsu-op--diff-warning-line-p plain-line)
+      (majutsu-op--delete-line)
+      (majutsu-op--insert-diff-node (list :type 'warning :text colored-line)))
+     ((majutsu-op--diff-elision-line-p plain-line)
+      (majutsu-op--delete-line)
+      (majutsu-op--insert-diff-node (list :type 'elision :text colored-line)))
+     ((majutsu-op--parse-diff-marker-line
+       plain-line colored-line group-kind ref-name)
+      (let ((node (majutsu-op--parse-diff-marker-line
+                   plain-line colored-line group-kind ref-name)))
+        (majutsu-op--delete-line)
+        (majutsu-op--insert-diff-node node)))
+     (t
+      (majutsu-op--delete-line)
+      (majutsu-op--insert-diff-node (list :type 'raw-line :text colored-line))))))
+
+(defun majutsu-op--wash-diff-ref (group-kind)
+  "Wash one named ref block in ref GROUP-KIND."
+  (let* ((line (majutsu-op--diff-line-string))
+         (plain (substring-no-properties line))
+         (name (string-remove-suffix ":" (string-trim plain))))
+    (majutsu-op--delete-line)
+    (magit-insert-section (jj-op-ref name)
+      (magit-insert-heading line)
+      (while (and (not (eobp))
+                  (not (majutsu-op--diff-ref-boundary-p group-kind)))
+        (majutsu-op--wash-diff-line group-kind name)))))
+
+(defun majutsu-op--wash-diff-group ()
+  "Wash one top-level operation diff group at point."
+  (let* ((line (majutsu-op--diff-line-string))
+         (plain (substring-no-properties line))
+         (title (string-trim plain))
+         (kind (majutsu-op--diff-group-kind plain)))
+    (majutsu-op--delete-line)
+    (magit-insert-section (jj-op-group (list :kind kind :title title))
+      (magit-insert-heading line)
+      (while (and (not (eobp))
+                  (not (majutsu-op--diff-group-boundary-p)))
+        (if (and (majutsu-op--diff-ref-group-p kind)
+                 (let* ((next-line (majutsu-op--diff-line-string))
+                        (next-plain (substring-no-properties next-line)))
+                   (majutsu-op--diff-ref-header-p next-plain kind)))
+            (majutsu-op--wash-diff-ref kind)
+          (majutsu-op--wash-diff-line kind))))))
+
+(defun majutsu-op--wash-diff-output (_args)
+  "Wash raw `jj op diff` output in the current narrowed region."
+  (goto-char (point-min))
+  (while (not (eobp))
+    (let* ((line (majutsu-op--diff-line-string))
+           (plain (substring-no-properties line))
+           (trimmed (string-trim plain)))
+      (cond
+       ((string-empty-p trimmed)
+        (majutsu-op--delete-line))
+       ((majutsu-op--diff-operation-header-p plain)
+        (majutsu-op--delete-line))
+       ((majutsu-op--diff-group-kind plain)
+        (majutsu-op--wash-diff-group))
+       (t
+        (majutsu-op--wash-diff-line nil)))))
+  (when (= (point-min) (point-max))
+    (insert (propertize "No repository changes\n" 'face 'shadow))))
+
+(defun majutsu-op--insert-operation-diff (args)
+  "Insert washed operation diff for ARGS."
+  (apply #'majutsu-jj-wash
+         #'majutsu-op--wash-diff-output
+         'wash-anyway
+         (majutsu-op--diff-command-args args)))
 
 (defun majutsu-op-show-refresh-buffer ()
   "Refresh the current operation show buffer."
@@ -968,19 +1044,18 @@ stored without ANSI escapes."
         (majutsu-op--insert-field "Duration" (plist-get metadata :duration))
         (majutsu-op--insert-field "Kind" (plist-get metadata :kind)))
       (let ((description (majutsu-op--operation-body op-id "self.description()")))
-        (unless (string-empty-p (string-trim (majutsu-jj-strip-ansi description)))
+        (unless (string-empty-p (string-trim (substring-no-properties description)))
           (magit-insert-section (jj-op-show-description op-id)
             (magit-insert-heading "Description")
             (majutsu-op--insert-colored-block description))))
       (let ((tags (majutsu-op--operation-body op-id "self.tags()")))
-        (unless (string-empty-p (string-trim (majutsu-jj-strip-ansi tags)))
+        (unless (string-empty-p (string-trim (substring-no-properties tags)))
           (magit-insert-section (jj-op-show-tags op-id)
             (magit-insert-heading "Tags")
             (majutsu-op--insert-colored-block tags))))
       (magit-insert-section (jj-op-diff op-id)
         (magit-insert-heading "Repository Changes")
-        (majutsu-op--insert-operation-diff-output
-         (majutsu-op--operation-diff-output op-id))))
+        (majutsu-op--insert-operation-diff (list "--operation" op-id))))
     (majutsu-selection-render)))
 
 (defun majutsu-op-show-diff-at-point ()
@@ -1014,7 +1089,6 @@ stored without ANSI escapes."
   :doc "Keymap for `majutsu-op-show-mode'."
   :parent majutsu-mode-map
   "RET" 'majutsu-op-show-default-action
-  "d" 'majutsu-op-show-diff-at-point
   "v" 'majutsu-op-show-evolog-at-point)
 
 (define-derived-mode majutsu-op-show-mode majutsu-mode "Majutsu Op Show"
@@ -1079,8 +1153,7 @@ stored without ANSI escapes."
   (let ((args (or majutsu-op-diff--args '())))
     (magit-insert-section (jj-op-diff-buffer args)
       (magit-insert-heading (majutsu-op--diff-buffer-heading args))
-      (majutsu-op--insert-operation-diff-output
-       (majutsu-op--diff-output args))))
+      (majutsu-op--insert-operation-diff args)))
   (majutsu-selection-render))
 
 (defvar-keymap majutsu-op-diff-mode-map
