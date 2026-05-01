@@ -3,19 +3,17 @@
 ;;; Commentary:
 
 ;; This library renders `jj evolog' using a Majutsu-owned template equivalent
-;; to jj's default compact evolog template, wrapped in graph-record tokens so
-;; the graph stays intact while record boundaries remain machine-readable.
+;; to jj's default compact evolog template.  Entries use the shared
+;; graph-entry protocol, so jj keeps rendering the graph while Majutsu parses
+;; heading and metadata modules back into real Magit sections.
 
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-graph-record)
+(require 'majutsu-graph-entry)
 (require 'subr-x)
 
 (declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
-
-(defconst majutsu-evolog--record-name "evolog"
-  "Graph record protocol name for evolog entries.")
 
 (defconst majutsu-evolog--change-offset-template
   '[:if [:commit :change_offset]
@@ -107,14 +105,77 @@
     ,majutsu-evolog--operation-line-template]
   "Visible evolog entry template, equivalent to jj's builtin_evolog_compact.")
 
+(defconst majutsu-evolog--field-default-modules
+  '((display . heading)
+    (change-id . metadata)
+    (commit-id . metadata)
+    (operation-id . metadata))
+  "Default graph-entry module placement for evolog fields.")
+
+(defconst majutsu-evolog-entry-columns
+  '((:field display :module heading :face t)
+    (:field change-id :module metadata :face nil)
+    (:field commit-id :module metadata :face nil)
+    (:field operation-id :module metadata :face nil))
+  "Field specification controlling evolog graph-entry transport.")
+
+(defun majutsu-evolog--column-template (field)
+  "Return majutsu-template form for evolog FIELD."
+  (pcase field
+    ('display majutsu-evolog--entry-display-template)
+    ('change-id '[:commit :change_id])
+    ('commit-id '[:commit :commit_id])
+    ('operation-id '[:if [:operation] [:operation :id] ""])
+    (_ (user-error "Unknown evolog field %S" field))))
+
+(defun majutsu-evolog--record-field (entry field value)
+  "Record canonical evolog FIELD VALUE onto ENTRY."
+  (pcase field
+    ('display
+     (setq entry (plist-put entry :display value)))
+    ('change-id
+     (setq entry (plist-put entry :change-id value)))
+    ('commit-id
+     (setq entry (plist-put entry :commit-id value)))
+    ('operation-id
+     (setq entry (plist-put entry :operation-id value))))
+  (majutsu-graph-entry-record-canonical-field entry field value))
+
+(defun majutsu-evolog--entry-id (entry)
+  "Return stable section id string from evolog ENTRY."
+  (or (let ((commit-id (plist-get entry :commit-id)))
+        (and (stringp commit-id)
+             (not (string-empty-p (string-trim commit-id)))
+             (substring-no-properties commit-id)))
+      (let ((change-id (plist-get entry :change-id)))
+        (and (stringp change-id)
+             (not (string-empty-p (string-trim change-id)))
+             (substring-no-properties change-id)))
+      "unknown"))
+
+(defun majutsu-evolog--graph-entry-profile ()
+  "Return the graph-entry profile for `majutsu-evolog'."
+  (list :name 'evolog
+        :self-type 'CommitEvolutionEntry
+        :columns-var 'majutsu-evolog-entry-columns
+        :default-modules majutsu-evolog--field-default-modules
+        :required-fields '(change-id commit-id operation-id)
+        :template-function 'majutsu-evolog--column-template
+        :record-field-function 'majutsu-evolog--record-field
+        :entry-id-function 'majutsu-evolog--entry-id
+        :section-class 'jj-evolog-entry
+        :section-value-function 'majutsu-evolog--entry-id
+        :section-hide nil
+        :tail-align nil
+        :compat-property-prefix 'majutsu-evolog))
+
+(defconst majutsu-evolog--entry-compiled
+  (majutsu-graph-entry-compile (majutsu-evolog--graph-entry-profile)
+                               majutsu-evolog-entry-columns)
+  "Compiled graph-entry layout metadata for `majutsu-evolog'.")
+
 (defconst majutsu-evolog--entry-template
-  (majutsu-graph-record-template
-   majutsu-evolog--record-name
-   '([:commit :change_id]
-     [:commit :commit_id]
-     [:if [:operation] [:operation :id] ""])
-   'CommitEvolutionEntry
-   majutsu-evolog--entry-display-template)
+  (plist-get majutsu-evolog--entry-compiled :template)
   "Template used by `majutsu-evolog'.")
 
 (defconst majutsu-evolog--read-only-global-args
@@ -127,6 +188,9 @@
 (defvar-local majutsu-evolog--args nil
   "Arguments used for the current evolog buffer.")
 
+(defvar-local majutsu-evolog--cached-entries nil
+  "Parsed evolog graph entries for the current buffer.")
+
 (defun majutsu-evolog--command-args (revset &optional args)
   "Return jj arguments for evolog REVSET with ARGS."
   (append majutsu-evolog--read-only-global-args
@@ -134,27 +198,10 @@
           (or args majutsu-evolog--args)
           (list "-r" revset "-T" majutsu-evolog--entry-template)))
 
-(defun majutsu-evolog--wash-record ()
-  "Wash one graph-record wrapped evolog entry at point."
-  (when-let* ((record (majutsu-graph-record-parse-at-point
-                       majutsu-evolog--record-name)))
-    (let ((beg (plist-get record :beg))
-          (end (plist-get record :end))
-          (display (plist-get record :display)))
-      (delete-region beg end)
-      (goto-char beg)
-      (unless (string-empty-p display)
-        (insert display)
-        (unless (string-suffix-p "\n" display)
-          (insert "\n")))
-      t)))
-
 (defun majutsu-evolog--wash-output (_args)
   "Wash raw `jj evolog` output in the current narrowed region."
-  (goto-char (point-min))
-  (while (not (eobp))
-    (unless (majutsu-evolog--wash-record)
-      (forward-line 1))))
+  (setq majutsu-evolog--cached-entries
+        (majutsu-graph-entry-wash-buffer majutsu-evolog--entry-compiled)))
 
 (defun majutsu-evolog--insert-entries ()
   "Insert evolog output for the current buffer."
@@ -171,6 +218,7 @@
   "Refresh the current evolog buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-evolog-mode)
+  (setq majutsu-evolog--cached-entries nil)
   (magit-insert-section (evologbuf)
     (majutsu-evolog--insert-entries)))
 

@@ -55,8 +55,8 @@
   ~majutsu-template-defspecial~.
 - JJ helpers: Add ~majutsu-jj-buffer-string~ for callers that need full
   plain-text command output instead of line-oriented ~majutsu-jj-lines~, plus
-  ~majutsu-graph-record~ helpers for graph-prefixed template output with hidden
-  metadata.
+  shared ~majutsu-graph-entry~ helpers for graph-prefixed template output,
+  hidden metadata, and Magit section rendering.
 
 ** Changed
 

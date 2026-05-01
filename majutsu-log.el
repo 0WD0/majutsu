@@ -700,66 +700,6 @@ Returns entry plist and moves point past the consumed entry, or nil."
   "Parse all sequentially-encoded log entries in current buffer using COMPILED."
   (majutsu-graph-entry-parse-buffer compiled))
 
-(defun majutsu-log--apply-line-prefix-span (start end line-prefix-str &optional wrap-prefix-str)
-  "Apply display-only line/wrap prefix strings to START..END."
-  (majutsu-graph-entry-apply-line-prefix-span
-   start end line-prefix-str wrap-prefix-str))
-
-(defun majutsu-log--insert-prefixed-line (content prefix)
-  "Insert CONTENT as one line with display-only PREFIX."
-  (majutsu-graph-entry-insert-prefixed-line content prefix))
-
-(defun majutsu-log--split-prefix-line (line prefix-width)
-  "Split LINE into (PREFIX . CONTENT) using PREFIX-WIDTH characters."
-  (majutsu-graph-entry-split-prefix-line line prefix-width))
-
-(defun majutsu-log--entry-column (entry field)
-  "Return canonical value for FIELD stored on ENTRY."
-  (majutsu-graph-entry-column entry field))
-
-(defun majutsu-log--entry-column-value (entry column)
-  "Return per-instance value for COLUMN stored on ENTRY.
-
-Fallback to the canonical field value when ENTRY predates per-instance storage."
-  (majutsu-graph-entry-column-value entry column))
-
-(defun majutsu-log--display-string (value)
-  "Return VALUE converted to a display string."
-  (majutsu-graph-entry-display-string value))
-
-(defun majutsu-log--apply-face-policy (value face)
-  "Apply FACE policy to VALUE and return display string."
-  (majutsu-graph-entry-apply-face-policy value face))
-
-(defun majutsu-log--content-properties (entry-id module &optional column)
-  "Return content text properties for ENTRY-ID in MODULE.
-When COLUMN is non-nil, also include field and column-instance identity."
-  (majutsu-graph-entry-content-properties
-   (majutsu-log--current-compiled) entry-id module column))
-
-(defun majutsu-log--decoration-properties (entry-id module decoration)
-  "Return decoration text properties for ENTRY-ID in MODULE."
-  (majutsu-graph-entry-decoration-properties
-   (majutsu-log--current-compiled) entry-id module decoration))
-
-(defun majutsu-log--propertize-content (text entry-id module &optional column)
-  "Return TEXT tagged as MODULE content for ENTRY-ID and COLUMN."
-  (majutsu-graph-entry-propertize-content
-   text (majutsu-log--current-compiled) entry-id module column))
-
-(defun majutsu-log--propertize-decoration (text entry-id module decoration)
-  "Return TEXT tagged as MODULE DECORATION for ENTRY-ID."
-  (majutsu-graph-entry-propertize-decoration
-   text (majutsu-log--current-compiled) entry-id module decoration))
-
-(defun majutsu-log--concat-heading-parts (parts)
-  "Concatenate heading PARTS without adding spaces after newlines."
-  (majutsu-graph-entry-concat-heading-parts parts))
-
-(defun majutsu-log--single-line-string (value)
-  "Return VALUE flattened to a single display line."
-  (majutsu-graph-entry-single-line-string value))
-
 (defun majutsu-log--render-column-text (entry column &optional plain)
   "Return rendered text for ENTRY COLUMN.
 When PLAIN is non-nil, strip all text properties from the result."

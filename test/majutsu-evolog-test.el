@@ -9,36 +9,43 @@
 (require 'ert)
 (require 'majutsu-evolog)
 
-(defun majutsu-evolog-test--record (&optional display)
-  "Return one graph-record wrapped evolog test entry with DISPLAY."
+(defun majutsu-evolog-test--raw-entry (&optional heading)
+  "Return one graph-entry encoded evolog test entry with HEADING."
   (concat "○  "
-          (majutsu-graph-record--start-token majutsu-evolog--record-name)
-          (or display
+          majutsu-graph-entry-start-token
+          (or heading
               (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
                       "│  feat(op): phase1\n"
                       "│  -- operation 86978b4db954 describe commit 8794efe3"))
-          (majutsu-graph-record--metadata-token majutsu-evolog--record-name)
-          "change-full" majutsu-graph-record-field-separator
-          "commit-full" majutsu-graph-record-field-separator
+          majutsu-graph-entry-tail-token
+          majutsu-graph-entry-body-token
+          majutsu-graph-entry-meta-token
+          "change-full" majutsu-graph-entry-field-separator
+          "commit-full" majutsu-graph-entry-field-separator
           "op-full"
-          (majutsu-graph-record--end-token majutsu-evolog--record-name)))
+          majutsu-graph-entry-end-token
+          "\n"))
 
-(ert-deftest majutsu-evolog-entry-template/rebuilds-default-compact-with-graph-record ()
-  "Evolog template should rebuild builtin_evolog_compact using graph-record."
-  (should (string-match-p (regexp-quote "\\x1DGR:evolog:S")
-                          majutsu-evolog--entry-template))
-  (should (string-match-p (regexp-quote "\\x1DGR:evolog:M")
-                          majutsu-evolog--entry-template))
-  (should (string-match-p "self.commit().change_id().shortest(8)"
-                          majutsu-evolog--entry-template))
-  (should (string-match-p "self.commit().author().email()"
-                          majutsu-evolog--entry-template))
-  (should (string-match-p "self.commit().committer().timestamp().local().format"
-                          majutsu-evolog--entry-template))
-  (should (string-match-p "self.operation().id().short()"
-                          majutsu-evolog--entry-template))
-  (should-not (string-match-p "builtin_evolog_compact"
-                              majutsu-evolog--entry-template)))
+(ert-deftest majutsu-evolog-entry-template/rebuilds-default-compact-with-graph-entry ()
+  "Evolog template should rebuild builtin_evolog_compact via graph-entry."
+  (let ((template (prin1-to-string majutsu-evolog--entry-template)))
+    (should (string-match-p (regexp-quote "\\x1dS") template))
+    (should (string-match-p (regexp-quote "\\x1dT") template))
+    (should (string-match-p (regexp-quote "\\x1dB") template))
+    (should (string-match-p (regexp-quote "\\x1dM") template))
+    (should (string-match-p (regexp-quote "\\x1dE") template))
+    (should (string-match-p "self.commit().change_id().shortest(8)"
+                            majutsu-evolog--entry-template))
+    (should (string-match-p "self.commit().author().email()"
+                            majutsu-evolog--entry-template))
+    (should (string-match-p "self.commit().committer().timestamp().local().format"
+                            majutsu-evolog--entry-template))
+    (should (string-match-p "self.operation().id().short()"
+                            majutsu-evolog--entry-template))
+    (should-not (string-match-p "builtin_evolog_compact"
+                                majutsu-evolog--entry-template))
+    (should-not (string-match-p "GR:evolog"
+                                majutsu-evolog--entry-template))))
 
 (ert-deftest majutsu-evolog-command-args/use-read-only-top-level-args-and-template ()
   "Evolog list commands should avoid snapshots and use Majutsu's template."
@@ -53,25 +60,42 @@
     (should (equal (last args 4)
                    (list "-r" "@" "-T" majutsu-evolog--entry-template)))))
 
-(ert-deftest majutsu-evolog-wash-output/restores-visible-compact-output ()
-  "Evolog washer should strip record tokens and keep visible graph output."
+(ert-deftest majutsu-evolog-wash-output/inserts-graph-entry-sections ()
+  "Evolog washer should render compact graph output as Magit sections."
   (with-temp-buffer
-    (insert (majutsu-evolog-test--record) "\n")
+    (magit-section-mode)
+    (setq buffer-read-only nil)
+    (insert (majutsu-evolog-test--raw-entry))
+    (goto-char (point-min))
     (majutsu-evolog--wash-output nil)
+    (goto-char (point-min))
     (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-      (should (string-match-p "○  qsustnur wd@example.com" content))
-      (should (string-match-p "│  feat(op): phase1" content))
-      (should (string-match-p "│  -- operation 86978b4db954" content))
-      (should-not (string-match-p "GR:evolog" content))
-      (should-not (string-match-p (regexp-quote majutsu-graph-record-field-separator)
-                                  content)))))
+      (should (string-match-p "qsustnur wd@example.com" content))
+      (should (string-match-p "feat(op): phase1" content))
+      (should (string-match-p "-- operation 86978b4db954" content))
+      (should-not (string-match-p "change-full" content))
+      (should-not (string-match-p "commit-full" content)))
+    (should (equal (substring-no-properties
+                    (get-text-property (point) 'line-prefix))
+                   "○  "))
+    (should (equal (magit-section-value-if 'jj-evolog-entry)
+                   "commit-full"))
+    (search-forward "feat(op): phase1")
+    (beginning-of-line)
+    (should (equal (substring-no-properties
+                    (get-text-property (point) 'line-prefix))
+                   "│  "))
+    (should (= (length majutsu-evolog--cached-entries) 1))
+    (let ((entry (car majutsu-evolog--cached-entries)))
+      (should (equal (plist-get entry :change-id) "change-full"))
+      (should (equal (plist-get entry :commit-id) "commit-full"))
+      (should (equal (plist-get entry :operation-id) "op-full")))))
 
-(ert-deftest majutsu-evolog-refresh-buffer/inserts-restored-compact-output ()
-  "Evolog refresh should render restored compact graph output, not details." 
+(ert-deftest majutsu-evolog-refresh-buffer/inserts-compact-entry-sections ()
+  "Evolog refresh should render compact graph-entry sections, not details."
   (cl-letf (((symbol-function 'majutsu-jj-wash)
              (lambda (washer _keep-error &rest _args)
-               (insert (majutsu-evolog-test--record))
-               (insert "\n")
+               (insert (majutsu-evolog-test--raw-entry))
                (funcall washer nil)
                0)))
     (with-temp-buffer
@@ -79,11 +103,15 @@
       (setq majutsu-evolog--revset "@")
       (let ((inhibit-read-only t))
         (majutsu-evolog-refresh-buffer))
+      (goto-char (point-min))
       (let ((content (buffer-substring-no-properties (point-min) (point-max))))
         (should (string-match-p "qsustnur wd@example.com" content))
         (should (string-match-p "-- operation 86978b4db954" content))
         (should-not (string-match-p "Change: change-full" content))
-        (should-not (string-match-p "Operation id: op-full" content))))))
+        (should-not (string-match-p "Operation id: op-full" content)))
+      (search-forward "qsustnur")
+      (should (equal (magit-section-value-if 'jj-evolog-entry)
+                     "commit-full")))))
 
 (ert-deftest majutsu-evolog-mode-map/does-not-bind-entry-actions ()
   "Evolog mode should not install premature point-specific entry actions."

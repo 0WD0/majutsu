@@ -61,7 +61,7 @@
   (with-temp-buffer
     (insert raw)
     (goto-char (point-min))
-    (majutsu-log--parse-entries-in-buffer compiled)))
+    (majutsu-graph-entry-parse-buffer compiled)))
 
 (defun majutsu-log-test--transport-value (value)
   "Return transport encoding for test VALUE."
@@ -77,7 +77,7 @@
    (mapcar (lambda (column)
              (majutsu-log-test--transport-value
               (alist-get (plist-get column :field) values nil nil #'eq)))
-           (majutsu-log--module-columns compiled module))
+           (majutsu-graph-entry-module-columns compiled module))
    majutsu-log--field-separator))
 
 (defun majutsu-log-test--metadata-payload (compiled values)
@@ -127,18 +127,20 @@
 
 (ert-deftest majutsu-log-default-column-schema-contains-module-and-face ()
   "Normalized column specs should include module/face/post metadata."
-  (let ((spec (majutsu-log--normalize-column-spec 'description)))
+  (let ((spec (majutsu-graph-entry-normalize-column-spec
+               (majutsu-log--graph-entry-profile) 'description)))
     (should (eq (plist-get spec :field) 'description))
     (should (eq (plist-get spec :module) 'heading))
     (should (eq (plist-get spec :face) t))
-    (should (equal (plist-get spec :post)
-                   (majutsu-log--default-postprocessors-for-field 'description)))))
+    (should (equal (plist-get spec :post) nil))))
 
 (ert-deftest majutsu-log-explicit-default-postprocessors-keep-field-defaults ()
   "Explicit `:post :default' should retain field-specific defaults."
-  (let ((spec (majutsu-log--normalize-column-spec '(:field parent-ids :post :default))))
+  (let ((spec (majutsu-graph-entry-normalize-column-spec
+               (majutsu-log--graph-entry-profile)
+               '(:field parent-ids :post :default))))
     (should (equal (plist-get spec :post)
-                   (majutsu-log--default-postprocessors-for-field 'parent-ids)))))
+                   '(majutsu-log-post-split-list-separator)))))
 
 (ert-deftest majutsu-log-compile-columns-emits-sequential-markers ()
   "Compiled log template should include S/T/B/M/E markers in order."
@@ -164,7 +166,7 @@
   (let* ((compiled (majutsu-log--compile-columns
                     '((:field description :module heading :face t))))
          (fields (mapcar (lambda (column) (plist-get column :field))
-                         (majutsu-log--module-columns compiled 'metadata))))
+                         (majutsu-graph-entry-module-columns compiled 'metadata))))
     (should (equal fields '(id commit-id parent-ids)))))
 
 (ert-deftest majutsu-log-post-decode-line-separator-restores-faces ()
@@ -246,7 +248,7 @@
     (should (equal (plist-get entry :author) "Alice"))
     (should (equal (plist-get entry :timestamp) "2m"))
     (should (equal (plist-get entry :long-desc) "body line 1\nbody line 2"))
-    (should (equal (majutsu-log--render-tail entry compiled) "Alice 2m"))))
+    (should (equal (majutsu-graph-entry-render-tail entry compiled) "Alice 2m"))))
 
 (ert-deftest majutsu-log-parse-entry-preserves-between-entry-lines ()
   "Lines between E of one entry and S of next entry stay with previous entry."
@@ -303,7 +305,7 @@
     (with-temp-buffer
       (insert raw)
       (goto-char (point-min))
-      (let ((entry (majutsu-log--parse-entry-at-point compiled)))
+      (let ((entry (majutsu-graph-entry-parse-at-point compiled)))
         (should entry)
         (should (= (plist-get entry :beg) (point-min)))
         (should (equal (buffer-substring-no-properties
@@ -353,7 +355,7 @@
     (should (equal (plist-get entry :short-desc) "desc"))
     (should (equal (plist-get entry :id) "row-id"))
     (should (equal (mapconcat #'substring-no-properties
-                              (majutsu-log--render-heading-lines entry compiled)
+                              (majutsu-graph-entry-render-heading-lines entry compiled)
                               "\n")
                    "○ [desc]"))))
 
@@ -376,10 +378,10 @@
          (entry (car (majutsu-log-test--parse-entries compiled raw))))
     (should (equal (plist-get entry :short-desc) "desc"))
     (should (equal (mapconcat #'substring-no-properties
-                              (majutsu-log--render-heading-lines entry compiled)
+                              (majutsu-graph-entry-render-heading-lines entry compiled)
                               "\n")
                    "○ [desc]"))
-    (should (equal (majutsu-log--render-body entry compiled) "DESC"))))
+    (should (equal (majutsu-graph-entry-render-body entry compiled) "DESC"))))
 
 (ert-deftest majutsu-log-render-heading-lines-with-auxiliary-heading-fields ()
   "Heading rendering should include additional heading fields in order."
@@ -390,7 +392,7 @@
                                  (timestamp . "2m"))
                       :heading-prefixes '("" "")))
          (heading (mapconcat #'substring-no-properties
-                             (majutsu-log--render-heading-lines entry compiled)
+                             (majutsu-graph-entry-render-heading-lines entry compiled)
                              "\n")))
     (should (equal heading "chg Title Very\nLong 2m"))))
 
@@ -407,7 +409,7 @@
       (require 'magit-section)
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (should (equal (buffer-substring-no-properties
                       (line-beginning-position)
@@ -426,7 +428,7 @@
         (should (eq (get-text-property spacer-pos 'majutsu-log-decoration)
                     'tail-spacer))
         (should (equal (get-text-property spacer-pos 'display)
-                       (majutsu-log--tail-spacer-display "Very Long 2m"))))
+                       (majutsu-graph-entry-tail-spacer-display "Very Long 2m"))))
       (forward-line 1)
       (should (equal (buffer-substring-no-properties
                       (line-beginning-position)
@@ -442,7 +444,7 @@
             ((symbol-function 'string-pixel-width) (lambda (_string &optional _buffer) 37))
             ((symbol-function 'window-body-width) (lambda (&optional _window pixelwise) (if pixelwise 200 80))))
     (with-temp-buffer
-      (should (equal (majutsu-log--tail-spacer-display "tail" 'fake-window)
+      (should (equal (majutsu-graph-entry-tail-spacer-display "tail" 'fake-window)
                      '(space :align-to (163)))))))
 
 (ert-deftest majutsu-log-tail-spacer-display-uses-columns-on-terminal ()
@@ -450,7 +452,7 @@
   (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _display) nil))
             ((symbol-function 'window-body-width) (lambda (&optional _window &rest _args) 80)))
     (with-temp-buffer
-      (should (equal (majutsu-log--tail-spacer-display "tail" 'fake-window)
+      (should (equal (majutsu-graph-entry-tail-spacer-display "tail" 'fake-window)
                      '(space :align-to 75))))))
 
 (ert-deftest majutsu-log-refresh-tail-spacers-recomputes-display ()
@@ -470,7 +472,7 @@
                  (lambda (&optional _display) t))
                 ((symbol-function 'string-pixel-width)
                  (lambda (_string &optional _buffer) 25)))
-        (majutsu-log--insert-entry entry compiled))
+        (majutsu-graph-entry-insert-entry entry compiled))
       (goto-char (point-min))
       (search-forward "Alice 2m")
       (let ((spacer-pos (- (point) (length "Alice 2m") 1)))
@@ -488,7 +490,7 @@
                    (lambda (_window _from _to
                             &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
                      '(61 . 1))))
-          (majutsu-log--refresh-tail-spacers))
+          (majutsu-graph-entry-refresh-tail-spacers))
         (should (equal (get-text-property spacer-pos 'display)
                        '(space :align-to (139))))))))
 
@@ -507,7 +509,7 @@
       (setq buffer-read-only nil)
       (cl-letf (((symbol-function 'display-graphic-p)
                  (lambda (&optional _display) nil)))
-        (majutsu-log--insert-entry entry compiled))
+        (majutsu-graph-entry-insert-entry entry compiled))
       (goto-char (point-min))
       (search-forward "Alice 2m")
       (let ((spacer-pos (- (point) (length "Alice 2m") 1)))
@@ -518,7 +520,7 @@
                    (lambda (&rest _args) 'fake-window))
                   ((symbol-function 'window-body-width)
                    (lambda (&optional _window &rest _args) 80)))
-          (majutsu-log--refresh-tail-spacers))
+          (majutsu-graph-entry-refresh-tail-spacers))
         (should (equal (get-text-property spacer-pos 'display)
                        '(space :align-to 71)))))))
 
@@ -540,10 +542,10 @@
                  (lambda (&optional _display) t))
                 ((symbol-function 'string-pixel-width)
                  (lambda (_string &optional _buffer) 25)))
-        (majutsu-log--insert-entry entry compiled))
+        (majutsu-graph-entry-insert-entry entry compiled))
       (cl-letf (((symbol-function 'display-graphic-p)
                  (lambda (&optional _display) t))
-                ((symbol-function 'majutsu-log--tail-owner-window)
+                ((symbol-function 'majutsu-graph-entry--tail-owner-window)
                  (lambda ()
                    (error "should not resolve tail owner when WINDOW is explicit")))
                 ((symbol-function 'window-body-width)
@@ -555,7 +557,7 @@
                           &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
                    (setq seen window)
                    '(61 . 1))))
-        (majutsu-log--refresh-tail-spacers nil nil 'explicit-window))
+        (majutsu-graph-entry-refresh-tail-spacers nil nil 'explicit-window))
       (should (eq seen 'explicit-window)))))
 
 (ert-deftest majutsu-log-mode-installs-tail-refresh-hooks ()
@@ -577,7 +579,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (let ((copied (filter-buffer-substring (line-beginning-position)
                                              (line-end-position))))
@@ -599,7 +601,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Alice 2m")
       (let* ((end (point))
@@ -630,7 +632,7 @@
       (majutsu-log-mode)
       (setq buffer-read-only nil)
       (setq-local majutsu-log--cached-entries (list entry))
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
       (cl-letf (((symbol-function 'kill-new)
@@ -656,7 +658,7 @@
       (majutsu-log-mode)
       (setq buffer-read-only nil)
       (setq-local majutsu-log--cached-entries (list entry))
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Alice")
       (backward-char 5)
@@ -683,7 +685,7 @@
       (majutsu-log-mode)
       (setq buffer-read-only nil)
       (setq-local majutsu-log--cached-entries (list entry))
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
       (cl-letf (((symbol-function 'kill-new)
@@ -711,7 +713,7 @@
       (majutsu-log-mode)
       (setq buffer-read-only nil)
       (setq-local majutsu-log--cached-entries (list entry))
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
       (cl-letf (((symbol-function 'kill-new)
@@ -745,7 +747,7 @@
       (majutsu-log-mode)
       (setq buffer-read-only nil)
       (setq-local majutsu-log--cached-entries (list entry))
-      (majutsu-log--insert-entry entry compiled)
+      (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
       (cl-letf (((symbol-function 'kill-new)
@@ -998,15 +1000,5 @@
                              candidates))))
         (majutsu-log-goto-child))
       (should (equal (magit-section-value-if 'jj-commit) "child-b")))))
-
-(ert-deftest majutsu-log-apply-face-policy-modes ()
-  "Face policy should support preserve, strip, and override."
-  (let* ((raw (propertize "x" 'font-lock-face 'error))
-         (preserve (majutsu-log--apply-face-policy raw t))
-         (strip (majutsu-log--apply-face-policy raw nil))
-         (override (majutsu-log--apply-face-policy raw 'warning)))
-    (should (eq (get-text-property 0 'font-lock-face preserve) 'error))
-    (should-not (get-text-property 0 'font-lock-face strip))
-    (should (eq (get-text-property 0 'font-lock-face override) 'warning))))
 
 ;;; majutsu-log-test.el ends here
