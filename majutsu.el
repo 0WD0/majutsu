@@ -109,6 +109,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-metaedit)
   (require 'majutsu-new)
   (require 'majutsu-op)
+  (require 'majutsu-evolog)
   (require 'majutsu-workspace)
   (require 'majutsu-conflict))
 
