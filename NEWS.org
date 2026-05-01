@@ -6,8 +6,8 @@
 ** Added
 
 - Operations: Add ~majutsu-op-transient~ on ~X~, a color-preserving structured
-  ~jj op log~ view, and an initial ~majutsu-op-show~ buffer for operation
-  metadata, tags, and repository changes.
+  ~jj op log~ view, and sectionized ~majutsu-op-show~ buffers for operation
+  metadata, tags, changed commits/refs, and per-line commit diff actions.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
 - Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
