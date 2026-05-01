@@ -425,8 +425,10 @@ Resolve entry points are available both from the Ediff transient and as direct c
 - Key: $ (Emacs) / ` (Evil) (majutsu-process-buffer) ::
   Show the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output such as remote fetches.
 
-** Operation Log (Experimental)
-- Command: majutsu-op-log :: View Jujutsu's operation history. You can see when commands were run and by whom.
+** Operations (Experimental)
+- Key: X (majutsu-op-transient) :: Open the operation dispatcher.
+- Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors. Press =RET= or =d= on an operation to show details.
+- Command: majutsu-op-show :: Show metadata, description/tags, and repository changes for one operation.
 
 * Manipulating
 ** Creating Changes
