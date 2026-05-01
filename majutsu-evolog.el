@@ -217,11 +217,12 @@ When OUTPUT is nil, run jj in BUF or the current buffer and cache the result."
           (end (plist-get record :end)))
       (delete-region beg end)
       (goto-char beg)
-      (magit-insert-section (jj-evolog-entry entry)
+      (magit-insert-section (jj-evolog-entry entry t)
         (magit-insert-heading (majutsu-evolog--format-entry-heading entry))
         (dolist (line (plist-get entry :suffix-lines))
-          (insert line "\n"))
-        (majutsu-evolog--insert-entry-body entry))
+          (magit-insert-heading line))
+        (magit-insert-section-body
+          (majutsu-evolog--insert-entry-body entry)))
       entry)))
 
 (defun majutsu-evolog--wash-output (_args)
