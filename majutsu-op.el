@@ -17,11 +17,13 @@
 
 (require 'cl-lib)
 (require 'majutsu)
+(require 'majutsu-selection)
 (require 'seq)
 (require 'subr-x)
 (require 'transient)
 
 (declare-function majutsu-diff-revset "majutsu-diff" (revset &optional args range filesets))
+(declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
 (declare-function majutsu-evolog "majutsu-evolog" (revset))
 (declare-function majutsu-jj-apply-ansi "majutsu-jj" (string))
 (declare-function majutsu-jj-colored-string "majutsu-jj" (&rest args))
@@ -372,15 +374,50 @@
   "Return a jj --config argument for operation commit summaries."
   (concat "templates.commit_summary=" majutsu-op--commit-summary-template))
 
+(defclass majutsu-op-option (majutsu-selection-option) ())
+
+(defclass majutsu-op-toggle-option (majutsu-selection-toggle-option) ())
+
+(defclass majutsu-op-target-prefix (transient-prefix) ())
+
+(defun majutsu-op--section-in-lineage (types &optional section)
+  "Return the first ancestor SECTION whose type is in TYPES."
+  (let ((section (or section (magit-current-section)))
+        (types (ensure-list types)))
+    (while (and section
+                (not (memq (oref section type) types)))
+      (setq section (oref section parent)))
+    section))
+
+(defun majutsu-op--section-value-in-lineage (types &optional section)
+  "Return the first ancestor value for section TYPES."
+  (when-let* ((section (majutsu-op--section-in-lineage types section)))
+    (oref section value)))
+
 (defun majutsu-op--operation-at-point ()
-  "Return the operation id at point, or nil."
-  (or (magit-section-value-if 'jj-op)
-      (magit-section-value-if 'jj-op-show)))
+  "Return the enclosing operation id at point, or nil."
+  (majutsu-op--section-value-in-lineage '(jj-op jj-op-show)))
 
 (defun majutsu-op--diff-line-at-point ()
   "Return the parsed operation diff line value at point, or nil."
-  (or (magit-section-value-if 'jj-op-commit-line)
-      (magit-section-value-if 'jj-op-ref-line)))
+  (majutsu-op--section-value-in-lineage '(jj-op-commit-line jj-op-ref-line)))
+
+(defun majutsu-op--selection-locate (operation)
+  "Locate OPERATION in the current operation buffer."
+  (or (majutsu-selection-find-section operation 'jj-op)
+      (majutsu-selection-find-section operation 'jj-op-show)))
+
+(defun majutsu-op--selection-targets ()
+  "Return operation ids selected from point or region."
+  (or (magit-region-values 'jj-op t)
+      (magit-region-values 'jj-op-show t)
+      (when-let* ((operation (majutsu-op--operation-at-point)))
+        (list operation))))
+
+(cl-defmethod transient-init-value ((obj majutsu-op-target-prefix))
+  (oset obj value
+        (when-let* ((operation (majutsu-op--operation-at-point)))
+          (list (concat "--operation=" operation)))))
 
 (defun majutsu-op--diff-line-commit-revset (line)
   "Return a commit-id revset for parsed operation diff LINE."
@@ -418,6 +455,60 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   (read-string prompt initial-input history
                (or (majutsu-op--operation-at-point) "@")))
 
+(transient-define-argument majutsu-op-arg:--operation ()
+  :description "Operation"
+  :class 'majutsu-op-option
+  :selection-label "[OP]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :locate-fn #'majutsu-op--selection-locate
+  :targets-fn #'majutsu-op--selection-targets
+  :key "-o"
+  :argument "--operation="
+  :prompt "Operation: "
+  :reader #'majutsu-op--transient-read-operation)
+
+(transient-define-argument majutsu-op-arg:operation ()
+  :description "Operation (toggle at point)"
+  :class 'majutsu-op-toggle-option
+  :key "o"
+  :argument "--operation=")
+
+(transient-define-argument majutsu-op-arg:--from ()
+  :description "From operation"
+  :class 'majutsu-op-option
+  :selection-label "[FROM]"
+  :selection-face '(:background "dark orange" :foreground "black")
+  :locate-fn #'majutsu-op--selection-locate
+  :targets-fn #'majutsu-op--selection-targets
+  :shortarg "-f"
+  :argument "--from="
+  :prompt "From operation: "
+  :reader #'majutsu-op--transient-read-operation)
+
+(transient-define-argument majutsu-op-arg:from ()
+  :description "From operation (toggle at point)"
+  :class 'majutsu-op-toggle-option
+  :key "f"
+  :argument "--from=")
+
+(transient-define-argument majutsu-op-arg:--to ()
+  :description "To operation"
+  :class 'majutsu-op-option
+  :selection-label "[TO]"
+  :selection-face '(:background "dark cyan" :foreground "white")
+  :locate-fn #'majutsu-op--selection-locate
+  :targets-fn #'majutsu-op--selection-targets
+  :shortarg "-t"
+  :argument "--to="
+  :prompt "To operation: "
+  :reader #'majutsu-op--transient-read-operation)
+
+(transient-define-argument majutsu-op-arg:to ()
+  :description "To operation (toggle at point)"
+  :class 'majutsu-op-toggle-option
+  :key "t"
+  :argument "--to=")
+
 ;;; op transient
 
 ;;;###autoload(autoload 'majutsu-op-transient "majutsu-op" nil t)
@@ -432,8 +523,8 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
    ["State"
     ("u" "Undo" majutsu-undo)
     ("r" "Redo" majutsu-redo)
-    ("R" "Restore" majutsu-op-restore)
-    ("V" "Revert" majutsu-op-revert)]])
+    ("R" "Restore..." majutsu-op-restore-transient)
+    ("V" "Revert..." majutsu-op-revert-transient)]])
 
 ;;; op log
 
@@ -514,7 +605,8 @@ stored without ANSI escapes."
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
   (magit-insert-section (oplog)
-    (majutsu-op-log-insert-entries)))
+    (majutsu-op-log-insert-entries))
+  (majutsu-selection-render))
 
 (defun majutsu-op-log-refresh-buffer ()
   "Refresh the op log buffer."
@@ -540,7 +632,8 @@ stored without ANSI escapes."
   "Major mode for viewing jj operation log."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments
      '("--limit=64"))
@@ -598,7 +691,8 @@ stored without ANSI escapes."
   :man-page "jj-operation-log"
   :transient-non-suffix t
   :class 'majutsu-op-log-prefix
-  [:description "JJ Operation Log"
+  [:description
+   "JJ Operation Log"
    ["Options"
     (majutsu-op-log:--limit)
     (majutsu-op-log:--reversed)]
@@ -625,23 +719,101 @@ stored without ANSI escapes."
 
 ;;; op restore/revert
 
+(defun majutsu-op--extract-target-operation (args)
+  "Return (OPERATION . ARGS) after stripping pseudo --operation= from ARGS."
+  (let (operation rest)
+    (dolist (arg args)
+      (if (string-prefix-p "--operation=" arg)
+          (setq operation (substring arg (length "--operation=")))
+        (push arg rest)))
+    (cons operation (nreverse rest))))
+
+(defun majutsu-op--run-confirmed (action prompt command)
+  "Run COMMAND after confirming ACTION with PROMPT."
+  (if (not (majutsu-confirm action prompt))
+      (message "%s canceled" (capitalize (symbol-name action)))
+    (when (zerop (apply #'majutsu-run-jj command))
+      (majutsu-refresh))))
+
 (defun majutsu-op-restore (operation)
   "Restore repository state to OPERATION by running jj op restore."
   (interactive (list (majutsu-op--read-operation "Restore to operation")))
-  (if (not (majutsu-confirm 'op-restore
-                            (format "Restore repository state to operation %s? " operation)))
-      (message "Operation restore canceled")
-    (when (zerop (majutsu-run-jj "op" "restore" operation))
-      (majutsu-refresh))))
+  (majutsu-op--run-confirmed
+   'op-restore
+   (format "Restore repository state to operation %s? " operation)
+   (list "op" "restore" operation)))
 
 (defun majutsu-op-revert (operation)
   "Revert OPERATION by running jj op revert."
   (interactive (list (majutsu-op--read-operation "Revert operation")))
-  (if (not (majutsu-confirm 'op-revert
-                            (format "Revert operation %s? " operation)))
-      (message "Operation revert canceled")
-    (when (zerop (majutsu-run-jj "op" "revert" operation))
-      (majutsu-refresh))))
+  (majutsu-op--run-confirmed
+   'op-revert
+   (format "Revert operation %s? " operation)
+   (list "op" "revert" operation)))
+
+(defun majutsu-op-restore-execute (args)
+  "Execute jj op restore with transient ARGS."
+  (interactive (list (transient-args 'majutsu-op-restore-transient)))
+  (pcase-let* ((`(,operation . ,rest) (majutsu-op--extract-target-operation args)))
+    (unless operation
+      (user-error "Please select an operation first"))
+    (majutsu-op--run-confirmed
+     'op-restore
+     (format "Restore repository state to operation %s? " operation)
+     (append '("op" "restore") rest (list operation)))))
+
+(defun majutsu-op-revert-execute (args)
+  "Execute jj op revert with transient ARGS."
+  (interactive (list (transient-args 'majutsu-op-revert-transient)))
+  (pcase-let* ((`(,operation . ,rest) (majutsu-op--extract-target-operation args)))
+    (unless operation
+      (user-error "Please select an operation first"))
+    (majutsu-op--run-confirmed
+     'op-revert
+     (format "Revert operation %s? " operation)
+     (append '("op" "revert") rest (list operation)))))
+
+;;;###autoload(autoload 'majutsu-op-restore-transient "majutsu-op" nil t)
+(transient-define-prefix majutsu-op-restore-transient ()
+  "Transient for jj operation restore."
+  :man-page "jj-operation-restore"
+  :class 'majutsu-op-target-prefix
+  :transient-non-suffix t
+  :description "JJ Operation Restore"
+  [["Selection"
+    (majutsu-op-arg:--operation)
+    (majutsu-op-arg:operation)
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
+   ["What"
+    ("-r" "Repo state" "--what=repo")
+    ("-t" "Remote-tracking" "--what=remote-tracking")]
+   ["Actions"
+    ("R" "Restore" majutsu-op-restore-execute)
+    ("RET" "Restore" majutsu-op-restore-execute)]]
+  (interactive)
+  (transient-setup 'majutsu-op-restore-transient nil nil
+                   :scope (majutsu-selection-session-begin)))
+
+;;;###autoload(autoload 'majutsu-op-revert-transient "majutsu-op" nil t)
+(transient-define-prefix majutsu-op-revert-transient ()
+  "Transient for jj operation revert."
+  :man-page "jj-operation-revert"
+  :class 'majutsu-op-target-prefix
+  :transient-non-suffix t
+  :description "JJ Operation Revert"
+  [["Selection"
+    (majutsu-op-arg:--operation)
+    (majutsu-op-arg:operation)
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
+   ["What"
+    ("-r" "Repo state" "--what=repo")
+    ("-t" "Remote-tracking" "--what=remote-tracking")]
+   ["Actions"
+    ("V" "Revert" majutsu-op-revert-execute)
+    ("RET" "Revert" majutsu-op-revert-execute)]]
+  (interactive)
+  (transient-setup 'majutsu-op-revert-transient nil nil
+                   :scope (majutsu-selection-session-begin)))
 
 ;;; op show
 
@@ -742,13 +914,20 @@ stored without ANSI escapes."
        (dolist (child (plist-get node :children))
          (majutsu-op--insert-diff-node child))))
     ('commit-line
-     (magit-insert-section (jj-op-commit-line (plist-get node :value))
-       (magit-insert-heading (majutsu-op--format-diff-line
-                              (plist-get node :value)))))
+     (let ((value (plist-get node :value)))
+       (magit-insert-section (jj-op-commit-line value)
+         (if-let* ((commit-id (plist-get value :commit-id)))
+             (magit-insert-section (jj-commit commit-id)
+               (magit-insert-heading (majutsu-op--format-diff-line value)))
+           (magit-insert-heading (majutsu-op--format-diff-line value))))))
     ('ref-line
-     (magit-insert-section (jj-op-ref-line (plist-get node :value))
-       (magit-insert-heading (majutsu-op--format-diff-line
-                              (plist-get node :value)))))
+     (let ((value (plist-get node :value)))
+       (magit-insert-section (jj-op-ref-line value)
+         (if-let* ((commit-id (and (not (plist-get value :absent))
+                                   (plist-get value :commit-id))))
+             (magit-insert-section (jj-commit commit-id)
+               (magit-insert-heading (majutsu-op--format-diff-line value)))
+           (magit-insert-heading (majutsu-op--format-diff-line value))))))
     ('warning
      (magit-insert-section (jj-op-warning nil)
        (magit-insert-heading (propertize (majutsu-op--node-display-text node)
@@ -802,20 +981,25 @@ stored without ANSI escapes."
       (magit-insert-section (jj-op-diff op-id)
         (magit-insert-heading "Repository Changes")
         (majutsu-op--insert-operation-diff-output
-         (majutsu-op--operation-diff-output op-id))))))
+         (majutsu-op--operation-diff-output op-id))))
+    (majutsu-selection-render)))
 
 (defun majutsu-op-show-diff-at-point ()
-  "Open the ordinary commit diff for the operation diff line at point."
+  "Open the ordinary commit diff for the changed commit at point."
   (interactive)
-  (if-let* ((line (majutsu-op--diff-line-at-point))
-            (revset (majutsu-op--diff-line-commit-revset line)))
-      (majutsu-diff-revset revset)
-    (user-error "No changed commit at point")))
+  (if-let* ((commit-id (magit-section-value-if 'jj-commit)))
+      (majutsu-diff-revset (format "commit_id(%s)" commit-id))
+    (if-let* ((line (majutsu-op--diff-line-at-point))
+              (revset (majutsu-op--diff-line-commit-revset line)))
+        (majutsu-diff-revset revset)
+      (user-error "No changed commit at point"))))
 
 (defun majutsu-op-show-default-action ()
   "Run the default action for the operation show section at point."
   (interactive)
-  (majutsu-op-show-diff-at-point))
+  (if (magit-section-value-if 'jj-commit)
+      (majutsu-edit-changeset)
+    (majutsu-op-show-diff-at-point)))
 
 (defun majutsu-op-show-evolog-at-point ()
   "Open evolog for the operation diff line at point."
@@ -838,7 +1022,8 @@ stored without ANSI escapes."
   "Major mode for viewing one jj operation."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (defun majutsu-op-show--buffer-name (operation)
   "Return buffer name for OPERATION."
@@ -896,7 +1081,8 @@ stored without ANSI escapes."
     (magit-insert-section (jj-op-diff-buffer args)
       (magit-insert-heading (majutsu-op--diff-buffer-heading args))
       (majutsu-op--insert-operation-diff-output
-       (majutsu-op--diff-output args)))))
+       (majutsu-op--diff-output args))))
+  (majutsu-selection-render))
 
 (defvar-keymap majutsu-op-diff-mode-map
   :doc "Keymap for `majutsu-op-diff-mode'."
@@ -906,7 +1092,8 @@ stored without ANSI escapes."
   "Major mode for comparing jj operations."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (defun majutsu-op-diff--buffer-name ()
   "Return buffer name for operation diff."
@@ -924,46 +1111,31 @@ stored without ANSI escapes."
       :directory root
       (majutsu-op-diff--args args))))
 
-(transient-define-argument majutsu-op-diff:--operation ()
-  :description "Operation"
-  :class 'transient-option
-  :key "-o"
-  :argument "--operation="
-  :prompt "Operation: "
-  :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-diff:--from ()
-  :description "From operation"
-  :class 'transient-option
-  :key "-f"
-  :argument "--from="
-  :prompt "From operation: "
-  :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-diff:--to ()
-  :description "To operation"
-  :class 'transient-option
-  :key "-t"
-  :argument "--to="
-  :prompt "To operation: "
-  :reader #'majutsu-op--transient-read-operation)
-
 ;;;###autoload(autoload 'majutsu-op-diff-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-diff-transient ()
   "Transient for jj operation diff."
   :man-page "jj-operation-diff"
+  :class 'majutsu-op-target-prefix
   :transient-non-suffix t
   :incompatible '(("--operation=" "--from=")
                   ("--operation=" "--to="))
-  [:description "JJ Operation Diff"
+  [:description
+   "JJ Operation Diff"
    ["Selection"
-    (majutsu-op-diff:--operation)
-    (majutsu-op-diff:--from)
-    (majutsu-op-diff:--to)]
+    (majutsu-op-arg:--operation)
+    (majutsu-op-arg:operation)
+    (majutsu-op-arg:--from)
+    (majutsu-op-arg:from)
+    (majutsu-op-arg:--to)
+    (majutsu-op-arg:to)
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
     ("d" "Open diff" majutsu-op-diff)
     ("RET" "Open diff" majutsu-op-diff)
-    ]])
+    ]]
+  (interactive)
+  (transient-setup 'majutsu-op-diff-transient nil nil
+                   :scope (majutsu-selection-session-begin)))
 
 ;;; _
 (provide 'majutsu-op)
