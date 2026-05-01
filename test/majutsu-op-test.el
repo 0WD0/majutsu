@@ -52,7 +52,9 @@
   (should (string-match-p "self.time().end().format" majutsu-op--log-template))
   (should (string-match-p "self.time().duration()" majutsu-op--log-template))
   (should (string-match-p "self.description().first_line()"
-                          majutsu-op--log-template)))
+                          majutsu-op--log-template))
+  (should (string-match-p "self.tags().first_line()" majutsu-op--log-template))
+  (should-not (string-match-p "separate(" majutsu-op--log-template)))
 
 (ert-deftest majutsu-op-commit-summary-template/carries-full-ids ()
   "Operation diff commit summary should carry full ids for actions."
@@ -72,8 +74,6 @@
                       majutsu-op--field-separator
                       "\e[32mshort-id\e[0m"
                       majutsu-op--field-separator
-                      "user"
-                      majutsu-op--field-separator
                       "@"
                       majutsu-op--field-separator
                       "user"
@@ -88,7 +88,9 @@
                       majutsu-op--field-separator
                       "op"
                       majutsu-op--field-separator
-                      "description\n"))
+                      "description"
+                      majutsu-op--field-separator
+                      "args: jj op\n"))
          (entry (car (majutsu-parse-op-log-entries nil raw)))
          (short (plist-get entry :op-id-short)))
     (should (equal (plist-get entry :op-id) "full-operation-id"))
@@ -98,11 +100,42 @@
     (should (equal (plist-get entry :time) "2026-05-02 04:50:00"))
     (should (equal (plist-get entry :duration) "3 milliseconds"))
     (should (equal (plist-get entry :kind) "op"))
-    (should (equal (plist-get entry :desc) "description"))))
+    (should (equal (plist-get entry :desc) "description"))
+    (should (equal (plist-get entry :tags) "args: jj op"))))
 
 (ert-deftest majutsu-op-parse-log-entries/rejects-malformed-records ()
   "Malformed records should be ignored instead of creating bad sections."
   (should-not (majutsu-parse-op-log-entries nil "only-one-field\n")))
+
+(ert-deftest majutsu-op-log-insert-entries/renders-multiline-expanded-entries ()
+  "Operation log entries should render useful multiline details by default."
+  (let ((entry (list :op-id "full-id"
+                     :op-id-short "short-id"
+                     :current "@"
+                     :kind "snapshot"
+                     :user "user"
+                     :workspace "workspace"
+                     :time "2026-05-02 04:50:00"
+                     :time-ago "2 minutes ago"
+                     :duration "3 milliseconds"
+                     :desc "description"
+                     :tags "args: jj op")))
+    (cl-letf (((symbol-function 'majutsu-parse-op-log-entries)
+               (lambda (&rest _) (list entry))))
+      (with-temp-buffer
+        (majutsu-op-log-mode)
+        (let ((inhibit-read-only t))
+          (majutsu-op-log-insert-entries))
+        (let ((content (buffer-substring-no-properties (point-min) (point-max))))
+          (should (string-match-p "@ short-id" content))
+          (should (string-match-p "description" content))
+          (should (string-match-p "Id: full-id" content))
+          (should (string-match-p "Time: 2026-05-02 04:50:00" content))
+          (should (string-match-p "args: jj op" content))
+          (should-not (string-match-p "\n\n\n" content)))
+        (goto-char (point-min))
+        (search-forward "short-id")
+        (should-not (oref (magit-current-section) hidden))))))
 
 (ert-deftest majutsu-op-parse-show-line/parses-metadata-record ()
   "Operation show metadata parser should keep full operation ids."
@@ -215,7 +248,12 @@
         (should (string-match-p "Changed commits" content))
         (should (string-match-p "change-short commit-short" content))
         (should-not (string-match-p (regexp-quote majutsu-op--field-separator)
-                                    content))))))
+                                    content)))
+      (goto-char (point-min))
+      (search-forward "Metadata")
+      (should-not (oref (magit-current-section) hidden))
+      (search-forward "Changed commits")
+      (should-not (oref (magit-current-section) hidden)))))
 
 (ert-deftest majutsu-op-show-refresh-buffer/inserts-line-level-sections ()
   "Operation show refresh should attach section values to parsed diff lines."
@@ -249,6 +287,11 @@
       (setq majutsu-op-show--operation "@")
       (let ((inhibit-read-only t))
         (majutsu-op-show-refresh-buffer))
+      (let ((case-fold-search nil)
+            (content (buffer-substring-no-properties (point-min) (point-max))))
+        (should-not (string-match-p "^Description$" content))
+        (should-not (string-match-p "^Tags$" content))
+        (should-not (string-match-p "\n\n\n" content)))
       (goto-char (point-min))
       (search-forward "commit-short")
       (let ((value (magit-section-value-if 'jj-op-commit-line)))
@@ -268,7 +311,7 @@
     (with-temp-buffer
       (majutsu-op-show-mode)
       (let ((inhibit-read-only t))
-        (magit-insert-section (jj-op-commit-line value t)
+        (magit-insert-section (jj-op-commit-line value)
           (magit-insert-heading "line")))
       (goto-char (point-min))
       (let (captured)
