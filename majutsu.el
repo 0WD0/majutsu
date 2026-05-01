@@ -75,7 +75,13 @@ Instead of invoking this alias for `majutsu-log' using
    [("C-x m"    "Show all key bindings"    describe-mode)]]
   ["Log commands"
    :if-derived majutsu-log-mode
-   [("w" "Copy…"             majutsu-log-copy-transient)]])
+   [("w" "Copy…"             majutsu-log-copy-transient)]]
+  ["Evolution log commands"
+   :if-derived majutsu-evolog-mode
+   [("w" "Copy…"             majutsu-evolog-copy-transient)]]
+  ["Operation log commands"
+   :if-derived majutsu-op-log-mode
+   [("w" "Copy…"             majutsu-op-log-copy-transient)]])
 
 (provide 'majutsu)
 
@@ -84,7 +90,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-jjdescription)
   (require 'majutsu-ref)
   (require 'majutsu-remote)
-
+  (require 'majutsu-row)
   (require 'majutsu-log)
   (require 'majutsu-diff)
   (require 'majutsu-ediff)
