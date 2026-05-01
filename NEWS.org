@@ -6,8 +6,9 @@
 ** Added
 
 - Operations: Add ~majutsu-op-transient~ on ~X~, a color-preserving structured
-  ~jj op log~ view, and sectionized ~majutsu-op-show~ buffers for operation
-  metadata, tags, changed commits/refs, and per-line commit diff actions.
+  multiline ~jj op log~ view, and expanded sectionized ~majutsu-op-show~ buffers
+  for operation metadata, tags, changed commits/refs, and per-line commit diff
+  actions. Native Evil integration covers the operation log/show modes.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
 - Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
