@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-gerrit)
 (require 'majutsu-remote)
 
 (require 'crm)
@@ -395,6 +396,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [["Sync"
     ("p" "Push" majutsu-git-push-transient)
     ("f" "Fetch" majutsu-git-fetch-transient)
+    ("u" "Gerrit upload" majutsu-gerrit-upload-transient)
     ("e" "Export" majutsu-git-export)
     ("m" "Import" majutsu-git-import)]
    ["Remotes"

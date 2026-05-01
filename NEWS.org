@@ -53,6 +53,10 @@
   ~X~ opens operation commands; ~v~ opens evolog.  Majutsu also adds
   ~op log~ / ~op diff~ transients and operation restore/revert actions.
 
+- Gerrit upload transient ::
+  The Git dispatcher now exposes a =jj gerrit upload= transient with revision
+  selection, review metadata, state flags, and repository-local defaults.
+
 ** Changed
 
 - Bookmark lists use typed row layouts ::

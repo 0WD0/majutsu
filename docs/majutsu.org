@@ -759,6 +759,19 @@ Runs: =jj git push=
 - Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not branch-specific =--branch= selections.
 Runs: =jj git fetch=
 
+** Gerrit Upload
+- Key: u (majutsu-gerrit-upload-transient) :: Open the Gerrit upload transient.
+- Key: -r :: Upload specific revision(s).
+- Key: r :: Toggle the revision at point into or out of the upload selection. If no revision is selected, Majutsu leaves revision selection to =jj gerrit upload=, which uses its own @/@- default.
+- Key: -b :: Target remote branch (=--remote-branch=).
+- Key: -R :: Gerrit remote (=--remote=).
+- Key: -n :: Preview without pushing (=--dry-run=).
+- Review options include reviewers, CCs, labels, topic, hashtags, and a patch set message.
+- State/notification options include change edit, WIP/ready, private/remove-private, publishing comments, notification policy, and attention-set handling.
+- Advanced options expose submit, skip validation, merged uploads, deadlines, custom keyed values, and trace values.
+- Key: W :: Save stable upload options as defaults for this jj repository. Majutsu remembers =--remote=, =--remote-branch=, =--notify=, and =--ignore-attention-set=, but not revisions, dry-run, metadata, state, or submit-related flags.
+Runs: =jj gerrit upload=
+
 ** Remotes
 - Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.
 - Key: l (majutsu-git-remote-list) :: List remotes.
