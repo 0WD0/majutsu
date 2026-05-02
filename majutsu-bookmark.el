@@ -19,6 +19,7 @@
 (require 'majutsu)
 (require 'majutsu-ref)
 (require 'majutsu-remote)
+(require 'majutsu-row)
 (require 'majutsu-template)
 
 (require 'seq)
@@ -249,14 +250,8 @@ bookmark(s) at point."
 (defvar-local majutsu-bookmark--list-all nil
   "Non-nil when the bookmark list includes remote bookmarks.")
 
-(defconst majutsu-bookmark--list-field-separator (string 30)
-  "Field separator used by the bookmark list machine template.")
-
-(defconst majutsu-bookmark--list-record-separator (string 29)
-  "Record separator used by the bookmark list machine template.")
-
 (defvar majutsu-bookmark--list-template-cache nil
-  "Cached compiled `jj bookmark list' template.")
+  "Cached compiled `jj bookmark list' row template metadata.")
 
 (defcustom majutsu-bookmark-list-commit-summary-template
   '[:majutsu-ref-default-commit-summary]
@@ -345,46 +340,176 @@ The template is compiled with `CommitRef' as the implicit self type."
   (:returns Template :doc "User-customizable bookmark-list heading.")
   majutsu-bookmark-list-heading-template)
 
-(defun majutsu-bookmark--compile-list-template ()
-  "Compile the structured `jj bookmark list' template."
-  (let* ((target-record
+(defconst majutsu-bookmark--list-field-default-modules
+  '((heading . heading)
+    (kind . metadata)
+    (name . metadata)
+    (remote . metadata)
+    (tracked . metadata)
+    (commit-id . metadata))
+  "Default row module placement for bookmark list fields.")
+
+(defconst majutsu-bookmark--list-columns
+  '((:field heading :module heading :face t)
+    (:field kind :module metadata :face nil)
+    (:field name :module metadata :face nil)
+    (:field remote :module metadata :face nil)
+    (:field tracked :module metadata :face nil)
+    (:field commit-id :module metadata :face nil))
+  "Row fields transported by `majutsu-bookmark-list'.")
+
+(defun majutsu-bookmark--row-empty-to-nil (value &optional _ctx)
+  "Return nil for empty bookmark row VALUE."
+  (and (stringp value)
+       (not (string-empty-p value))
+       value))
+
+(defun majutsu-bookmark--row-bool (value &optional _ctx)
+  "Decode bookmark row boolean VALUE."
+  (and (stringp value)
+       (member value '("t" "true" "1"))
+       t))
+
+(defun majutsu-bookmark--list-column-template (field)
+  "Return placeholder template for bookmark list FIELD."
+  (pcase field
+    ('heading '[:majutsu-bookmark-list-heading])
+    ('kind "ref")
+    ('name '[:name])
+    ('remote '[:if [:remote] [:remote] ""])
+    ('tracked '[:if [:tracked] "t" ""])
+    ('commit-id "")
+    (_ (user-error "Unknown bookmark list row field %S" field))))
+
+(defun majutsu-bookmark--row-record-field (entry field value)
+  "Record bookmark list FIELD VALUE onto ENTRY."
+  (pcase field
+    ('kind (setq entry (plist-put entry :kind value)))
+    ('name (setq entry (plist-put entry :name value)))
+    ('remote (setq entry (plist-put entry :remote value)))
+    ('tracked (setq entry (plist-put entry :tracked value)))
+    ('commit-id (setq entry (plist-put entry :commit-id value)))
+    ('heading (setq entry (plist-put entry :heading value))))
+  (majutsu-row-record-canonical-field entry field value))
+
+(defun majutsu-bookmark--row-section-value (entry)
+  "Return section value for bookmark list ENTRY."
+  (if (equal (majutsu-row-column entry 'kind) "target")
+      (majutsu-row-column entry 'commit-id)
+    (let ((name (majutsu-row-column entry 'name))
+          (remote (majutsu-row-column entry 'remote)))
+      (if remote
+          (concat name "@" remote)
+        name))))
+
+(defun majutsu-bookmark--row-section-class (entry)
+  "Return section class for bookmark list ENTRY."
+  (if (equal (majutsu-row-column entry 'kind) "target")
+      'jj-commit
+    'jj-bookmark))
+
+(defun majutsu-bookmark--row-profile ()
+  "Return row profile for `majutsu-bookmark-list'."
+  (list :name 'bookmark-list
+        :self-type 'CommitRef
+        :default-modules majutsu-bookmark--list-field-default-modules
+        :template-function 'majutsu-bookmark--list-column-template
+        :default-postprocessors nil
+        :field-postprocessors
+        '((remote . (majutsu-bookmark--row-empty-to-nil))
+          (tracked . (majutsu-bookmark--row-bool))
+          (commit-id . (majutsu-bookmark--row-empty-to-nil)))
+        :record-field-function 'majutsu-bookmark--row-record-field
+        :entry-id-function 'majutsu-bookmark--row-section-value
+        :section-value-function 'majutsu-bookmark--row-section-value
+        :section-class-function 'majutsu-bookmark--row-section-class
+        :section-hide t
+        :show-child-count nil
+        :tail-align nil
+        :compat-property-prefix 'majutsu-bookmark-list))
+
+(defun majutsu-bookmark--row-form
+    (compiled heading kind name remote tracked commit-id)
+  "Return one bookmark row form using COMPILED metadata."
+  (let ((tokens (plist-get compiled :tokens)))
+    `[:concat
+      ,(plist-get tokens :start)
+      ,heading
+      ,(plist-get tokens :tail)
+      ,(plist-get tokens :body)
+      ,(plist-get tokens :metadata)
+      [:concat
+       ,kind
+       ,majutsu-row-field-separator
+       ,name
+       ,majutsu-row-field-separator
+       ,remote
+       ,majutsu-row-field-separator
+       ,tracked
+       ,majutsu-row-field-separator
+       ,commit-id]
+      ,(plist-get tokens :end)
+      "\n"]))
+
+(defun majutsu-bookmark--list-template-form (compiled)
+  "Return template form for bookmark list row stream using COMPILED."
+  (let* ((target-row
           (lambda (marker commit)
-            `[[:join ,majutsu-bookmark--list-field-separator
-                     "target"
-                     [:method [:self 1] :name]
-                     [:if [:method [:self 1] :remote]
-                         [:method [:self 1] :remote]
-                       ""]
-                     ,marker
-                     [:method ,commit :commit_id]
-                     ["  " ,marker " " [:method ,commit :majutsu-bookmark-list-commit-summary]]]
-              ,majutsu-bookmark--list-record-separator]))
-         (target-records
+            (majutsu-bookmark--row-form
+             compiled
+             `["  " ,marker " " [:method ,commit :majutsu-bookmark-list-commit-summary]]
+             "target"
+             '[:method [:self 1] :name]
+             '[:if [:method [:self 1] :remote]
+                  [:method [:self 1] :remote]
+                ""]
+             ""
+             `[:method ,commit :commit_id])))
+         (target-rows
           `[:if [:conflict]
-               [[:method [:method [:removed_targets]
-                          :map [:lambda [c] ,(funcall target-record "-" 'c)]]
+               [,(plist-get (plist-get compiled :tokens) :push)
+                "\n"
+                [:method [:method [:removed_targets]
+                          :map [:lambda [c] ,(funcall target-row "-" 'c)]]
                          :join ""]
                 [:method [:method [:added_targets]
-                          :map [:lambda [c] ,(funcall target-record "+" 'c)]]
-                         :join ""]]
+                          :map [:lambda [c] ,(funcall target-row "+" 'c)]]
+                         :join ""]
+                ,(plist-get (plist-get compiled :tokens) :pop)
+                "\n"]
              ""])
-         (ref-record
-          `[[:join ,majutsu-bookmark--list-field-separator
-                   "ref"
-                   [:name]
-                   [:if [:remote] [:remote] ""]
-                   [:if [:tracked] "t" ""]
-                   [:majutsu-bookmark-list-heading]]
-            ,majutsu-bookmark--list-record-separator]))
-    (majutsu-template-compile
-     `[:concat ,ref-record ,target-records]
-     'CommitRef)))
+         (ref-row
+          (majutsu-bookmark--row-form
+           compiled
+           '[:majutsu-bookmark-list-heading]
+           "ref"
+           '[:name]
+           '[:if [:remote] [:remote] ""]
+           '[:if [:tracked] "t" ""]
+           ""))
+         (tracked-remote '[:and [:remote] [:tracked]])
+         (tokens (plist-get compiled :tokens)))
+    `[:concat
+      [:if ,tracked-remote [,(plist-get tokens :push) "\n"] ""]
+      ,ref-row
+      ,target-rows
+      [:if ,tracked-remote [,(plist-get tokens :pop) "\n"] ""]]))
+
+(defun majutsu-bookmark--list-compiled ()
+  "Return cached row metadata for `jj bookmark list'."
+  (or majutsu-bookmark--list-template-cache
+      (let* ((compiled (majutsu-row-compile
+                        (majutsu-bookmark--row-profile)
+                        majutsu-bookmark--list-columns))
+             (template (majutsu-template-compile
+                        (majutsu-bookmark--list-template-form compiled)
+                        'CommitRef)))
+        (setq majutsu-bookmark--list-template-cache
+              (plist-put compiled :template template)))))
 
 (defun majutsu-bookmark--list-template ()
-  "Return cached template used to render and parse `jj bookmark list' output."
-  (or majutsu-bookmark--list-template-cache
-      (setq majutsu-bookmark--list-template-cache
-            (majutsu-bookmark--compile-list-template))))
+  "Return cached row template used by `jj bookmark list'."
+  (plist-get (majutsu-bookmark--list-compiled) :template))
 
 ;;;###autoload
 (defun majutsu-bookmark-list (&optional all)
@@ -395,113 +520,14 @@ With prefix ALL, include remote bookmarks."
     :buffer "*Majutsu Bookmarks*"
     (majutsu-bookmark--list-all (and all t))))
 
-(defun majutsu-bookmark--parse-list-record (record)
-  "Parse one structured bookmark list RECORD into a plist."
-  (let ((kind (majutsu--field-string
-               (car (majutsu--split-fields
-                     record majutsu-bookmark--list-field-separator 2)))))
-    (pcase kind
-      ("ref"
-       (let* ((fields (majutsu--split-fields
-                       record majutsu-bookmark--list-field-separator 5))
-              (name (majutsu--field-string (nth 1 fields)))
-              (remote (majutsu--field-string (nth 2 fields))))
-         (unless (string-empty-p name)
-           (list :kind 'ref
-                 :name name
-                 :remote (and (not (string-empty-p remote)) remote)
-                 :tracked (majutsu--field-bool-p (nth 3 fields))
-                 :heading (or (nth 4 fields) "")
-                 :targets nil))))
-      ("target"
-       (let* ((fields (majutsu--split-fields
-                       record majutsu-bookmark--list-field-separator 6))
-              (name (majutsu--field-string (nth 1 fields)))
-              (remote (majutsu--field-string (nth 2 fields))))
-         (unless (string-empty-p name)
-           (list :kind 'target
-                 :name name
-                 :remote (and (not (string-empty-p remote)) remote)
-                 :commit-id (majutsu--field-string (nth 4 fields))
-                 :line (or (nth 5 fields) ""))))))))
-
-(defun majutsu-bookmark--same-ref-p (entry target)
-  "Return non-nil when TARGET belongs to ENTRY."
-  (and (equal (plist-get entry :name) (plist-get target :name))
-       (equal (plist-get entry :remote) (plist-get target :remote))))
-
-(defun majutsu-bookmark--parse-list-output (output)
-  "Parse structured `jj bookmark list' OUTPUT into entry plists."
-  (let (entries current)
-    (dolist (record (majutsu--split-fields
-                     output majutsu-bookmark--list-record-separator))
-      (when-let* ((item (majutsu-bookmark--parse-list-record record)))
-        (pcase (plist-get item :kind)
-          ('ref
-           (setq current item)
-           (push item entries))
-          ('target
-           (when (and current (majutsu-bookmark--same-ref-p current item))
-             (setf (plist-get current :targets)
-                   (append (plist-get current :targets) (list item))))))))
-    (nreverse entries)))
-
-(defun majutsu-bookmark--entry-ref (entry)
-  "Return the exact revision/ref name represented by bookmark ENTRY."
-  (let ((name (plist-get entry :name))
-        (remote (plist-get entry :remote)))
-    (if remote
-        (concat name "@" remote)
-      name)))
-
-(defun majutsu-bookmark--tracked-child-p (primary entry)
-  "Return non-nil when ENTRY should be nested under PRIMARY."
-  (and primary
-       (plist-get entry :remote)
-       (plist-get entry :tracked)
-       (not (plist-get primary :remote))
-       (equal (plist-get entry :name) (plist-get primary :name))))
-
-(defun majutsu-bookmark--group-list-entries (entries)
-  "Group bookmark list ENTRIES into primary entries with tracked children."
-  (let (groups current)
-    (dolist (entry entries)
-      (if (majutsu-bookmark--tracked-child-p (plist-get current :primary) entry)
-          (plist-put current :children
-                     (append (plist-get current :children) (list entry)))
-        (setq current (list :primary entry :children nil))
-        (push current groups)))
-    (nreverse groups)))
-
-(defun majutsu-bookmark--insert-target (target)
-  "Insert one conflicted bookmark TARGET as a commit section."
-  (magit-insert-section (jj-commit (plist-get target :commit-id) t)
-    (magit-insert-heading (or (plist-get target :line) ""))))
-
-(defun majutsu-bookmark--insert-list-entry (entry &optional children)
-  "Insert bookmark list ENTRY and optional CHILDREN as sections."
-  (let ((magit-section-show-child-count nil))
-    (magit-insert-section (jj-bookmark (majutsu-bookmark--entry-ref entry) t)
-      (magit-insert-heading (or (plist-get entry :heading)
-                                (majutsu-bookmark--entry-ref entry)))
-      (dolist (target (plist-get entry :targets))
-        (majutsu-bookmark--insert-target target))
-      (dolist (child children)
-        (majutsu-bookmark--insert-list-entry child)))))
-
 (defun majutsu-bookmark--wash-list (_args)
-  "Wash structured `jj bookmark list' output into bookmark sections."
-  (let* ((entries (majutsu-bookmark--parse-list-output
-                   (buffer-substring (point-min) (point-max))))
-         (groups (majutsu-bookmark--group-list-entries entries))
-         (inhibit-read-only t))
-    (delete-region (point-min) (point-max))
+  "Wash structured `jj bookmark list' row output into bookmark sections."
+  (let* ((compiled (majutsu-bookmark--list-compiled))
+         (entries (majutsu-row-wash-buffer compiled)))
     (if (null entries)
         (magit-cancel-section)
-      (dolist (group groups)
-        (majutsu-bookmark--insert-list-entry
-         (plist-get group :primary)
-         (plist-get group :children)))
+      (majutsu-row-set-buffer-data
+       compiled entries majutsu-row-cached-roots)
       (insert "\n"))))
 
 (defun majutsu-bookmark-list-refresh-buffer ()

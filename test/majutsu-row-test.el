@@ -42,6 +42,26 @@
   "Join FIELDS with the row field separator."
   (string-join fields majutsu-row-field-separator))
 
+(defun majutsu-row-test--raw-entry (_compiled title id &optional body prefix)
+  "Return one raw test entry for _COMPILED with TITLE, ID, BODY, and PREFIX."
+  (concat (or prefix "")
+          majutsu-row-start-token
+          title
+          majutsu-row-tail-token
+          majutsu-row-body-token
+          (or body "")
+          majutsu-row-meta-token
+          (majutsu-row-test--payload id)
+          majutsu-row-end-token))
+
+(defun majutsu-row-test--collect-sections (&optional section)
+  "Return SECTION and all descendants, defaulting to `magit-root-section'."
+  (let ((section (or section magit-root-section)))
+    (cons section
+          (apply #'append
+                 (mapcar #'majutsu-row-test--collect-sections
+                         (oref section children))))))
+
 (ert-deftest majutsu-row-compile-adds-required-metadata ()
   "Compiled layouts should append hidden required metadata fields."
   (let* ((compiled (majutsu-row-test--compiled))
@@ -83,6 +103,104 @@
     (should (equal (majutsu-row-render-body entry compiled)
                    "Body 1\nBody 2"))
     (should (equal (majutsu-row-column entry 'id) "id-1"))))
+
+(ert-deftest majutsu-row-read-buffer-builds-stack-tree ()
+  "Stream parser should use inline push/pop markers to build children."
+  (let* ((compiled (majutsu-row-test--compiled))
+         (raw (concat
+               (majutsu-row-test--raw-entry compiled "Parent" "parent" nil "○ ")
+               majutsu-row-push-token
+               "\n"
+               (majutsu-row-test--raw-entry compiled "Child" "child" nil "│ ")
+               majutsu-row-pop-token
+               "\n"
+               (majutsu-row-test--raw-entry compiled "Sibling" "sibling" nil "○ ")
+               "\n"))
+         parsed roots entries parent child sibling)
+    (with-temp-buffer
+      (insert raw)
+      (setq parsed (majutsu-row-read-buffer compiled)))
+    (setq roots (plist-get parsed :roots)
+          entries (plist-get parsed :entries)
+          parent (car roots)
+          child (car (plist-get parent :children))
+          sibling (cadr roots))
+    (should (equal (mapcar (lambda (entry)
+                             (majutsu-row-column entry 'id))
+                           entries)
+                   '("parent" "child" "sibling")))
+    (should (= (length roots) 2))
+    (should (equal (majutsu-row-column parent 'id) "parent"))
+    (should (equal (majutsu-row-column child 'id) "child"))
+    (should (eq (plist-get child :parent) parent))
+    (should (= (plist-get child :depth) 1))
+    (should (equal (majutsu-row-column sibling 'id) "sibling"))))
+
+(ert-deftest majutsu-row-read-buffer-pop-restores-parent ()
+  "A pop should restore the popped parent as the next push target."
+  (let* ((compiled (majutsu-row-test--compiled))
+         (raw (concat
+               (majutsu-row-test--raw-entry compiled "Parent" "parent" nil "○ ")
+               majutsu-row-push-token
+               "\n"
+               (majutsu-row-test--raw-entry compiled "Child 1" "child-1" nil "│ ")
+               majutsu-row-pop-token
+               majutsu-row-push-token
+               "\n"
+               (majutsu-row-test--raw-entry compiled "Child 2" "child-2" nil "│ ")
+               majutsu-row-pop-token
+               "\n"))
+         parsed parent children)
+    (with-temp-buffer
+      (insert raw)
+      (setq parsed (majutsu-row-read-buffer compiled)))
+    (setq parent (car (plist-get parsed :roots))
+          children (plist-get parent :children))
+    (should (equal (mapcar (lambda (entry)
+                             (majutsu-row-column entry 'id))
+                           children)
+                   '("child-1" "child-2")))
+    (should (seq-every-p (lambda (entry)
+                           (eq (plist-get entry :parent) parent))
+                         children))))
+
+(ert-deftest majutsu-row-insert-forest-creates-nested-magit-sections ()
+  "Renderer should put child entries inside the parent section body."
+  (let* ((compiled (majutsu-row-test--compiled))
+         (raw (concat
+               (majutsu-row-test--raw-entry compiled "Parent" "parent" "Parent body" "○ ")
+               majutsu-row-push-token
+               "\n"
+               (majutsu-row-test--raw-entry compiled "Child" "child" nil "│ ")
+               majutsu-row-pop-token
+               "\n"))
+         parsed parent-section child-section)
+    (with-temp-buffer
+      (insert raw)
+      (setq parsed (majutsu-row-read-buffer compiled)))
+    (with-temp-buffer
+      (magit-section-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (test-root)
+        (majutsu-row-insert-forest (plist-get parsed :roots) compiled))
+      (goto-char (point-min))
+      (search-forward "Parent")
+      (setq parent-section (magit-current-section))
+      (goto-char (point-min))
+      (search-forward "Child")
+      (setq child-section (magit-current-section))
+      (should (equal (oref parent-section value) "parent"))
+      (should (equal (oref child-section value) "child"))
+      (should (eq (oref child-section parent) parent-section))
+      (should (memq child-section (oref parent-section children)))
+      (should (< (save-excursion
+                   (goto-char (point-min))
+                   (search-forward "Parent body")
+                   (point))
+                 (save-excursion
+                   (goto-char (point-min))
+                   (search-forward "Child")
+                   (point)))))))
 
 (ert-deftest majutsu-row-insert-entry-creates-magit-section ()
   "Renderer should create a Magit section and display-only graph prefix."
