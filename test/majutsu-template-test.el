@@ -224,6 +224,36 @@
             [:raw "outer" :Commit]])
           "if(outer.root(), inner.description(), outer.description())"))
 
+(ert-deftest test-majutsu-template-curried-lambda-captures-outer-binding ()
+  (mt--is (majutsu-tpl
+           [[[:|marker|
+              [:|commit|
+               [:concat marker " " commit]]]
+             "-"]
+            "C"])
+          "concat(\"-\", \" \", \"C\")")
+  (mt--is (majutsu-tpl
+           [:method [:raw "xs"]
+            :map [:|c|
+                  [[[:|marker|
+                     [:|commit|
+                      [:concat marker " " commit]]]
+                    "-"]
+                   c]]
+            :join ""])
+          "xs.map(|c| concat(\"-\", \" \", c)).join(\"\")"))
+
+(ert-deftest test-majutsu-template-curried-lambda-captures-outer-self ()
+  (mt--is (majutsu-tpl
+           [[[:|outer|
+              [:|inner|
+               [:concat [:method [:self 1] :description]
+                        " -> "
+                        [:method [:self] :description]]]]
+             [:raw "lhs" :Commit]]
+            [:raw "rhs" :Commit]])
+          "concat(lhs.description(), \" -> \", rhs.description())"))
+
 (ert-deftest test-majutsu-template-defspecial-basic ()
   (mt--is (majutsu-tpl [:test-special-wrap [:str "x"]])
           "concat(\"<\", \"x\", \">\")"))
