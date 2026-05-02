@@ -67,8 +67,8 @@
       (should-not (member "--tracked" seen-args))
       (should (member "-T" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "!remote") template))
-        (should (string-match-p (regexp-quote "present") template))
+        (should (string-match-p (regexp-quote "(!self.remote())") template))
+        (should (string-match-p (regexp-quote "self.present()") template))
         (should (string-match-p (regexp-quote "\\n") template))))))
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/remote-args ()
@@ -81,7 +81,8 @@
       (should (member "--all-remotes" seen-args))
       (should (member "-T" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "remote && present") template))
+        (should (string-match-p (regexp-quote "self.remote()") template))
+        (should (string-match-p (regexp-quote "self.present()") template))
         (should (string-match-p (regexp-quote "\"@\"") template))))))
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/remote-tracked-args ()
@@ -93,7 +94,7 @@
       (should (equal (majutsu--get-bookmark-names 'remote-tracked) '("main@origin")))
       (should (member "--tracked" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "tracked") template))))))
+        (should (string-match-p (regexp-quote "self.tracked()") template))))))
 
 (ert-deftest majutsu-bookmark-get-bookmark-names/remote-untracked-args ()
   (let (seen-args)
@@ -104,7 +105,7 @@
       (should (equal (majutsu--get-bookmark-names 'remote-untracked) '("topic@origin")))
       (should (member "--all-remotes" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "!tracked") template))))))
+        (should (string-match-p (regexp-quote "(!self.tracked())") template))))))
 
 (ert-deftest majutsu-bookmark-forget-name-candidates/include-local-and-remote-bases ()
   (cl-letf (((symbol-function 'majutsu--get-bookmark-names)

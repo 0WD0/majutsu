@@ -89,6 +89,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-template)
   (require 'majutsu-jjdescription)
   (require 'majutsu-marginalia)
+  (require 'majutsu-ref)
   (require 'majutsu-remote)
   (require 'majutsu-row)
   (require 'majutsu-log)

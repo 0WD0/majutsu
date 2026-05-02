@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-ref)
 (require 'majutsu-remote)
 (require 'majutsu-template)
 
@@ -81,29 +82,7 @@ SCOPE controls what to return:
 - t or `remote': remote bookmark refs (e.g. \"main@origin\")
 - `remote-tracked': tracked remote bookmark refs only
 - `remote-untracked': untracked remote bookmark refs only"
-  (let* ((scope (pcase scope
-                  ((or 'nil 'local) 'local)
-                  ('remote 'remote)
-                  ('remote-tracked 'remote-tracked)
-                  ('remote-untracked 'remote-untracked)
-                  (_ (user-error "Unknown bookmark name scope: %S" scope))))
-         (template (pcase scope
-                     ('local
-                      "if(!remote && present, name ++ \"\\n\", \"\")")
-                     ('remote
-                      "if(remote && present, name ++ \"@\" ++ remote ++ \"\\n\", \"\")")
-                     ('remote-tracked
-                      "if(remote && present && tracked, name ++ \"@\" ++ remote ++ \"\\n\", \"\")")
-                     ('remote-untracked
-                      "if(remote && present && !tracked, name ++ \"@\" ++ remote ++ \"\\n\", \"\")")))
-         (args (append '("bookmark" "list" "--quiet")
-                       (pcase scope
-                         ((or 'remote 'remote-untracked) '("--all-remotes"))
-                         ('remote-tracked '("--tracked"))
-                         (_ nil))
-                       (list "-T" template)))
-         (names (majutsu-jj-lines args)))
-    (delete-dups names)))
+  (majutsu-ref-names 'bookmark scope))
 
 (defvar majutsu-bookmark-name-history nil
   "Minibuffer history for exact bookmark-name input.")
@@ -111,88 +90,17 @@ SCOPE controls what to return:
 (defvar majutsu-bookmark-pattern-history nil
   "Minibuffer history for bookmark name-pattern input.")
 
-(defconst majutsu-bookmark--completion-field-separator (string 31)
+(defconst majutsu-bookmark--completion-field-separator
+  majutsu-ref--completion-field-separator
   "Separator inserted between bookmark completion fields.")
 
 (defconst majutsu-bookmark--completion-template
-  (let ((sep (format "\"%s\"" majutsu-bookmark--completion-field-separator)))
-    (concat
-     (string-join
-      (list "name"
-            sep "if(remote, remote, \"\")"
-            sep "if(conflict, \"t\", \"\")"
-            sep "if(present, \"t\", \"\")"
-            sep "if(tracked, \"t\", \"\")"
-            sep "if(synced, \"t\", \"\")")
-      " ++ ")
-     " ++ \"\\n\""))
+  majutsu-ref--completion-template
   "Template used to collect bookmark completion metadata.")
-
-(defun majutsu-bookmark--split-completion-fields (value)
-  "Split bookmark completion VALUE.
-Use `majutsu-bookmark--completion-field-separator' as the field separator."
-  (majutsu--split-fields value majutsu-bookmark--completion-field-separator))
-
-(defun majutsu-bookmark--parse-completion-line (line)
-  "Parse one bookmark completion LINE into a plist."
-  (let* ((fields (majutsu-bookmark--split-completion-fields (or line "")))
-         (name (nth 0 fields))
-         (remote (nth 1 fields)))
-    (when (and (stringp name) (not (string-empty-p name)))
-      (list :name name
-            :remote (unless (string-empty-p remote) remote)
-            :conflict (majutsu--field-bool-p (nth 2 fields))
-            :present (majutsu--field-bool-p (nth 3 fields))
-            :tracked (majutsu--field-bool-p (nth 4 fields))
-            :synced (majutsu--field-bool-p (nth 5 fields))))))
-
-(defun majutsu-bookmark--completion-entries (&optional directory)
-  "Return structured bookmark completion entries for DIRECTORY."
-  (let ((default-directory (or directory default-directory))
-        entries)
-    (dolist (line (majutsu-jj-lines "bookmark" "list" "--quiet" "--all-remotes"
-                                    "-T" majutsu-bookmark--completion-template))
-      (when-let* ((entry (majutsu-bookmark--parse-completion-line line)))
-        (push entry entries)))
-    (nreverse entries)))
 
 (defun majutsu-bookmark-candidate-data (&optional candidates directory)
   "Return completion payload for bookmark CANDIDATES in DIRECTORY."
-  (let ((default-directory (or directory default-directory))
-        (entries (make-hash-table :test #'equal))
-        local-candidates)
-    (condition-case _
-        (dolist (row (majutsu-bookmark--completion-entries default-directory))
-          (let* ((name (plist-get row :name))
-                 (remote (plist-get row :remote))
-                 (entry (or (gethash name entries)
-                            (list :name name
-                                  :tracked-remotes nil
-                                  :untracked-remotes nil))))
-            (when (plist-get row :conflict)
-              (setq entry (plist-put entry :conflict t)))
-            (if remote
-                (setq entry
-                      (plist-put entry
-                                 (if (plist-get row :tracked)
-                                     :tracked-remotes
-                                   :untracked-remotes)
-                                 (majutsu--append-unique
-                                  (plist-get entry
-                                             (if (plist-get row :tracked)
-                                                 :tracked-remotes
-                                               :untracked-remotes))
-                                  remote)))
-              (setq entry (plist-put entry :local t))
-              (when (plist-get row :synced)
-                (setq entry (plist-put entry :synced t)))
-              (unless (member name local-candidates)
-                (setq local-candidates (append local-candidates (list name)))))
-            (puthash name entry entries)))
-      (error nil))
-    (list :category 'majutsu-bookmark
-          :candidates (or candidates local-candidates)
-          :entries entries)))
+  (majutsu-ref-candidate-data 'bookmark candidates directory))
 
 (defun majutsu--bookmark-base-names-from-scope (scope)
   "Return bookmark base names for SCOPE.
