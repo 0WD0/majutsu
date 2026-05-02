@@ -2322,16 +2322,16 @@ implicit self context installed during this compilation."
     (let* ((list-form (append form nil)))
       (cond
        ((null list-form)
-        (majutsu-template--sugar-transform '(:concat)))
+        (majutsu-template-concat))
        ((symbolp (car list-form))
         (majutsu-template--sugar-transform list-form))
        ((cdr list-form)
         (let ((head (majutsu-template--sugar-transform (car list-form))))
           (if (eq (majutsu-template-node-kind head) :lambda)
-              (majutsu-template--sugar-transform (cons :call (cons head (cdr list-form))))
-            (majutsu-template--sugar-transform (cons :concat list-form)))))
+              (apply #'majutsu-template-call head (cdr list-form))
+            (apply #'majutsu-template-concat head (cdr list-form)))))
        (t
-        (majutsu-template--sugar-transform (cons :concat list-form))))))
+        (majutsu-template-concat (car list-form))))))
    ((and (consp form) (eq (car form) 'quote))
     (majutsu-template--sugar-transform (cadr form)))
    ((and (consp form) (symbolp (car form)))
@@ -2383,13 +2383,12 @@ implicit self context installed during this compilation."
       (let* ((normalized (majutsu-template--operator-symbol op))
              (meta (or (majutsu-template--lookup-function-meta op)
                        (majutsu-template--lookup-function-meta normalized)))
-             (self-binding (majutsu-template--current-self))
-             (self-node (majutsu-template--maybe-self-dispatch op args)))
+             (self-binding (majutsu-template--current-self)))
         (cond
          (meta
           (apply (majutsu-template--fn-symbol meta)
                  (mapcar #'majutsu-template--sugar-transform args)))
-         (self-node self-node)
+         ((majutsu-template--maybe-self-dispatch op args))
          ((and (keywordp op)
                self-binding
                (majutsu-template--self-binding-node self-binding)
