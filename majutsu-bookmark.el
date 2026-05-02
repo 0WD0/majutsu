@@ -438,16 +438,12 @@ The template is compiled with `CommitRef' as the implicit self type."
       ,(plist-get tokens :tail)
       ,(plist-get tokens :body)
       ,(plist-get tokens :metadata)
-      [:concat
-       ,kind
-       ,majutsu-row-field-separator
-       ,name
-       ,majutsu-row-field-separator
-       ,remote
-       ,majutsu-row-field-separator
-       ,tracked
-       ,majutsu-row-field-separator
-       ,commit-id]
+      [:join ,majutsu-row-field-separator
+             ,kind
+             ,name
+             ,remote
+             ,tracked
+             ,commit-id]
       ,(plist-get tokens :end)
       "\n"]))
 
@@ -489,8 +485,7 @@ The template is compiled with `CommitRef' as the implicit self type."
            ""))
          (tracked-remote '[:and [:remote] [:tracked]])
          (tokens (plist-get compiled :tokens)))
-    `[:concat
-      [:if ,tracked-remote [,(plist-get tokens :push) "\n"] ""]
+    `[[:if ,tracked-remote [,(plist-get tokens :push) "\n"] ""]
       ,ref-row
       ,target-rows
       [:if ,tracked-remote [,(plist-get tokens :pop) "\n"] ""]]))
