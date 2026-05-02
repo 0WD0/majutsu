@@ -50,7 +50,8 @@
       (should-not (member "--all-remotes" seen-args))
       (should (member "-T" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "!remote") template))))))
+        (should (string-match-p (regexp-quote "(!self.remote())") template))
+        (should (string-match-p (regexp-quote "self.present()") template))))))
 
 (ert-deftest majutsu-tag-get-tag-names/remote-args ()
   (let (seen-args)
@@ -61,7 +62,8 @@
       (should (equal (majutsu--get-tag-names 'remote) '("v1.0@git")))
       (should (member "--all-remotes" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "remote && present") template))
+        (should (string-match-p (regexp-quote "self.remote()") template))
+        (should (string-match-p (regexp-quote "self.present()") template))
         (should (string-match-p (regexp-quote "\"@\"") template))))))
 
 (ert-deftest majutsu-tag-candidate-data/builds-structured-entries ()
