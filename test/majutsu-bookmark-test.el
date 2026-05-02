@@ -130,6 +130,10 @@
   (should (string-match-p "self\.removed_targets().map" majutsu-bookmark--list-template))
   (should (string-match-p "self\.added_targets().map" majutsu-bookmark--list-template))
   (should (string-match-p "format_commit_summary_with_refs" majutsu-bookmark--list-template))
+  (should (string-match-p (regexp-quote "label(\"bookmark\"")
+                          majutsu-bookmark--list-template))
+  (should (string-match-p (regexp-quote "label(\"conflict\"")
+                          majutsu-bookmark--list-template))
   (should (string-match-p (regexp-quote "\\x1E") majutsu-bookmark--list-template))
   (should (string-match-p (regexp-quote "\\x1D") majutsu-bookmark--list-template)))
 
@@ -221,10 +225,23 @@
           (should (equal (mapcar (lambda (section) (oref section value))
                                  commit-sections)
                          '("old123" "new123")))
-          (should (string-match-p (regexp-quote "topic (conflicted) (2)")
+          (should (string-match-p (regexp-quote "topic (conflicted):")
                                   (buffer-string)))
+          (should-not (string-match-p (regexp-quote "topic (conflicted) (2)")
+                                      (buffer-string)))
           (should (string-match-p (regexp-quote "  - old-target") (buffer-string)))
-          (should (string-match-p (regexp-quote "  + new-target") (buffer-string))))))))
+          (should (string-match-p (regexp-quote "  + new-target") (buffer-string)))
+          (save-excursion
+            (goto-char (point-min))
+            (search-forward "  - old-target")
+            (should-not (memq 'diff-removed
+                              (ensure-list (get-text-property (+ (match-beginning 0) 2)
+                                                              'font-lock-face))))
+            (goto-char (point-min))
+            (search-forward "  + new-target")
+            (should-not (memq 'diff-added
+                              (ensure-list (get-text-property (+ (match-beginning 0) 2)
+                                                              'font-lock-face))))))))))
 
 (ert-deftest majutsu-bookmark-list-refresh-buffer/uses-structured-template ()
   (let (seen-args)
