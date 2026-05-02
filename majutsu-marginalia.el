@@ -139,7 +139,7 @@ Insert Marginalia's alignment marker before the first separator."
   (majutsu-marginalia--annotation
    (majutsu-marginalia--field label (or face 'marginalia-type))))
 
-(defun majutsu-marginalia--bookmark-remote-field (label remotes face)
+(defun majutsu-marginalia--ref-remote-field (label remotes face)
   "Format LABEL for REMOTES using FACE."
   (when remotes
     (let* ((remotes (delete-dups (copy-sequence remotes)))
@@ -244,11 +244,11 @@ should stay compact but keep a stable kind column for readability."
       (majutsu-marginalia--orig-annotation cand)
       (majutsu-marginalia--label "revset" 'marginalia-key)))
 
-(defun majutsu-marginalia-annotate-bookmark (cand)
-  "Annotate bookmark candidate CAND."
-  (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-bookmark cand)))
+(defun majutsu-marginalia--annotate-ref (cand category label)
+  "Annotate ref candidate CAND from CATEGORY using LABEL."
+  (if-let* ((entry (majutsu-marginalia--cached-entry category cand)))
       (majutsu-marginalia--annotation
-       (majutsu-marginalia--column "bookmark" 9 'marginalia-key)
+       (majutsu-marginalia--column label 9 'marginalia-key)
        (majutsu-marginalia--column
         (if (plist-get entry :local) "local" "remote only")
         11 'marginalia-type)
@@ -259,40 +259,23 @@ should stay compact but keep a stable kind column for readability."
         (and (plist-get entry :conflict) "conflicted")
         10 'warning)
        (majutsu-marginalia--column
-        (majutsu-marginalia--bookmark-remote-field
+        (majutsu-marginalia--ref-remote-field
          "tracked" (plist-get entry :tracked-remotes) nil)
         22 'success)
        (majutsu-marginalia--column
-        (majutsu-marginalia--bookmark-remote-field
+        (majutsu-marginalia--ref-remote-field
          "untracked" (plist-get entry :untracked-remotes) nil)
         22 'marginalia-documentation))
-    (or (majutsu-marginalia--cached-annotation 'majutsu-bookmark cand)
-        (majutsu-marginalia--label "bookmark" 'marginalia-key))))
+    (or (majutsu-marginalia--cached-annotation category cand)
+        (majutsu-marginalia--label label 'marginalia-key))))
+
+(defun majutsu-marginalia-annotate-bookmark (cand)
+  "Annotate bookmark candidate CAND."
+  (majutsu-marginalia--annotate-ref cand 'majutsu-bookmark "bookmark"))
 
 (defun majutsu-marginalia-annotate-tag (cand)
   "Annotate tag candidate CAND."
-  (if-let* ((entry (majutsu-marginalia--cached-entry 'majutsu-tag cand)))
-      (majutsu-marginalia--annotation
-       (majutsu-marginalia--column "tag" 9 'marginalia-key)
-       (majutsu-marginalia--column
-        (if (plist-get entry :local) "local" "remote only")
-        11 'marginalia-type)
-       (majutsu-marginalia--column
-        (and (plist-get entry :synced) "synced")
-        8 'success)
-       (majutsu-marginalia--column
-        (and (plist-get entry :conflict) "conflicted")
-        10 'warning)
-       (majutsu-marginalia--column
-        (majutsu-marginalia--bookmark-remote-field
-         "tracked" (plist-get entry :tracked-remotes) nil)
-        22 'success)
-       (majutsu-marginalia--column
-        (majutsu-marginalia--bookmark-remote-field
-         "untracked" (plist-get entry :untracked-remotes) nil)
-        22 'marginalia-documentation))
-    (or (majutsu-marginalia--cached-annotation 'majutsu-tag cand)
-        (majutsu-marginalia--label "tag" 'marginalia-key))))
+  (majutsu-marginalia--annotate-ref cand 'majutsu-tag "tag"))
 
 (defun majutsu-marginalia-annotate-remote (cand)
   "Annotate Git remote candidate CAND."
