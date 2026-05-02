@@ -279,12 +279,13 @@ The template is compiled with `CommitRef' as the implicit self type."
          (setq majutsu-bookmark--list-template-cache nil)))
 
 (defcustom majutsu-bookmark-list-conflict-target-heading-template
-  '["  " [:majutsu-bookmark-list-conflict-target-marker]
-    " " [:majutsu-bookmark-list-commit-summary]]
+  '[:|marker|
+    [:|summary|
+     [:concat "  " marker " " summary]]]
   "Template used for conflicted target headings in `majutsu-bookmark-list'.
-The template is compiled with `Commit' as the implicit self type.  Use
-`[:majutsu-bookmark-list-conflict-target-marker]' to include the target marker
-such as `+' or `-'."
+The template is compiled as a two-stage lambda: the first argument is the
+conflict marker such as `+' or `-', and the second argument is the commit
+summary string."
   :type 'sexp
   :group 'majutsu
   :set (lambda (symbol value)
@@ -360,40 +361,6 @@ such as `+' or `-'."
   (:returns Template :doc "User-customizable bookmark-list heading.")
   majutsu-bookmark-list-heading-template)
 
-(defvar majutsu-bookmark--list-conflict-target-marker nil
-  "Template node for the current conflicted bookmark target marker.")
-
-(majutsu-template-defkeyword majutsu-bookmark-list-conflict-target-marker Commit
-  (:returns Template :doc "Current conflicted bookmark target marker.")
-  (or majutsu-bookmark--list-conflict-target-marker ""))
-
-(majutsu-template-defmethod majutsu-bookmark-list-conflict-target-heading Commit
-  ((marker Template))
-  (:returns Template :doc "User-customizable conflicted bookmark target heading.")
-  (let ((majutsu-bookmark--list-conflict-target-marker marker))
-    (majutsu-template--rewrite
-     majutsu-bookmark-list-conflict-target-heading-template)))
-
-(majutsu-template-defkeyword majutsu-bookmark-list-row-kind CommitRef
-  (:returns Template :doc "Machine kind for bookmark-list ref rows.")
-  "ref")
-
-(majutsu-template-defkeyword majutsu-bookmark-list-row-name CommitRef
-  (:returns Template :doc "Machine name for bookmark-list ref rows.")
-  [:name])
-
-(majutsu-template-defkeyword majutsu-bookmark-list-row-remote CommitRef
-  (:returns Template :doc "Machine remote for bookmark-list ref rows.")
-  [:if [:remote] [:remote] ""])
-
-(majutsu-template-defkeyword majutsu-bookmark-list-row-tracked CommitRef
-  (:returns Template :doc "Machine tracked flag for bookmark-list ref rows.")
-  [:if [:tracked] "t" ""])
-
-(majutsu-template-defkeyword majutsu-bookmark-list-row-commit-id CommitRef
-  (:returns Template :doc "Machine commit id for bookmark-list ref rows.")
-  "")
-
 (defconst majutsu-bookmark--list-field-default-modules
   '((heading . heading)
     (kind . metadata)
@@ -428,11 +395,11 @@ such as `+' or `-'."
   "Return placeholder template for bookmark list FIELD."
   (pcase field
     ('heading '[:majutsu-bookmark-list-heading])
-    ('kind '[:majutsu-bookmark-list-row-kind])
-    ('name '[:majutsu-bookmark-list-row-name])
-    ('remote '[:majutsu-bookmark-list-row-remote])
-    ('tracked '[:majutsu-bookmark-list-row-tracked])
-    ('commit-id '[:majutsu-bookmark-list-row-commit-id])
+    ('kind "ref")
+    ('name '[:name])
+    ('remote '[:remote])
+    ('tracked '[:if [:tracked] "t" ""])
+    ('commit-id "")
     (_ (user-error "Unknown bookmark list row field %S" field))))
 
 (defun majutsu-bookmark--row-record-field (entry field value)
@@ -487,8 +454,9 @@ such as `+' or `-'."
 MARKER is the conflict side marker rendered in the target heading."
   (majutsu-row-template-form
    compiled
-   `((heading . [:method ,commit
-                 :majutsu-bookmark-list-conflict-target-heading ,marker])
+   `((heading . [[,majutsu-bookmark-list-conflict-target-heading-template
+                  ,marker]
+                 [:method ,commit :majutsu-bookmark-list-commit-summary]])
      (kind . "target")
      (name . [:method [:self 1] :name])
      (remote . [:if [:method [:self 1] :remote]
