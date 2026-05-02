@@ -1663,6 +1663,21 @@ TYPE defaults to `Lambda' and may be a richer internal lambda type ref."
         (user-error "majutsu-template: invalid lambda parameter %S" item)))
     items))
 
+(defun majutsu-template--lambda-props (body-form)
+  "Return lambda node properties for BODY-FORM and current capture context."
+  (list :body-form body-form
+        :captured-bindings majutsu-template--binding-stack
+        :captured-self-stack majutsu-template--self-stack))
+
+(defun majutsu-template--call-with-lambda-capture (lambda-node thunk)
+  "Call THUNK in LAMBDA-NODE's captured lexical/self context."
+  (let* ((props (majutsu-template-node-props lambda-node))
+         (captured-bindings (plist-get props :captured-bindings))
+         (captured-self-stack (plist-get props :captured-self-stack))
+         (majutsu-template--binding-stack captured-bindings)
+         (majutsu-template--self-stack captured-self-stack))
+    (funcall thunk)))
+
 (defun majutsu-template--lambda-from-form (params body &optional param-type)
   "Return lambda node from PARAMS and BODY forms.
 When PARAM-TYPE is non-nil, bind the single lambda parameter to that type."
@@ -1682,6 +1697,7 @@ When PARAM-TYPE is non-nil, bind the single lambda parameter to that type."
                               :type (and (eq param self-param) bound-type)
                               :node (when (eq param self-param) self-node)))
                            parsed-params))
+         (props (majutsu-template--lambda-props body))
          (body-node (majutsu-template--call-with-bindings
                      bindings
                      (lambda ()
@@ -1692,9 +1708,7 @@ When PARAM-TYPE is non-nil, bind the single lambda parameter to that type."
          (lambda-type (list :lambda
                             (list (or bound-type 'Unknown))
                             (or (majutsu-template-node-type body-node) 'Unknown))))
-    (majutsu-template--lambda-node parsed-params body-node
-                                   (list :body-form body)
-                                   lambda-type)))
+    (majutsu-template--lambda-node parsed-params body-node props lambda-type)))
 
 (defun majutsu-template--lambda-sugar-params (op)
   "Return lambda parameter list encoded by keyword OP like `:|x|'.
@@ -1805,7 +1819,10 @@ CONTEXT is used in error messages."
     (unless (= (length params) 1)
       (user-error "majutsu-template: only single-argument lambdas can be specialized"))
     (if-let* ((body-form (plist-get (majutsu-template-node-props lambda-node) :body-form)))
-        (majutsu-template--lambda-from-form params body-form arg-type)
+        (majutsu-template--call-with-lambda-capture
+         lambda-node
+         (lambda ()
+           (majutsu-template--lambda-from-form params body-form arg-type)))
       lambda-node)))
 
 (defun majutsu-template--apply-lambda (lambda-node arg-nodes)
@@ -1841,14 +1858,17 @@ CONTEXT is used in error messages."
                                              :type (majutsu-template-node-type arg)
                                              :node arg))
                                           params arg-nodes)))
-                (majutsu-template--call-with-bindings
-                 bindings
+                (majutsu-template--call-with-lambda-capture
+                 specialized
                  (lambda ()
-                   (majutsu-template--call-with-self-binding
-                    (car arg-nodes)
-                    self-type
+                   (majutsu-template--call-with-bindings
+                    bindings
                     (lambda ()
-                      (majutsu-template--sugar-transform specialized-body-form))))))
+                      (majutsu-template--call-with-self-binding
+                       (car arg-nodes)
+                       self-type
+                       (lambda ()
+                         (majutsu-template--sugar-transform specialized-body-form))))))))
             (cl-loop with result = (majutsu-template--lambda-body lambda-node)
                      for param in params
                      for arg in arg-nodes
