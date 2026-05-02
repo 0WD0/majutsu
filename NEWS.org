@@ -57,8 +57,9 @@
   nested Magit sections, and migrate bookmark lists to that shared row protocol.
 - Bookmarks: The bookmark list buffer now uses typed =jj bookmark list -T=
   machine records with customizable Majutsu template display fragments for
-  bookmark headings and commit summaries, while assigning precise section
-  values such as =name@remote= for tracked remote rows.
+  bookmark headings, commit summaries, and conflicted target headings, while
+  assigning precise section values such as =name@remote= for tracked remote
+  rows.
 - Transients: Add a generic repository-local defaults layer keyed by jj's
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
