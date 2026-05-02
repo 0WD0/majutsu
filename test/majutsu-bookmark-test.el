@@ -165,10 +165,10 @@
     (should (string-match-p (regexp-quote "\\x1D") template))))
 
 (ert-deftest majutsu-bookmark-list-template/uses-custom-display-templates ()
-  (let ((majutsu-bookmark--list-template-cache nil)
-        (majutsu-bookmark-list-heading-template
+  (let ((majutsu-bookmark--compiled-template-cache nil)
+        (majutsu-bookmark-list-template-heading
          '[:separate " :: " [:majutsu-bookmark-list-name] "CUSTOM-HEADING"])
-        (majutsu-bookmark-list-commit-summary-template
+        (majutsu-bookmark-list-template-commit-summary
          '["CUSTOM-SUMMARY " [:commit_id :shortest 4]]))
     (let ((template (majutsu-bookmark--list-template)))
       (should (string-match-p (regexp-quote "CUSTOM-HEADING") template))
@@ -176,13 +176,11 @@
       (should (string-match-p (regexp-quote "commit_id().shortest(4)") template)))))
 
 (ert-deftest majutsu-bookmark-list-template/uses-custom-conflict-target-heading ()
-  (let ((majutsu-bookmark--list-template-cache nil)
-        (majutsu-bookmark-list-conflict-target-heading-template
+  (let ((majutsu-bookmark--compiled-template-cache nil)
+        (majutsu-bookmark-list-template-conflict-target-heading
          '[:|marker|
-           [:|summary|
-            ["TARGET " marker " " summary]]])
-        (majutsu-bookmark-list-commit-summary-template
-         '[:commit_id :shortest 4]))
+           [:|commit|
+            ["TARGET " marker " " [:commit_id :shortest 4]]]]))
     (let ((template (majutsu-bookmark--list-template)))
       (should (string-match-p (regexp-quote "TARGET ") template))
       (should (string-match-p (regexp-quote "\"-\"") template))
@@ -207,7 +205,7 @@
     (with-temp-buffer
       (insert output)
       (setq parsed (majutsu-row-read-buffer
-                    (majutsu-bookmark--list-compiled))))
+                    (majutsu-bookmark--ensure-list-template))))
     (setq roots (plist-get parsed :roots)
           dev (car roots)
           origin (car (plist-get dev :children))
