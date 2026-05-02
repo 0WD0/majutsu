@@ -140,39 +140,9 @@ or (inline VALUE) for `--opt=VALUE' and short `-oVALUE' forms."
   "Return the first value for OPTIONS found in ARGS."
   (car (majutsu-log--args-option-values args options)))
 
-(defun majutsu-log--args-remove-options (args options)
-  "Return ARGS with OPTIONS and their values removed."
-  (let ((options (ensure-list options))
-        out)
-    (while args
-      (let* ((arg (pop args))
-             (match (majutsu-log--args-option-match arg options)))
-        (pcase match
-          ('(separate)
-           (pop args))
-          (`(inline ,_value)
-           nil)
-          (_
-           (push arg out)))))
-    (nreverse out)))
-
 (defun majutsu-log--revision-values (args)
   "Return `jj log -r/--revision' values from ARGS."
   (majutsu-log--args-option-values args '("--revision" "--revisions" "-r")))
-
-(defun majutsu-log--args-toggle-flag (args flag)
-  (if (member flag args)
-      (remove flag args)
-    (append args (list flag))))
-
-(defun majutsu-log--args-set-option (args opt value)
-  "Set OPT to VALUE inside ARGS (removing existing OPT)."
-  (setq args (majutsu-log--args-remove-options args (string-remove-suffix "=" opt)))
-  (if value
-      (append args (if (string-suffix-p "=" opt)
-                       (list (concat opt value))
-                     (list opt value)))
-    args))
 
 (defun majutsu-log--summary-parts ()
   "Return a list of human-readable fragments describing current log buffer."
@@ -214,10 +184,6 @@ or (inline VALUE) for `--opt=VALUE' and short `-oVALUE' forms."
 
 ;;; Log Template
 
-(defconst majutsu-log--field-separator
-  majutsu-graph-entry-field-separator
-  "Separator character inserted between fields inside each module payload.")
-
 (defconst majutsu-log--field-list-separator "\x1c"
   "Separator character inserted between list items inside a single field value.")
 
@@ -226,34 +192,6 @@ or (inline VALUE) for `--opt=VALUE' and short `-oVALUE' forms."
   "Encoded newline separator used inside template field payloads.
 Log records are transported as single lines, then this separator is
 decoded back to literal newlines after field splitting.")
-
-(defconst majutsu-log--record-marker
-  majutsu-graph-entry-record-marker
-  "Control marker prefix for module boundaries inside log output.")
-
-(defconst majutsu-log--entry-start-token
-  majutsu-graph-entry-start-token
-  "Marker that starts a commit entry and heading payload.")
-
-(defconst majutsu-log--entry-tail-token
-  majutsu-graph-entry-tail-token
-  "Marker that starts the tail payload.")
-
-(defconst majutsu-log--entry-body-token
-  majutsu-graph-entry-body-token
-  "Marker that starts the body payload.")
-
-(defconst majutsu-log--entry-meta-token
-  majutsu-graph-entry-meta-token
-  "Marker that starts the metadata payload.")
-
-(defconst majutsu-log--entry-end-token
-  majutsu-graph-entry-end-token
-  "Marker that terminates a commit entry.")
-
-(defconst majutsu-log--module-order
-  majutsu-graph-entry-module-order
-  "Module parse/render order for sequential log payloads.")
 
 (defconst majutsu-log--field-default-modules
   '((id . metadata)
@@ -489,23 +427,14 @@ transport logical newlines safely through single-line payload segments."
   (when (and (stringp value)
              (not (string-empty-p value)))
     (mapcar #'substring-no-properties
-            (majutsu-log--split-by-separator value majutsu-log--field-list-separator))))
+            (majutsu-graph-entry-split-by-separator
+             value majutsu-log--field-list-separator))))
 
 (defun majutsu-log-post-remove-ago-suffix (value &optional _ctx)
   "Trim a trailing \\=' ago\\=' suffix from VALUE."
   (if (stringp value)
       (string-remove-suffix " ago" value)
     value))
-
-(defun majutsu-log--default-module-for-field (field)
-  "Return default module symbol for FIELD."
-  (or (alist-get field majutsu-log--field-default-modules nil nil #'eq)
-      (user-error "Field %S requires explicit :module" field)))
-
-(defun majutsu-log--default-postprocessors-for-field (field)
-  "Return default postprocessors for FIELD."
-  (append majutsu-log--default-column-postprocessors
-          (alist-get field majutsu-log--field-default-postprocessors nil nil #'eq)))
 
 (defun majutsu-log--graph-entry-profile ()
   "Return the graph-entry profile for `majutsu-log'."
@@ -526,33 +455,6 @@ transport logical newlines safely through single-line payload segments."
         :tail-align t
         :compat-property-prefix 'majutsu-log))
 
-(defun majutsu-log--normalize-postprocessors (post field)
-  "Normalize POST value for FIELD into a function list.
-
-Omitted or `:default' values use the field defaults. Explicit functions are
-appended after those defaults, while nil disables column postprocessing."
-  (majutsu-graph-entry-normalize-postprocessors
-   (majutsu-log--graph-entry-profile) post field))
-
-(defun majutsu-log--normalize-column-spec (spec)
-  "Normalize a single column SPEC into a plist with defaults."
-  (majutsu-graph-entry-normalize-column-spec
-   (majutsu-log--graph-entry-profile) spec))
-
-(defun majutsu-log--ensure-required-columns (columns)
-  "Ensure required columns are present in COLUMNS list.
-Missing required fields are appended with defaults."
-  (majutsu-graph-entry-ensure-required-columns
-   (majutsu-log--graph-entry-profile) columns))
-
-(defun majutsu-log--module-columns (compiled module)
-  "Return compiled column specs for MODULE from COMPILED metadata."
-  (majutsu-graph-entry-module-columns compiled module))
-
-(defun majutsu-log--assign-column-instances (columns)
-  "Return COLUMNS with stable per-instance ids assigned."
-  (majutsu-graph-entry-assign-column-instances columns))
-
 (defun majutsu-log--column-template (field)
   "Return majutsu-template form for FIELD.
 Looks up `majutsu-log-template-FIELD'."
@@ -560,10 +462,6 @@ Looks up `majutsu-log-template-FIELD'."
     (if (and var (boundp var))
         (symbol-value var)
       (user-error "Unknown column field %S" field))))
-
-(defun majutsu-log--build-module-template-form (templates)
-  "Return a template form joining TEMPLATES with field separators."
-  (majutsu-graph-entry-build-module-template-form templates))
 
 (defun majutsu-log--compile-columns (&optional columns)
   "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
@@ -588,41 +486,6 @@ Returns a plist with :template, :columns, and :module-columns."
 
 ;;; Log Parsing
 
-(defun majutsu-log--split-by-separator (value separator)
-  "Split VALUE by one-char string SEPARATOR, preserving empty fields."
-  (majutsu-graph-entry-split-by-separator value separator))
-
-(defun majutsu-log--join-lines (lines)
-  "Join LINES with literal newlines, preserving string properties."
-  (majutsu-graph-entry-join-lines lines))
-
-(defun majutsu-log--line-token-position (token bol eol &optional start)
-  "Return start position of TOKEN between BOL and EOL, or nil."
-  (majutsu-graph-entry-line-token-position token bol eol start))
-
-(defun majutsu-log--parse-trailing-payloads (payload)
-  "Parse tail, body, and metadata segments from PAYLOAD."
-  (majutsu-graph-entry-parse-trailing-payloads
-   (list :tokens (majutsu-graph-entry-default-tokens)) payload))
-
-(defun majutsu-log--split-module-values (payload count)
-  "Split PAYLOAD into COUNT field values using `majutsu-log--field-separator'."
-  (majutsu-graph-entry-split-module-values payload count))
-
-(defun majutsu-log--decode-transport-value (value)
-  "Decode transport-level escapes inside VALUE before column postprocessing."
-  (majutsu-log-post-decode-line-separator value))
-
-(defun majutsu-log--apply-postprocessor (fn value ctx)
-  "Apply postprocessor FN to VALUE with context CTX.
-
-FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
-  (majutsu-graph-entry-apply-postprocessor fn value ctx))
-
-(defun majutsu-log--apply-postprocessors (value postprocessors ctx)
-  "Apply POSTPROCESSORS to VALUE with CTX sequentially."
-  (majutsu-graph-entry-apply-postprocessors value postprocessors ctx))
-
 (defun majutsu-log--apply-flags (entry value)
   "Set flag fields on ENTRY based on VALUE string."
   (dolist (flag (split-string (or value "") " " t))
@@ -634,13 +497,6 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
       ("root" (setq entry (plist-put entry :root t)))
       ("@" (setq entry (plist-put entry :current_working_copy t)))))
   entry)
-
-(defun majutsu-log--canonical-field-value (field value)
-  "Return canonical semantic value for FIELD based on VALUE."
-  (majutsu-graph-entry-apply-postprocessors
-   value
-   (majutsu-log--default-postprocessors-for-field field)
-   (list :field field :module 'canonical :raw-value value :canonical t)))
 
 (defun majutsu-log--record-field (entry field value)
   "Record canonical FIELD VALUE onto ENTRY plist and field map."
@@ -680,59 +536,6 @@ FN may accept either (VALUE) or (VALUE CTX). Errors return VALUE unchanged."
     (setf (alist-get field columns nil nil #'eq) value)
     (setq entry (plist-put entry :columns columns)))
   entry)
-
-(defun majutsu-log--record-column-value (entry column value)
-  "Record per-instance VALUE for COLUMN onto ENTRY."
-  (majutsu-graph-entry-record-column-value entry column value))
-
-(defun majutsu-log--record-module-fields (entry module payload compiled)
-  "Record MODULE PAYLOAD values into ENTRY using COMPILED module layout."
-  (majutsu-graph-entry-record-module-fields entry module payload compiled))
-
-(defun majutsu-log--parse-entry-at-point (compiled)
-  "Parse one sequentially-encoded log entry at point using COMPILED.
-
-Point must be at a line potentially containing `majutsu-log--entry-start-token'.
-Returns entry plist and moves point past the consumed entry, or nil."
-  (majutsu-graph-entry-parse-at-point compiled))
-
-(defun majutsu-log--parse-entries-in-buffer (compiled)
-  "Parse all sequentially-encoded log entries in current buffer using COMPILED."
-  (majutsu-graph-entry-parse-buffer compiled))
-
-(defun majutsu-log--render-column-text (entry column &optional plain)
-  "Return rendered text for ENTRY COLUMN.
-When PLAIN is non-nil, strip all text properties from the result."
-  (majutsu-graph-entry-render-column-text entry column plain))
-
-(defun majutsu-log--render-module-parts (entry compiled module &optional annotate plain)
-  "Return rendered ENTRY parts for MODULE using COMPILED.
-When ANNOTATE is non-nil, add span properties for field/column identity.
-When PLAIN is non-nil, strip presentation text properties first."
-  (majutsu-graph-entry-render-module-parts
-   entry compiled module annotate plain))
-
-(defun majutsu-log--render-heading-content (entry compiled &optional annotate plain)
-  "Render ENTRY heading module content without graph prefixes."
-  (majutsu-graph-entry-render-heading-content
-   entry compiled annotate plain))
-
-(defun majutsu-log--render-heading-content-lines (entry compiled &optional annotate plain)
-  "Render ENTRY heading module content lines without graph prefixes."
-  (majutsu-graph-entry-render-heading-content-lines
-   entry compiled annotate plain))
-
-(defun majutsu-log--render-heading-lines (entry compiled)
-  "Render ENTRY heading module as visible lines with graph prefixes."
-  (majutsu-graph-entry-render-heading-lines entry compiled))
-
-(defun majutsu-log--render-tail (entry compiled &optional annotate plain)
-  "Render ENTRY tail module as a single-line auxiliary string."
-  (majutsu-graph-entry-render-tail entry compiled annotate plain))
-
-(defun majutsu-log--render-body (entry compiled &optional annotate plain)
-  "Render ENTRY body module as foldable multiline content."
-  (majutsu-graph-entry-render-body entry compiled annotate plain))
 
 (defun majutsu-log--entry-id (entry)
   "Return stable section id string from ENTRY metadata fields."
@@ -930,7 +733,7 @@ When the region is active, copy it literally using `copy-region-as-kill'."
       (unless column
         (user-error "No log field at point"))
       (majutsu-log--copy-string
-       (majutsu-log--render-column-text entry column t)))))
+       (majutsu-graph-entry-render-column-text entry column t)))))
 
 ;;;###autoload
 (defun majutsu-log-copy-module ()
@@ -944,9 +747,14 @@ When the region is active, copy it literally using `copy-region-as-kill'."
            (entry (majutsu-log--entry-at-point))
            (module (majutsu-log--text-property-near-point 'majutsu-log-module))
            (text (pcase module
-                   ('heading (majutsu-log--render-heading-content entry compiled nil t))
-                   ('tail (or (majutsu-log--render-tail entry compiled nil t) ""))
-                   ('body (or (majutsu-log--render-body entry compiled nil t) ""))
+                   ('heading (majutsu-graph-entry-render-heading-content
+                              entry compiled nil t))
+                   ('tail (or (majutsu-graph-entry-render-tail
+                               entry compiled nil t)
+                              ""))
+                   ('body (or (majutsu-graph-entry-render-body
+                               entry compiled nil t)
+                              ""))
                    (_ nil))))
       (unless entry
         (user-error "No log entry at point"))
@@ -1047,37 +855,12 @@ disappear again."
       (insert ?\n))
     (setq majutsu-log--this-error nil)))
 
-(defconst majutsu-log--tail-terminal-padding
-  majutsu-graph-entry--tail-terminal-padding
-  "Reserved terminal columns kept to the right of tail-aligned text.")
-
-(defun majutsu-log--tail-owner-window ()
-  "Return the window that currently owns tail layout for the current buffer."
-  (majutsu-graph-entry--tail-owner-window))
-
-(defun majutsu-log--tail-align-to-width (width &optional window)
-  "Return a `:align-to' target that right-aligns content of WIDTH."
-  (majutsu-graph-entry-tail-align-to-width width window))
-
-(defun majutsu-log--tail-spacer-display (tail &optional window)
-  "Return the spacer display spec used to right-align TAIL."
-  (majutsu-graph-entry-tail-spacer-display tail window))
-
-(defun majutsu-log--tail-width-at (pos &optional window)
-  "Return displayed width of tail text following spacer at POS."
-  (majutsu-graph-entry--tail-width-at pos window))
-
-(defun majutsu-log--refresh-tail-spacers (&optional beg end window)
-  "Recompute right-alignment display specs for tail spacers in BEG..END.
-When WINDOW is non-nil, use that window as the tail layout owner."
-  (majutsu-graph-entry-refresh-tail-spacers beg end window))
-
 (defun majutsu-log--refresh-tail-window (&optional window)
   "Refresh tail alignment for the current log buffer using WINDOW.
-When WINDOW is nil, use `majutsu-log--tail-owner-window'."
+When WINDOW is nil, use the current graph-entry tail owner window."
   (when (derived-mode-p 'majutsu-log-mode)
-    (setq window (or window (majutsu-log--tail-owner-window)))
-    (majutsu-log--refresh-tail-spacers nil nil window)
+    (setq window (or window (majutsu-graph-entry--tail-owner-window)))
+    (majutsu-graph-entry-refresh-tail-spacers nil nil window)
     (when window
       (force-window-update window))))
 
@@ -1090,24 +873,6 @@ When WINDOW is nil, use `majutsu-log--tail-owner-window'."
   (when (eq window (selected-window))
     (majutsu-log--refresh-tail-window window)))
 
-(defun majutsu-log--insert-heading-anchor-line (anchor-left tail entry-id prefix)
-  "Insert ANCHOR-LEFT and right-aligned TAIL on one prefixed line."
-  (majutsu-graph-entry--insert-heading-anchor-line
-   anchor-left tail entry-id prefix (majutsu-log--current-compiled)))
-
-(defun majutsu-log--string-has-module-p (string module)
-  "Return non-nil if STRING contains text marked with MODULE."
-  (majutsu-graph-entry-string-has-module-p string module))
-
-(defun majutsu-log--string-remove-module (string module)
-  "Return STRING with text marked as MODULE removed."
-  (majutsu-graph-entry-string-remove-module string module))
-
-(defun majutsu-log--cleanup-copied-string (string)
-  "Strip Majutsu log UI properties from copied STRING."
-  (majutsu-graph-entry-cleanup-copied-string
-   string (majutsu-log--current-compiled)))
-
 (defun majutsu-log--filter-buffer-substring (beg end &optional delete)
   "Filter copied log text between BEG and END.
 
@@ -1115,19 +880,6 @@ When a copied region contains both heading and tail text, drop the tail text
 from the copied result by default. Copying tail text alone preserves it."
   (majutsu-graph-entry-filter-buffer-substring
    beg end delete (majutsu-log--current-compiled)))
-
-(defun majutsu-log--insert-entry (entry compiled)
-  "Insert parsed ENTRY as a `jj-commit' section using COMPILED."
-  (setq-local majutsu-log--buffer-compiled compiled)
-  (majutsu-graph-entry-insert-entry entry compiled))
-
-(defun majutsu-log--wash-entry (compiled)
-  "Wash the entry at point using COMPILED.
-
-Return the parsed entry after replacing its raw protocol region with a
-`jj-commit' section, or nil when point is not at an entry."
-  (setq-local majutsu-log--buffer-compiled compiled)
-  (majutsu-graph-entry-wash-entry compiled))
 
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
@@ -1138,9 +890,10 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
     (setq majutsu-log--cached-entries nil)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
+    (setq-local majutsu-log--buffer-compiled compiled)
     (goto-char (point-min))
     (while (not (eobp))
-      (if-let* ((entry (majutsu-log--wash-entry compiled)))
+      (if-let* ((entry (majutsu-graph-entry-wash-entry compiled)))
           (push entry entries)
         (magit-delete-line)))
     (setq majutsu-log--cached-entries (nreverse entries))
@@ -1442,18 +1195,6 @@ minibuffer for editing.  Empty input clears the filter."
   (interactive)
   (majutsu-log--set-value 'majutsu-log-mode nil nil)
   (transient-reset))
-
-(defun majutsu-log--toggle-desc (label flag)
-  "Return LABEL annotated with ON/OFF state for FLAG in log args."
-  (if (member flag (car (majutsu-log--get-value 'majutsu-log-mode 'direct)))
-      (format "%s [on]" label)
-    (format "%s [off]" label)))
-
-(defun majutsu-log--value-desc (label value)
-  "Return LABEL annotated with VALUE, when VALUE is non-nil."
-  (if value
-      (format "%s (%s)" label value)
-    label))
 
 
 ;;; Arguments

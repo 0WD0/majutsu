@@ -78,7 +78,7 @@
              (majutsu-log-test--transport-value
               (alist-get (plist-get column :field) values nil nil #'eq)))
            (majutsu-graph-entry-module-columns compiled module))
-   majutsu-log--field-separator))
+   majutsu-graph-entry-field-separator))
 
 (defun majutsu-log-test--metadata-payload (compiled values)
   "Return metadata payload for COMPILED using VALUES alist."
@@ -88,15 +88,15 @@
   "Return one raw relation-aware log entry for ID and TITLE."
   (let ((compiled (majutsu-log-test--relations-compiled)))
     (concat
-     "○ " majutsu-log--entry-start-token id majutsu-log--field-separator title
-     majutsu-log--entry-tail-token
-     majutsu-log--entry-body-token
-     majutsu-log--entry-meta-token
+     "○ " majutsu-graph-entry-start-token id majutsu-graph-entry-field-separator title
+     majutsu-graph-entry-tail-token
+     majutsu-graph-entry-body-token
+     majutsu-graph-entry-meta-token
      (majutsu-log-test--metadata-payload
       compiled
       `((id . ,id)
         (parent-ids . ,parent-ids)))
-     majutsu-log--entry-end-token
+     majutsu-graph-entry-end-token
      "\n")))
 
 (defun majutsu-log-test--post-wrap (value _ctx)
@@ -184,17 +184,17 @@
   "Parser should handle graph prefixes and multiline heading payload."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               "○ " majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Title line 1\n"
-               "│ Title line 2" majutsu-log--entry-tail-token
-               majutsu-log--entry-body-token
+               "○ " majutsu-graph-entry-start-token "chg" majutsu-graph-entry-field-separator "Title line 1\n"
+               "│ Title line 2" majutsu-graph-entry-tail-token
+               majutsu-graph-entry-body-token
                "body line 1" majutsu-log--field-line-separator "body line 2"
-               majutsu-log--entry-meta-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-123")
                   (timestamp . "2m ago")
                   (flags . "@ immutable")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
     (should (= 1 (length entries)))
@@ -212,14 +212,14 @@
   "Parser should also support --no-graph output (indent = 0)."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Top\n"
-               "Tail" majutsu-log--entry-tail-token majutsu-log--entry-body-token "payload"
-               majutsu-log--entry-meta-token
+               majutsu-graph-entry-start-token "chg" majutsu-graph-entry-field-separator "Top\n"
+               "Tail" majutsu-graph-entry-tail-token majutsu-graph-entry-body-token "payload"
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-999")
                   (timestamp . "1h ago")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
     (should (= 1 (length entries)))
@@ -233,16 +233,16 @@
   "Parser should decode tail payloads separately from body and metadata."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
-               "○ " majutsu-log--entry-start-token "chg" majutsu-log--field-separator "Title"
-               majutsu-log--entry-tail-token
-               "Alice" majutsu-log--field-separator "2m ago"
-               majutsu-log--entry-body-token
+               "○ " majutsu-graph-entry-start-token "chg" majutsu-graph-entry-field-separator "Title"
+               majutsu-graph-entry-tail-token
+               "Alice" majutsu-graph-entry-field-separator "2m ago"
+               majutsu-graph-entry-body-token
                "body line 1" majutsu-log--field-line-separator "body line 2"
-               majutsu-log--entry-meta-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-123")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (entry (car (majutsu-log-test--parse-entries compiled raw))))
     (should (equal (plist-get entry :id) "id-123"))
     (should (equal (plist-get entry :author) "Alice"))
@@ -254,23 +254,23 @@
   "Lines between E of one entry and S of next entry stay with previous entry."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
-               majutsu-log--entry-tail-token
-               majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token
+               "○ " majutsu-graph-entry-start-token "chg1" majutsu-graph-entry-field-separator "Title1"
+               majutsu-graph-entry-tail-token
+               majutsu-graph-entry-body-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-1")))
-               majutsu-log--entry-end-token "\n"
+               majutsu-graph-entry-end-token "\n"
                "│ carry-line\n"
-               "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
-               majutsu-log--entry-tail-token
-               majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token
+               "○ " majutsu-graph-entry-start-token "chg2" majutsu-graph-entry-field-separator "Title2"
+               majutsu-graph-entry-tail-token
+               majutsu-graph-entry-body-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-2")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (first (nth 0 entries))
          (second (nth 1 entries)))
@@ -284,24 +284,24 @@
   "Parser should record the raw entry region for streaming washing."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (first-raw (concat
-                     "○ " majutsu-log--entry-start-token "chg1" majutsu-log--field-separator "Title1"
-                     majutsu-log--entry-tail-token
-                     majutsu-log--entry-body-token
-                     majutsu-log--entry-meta-token
+                     "○ " majutsu-graph-entry-start-token "chg1" majutsu-graph-entry-field-separator "Title1"
+                     majutsu-graph-entry-tail-token
+                     majutsu-graph-entry-body-token
+                     majutsu-graph-entry-meta-token
                      (majutsu-log-test--metadata-payload
                       compiled
                       '((id . "id-1")))
-                     majutsu-log--entry-end-token "\n"
+                     majutsu-graph-entry-end-token "\n"
                      "│ carry-line\n"))
          (raw (concat first-raw
-                      "○ " majutsu-log--entry-start-token "chg2" majutsu-log--field-separator "Title2"
-                      majutsu-log--entry-tail-token
-                      majutsu-log--entry-body-token
-                      majutsu-log--entry-meta-token
+                      "○ " majutsu-graph-entry-start-token "chg2" majutsu-graph-entry-field-separator "Title2"
+                      majutsu-graph-entry-tail-token
+                      majutsu-graph-entry-body-token
+                      majutsu-graph-entry-meta-token
                       (majutsu-log-test--metadata-payload
                        compiled
                        '((id . "id-2")))
-                      majutsu-log--entry-end-token "\n")))
+                      majutsu-graph-entry-end-token "\n")))
     (with-temp-buffer
       (insert raw)
       (goto-char (point-min))
@@ -341,14 +341,14 @@
            `((:field description :module heading :face t :post majutsu-log-test--post-wrap)
              (:field id :module metadata :face nil))))
          (raw (concat
-               "○ " majutsu-log--entry-start-token "desc"
-               majutsu-log--entry-tail-token
-               majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token
+               "○ " majutsu-graph-entry-start-token "desc"
+               majutsu-graph-entry-tail-token
+               majutsu-graph-entry-body-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "row-id")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (entries (majutsu-log-test--parse-entries compiled raw))
          (entry (car entries)))
     (should (= 1 (length entries)))
@@ -367,14 +367,14 @@
              (:field description :module body :face nil :post majutsu-log-test--post-by-module)
              (:field id :module metadata :face nil))))
          (raw (concat
-               "○ " majutsu-log--entry-start-token "desc"
-               majutsu-log--entry-tail-token
-               majutsu-log--entry-body-token "desc"
-               majutsu-log--entry-meta-token
+               "○ " majutsu-graph-entry-start-token "desc"
+               majutsu-graph-entry-tail-token
+               majutsu-graph-entry-body-token "desc"
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "row-id")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (entry (car (majutsu-log-test--parse-entries compiled raw))))
     (should (equal (plist-get entry :short-desc) "desc"))
     (should (equal (mapconcat #'substring-no-properties
@@ -488,7 +488,7 @@
                      (if pixelwise 200 80)))
                   ((symbol-function 'window-text-pixel-size)
                    (lambda (_window _from _to
-                            &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
+                                    &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
                      '(61 . 1))))
           (majutsu-graph-entry-refresh-tail-spacers))
         (should (equal (get-text-property spacer-pos 'display)
@@ -554,7 +554,7 @@
                    (if pixelwise 200 80)))
                 ((symbol-function 'window-text-pixel-size)
                  (lambda (window _from _to
-                          &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
+                                 &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
                    (setq seen window)
                    '(61 . 1))))
         (majutsu-graph-entry-refresh-tail-spacers nil nil 'explicit-window))
@@ -646,6 +646,7 @@
 (ert-deftest majutsu-log-copy-field-copies-field-value-at-point ()
   "`majutsu-log-copy-field' should copy the rendered field value at point."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
                                  (description . "Title")
@@ -915,26 +916,26 @@
   "Washing should transform the buffer incrementally and cache entries."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
-               "○ " majutsu-log--entry-start-token
-               "chg1" majutsu-log--field-separator "Title1"
-               majutsu-log--entry-tail-token
-               "Alice" majutsu-log--field-separator "2m ago"
-               majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token
+               "○ " majutsu-graph-entry-start-token
+               "chg1" majutsu-graph-entry-field-separator "Title1"
+               majutsu-graph-entry-tail-token
+               "Alice" majutsu-graph-entry-field-separator "2m ago"
+               majutsu-graph-entry-body-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-1")))
-               majutsu-log--entry-end-token "\n"
-               "○ " majutsu-log--entry-start-token
-               "chg2" majutsu-log--field-separator "Title2"
-               majutsu-log--entry-tail-token
-               "Bob" majutsu-log--field-separator "1h ago"
-               majutsu-log--entry-body-token
-               majutsu-log--entry-meta-token
+               majutsu-graph-entry-end-token "\n"
+               "○ " majutsu-graph-entry-start-token
+               "chg2" majutsu-graph-entry-field-separator "Title2"
+               majutsu-graph-entry-tail-token
+               "Bob" majutsu-graph-entry-field-separator "1h ago"
+               majutsu-graph-entry-body-token
+               majutsu-graph-entry-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-2")))
-               majutsu-log--entry-end-token "\n"))
+               majutsu-graph-entry-end-token "\n"))
          (majutsu--default-directory "/tmp/test-repo/")
          (majutsu-log--compiled-template-cache compiled))
     (with-temp-buffer
@@ -948,7 +949,7 @@
         (let ((output (buffer-string)))
           (should (string-match-p "Title1 Alice 2m" output))
           (should (string-match-p "Title2 Bob 1h" output))
-          (should-not (string-match-p (regexp-quote majutsu-log--entry-start-token) output))
+          (should-not (string-match-p (regexp-quote majutsu-graph-entry-start-token) output))
           (should (= 2 (length majutsu-log--cached-entries))))))))
 
 (ert-deftest majutsu-log-goto-parent-selects-specific-parent ()
