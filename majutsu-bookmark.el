@@ -254,10 +254,53 @@ occupy their transport slots."
     [:join ,majutsu-bookmark--list-field-separator ,@fields]
     ,majutsu-bookmark--list-record-separator])
 
+(defun majutsu-bookmark--list-name-form ()
+  "Return jj's bookmark-list ref-name template form."
+  '[:if [:remote]
+       [:if [:tracked]
+           [:label "bookmark" ["@" [:remote]]]
+         [:label "bookmark" [[:name] "@" [:remote]]]]
+     [:label "bookmark" [:name]]])
+
+(defun majutsu-bookmark--list-distance-part-form (label count)
+  "Return one tracking-distance template fragment for LABEL and COUNT."
+  `[:if [:not [:method ,count :zero]]
+       [:if [:method ,count :exact]
+           [,label " by " [:method ,count :exact] " commits"]
+         [,label " by at least " [:method ,count :lower] " commits"]]])
+
+(defun majutsu-bookmark--list-distances-form ()
+  "Return jj's tracked-remote distance template form."
+  `[:if [:tracking_present]
+       [:surround "(" ")"
+                  [:separate ", "
+                             ,(majutsu-bookmark--list-distance-part-form
+                               "ahead" '[:tracking_ahead_count])
+                             ,(majutsu-bookmark--list-distance-part-form
+                               "behind" '[:tracking_behind_count])]]])
+
+(defun majutsu-bookmark--list-targets-form ()
+  "Return jj's bookmark target summary template form."
+  '[:if [:conflict]
+       [" " [:label "conflict" "(conflicted)"] ":"]
+     [": " [:call 'format_commit_summary_with_refs [:normal_target] ""]]])
+
+(defun majutsu-bookmark--list-heading-form ()
+  "Return jj-compatible bookmark-list heading template form."
+  (let ((name (majutsu-bookmark--list-name-form))
+        (targets (majutsu-bookmark--list-targets-form)))
+    `[:if [:remote]
+         [:if [:tracked]
+             ["  " [:separate " " ,name
+                              [:if [:present] ,(majutsu-bookmark--list-distances-form)]]
+              [:if [:present] ,targets " (not created yet)"]]
+           [,name ,targets]]
+       [,name [:if [:present] ,targets " (deleted)"]]]))
+
 (defun majutsu-bookmark--list-target-form (marker commit &optional ref-depth)
-  "Return a target-record template form.
-MARKER is `-', `+', or empty.  COMMIT is a Commit-valued template form.
-REF-DEPTH selects the surrounding CommitRef `:self' binding."
+  "Return a conflict-target record template form.
+MARKER is `-' or `+'.  COMMIT is a Commit-valued template form.  REF-DEPTH
+selects the surrounding CommitRef `:self' binding."
   (let ((ref (if ref-depth `[:self ,ref-depth] '[:self])))
     (majutsu-bookmark--list-record-form
      "target"
@@ -265,15 +308,16 @@ REF-DEPTH selects the surrounding CommitRef `:self' binding."
      `[:if [:method ,ref :remote] [:method ,ref :remote] ""]
      marker
      `[:method ,commit :commit_id]
-     `[:call 'format_commit_summary_with_refs ,commit ""])))
+     `["  " ,marker " " [:call 'format_commit_summary_with_refs ,commit ""]])))
 
-(defun majutsu-bookmark--list-display-name-form ()
-  "Return a template form matching jj's bookmark ref-name rendering."
-  '[:if [:remote]
-       [:if [:tracked]
-           [:call 'label "bookmark" ["@" [:remote]]]
-         [:call 'label "bookmark" [:concat [:name] "@" [:remote]]]]
-     [:call 'label "bookmark" [:name]]])
+(defun majutsu-bookmark--list-target-records-form ()
+  "Return template form emitting conflict target records for the current ref."
+  `[:if [:conflict]
+       [[:map-join "" [:removed_targets] c
+                   ,(majutsu-bookmark--list-target-form "-" 'c 1)]
+        [:map-join "" [:added_targets] c
+                   ,(majutsu-bookmark--list-target-form "+" 'c 1)]]
+     ""])
 
 (defconst majutsu-bookmark--list-template
   (majutsu-template-compile
@@ -283,48 +327,14 @@ REF-DEPTH selects the surrounding CommitRef `:self' binding."
        [:name]
        [:if [:remote] [:remote] ""]
        [:if [:tracked] "t" ""]
-       [:if [:present] "t" ""]
-       [:if [:conflict] "t" ""]
-       [:if [:synced] "t" ""]
-       [:if [:tracking_present] "t" ""]
-       [:if [:conflict] [:method [:added_targets] :len] ""]
-       [:if [:conflict] [:method [:removed_targets] :len] ""]
-       [:if [:and [:tracked] [:tracking_present]]
-           [:method [:tracking_ahead_count] :lower]
-         ""]
-       [:if [:and [:and [:tracked] [:tracking_present]]
-                  [:method [:tracking_ahead_count] :exact]]
-           "t"
-         ""]
-       [:if [:and [:tracked] [:tracking_present]]
-           [:method [:tracking_behind_count] :lower]
-         ""]
-       [:if [:and [:and [:tracked] [:tracking_present]]
-                  [:method [:tracking_behind_count] :exact]]
-           "t"
-         ""]
-       (majutsu-bookmark--list-display-name-form)
-       [:if [:conflict]
-           [:call 'label "conflict" "(conflicted)"]
-         ""])
-     [:if [:conflict]
-         [[:method
-           [:method [:removed_targets]
-            :map [:|c| ,(majutsu-bookmark--list-target-form "-" 'c 1)]]
-           :join ""]
-          [:method
-           [:method [:added_targets]
-            :map [:|c| ,(majutsu-bookmark--list-target-form "+" 'c 1)]]
-           :join ""]]
-       [:if [:present]
-           ,(majutsu-bookmark--list-target-form "" '[:normal_target])
-         ""]]]
+       (majutsu-bookmark--list-heading-form))
+     ,(majutsu-bookmark--list-target-records-form)]
    'CommitRef)
   "Template used to render and parse `jj bookmark list' output.
 
-It emits one machine-readable ref record followed by target records.  Ref
-records use `CommitRef' fields directly; target records use jj's
-`format_commit_summary_with_refs' only for commit summary text.")
+It emits one ref record containing exact section metadata plus jj-rendered
+heading text, followed by conflict target records containing commit ids and
+jj-rendered target lines.  Majutsu only sectionizes the records.")
 
 ;;;###autoload
 (defun majutsu-bookmark-list (&optional all)
@@ -335,81 +345,35 @@ With prefix ALL, include remote bookmarks."
     :buffer "*Majutsu Bookmarks*"
     (majutsu-bookmark--list-all (and all t))))
 
-(defun majutsu-bookmark--split-char (value separator &optional max-fields)
-  "Split VALUE at SEPARATOR, preserving text properties and empty fields.
-When MAX-FIELDS is non-nil, split at most MAX-FIELDS fields, leaving the
-remaining text in the last field."
-  (when (stringp value)
-    (let ((start 0)
-          (len (length value))
-          (sep (aref separator 0))
-          out)
-      (catch 'done
-        (dotimes (idx len)
-          (when (and max-fields
-                     (>= (length out) (1- max-fields)))
-            (throw 'done nil))
-          (when (eq (aref value idx) sep)
-            (push (substring value start idx) out)
-            (setq start (1+ idx)))))
-      (push (substring value start len) out)
-      (nreverse out))))
-
-(defun majutsu-bookmark--list-bool-p (value)
-  "Return non-nil when machine-template VALUE is true."
-  (equal (substring-no-properties (or value "")) "t"))
-
-(defun majutsu-bookmark--list-string (value)
-  "Return plain string VALUE, or an empty string for nil."
-  (substring-no-properties (or value "")))
-
-(defun majutsu-bookmark--list-int (value)
-  "Parse integer VALUE from the machine template, or nil when empty."
-  (let ((value (majutsu-bookmark--list-string value)))
-    (unless (string-empty-p value)
-      (string-to-number value))))
-
 (defun majutsu-bookmark--parse-list-record (record)
   "Parse one structured bookmark list RECORD into a plist."
-  (let ((kind (majutsu-bookmark--list-string
-               (car (majutsu-bookmark--split-char
+  (let ((kind (majutsu--field-string
+               (car (majutsu--split-fields
                      record majutsu-bookmark--list-field-separator 2)))))
     (pcase kind
       ("ref"
-       (let* ((fields (majutsu-bookmark--split-char
-                       record majutsu-bookmark--list-field-separator 16))
-              (name (majutsu-bookmark--list-string (nth 1 fields)))
-              (remote (majutsu-bookmark--list-string (nth 2 fields))))
+       (let* ((fields (majutsu--split-fields
+                       record majutsu-bookmark--list-field-separator 5))
+              (name (majutsu--field-string (nth 1 fields)))
+              (remote (majutsu--field-string (nth 2 fields))))
          (unless (string-empty-p name)
            (list :kind 'ref
                  :name name
-                 :remote (unless (string-empty-p remote) remote)
-                 :tracked (majutsu-bookmark--list-bool-p (nth 3 fields))
-                 :present (majutsu-bookmark--list-bool-p (nth 4 fields))
-                 :conflict (majutsu-bookmark--list-bool-p (nth 5 fields))
-                 :synced (majutsu-bookmark--list-bool-p (nth 6 fields))
-                 :tracking-present (majutsu-bookmark--list-bool-p (nth 7 fields))
-                 :added-count (majutsu-bookmark--list-int (nth 8 fields))
-                 :removed-count (majutsu-bookmark--list-int (nth 9 fields))
-                 :ahead-count (majutsu-bookmark--list-int (nth 10 fields))
-                 :ahead-exact (majutsu-bookmark--list-bool-p (nth 11 fields))
-                 :behind-count (majutsu-bookmark--list-int (nth 12 fields))
-                 :behind-exact (majutsu-bookmark--list-bool-p (nth 13 fields))
-                 :display-name (nth 14 fields)
-                 :conflict-label (nth 15 fields)
+                 :remote (and (not (string-empty-p remote)) remote)
+                 :tracked (majutsu--field-bool-p (nth 3 fields))
+                 :heading (or (nth 4 fields) "")
                  :targets nil))))
       ("target"
-       (let* ((fields (majutsu-bookmark--split-char
+       (let* ((fields (majutsu--split-fields
                        record majutsu-bookmark--list-field-separator 6))
-              (name (majutsu-bookmark--list-string (nth 1 fields)))
-              (remote (majutsu-bookmark--list-string (nth 2 fields))))
+              (name (majutsu--field-string (nth 1 fields)))
+              (remote (majutsu--field-string (nth 2 fields))))
          (unless (string-empty-p name)
            (list :kind 'target
                  :name name
-                 :remote (unless (string-empty-p remote) remote)
-                 :marker (majutsu-bookmark--list-string (nth 3 fields))
-                 :commit-id (majutsu-bookmark--list-string (nth 4 fields))
-                 :summary (or (nth 5 fields) ""))))))))
+                 :remote (and (not (string-empty-p remote)) remote)
+                 :commit-id (majutsu--field-string (nth 4 fields))
+                 :line (or (nth 5 fields) ""))))))))
 
 (defun majutsu-bookmark--same-ref-p (entry target)
   "Return non-nil when TARGET belongs to ENTRY."
@@ -419,7 +383,7 @@ remaining text in the last field."
 (defun majutsu-bookmark--parse-list-output (output)
   "Parse structured `jj bookmark list' OUTPUT into entry plists."
   (let (entries current)
-    (dolist (record (majutsu-bookmark--split-char
+    (dolist (record (majutsu--split-fields
                      output majutsu-bookmark--list-record-separator))
       (when-let* ((item (majutsu-bookmark--parse-list-record record)))
         (pcase (plist-get item :kind)
@@ -440,107 +404,40 @@ remaining text in the last field."
         (concat name "@" remote)
       name)))
 
+(defun majutsu-bookmark--tracked-child-p (primary entry)
+  "Return non-nil when ENTRY should be nested under PRIMARY."
+  (and primary
+       (plist-get entry :remote)
+       (plist-get entry :tracked)
+       (not (plist-get primary :remote))
+       (equal (plist-get entry :name) (plist-get primary :name))))
+
 (defun majutsu-bookmark--group-list-entries (entries)
   "Group bookmark list ENTRIES into primary entries with tracked children."
   (let (groups current)
     (dolist (entry entries)
-      (let ((primary (plist-get current :primary)))
-        (if (and primary
-                 (plist-get entry :remote)
-                 (plist-get entry :tracked)
-                 (not (plist-get primary :remote))
-                 (equal (plist-get entry :name)
-                        (plist-get primary :name)))
-            (plist-put current :children
-                       (append (plist-get current :children) (list entry)))
-          (setq current (list :primary entry :children nil))
-          (push current groups))))
+      (if (majutsu-bookmark--tracked-child-p (plist-get current :primary) entry)
+          (plist-put current :children
+                     (append (plist-get current :children) (list entry)))
+        (setq current (list :primary entry :children nil))
+        (push current groups)))
     (nreverse groups)))
-
-(defun majutsu-bookmark--entry-target (entry)
-  "Return the normal target record for ENTRY, if any."
-  (seq-find (lambda (target)
-              (string-empty-p (plist-get target :marker)))
-            (plist-get entry :targets)))
-
-(defun majutsu-bookmark--entry-display-name (entry)
-  "Return the display name for bookmark ENTRY."
-  (let ((name (plist-get entry :name))
-        (remote (plist-get entry :remote)))
-    (cond
-     ((and remote (plist-get entry :tracked))
-      (concat "@" remote))
-     (remote
-      (concat name "@" remote))
-     (t name))))
-
-(defun majutsu-bookmark--entry-display-text (entry)
-  "Return display text for bookmark ENTRY, preserving jj label properties."
-  (let ((display (plist-get entry :display-name)))
-    (if (and display (not (string-empty-p (substring-no-properties display))))
-        display
-      (majutsu-bookmark--entry-display-name entry))))
-
-(defun majutsu-bookmark--tracking-distance-part (entry label count-key exact-key)
-  "Return one tracking distance string for ENTRY.
-LABEL is `ahead' or `behind'.  COUNT-KEY and EXACT-KEY select parsed fields."
-  (let ((count (plist-get entry count-key)))
-    (when (and (numberp count) (> count 0))
-      (format "%s by %s%d commits"
-              label
-              (if (plist-get entry exact-key) "" "at least ")
-              count))))
-
-(defun majutsu-bookmark--tracking-distance (entry)
-  "Return formatted tracking distance for ENTRY, or nil."
-  (when (and (plist-get entry :tracked)
-             (plist-get entry :tracking-present))
-    (let ((parts (delq nil
-                       (list (majutsu-bookmark--tracking-distance-part
-                              entry "ahead" :ahead-count :ahead-exact)
-                             (majutsu-bookmark--tracking-distance-part
-                              entry "behind" :behind-count :behind-exact)))))
-      (unless (null parts)
-        (concat " (" (string-join parts ", ") ")")))))
-
-(defun majutsu-bookmark--insert-entry-heading (entry)
-  "Insert the heading for bookmark list ENTRY."
-  (when (and (plist-get entry :remote)
-             (plist-get entry :tracked))
-    (insert "  "))
-  (insert (majutsu-bookmark--entry-display-text entry))
-  (when-let* ((distance (majutsu-bookmark--tracking-distance entry)))
-    (insert distance))
-  (cond
-   ((plist-get entry :conflict)
-    (insert " " (or (plist-get entry :conflict-label) "(conflicted)") ":"))
-   ((plist-get entry :present)
-    (when-let* ((target (majutsu-bookmark--entry-target entry)))
-      (insert ": " (plist-get target :summary))))
-   (t
-    (insert " " (propertize (if (and (plist-get entry :remote)
-                                     (plist-get entry :tracked))
-                                "(not created yet)"
-                              "(deleted)")
-                            'font-lock-face 'shadow)))))
 
 (defun majutsu-bookmark--insert-target (target)
   "Insert one conflicted bookmark TARGET as a commit section."
   (magit-insert-section (jj-commit (plist-get target :commit-id) t)
-    (magit-insert-heading
-      (insert "  " (plist-get target :marker) " "
-              (plist-get target :summary)))))
+    (magit-insert-heading (or (plist-get target :line) ""))))
 
 (defun majutsu-bookmark--insert-list-entry (entry &optional children)
   "Insert bookmark list ENTRY and optional CHILDREN as sections."
-  (magit-insert-section (jj-bookmark (majutsu-bookmark--entry-ref entry) t)
-    (magit-insert-heading
-      (majutsu-bookmark--insert-entry-heading entry))
-    (when (plist-get entry :conflict)
+  (let ((magit-section-show-child-count nil))
+    (magit-insert-section (jj-bookmark (majutsu-bookmark--entry-ref entry) t)
+      (magit-insert-heading (or (plist-get entry :heading)
+                                (majutsu-bookmark--entry-ref entry)))
       (dolist (target (plist-get entry :targets))
-        (majutsu-bookmark--insert-target target)))
-    (dolist (child children)
-      (majutsu-bookmark--insert-list-entry child))))
+        (majutsu-bookmark--insert-target target))
+      (dolist (child children)
+        (majutsu-bookmark--insert-list-entry child)))))
 
 (defun majutsu-bookmark--wash-list (_args)
   "Wash structured `jj bookmark list' output into bookmark sections."
