@@ -267,6 +267,14 @@ REF-DEPTH selects the surrounding CommitRef `:self' binding."
      `[:method ,commit :commit_id]
      `[:call 'format_commit_summary_with_refs ,commit ""])))
 
+(defun majutsu-bookmark--list-display-name-form ()
+  "Return a template form matching jj's bookmark ref-name rendering."
+  '[:if [:remote]
+       [:if [:tracked]
+           [:call 'label "bookmark" ["@" [:remote]]]
+         [:call 'label "bookmark" [:concat [:name] "@" [:remote]]]]
+     [:call 'label "bookmark" [:name]]])
+
 (defconst majutsu-bookmark--list-template
   (majutsu-template-compile
    `[:concat
@@ -294,6 +302,10 @@ REF-DEPTH selects the surrounding CommitRef `:self' binding."
        [:if [:and [:and [:tracked] [:tracking_present]]
                   [:method [:tracking_behind_count] :exact]]
            "t"
+         ""]
+       (majutsu-bookmark--list-display-name-form)
+       [:if [:conflict]
+           [:call 'label "conflict" "(conflicted)"]
          ""])
      [:if [:conflict]
          [[:method
@@ -365,7 +377,7 @@ remaining text in the last field."
     (pcase kind
       ("ref"
        (let* ((fields (majutsu-bookmark--split-char
-                       record majutsu-bookmark--list-field-separator 14))
+                       record majutsu-bookmark--list-field-separator 16))
               (name (majutsu-bookmark--list-string (nth 1 fields)))
               (remote (majutsu-bookmark--list-string (nth 2 fields))))
          (unless (string-empty-p name)
@@ -383,6 +395,8 @@ remaining text in the last field."
                  :ahead-exact (majutsu-bookmark--list-bool-p (nth 11 fields))
                  :behind-count (majutsu-bookmark--list-int (nth 12 fields))
                  :behind-exact (majutsu-bookmark--list-bool-p (nth 13 fields))
+                 :display-name (nth 14 fields)
+                 :conflict-label (nth 15 fields)
                  :targets nil))))
       ("target"
        (let* ((fields (majutsu-bookmark--split-char
@@ -460,11 +474,12 @@ remaining text in the last field."
       (concat name "@" remote))
      (t name))))
 
-(defun majutsu-bookmark--entry-name-face (entry)
-  "Return face used for bookmark ENTRY's display name."
-  (if (plist-get entry :remote)
-      'magit-branch-remote
-    'magit-branch-local))
+(defun majutsu-bookmark--entry-display-text (entry)
+  "Return display text for bookmark ENTRY, preserving jj label properties."
+  (let ((display (plist-get entry :display-name)))
+    (if (and display (not (string-empty-p (substring-no-properties display))))
+        display
+      (majutsu-bookmark--entry-display-name entry))))
 
 (defun majutsu-bookmark--tracking-distance-part (entry label count-key exact-key)
   "Return one tracking distance string for ENTRY.
@@ -493,17 +508,12 @@ LABEL is `ahead' or `behind'.  COUNT-KEY and EXACT-KEY select parsed fields."
   (when (and (plist-get entry :remote)
              (plist-get entry :tracked))
     (insert "  "))
-  (insert (propertize (majutsu-bookmark--entry-display-name entry)
-                      'font-lock-face
-                      (majutsu-bookmark--entry-name-face entry)))
+  (insert (majutsu-bookmark--entry-display-text entry))
   (when-let* ((distance (majutsu-bookmark--tracking-distance entry)))
     (insert distance))
   (cond
    ((plist-get entry :conflict)
-    (insert " " (propertize "(conflicted)" 'font-lock-face 'font-lock-warning-face))
-    (when-let* ((count (plist-get entry :added-count))
-                (_ (> count 1)))
-      (insert " " (propertize (format "(%d)" count) 'font-lock-face 'shadow))))
+    (insert " " (or (plist-get entry :conflict-label) "(conflicted)") ":"))
    ((plist-get entry :present)
     (when-let* ((target (majutsu-bookmark--entry-target entry)))
       (insert ": " (plist-get target :summary))))
@@ -514,23 +524,12 @@ LABEL is `ahead' or `behind'.  COUNT-KEY and EXACT-KEY select parsed fields."
                               "(deleted)")
                             'font-lock-face 'shadow)))))
 
-(defun majutsu-bookmark--target-marker-face (marker)
-  "Return face used for target MARKER."
-  (pcase marker
-    ("+" 'diff-added)
-    ("-" 'diff-removed)
-    (_ 'shadow)))
-
 (defun majutsu-bookmark--insert-target (target)
   "Insert one conflicted bookmark TARGET as a commit section."
   (magit-insert-section (jj-commit (plist-get target :commit-id) t)
     (magit-insert-heading
-      (let ((marker (plist-get target :marker)))
-        (insert "  "
-                (propertize marker 'font-lock-face
-                            (majutsu-bookmark--target-marker-face marker))
-                " "
-                (plist-get target :summary))))))
+      (insert "  " (plist-get target :marker) " "
+              (plist-get target :summary)))))
 
 (defun majutsu-bookmark--insert-list-entry (entry &optional children)
   "Insert bookmark list ENTRY and optional CHILDREN as sections."
