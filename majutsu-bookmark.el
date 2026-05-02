@@ -471,10 +471,14 @@ MARKER is the conflict side marker rendered in the target heading."
     `[:if [:conflict]
          [,(plist-get tokens :push)
           "\n"
-          [:map-join "" [:removed_targets] c
-           ,(majutsu-bookmark--target-row-template-form compiled "-" 'c)]
-          [:map-join "" [:added_targets] c
-           ,(majutsu-bookmark--target-row-template-form compiled "+" 'c)]
+          [:method [:removed_targets]
+           :map [:|c|
+                 ,(majutsu-bookmark--target-row-template-form compiled "-" 'c)]
+           :join ""]
+          [:method [:added_targets]
+           :map [:|c|
+                 ,(majutsu-bookmark--target-row-template-form compiled "+" 'c)]
+           :join ""]
           ,(plist-get tokens :pop)
           "\n"]
        ""]))
@@ -483,10 +487,10 @@ MARKER is the conflict side marker rendered in the target heading."
   "Return template form for bookmark list row stream using COMPILED."
   (let ((tracked-remote '[:and [:remote] [:tracked]])
         (tokens (plist-get compiled :tokens)))
-    `[[:if ,tracked-remote [,(plist-get tokens :push) "\n"] ""]
+    `[[:if ,tracked-remote [,(plist-get tokens :push) "\n"]]
       ,(majutsu-row-template-form compiled)
       ,(majutsu-bookmark--conflict-targets-template-form compiled)
-      [:if ,tracked-remote [,(plist-get tokens :pop) "\n"] ""]]))
+      [:if ,tracked-remote [,(plist-get tokens :pop) "\n"]]]))
 
 (defun majutsu-bookmark--list-compiled ()
   "Return cached row metadata for `jj bookmark list'."

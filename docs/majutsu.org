@@ -1065,16 +1065,18 @@ List-oriented methods can be written in several equivalent styles:
               :join [:str ", "]])
 ; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 
-(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+(majutsu-tpl [:method [:raw "self.parents()"]
+                      :map [:lambda [p] [:raw "p.commit_id()"]]
+                      :join [:str ", "]])
 ; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 #+end_src
 
-Prefer direct lambdas and =map + join= composition in new code. The historical
-binder forms such as =[:map collection var body]= and =:map-join= remain as
-compatibility sugar, but they now lower through the same core
-=:method= + =:lambda= path as direct method calls. Similarly, =:-map= remains a
-value-level explicit-lambda helper while the =:--map= family is syntax sugar
-layered on top of the same lambda support.
+Prefer direct lambdas and =:map= + =:join= composition in new code. The
+historical binder form =[:map collection var body]= remains as compatibility
+sugar, but it now lowers through the same core =:method= + =:lambda= path as
+direct method calls. Similarly, =:-map= remains a value-level explicit-lambda
+helper while the =:--map= family is syntax sugar layered on top of the same
+lambda support.
 
 This is a deliberate Majutsu DSL adaptation. Upstream jj centers the
 higher-order story around expressions such as =collection.map(|x| body)=;
