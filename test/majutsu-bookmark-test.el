@@ -28,6 +28,16 @@
                      majutsu-bookmark--list-field-separator)
           majutsu-bookmark--list-record-separator))
 
+(defun majutsu-bookmark-test--ref (name remote tracked heading)
+  "Return one bookmark-list ref record."
+  (majutsu-bookmark-test--record
+   "ref" name remote (and tracked "t") heading))
+
+(defun majutsu-bookmark-test--target (name remote marker commit-id line)
+  "Return one bookmark-list conflict target record."
+  (majutsu-bookmark-test--record
+   "target" name remote marker commit-id line))
+
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
                  '("main" . "origin"))))
@@ -140,36 +150,33 @@
 
 (ert-deftest majutsu-bookmark-parse-list-output/attaches-targets-and-remote-state ()
   (let* ((output (concat
-                  (majutsu-bookmark-test--record
-                   "ref" "dev" "" "" "t" "" "" "" "" "" "" "" "" "")
-                  (majutsu-bookmark-test--record
-                   "target" "dev" "" "" "b052a92d" "rymwrkkn b052a92d summary")
-                  (majutsu-bookmark-test--record
-                   "ref" "dev" "origin" "t" "t" "" "" "t" "" "" "2" "t" "10" "")
-                  (majutsu-bookmark-test--record
-                   "target" "dev" "origin" "" "4bb5dd3b"
-                   "sxwtxlqt/1 4bb5dd3b (hidden) summary")))
+                  (majutsu-bookmark-test--ref
+                   "dev" "" nil "dev: rymwrkkn b052a92d summary")
+                  (majutsu-bookmark-test--ref
+                   "dev" "origin" t
+                   "  @origin (ahead by 2 commits, behind by at least 10 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary")
+                  (majutsu-bookmark-test--target
+                   "dev" "origin" "+" "4bb5dd3b"
+                   "  + sxwtxlqt/1 4bb5dd3b (hidden) summary")))
          (entries (majutsu-bookmark--parse-list-output output)))
     (should (= (length entries) 2))
     (should (equal (mapcar #'majutsu-bookmark--entry-ref entries)
                    '("dev" "dev@origin")))
-    (should (equal (plist-get (car (plist-get (car entries) :targets)) :summary)
-                   "rymwrkkn b052a92d summary"))
+    (should (equal (plist-get (car entries) :heading)
+                   "dev: rymwrkkn b052a92d summary"))
     (should (plist-get (cadr entries) :tracked))
-    (should (equal (plist-get (cadr entries) :ahead-count) 2))
-    (should (equal (plist-get (cadr entries) :behind-count) 10))))
+    (should (equal (plist-get (cadr entries) :heading)
+                   "  @origin (ahead by 2 commits, behind by at least 10 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary"))
+    (should (equal (plist-get (car (plist-get (cadr entries) :targets)) :line)
+                   "  + sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
 
 (ert-deftest majutsu-bookmark-wash-list/nests-tracked-remotes-under-local-bookmark ()
   (let* ((output (concat
-                  (majutsu-bookmark-test--record
-                   "ref" "dev" "" "" "t" "" "" "" "" "" "" "" "" "")
-                  (majutsu-bookmark-test--record
-                   "target" "dev" "" "" "b052a92d" "rymwrkkn b052a92d summary")
-                  (majutsu-bookmark-test--record
-                   "ref" "dev" "origin" "t" "t" "" "" "t" "" "" "2" "t" "" "")
-                  (majutsu-bookmark-test--record
-                   "target" "dev" "origin" "" "4bb5dd3b"
-                   "sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
+                  (majutsu-bookmark-test--ref
+                   "dev" "" nil "dev: rymwrkkn b052a92d summary")
+                  (majutsu-bookmark-test--ref
+                   "dev" "origin" t
+                   "  @origin (ahead by 2 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
     (with-temp-buffer
       (majutsu-bookmark-list-mode)
       (let ((inhibit-read-only t)
@@ -198,12 +205,12 @@
 
 (ert-deftest majutsu-bookmark-wash-list/sectionizes-conflicted-targets ()
   (let* ((output (concat
-                  (majutsu-bookmark-test--record
-                   "ref" "topic" "" "" "t" "t" "" "" "2" "1" "" "" "" "")
-                  (majutsu-bookmark-test--record
-                   "target" "topic" "" "-" "old123" "old-target")
-                  (majutsu-bookmark-test--record
-                   "target" "topic" "" "+" "new123" "new-target"))))
+                  (majutsu-bookmark-test--ref
+                   "topic" "" nil "topic (conflicted):")
+                  (majutsu-bookmark-test--target
+                   "topic" "" "-" "old123" "  - old-target")
+                  (majutsu-bookmark-test--target
+                   "topic" "" "+" "new123" "  + new-target"))))
     (with-temp-buffer
       (majutsu-bookmark-list-mode)
       (let ((inhibit-read-only t)
