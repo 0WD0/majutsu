@@ -295,42 +295,9 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
                            (current-buffer))
     (or (magit-section-value-if 'jj-commit) "@")))
 
-(defun majutsu-diff--transient-suffix-object ()
-  "Return the active revset suffix object, if it can be found."
-  (or (ignore-errors (transient-suffix-object))
-      (and (symbolp this-command)
-           (get this-command 'transient--suffix))))
-
-(defun majutsu-diff--transient-prefix-command-from-suffix (command)
-  "Infer the transient prefix command from suffix COMMAND."
-  (when-let* ((name (and command (symbol-name command))))
-    (cond
-     ((string-prefix-p "majutsu-absorb:" name) 'majutsu-absorb)
-     ((string-prefix-p "majutsu-diff:" name) 'majutsu-diff)
-     ((string-prefix-p "majutsu-duplicate:" name) 'majutsu-duplicate)
-     ((string-prefix-p "majutsu-new:" name) 'majutsu-new)
-     ((string-prefix-p "majutsu-rebase:" name) 'majutsu-rebase)
-     ((string-prefix-p "majutsu-restore:" name) 'majutsu-restore)
-     ((string-prefix-p "majutsu-revert:" name) 'majutsu-revert)
-     ((string-prefix-p "majutsu-simplify-parents:" name)
-      'majutsu-simplify-parents-transient)
-     ((string-prefix-p "majutsu-split:" name) 'majutsu-split)
-     ((string-prefix-p "majutsu-squash:" name) 'majutsu-squash))))
-
 (defun majutsu-diff--transient-prefix-command ()
-  "Return the current transient prefix command for revset readers.
-
-Use Transient's prefix/suffix object APIs rather than assuming
-`transient-current-command' is bound while an infix reader runs."
-  (or (ignore-errors
-        (when-let* ((prefix (transient-prefix-object)))
-          (oref prefix command)))
-      (and (symbolp transient-current-command)
-           (get transient-current-command 'transient--prefix)
-           transient-current-command)
-      (when-let* ((suffix (majutsu-diff--transient-suffix-object)))
-        (majutsu-diff--transient-prefix-command-from-suffix
-         (oref suffix command)))))
+  "Return the current transient prefix command for revset readers."
+  (oref (transient-prefix-object) command))
 
 (defun majutsu-diff--transient-jj-command-args ()
   "Return jj subcommand args for the active revset transient."
@@ -348,13 +315,7 @@ Use Transient's prefix/suffix object APIs rather than assuming
 
 (defun majutsu-diff--transient-jj-option-arg ()
   "Return jj option arg for the active revset infix command."
-  (when-let* ((suffix (majutsu-diff--transient-suffix-object))
-              ((slot-exists-p suffix 'argument))
-              ((slot-boundp suffix 'argument))
-              (argument (oref suffix argument)))
-    (if (string-suffix-p "=" argument)
-        (substring argument 0 -1)
-      argument)))
+  (string-remove-suffix "=" (oref (transient-suffix-object) argument)))
 
 (defun majutsu-diff--transient-revset-completion-args ()
   "Return jj native completion context for the active revset reader."
