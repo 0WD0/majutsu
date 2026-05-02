@@ -138,11 +138,10 @@ DEFAULT is preselected when non-nil.  If REQUIRE-MATCH is non-nil,
 require an existing local bookmark name."
   (let ((default (or default (majutsu-bookmark-at-point)))
         (payload (majutsu-bookmark-candidate-data nil default-directory)))
-    (majutsu-completing-read-payload prompt payload
-                                     nil (or require-match 'any) nil
-                                     'majutsu-bookmark-name-history
-                                     default 'majutsu-bookmark nil
-                                     default-directory)))
+    (majutsu-ref-read 'bookmark prompt payload
+                      'majutsu-bookmark-name-history
+                      default (or require-match 'any)
+                      default-directory)))
 
 (defun majutsu-read-bookmark-names (prompt &optional candidates default require-match)
   "Read exact bookmark names with PROMPT.
@@ -151,10 +150,10 @@ non-nil.  If REQUIRE-MATCH is non-nil, require existing local bookmark
 names."
   (let ((default (or default (majutsu-bookmark-at-point)))
         (payload (majutsu-bookmark-candidate-data candidates default-directory)))
-    (majutsu-completing-read-multiple-payload
-     prompt payload
-     nil (or require-match 'any) nil 'majutsu-bookmark-name-history
-     default 'majutsu-bookmark nil default-directory)))
+    (majutsu-ref-read-multiple 'bookmark prompt payload
+                               'majutsu-bookmark-name-history
+                               default (or require-match 'any)
+                               default-directory)))
 
 (defun majutsu-read-bookmark-pattern (prompt &optional default)
   "Read one bookmark name pattern using PROMPT.
@@ -163,11 +162,9 @@ DEFAULT is preselected when non-nil."
                      (majutsu-bookmark-at-point)
                      (majutsu--bookmark-patterns-for-revision-at-point)))
         (payload (majutsu-bookmark-candidate-data nil default-directory)))
-    (majutsu-completing-read-payload prompt payload
-                                     nil 'any nil
-                                     'majutsu-bookmark-pattern-history
-                                     default 'majutsu-bookmark nil
-                                     default-directory)))
+    (majutsu-ref-read 'bookmark prompt payload
+                      'majutsu-bookmark-pattern-history
+                      default 'any default-directory)))
 
 (defun majutsu-read-bookmark-patterns (prompt &optional _init-input _history candidates default)
   "Read bookmark name patterns with PROMPT.
@@ -177,10 +174,9 @@ bookmark(s) at point."
                       (majutsu-bookmark-at-point)
                       (majutsu--bookmark-patterns-for-revision-at-point)))
          (payload (majutsu-bookmark-candidate-data candidates default-directory)))
-    (majutsu-completing-read-multiple-payload
-     prompt payload
-     nil nil nil 'majutsu-bookmark-pattern-history
-     default 'majutsu-bookmark nil default-directory)))
+    (majutsu-ref-read-multiple 'bookmark prompt payload
+                               'majutsu-bookmark-pattern-history
+                               default nil default-directory)))
 
 ;;;###autoload
 (defun majutsu-bookmark-create (&optional names)
