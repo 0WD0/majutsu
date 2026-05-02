@@ -273,6 +273,20 @@ The template is compiled with `CommitRef' as the implicit self type."
          (set-default symbol value)
          (setq majutsu-bookmark--list-template-cache nil)))
 
+(defcustom majutsu-bookmark-list-conflict-target-heading-template
+  '[:|marker|
+    [:|summary|
+     [:concat "  " marker " " summary]]]
+  "Template used for conflicted target headings in `majutsu-bookmark-list'.
+The template is compiled as a two-stage lambda: the first argument is the
+conflict marker such as `+' or `-', and the second argument is the commit
+summary string."
+  :type 'sexp
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-bookmark--list-template-cache nil)))
+
 (defun majutsu-bookmark--invalidate-list-template (&rest _)
   "Invalidate the cached bookmark-list template."
   (setq majutsu-bookmark--list-template-cache nil))
@@ -281,6 +295,8 @@ The template is compiled with `CommitRef' as the implicit self type."
   (add-variable-watcher 'majutsu-bookmark-list-commit-summary-template
                         #'majutsu-bookmark--invalidate-list-template)
   (add-variable-watcher 'majutsu-bookmark-list-heading-template
+                        #'majutsu-bookmark--invalidate-list-template)
+  (add-variable-watcher 'majutsu-bookmark-list-conflict-target-heading-template
                         #'majutsu-bookmark--invalidate-list-template))
 
 (majutsu-template-defkeyword majutsu-bookmark-list-commit-summary Commit
@@ -376,7 +392,7 @@ The template is compiled with `CommitRef' as the implicit self type."
     ('heading '[:majutsu-bookmark-list-heading])
     ('kind "ref")
     ('name '[:name])
-    ('remote '[:if [:remote] [:remote] ""])
+    ('remote '[:remote])
     ('tracked '[:if [:tracked] "t" ""])
     ('commit-id "")
     (_ (user-error "Unknown bookmark list row field %S" field))))
@@ -428,66 +444,43 @@ The template is compiled with `CommitRef' as the implicit self type."
         :tail-align nil
         :compat-property-prefix 'majutsu-bookmark-list))
 
-(defun majutsu-bookmark--row-form
-    (compiled heading kind name remote tracked commit-id)
-  "Return one bookmark row form using COMPILED metadata."
+(defun majutsu-bookmark--target-row-template-form (compiled marker commit)
+  "Return row template form for one conflict target COMMIT.
+MARKER is the conflict side marker rendered in the target heading."
+  (majutsu-row-template-form
+   compiled
+   `((heading . [[,majutsu-bookmark-list-conflict-target-heading-template
+                  ,marker]
+                 [:method ,commit :majutsu-bookmark-list-commit-summary]])
+     (kind . "target")
+     (name . [:method [:self 1] :name])
+     (remote . [:if [:method [:self 1] :remote]
+                   [:method [:self 1] :remote]
+                 ""])
+     (tracked . "")
+     (commit-id . [:method ,commit :commit_id]))))
+
+(defun majutsu-bookmark--conflict-targets-template-form (compiled)
+  "Return target rows template form for conflicted bookmark refs."
   (let ((tokens (plist-get compiled :tokens)))
-    `[:concat
-      ,(plist-get tokens :start)
-      ,heading
-      ,(plist-get tokens :tail)
-      ,(plist-get tokens :body)
-      ,(plist-get tokens :metadata)
-      [:join ,majutsu-row-field-separator
-             ,kind
-             ,name
-             ,remote
-             ,tracked
-             ,commit-id]
-      ,(plist-get tokens :end)
-      "\n"]))
+    `[:if [:conflict]
+         [,(plist-get tokens :push)
+          "\n"
+          [:map-join "" [:removed_targets] c
+           ,(majutsu-bookmark--target-row-template-form compiled "-" 'c)]
+          [:map-join "" [:added_targets] c
+           ,(majutsu-bookmark--target-row-template-form compiled "+" 'c)]
+          ,(plist-get tokens :pop)
+          "\n"]
+       ""]))
 
 (defun majutsu-bookmark--list-template-form (compiled)
   "Return template form for bookmark list row stream using COMPILED."
-  (let* ((target-row
-          (lambda (marker commit)
-            (majutsu-bookmark--row-form
-             compiled
-             `["  " ,marker " " [:method ,commit :majutsu-bookmark-list-commit-summary]]
-             "target"
-             '[:method [:self 1] :name]
-             '[:if [:method [:self 1] :remote]
-                  [:method [:self 1] :remote]
-                ""]
-             ""
-             `[:method ,commit :commit_id])))
-         (target-rows
-          `[:if [:conflict]
-               [,(plist-get (plist-get compiled :tokens) :push)
-                "\n"
-                [:method [:method [:removed_targets]
-                          :map [:lambda [c] ,(funcall target-row "-" 'c)]]
-                         :join ""]
-                [:method [:method [:added_targets]
-                          :map [:lambda [c] ,(funcall target-row "+" 'c)]]
-                         :join ""]
-                ,(plist-get (plist-get compiled :tokens) :pop)
-                "\n"]
-             ""])
-         (ref-row
-          (majutsu-bookmark--row-form
-           compiled
-           '[:majutsu-bookmark-list-heading]
-           "ref"
-           '[:name]
-           '[:if [:remote] [:remote] ""]
-           '[:if [:tracked] "t" ""]
-           ""))
-         (tracked-remote '[:and [:remote] [:tracked]])
-         (tokens (plist-get compiled :tokens)))
+  (let ((tracked-remote '[:and [:remote] [:tracked]])
+        (tokens (plist-get compiled :tokens)))
     `[[:if ,tracked-remote [,(plist-get tokens :push) "\n"] ""]
-      ,ref-row
-      ,target-rows
+      ,(majutsu-row-template-form compiled)
+      ,(majutsu-bookmark--conflict-targets-template-form compiled)
       [:if ,tracked-remote [,(plist-get tokens :pop) "\n"] ""]]))
 
 (defun majutsu-bookmark--list-compiled ()
