@@ -18,6 +18,22 @@
   (should (eq (alist-get 'jj-tag magit--section-type-alist)
               'majutsu-tag-section)))
 
+(ert-deftest majutsu-split-fields/preserves-empty-fields-and-tail ()
+  (let ((sep (string 30)))
+    (should (equal (majutsu--split-fields (concat "a" sep "b" sep) sep)
+                   '("a" "b" "")))
+    (should (equal (majutsu--split-fields (concat "a" sep "b" sep "c") sep 2)
+                   (list "a" (concat "b" sep "c"))))))
+
+(ert-deftest majutsu-machine-field-parsers/normalize-values ()
+  (should (majutsu--field-bool-p "t"))
+  (should-not (majutsu--field-bool-p ""))
+  (should (equal (majutsu--field-string #("x" 0 1 (face bold))) "x")))
+
+(ert-deftest majutsu-append-unique/preserves-order ()
+  (should (equal (majutsu--append-unique '("a") "b") '("a" "b")))
+  (should (equal (majutsu--append-unique '("a") "a") '("a"))))
+
 (ert-deftest majutsu-completing-read/empty-optional-returns-nil ()
   (cl-letf (((symbol-function 'completing-read)
              (lambda (&rest _args)

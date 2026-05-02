@@ -73,22 +73,7 @@ SCOPE controls what to return:
 
 (defun majutsu-tag--split-completion-fields (value)
   "Split tag completion VALUE by `majutsu-tag--completion-field-separator'."
-  (if (not (stringp value))
-      nil
-    (let ((start 0)
-          (len (length value))
-          (sep (aref majutsu-tag--completion-field-separator 0))
-          out)
-      (dotimes (idx len)
-        (when (eq (aref value idx) sep)
-          (push (substring value start idx) out)
-          (setq start (1+ idx))))
-      (push (substring value start len) out)
-      (nreverse out))))
-
-(defun majutsu-tag--parse-completion-bool (value)
-  "Parse tag completion boolean VALUE."
-  (equal value "t"))
+  (majutsu--split-fields value majutsu-tag--completion-field-separator))
 
 (defun majutsu-tag--parse-completion-line (line)
   "Parse one tag completion LINE into a plist."
@@ -98,10 +83,10 @@ SCOPE controls what to return:
     (when (and (stringp name) (not (string-empty-p name)))
       (list :name name
             :remote (unless (string-empty-p remote) remote)
-            :conflict (majutsu-tag--parse-completion-bool (nth 2 fields))
-            :present (majutsu-tag--parse-completion-bool (nth 3 fields))
-            :tracked (majutsu-tag--parse-completion-bool (nth 4 fields))
-            :synced (majutsu-tag--parse-completion-bool (nth 5 fields))))))
+            :conflict (majutsu--field-bool-p (nth 2 fields))
+            :present (majutsu--field-bool-p (nth 3 fields))
+            :tracked (majutsu--field-bool-p (nth 4 fields))
+            :synced (majutsu--field-bool-p (nth 5 fields))))))
 
 (defun majutsu-tag--completion-entries (&optional directory)
   "Return structured tag completion entries for DIRECTORY."
@@ -112,12 +97,6 @@ SCOPE controls what to return:
       (when-let* ((entry (majutsu-tag--parse-completion-line line)))
         (push entry entries)))
     (nreverse entries)))
-
-(defun majutsu-tag--add-unique-string (items item)
-  "Return ITEMS with ITEM appended unless it is already present."
-  (if (member item items)
-      items
-    (append items (list item))))
 
 (defun majutsu-tag-candidate-data (&optional directory)
   "Return completion payload for local tags in DIRECTORY."
@@ -140,7 +119,7 @@ SCOPE controls what to return:
                                  (if (plist-get row :tracked)
                                      :tracked-remotes
                                    :untracked-remotes)
-                                 (majutsu-tag--add-unique-string
+                                 (majutsu--append-unique
                                   (plist-get entry
                                              (if (plist-get row :tracked)
                                                  :tracked-remotes

@@ -155,6 +155,41 @@ for a class of actions that would normally ask for confirmation."
 
 ;;; Utilities
 
+(defun majutsu--split-fields (value separator &optional max-fields)
+  "Split VALUE at one-character SEPARATOR, preserving empty fields.
+When MAX-FIELDS is non-nil, split at most MAX-FIELDS fields and leave the
+remaining text in the last field.  Text properties are preserved."
+  (when (stringp value)
+    (let ((start 0)
+          (len (length value))
+          (sep (if (characterp separator) separator (aref separator 0)))
+          out)
+      (catch 'done
+        (dotimes (idx len)
+          (when (and max-fields
+                     (>= (length out) (1- max-fields)))
+            (throw 'done nil))
+          (when (eq (aref value idx) sep)
+            (push (substring value start idx) out)
+            (setq start (1+ idx)))))
+      (push (substring value start len) out)
+      (nreverse out))))
+
+(defun majutsu--field-string (value)
+  "Return VALUE as a plain machine-field string."
+  (substring-no-properties (or value "")))
+
+(defun majutsu--field-bool-p (value)
+  "Return non-nil when machine-field VALUE is true."
+  (equal (majutsu--field-string value) "t"))
+
+(defun majutsu--append-unique (items item &optional testfn)
+  "Return ITEMS with ITEM appended unless already present.
+TESTFN defaults to `equal'."
+  (if (cl-member item items :test (or testfn #'equal))
+      items
+    (append items (list item))))
+
 (defun majutsu--ensure-flag (args flag &optional position)
   "Return ARGS ensuring FLAG is present once.
 POSITION may be `front' to insert FLAG at the beginning; otherwise FLAG
