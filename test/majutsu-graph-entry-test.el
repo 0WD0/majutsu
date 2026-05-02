@@ -132,7 +132,7 @@
                       (point-min) (point-max) nil compiled)
                      "Title\n")))))
 
-(ert-deftest majutsu-graph-entry-copy-field-copies-visible-field ()
+(ert-deftest majutsu-entry-copy-field-copies-visible-field ()
   "Copying a visible field should use graph-entry text properties."
   (let* ((compiled (majutsu-graph-entry-test--compiled))
          (entry (list :columns '((title . "Title")
@@ -146,8 +146,9 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-graph-entry-buffer-compiled compiled)
-      (setq-local majutsu-graph-entry-cached-entries (list entry))
+      (setq-local majutsu-entry-copy-buffer-layout
+                  (plist-get compiled :copy-layout))
+      (setq-local majutsu-entry-copy-cached-entries (list entry))
       (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Alice")
@@ -157,10 +158,10 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-graph-entry-copy-field))
+        (majutsu-entry-copy-field))
       (should (equal copied "Alice")))))
 
-(ert-deftest majutsu-graph-entry-copy-module-copies-visible-module ()
+(ert-deftest majutsu-entry-copy-module-copies-visible-module ()
   "Copying a module should render it without graph decoration."
   (let* ((compiled (majutsu-graph-entry-test--compiled))
          (entry (list :columns '((title . "Title")
@@ -174,8 +175,9 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-graph-entry-buffer-compiled compiled)
-      (setq-local majutsu-graph-entry-cached-entries (list entry))
+      (setq-local majutsu-entry-copy-buffer-layout
+                  (plist-get compiled :copy-layout))
+      (setq-local majutsu-entry-copy-cached-entries (list entry))
       (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -184,10 +186,10 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-graph-entry-copy-module))
+        (majutsu-entry-copy-module))
       (should (equal copied "Title")))))
 
-(ert-deftest majutsu-graph-entry-copy-entry-field-copies-hidden-field ()
+(ert-deftest majutsu-entry-copy-entry-field-copies-hidden-field ()
   "Copying an entry field should allow hidden canonical metadata."
   (let* ((compiled (majutsu-graph-entry-test--compiled))
          (entry (list :columns '((title . "Title")
@@ -201,8 +203,9 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-graph-entry-buffer-compiled compiled)
-      (setq-local majutsu-graph-entry-cached-entries (list entry))
+      (setq-local majutsu-entry-copy-buffer-layout
+                  (plist-get compiled :copy-layout))
+      (setq-local majutsu-entry-copy-cached-entries (list entry))
       (majutsu-graph-entry-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -217,16 +220,16 @@
                                    (string-match-p "id" candidate))
                                  candidates)
                        (car candidates)))))
-        (majutsu-graph-entry-copy-entry-field))
+        (majutsu-entry-copy-entry-field))
       (should (equal copied "id-1")))))
 
-(ert-deftest majutsu-graph-entry-copy-transient-has-copy-actions ()
+(ert-deftest majutsu-entry-copy-transient-has-copy-actions ()
   "Shared graph-entry copy transient should expose semantic copy actions."
-  (should (transient-get-suffix 'majutsu-graph-entry-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-graph-entry-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-graph-entry-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-graph-entry-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-graph-entry-copy-transient "m")))
+  (should (transient-get-suffix 'majutsu-entry-copy-transient "s"))
+  (should (transient-get-suffix 'majutsu-entry-copy-transient "f"))
+  (should (transient-get-suffix 'majutsu-entry-copy-transient "F"))
+  (should (transient-get-suffix 'majutsu-entry-copy-transient "h"))
+  (should (transient-get-suffix 'majutsu-entry-copy-transient "m")))
 
 (provide 'majutsu-graph-entry-test)
 

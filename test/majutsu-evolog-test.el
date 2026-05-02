@@ -151,7 +151,7 @@
                                    (string-match-p "operation-id" candidate))
                                  candidates)
                        (car candidates)))))
-        (majutsu-graph-entry-copy-entry-field))
+        (majutsu-entry-copy-entry-field))
       (should (equal copied "op-full")))))
 
 (ert-deftest majutsu-evolog-filter-buffer-substring/cleans-graph-properties ()
