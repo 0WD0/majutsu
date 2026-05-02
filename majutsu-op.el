@@ -17,8 +17,8 @@
 
 (require 'cl-lib)
 (require 'majutsu)
-(require 'majutsu-entry-copy)
-(require 'majutsu-graph-entry)
+(require 'majutsu-row)
+(require 'majutsu-row)
 (require 'majutsu-selection)
 (require 'seq)
 (require 'subr-x)
@@ -576,7 +576,7 @@ operations."
      (setq entry (plist-put entry :duration value)))
     ('tags
      (setq entry (plist-put entry :tags value))))
-  (majutsu-graph-entry-record-canonical-field entry field value))
+  (majutsu-row-record-canonical-field entry field value))
 
 (defun majutsu-op-log--entry-id (entry)
   "Return stable section id string from operation log ENTRY."
@@ -603,7 +603,7 @@ operations."
 
 (defun majutsu-op-log--compile-columns (&optional columns)
   "Compile operation log COLUMNS into graph-entry metadata."
-  (majutsu-graph-entry-compile
+  (majutsu-row-compile
    (majutsu-op-log--graph-entry-profile)
    (or columns majutsu-op-log-columns)))
 
@@ -641,12 +641,12 @@ result."
                 (insert (or log-output
                             (apply #'majutsu-jj-buffer-string cmd-args)))
                 (goto-char (point-min))
-                (majutsu-graph-entry-parse-buffer
+                (majutsu-row-parse-buffer
                  (majutsu-op-log--ensure-template)))))
         (unless log-output
           (setq majutsu-op-log--cached-entries entries)
-          (majutsu-entry-copy-set-buffer-data
-           (plist-get (majutsu-op-log--ensure-template) :copy-layout)
+          (majutsu-row-set-buffer-data
+           (majutsu-op-log--ensure-template)
            entries))
         entries))))
 
@@ -654,9 +654,9 @@ result."
   "Wash raw `jj op log` output in the current narrowed region."
   (let ((compiled (majutsu-op-log--ensure-template)))
     (setq majutsu-op-log--cached-entries
-          (majutsu-graph-entry-wash-buffer compiled))
-    (majutsu-entry-copy-set-buffer-data
-     (plist-get compiled :copy-layout)
+          (majutsu-row-wash-buffer compiled))
+    (majutsu-row-set-buffer-data
+     compiled
      majutsu-op-log--cached-entries)))
 
 (defun majutsu-op-log-insert-entries ()
@@ -664,7 +664,7 @@ result."
   (magit-insert-section (jj-op-log)
     (magit-insert-heading "Operation Log")
     (setq majutsu-op-log--cached-entries nil)
-    (majutsu-entry-copy-clear-buffer-data)
+    (majutsu-row-clear-buffer-data)
     (apply #'majutsu-jj-wash
            #'majutsu-op--wash-log-output
            'wash-anyway
@@ -681,7 +681,7 @@ result."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
   (setq majutsu-op-log--cached-entries nil)
-  (majutsu-entry-copy-clear-buffer-data)
+  (majutsu-row-clear-buffer-data)
   (majutsu-op-log-render))
 
 (defun majutsu-op-log-show-at-point ()
@@ -693,7 +693,7 @@ result."
 
 (defun majutsu-op-log--filter-buffer-substring (beg end &optional delete)
   "Filter copied operation log text between BEG and END."
-  (majutsu-graph-entry-filter-buffer-substring
+  (majutsu-row-filter-buffer-substring
    beg end delete (majutsu-op-log--ensure-template)))
 
 ;;;###autoload
@@ -703,15 +703,14 @@ result."
   (if (use-region-p)
       (call-interactively #'copy-region-as-kill)
     (let* ((compiled (majutsu-op-log--ensure-template))
-           (layout (plist-get compiled :copy-layout))
-           (entry (or (majutsu-entry-copy-entry-at-point
-                       layout majutsu-op-log--cached-entries)
+           (entry (or (majutsu-row-entry-at-point
+                       compiled majutsu-op-log--cached-entries)
                       (user-error "No operation at point"))))
-      (majutsu-entry-copy-entry-field-value-to-kill
-       entry 'op-id layout))))
+      (majutsu-row-entry-field-value-to-kill
+       entry 'op-id))))
 
 ;;;###autoload(autoload 'majutsu-op-log-copy-transient "majutsu-op" nil t)
-(majutsu-entry-copy-define-transient
+(majutsu-row-define-copy-transient
  majutsu-op-log-copy-transient
  "Transient for semantic copy commands in `majutsu-op-log-mode'."
  ("o" "Operation id" majutsu-op-log-copy-operation-id))
@@ -729,8 +728,8 @@ result."
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function
               #'majutsu-op-log--filter-buffer-substring)
-  (setq-local majutsu-entry-copy-buffer-layout
-              (plist-get (majutsu-op-log--ensure-template) :copy-layout))
+  (setq-local majutsu-row-buffer-compiled
+              (majutsu-op-log--ensure-template))
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments

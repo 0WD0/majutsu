@@ -19,7 +19,7 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-graph-entry)
+(require 'majutsu-row)
 
 ;;; Section Keymaps
 
@@ -188,7 +188,7 @@ or (inline VALUE) for `--opt=VALUE' and short `-oVALUE' forms."
   "Separator character inserted between list items inside a single field value.")
 
 (defconst majutsu-log--field-line-separator
-  majutsu-graph-entry-field-line-separator
+  majutsu-row-field-line-separator
   "Encoded newline separator used inside template field payloads.
 Log records are transported as single lines, then this separator is
 decoded back to literal newlines after field splitting.")
@@ -427,7 +427,7 @@ transport logical newlines safely through single-line payload segments."
   (when (and (stringp value)
              (not (string-empty-p value)))
     (mapcar #'substring-no-properties
-            (majutsu-graph-entry-split-by-separator
+            (majutsu-row-split-by-separator
              value majutsu-log--field-list-separator))))
 
 (defun majutsu-log-post-remove-ago-suffix (value &optional _ctx)
@@ -466,7 +466,7 @@ Looks up `majutsu-log-template-FIELD'."
 (defun majutsu-log--compile-columns (&optional columns)
   "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
 Returns a plist with :template, :columns, and :module-columns."
-  (majutsu-graph-entry-compile (majutsu-log--graph-entry-profile) columns))
+  (majutsu-row-compile (majutsu-log--graph-entry-profile) columns))
 
 (defun majutsu-log--ensure-template ()
   "Return cached compiled template structure, recomputing if necessary."
@@ -598,8 +598,8 @@ When ENTRIES is nil, use `majutsu-log--cached-entries'."
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (majutsu-entry-copy-field
-   (plist-get (majutsu-log--current-compiled) :copy-layout)
+  (majutsu-row-copy-field
+   (majutsu-log--current-compiled)
    majutsu-log--cached-entries))
 
 ;;;###autoload
@@ -608,8 +608,8 @@ When the region is active, copy it literally using `copy-region-as-kill'."
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (majutsu-entry-copy-module
-   (plist-get (majutsu-log--current-compiled) :copy-layout)
+  (majutsu-row-copy-module
+   (majutsu-log--current-compiled)
    majutsu-log--cached-entries))
 
 ;;;###autoload
@@ -622,8 +622,8 @@ called interactively, prompt with completion over the current entry's
 available canonical fields.  If the region is active, copy it literally using
 `copy-region-as-kill'."
   (interactive)
-  (majutsu-entry-copy-entry-field
-   (plist-get (majutsu-log--current-compiled) :copy-layout)
+  (majutsu-row-copy-entry-field
+   (majutsu-log--current-compiled)
    majutsu-log--cached-entries))
 
 ;;;###autoload
@@ -634,8 +634,8 @@ This copies the canonical hidden `commit-id' field, even when it is not shown
 in the visible log layout.  If the region is active, copy it literally using
 `copy-region-as-kill'."
   (interactive)
-  (majutsu-entry-copy-commit-id
-   (plist-get (majutsu-log--current-compiled) :copy-layout)
+  (majutsu-row-copy-commit-id
+   (majutsu-log--current-compiled)
    majutsu-log--cached-entries))
 
 (defun majutsu-log--visible-parent-ids (entry)
@@ -703,8 +703,8 @@ disappear again."
   "Refresh tail alignment for the current log buffer using WINDOW.
 When WINDOW is nil, use the current graph-entry tail owner window."
   (when (derived-mode-p 'majutsu-log-mode)
-    (setq window (or window (majutsu-graph-entry--tail-owner-window)))
-    (majutsu-graph-entry-refresh-tail-spacers nil nil window)
+    (setq window (or window (majutsu-row--tail-owner-window)))
+    (majutsu-row-refresh-tail-spacers nil nil window)
     (when window
       (force-window-update window))))
 
@@ -722,7 +722,7 @@ When WINDOW is nil, use the current graph-entry tail owner window."
 
 When a copied region contains both heading and tail text, drop the tail text
 from the copied result by default. Copying tail text alone preserves it."
-  (majutsu-graph-entry-filter-buffer-substring
+  (majutsu-row-filter-buffer-substring
    beg end delete (majutsu-log--current-compiled)))
 
 (defun majutsu-log--wash-logs (_args)
@@ -732,18 +732,18 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   (let* ((compiled (majutsu-log--ensure-template))
          (entries nil))
     (setq majutsu-log--cached-entries nil)
-    (majutsu-entry-copy-clear-buffer-data)
+    (majutsu-row-clear-buffer-data)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
     (setq-local majutsu-log--buffer-compiled compiled)
     (goto-char (point-min))
     (while (not (eobp))
-      (if-let* ((entry (majutsu-graph-entry-wash-entry compiled)))
+      (if-let* ((entry (majutsu-row-wash-entry compiled)))
           (push entry entries)
         (magit-delete-line)))
     (setq majutsu-log--cached-entries (nreverse entries))
-    (majutsu-entry-copy-set-buffer-data
-     (plist-get compiled :copy-layout)
+    (majutsu-row-set-buffer-data
+     compiled
      majutsu-log--cached-entries)
     (majutsu-log--rebuild-relation-indexes majutsu-log--cached-entries)
     (insert "\n")))
@@ -900,10 +900,10 @@ Return non-nil when the section could be located."
   :options '(bug-reference-mode))
 
 ;;;###autoload(autoload 'majutsu-log-copy-transient "majutsu-log" nil t)
-(majutsu-entry-copy-define-transient
+(majutsu-row-define-copy-transient
  majutsu-log-copy-transient
  "Transient for semantic copy commands in `majutsu-log-mode'."
- ("h" "Commit hash" majutsu-entry-copy-commit-id))
+ ("h" "Commit hash" majutsu-row-copy-commit-id))
 
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."
@@ -942,7 +942,7 @@ Return non-nil when the section could be located."
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
   (setq majutsu-log--cached-entries nil)
-  (majutsu-entry-copy-clear-buffer-data)
+  (majutsu-row-clear-buffer-data)
   (setq majutsu-log--entry-by-id nil)
   (setq majutsu-log--children-by-id nil)
   (majutsu-log-render))

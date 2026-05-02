@@ -13,18 +13,18 @@
 (defun majutsu-evolog-test--raw-entry (&optional heading)
   "Return one graph-entry encoded evolog test entry with HEADING."
   (concat "○  "
-          majutsu-graph-entry-start-token
+          majutsu-row-start-token
           (or heading
               (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
                       "│  feat(op): phase1\n"
                       "│  -- operation 86978b4db954 describe commit 8794efe3"))
-          majutsu-graph-entry-tail-token
-          majutsu-graph-entry-body-token
-          majutsu-graph-entry-meta-token
-          "change-full" majutsu-graph-entry-field-separator
-          "commit-full" majutsu-graph-entry-field-separator
+          majutsu-row-tail-token
+          majutsu-row-body-token
+          majutsu-row-meta-token
+          "change-full" majutsu-row-field-separator
+          "commit-full" majutsu-row-field-separator
           "op-full"
-          majutsu-graph-entry-end-token
+          majutsu-row-end-token
           "\n"))
 
 (ert-deftest majutsu-evolog-entry-template/rebuilds-default-compact-with-graph-entry ()
@@ -151,7 +151,7 @@
                                    (string-match-p "operation-id" candidate))
                                  candidates)
                        (car candidates)))))
-        (majutsu-entry-copy-entry-field))
+        (majutsu-row-copy-entry-field))
       (should (equal copied "op-full")))))
 
 (ert-deftest majutsu-evolog-filter-buffer-substring/cleans-graph-properties ()
@@ -165,7 +165,7 @@
     (let ((copied (filter-buffer-substring (point-min) (point-max))))
       (should (string-match-p "feat(op): phase1" copied))
       (should-not (text-property-not-all
-                   0 (length copied) 'majutsu-graph-entry-module nil copied))
+                   0 (length copied) 'majutsu-row-module nil copied))
       (should-not (text-property-not-all
                    0 (length copied) 'line-prefix nil copied)))))
 

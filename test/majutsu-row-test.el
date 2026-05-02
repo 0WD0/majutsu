@@ -1,17 +1,17 @@
-;;; majutsu-graph-entry-test.el --- Tests for graph entries -*- lexical-binding: t; -*-
+;;; majutsu-row-test.el --- Tests for row rendering  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 
-;; Tests for the shared graph-entry protocol.
+;; Tests for the shared row protocol.
 
 ;;; Code:
 
 (require 'ert)
 (require 'magit-section)
 (require 'transient)
-(require 'majutsu-graph-entry)
+(require 'majutsu-row)
 
-(defconst majutsu-graph-entry-test--profile
+(defconst majutsu-row-test--profile
   (list :name 'test
         :self-type 'Commit
         :default-modules '((title . heading)
@@ -21,33 +21,33 @@
         :required-fields '(id)
         :template-function (lambda (field) (symbol-name field))
         :entry-id-function (lambda (entry)
-                             (or (majutsu-graph-entry-column entry 'id)
+                             (or (majutsu-row-column entry 'id)
                                  "unknown"))
         :section-class 'magit-section
         :section-value-function (lambda (entry)
-                                  (majutsu-graph-entry-column entry 'id))
+                                  (majutsu-row-column entry 'id))
         :tail-align nil)
-  "Graph-entry profile used by tests.")
+  "Row profile used by tests.")
 
-(defun majutsu-graph-entry-test--compiled (&optional columns)
-  "Return a compiled test graph-entry layout."
-  (majutsu-graph-entry-compile
-   majutsu-graph-entry-test--profile
+(defun majutsu-row-test--compiled (&optional columns)
+  "Return a compiled test row layout."
+  (majutsu-row-compile
+   majutsu-row-test--profile
    (or columns
        '((:field title :module heading :template "Title" :face nil)
          (:field author :module tail :template "Alice" :face nil)
          (:field body :module body :template "Body" :face nil)))))
 
-(defun majutsu-graph-entry-test--payload (&rest fields)
+(defun majutsu-row-test--payload (&rest fields)
   "Join FIELDS with the graph-entry field separator."
-  (string-join fields majutsu-graph-entry-field-separator))
+  (string-join fields majutsu-row-field-separator))
 
-(ert-deftest majutsu-graph-entry-compile-adds-required-metadata ()
+(ert-deftest majutsu-row-compile-adds-required-metadata ()
   "Compiled layouts should append hidden required metadata fields."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+  (let* ((compiled (majutsu-row-test--compiled))
          (metadata-fields
           (mapcar (lambda (column) (plist-get column :field))
-                  (majutsu-graph-entry-module-columns compiled 'metadata)))
+                  (majutsu-row-module-columns compiled 'metadata)))
          (template (prin1-to-string (plist-get compiled :template))))
     (should (equal metadata-fields '(id)))
     (should (string-match-p (regexp-quote "\\x1dS") template))
@@ -56,37 +56,37 @@
     (should (string-match-p (regexp-quote "\\x1dM") template))
     (should (string-match-p (regexp-quote "\\x1dE") template))))
 
-(ert-deftest majutsu-graph-entry-parse-preserves-graph-entry-shape ()
+(ert-deftest majutsu-row-parse-preserves-shape ()
   "Parser should preserve graph prefixes, modules, metadata, and suffix lines."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+  (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
-               "○ " majutsu-graph-entry-start-token
+               "○ " majutsu-row-start-token
                "Title line 1\n"
-               "│ Title line 2" majutsu-graph-entry-tail-token
+               "│ Title line 2" majutsu-row-tail-token
                "Alice"
-               majutsu-graph-entry-body-token
-               "Body 1" majutsu-graph-entry-field-line-separator "Body 2"
-               majutsu-graph-entry-meta-token
+               majutsu-row-body-token
+               "Body 1" majutsu-row-field-line-separator "Body 2"
+               majutsu-row-meta-token
                "id-1"
-               majutsu-graph-entry-end-token "\n"
+               majutsu-row-end-token "\n"
                "│\n"))
          entry)
     (with-temp-buffer
       (insert raw)
       (goto-char (point-min))
-      (setq entry (majutsu-graph-entry-parse-at-point compiled)))
+      (setq entry (majutsu-row-parse-at-point compiled)))
     (should (equal (plist-get entry :heading-prefixes) '("○ " "│ ")))
     (should (equal (plist-get entry :suffix-lines) '("│")))
-    (should (equal (majutsu-graph-entry-column entry 'title)
+    (should (equal (majutsu-row-column entry 'title)
                    "Title line 1\nTitle line 2"))
-    (should (equal (majutsu-graph-entry-render-tail entry compiled) "Alice"))
-    (should (equal (majutsu-graph-entry-render-body entry compiled)
+    (should (equal (majutsu-row-render-tail entry compiled) "Alice"))
+    (should (equal (majutsu-row-render-body entry compiled)
                    "Body 1\nBody 2"))
-    (should (equal (majutsu-graph-entry-column entry 'id) "id-1"))))
+    (should (equal (majutsu-row-column entry 'id) "id-1"))))
 
-(ert-deftest majutsu-graph-entry-insert-entry-creates-magit-section ()
+(ert-deftest majutsu-row-insert-entry-creates-magit-section ()
   "Renderer should create a Magit section and display-only graph prefix."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+  (let* ((compiled (majutsu-row-test--compiled))
          (entry (list :columns '((title . "Title")
                                  (author . "Alice")
                                  (id . "id-1"))
@@ -97,7 +97,7 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (majutsu-graph-entry-insert-entry entry compiled)
+      (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (should (equal (buffer-substring-no-properties
                       (line-beginning-position)
@@ -109,14 +109,14 @@
       (should (equal (oref (magit-current-section) value) "id-1"))
       (search-forward "Title")
       (backward-char 5)
-      (should (eq (get-text-property (point) 'majutsu-graph-entry-field)
+      (should (eq (get-text-property (point) 'majutsu-row-field)
                   'title))
-      (should (eq (get-text-property (point) 'majutsu-graph-entry-module)
+      (should (eq (get-text-property (point) 'majutsu-row-module)
                   'heading)))))
 
-(ert-deftest majutsu-graph-entry-filter-drops-tail-from-copied-heading ()
+(ert-deftest majutsu-row-filter-drops-tail-from-copied-heading ()
   "Copy filter should drop tail text when heading text is present."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+  (let* ((compiled (majutsu-row-test--compiled))
          (entry (list :columns '((title . "Title")
                                  (author . "Alice")
                                  (id . "id-1"))
@@ -127,14 +127,14 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (majutsu-graph-entry-insert-entry entry compiled)
-      (should (equal (majutsu-graph-entry-filter-buffer-substring
+      (majutsu-row-insert-entry entry compiled)
+      (should (equal (majutsu-row-filter-buffer-substring
                       (point-min) (point-max) nil compiled)
                      "Title\n")))))
 
-(ert-deftest majutsu-entry-copy-field-copies-visible-field ()
-  "Copying a visible field should use graph-entry text properties."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+(ert-deftest majutsu-row-copy-field-copies-visible-field ()
+  "Copying a visible field should use row text properties."
+  (let* ((compiled (majutsu-row-test--compiled))
          (entry (list :columns '((title . "Title")
                                  (author . "Alice")
                                  (id . "id-1"))
@@ -146,10 +146,9 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-entry-copy-buffer-layout
-                  (plist-get compiled :copy-layout))
-      (setq-local majutsu-entry-copy-cached-entries (list entry))
-      (majutsu-graph-entry-insert-entry entry compiled)
+      (setq-local majutsu-row-buffer-compiled compiled)
+      (setq-local majutsu-row-cached-entries (list entry))
+      (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Alice")
       (backward-char 5)
@@ -158,12 +157,12 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-entry-copy-field))
+        (majutsu-row-copy-field))
       (should (equal copied "Alice")))))
 
-(ert-deftest majutsu-entry-copy-module-copies-visible-module ()
+(ert-deftest majutsu-row-copy-module-copies-visible-module ()
   "Copying a module should render it without graph decoration."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+  (let* ((compiled (majutsu-row-test--compiled))
          (entry (list :columns '((title . "Title")
                                  (author . "Alice")
                                  (id . "id-1"))
@@ -175,10 +174,9 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-entry-copy-buffer-layout
-                  (plist-get compiled :copy-layout))
-      (setq-local majutsu-entry-copy-cached-entries (list entry))
-      (majutsu-graph-entry-insert-entry entry compiled)
+      (setq-local majutsu-row-buffer-compiled compiled)
+      (setq-local majutsu-row-cached-entries (list entry))
+      (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
       (cl-letf (((symbol-function 'kill-new)
@@ -186,12 +184,12 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-entry-copy-module))
+        (majutsu-row-copy-module))
       (should (equal copied "Title")))))
 
-(ert-deftest majutsu-entry-copy-entry-field-copies-hidden-field ()
+(ert-deftest majutsu-row-copy-entry-field-copies-hidden-field ()
   "Copying an entry field should allow hidden canonical metadata."
-  (let* ((compiled (majutsu-graph-entry-test--compiled))
+  (let* ((compiled (majutsu-row-test--compiled))
          (entry (list :columns '((title . "Title")
                                  (author . "Alice")
                                  (id . "id-1"))
@@ -203,10 +201,9 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-entry-copy-buffer-layout
-                  (plist-get compiled :copy-layout))
-      (setq-local majutsu-entry-copy-cached-entries (list entry))
-      (majutsu-graph-entry-insert-entry entry compiled)
+      (setq-local majutsu-row-buffer-compiled compiled)
+      (setq-local majutsu-row-cached-entries (list entry))
+      (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
       (cl-letf (((symbol-function 'kill-new)
@@ -220,17 +217,17 @@
                                    (string-match-p "id" candidate))
                                  candidates)
                        (car candidates)))))
-        (majutsu-entry-copy-entry-field))
+        (majutsu-row-copy-entry-field))
       (should (equal copied "id-1")))))
 
-(ert-deftest majutsu-entry-copy-transient-has-copy-actions ()
-  "Shared graph-entry copy transient should expose semantic copy actions."
-  (should (transient-get-suffix 'majutsu-entry-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-entry-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-entry-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-entry-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-entry-copy-transient "m")))
+(ert-deftest majutsu-row-copy-transient-has-copy-actions ()
+  "Shared row copy transient should expose semantic copy actions."
+  (should (transient-get-suffix 'majutsu-row-copy-transient "s"))
+  (should (transient-get-suffix 'majutsu-row-copy-transient "f"))
+  (should (transient-get-suffix 'majutsu-row-copy-transient "F"))
+  (should (transient-get-suffix 'majutsu-row-copy-transient "h"))
+  (should (transient-get-suffix 'majutsu-row-copy-transient "m")))
 
-(provide 'majutsu-graph-entry-test)
+(provide 'majutsu-row-test)
 
-;;; majutsu-graph-entry-test.el ends here
+;;; majutsu-row-test.el ends here

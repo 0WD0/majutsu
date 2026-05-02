@@ -10,7 +10,7 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-graph-entry)
+(require 'majutsu-row)
 (require 'subr-x)
 
 (declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
@@ -139,7 +139,7 @@
      (setq entry (plist-put entry :commit-id value)))
     ('operation-id
      (setq entry (plist-put entry :operation-id value))))
-  (majutsu-graph-entry-record-canonical-field entry field value))
+  (majutsu-row-record-canonical-field entry field value))
 
 (defun majutsu-evolog--entry-id (entry)
   "Return stable section id string from evolog ENTRY."
@@ -170,7 +170,7 @@
         :compat-property-prefix 'majutsu-evolog))
 
 (defconst majutsu-evolog--entry-compiled
-  (majutsu-graph-entry-compile (majutsu-evolog--graph-entry-profile)
+  (majutsu-row-compile (majutsu-evolog--graph-entry-profile)
                                majutsu-evolog-entry-columns)
   "Compiled graph-entry layout metadata for `majutsu-evolog'.")
 
@@ -201,9 +201,9 @@
 (defun majutsu-evolog--wash-output (_args)
   "Wash raw `jj evolog` output in the current narrowed region."
   (setq majutsu-evolog--cached-entries
-        (majutsu-graph-entry-wash-buffer majutsu-evolog--entry-compiled))
-  (majutsu-entry-copy-set-buffer-data
-   (plist-get majutsu-evolog--entry-compiled :copy-layout)
+        (majutsu-row-wash-buffer majutsu-evolog--entry-compiled))
+  (majutsu-row-set-buffer-data
+   majutsu-evolog--entry-compiled
    majutsu-evolog--cached-entries))
 
 (defun majutsu-evolog--insert-entries ()
@@ -219,7 +219,7 @@
 
 (defun majutsu-evolog--filter-buffer-substring (beg end &optional delete)
   "Filter copied evolog text between BEG and END."
-  (majutsu-graph-entry-filter-buffer-substring
+  (majutsu-row-filter-buffer-substring
    beg end delete majutsu-evolog--entry-compiled))
 
 (defun majutsu-evolog-refresh-buffer ()
@@ -227,15 +227,15 @@
   (interactive)
   (majutsu--assert-mode 'majutsu-evolog-mode)
   (setq majutsu-evolog--cached-entries nil)
-  (majutsu-entry-copy-clear-buffer-data)
+  (majutsu-row-clear-buffer-data)
   (magit-insert-section (evologbuf)
     (majutsu-evolog--insert-entries)))
 
 ;;;###autoload(autoload 'majutsu-evolog-copy-transient "majutsu-evolog" nil t)
-(majutsu-entry-copy-define-transient
+(majutsu-row-define-copy-transient
  majutsu-evolog-copy-transient
  "Transient for semantic copy commands in `majutsu-evolog-mode'."
- ("h" "Commit hash" majutsu-entry-copy-commit-id))
+ ("h" "Commit hash" majutsu-row-copy-commit-id))
 
 (defvar-keymap majutsu-evolog-mode-map
   :doc "Keymap for `majutsu-evolog-mode'."
@@ -248,8 +248,8 @@
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function
               #'majutsu-evolog--filter-buffer-substring)
-  (setq-local majutsu-entry-copy-buffer-layout
-              (plist-get majutsu-evolog--entry-compiled :copy-layout)))
+  (setq-local majutsu-row-buffer-compiled
+              majutsu-evolog--entry-compiled))
 
 (defun majutsu-evolog--buffer-name (revset)
   "Return buffer name for evolog REVSET."

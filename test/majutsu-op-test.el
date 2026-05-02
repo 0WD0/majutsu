@@ -46,7 +46,7 @@
 
 (defun majutsu-op-test--log-payload (&rest fields)
   "Join operation log graph-entry FIELDS."
-  (string-join fields majutsu-graph-entry-field-separator))
+  (string-join fields majutsu-row-field-separator))
 
 (defun majutsu-op-test--log-raw-entry (&rest kvs)
   "Return one graph-entry encoded operation log entry from KVS."
@@ -61,20 +61,20 @@
          (kind (or (plist-get kvs :kind) "op"))
          (desc (or (plist-get kvs :desc) "description"))
          (tags (or (plist-get kvs :tags) "args: jj op")))
-    (concat majutsu-graph-entry-start-token
+    (concat majutsu-row-start-token
             (majutsu-op-test--log-payload current op-id-short kind desc)
-            majutsu-graph-entry-tail-token
-            majutsu-graph-entry-body-token
+            majutsu-row-tail-token
+            majutsu-row-body-token
             (majutsu-op-test--log-payload
              (concat "Id: " op-id)
              (concat "User: " user)
              (concat "Workspace: " workspace)
              (concat "Time: " time " (" time-ago "), lasted " duration)
              tags)
-            majutsu-graph-entry-meta-token
+            majutsu-row-meta-token
             (majutsu-op-test--log-payload
              op-id user workspace time time-ago duration)
-            majutsu-graph-entry-end-token
+            majutsu-row-end-token
             "\n")))
 
 (ert-deftest majutsu-op-log-template/carries-rich-line-fields ()
