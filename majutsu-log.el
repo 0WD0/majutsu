@@ -729,19 +729,14 @@ from the copied result by default. Copying tail text alone preserves it."
   "Wash jj log output in the current (narrowed) buffer region.
 
 This function is meant to be used as a WASHER for `majutsu-jj-wash'."
-  (let* ((compiled (majutsu-log--ensure-template))
-         (entries nil))
+  (let* ((compiled (majutsu-log--ensure-template)))
     (setq majutsu-log--cached-entries nil)
     (majutsu-row-clear-buffer-data)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
     (setq-local majutsu-log--buffer-compiled compiled)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (if-let* ((entry (majutsu-row-wash-entry compiled)))
-          (push entry entries)
-        (magit-delete-line)))
-    (setq majutsu-log--cached-entries (nreverse entries))
+    (setq majutsu-log--cached-entries
+          (majutsu-row-wash-buffer compiled))
     (majutsu-row-set-buffer-data
      compiled
      majutsu-log--cached-entries)
