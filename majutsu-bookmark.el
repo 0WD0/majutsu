@@ -255,89 +255,130 @@ bookmark(s) at point."
 (defconst majutsu-bookmark--list-record-separator (string 29)
   "Record separator used by the bookmark list machine template.")
 
-(defun majutsu-bookmark--list-record-form (&rest fields)
-  "Return a template form for one machine-readable record with FIELDS.
-This uses `join' rather than `separate' because empty fields must still
-occupy their transport slots."
-  `[:concat
-    [:join ,majutsu-bookmark--list-field-separator ,@fields]
-    ,majutsu-bookmark--list-record-separator])
+(majutsu-template-defkeyword ref-change-offset Commit
+  (:returns Template :doc "jj-compatible change-offset suffix.")
+  [:if [:change_offset]
+      [[:label "change_offset" "/"]
+       [:change_offset]]])
 
-(defun majutsu-bookmark--list-name-form ()
-  "Return jj's bookmark-list ref-name template form."
-  '[:if [:remote]
-       [:if [:tracked]
-           [:label "bookmark" ["@" [:remote]]]
-         [:label "bookmark" [[:name] "@" [:remote]]]]
-     [:label "bookmark" [:name]]])
+(majutsu-template-defkeyword ref-short-change-id-with-offset Commit
+  (:returns Template :doc "jj-compatible short change-id with change offset.")
+  [:coalesce
+   [:if [:hidden]
+       [:label "hidden"
+               [[:change_id :shortest 8]
+                [:ref-change-offset]]]]
+   [:if [:divergent]
+       [:label "divergent"
+               [[:change_id :shortest 8]
+                [:ref-change-offset]]]]
+   [:change_id :shortest 8]])
 
-(defun majutsu-bookmark--list-distance-part-form (label count)
-  "Return one tracking-distance template fragment for LABEL and COUNT."
+(majutsu-template-defkeyword ref-commit-labels Commit
+  (:returns Template :doc "jj-compatible commit labels for ref summaries.")
+  [:separate " "
+             [:coalesce
+              [:if [:hidden] [:label "hidden" "(hidden)"]]
+              [:if [:divergent] [:label "divergent" "(divergent)"]]]
+             [:if [:conflict] [:label "conflict" "(conflict)"]]])
+
+(majutsu-template-defkeyword ref-description-summary Commit
+  (:returns Template :doc "jj-compatible description fragment for ref summaries.")
+  [:if [:description]
+      [:description :first_line]
+    [:label [:if [:empty] "empty" "description placeholder"]
+            "(no description set)"]])
+
+(majutsu-template-defkeyword ref-summary Commit
+  (:returns Template :doc "jj-compatible single-line commit summary without refs.")
+  [:label [:if [:current_working_copy] "working_copy"]
+          [:separate " "
+                     [:ref-short-change-id-with-offset]
+                     [:commit_id :shortest 8]
+                     [:separate " "
+                                [:ref-commit-labels]
+                                [:if [:empty] [:label "empty" "(empty)"]]
+                                [:ref-description-summary]]]])
+
+(majutsu-template-defkeyword bookmark-list-name CommitRef
+  (:returns Template :doc "jj-compatible bookmark-list ref name.")
+  [:if [:remote]
+      [:if [:tracked]
+          [:label "bookmark" ["@" [:remote]]]
+        [:label "bookmark" [[:name] "@" [:remote]]]]
+    [:label "bookmark" [:name]]])
+
+(majutsu-template-defun bookmark-list-distance-part ((label Template)
+                                                     (count SizeHint))
+  (:returns Template :doc "One tracked-distance fragment for LABEL and COUNT.")
   `[:if [:not [:method ,count :zero]]
        [:if [:method ,count :exact]
            [,label " by " [:method ,count :exact] " commits"]
          [,label " by at least " [:method ,count :lower] " commits"]]])
 
-(defun majutsu-bookmark--list-distances-form ()
-  "Return jj's tracked-remote distance template form."
-  `[:if [:tracking_present]
-       [:surround "(" ")"
-                  [:separate ", "
-                             ,(majutsu-bookmark--list-distance-part-form
-                               "ahead" '[:tracking_ahead_count])
-                             ,(majutsu-bookmark--list-distance-part-form
-                               "behind" '[:tracking_behind_count])]]])
+(majutsu-template-defkeyword bookmark-list-distances CommitRef
+  (:returns Template :doc "jj-compatible tracked-remote distance summary.")
+  [:if [:tracking_present]
+      [:surround "(" ")"
+                 [:separate ", "
+                            [:bookmark-list-distance-part "ahead" [:tracking_ahead_count]]
+                            [:bookmark-list-distance-part "behind" [:tracking_behind_count]]]]])
 
-(defun majutsu-bookmark--list-targets-form ()
-  "Return jj's bookmark target summary template form."
-  '[:if [:conflict]
-       [" " [:label "conflict" "(conflicted)"] ":"]
-     [": " [:call 'format_commit_summary_with_refs [:normal_target] ""]]])
+(majutsu-template-defkeyword bookmark-list-normal-summary CommitRef
+  (:returns Template :doc "Summary of the normal target without extra refs.")
+  [:method [:normal_target] :ref-summary])
 
-(defun majutsu-bookmark--list-heading-form ()
-  "Return jj-compatible bookmark-list heading template form."
-  (let ((name (majutsu-bookmark--list-name-form))
-        (targets (majutsu-bookmark--list-targets-form)))
-    `[:if [:remote]
-         [:if [:tracked]
-             ["  " [:separate " " ,name
-                              [:if [:present] ,(majutsu-bookmark--list-distances-form)]]
-              [:if [:present] ,targets " (not created yet)"]]
-           [,name ,targets]]
-       [,name [:if [:present] ,targets " (deleted)"]]]))
+(majutsu-template-defkeyword bookmark-list-targets CommitRef
+  (:returns Template :doc "jj-compatible bookmark target rendering.")
+  [:if [:conflict]
+      [" " [:label "conflict" "(conflicted)"] ":"]
+    [": " [:bookmark-list-normal-summary]]])
 
-(defun majutsu-bookmark--list-target-form (marker commit &optional ref-depth)
-  "Return a conflict-target record template form.
-MARKER is `-' or `+'.  COMMIT is a Commit-valued template form.  REF-DEPTH
-selects the surrounding CommitRef `:self' binding."
-  (let ((ref (if ref-depth `[:self ,ref-depth] '[:self])))
-    (majutsu-bookmark--list-record-form
-     "target"
-     `[:method ,ref :name]
-     `[:if [:method ,ref :remote] [:method ,ref :remote] ""]
-     marker
-     `[:method ,commit :commit_id]
-     `["  " ,marker " " [:call 'format_commit_summary_with_refs ,commit ""]])))
+(majutsu-template-defkeyword bookmark-list-heading CommitRef
+  (:returns Template :doc "jj-compatible bookmark-list heading.")
+  [:if [:remote]
+      [:if [:tracked]
+          ["  " [:separate " "
+                           [:bookmark-list-name]
+                           [:if [:present] [:bookmark-list-distances]]]
+           [:if [:present] [:bookmark-list-targets] " (not created yet)"]]
+        [[:bookmark-list-name] [:bookmark-list-targets]]]
+    [[:bookmark-list-name]
+     [:if [:present] [:bookmark-list-targets] " (deleted)"]]])
 
-(defun majutsu-bookmark--list-target-records-form ()
-  "Return template form emitting conflict target records for the current ref."
+(majutsu-template-defkeyword bookmark-list-target-records CommitRef
+  (:returns Template :doc "Machine conflicted target records for the current ref.")
   `[:if [:conflict]
        [[:map-join "" [:removed_targets] c
-                   ,(majutsu-bookmark--list-target-form "-" 'c 1)]
+                   [[:join ,majutsu-bookmark--list-field-separator
+                           "target"
+                           [:method [:self 1] :name]
+                           [:if [:method [:self 1] :remote] [:method [:self 1] :remote] ""]
+                           "-"
+                           [:method 'c :commit_id]
+                           ["  " "-" " " [:method 'c :ref-summary]]]
+                    ,majutsu-bookmark--list-record-separator]]
         [:map-join "" [:added_targets] c
-                   ,(majutsu-bookmark--list-target-form "+" 'c 1)]]
+                   [[:join ,majutsu-bookmark--list-field-separator
+                           "target"
+                           [:method [:self 1] :name]
+                           [:if [:method [:self 1] :remote] [:method [:self 1] :remote] ""]
+                           "+"
+                           [:method 'c :commit_id]
+                           ["  " "+" " " [:method 'c :ref-summary]]]
+                    ,majutsu-bookmark--list-record-separator]]]
      ""])
 
 (defconst majutsu-bookmark--list-template
   (majutsu-template-compile
-   `[:concat
-     ,(majutsu-bookmark--list-record-form
-       "ref"
-       [:name]
-       [:if [:remote] [:remote] ""]
-       [:if [:tracked] "t" ""]
-       (majutsu-bookmark--list-heading-form))
-     ,(majutsu-bookmark--list-target-records-form)]
+   `[[:join ,majutsu-bookmark--list-field-separator
+            "ref"
+            [:name]
+            [:if [:remote] [:remote] ""]
+            [:if [:tracked] "t" ""]
+            [:bookmark-list-heading]]
+     ,majutsu-bookmark--list-record-separator
+     [:bookmark-list-target-records]]
    'CommitRef)
   "Template used to render and parse `jj bookmark list' output.
 
