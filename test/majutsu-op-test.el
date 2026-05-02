@@ -52,7 +52,6 @@
   "Return one row encoded operation log entry from KVS."
   (let* ((op-id (or (plist-get kvs :op-id) "full-id"))
          (op-id-short (or (plist-get kvs :op-id-short) "short-id"))
-         (current (or (plist-get kvs :current) "@"))
          (user (or (plist-get kvs :user) "user"))
          (workspace (or (plist-get kvs :workspace) "workspace"))
          (time (or (plist-get kvs :time) "2026-05-02 04:50:00"))
@@ -62,7 +61,7 @@
          (desc (or (plist-get kvs :desc) "description"))
          (tags (or (plist-get kvs :tags) "args: jj op")))
     (concat majutsu-row-start-token
-            (majutsu-op-test--log-payload current op-id-short kind desc)
+            (majutsu-op-test--log-payload op-id-short kind desc)
             majutsu-row-tail-token
             majutsu-row-body-token
             (majutsu-op-test--log-payload
@@ -78,12 +77,12 @@
             "\n")))
 
 (ert-deftest majutsu-op-log-template/carries-rich-line-fields ()
-  "Operation log template should carry ids, current marker, time, and duration."
+  "Operation log template should carry ids, time, duration, and details."
   (let ((template (plist-get (majutsu-op-log--ensure-template) :template)))
     (should (string-match-p (regexp-quote "\\x1dS") (prin1-to-string template)))
     (should (string-match-p "self.id()" template))
     (should (string-match-p "self.id().short()" template))
-    (should (string-match-p "self.current_operation()" template))
+    (should-not (string-match-p "self.current_operation()" template))
     (should (string-match-p "self.time().end().format" template))
     (should (string-match-p "self.time().duration()" template))
     (should (string-match-p "self.description().first_line()" template))
@@ -114,7 +113,7 @@
     (should (equal (plist-get entry :op-id) "full-operation-id"))
     (should (equal short "short-id"))
     (should (get-text-property 0 'font-lock-face short))
-    (should (equal (plist-get entry :current) "@"))
+    (should-not (plist-member entry :current))
     (should (equal (plist-get entry :time) "2026-05-02 04:50:00"))
     (should (equal (plist-get entry :duration) "3 milliseconds"))
     (should (equal (plist-get entry :kind) "op"))
@@ -144,7 +143,6 @@
                  (majutsu-op-test--log-raw-entry
                   :op-id "full"
                   :op-id-short "short"
-                  :current ""
                   :time "time"
                   :time-ago "ago"
                   :duration "duration"
@@ -161,7 +159,6 @@
   "Operation log entries should render useful multiline details by default."
   (let ((entry (list :op-id "full-id"
                      :op-id-short "short-id"
-                     :current "@"
                      :kind "snapshot"
                      :user "user"
                      :workspace "workspace"
@@ -175,7 +172,6 @@
                  (insert (majutsu-op-test--log-raw-entry
                           :op-id "full-id"
                           :op-id-short "short-id"
-                          :current "@"
                           :kind "snapshot"))
                  (funcall washer nil)
                  0)))
@@ -184,7 +180,7 @@
         (let ((inhibit-read-only t))
           (majutsu-op-log-insert-entries))
         (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-          (should (string-match-p "@ short-id" content))
+          (should (string-match-p "short-id" content))
           (should (string-match-p "description" content))
           (should (string-match-p "Id: full-id" content))
           (should (string-match-p "Time: 2026-05-02 04:50:00" content))

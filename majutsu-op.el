@@ -453,8 +453,7 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   "Cached operation log entries.")
 
 (defconst majutsu-op-log--field-default-modules
-  '((current-marker . heading)
-    (op-id-short . heading)
+  '((op-id-short . heading)
     (kind . heading)
     (description . heading)
     (id-line . body)
@@ -471,8 +470,7 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   "Default row module placement for operation log fields.")
 
 (defcustom majutsu-op-log-columns
-  '((:field current-marker :module heading :face t)
-    (:field op-id-short :module heading :face t)
+  '((:field op-id-short :module heading :face t)
     (:field kind :module heading :face t)
     (:field description :module heading :face t)
     (:field id-line :module body :face t)
@@ -509,10 +507,6 @@ operations."
 (defun majutsu-op-log--column-template (field)
   "Return majutsu-template form for operation log FIELD."
   (pcase field
-    ('current-marker
-     '[:if [:current_operation]
-          [:label "current_operation" "@"]
-        ""])
     ('op-id-short
      '[:label "id short" [:id :short]])
     ('kind
@@ -551,9 +545,6 @@ operations."
 (defun majutsu-op-log--record-field (entry field value)
   "Record canonical operation log FIELD VALUE onto ENTRY."
   (pcase field
-    ('current-marker
-     (setq entry (plist-put entry :current
-                            (majutsu-op--machine-field value))))
     ('op-id-short
      (setq entry (plist-put entry :op-id-short value)))
     ('kind
