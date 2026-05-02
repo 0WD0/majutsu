@@ -104,7 +104,7 @@
 
 (defun majutsu-op--split-record (line expected)
   "Split LINE into EXPECTED fields, or return nil when malformed."
-  (let ((fields (split-string line majutsu-op--field-separator)))
+  (let ((fields (majutsu--split-fields line majutsu-op--field-separator)))
     (and (= (length fields) expected) fields)))
 
 (defun majutsu-op--parse-show-line (line)
