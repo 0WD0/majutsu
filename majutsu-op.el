@@ -635,14 +635,14 @@ result."
   (with-current-buffer (or buf (current-buffer))
     (if (and majutsu-op-log--cached-entries (not log-output))
         majutsu-op-log--cached-entries
-      (let ((entries
-             (with-temp-buffer
-               (insert (or log-output
-                           (apply #'majutsu-jj-buffer-string
-                                  (majutsu-op--log-command-args))))
-               (goto-char (point-min))
-               (majutsu-graph-entry-parse-buffer
-                (majutsu-op-log--ensure-template)))))
+      (let* ((cmd-args (unless log-output (majutsu-op--log-command-args)))
+             (entries
+              (with-temp-buffer
+                (insert (or log-output
+                            (apply #'majutsu-jj-buffer-string cmd-args)))
+                (goto-char (point-min))
+                (majutsu-graph-entry-parse-buffer
+                 (majutsu-op-log--ensure-template)))))
         (unless log-output
           (setq majutsu-op-log--cached-entries entries)
           (majutsu-entry-copy-set-buffer-data
