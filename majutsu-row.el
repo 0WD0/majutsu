@@ -208,17 +208,13 @@
   "Return compiled column specs for MODULE from COMPILED."
   (alist-get module (plist-get compiled :module-columns) nil nil #'eq))
 
-;;; Layout columns (from layout plist)
+;;; Column lookup
 
-(defun majutsu-row-layout-columns (layout)
-  "Return column specs from LAYOUT."
-  (plist-get layout :columns))
-
-(defun majutsu-row-column-by-instance (layout instance)
-  "Return column spec from LAYOUT identified by INSTANCE."
+(defun majutsu-row-column-by-instance (compiled instance)
+  "Return column spec from COMPILED identified by INSTANCE."
   (seq-find (lambda (column)
               (eql (plist-get column :instance) instance))
-            (majutsu-row-layout-columns layout)))
+            (plist-get compiled :columns)))
 
 (defun majutsu-row-assign-column-instances (columns)
   "Return COLUMNS with stable per-instance ids assigned."
@@ -236,14 +232,6 @@
         (if fn
             (funcall fn field)
           (user-error "Column %S has no :template" field)))))
-
-(defun majutsu-row--copy-layout (profile columns)
-  "Return copy layout for PROFILE COLUMNS."
-  (list :name (plist-get profile :name)
-        :columns columns
-        :entry-id-function (plist-get profile :entry-id-function)
-        :section-value-function (plist-get profile :section-value-function)
-        :section-class (plist-get profile :section-class)))
 
 (defun majutsu-row-build-module-template-form (templates)
   "Return a template form joining TEMPLATES with field separators."
@@ -303,8 +291,7 @@
           :template template
           :columns complete
           :module-columns module-columns
-          :tokens tokens
-          :copy-layout (majutsu-row--copy-layout profile complete))))
+          :tokens tokens)))
 
 ;;; String splitting/joining
 
@@ -984,25 +971,23 @@ When PLAIN is non-nil, omit faces and text properties."
         (magit-delete-line)))
     (nreverse entries)))
 
-;;; Copy property listing
+;;; Copy property cleanup
 
-(defun majutsu-row--extra-copy-properties (&optional compiled)
-  "Return extra copy cleanup properties for COMPILED (beyond base UI props)."
-  (let ((props nil))
+(defun majutsu-row--copy-properties (&optional compiled)
+  "Return text properties removed from copied row text."
+  (let ((props (copy-sequence majutsu-row--ui-properties)))
     (when compiled
       (dolist (prefix (majutsu-row--compat-prefixes compiled))
         (dolist (suffix '(module field column entry-id decoration tail-spacer))
           (push (majutsu-row--property-symbol prefix suffix) props))))
     props))
 
-;;; Copy string cleanup
-
-(defun majutsu-row-cleanup-copied-string (string &optional extra-properties)
-  "Strip row and EXTRA-PROPERTIES from copied STRING."
+(defun majutsu-row-cleanup-copied-string (string &optional compiled)
+  "Strip row UI properties from copied STRING."
   (when (stringp string)
     (remove-list-of-text-properties
      0 (length string)
-     (append majutsu-row--ui-properties extra-properties)
+     (majutsu-row--copy-properties compiled)
      string))
   string)
 
@@ -1035,7 +1020,7 @@ When PLAIN is non-nil, omit faces and text properties."
     (apply #'concat (nreverse parts))))
 
 (defun majutsu-row-filter-buffer-substring
-    (beg end &optional delete extra-properties)
+    (beg end &optional delete compiled)
   "Filter copied row text between BEG and END.
 Drops tail text when both heading and tail are present in the copied region."
   (let ((string (buffer-substring--filter beg end delete))
@@ -1045,34 +1030,33 @@ Drops tail text when both heading and tail are present in the copied region."
                (majutsu-row-string-has-module-p string 'tail))
       (setq string (majutsu-row-string-remove-module string 'tail))
       (setq trim-tail t))
-    (setq string (majutsu-row-cleanup-copied-string
-                  string extra-properties))
+    (setq string (majutsu-row-cleanup-copied-string string compiled))
     (when (and trim-tail (stringp string))
       (setq string (replace-regexp-in-string "[ \t]+$" "" string)))
     string))
 
 ;;; Copy index building
 
-(defun majutsu-row-entry-id (entry layout)
-  "Return stable entry id for ENTRY using LAYOUT."
-  (if-let* ((fn (plist-get layout :entry-id-function)))
+(defun majutsu-row-entry-id (entry compiled)
+  "Return stable entry id for ENTRY using COMPILED."
+  (if-let* ((fn (plist-get (majutsu-row--profile compiled) :entry-id-function)))
       (funcall fn entry)
     (majutsu-row-column entry 'id)))
 
-(defun majutsu-row-section-value (entry layout)
-  "Return Magit section value for ENTRY using LAYOUT."
-  (if-let* ((fn (plist-get layout :section-value-function)))
+(defun majutsu-row-section-value (entry compiled)
+  "Return Magit section value for ENTRY using COMPILED."
+  (if-let* ((fn (plist-get (majutsu-row--profile compiled) :section-value-function)))
       (funcall fn entry)
-    (majutsu-row-entry-id entry layout)))
+    (majutsu-row-entry-id entry compiled)))
 
-(defun majutsu-row-build-indexes (layout entries)
-  "Return (ENTRY-INDEX . SECTION-VALUE-INDEX) for LAYOUT ENTRIES."
+(defun majutsu-row-build-indexes (compiled entries)
+  "Return (ENTRY-INDEX . SECTION-VALUE-INDEX) for COMPILED ENTRIES."
   (let ((entry-index (make-hash-table :test #'equal))
         (section-value-index (make-hash-table :test #'equal)))
     (dolist (entry entries)
-      (when-let* ((id (majutsu-row-entry-id entry layout)))
+      (when-let* ((id (majutsu-row-entry-id entry compiled)))
         (puthash id entry entry-index))
-      (when-let* ((value (majutsu-row-section-value entry layout)))
+      (when-let* ((value (majutsu-row-section-value entry compiled)))
         (puthash value entry section-value-index)))
     (cons entry-index section-value-index)))
 
@@ -1080,8 +1064,7 @@ Drops tail text when both heading and tail are present in the copied region."
 
 (defun majutsu-row-set-buffer-data (compiled entries)
   "Set current buffer row COMPILED and ENTRIES."
-  (let* ((layout (plist-get compiled :copy-layout))
-         (indexes (majutsu-row-build-indexes layout entries)))
+  (let ((indexes (majutsu-row-build-indexes compiled entries)))
     (setq-local majutsu-row-buffer-compiled compiled)
     (setq-local majutsu-row-cached-entries entries)
     (setq-local majutsu-row-entry-index (car indexes))
@@ -1104,47 +1087,39 @@ Drops tail text when both heading and tail are present in the copied region."
 
 ;;; Copy entry lookup
 
-(defun majutsu-row-entry-for-id (id layout &optional entries)
-  "Return entry ID using LAYOUT and optional ENTRIES."
+(defun majutsu-row-entry-for-id (id compiled &optional entries)
+  "Return entry ID using COMPILED and optional ENTRIES."
   (when (and id (not (and (stringp id) (string-empty-p id))))
     (or (and (not entries)
              (hash-table-p majutsu-row-entry-index)
              (gethash id majutsu-row-entry-index))
         (seq-find (lambda (entry)
-                    (equal id (majutsu-row-entry-id entry layout)))
+                    (equal id (majutsu-row-entry-id entry compiled)))
                   (or entries majutsu-row-cached-entries)))))
 
-(defun majutsu-row-entry-for-section-value (value layout &optional entries)
-  "Return entry with section VALUE using LAYOUT and optional ENTRIES."
+(defun majutsu-row-entry-for-section-value (value compiled &optional entries)
+  "Return entry with section VALUE using COMPILED and optional ENTRIES."
   (when value
     (or (and (not entries)
              (hash-table-p majutsu-row-section-value-index)
              (gethash value majutsu-row-section-value-index))
         (seq-find (lambda (entry)
-                    (equal value (majutsu-row-section-value entry layout)))
+                    (equal value (majutsu-row-section-value entry compiled)))
                   (or entries majutsu-row-cached-entries)))))
 
 (defun majutsu-row-entry-at-point (&optional compiled entries)
   "Return cached row entry at point, or nil."
   (let* ((compiled (majutsu-row-current-compiled compiled))
-         (layout (plist-get compiled :copy-layout))
-         (section-class (plist-get layout :section-class)))
+         (section-class (plist-get (majutsu-row--profile compiled) :section-class)))
     (or (when-let* ((entry-id (majutsu-row-text-property-near-point
                                'majutsu-row-entry-id)))
-          (majutsu-row-entry-for-id entry-id layout entries))
+          (majutsu-row-entry-for-id entry-id compiled entries))
         (when-let* ((section-value (and section-class
                                         (magit-section-value-if section-class))))
           (majutsu-row-entry-for-section-value
-           section-value layout entries)))))
+           section-value compiled entries)))))
 
 ;;; Copy field value access
-
-(defun majutsu-row-plist-field-value (entry field &optional missing)
-  "Return FIELD from plist ENTRY, or MISSING when unavailable."
-  (let ((key (intern (concat ":" (symbol-name field)))))
-    (if (plist-member entry key)
-        (plist-get entry key)
-      missing)))
 
 (defun majutsu-row-field-copy-string (value)
   "Return canonical clipboard text for field VALUE."
@@ -1162,8 +1137,8 @@ Drops tail text when both heading and tail are present in the copied region."
    ((listp value) (not (null value)))
    (t t)))
 
-(defun majutsu-row-entry-field-candidate-preview (entry field _layout)
-  "Return one-line preview string for FIELD on ENTRY using LAYOUT."
+(defun majutsu-row-entry-field-candidate-preview (entry field)
+  "Return one-line preview string for FIELD on ENTRY."
   (let* ((text (majutsu-row-field-copy-string
                 (majutsu-row-column entry field)))
          (text (replace-regexp-in-string "[\n\r\t ]+" " " text nil t)))
@@ -1171,16 +1146,14 @@ Drops tail text when both heading and tail are present in the copied region."
         (concat (substring text 0 48) "…")
       text)))
 
-(defun majutsu-row-entry-copyable-fields (entry layout)
-  "Return copyable canonical field symbols for ENTRY using LAYOUT order."
+(defun majutsu-row-entry-copyable-fields (entry compiled)
+  "Return copyable canonical field symbols for ENTRY using COMPILED order."
   (let ((fields nil)
-        (seen nil)
-        (missing (make-symbol "majutsu-row-missing-field")))
-    (dolist (column (majutsu-row-layout-columns layout))
+        (seen nil))
+    (dolist (column (plist-get compiled :columns))
       (let* ((field (plist-get column :field))
              (value (majutsu-row-column entry field)))
         (when (and (not (memq field seen))
-                   (not (eq value missing))
                    (majutsu-row-field-value-present-p value))
           (push field seen)
           (push field fields))))
@@ -1193,18 +1166,18 @@ Drops tail text when both heading and tail are present in the copied region."
           (push field fields))))
     (nreverse fields)))
 
-(defun majutsu-row-read-entry-field (entry layout &optional prompt)
-  "Read one canonical field from ENTRY using LAYOUT."
+(defun majutsu-row-read-entry-field (entry compiled &optional prompt)
+  "Read one canonical field from ENTRY using COMPILED."
   (let* ((default-field (majutsu-row-text-property-near-point
                          'majutsu-row-field))
          (candidates (mapcar (lambda (field)
                                (cons (format "%s\t%s"
                                              field
                                              (majutsu-row-entry-field-candidate-preview
-                                              entry field layout))
+                                              entry field))
                                      field))
                              (majutsu-row-entry-copyable-fields
-                              entry layout)))
+                              entry compiled)))
          (default (car (rassoc default-field candidates)))
          (choice (completing-read (or prompt "Copy entry field: ")
                                   (mapcar #'car candidates)
@@ -1240,7 +1213,6 @@ When the region is active, copy it literally using `copy-region-as-kill'."
   (if (use-region-p)
       (call-interactively #'copy-region-as-kill)
     (let* ((compiled (majutsu-row-current-compiled compiled))
-           (layout (plist-get compiled :copy-layout))
            (entry (or (majutsu-row-entry-at-point compiled entries)
                       (user-error "No entry at point")))
            (instance (majutsu-row-text-property-near-point
@@ -1251,12 +1223,12 @@ When the region is active, copy it literally using `copy-region-as-kill'."
                     'majutsu-row-module))
            (column (or (and instance
                             (majutsu-row-column-by-instance
-                             layout instance))
+                             compiled instance))
                        (and field module
                             (seq-find (lambda (candidate)
                                         (and (eq (plist-get candidate :field) field)
                                              (eq (plist-get candidate :module) module)))
-                                      (majutsu-row-layout-columns layout))))))
+                                      (plist-get compiled :columns))))))
       (unless column
         (user-error "No entry field at point"))
       (majutsu-row-copy-string
@@ -1300,10 +1272,9 @@ When the region is active, copy it literally using `copy-region-as-kill'."
   (if (use-region-p)
       (call-interactively #'copy-region-as-kill)
     (let* ((compiled (majutsu-row-current-compiled compiled))
-           (layout (plist-get compiled :copy-layout))
            (entry (or (majutsu-row-entry-at-point compiled entries)
                       (user-error "No entry at point")))
-           (field (majutsu-row-read-entry-field entry layout)))
+           (field (majutsu-row-read-entry-field entry compiled)))
       (majutsu-row-entry-field-value-to-kill entry field))))
 
 ;;;###autoload

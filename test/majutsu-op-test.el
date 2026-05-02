@@ -45,11 +45,11 @@
                majutsu-op--field-separator))
 
 (defun majutsu-op-test--log-payload (&rest fields)
-  "Join operation log graph-entry FIELDS."
+  "Join operation log row FIELDS."
   (string-join fields majutsu-row-field-separator))
 
 (defun majutsu-op-test--log-raw-entry (&rest kvs)
-  "Return one graph-entry encoded operation log entry from KVS."
+  "Return one row encoded operation log entry from KVS."
   (let* ((op-id (or (plist-get kvs :op-id) "full-id"))
          (op-id-short (or (plist-get kvs :op-id-short) "short-id"))
          (current (or (plist-get kvs :current) "@"))

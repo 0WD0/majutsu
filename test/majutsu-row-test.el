@@ -39,7 +39,7 @@
          (:field body :module body :template "Body" :face nil)))))
 
 (defun majutsu-row-test--payload (&rest fields)
-  "Join FIELDS with the graph-entry field separator."
+  "Join FIELDS with the row field separator."
   (string-join fields majutsu-row-field-separator))
 
 (ert-deftest majutsu-row-compile-adds-required-metadata ()

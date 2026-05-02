@@ -436,8 +436,8 @@ transport logical newlines safely through single-line payload segments."
       (string-remove-suffix " ago" value)
     value))
 
-(defun majutsu-log--graph-entry-profile ()
-  "Return the graph-entry profile for `majutsu-log'."
+(defun majutsu-log--row-profile ()
+  "Return the row profile for `majutsu-log'."
   (list :name 'log
         :self-type 'Commit
         :columns-var 'majutsu-log-commit-columns
@@ -466,7 +466,7 @@ Looks up `majutsu-log-template-FIELD'."
 (defun majutsu-log--compile-columns (&optional columns)
   "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
 Returns a plist with :template, :columns, and :module-columns."
-  (majutsu-row-compile (majutsu-log--graph-entry-profile) columns))
+  (majutsu-row-compile (majutsu-log--row-profile) columns))
 
 (defun majutsu-log--ensure-template ()
   "Return cached compiled template structure, recomputing if necessary."
@@ -701,7 +701,7 @@ disappear again."
 
 (defun majutsu-log--refresh-tail-window (&optional window)
   "Refresh tail alignment for the current log buffer using WINDOW.
-When WINDOW is nil, use the current graph-entry tail owner window."
+When WINDOW is nil, use the current row tail owner window."
   (when (derived-mode-p 'majutsu-log-mode)
     (setq window (or window (majutsu-row--tail-owner-window)))
     (majutsu-row-refresh-tail-spacers nil nil window)

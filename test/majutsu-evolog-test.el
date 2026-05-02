@@ -11,7 +11,7 @@
 (require 'majutsu-evolog)
 
 (defun majutsu-evolog-test--raw-entry (&optional heading)
-  "Return one graph-entry encoded evolog test entry with HEADING."
+  "Return one row encoded evolog test entry with HEADING."
   (concat "○  "
           majutsu-row-start-token
           (or heading
@@ -27,8 +27,8 @@
           majutsu-row-end-token
           "\n"))
 
-(ert-deftest majutsu-evolog-entry-template/rebuilds-default-compact-with-graph-entry ()
-  "Evolog template should rebuild builtin_evolog_compact via graph-entry."
+(ert-deftest majutsu-evolog-entry-template/rebuilds-default-compact-with-row ()
+  "Evolog template should rebuild builtin_evolog_compact via row."
   (let ((template (prin1-to-string majutsu-evolog--entry-template)))
     (should (string-match-p (regexp-quote "\\x1dS") template))
     (should (string-match-p (regexp-quote "\\x1dT") template))
@@ -61,7 +61,7 @@
     (should (equal (last args 4)
                    (list "-r" "@" "-T" majutsu-evolog--entry-template)))))
 
-(ert-deftest majutsu-evolog-wash-output/inserts-graph-entry-sections ()
+(ert-deftest majutsu-evolog-wash-output/inserts-row-sections ()
   "Evolog washer should render compact graph output as Magit sections."
   (with-temp-buffer
     (magit-section-mode)
@@ -93,7 +93,7 @@
       (should (equal (plist-get entry :operation-id) "op-full")))))
 
 (ert-deftest majutsu-evolog-refresh-buffer/inserts-compact-entry-sections ()
-  "Evolog refresh should render compact graph-entry sections, not details."
+  "Evolog refresh should render compact row sections, not details."
   (cl-letf (((symbol-function 'majutsu-jj-wash)
              (lambda (washer _keep-error &rest _args)
                (insert (majutsu-evolog-test--raw-entry))
@@ -122,7 +122,7 @@
               'majutsu-diff)))
 
 (ert-deftest majutsu-evolog-copy-transient-has-copy-actions ()
-  "Evolog copy transient should expose shared graph-entry copy actions."
+  "Evolog copy transient should expose shared row copy actions."
   (should (transient-get-suffix 'majutsu-evolog-copy-transient "s"))
   (should (transient-get-suffix 'majutsu-evolog-copy-transient "f"))
   (should (transient-get-suffix 'majutsu-evolog-copy-transient "F"))
@@ -130,7 +130,7 @@
   (should (transient-get-suffix 'majutsu-evolog-copy-transient "m")))
 
 (ert-deftest majutsu-evolog-copy-entry-field-copies-operation-id ()
-  "Shared graph-entry copy should work in evolog buffers."
+  "Shared row copy should work in evolog buffers."
   (let (copied)
     (with-temp-buffer
       (majutsu-evolog-mode)
@@ -155,7 +155,7 @@
       (should (equal copied "op-full")))))
 
 (ert-deftest majutsu-evolog-filter-buffer-substring/cleans-graph-properties ()
-  "Evolog copy filter should strip graph-entry display properties."
+  "Evolog copy filter should strip row display properties."
   (with-temp-buffer
     (majutsu-evolog-mode)
     (setq buffer-read-only nil)

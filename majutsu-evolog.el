@@ -4,7 +4,7 @@
 
 ;; This library renders `jj evolog' using a Majutsu-owned template equivalent
 ;; to jj's default compact evolog template.  Entries use the shared
-;; graph-entry protocol, so jj keeps rendering the graph while Majutsu parses
+;; row protocol, so jj keeps rendering the graph while Majutsu parses
 ;; heading and metadata modules back into real Magit sections.
 
 ;;; Code:
@@ -110,14 +110,14 @@
     (change-id . metadata)
     (commit-id . metadata)
     (operation-id . metadata))
-  "Default graph-entry module placement for evolog fields.")
+  "Default row module placement for evolog fields.")
 
 (defconst majutsu-evolog-entry-columns
   '((:field display :module heading :face t)
     (:field change-id :module metadata :face nil)
     (:field commit-id :module metadata :face nil)
     (:field operation-id :module metadata :face nil))
-  "Field specification controlling evolog graph-entry transport.")
+  "Field specification controlling evolog row transport.")
 
 (defun majutsu-evolog--column-template (field)
   "Return majutsu-template form for evolog FIELD."
@@ -153,8 +153,8 @@
              (substring-no-properties change-id)))
       "unknown"))
 
-(defun majutsu-evolog--graph-entry-profile ()
-  "Return the graph-entry profile for `majutsu-evolog'."
+(defun majutsu-evolog--row-profile ()
+  "Return the row profile for `majutsu-evolog'."
   (list :name 'evolog
         :self-type 'CommitEvolutionEntry
         :columns-var 'majutsu-evolog-entry-columns
@@ -170,9 +170,9 @@
         :compat-property-prefix 'majutsu-evolog))
 
 (defconst majutsu-evolog--entry-compiled
-  (majutsu-row-compile (majutsu-evolog--graph-entry-profile)
+  (majutsu-row-compile (majutsu-evolog--row-profile)
                                majutsu-evolog-entry-columns)
-  "Compiled graph-entry layout metadata for `majutsu-evolog'.")
+  "Compiled row layout metadata for `majutsu-evolog'.")
 
 (defconst majutsu-evolog--entry-template
   (plist-get majutsu-evolog--entry-compiled :template)

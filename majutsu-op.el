@@ -468,7 +468,7 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
     (time . metadata)
     (time-ago . metadata)
     (duration . metadata))
-  "Default graph-entry module placement for operation log fields.")
+  "Default row module placement for operation log fields.")
 
 (defcustom majutsu-op-log-columns
   '((:field current-marker :module heading :face t)
@@ -489,17 +489,17 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   "Field specification controlling operation log template and rendering.
 
 Each element is a plist with at least `:field'. Supported keys are the same as
-other graph-entry views: `:field', `:module', `:face', and `:post'. Hidden
+other row views: `:field', `:module', `:face', and `:post'. Hidden
 metadata fields should keep full operation ids available for commands and copy
 operations."
   :type '(repeat (plist :options (:field :module :face :post)))
   :group 'majutsu)
 
 (defvar majutsu-op-log--compiled-template-cache nil
-  "Cached compiled operation log graph-entry template metadata.")
+  "Cached compiled operation log row template metadata.")
 
 (defun majutsu-op-log--invalidate-template-cache (&rest _)
-  "Invalidate cached operation log graph-entry template metadata."
+  "Invalidate cached operation log row template metadata."
   (setq majutsu-op-log--compiled-template-cache nil))
 
 (when (fboundp 'add-variable-watcher)
@@ -586,8 +586,8 @@ operations."
              (substring-no-properties op-id)))
       "unknown"))
 
-(defun majutsu-op-log--graph-entry-profile ()
-  "Return the graph-entry profile for operation log entries."
+(defun majutsu-op-log--row-profile ()
+  "Return the row profile for operation log entries."
   (list :name 'op-log
         :self-type 'Operation
         :columns-var 'majutsu-op-log-columns
@@ -602,9 +602,9 @@ operations."
         :compat-property-prefix 'majutsu-op-log))
 
 (defun majutsu-op-log--compile-columns (&optional columns)
-  "Compile operation log COLUMNS into graph-entry metadata."
+  "Compile operation log COLUMNS into row metadata."
   (majutsu-row-compile
-   (majutsu-op-log--graph-entry-profile)
+   (majutsu-op-log--row-profile)
    (or columns majutsu-op-log-columns)))
 
 (defun majutsu-op-log--ensure-template ()

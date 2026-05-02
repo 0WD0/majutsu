@@ -128,7 +128,7 @@
 (ert-deftest majutsu-log-default-column-schema-contains-module-and-face ()
   "Normalized column specs should include module/face/post metadata."
   (let ((spec (majutsu-row-normalize-column-spec
-               (majutsu-log--graph-entry-profile) 'description)))
+               (majutsu-log--row-profile) 'description)))
     (should (eq (plist-get spec :field) 'description))
     (should (eq (plist-get spec :module) 'heading))
     (should (eq (plist-get spec :face) t))
@@ -137,7 +137,7 @@
 (ert-deftest majutsu-log-explicit-default-postprocessors-keep-field-defaults ()
   "Explicit `:post :default' should retain field-specific defaults."
   (let ((spec (majutsu-row-normalize-column-spec
-               (majutsu-log--graph-entry-profile)
+               (majutsu-log--row-profile)
                '(:field parent-ids :post :default))))
     (should (equal (plist-get spec :post)
                    '(majutsu-log-post-split-list-separator)))))
