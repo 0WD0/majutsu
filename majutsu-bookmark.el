@@ -307,12 +307,11 @@ The template is compiled with `CommitRef' as the implicit self type."
             [:name]]])
 
 (majutsu-template-defmethod majutsu-bookmark-list-distance-part SizeHint
-    ((prefix Template))
+  ((prefix Template))
   (:returns Template :doc "One compact tracked-distance fragment.")
   `[:if [:not [:zero]]
-       [:if [:exact]
-           [,prefix [:exact]]
-         [,prefix ">=" [:lower]]]])
+       [,prefix
+        [:if [:exact] [:exact] [[:lower] "+"]]]])
 
 (majutsu-template-defkeyword majutsu-bookmark-list-tracking CommitRef
   (:returns Template :doc "Compact tracked-remote distance summary.")
