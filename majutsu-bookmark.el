@@ -241,58 +241,66 @@ bookmark(s) at point."
 (defvar-local majutsu-bookmark--list-all nil
   "Non-nil when the bookmark list includes remote bookmarks.")
 
-(defvar majutsu-bookmark--list-template-cache nil
+(defvar majutsu-bookmark--compiled-template-cache nil
   "Cached compiled `jj bookmark list' row template metadata.")
-
-(defcustom majutsu-bookmark-list-commit-summary-template
-  '[:majutsu-ref-default-commit-summary]
-  "Template used for commit summaries in `majutsu-bookmark-list'.
-The template is compiled with `Commit' as the implicit self type."
-  :type 'sexp
-  :group 'majutsu
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (setq majutsu-bookmark--list-template-cache nil)))
-
-(defcustom majutsu-bookmark-list-heading-template
-  '[:majutsu-bookmark-list-default-heading]
-  "Template used for bookmark headings in `majutsu-bookmark-list'.
-The template is compiled with `CommitRef' as the implicit self type."
-  :type 'sexp
-  :group 'majutsu
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (setq majutsu-bookmark--list-template-cache nil)))
-
-(defcustom majutsu-bookmark-list-conflict-target-heading-template
-  '[:|marker|
-    [:|summary|
-     [:concat "  " marker " " summary]]]
-  "Template used for conflicted target headings in `majutsu-bookmark-list'.
-The template is compiled as a two-stage lambda: the first argument is the
-conflict marker such as `+' or `-', and the second argument is the commit
-summary string."
-  :type 'sexp
-  :group 'majutsu
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (setq majutsu-bookmark--list-template-cache nil)))
 
 (defun majutsu-bookmark--invalidate-list-template (&rest _)
   "Invalidate the cached bookmark-list template."
-  (setq majutsu-bookmark--list-template-cache nil))
+  (setq majutsu-bookmark--compiled-template-cache nil))
 
-(when (fboundp 'add-variable-watcher)
-  (add-variable-watcher 'majutsu-bookmark-list-commit-summary-template
-                        #'majutsu-bookmark--invalidate-list-template)
-  (add-variable-watcher 'majutsu-bookmark-list-heading-template
-                        #'majutsu-bookmark--invalidate-list-template)
-  (add-variable-watcher 'majutsu-bookmark-list-conflict-target-heading-template
-                        #'majutsu-bookmark--invalidate-list-template))
+(defmacro majutsu-bookmark-define-template (name template doc)
+  "Define a bookmark-list template variable NAME with TEMPLATE and DOC."
+  (declare (indent 1) (debug t) (doc-string 3))
+  (let ((var-name (intern (format "majutsu-bookmark-list-template-%s" name))))
+    `(progn
+       (defcustom ,var-name ,template
+         ,doc
+         :type 'sexp
+         :group 'majutsu
+         :set (lambda (symbol value)
+                (set-default symbol value)
+                (setq majutsu-bookmark--compiled-template-cache nil)))
+       (when (fboundp 'add-variable-watcher)
+         (add-variable-watcher ',var-name
+                               #'majutsu-bookmark--invalidate-list-template)))))
+
+(majutsu-bookmark-define-template commit-summary
+  '[:majutsu-ref-default-commit-summary]
+  "Template used for bookmark-list commit summaries.")
+
+(majutsu-bookmark-define-template heading
+  '[:majutsu-bookmark-list-default-heading]
+  "Template used for bookmark-list headings.")
+
+(majutsu-bookmark-define-template conflict-target-heading
+  '[:|marker|
+    [:|commit|
+     [:concat "  " marker " " [:majutsu-bookmark-list-commit-summary]]]]
+  "Template used for conflicted bookmark target headings.")
+
+(majutsu-bookmark-define-template kind
+  "ref"
+  "Template used for bookmark-list row kind values.")
+
+(majutsu-bookmark-define-template name
+  '[:name]
+  "Template used for bookmark-list bookmark names.")
+
+(majutsu-bookmark-define-template remote
+  '[:if [:remote] [:remote] ""]
+  "Template used for bookmark-list remote names.")
+
+(majutsu-bookmark-define-template tracked
+  '[:if [:tracked] "t" ""]
+  "Template used for bookmark-list tracked flags.")
+
+(majutsu-bookmark-define-template commit-id
+  ""
+  "Template used for bookmark-list commit ids.")
 
 (majutsu-template-defkeyword majutsu-bookmark-list-commit-summary Commit
   (:returns Template :doc "User-customizable commit summary for bookmark list entries.")
-  majutsu-bookmark-list-commit-summary-template)
+  majutsu-bookmark-list-template-commit-summary)
 
 (majutsu-template-defkeyword majutsu-bookmark-list-name CommitRef
   (:returns Template :doc "Default bookmark-list ref name.")
@@ -343,9 +351,19 @@ summary string."
                    [:majutsu-bookmark-list-target-summary]
                  "(deleted)"]]])
 
-(majutsu-template-defkeyword majutsu-bookmark-list-heading CommitRef
-  (:returns Template :doc "User-customizable bookmark-list heading.")
-  majutsu-bookmark-list-heading-template)
+(defcustom majutsu-bookmark-list-columns
+  '((:field heading :module heading :face t)
+    (:field kind :module metadata :face nil)
+    (:field name :module metadata :face nil)
+    (:field remote :module metadata :face nil)
+    (:field tracked :module metadata :face nil)
+    (:field commit-id :module metadata :face nil))
+  "Row fields transported by `majutsu-bookmark-list'."
+  :type '(repeat (plist :options (:field :module :face :post)))
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-bookmark--compiled-template-cache nil)))
 
 (defconst majutsu-bookmark--list-field-default-modules
   '((heading . heading)
@@ -356,14 +374,9 @@ summary string."
     (commit-id . metadata))
   "Default row module placement for bookmark list fields.")
 
-(defconst majutsu-bookmark--list-columns
-  '((:field heading :module heading :face t)
-    (:field kind :module metadata :face nil)
-    (:field name :module metadata :face nil)
-    (:field remote :module metadata :face nil)
-    (:field tracked :module metadata :face nil)
-    (:field commit-id :module metadata :face nil))
-  "Row fields transported by `majutsu-bookmark-list'.")
+(defconst majutsu-bookmark--list-required-fields
+  '(heading kind name remote tracked commit-id)
+  "Fields required by the bookmark-list row parser.")
 
 (defun majutsu-bookmark--row-empty-to-nil (value &optional _ctx)
   "Return nil for empty bookmark row VALUE."
@@ -378,15 +391,11 @@ summary string."
        t))
 
 (defun majutsu-bookmark--list-column-template (field)
-  "Return placeholder template for bookmark list FIELD."
-  (pcase field
-    ('heading '[:majutsu-bookmark-list-heading])
-    ('kind "ref")
-    ('name '[:name])
-    ('remote '[:remote])
-    ('tracked '[:if [:tracked] "t" ""])
-    ('commit-id "")
-    (_ (user-error "Unknown bookmark list row field %S" field))))
+  "Return bookmark-list template form for FIELD."
+  (let ((var (intern-soft (format "majutsu-bookmark-list-template-%s" field))))
+    (if (and var (boundp var))
+        (symbol-value var)
+      (user-error "Unknown bookmark-list column field %S" field))))
 
 (defun majutsu-bookmark--row-record-field (entry field value)
   "Record bookmark list FIELD VALUE onto ENTRY."
@@ -419,7 +428,9 @@ summary string."
   "Return row profile for `majutsu-bookmark-list'."
   (list :name 'bookmark-list
         :self-type 'CommitRef
+        :columns-var 'majutsu-bookmark-list-columns
         :default-modules majutsu-bookmark--list-field-default-modules
+        :required-fields majutsu-bookmark--list-required-fields
         :template-function 'majutsu-bookmark--list-column-template
         :default-postprocessors nil
         :field-postprocessors
@@ -440,9 +451,9 @@ summary string."
 MARKER is the conflict side marker rendered in the target heading."
   (majutsu-row-template-form
    compiled
-   `((heading . [[,majutsu-bookmark-list-conflict-target-heading-template
+   `((heading . [[,majutsu-bookmark-list-template-conflict-target-heading
                   ,marker]
-                 [:method ,commit :majutsu-bookmark-list-commit-summary]])
+                 ,commit])
      (kind . "target")
      (name . [:method [:self 1] :name])
      (remote . [:if [:method [:self 1] :remote]
@@ -475,21 +486,24 @@ MARKER is the conflict side marker rendered in the target heading."
       ,(majutsu-bookmark--conflict-targets-template-form compiled)
       [:if ,tracked-remote [,majutsu-row-pop-token "\n"]]]))
 
-(defun majutsu-bookmark--list-compiled ()
+(defun majutsu-bookmark--compile-list-columns (&optional columns)
+  "Compile bookmark-list COLUMNS into row metadata."
+  (majutsu-row-compile (majutsu-bookmark--row-profile) columns))
+
+(defun majutsu-bookmark--ensure-list-template ()
   "Return cached row metadata for `jj bookmark list'."
-  (or majutsu-bookmark--list-template-cache
-      (let* ((compiled (majutsu-row-compile
-                        (majutsu-bookmark--row-profile)
-                        majutsu-bookmark--list-columns))
+  (or majutsu-bookmark--compiled-template-cache
+      (let* ((compiled (majutsu-bookmark--compile-list-columns
+                        majutsu-bookmark-list-columns))
              (template (majutsu-template-compile
                         (majutsu-bookmark--list-template-form compiled)
                         'CommitRef)))
-        (setq majutsu-bookmark--list-template-cache
+        (setq majutsu-bookmark--compiled-template-cache
               (plist-put compiled :template template)))))
 
 (defun majutsu-bookmark--list-template ()
   "Return cached row template used by `jj bookmark list'."
-  (plist-get (majutsu-bookmark--list-compiled) :template))
+  (plist-get (majutsu-bookmark--ensure-list-template) :template))
 
 ;;;###autoload
 (defun majutsu-bookmark-list (&optional all)
@@ -502,7 +516,7 @@ With prefix ALL, include remote bookmarks."
 
 (defun majutsu-bookmark--wash-list (_args)
   "Wash structured `jj bookmark list' row output into bookmark sections."
-  (let* ((compiled (majutsu-bookmark--list-compiled))
+  (let* ((compiled (majutsu-bookmark--ensure-list-template))
          (entries (majutsu-row-wash-buffer compiled)))
     (if (null entries)
         (magit-cancel-section)
