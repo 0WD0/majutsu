@@ -60,6 +60,9 @@
 
 ** Changed
 
+- Bookmarks: The bookmark list buffer now uses a structured =jj bookmark list
+  -T= template, preserving jj's own rendering while assigning precise section
+  values such as =name@remote= for tracked remote rows.
 - Transients: Add a generic repository-local defaults layer keyed by jj's
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults

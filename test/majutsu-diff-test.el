@@ -176,7 +176,7 @@
                  (ert-fail "Should not use single reader for --revisions"))))
       (should (equal (majutsu-diff--transient-read-revset "Revisions: " nil nil)
                      "main | dev"))
-      (should (equal seen '("@" ("diff" "-r")))))))
+      (should (equal seen '("@" ("diff" "--revisions")))))))
 
 (ert-deftest majutsu-diff-repo-default-action/is-available ()
   "The diff transient should expose generic repository-local defaults."
