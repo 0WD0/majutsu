@@ -23,6 +23,7 @@
 (require 'seq)
 (require 'subr-x)
 
+(declare-function majutsu-jj-lines "majutsu-jj")
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
 
 ;;; majutsu-gerrit
@@ -34,13 +35,41 @@
 (defvar majutsu-gerrit-remote-branch-history nil
   "Minibuffer history for Gerrit remote branch names.")
 
+(defun majutsu-gerrit--remote-branch-names (&optional remote)
+  "Return a list of remote branch names for REMOTE.
+If REMOTE is nil, return branches from all remotes.
+Uses `jj bookmark list' with a template to enumerate remote bookmarks."
+  (let ((default-directory (ignore-errors (majutsu--toplevel-safe)))
+        (template "if(remote, name ++ \"\\n\", \"\")"))
+    (when default-directory
+      (delete-dups
+       (sort
+        (delq nil
+              (mapcar
+               (lambda (line)
+                 (let ((s (string-trim line)))
+                   (unless (string-empty-p s) s)))
+               (condition-case _
+                   (apply #'majutsu-jj-lines
+                          (append (list "bookmark" "list" "--quiet" "-T" template)
+                                  (and remote (list "--remote" remote))))
+                 (error nil))))
+        #'string<)))))
+
 (defun majutsu-gerrit-upload--read-revset (prompt initial-input _history)
   "Read revset for `jj gerrit upload --revision='."
   (majutsu-read-revset prompt initial-input '("gerrit" "upload" "-r")))
 
 (defun majutsu-gerrit-upload--read-remote-branch (prompt initial-input _history)
-  "Read target remote branch for `jj gerrit upload'."
-  (majutsu-read-string prompt initial-input 'majutsu-gerrit-remote-branch-history))
+  "Read target remote branch for `jj gerrit upload' with completion."
+  (let* ((args (transient-get-value))
+         (remote (cl-loop for arg in args
+                          when (string-prefix-p "--remote=" arg)
+                          return (substring arg 9)))
+         (branches (majutsu-gerrit--remote-branch-names remote)))
+    (completing-read (format-prompt prompt nil)
+                     branches nil nil initial-input
+                     'majutsu-gerrit-remote-branch-history)))
 
 (defun majutsu-gerrit-upload-arguments ()
   "Return current Gerrit upload arguments.
