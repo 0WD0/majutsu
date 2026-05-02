@@ -40,9 +40,9 @@
   or frame.
 - Log: Add visible DAG relation navigation. ~[~ jumps to a parent revision and
   ~]~ jumps to a child revision, prompting when multiple visible targets exist.
-- Log: Add semantic copy commands under the log dispatcher copy submenu for
-  section values, rendered fields, hidden entry fields, commit hashes, and
-  visible modules.
+- Log/Evolog: Add shared graph-entry copy commands under the dispatcher copy
+  submenu for section values, rendered fields, hidden entry fields, commit
+  hashes, and visible modules.
 - JJ descriptions: Add save/history/search/diff commands for description
   buffers, including ~majutsu-jjdescription-save-message~,
   ~majutsu-jjdescription-prev-message~,

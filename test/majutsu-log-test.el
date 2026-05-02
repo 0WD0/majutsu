@@ -674,6 +674,7 @@
 (ert-deftest majutsu-log-copy-module-copies-heading-content-without-decoration ()
   "`majutsu-log-copy-module' should copy heading content without graph/tail decoration."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
                                  (description . "Title\nMore")
@@ -700,6 +701,7 @@
 (ert-deftest majutsu-log-copy-entry-field-copies-hidden-metadata ()
   "`majutsu-log-copy-entry-field' should copy hidden canonical metadata fields."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
                       :columns '((change-id . "chg")
@@ -734,6 +736,7 @@
 (ert-deftest majutsu-log-copy-commit-id-copies-hidden-hash ()
   "`majutsu-log-copy-commit-id' should copy the canonical hidden commit hash."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
                       :columns '((change-id . "chg")

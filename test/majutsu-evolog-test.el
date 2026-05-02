@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'transient)
 (require 'majutsu-evolog)
 
 (defun majutsu-evolog-test--raw-entry (&optional heading)
@@ -119,6 +120,54 @@
               'majutsu-visit-thing))
   (should (eq (lookup-key majutsu-evolog-mode-map (kbd "d"))
               'majutsu-diff)))
+
+(ert-deftest majutsu-evolog-copy-transient-has-copy-actions ()
+  "Evolog copy transient should expose shared graph-entry copy actions."
+  (should (transient-get-suffix 'majutsu-evolog-copy-transient "s"))
+  (should (transient-get-suffix 'majutsu-evolog-copy-transient "f"))
+  (should (transient-get-suffix 'majutsu-evolog-copy-transient "F"))
+  (should (transient-get-suffix 'majutsu-evolog-copy-transient "h"))
+  (should (transient-get-suffix 'majutsu-evolog-copy-transient "m")))
+
+(ert-deftest majutsu-evolog-copy-entry-field-copies-operation-id ()
+  "Shared graph-entry copy should work in evolog buffers."
+  (let (copied)
+    (with-temp-buffer
+      (majutsu-evolog-mode)
+      (setq buffer-read-only nil)
+      (insert (majutsu-evolog-test--raw-entry))
+      (goto-char (point-min))
+      (majutsu-evolog--wash-output nil)
+      (goto-char (point-min))
+      (search-forward "feat(op): phase1")
+      (cl-letf (((symbol-function 'kill-new)
+                 (lambda (string) (setq copied string)))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (apply #'format format-string args)))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &rest _)
+                   (or (seq-find (lambda (candidate)
+                                   (string-match-p "operation-id" candidate))
+                                 candidates)
+                       (car candidates)))))
+        (majutsu-graph-entry-copy-entry-field))
+      (should (equal copied "op-full")))))
+
+(ert-deftest majutsu-evolog-filter-buffer-substring/cleans-graph-properties ()
+  "Evolog copy filter should strip graph-entry display properties."
+  (with-temp-buffer
+    (majutsu-evolog-mode)
+    (setq buffer-read-only nil)
+    (insert (majutsu-evolog-test--raw-entry))
+    (goto-char (point-min))
+    (majutsu-evolog--wash-output nil)
+    (let ((copied (filter-buffer-substring (point-min) (point-max))))
+      (should (string-match-p "feat(op): phase1" copied))
+      (should-not (text-property-not-all
+                   0 (length copied) 'majutsu-graph-entry-module nil copied))
+      (should-not (text-property-not-all
+                   0 (length copied) 'line-prefix nil copied)))))
 
 (ert-deftest majutsu-evolog/passes-revset-and-args-to-buffer ()
   "majutsu-evolog should remember revset and args in the buffer."

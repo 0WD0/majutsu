@@ -76,7 +76,10 @@ Instead of invoking this alias for `majutsu-log' using
    [("C-x m"    "Show all key bindings"    describe-mode)]]
   ["Log commands"
    :if-derived majutsu-log-mode
-   [("w" "Copy…"             majutsu-log-copy-transient)]])
+   [("w" "Copy…"             majutsu-log-copy-transient)]]
+  ["Evolution log commands"
+   :if-derived majutsu-evolog-mode
+   [("w" "Copy…"             majutsu-evolog-copy-transient)]])
 
 (provide 'majutsu)
 

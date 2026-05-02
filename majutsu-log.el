@@ -586,127 +586,11 @@ When ENTRIES is nil, use `majutsu-log--cached-entries'."
   (or (magit-section-value-if 'jj-commit)
       (user-error "No changeset at point")))
 
-(defun majutsu-log--text-property-near-point (property &optional pos)
-  "Return PROPERTY near POS, preferring the previous character.
-This makes point at the end of a field behave like point on that field."
-  (let ((pos (or pos (point))))
-    (or (and (> pos (point-min))
-             (get-text-property (1- pos) property))
-        (get-text-property pos property))))
-
-(defun majutsu-log--entry-at-point ()
-  "Return the parsed log entry at point, or nil if unavailable."
-  (or (when-let* ((entry-id (majutsu-log--text-property-near-point
-                             'majutsu-log-entry-id)))
-        (majutsu-log--entry-for-id entry-id))
-      (when-let* ((entry-id (magit-section-value-if 'jj-commit)))
-        (majutsu-log--entry-for-id entry-id))))
-
 (defun majutsu-log--current-compiled ()
   "Return compiled column/layout metadata for the current buffer."
   (or majutsu-log--buffer-compiled
       majutsu-log--compiled-template-cache
       (majutsu-log--ensure-template)))
-
-(defun majutsu-log--compiled-column-by-instance (compiled instance)
-  "Return column spec from COMPILED identified by INSTANCE."
-  (seq-find (lambda (column)
-              (eql (plist-get column :instance) instance))
-            (plist-get compiled :columns)))
-
-(defun majutsu-log--field-copy-string (value)
-  "Return canonical clipboard text for field VALUE."
-  (cond
-   ((null value) "")
-   ((stringp value) (substring-no-properties value))
-   ((listp value) (mapconcat #'majutsu-log--field-copy-string value "\n"))
-   (t (format "%s" value))))
-
-(defun majutsu-log--field-value-present-p (value)
-  "Return non-nil if canonical field VALUE should be offered for copying."
-  (cond
-   ((null value) nil)
-   ((stringp value) (not (string-empty-p value)))
-   ((listp value) (not (null value)))
-   (t t)))
-
-(defun majutsu-log--entry-field-value (entry field &optional missing)
-  "Return canonical FIELD value from ENTRY, or MISSING when unavailable."
-  (alist-get field (plist-get entry :columns) missing nil #'eq))
-
-(defun majutsu-log--entry-field-candidate-preview (entry field)
-  "Return one-line preview string for FIELD on ENTRY."
-  (let* ((text (majutsu-log--field-copy-string
-                (majutsu-log--entry-field-value entry field)))
-         (text (replace-regexp-in-string "[\n\r\t ]+" " " text nil t)))
-    (if (> (length text) 48)
-        (concat (substring text 0 48) "…")
-      text)))
-
-(defun majutsu-log--entry-copyable-fields (entry compiled)
-  "Return copyable canonical field symbols for ENTRY using COMPILED order."
-  (let ((fields nil)
-        (seen nil))
-    (dolist (column (plist-get compiled :columns))
-      (let* ((field (plist-get column :field))
-             (value (majutsu-log--entry-field-value entry field :majutsu-missing)))
-        (when (and (not (memq field seen))
-                   (not (eq value :majutsu-missing))
-                   (majutsu-log--field-value-present-p value))
-          (push field seen)
-          (push field fields))))
-    (dolist (cell (plist-get entry :columns))
-      (let ((field (car cell))
-            (value (cdr cell)))
-        (when (and (not (memq field seen))
-                   (majutsu-log--field-value-present-p value))
-          (push field seen)
-          (push field fields))))
-    (nreverse fields)))
-
-(defun majutsu-log--read-entry-field (entry compiled &optional prompt)
-  "Read one canonical field from ENTRY using COMPILED.
-When PROMPT is nil, use a default log-field prompt."
-  (let* ((default-field (majutsu-log--text-property-near-point 'majutsu-log-field))
-         (candidates (mapcar (lambda (field)
-                               (cons (format "%s\t%s"
-                                             field
-                                             (majutsu-log--entry-field-candidate-preview entry field))
-                                     field))
-                             (majutsu-log--entry-copyable-fields entry compiled)))
-         (default (car (rassoc default-field candidates)))
-         (choice (completing-read (or prompt "Copy log field: ")
-                                  (mapcar #'car candidates)
-                                  nil t nil nil default)))
-    (or (cdr (assoc choice candidates))
-        (user-error "Unknown log field %S" choice))))
-
-(defun majutsu-log--copy-entry-field-value (entry field)
-  "Copy canonical FIELD value from ENTRY to the kill ring."
-  (let ((value (majutsu-log--entry-field-value entry field :majutsu-missing)))
-    (when (eq value :majutsu-missing)
-      (user-error "Field %s is unavailable for the current entry" field))
-    (unless (majutsu-log--field-value-present-p value)
-      (user-error "Field %s is empty for the current entry" field))
-    (majutsu-log--copy-string (majutsu-log--field-copy-string value))))
-
-(defun majutsu-log--copy-string (string)
-  "Copy STRING to the kill ring and echo it."
-  (kill-new string)
-  (message "%s" string))
-
-;;;###autoload
-(defun majutsu-copy-section-value ()
-  "Copy the current section's stable value.
-
-When the region is active, copy it literally using `copy-region-as-kill'."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (if-let* ((section (magit-current-section))
-              (value (oref section value)))
-        (majutsu-log--copy-string (format "%s" value))
-      (user-error "No section value at point"))))
 
 ;;;###autoload
 (defun majutsu-log-copy-field ()
@@ -714,26 +598,9 @@ When the region is active, copy it literally using `copy-region-as-kill'."
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-log--current-compiled))
-           (entry (majutsu-log--entry-at-point))
-           (instance (majutsu-log--text-property-near-point 'majutsu-log-column))
-           (field (majutsu-log--text-property-near-point 'majutsu-log-field))
-           (module (majutsu-log--text-property-near-point 'majutsu-log-module))
-           (column (or (and instance
-                            (majutsu-log--compiled-column-by-instance compiled instance))
-                       (and field module
-                            (seq-find (lambda (candidate)
-                                        (and (eq (plist-get candidate :field) field)
-                                             (eq (plist-get candidate :module) module)))
-                                      (plist-get compiled :columns))))))
-      (unless entry
-        (user-error "No log entry at point"))
-      (unless column
-        (user-error "No log field at point"))
-      (majutsu-log--copy-string
-       (majutsu-graph-entry-render-column-text entry column t)))))
+  (majutsu-graph-entry-copy-field
+   (majutsu-log--current-compiled)
+   majutsu-log--cached-entries))
 
 ;;;###autoload
 (defun majutsu-log-copy-module ()
@@ -741,26 +608,9 @@ When the region is active, copy it literally using `copy-region-as-kill'."
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-log--current-compiled))
-           (entry (majutsu-log--entry-at-point))
-           (module (majutsu-log--text-property-near-point 'majutsu-log-module))
-           (text (pcase module
-                   ('heading (majutsu-graph-entry-render-heading-content
-                              entry compiled nil t))
-                   ('tail (or (majutsu-graph-entry-render-tail
-                               entry compiled nil t)
-                              ""))
-                   ('body (or (majutsu-graph-entry-render-body
-                               entry compiled nil t)
-                              ""))
-                   (_ nil))))
-      (unless entry
-        (user-error "No log entry at point"))
-      (unless text
-        (user-error "No log module at point"))
-      (majutsu-log--copy-string text))))
+  (majutsu-graph-entry-copy-module
+   (majutsu-log--current-compiled)
+   majutsu-log--cached-entries))
 
 ;;;###autoload
 (defun majutsu-log-copy-entry-field ()
@@ -772,13 +622,9 @@ called interactively, prompt with completion over the current entry's
 available canonical fields.  If the region is active, copy it literally using
 `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-log--current-compiled))
-           (entry (or (majutsu-log--entry-at-point)
-                      (user-error "No log entry at point")))
-           (field (majutsu-log--read-entry-field entry compiled)))
-      (majutsu-log--copy-entry-field-value entry field))))
+  (majutsu-graph-entry-copy-entry-field
+   (majutsu-log--current-compiled)
+   majutsu-log--cached-entries))
 
 ;;;###autoload
 (defun majutsu-log-copy-commit-id ()
@@ -788,11 +634,9 @@ This copies the canonical hidden `commit-id' field, even when it is not shown
 in the visible log layout.  If the region is active, copy it literally using
 `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let ((entry (or (majutsu-log--entry-at-point)
-                     (user-error "No log entry at point"))))
-      (majutsu-log--copy-entry-field-value entry 'commit-id))))
+  (majutsu-graph-entry-copy-commit-id
+   (majutsu-log--current-compiled)
+   majutsu-log--cached-entries))
 
 (defun majutsu-log--visible-parent-ids (entry)
   "Return visible parent ids for ENTRY in current buffer order."
@@ -888,15 +732,18 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   (let* ((compiled (majutsu-log--ensure-template))
          (entries nil))
     (setq majutsu-log--cached-entries nil)
+    (setq majutsu-graph-entry-cached-entries nil)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
     (setq-local majutsu-log--buffer-compiled compiled)
+    (setq-local majutsu-graph-entry-buffer-compiled compiled)
     (goto-char (point-min))
     (while (not (eobp))
       (if-let* ((entry (majutsu-graph-entry-wash-entry compiled)))
           (push entry entries)
         (magit-delete-line)))
     (setq majutsu-log--cached-entries (nreverse entries))
+    (setq majutsu-graph-entry-cached-entries majutsu-log--cached-entries)
     (majutsu-log--rebuild-relation-indexes majutsu-log--cached-entries)
     (insert "\n")))
 
@@ -1052,13 +899,9 @@ Return non-nil when the section could be located."
   :options '(bug-reference-mode))
 
 ;;;###autoload(autoload 'majutsu-log-copy-transient "majutsu-log" nil t)
-(transient-define-prefix majutsu-log-copy-transient ()
-  "Transient for semantic copy commands in `majutsu-log-mode'."
-  [[("s" "Section value" majutsu-copy-section-value)
-    ("f" "Visible field at point" majutsu-log-copy-field)
-    ("F" "Entry field…" majutsu-log-copy-entry-field)
-    ("h" "Commit hash" majutsu-log-copy-commit-id)
-    ("m" "Visible module at point" majutsu-log-copy-module)]])
+(majutsu-graph-entry-define-copy-transient
+ majutsu-log-copy-transient
+ "Transient for semantic copy commands in `majutsu-log-mode'.")
 
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."
@@ -1097,6 +940,7 @@ Return non-nil when the section could be located."
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
   (setq majutsu-log--cached-entries nil)
+  (setq majutsu-graph-entry-cached-entries nil)
   (setq majutsu-log--entry-by-id nil)
   (setq majutsu-log--children-by-id nil)
   (majutsu-log-render))

@@ -200,8 +200,12 @@
 
 (defun majutsu-evolog--wash-output (_args)
   "Wash raw `jj evolog` output in the current narrowed region."
+  (setq-local majutsu-graph-entry-buffer-compiled
+              majutsu-evolog--entry-compiled)
   (setq majutsu-evolog--cached-entries
-        (majutsu-graph-entry-wash-buffer majutsu-evolog--entry-compiled)))
+        (majutsu-graph-entry-wash-buffer majutsu-evolog--entry-compiled))
+  (setq majutsu-graph-entry-cached-entries
+        majutsu-evolog--cached-entries))
 
 (defun majutsu-evolog--insert-entries ()
   "Insert evolog output for the current buffer."
@@ -214,13 +218,24 @@
             (or majutsu-evolog--revset "@")
             majutsu-evolog--args))))
 
+(defun majutsu-evolog--filter-buffer-substring (beg end &optional delete)
+  "Filter copied evolog text between BEG and END."
+  (majutsu-graph-entry-filter-buffer-substring
+   beg end delete majutsu-evolog--entry-compiled))
+
 (defun majutsu-evolog-refresh-buffer ()
   "Refresh the current evolog buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-evolog-mode)
   (setq majutsu-evolog--cached-entries nil)
+  (setq majutsu-graph-entry-cached-entries nil)
   (magit-insert-section (evologbuf)
     (majutsu-evolog--insert-entries)))
+
+;;;###autoload(autoload 'majutsu-evolog-copy-transient "majutsu-evolog" nil t)
+(majutsu-graph-entry-define-copy-transient
+ majutsu-evolog-copy-transient
+ "Transient for semantic copy commands in `majutsu-evolog-mode'.")
 
 (defvar-keymap majutsu-evolog-mode-map
   :doc "Keymap for `majutsu-evolog-mode'."
@@ -230,7 +245,11 @@
   "Major mode for viewing jj change evolution history."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (setq-local filter-buffer-substring-function
+              #'majutsu-evolog--filter-buffer-substring)
+  (setq-local majutsu-graph-entry-buffer-compiled
+              majutsu-evolog--entry-compiled))
 
 (defun majutsu-evolog--buffer-name (revset)
   "Return buffer name for evolog REVSET."
