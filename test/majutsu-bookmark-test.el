@@ -170,6 +170,17 @@
       (should (string-match-p (regexp-quote "CUSTOM-SUMMARY ") template))
       (should (string-match-p (regexp-quote "commit_id().shortest(4)") template)))))
 
+(ert-deftest majutsu-bookmark-list-template/uses-custom-conflict-target-heading ()
+  (let ((majutsu-bookmark--list-template-cache nil)
+        (majutsu-bookmark-list-conflict-target-heading-template
+         '["TARGET " [:majutsu-bookmark-list-conflict-target-marker]
+           " " [:commit_id :shortest 4]]))
+    (let ((template (majutsu-bookmark--list-template)))
+      (should (string-match-p (regexp-quote "TARGET ") template))
+      (should (string-match-p (regexp-quote "\"-\"") template))
+      (should (string-match-p (regexp-quote "\"+\"") template))
+      (should (string-match-p (regexp-quote "commit_id().shortest(4)") template)))))
+
 (ert-deftest majutsu-bookmark-row-output/attaches-targets-and-remote-state ()
   (let* ((output (concat
                   (majutsu-bookmark-test--ref

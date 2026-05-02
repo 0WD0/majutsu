@@ -252,6 +252,10 @@
             (funcall fn field)
           (user-error "Column %S has no :template" field)))))
 
+(defconst majutsu-row--no-template-override
+  (make-symbol "majutsu-row-no-template-override")
+  "Sentinel used when no row template override exists.")
+
 (defun majutsu-row-build-module-template-form (templates)
   "Return a template form joining TEMPLATES with field separators."
   (cond
@@ -266,6 +270,45 @@
         (setq first nil)
         (setq forms (append forms (list template))))
       (cons :concat forms)))))
+
+(defun majutsu-row--template-override (overrides field)
+  "Return template override for FIELD from OVERRIDES."
+  (if-let* ((cell (assq field overrides)))
+      (cdr cell)
+    majutsu-row--no-template-override))
+
+(defun majutsu-row-module-template-form (compiled module &optional overrides)
+  "Return template form for COMPILED MODULE.
+OVERRIDES is an alist mapping fields to replacement template forms."
+  (let* ((profile (majutsu-row--profile compiled))
+         (columns (majutsu-row-module-columns compiled module)))
+    (majutsu-row-build-module-template-form
+     (mapcar (lambda (column)
+               (let* ((field (plist-get column :field))
+                      (override (majutsu-row--template-override
+                                 overrides field)))
+                 (if (eq override majutsu-row--no-template-override)
+                     (majutsu-row--column-template profile column)
+                   override)))
+             columns))))
+
+(defun majutsu-row-template-form (compiled &optional overrides)
+  "Return one row template form for COMPILED.
+OVERRIDES is an alist mapping fields to replacement template forms.  This
+constructs the row transport wrapper from the compiled row metadata, so callers
+only describe field values and do not duplicate the row protocol."
+  (let ((tokens (plist-get compiled :tokens)))
+    `[:concat
+      ,(plist-get tokens :start)
+      ,(majutsu-row-module-template-form compiled 'heading overrides)
+      ,(plist-get tokens :tail)
+      ,(majutsu-row-module-template-form compiled 'tail overrides)
+      ,(plist-get tokens :body)
+      ,(majutsu-row-module-template-form compiled 'body overrides)
+      ,(plist-get tokens :metadata)
+      ,(majutsu-row-module-template-form compiled 'metadata overrides)
+      ,(plist-get tokens :end)
+      "\n"]))
 
 (defun majutsu-row-compile (profile &optional columns)
   "Compile PROFILE COLUMNS into a jj template and layout metadata."
@@ -287,30 +330,14 @@
                                         (eq (plist-get column :module) module))
                                       complete)))
                   majutsu-row-module-order))
-         (tokens (majutsu-row--tokens profile))
-         (module-form
-          (lambda (module)
-            (majutsu-row-build-module-template-form
-             (mapcar (lambda (column)
-                       (majutsu-row--column-template profile column))
-                     (alist-get module module-columns nil nil #'eq)))))
-         (form `[:concat
-                 ,(plist-get tokens :start)
-                 ,(funcall module-form 'heading)
-                 ,(plist-get tokens :tail)
-                 ,(funcall module-form 'tail)
-                 ,(plist-get tokens :body)
-                 ,(funcall module-form 'body)
-                 ,(plist-get tokens :metadata)
-                 ,(funcall module-form 'metadata)
-                 ,(plist-get tokens :end)
-                 "\n"])
-         (template (majutsu-template-compile form (plist-get profile :self-type))))
-    (list :profile profile
-          :template template
-          :columns complete
-          :module-columns module-columns
-          :tokens tokens)))
+         (compiled (list :profile profile
+                         :columns complete
+                         :module-columns module-columns
+                         :tokens (majutsu-row--tokens profile)))
+         (template (majutsu-template-compile
+                    (majutsu-row-template-form compiled)
+                    (plist-get profile :self-type))))
+    (plist-put compiled :template template)))
 
 ;;; String splitting/joining
 
