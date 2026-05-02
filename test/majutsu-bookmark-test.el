@@ -21,22 +21,29 @@
                  (mapcar #'majutsu-bookmark-test--sections
                          (oref section children))))))
 
-(defun majutsu-bookmark-test--record (&rest fields)
-  "Return one bookmark-list machine record from FIELDS."
-  (concat (mapconcat (lambda (field) (or field ""))
-                     fields
-                     majutsu-bookmark--list-field-separator)
-          majutsu-bookmark--list-record-separator))
+(defun majutsu-bookmark-test--row
+    (heading kind name remote tracked commit-id)
+  "Return one raw bookmark-list row record."
+  (concat majutsu-row-start-token
+          heading
+          majutsu-row-tail-token
+          majutsu-row-body-token
+          majutsu-row-meta-token
+          (string-join (list kind name (or remote "")
+                             (if tracked "t" "") (or commit-id ""))
+                       majutsu-row-field-separator)
+          majutsu-row-end-token
+          "\n"))
 
 (defun majutsu-bookmark-test--ref (name remote tracked heading)
-  "Return one bookmark-list ref record."
-  (majutsu-bookmark-test--record
-   "ref" name remote (and tracked "t") heading))
+  "Return one bookmark-list ref row record."
+  (majutsu-bookmark-test--row
+   heading "ref" name remote tracked nil))
 
-(defun majutsu-bookmark-test--target (name remote marker commit-id line)
-  "Return one bookmark-list conflict target record."
-  (majutsu-bookmark-test--record
-   "target" name remote marker commit-id line))
+(defun majutsu-bookmark-test--target (name remote _marker commit-id line)
+  "Return one bookmark-list conflict target row record."
+  (majutsu-bookmark-test--row
+   line "target" name remote nil commit-id))
 
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
@@ -163,39 +170,49 @@
       (should (string-match-p (regexp-quote "CUSTOM-SUMMARY ") template))
       (should (string-match-p (regexp-quote "commit_id().shortest(4)") template)))))
 
-(ert-deftest majutsu-bookmark-parse-list-output/attaches-targets-and-remote-state ()
+(ert-deftest majutsu-bookmark-row-output/attaches-targets-and-remote-state ()
   (let* ((output (concat
                   (majutsu-bookmark-test--ref
                    "dev" "" nil "dev: rymwrkkn b052a92d summary")
+                  majutsu-row-push-token "\n"
                   (majutsu-bookmark-test--ref
                    "dev" "origin" t
                    "  @origin (ahead by 2 commits, behind by at least 10 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary")
+                  majutsu-row-push-token "\n"
                   (majutsu-bookmark-test--target
                    "dev" "origin" "+" "4bb5dd3b"
-                   "  + sxwtxlqt/1 4bb5dd3b (hidden) summary")))
-         (entries (majutsu-bookmark--parse-list-output output)))
-    (should (= (length entries) 2))
-    (should (equal (mapcar #'majutsu-bookmark--entry-ref entries)
-                   '("dev" "dev@origin")))
-    (should (equal (plist-get (car entries) :heading)
-                   "dev: rymwrkkn b052a92d summary"))
-    (should (plist-get (cadr entries) :tracked))
-    (should (equal (plist-get (cadr entries) :heading)
-                   "  @origin (ahead by 2 commits, behind by at least 10 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary"))
-    (should (equal (plist-get (car (plist-get (cadr entries) :targets)) :line)
+                   "  + sxwtxlqt/1 4bb5dd3b (hidden) summary")
+                  majutsu-row-pop-token "\n"
+                  majutsu-row-pop-token "\n"))
+         parsed roots dev origin target)
+    (with-temp-buffer
+      (insert output)
+      (setq parsed (majutsu-row-read-buffer
+                    (majutsu-bookmark--list-compiled))))
+    (setq roots (plist-get parsed :roots)
+          dev (car roots)
+          origin (car (plist-get dev :children))
+          target (car (plist-get origin :children)))
+    (should (= (length roots) 1))
+    (should (equal (majutsu-row-column dev 'name) "dev"))
+    (should (equal (majutsu-row-column origin 'remote) "origin"))
+    (should (majutsu-row-column origin 'tracked))
+    (should (equal (majutsu-row-column target 'commit-id) "4bb5dd3b"))
+    (should (equal (majutsu-row-column target 'heading)
                    "  + sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
 
 (ert-deftest majutsu-bookmark-wash-list/nests-tracked-remotes-under-local-bookmark ()
   (let* ((output (concat
                   (majutsu-bookmark-test--ref
                    "dev" "" nil "dev: rymwrkkn b052a92d summary")
+                  majutsu-row-push-token "\n"
                   (majutsu-bookmark-test--ref
                    "dev" "origin" t
-                   "  @origin (ahead by 2 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
+                   "  @origin (ahead by 2 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary")
+                  majutsu-row-pop-token "\n")))
     (with-temp-buffer
       (majutsu-bookmark-list-mode)
-      (let ((inhibit-read-only t)
-            (magit-section-inhibit-markers t))
+      (let ((inhibit-read-only t))
         (magit-insert-section (bookmark-list)
           (insert output)
           (majutsu-bookmark--wash-list nil))
@@ -204,12 +221,14 @@
                                 (and (eq (oref section type) 'jj-bookmark)
                                      (equal (oref section value) "dev")))
                               sections))
-               (origin (and dev
-                            (seq-find (lambda (section)
-                                        (and (eq (oref section type) 'jj-bookmark)
-                                             (equal (oref section value) "dev@origin")))
-                                      (oref dev children)))))
+               origin)
           (should dev)
+          (magit-section-show dev)
+          (setq origin
+                (seq-find (lambda (section)
+                            (and (eq (oref section type) 'jj-bookmark)
+                                 (equal (oref section value) "dev@origin")))
+                          (oref dev children)))
           (should origin)
           (should-not (seq-find (lambda (section)
                                   (and (eq (oref section type) 'jj-bookmark)
@@ -222,14 +241,15 @@
   (let* ((output (concat
                   (majutsu-bookmark-test--ref
                    "topic" "" nil "topic (conflicted):")
+                  majutsu-row-push-token "\n"
                   (majutsu-bookmark-test--target
                    "topic" "" "-" "old123" "  - old-target")
                   (majutsu-bookmark-test--target
-                   "topic" "" "+" "new123" "  + new-target"))))
+                   "topic" "" "+" "new123" "  + new-target")
+                  majutsu-row-pop-token "\n")))
     (with-temp-buffer
       (majutsu-bookmark-list-mode)
-      (let ((inhibit-read-only t)
-            (magit-section-inhibit-markers t))
+      (let ((inhibit-read-only t))
         (magit-insert-section (bookmark-list)
           (insert output)
           (majutsu-bookmark--wash-list nil))
@@ -243,8 +263,14 @@
                               (eq (oref section type) 'jj-commit))
                             sections)))
           (should (= (length bookmark-sections) 1))
-          (should (= (length commit-sections) 2))
           (should (equal (oref (car bookmark-sections) value) "topic"))
+          (magit-section-show (car bookmark-sections))
+          (setq sections (majutsu-bookmark-test--sections)
+                commit-sections
+                (seq-filter (lambda (section)
+                              (eq (oref section type) 'jj-commit))
+                            sections))
+          (should (= (length commit-sections) 2))
           (should (equal (mapcar (lambda (section) (oref section value))
                                  commit-sections)
                          '("old123" "new123")))

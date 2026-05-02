@@ -49,6 +49,18 @@
   (concat majutsu-row-record-marker "E")
   "Marker that terminates an entry.")
 
+(defconst majutsu-row-push-token
+  (concat majutsu-row-record-marker "[")
+  "Marker that pushes the latest parsed entry as the current parent.")
+
+(defconst majutsu-row-pop-token
+  (concat majutsu-row-record-marker "]")
+  "Marker that pops the current parent entry.")
+
+(defconst majutsu-row-reset-token
+  (concat majutsu-row-record-marker "=")
+  "Marker that resets the row parser stack.")
+
 (defconst majutsu-row-module-order '(heading tail body metadata)
   "Module parse/render order for sequential row payloads.")
 
@@ -78,6 +90,9 @@
 (defvar-local majutsu-row-cached-entries nil
   "Parsed row entries for the current buffer.")
 
+(defvar-local majutsu-row-cached-roots nil
+  "Parsed top-level row entries for the current buffer.")
+
 (defvar-local majutsu-row-entry-index nil
   "Hash table mapping stable entry ids to cached entries.")
 
@@ -92,12 +107,15 @@
         :tail majutsu-row-tail-token
         :body majutsu-row-body-token
         :metadata majutsu-row-meta-token
-        :end majutsu-row-end-token))
+        :end majutsu-row-end-token
+        :push majutsu-row-push-token
+        :pop majutsu-row-pop-token
+        :reset majutsu-row-reset-token))
 
 (defun majutsu-row--tokens (profile)
-  "Return token plist for PROFILE."
-  (or (plist-get profile :tokens)
-      (majutsu-row-default-tokens)))
+  "Return token plist for PROFILE, merged over default tokens."
+  (append (plist-get profile :tokens)
+          (majutsu-row-default-tokens)))
 
 (defun majutsu-row--profile (compiled)
   "Return row profile from COMPILED."
@@ -318,7 +336,10 @@
       (- (point) (length token)))))
 
 (defun majutsu-row-parse-trailing-payloads (compiled payload)
-  "Parse tail, body, and metadata segments from PAYLOAD using COMPILED."
+  "Parse tail, body, and metadata segments from PAYLOAD using COMPILED.
+Return a plist with module payloads and :end-offset, the index just after
+COMPILED's end token inside PAYLOAD.  Text after the end token belongs to the
+surrounding event stream and is intentionally ignored here."
   (let ((tail-token (majutsu-row--token compiled :tail))
         (body-token (majutsu-row--token compiled :body))
         (meta-token (majutsu-row--token compiled :metadata))
@@ -334,13 +355,12 @@
                            (string-match (regexp-quote end-token)
                                          payload (+ meta-pos (length meta-token))))))
         (when (and body-pos meta-pos end-pos)
-          (let ((trailing (substring payload (+ end-pos (length end-token)))))
-            (when (string-empty-p trailing)
-              (list :tail (substring payload tail-start body-pos)
-                    :body (substring payload (+ body-pos (length body-token)) meta-pos)
-                    :metadata (substring payload
-                                         (+ meta-pos (length meta-token))
-                                         end-pos)))))))))
+          (list :tail (substring payload tail-start body-pos)
+                :body (substring payload (+ body-pos (length body-token)) meta-pos)
+                :metadata (substring payload
+                                     (+ meta-pos (length meta-token))
+                                     end-pos)
+                :end-offset (+ end-pos (length end-token))))))))
 
 (defun majutsu-row-split-module-values (payload count)
   "Split PAYLOAD into COUNT field values."
@@ -443,94 +463,248 @@
 
 ;;; Parse
 
-(defun majutsu-row-parse-at-point (compiled)
-  "Parse one sequentially encoded row entry at point using COMPILED."
-  (let* ((entry-beg (line-beginning-position))
-         (start-token (majutsu-row--token compiled :start))
+(defun majutsu-row--looking-at-token-p (token)
+  "Return non-nil when point is at TOKEN."
+  (and (stringp token)
+       (looking-at-p (regexp-quote token))))
+
+(defun majutsu-row--event-at-point (compiled)
+  "Return (KIND . TOKEN) for the row protocol event at point."
+  (seq-some
+   (pcase-lambda (`(,key . ,kind))
+     (let ((token (majutsu-row--token compiled key)))
+       (and (majutsu-row--looking-at-token-p token)
+            (cons kind token))))
+   '((:start . row)
+     (:push . push)
+     (:pop . pop)
+     (:reset . reset))))
+
+(defun majutsu-row--next-marker-position (start end)
+  "Return next row marker position between START and END, or nil."
+  (save-excursion
+    (goto-char start)
+    (when-let* ((found (search-forward majutsu-row-record-marker end t)))
+      (1- found))))
+
+(defun majutsu-row--suffix-lines-from-region (beg end)
+  "Return suffix lines represented by raw text from BEG to END."
+  (when (< beg end)
+    (let ((text (buffer-substring beg end)))
+      (when (string-match-p "\n" text)
+        (when (string-prefix-p "\n" text)
+          (setq text (substring text 1)))
+        (when (string-suffix-p "\n" text)
+          (setq text (substring text 0 -1)))
+        (unless (string-empty-p text)
+          (majutsu-row-split-by-separator text "\n"))))))
+
+(defun majutsu-row--append-suffix-lines (entry lines)
+  "Append LINES to ENTRY's suffix lines."
+  (when lines
+    (plist-put entry :suffix-lines
+               (append (plist-get entry :suffix-lines) lines)))
+  entry)
+
+(defun majutsu-row--finalize-entry-gap (entry gap-beg gap-end next-marker)
+  "Finalize ENTRY's inter-event text from GAP-BEG to GAP-END.
+When NEXT-MARKER is non-nil, exclude the graph/carrier prefix before that
+marker from ENTRY's source span and suffix lines."
+  (when entry
+    (let* ((entry-end
+            (if next-marker
+                (let ((line-beg (save-excursion
+                                  (goto-char next-marker)
+                                  (line-beginning-position))))
+                  (if (> line-beg gap-beg)
+                      line-beg
+                    next-marker))
+              gap-end))
+           (suffix-lines (majutsu-row--suffix-lines-from-region
+                          gap-beg entry-end)))
+      (majutsu-row--append-suffix-lines entry suffix-lines)
+      (plist-put entry :end entry-end)))
+  entry)
+
+(defun majutsu-row--parse-entry-record-at-point (compiled)
+  "Parse one row record at point using COMPILED.
+Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
+  (let* ((start-token (majutsu-row--token compiled :start))
          (tail-token (majutsu-row--token compiled :tail))
+         (entry-beg (line-beginning-position))
          (bol entry-beg)
          (eol (line-end-position))
-         (start-pos (majutsu-row-line-token-position
-                     start-token bol eol)))
+         (start-pos (if (majutsu-row--looking-at-token-p start-token)
+                        (point)
+                      (majutsu-row-line-token-position
+                       start-token bol eol))))
     (when start-pos
       (let* ((indent (- start-pos bol))
              (heading-prefixes nil)
              (heading-segments nil)
-             (trailing-payload nil)
+             (record-end nil)
              (done nil)
              (first-line t))
-        (while (and (not done) (not (eobp)))
-          (setq bol (line-beginning-position)
-                eol (line-end-position))
-          (let* ((prefix-end (min (+ bol indent) eol))
-                 (prefix (buffer-substring bol prefix-end))
-                 (content-start (if first-line
-                                    (+ start-pos (length start-token))
-                                  prefix-end))
-                 (segment-pos (majutsu-row-line-token-position
-                               tail-token bol eol content-start)))
-            (if segment-pos
-                (progn
-                  (push prefix heading-prefixes)
-                  (push (buffer-substring content-start segment-pos)
-                        heading-segments)
-                  (setq trailing-payload (buffer-substring segment-pos eol))
-                  (setq done t)
-                  (forward-line 1))
-              (push prefix heading-prefixes)
-              (push (buffer-substring content-start eol) heading-segments)
-              (forward-line 1)
-              (when (eobp)
-                (setq done :incomplete))))
-          (setq first-line nil))
-        (when (eq done t)
-          (when-let* ((payloads (majutsu-row-parse-trailing-payloads
-                                 compiled trailing-payload)))
-            (let* ((profile (majutsu-row--profile compiled))
-                   (entry (list :beg entry-beg
-                                :row-profile (plist-get profile :name)
-                                :indent indent
-                                :columns nil
-                                :column-values nil
-                                :modules nil
-                                :heading-prefixes (nreverse heading-prefixes)))
-                   (heading-payload
-                    (majutsu-row-join-lines
-                     (nreverse heading-segments))))
-              (setq entry (majutsu-row-record-module-fields
-                           entry 'heading heading-payload compiled))
-              (setq entry (majutsu-row-record-module-fields
-                           entry 'tail (plist-get payloads :tail) compiled))
-              (setq entry (majutsu-row-record-module-fields
-                           entry 'body (plist-get payloads :body) compiled))
-              (setq entry (majutsu-row-record-module-fields
-                           entry 'metadata (plist-get payloads :metadata) compiled))
-              (let ((suffix-lines nil))
-                (while (and (not (eobp))
-                            (let ((next-bol (line-beginning-position))
-                                  (next-eol (line-end-position)))
-                              (not (majutsu-row-line-token-position
-                                    start-token next-bol next-eol))))
-                  (push (buffer-substring (line-beginning-position)
-                                          (line-end-position))
-                        suffix-lines)
-                  (forward-line 1))
-                (setq entry (plist-put entry :suffix-lines
-                                       (nreverse suffix-lines)))
-                (setq entry (plist-put entry :end (point))))
-              entry)))))))
+        (save-excursion
+          (goto-char start-pos)
+          (while (and (not done) (not (eobp)))
+            (setq bol (line-beginning-position)
+                  eol (line-end-position))
+            (let* ((prefix-end (min (+ bol indent) eol))
+                   (prefix (buffer-substring bol prefix-end))
+                   (content-start (if first-line
+                                      (+ start-pos (length start-token))
+                                    prefix-end))
+                   (segment-pos (majutsu-row-line-token-position
+                                 tail-token bol eol content-start)))
+              (if segment-pos
+                  (progn
+                    (push prefix heading-prefixes)
+                    (push (buffer-substring content-start segment-pos)
+                          heading-segments)
+                    (when-let* ((payloads (majutsu-row-parse-trailing-payloads
+                                           compiled
+                                           (buffer-substring segment-pos eol))))
+                      (setq record-end
+                            (+ segment-pos (plist-get payloads :end-offset)))
+                      (setq done payloads)))
+                (push prefix heading-prefixes)
+                (push (buffer-substring content-start eol) heading-segments)
+                (forward-line 1)
+                (when (eobp)
+                  (setq done :incomplete))))
+            (setq first-line nil)))
+        (when (plistp done)
+          (let* ((profile (majutsu-row--profile compiled))
+                 (entry (list :beg entry-beg
+                              :record-end record-end
+                              :end record-end
+                              :row-profile (plist-get profile :name)
+                              :indent indent
+                              :columns nil
+                              :column-values nil
+                              :modules nil
+                              :heading-prefixes (nreverse heading-prefixes)
+                              :suffix-lines nil
+                              :children nil
+                              :parent nil
+                              :depth 0))
+                 (heading-payload
+                  (majutsu-row-join-lines
+                   (nreverse heading-segments))))
+            (setq entry (majutsu-row-record-module-fields
+                         entry 'heading heading-payload compiled))
+            (setq entry (majutsu-row-record-module-fields
+                         entry 'tail (plist-get done :tail) compiled))
+            (setq entry (majutsu-row-record-module-fields
+                         entry 'body (plist-get done :body) compiled))
+            (setq entry (majutsu-row-record-module-fields
+                         entry 'metadata (plist-get done :metadata) compiled))
+            (cons entry record-end)))))))
+
+(defun majutsu-row--attach-entry (entry stack)
+  "Attach ENTRY under STACK's top parent, or leave it as a root entry."
+  (if-let* ((parent (car stack)))
+      (progn
+        (plist-put entry :parent parent)
+        (plist-put entry :depth (1+ (or (plist-get parent :depth) 0)))
+        (plist-put parent :children
+                   (append (plist-get parent :children) (list entry)))
+        nil)
+    (plist-put entry :parent nil)
+    (plist-put entry :depth 0)
+    entry))
+
+(defun majutsu-row-read-region (compiled beg end &optional _options)
+  "Read row protocol events between BEG and END using COMPILED.
+Return a plist with :roots, :entries, and :diagnostics."
+  (let (roots entries diagnostics stack last-entry suffix-owner)
+    (save-excursion
+      (let ((cursor beg))
+        (while (< cursor end)
+          (if-let* ((marker (majutsu-row--next-marker-position cursor end)))
+              (progn
+                (majutsu-row--finalize-entry-gap
+                 suffix-owner cursor marker marker)
+                (goto-char marker)
+                (pcase-let ((`(,kind . ,token)
+                             (or (majutsu-row--event-at-point compiled)
+                                 (cons 'unknown majutsu-row-record-marker))))
+                  (pcase kind
+                    ('row
+                     (if-let* ((parsed (majutsu-row--parse-entry-record-at-point
+                                        compiled)))
+                         (let* ((entry (car parsed))
+                                (record-end (cdr parsed))
+                                (root (majutsu-row--attach-entry entry stack)))
+                           (when root
+                             (push root roots))
+                           (push entry entries)
+                           (setq last-entry entry
+                                 suffix-owner entry
+                                 cursor record-end))
+                       (push (list :position marker
+                                   :message "Incomplete row record")
+                             diagnostics)
+                       (setq suffix-owner nil
+                             cursor (+ marker (length token)))))
+                    ('push
+                     (if last-entry
+                         (push last-entry stack)
+                       (push (list :position marker
+                                   :message "Row push without previous entry")
+                             diagnostics))
+                     (setq suffix-owner nil
+                           cursor (+ marker (length token))))
+                    ('pop
+                     (if stack
+                         (setq last-entry (pop stack))
+                       (push (list :position marker
+                                   :message "Row pop without parent")
+                             diagnostics))
+                     (setq suffix-owner nil
+                           cursor (+ marker (length token))))
+                    ('reset
+                     (setq stack nil
+                           last-entry nil
+                           suffix-owner nil
+                           cursor (+ marker (length token))))
+                    (_
+                     (push (list :position marker
+                                 :message "Unknown row protocol marker")
+                           diagnostics)
+                     (setq suffix-owner nil
+                           cursor (min end (1+ marker)))))))
+            (majutsu-row--finalize-entry-gap suffix-owner cursor end nil)
+            (setq cursor end))))
+      (dolist (entry stack)
+        (push (list :entry entry
+                    :message "Unclosed row stack entry")
+              diagnostics))
+      (list :roots (nreverse roots)
+            :entries (nreverse entries)
+            :diagnostics (nreverse diagnostics)))))
+
+(defun majutsu-row-read-buffer (compiled &optional options)
+  "Read the current buffer as a row protocol stream using COMPILED."
+  (majutsu-row-read-region compiled (point-min) (point-max) options))
+
+(defun majutsu-row-parse-at-point (compiled)
+  "Parse one sequentially encoded row entry at point using COMPILED."
+  (let* ((entry-beg (line-beginning-position))
+         (start-token (majutsu-row--token compiled :start))
+         (start-pos (majutsu-row-line-token-position
+                     start-token entry-beg (line-end-position))))
+    (when start-pos
+      (seq-find (lambda (entry)
+                  (= (plist-get entry :beg) entry-beg))
+                (plist-get (majutsu-row-read-region
+                            compiled entry-beg (point-max))
+                           :entries)))))
 
 (defun majutsu-row-parse-buffer (compiled)
   "Parse all sequentially encoded row entries in current buffer."
-  (let (entries)
-    (save-excursion
-      (goto-char (point-min))
-      (while (not (eobp))
-        (let ((entry (majutsu-row-parse-at-point compiled)))
-          (if entry
-              (push entry entries)
-            (forward-line 1)))))
-    (nreverse entries)))
+  (plist-get (majutsu-row-read-buffer compiled) :entries))
 
 ;;; Line prefix/insertion helpers
 
@@ -879,6 +1053,32 @@ When PLAIN is non-nil, omit faces and text properties."
       (majutsu-row-refresh-tail-spacers spacer-pos (1+ spacer-pos)
                                         window))))
 
+(defun majutsu-row-entry-section-class (entry compiled)
+  "Return the Magit section class for ENTRY using COMPILED."
+  (let* ((profile (majutsu-row--profile compiled))
+         (fn (plist-get profile :section-class-function)))
+    (or (and fn (funcall fn entry))
+        (plist-get profile :section-class)
+        'magit-section)))
+
+(defun majutsu-row-entry-section-hide (entry compiled)
+  "Return the initial hide value for ENTRY using COMPILED."
+  (let* ((profile (majutsu-row--profile compiled))
+         (fn (plist-get profile :section-hide-function)))
+    (if fn
+        (funcall fn entry)
+      (plist-get profile :section-hide))))
+
+(defun majutsu-row--call-with-child-count-policy (compiled thunk)
+  "Call THUNK with COMPILED's child-count display policy."
+  (let* ((profile (majutsu-row--profile compiled))
+         (has-policy (plist-member profile :show-child-count))
+         (policy (plist-get profile :show-child-count)))
+    (if (and has-policy (not (eq policy :inherit)))
+        (let ((magit-section-show-child-count policy))
+          (funcall thunk))
+      (funcall thunk))))
+
 (defun majutsu-row-insert-entry (entry compiled)
   "Insert parsed ENTRY as a Magit section using COMPILED."
   (let* ((profile (majutsu-row--profile compiled))
@@ -886,9 +1086,9 @@ When PLAIN is non-nil, omit faces and text properties."
          (section-value-fn (or (plist-get profile :section-value-function)
                                entry-id-fn))
          (id (funcall entry-id-fn entry))
-         (section-class (or (plist-get profile :section-class) 'magit-section))
+         (section-class (majutsu-row-entry-section-class entry compiled))
          (section-value (funcall section-value-fn entry))
-         (section-hide (plist-get profile :section-hide))
+         (section-hide (majutsu-row-entry-section-hide entry compiled))
          (indent (or (plist-get entry :indent) 0))
          (prefixes (or (plist-get entry :heading-prefixes) (list "")))
          (last-prefix (or (car (last prefixes)) ""))
@@ -898,6 +1098,7 @@ When PLAIN is non-nil, omit faces and text properties."
          (heading-lines nil)
          (tail (majutsu-row-render-tail entry compiled t))
          (suffix-lines (plist-get entry :suffix-lines))
+         (children (plist-get entry :children))
          (body (majutsu-row-render-body entry compiled t))
          (has-body (and (stringp body)
                         (not (string-empty-p (string-trim body))))))
@@ -909,34 +1110,44 @@ When PLAIN is non-nil, omit faces and text properties."
                       (line (or (nth idx content-lines) "")))
                   (push (cons prefix line) heading-lines)))
     (setq heading-lines (nreverse heading-lines))
-    (magit-insert-section ((eval section-class) section-value section-hide)
-      (when heading-lines
-        (majutsu-row--insert-heading-anchor-line
-         (cdar heading-lines) tail id (caar heading-lines) compiled))
-      (dolist (line (cdr heading-lines))
-        (majutsu-row-insert-prefixed-line (cdr line) (car line)))
-      (dolist (suffix-line suffix-lines)
-        (pcase-let* ((`(,prefix . ,content)
-                      (majutsu-row-split-prefix-line suffix-line indent))
-                     (decorated-prefix
-                      (majutsu-row-propertize-decoration
-                       prefix compiled id 'heading 'graph-carry))
-                     (decorated-content
-                      (majutsu-row-propertize-content
-                       content compiled id 'heading)))
-          (majutsu-row-insert-prefixed-line
-           decorated-content decorated-prefix)))
-      (when has-body
-        (magit-insert-heading)
-        (let ((body-prefix (majutsu-row-propertize-decoration
-                            (make-string indent ?\s)
-                            compiled id 'body 'body-prefix)))
-          (magit-insert-section-body
-            (let ((start (point)))
-              (insert body)
-              (insert "\n")
-              (majutsu-row-apply-line-prefix-span
-               start (point) body-prefix))))))))
+    (majutsu-row--call-with-child-count-policy
+     compiled
+     (lambda ()
+       (magit-insert-section ((eval section-class) section-value section-hide)
+         (when heading-lines
+           (majutsu-row--insert-heading-anchor-line
+            (cdar heading-lines) tail id (caar heading-lines) compiled))
+         (dolist (line (cdr heading-lines))
+           (majutsu-row-insert-prefixed-line (cdr line) (car line)))
+         (dolist (suffix-line suffix-lines)
+           (pcase-let* ((`(,prefix . ,content)
+                         (majutsu-row-split-prefix-line suffix-line indent))
+                        (decorated-prefix
+                         (majutsu-row-propertize-decoration
+                          prefix compiled id 'heading 'graph-carry))
+                        (decorated-content
+                         (majutsu-row-propertize-content
+                          content compiled id 'heading)))
+             (majutsu-row-insert-prefixed-line
+              decorated-content decorated-prefix)))
+         (when (or has-body children)
+           (magit-insert-heading)
+           (magit-insert-section-body
+             (when has-body
+               (let ((body-prefix (majutsu-row-propertize-decoration
+                                   (make-string indent ?\s)
+                                   compiled id 'body 'body-prefix))
+                     (start (point)))
+                 (insert body)
+                 (insert "\n")
+                 (majutsu-row-apply-line-prefix-span
+                  start (point) body-prefix)))
+             (majutsu-row-insert-forest children compiled))))))))
+
+(defun majutsu-row-insert-forest (entries compiled)
+  "Insert row ENTRIES recursively as Magit sections using COMPILED."
+  (dolist (entry entries)
+    (majutsu-row-insert-entry entry compiled)))
 
 ;;; Wash
 
@@ -953,13 +1164,14 @@ When PLAIN is non-nil, omit faces and text properties."
 
 (defun majutsu-row-wash-buffer (compiled)
   "Wash all row entries in the current narrowed buffer."
-  (let (entries)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (if-let* ((entry (majutsu-row-wash-entry compiled)))
-          (push entry entries)
-        (magit-delete-line)))
-    (nreverse entries)))
+  (let* ((result (majutsu-row-read-buffer compiled))
+         (roots (plist-get result :roots))
+         (entries (plist-get result :entries))
+         (inhibit-read-only t))
+    (delete-region (point-min) (point-max))
+    (majutsu-row-insert-forest roots compiled)
+    (setq-local majutsu-row-cached-roots roots)
+    entries))
 
 ;;; Copy property cleanup
 
@@ -1052,17 +1264,23 @@ Drops tail text when both heading and tail are present in the copied region."
 
 ;;; Copy buffer data management
 
-(defun majutsu-row-set-buffer-data (compiled entries)
-  "Set current buffer row COMPILED and ENTRIES."
+(defun majutsu-row-set-buffer-data (compiled entries &optional roots)
+  "Set current buffer row COMPILED, ENTRIES, and optional ROOTS."
   (let ((indexes (majutsu-row-build-indexes compiled entries)))
     (setq-local majutsu-row-buffer-compiled compiled)
     (setq-local majutsu-row-cached-entries entries)
+    (setq-local majutsu-row-cached-roots (or roots entries))
     (setq-local majutsu-row-entry-index (car indexes))
     (setq-local majutsu-row-section-value-index (cdr indexes))))
+
+(defun majutsu-row-set-buffer-forest-data (compiled roots entries)
+  "Set current buffer row COMPILED, ROOTS, and flat ENTRIES."
+  (majutsu-row-set-buffer-data compiled entries roots))
 
 (defun majutsu-row-clear-buffer-data ()
   "Clear current buffer row data."
   (setq-local majutsu-row-cached-entries nil)
+  (setq-local majutsu-row-cached-roots nil)
   (setq-local majutsu-row-entry-index nil)
   (setq-local majutsu-row-section-value-index nil))
 
