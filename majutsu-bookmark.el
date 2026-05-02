@@ -269,29 +269,46 @@ bookmark(s) at point."
   "Template used for bookmark-list commit summaries.")
 
 (majutsu-bookmark-define-template heading
-  '[:majutsu-bookmark-list-default-heading]
+  [:if [:remote]
+      [:if [:tracked]
+          ["  " [:separate " "
+                           [:majutsu-bookmark-list-name]
+                           [:if [:present] [:majutsu-bookmark-list-tracking]]
+                           [:if [:present]
+                               [:majutsu-bookmark-list-target-summary]
+                             "(not created yet)"]]]
+        [:separate " " [:majutsu-bookmark-list-name] [:majutsu-bookmark-list-target-summary]]]
+    [:separate " "
+               [:majutsu-bookmark-list-name]
+               [:if [:present]
+                   [:majutsu-bookmark-list-target-summary]
+                 "(deleted)"]]]
   "Template used for bookmark-list headings.")
 
-(majutsu-bookmark-define-template conflict-target-heading
-  '[:|marker|
-    [:|commit|
-     [:concat "  " marker " " [:majutsu-bookmark-list-commit-summary]]]]
-  "Template used for conflicted bookmark target headings.")
+(majutsu-bookmark-define-template removed-target-heading
+  [:|commit|
+   [:concat "  - " [:majutsu-bookmark-list-commit-summary]]]
+  "Template used for removed conflicted bookmark target headings.")
+
+(majutsu-bookmark-define-template added-target-heading
+  [:|commit|
+   [:concat "  + " [:majutsu-bookmark-list-commit-summary]]]
+  "Template used for added conflicted bookmark target headings.")
 
 (majutsu-bookmark-define-template kind
   "ref"
   "Template used for bookmark-list row kind values.")
 
 (majutsu-bookmark-define-template name
-  '[:name]
+  [:name]
   "Template used for bookmark-list bookmark names.")
 
 (majutsu-bookmark-define-template remote
-  '[:if [:remote] [:remote] ""]
+  [:remote]
   "Template used for bookmark-list remote names.")
 
 (majutsu-bookmark-define-template tracked
-  '[:if [:tracked] "t" ""]
+  [:if [:tracked] "t" ""]
   "Template used for bookmark-list tracked flags.")
 
 (majutsu-bookmark-define-template commit-id
@@ -333,23 +350,6 @@ bookmark(s) at point."
   [:if [:conflict]
       [:label "conflict" "(conflicted):"]
     [:method [:normal_target] :majutsu-bookmark-list-commit-summary]])
-
-(majutsu-template-defkeyword majutsu-bookmark-list-default-heading CommitRef
-  (:returns Template :doc "Default Majutsu bookmark-list heading.")
-  [:if [:remote]
-      [:if [:tracked]
-          ["  " [:separate " "
-                           [:majutsu-bookmark-list-name]
-                           [:if [:present] [:majutsu-bookmark-list-tracking]]
-                           [:if [:present]
-                               [:majutsu-bookmark-list-target-summary]
-                             "(not created yet)"]]]
-        [:separate " " [:majutsu-bookmark-list-name] [:majutsu-bookmark-list-target-summary]]]
-    [:separate " "
-               [:majutsu-bookmark-list-name]
-               [:if [:present]
-                   [:majutsu-bookmark-list-target-summary]
-                 "(deleted)"]]])
 
 (defcustom majutsu-bookmark-list-columns
   '((:field heading :module heading :face t)
@@ -446,14 +446,12 @@ bookmark(s) at point."
         :tail-align nil
         :compat-property-prefix 'majutsu-bookmark-list))
 
-(defun majutsu-bookmark--target-row-template-form (compiled marker commit)
+(defun majutsu-bookmark--target-row-template-form (compiled heading-template commit)
   "Return row template form for one conflict target COMMIT.
-MARKER is the conflict side marker rendered in the target heading."
+HEADING-TEMPLATE is a one-argument lambda template accepting COMMIT."
   (majutsu-row-template-form
    compiled
-   `((heading . [[,majutsu-bookmark-list-template-conflict-target-heading
-                  ,marker]
-                 ,commit])
+   `((heading . [,heading-template ,commit])
      (kind . "target")
      (name . [:method [:self 1] :name])
      (remote . [:if [:method [:self 1] :remote]
@@ -469,11 +467,13 @@ MARKER is the conflict side marker rendered in the target heading."
         "\n"
         [:method [:removed_targets]
          :map [:|c|
-               ,(majutsu-bookmark--target-row-template-form compiled "-" 'c)]
+               ,(majutsu-bookmark--target-row-template-form
+                 compiled majutsu-bookmark-list-template-removed-target-heading 'c)]
          :join ""]
         [:method [:added_targets]
          :map [:|c|
-               ,(majutsu-bookmark--target-row-template-form compiled "+" 'c)]
+               ,(majutsu-bookmark--target-row-template-form
+                 compiled majutsu-bookmark-list-template-added-target-heading 'c)]
          :join ""]
         ,majutsu-row-pop-token
         "\n"]])
