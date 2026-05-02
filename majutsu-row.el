@@ -14,6 +14,7 @@
 (require 'subr-x)
 (require 'transient)
 (require 'magit-section)
+(require 'majutsu-base)
 (require 'majutsu-template)
 (require 'majutsu-section)
 
@@ -297,18 +298,7 @@
 
 (defun majutsu-row-split-by-separator (value separator)
   "Split VALUE by one-character SEPARATOR, preserving empty fields."
-  (if (not (stringp value))
-      nil
-    (let ((start 0)
-          (len (length value))
-          (sep (aref separator 0))
-          out)
-      (dotimes (idx len)
-        (when (eq (aref value idx) sep)
-          (push (substring value start idx) out)
-          (setq start (1+ idx))))
-      (push (substring value start len) out)
-      (nreverse out))))
+  (majutsu--split-fields value separator))
 
 (defun majutsu-row-join-lines (lines)
   "Join LINES with literal newlines, preserving string properties."

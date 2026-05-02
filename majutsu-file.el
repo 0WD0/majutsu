@@ -338,18 +338,7 @@ Results are cached in `majutsu-file--list-cache`."
 
 (defun majutsu-file--split-completion-fields (value)
   "Split file completion VALUE by `majutsu-file--completion-field-separator'."
-  (if (not (stringp value))
-      nil
-    (let ((start 0)
-          (len (length value))
-          (sep (aref majutsu-file--completion-field-separator 0))
-          out)
-      (dotimes (idx len)
-        (when (eq (aref value idx) sep)
-          (push (substring value start idx) out)
-          (setq start (1+ idx))))
-      (push (substring value start len) out)
-      (nreverse out))))
+  (majutsu--split-fields value majutsu-file--completion-field-separator))
 
 (defun majutsu-file--parse-completion-line (line)
   "Parse one file completion LINE into a plist."
@@ -358,8 +347,8 @@ Results are cached in `majutsu-file--list-cache`."
     (when (and (stringp path) (not (string-empty-p path)))
       (list :path path
             :file-type (nth 1 fields)
-            :executable (equal (nth 2 fields) "t")
-            :conflict (equal (nth 3 fields) "t")))))
+            :executable (majutsu--field-bool-p (nth 2 fields))
+            :conflict (majutsu--field-bool-p (nth 3 fields))))))
 
 (defun majutsu-file--completion-entries (revset root)
   "Return structured file completion entries for REVSET in ROOT."

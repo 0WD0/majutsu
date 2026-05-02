@@ -210,9 +210,8 @@
 
 (defun majutsu-arrange--parse-node-line (line &optional role)
   "Parse one machine template LINE into an arrange node with ROLE."
-  (let* ((fields (split-string (or line "")
-                               (regexp-quote majutsu-arrange--field-separator)
-                               nil))
+  (let* ((fields (majutsu--split-fields (or line "")
+                                        majutsu-arrange--field-separator))
          (change-id (nth 0 fields))
          (commit-id (nth 1 fields))
          (short-change-id (nth 2 fields))

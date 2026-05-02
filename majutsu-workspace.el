@@ -125,18 +125,7 @@ When FIELDS is nil, use `majutsu-workspace--default-fields'."
 
 (defun majutsu-workspace--split-fields (value)
   "Split VALUE by `majutsu-workspace--field-separator', preserving empties."
-  (if (not (stringp value))
-      nil
-    (let ((start 0)
-          (len (length value))
-          (sep (aref majutsu-workspace--field-separator 0))
-          out)
-      (dotimes (idx len)
-        (when (eq (aref value idx) sep)
-          (push (substring value start idx) out)
-          (setq start (1+ idx))))
-      (push (substring value start len) out)
-      (nreverse out))))
+  (majutsu--split-fields value majutsu-workspace--field-separator))
 
 (defun majutsu-workspace--parse-line (line &optional plan)
   "Parse a single workspace LINE using PLAN.
