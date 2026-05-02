@@ -126,5 +126,78 @@
                    "--notify=owner"
                    "--ignore-attention-set"))))
 
+(ert-deftest majutsu-gerrit--remote-branch-names/parses-single-remote ()
+  "Should extract remote bookmark names from `jj bookmark list --remote'."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest args)
+               (should (member "--remote" args))
+               (should (member "gerrit" args))
+               '("feat/tramp" "" "main" "" "")))
+            ((symbol-function 'majutsu--toplevel-safe)
+             (lambda () "/repo")))
+    (should (equal (majutsu-gerrit--remote-branch-names "gerrit")
+                   '("feat/tramp" "main")))))
+
+(ert-deftest majutsu-gerrit--remote-branch-names/dedupes-across-remotes ()
+  "When no remote is given, should dedupe names from all remotes."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _args)
+               '("main" "dev" "main" "feat/tramp" "")))
+            ((symbol-function 'majutsu--toplevel-safe)
+             (lambda () "/repo")))
+    (should (equal (majutsu-gerrit--remote-branch-names)
+                   '("dev" "feat/tramp" "main")))))
+
+(ert-deftest majutsu-gerrit--remote-branch-names/returns-nil-on-error ()
+  "Should return nil when jj command fails."
+  (cl-letf (((symbol-function 'majutsu-jj-lines)
+             (lambda (&rest _args)
+               (error "jj error")))
+            ((symbol-function 'majutsu--toplevel-safe)
+             (lambda () "/repo")))
+    (should-not (majutsu-gerrit--remote-branch-names "origin"))))
+
+(ert-deftest majutsu-gerrit-upload-read-remote-branch/extracts-remote-from-transient ()
+  "Reader should extract --remote from current transient args."
+  (let ((transient-args-remote nil))
+    (cl-letf (((symbol-function 'transient-get-value)
+               (lambda () '("--remote=gerrit" "--dry-run")))
+              ((symbol-function 'majutsu-gerrit--remote-branch-names)
+               (lambda (remote)
+                 (setq transient-args-remote remote)
+                 '("main" "dev")))
+              ((symbol-function 'completing-read)
+               (lambda (prompt _collection &rest _rest) "main")))
+      (should (equal (majutsu-gerrit-upload--read-remote-branch
+                      "Remote branch: " nil nil)
+                     "main"))
+      (should (equal transient-args-remote "gerrit")))))
+
+(ert-deftest majutsu-gerrit-upload-read-remote-branch/passes-branches-to-completing-read ()
+  "Reader should present remote branch names as completion candidates."
+  (let (seen-collection)
+    (cl-letf (((symbol-function 'transient-get-value)
+               (lambda () nil))
+              ((symbol-function 'majutsu-gerrit--remote-branch-names)
+               (lambda (_remote) '("main" "dev")))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _rest)
+                 (setq seen-collection collection)
+                 "dev")))
+      (majutsu-gerrit-upload--read-remote-branch "Remote branch: " nil nil)
+      (should (equal seen-collection '("main" "dev"))))))
+
+(ert-deftest majutsu-gerrit-upload-read-remote-branch/allows-free-input ()
+  "Reader should allow arbitrary input when no branch matches."
+  (cl-letf (((symbol-function 'transient-get-value)
+             (lambda () nil))
+            ((symbol-function 'majutsu-gerrit--remote-branch-names)
+             (lambda (_remote) '("main" "dev")))
+            ((symbol-function 'completing-read)
+             (lambda (_prompt _collection &rest _rest) "feature/new")))
+    (should (equal (majutsu-gerrit-upload--read-remote-branch
+                    "Remote branch: " nil nil)
+                   "feature/new"))))
+
 (provide 'majutsu-gerrit-test)
 ;;; majutsu-gerrit-test.el ends here
