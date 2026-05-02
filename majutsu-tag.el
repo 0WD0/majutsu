@@ -87,9 +87,9 @@ If REQUIRE-MATCH is non-nil, require existing local tags.
 DEFAULT is preselected when non-nil."
   (let ((default (or default (majutsu-tag-at-point)))
         (payload (majutsu-tag-candidate-data)))
-    (majutsu-completing-read-multiple-payload
-     prompt payload nil (or require-match 'any) nil history default
-     'majutsu-tag nil default-directory)))
+    (majutsu-ref-read-multiple 'tag prompt payload history
+                               default (or require-match 'any)
+                               default-directory)))
 
 (defun majutsu-tag--read-exact-names (prompt &optional require-match)
   "Read exact tag names with PROMPT.
