@@ -58,5 +58,41 @@
         (should (plist-get feature :conflict))
         (should (equal (plist-get feature :untracked-remotes) '("fork")))))))
 
+(ert-deftest majutsu-ref-read/forwards-category-and-history ()
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-completing-read-payload)
+               (lambda (&rest args)
+                 (setq seen args)
+                 "main")))
+      (should (equal (majutsu-ref-read 'bookmark "Bookmark"
+                                       '(:candidates ("main"))
+                                       'majutsu-bookmark-name-history
+                                       "main" 'any "/tmp/repo/")
+                     "main"))
+      (should (equal (nth 0 seen) "Bookmark"))
+      (should (equal (nth 1 seen) '(:candidates ("main"))))
+      (should (eq (nth 5 seen) 'majutsu-bookmark-name-history))
+      (should (equal (nth 6 seen) "main"))
+      (should (eq (nth 7 seen) 'majutsu-bookmark))
+      (should (equal (nth 9 seen) "/tmp/repo/")))))
+
+(ert-deftest majutsu-ref-read-multiple/forwards-category-and-history ()
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-completing-read-multiple-payload)
+               (lambda (&rest args)
+                 (setq seen args)
+                 '("v1.0"))))
+      (should (equal (majutsu-ref-read-multiple 'tag "Tags"
+                                                '(:candidates ("v1.0"))
+                                                'majutsu-tag-name-history
+                                                "v1.0" 'any "/tmp/repo/")
+                     '("v1.0")))
+      (should (equal (nth 0 seen) "Tags"))
+      (should (equal (nth 1 seen) '(:candidates ("v1.0"))))
+      (should (eq (nth 5 seen) 'majutsu-tag-name-history))
+      (should (equal (nth 6 seen) "v1.0"))
+      (should (eq (nth 7 seen) 'majutsu-tag))
+      (should (equal (nth 9 seen) "/tmp/repo/")))))
+
 (provide 'majutsu-ref-test)
 ;;; majutsu-ref-test.el ends here

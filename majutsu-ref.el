@@ -180,5 +180,24 @@ When CANDIDATES is non-nil, use it instead of derived local ref candidates."
           :candidates (or candidates local-candidates)
           :entries entries)))
 
+(defun majutsu-ref-read (kind prompt payload history &optional default require-match directory)
+  "Read one ref of KIND with PROMPT from structured PAYLOAD.
+HISTORY is the minibuffer history variable.  DEFAULT, REQUIRE-MATCH, and
+DIRECTORY are forwarded to `majutsu-completing-read-payload'."
+  (let ((default-directory (or directory default-directory)))
+    (majutsu-completing-read-payload
+     prompt payload nil require-match nil history default
+     (majutsu-ref--category kind) nil default-directory)))
+
+(defun majutsu-ref-read-multiple
+    (kind prompt payload history &optional default require-match directory)
+  "Read multiple refs of KIND with PROMPT from structured PAYLOAD.
+HISTORY is the minibuffer history variable.  DEFAULT, REQUIRE-MATCH, and
+DIRECTORY are forwarded to `majutsu-completing-read-multiple-payload'."
+  (let ((default-directory (or directory default-directory)))
+    (majutsu-completing-read-multiple-payload
+     prompt payload nil require-match nil history default
+     (majutsu-ref--category kind) nil default-directory)))
+
 (provide 'majutsu-ref)
 ;;; majutsu-ref.el ends here
