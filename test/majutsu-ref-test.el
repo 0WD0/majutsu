@@ -13,6 +13,23 @@
 (require 'seq)
 (require 'majutsu-ref)
 
+(ert-deftest majutsu-ref-default-commit-summary/expands-without-jj-config-helper ()
+  (let ((template (majutsu-template-compile
+                   '[:majutsu-ref-default-commit-summary]
+                   'Commit)))
+    (should-not (string-match-p "format_commit_summary_with_refs" template))
+    (should (string-match-p (regexp-quote "change_id().shortest(8)") template))
+    (should (string-match-p (regexp-quote "commit_id().shortest(8)") template))
+    (should (string-match-p (regexp-quote "description().first_line()") template))
+    (should (string-match-p (regexp-quote "label(\"empty\", \"(empty)\")") template))))
+
+(ert-deftest majutsu-ref-default-commit-summary/can-render-on-explicit-commit ()
+  (let ((template (majutsu-template-compile
+                   '[:method [:raw "c" :Commit] :majutsu-ref-default-commit-summary]
+                   'CommitRef)))
+    (should (string-match-p (regexp-quote "c.change_id().shortest(8)") template))
+    (should (string-match-p (regexp-quote "c.commit_id().shortest(8)") template))))
+
 (ert-deftest majutsu-ref-names/bookmark-tracked-uses-command-flags ()
   (let (seen-args)
     (cl-letf (((symbol-function 'majutsu-jj-lines)
