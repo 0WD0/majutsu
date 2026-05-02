@@ -79,7 +79,10 @@ Instead of invoking this alias for `majutsu-log' using
    [("w" "Copy…"             majutsu-log-copy-transient)]]
   ["Evolution log commands"
    :if-derived majutsu-evolog-mode
-   [("w" "Copy…"             majutsu-evolog-copy-transient)]])
+   [("w" "Copy…"             majutsu-evolog-copy-transient)]]
+  ["Operation log commands"
+   :if-derived majutsu-op-log-mode
+   [("w" "Copy…"             majutsu-op-log-copy-transient)]])
 
 (provide 'majutsu)
 
@@ -88,6 +91,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-jjdescription)
   (require 'majutsu-marginalia)
   (require 'majutsu-remote)
+  (require 'majutsu-entry-copy)
   (require 'majutsu-graph-entry)
   (require 'majutsu-log)
   (require 'majutsu-diff)

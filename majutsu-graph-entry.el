@@ -11,9 +11,8 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
-(require 'transient)
 (require 'magit-section)
-(require 'majutsu-section)
+(require 'majutsu-entry-copy)
 (require 'majutsu-template)
 
 (defconst majutsu-graph-entry-field-separator "\x1e"
@@ -51,11 +50,6 @@
 (defconst majutsu-graph-entry--tail-terminal-padding 1
   "Terminal columns reserved to the right of tail-aligned text.")
 
-(defvar-local majutsu-graph-entry-buffer-compiled nil
-  "Compiled graph-entry metadata for the current buffer.")
-
-(defvar-local majutsu-graph-entry-cached-entries nil
-  "Parsed graph entries for the current buffer.")
 
 (defun majutsu-graph-entry-default-tokens ()
   "Return the default graph-entry token plist."
@@ -179,6 +173,14 @@
             (funcall fn field)
           (user-error "Column %S has no :template" field)))))
 
+(defun majutsu-graph-entry--copy-layout (profile columns)
+  "Return entry-copy layout for PROFILE COLUMNS."
+  (list :name (plist-get profile :name)
+        :columns columns
+        :entry-id-function (plist-get profile :entry-id-function)
+        :section-value-function (plist-get profile :section-value-function)
+        :section-class (plist-get profile :section-class)))
+
 (defun majutsu-graph-entry-build-module-template-form (templates)
   "Return a template form joining TEMPLATES with field separators."
   (cond
@@ -237,7 +239,8 @@
           :template template
           :columns complete
           :module-columns module-columns
-          :tokens tokens)))
+          :tokens tokens
+          :copy-layout (majutsu-graph-entry--copy-layout profile complete))))
 
 (defun majutsu-graph-entry-split-by-separator (value separator)
   "Split VALUE by one-character SEPARATOR, preserving empty fields."
@@ -518,236 +521,9 @@
         (majutsu-graph-entry-column entry (plist-get column :field))
       value)))
 
-(defun majutsu-graph-entry-current-compiled (&optional compiled)
-  "Return COMPILED or the current buffer's graph-entry layout."
-  (or compiled
-      majutsu-graph-entry-buffer-compiled
-      (user-error "No graph-entry layout in current buffer")))
-
-(defun majutsu-graph-entry-text-property-near-point (property &optional pos)
-  "Return PROPERTY near POS, preferring the previous character."
-  (let ((pos (or pos (point))))
-    (or (and (> pos (point-min))
-             (get-text-property (1- pos) property))
-        (get-text-property pos property))))
-
-(defun majutsu-graph-entry-entry-id (entry compiled)
-  "Return the stable entry id for ENTRY using COMPILED."
-  (funcall (plist-get (majutsu-graph-entry--profile compiled)
-                   :entry-id-function)
-           entry))
-
-(defun majutsu-graph-entry-entry-for-id (id compiled &optional entries)
-  "Return parsed graph entry ID from ENTRIES using COMPILED."
-  (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-         (entries (or entries majutsu-graph-entry-cached-entries))
-         (profile (majutsu-graph-entry--profile compiled))
-         (entry-id-function (plist-get profile :entry-id-function))
-         (section-value-function (plist-get profile :section-value-function)))
-    (when (and id (not (string-empty-p id)))
-      (seq-find (lambda (entry)
-                  (let ((entry-id (funcall entry-id-function entry))
-                        (section-value (and section-value-function
-                                            (funcall section-value-function entry))))
-                    (or (equal id entry-id)
-                        (and section-value (equal id section-value)))))
-                entries))))
-
-(defun majutsu-graph-entry-entry-at-point (&optional compiled entries)
-  "Return the parsed graph entry at point, or nil if unavailable."
-  (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-         (entries (or entries majutsu-graph-entry-cached-entries))
-         (profile (majutsu-graph-entry--profile compiled))
-         (section-class (plist-get profile :section-class)))
-    (or (when-let* ((entry-id (majutsu-graph-entry-text-property-near-point
-                               'majutsu-graph-entry-id)))
-          (majutsu-graph-entry-entry-for-id entry-id compiled entries))
-        (when-let* ((section-value (and section-class
-                                        (magit-section-value-if section-class))))
-          (majutsu-graph-entry-entry-for-id section-value compiled entries)))))
-
-(defun majutsu-graph-entry-field-copy-string (value)
-  "Return canonical clipboard text for field VALUE."
-  (cond
-   ((null value) "")
-   ((stringp value) (substring-no-properties value))
-   ((listp value) (mapconcat #'majutsu-graph-entry-field-copy-string value "\n"))
-   (t (format "%s" value))))
-
-(defun majutsu-graph-entry-field-value-present-p (value)
-  "Return non-nil if canonical field VALUE should be offered for copying."
-  (cond
-   ((null value) nil)
-   ((stringp value) (not (string-empty-p value)))
-   ((listp value) (not (null value)))
-   (t t)))
-
-(defun majutsu-graph-entry-entry-field-value (entry field &optional missing)
-  "Return canonical FIELD value from ENTRY, or MISSING when unavailable."
-  (alist-get field (plist-get entry :columns) missing nil #'eq))
-
-(defun majutsu-graph-entry-entry-field-candidate-preview (entry field)
-  "Return one-line preview string for FIELD on ENTRY."
-  (let* ((text (majutsu-graph-entry-field-copy-string
-                (majutsu-graph-entry-entry-field-value entry field)))
-         (text (replace-regexp-in-string "[\n\r\t ]+" " " text nil t)))
-    (if (> (length text) 48)
-        (concat (substring text 0 48) "…")
-      text)))
-
-(defun majutsu-graph-entry-entry-copyable-fields (entry compiled)
-  "Return copyable canonical field symbols for ENTRY using COMPILED order."
-  (let ((fields nil)
-        (seen nil))
-    (dolist (column (plist-get (majutsu-graph-entry-current-compiled compiled) :columns))
-      (let* ((field (plist-get column :field))
-             (value (majutsu-graph-entry-entry-field-value entry field :majutsu-missing)))
-        (when (and (not (memq field seen))
-                   (not (eq value :majutsu-missing))
-                   (majutsu-graph-entry-field-value-present-p value))
-          (push field seen)
-          (push field fields))))
-    (dolist (cell (plist-get entry :columns))
-      (let ((field (car cell))
-            (value (cdr cell)))
-        (when (and (not (memq field seen))
-                   (majutsu-graph-entry-field-value-present-p value))
-          (push field seen)
-          (push field fields))))
-    (nreverse fields)))
-
-(defun majutsu-graph-entry-read-entry-field (entry compiled &optional prompt)
-  "Read one canonical field from ENTRY using COMPILED.
-When PROMPT is nil, use a default graph-entry prompt."
-  (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-         (default-field (majutsu-graph-entry-text-property-near-point
-                         'majutsu-graph-entry-field))
-         (candidates (mapcar (lambda (field)
-                               (cons (format "%s\t%s"
-                                             field
-                                             (majutsu-graph-entry-entry-field-candidate-preview
-                                              entry field))
-                                     field))
-                             (majutsu-graph-entry-entry-copyable-fields entry compiled)))
-         (default (car (rassoc default-field candidates)))
-         (choice (completing-read (or prompt "Copy entry field: ")
-                                  (mapcar #'car candidates)
-                                  nil t nil nil default)))
-    (or (cdr (assoc choice candidates))
-        (user-error "Unknown entry field %S" choice))))
-
-(defun majutsu-graph-entry-copy-string (string)
-  "Copy STRING to the kill ring and echo it."
-  (kill-new string)
-  (message "%s" string))
-
-(defun majutsu-graph-entry-copy-entry-field-value (entry field &optional _compiled)
-  "Copy canonical FIELD value from ENTRY to the kill ring."
-  (let ((value (majutsu-graph-entry-entry-field-value entry field :majutsu-missing)))
-    (when (eq value :majutsu-missing)
-      (user-error "Field %s is unavailable for the current entry" field))
-    (unless (majutsu-graph-entry-field-value-present-p value)
-      (user-error "Field %s is empty for the current entry" field))
-    (majutsu-graph-entry-copy-string
-     (majutsu-graph-entry-field-copy-string value))))
-
-(defun majutsu-graph-entry-copy-field (&optional compiled entries)
-  "Copy the rendered value of the graph-entry field at point."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-           (entries (or entries majutsu-graph-entry-cached-entries))
-           (entry (or (majutsu-graph-entry-entry-at-point compiled entries)
-                      (user-error "No graph entry at point")))
-           (instance (majutsu-graph-entry-text-property-near-point
-                      'majutsu-graph-entry-column))
-           (field (majutsu-graph-entry-text-property-near-point
-                   'majutsu-graph-entry-field))
-           (module (majutsu-graph-entry-text-property-near-point
-                    'majutsu-graph-entry-module))
-           (column (or (and instance
-                            (seq-find (lambda (candidate)
-                                        (eql (plist-get candidate :instance) instance))
-                                      (plist-get compiled :columns)))
-                       (and field module
-                            (seq-find (lambda (candidate)
-                                        (and (eq (plist-get candidate :field) field)
-                                             (eq (plist-get candidate :module) module)))
-                                      (plist-get compiled :columns))))))
-      (unless column
-        (user-error "No graph field at point"))
-      (majutsu-graph-entry-copy-string
-       (majutsu-graph-entry-render-column-text entry column t)))))
-
-(defun majutsu-graph-entry-copy-module (&optional compiled entries)
-  "Copy the rendered graph-entry module at point."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-           (entries (or entries majutsu-graph-entry-cached-entries))
-           (entry (or (majutsu-graph-entry-entry-at-point compiled entries)
-                      (user-error "No graph entry at point")))
-           (module (majutsu-graph-entry-text-property-near-point
-                    'majutsu-graph-entry-module))
-           (text (pcase module
-                   ('heading (majutsu-graph-entry-render-heading-content
-                              entry compiled nil t))
-                   ('tail (or (majutsu-graph-entry-render-tail entry compiled nil t)
-                              ""))
-                   ('body (or (majutsu-graph-entry-render-body entry compiled nil t)
-                              ""))
-                   (_ nil))))
-      (unless text
-        (user-error "No graph module at point"))
-      (majutsu-graph-entry-copy-string text))))
-
-(defun majutsu-graph-entry-copy-entry-field (&optional compiled entries)
-  "Copy a canonical field from the current graph entry."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-           (entries (or entries majutsu-graph-entry-cached-entries))
-           (entry (or (majutsu-graph-entry-entry-at-point compiled entries)
-                      (user-error "No graph entry at point")))
-           (field (majutsu-graph-entry-read-entry-field entry compiled)))
-      (majutsu-graph-entry-copy-entry-field-value entry field compiled))))
-
-(defun majutsu-graph-entry-copy-commit-id (&optional compiled entries)
-  "Copy the current graph entry's commit hash."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-graph-entry-current-compiled compiled))
-           (entries (or entries majutsu-graph-entry-cached-entries))
-           (entry (or (majutsu-graph-entry-entry-at-point compiled entries)
-                      (user-error "No graph entry at point"))))
-      (majutsu-graph-entry-copy-entry-field-value entry 'commit-id compiled))))
-
-(defmacro majutsu-graph-entry-define-copy-transient (name doc)
-  "Define NAME as a graph-entry copy transient with DOC."
-  `(transient-define-prefix ,name ()
-     ,doc
-     [[("s" "Section value" majutsu-copy-section-value)
-       ("f" "Visible field at point" majutsu-graph-entry-copy-field)
-       ("F" "Entry field…" majutsu-graph-entry-copy-entry-field)
-       ("h" "Commit hash" majutsu-graph-entry-copy-commit-id)
-       ("m" "Visible module at point" majutsu-graph-entry-copy-module)]]))
-
-;;;###autoload(autoload 'majutsu-graph-entry-copy-transient "majutsu-graph-entry" nil t)
-(majutsu-graph-entry-define-copy-transient
- majutsu-graph-entry-copy-transient
- "Transient for semantic copy commands in graph-entry buffers.")
-
 (defun majutsu-graph-entry-display-string (value)
   "Return VALUE converted to a display string."
-  (cond
-   ((null value) "")
-   ((stringp value) value)
-   ((listp value) (mapconcat #'majutsu-graph-entry-display-string value " "))
-   (t (format "%s" value))))
+  (majutsu-entry-copy-display-string value))
 
 (defun majutsu-graph-entry-apply-face-policy (value face)
   "Apply FACE policy to VALUE and return display string."
@@ -782,10 +558,13 @@ When PROMPT is nil, use a default graph-entry prompt."
 (defun majutsu-graph-entry-content-properties
     (compiled entry-id module &optional column)
   "Return content properties for ENTRY-ID in MODULE."
-  (let ((props `(majutsu-graph-entry-profile
-                 ,(plist-get (majutsu-graph-entry--profile compiled) :name)
-                 majutsu-graph-entry-module ,module
-                 majutsu-graph-entry-id ,entry-id)))
+  (let ((props (append
+                `(majutsu-graph-entry-profile
+                  ,(plist-get (majutsu-graph-entry--profile compiled) :name)
+                  majutsu-graph-entry-module ,module
+                  majutsu-graph-entry-id ,entry-id)
+                (majutsu-entry-copy-content-properties
+                 (plist-get compiled :copy-layout) entry-id module column))))
     (when column
       (setq props (append props
                           `(majutsu-graph-entry-field ,(plist-get column :field)
@@ -801,22 +580,28 @@ When PROMPT is nil, use a default graph-entry prompt."
     (compiled entry-id module decoration)
   "Return decoration properties for ENTRY-ID in MODULE."
   (majutsu-graph-entry--append-compat-properties
-   `(majutsu-graph-entry-profile
-     ,(plist-get (majutsu-graph-entry--profile compiled) :name)
-     majutsu-graph-entry-module ,module
-     majutsu-graph-entry-id ,entry-id
-     majutsu-graph-entry-decoration ,decoration)
+   (append
+    `(majutsu-graph-entry-profile
+      ,(plist-get (majutsu-graph-entry--profile compiled) :name)
+      majutsu-graph-entry-module ,module
+      majutsu-graph-entry-id ,entry-id
+      majutsu-graph-entry-decoration ,decoration)
+    (majutsu-entry-copy-decoration-properties
+     (plist-get compiled :copy-layout) entry-id module decoration))
    compiled
    (list 'module module 'entry-id entry-id 'decoration decoration)))
 
 (defun majutsu-graph-entry-tail-spacer-properties (compiled entry-id display)
   "Return tail spacer properties for ENTRY-ID and DISPLAY."
   (majutsu-graph-entry--append-compat-properties
-   `(majutsu-graph-entry-module tail
-     majutsu-graph-entry-id ,entry-id
-     majutsu-graph-entry-decoration tail-spacer
-     majutsu-graph-entry-tail-spacer t
-     display ,display)
+   (append
+    `(majutsu-graph-entry-module tail
+      majutsu-graph-entry-id ,entry-id
+      majutsu-graph-entry-decoration tail-spacer
+      majutsu-graph-entry-tail-spacer t
+      display ,display)
+    (majutsu-entry-copy-decoration-properties
+     (plist-get compiled :copy-layout) entry-id 'tail 'tail-spacer))
    compiled
    (list 'module 'tail
          'entry-id entry-id
@@ -845,20 +630,11 @@ When PROMPT is nil, use a default graph-entry prompt."
 
 (defun majutsu-graph-entry-concat-heading-parts (parts)
   "Concatenate heading PARTS without spaces after newlines."
-  (let ((out ""))
-    (dolist (part parts out)
-      (unless (string-empty-p part)
-        (let ((need-space
-               (and (> (length out) 0)
-                    (not (eq (aref out (1- (length out))) ?\n))
-                    (not (eq (aref part 0) ?\n)))))
-          (setq out (concat out (if need-space " " "") part)))))))
+  (majutsu-entry-copy-concat-heading-parts parts))
 
 (defun majutsu-graph-entry-single-line-string (value)
   "Return VALUE flattened to a single display line."
-  (if (stringp value)
-      (string-trim (replace-regexp-in-string "[\n\r]+" " " value nil t))
-    value))
+  (majutsu-entry-copy-single-line-string value))
 
 (defun majutsu-graph-entry-render-column-text (entry column &optional plain)
   "Return rendered text for ENTRY COLUMN."
@@ -1105,68 +881,31 @@ When PROMPT is nil, use a default graph-entry prompt."
         (magit-delete-line)))
     (nreverse entries)))
 
-(defun majutsu-graph-entry-string-has-module-p (string module)
-  "Return non-nil if STRING contains text marked with MODULE."
-  (let ((pos 0)
-        found)
-    (while (and (< pos (length string)) (not found))
-      (setq found (eq (get-text-property
-                       pos 'majutsu-graph-entry-module string)
-                      module)
-            pos (or (next-single-property-change
-                     pos 'majutsu-graph-entry-module string)
-                    (length string))))
-    found))
-
-(defun majutsu-graph-entry-string-remove-module (string module)
-  "Return STRING with text marked as MODULE removed."
-  (let ((pos 0)
-        parts)
-    (while (< pos (length string))
-      (let* ((next (or (next-single-property-change
-                        pos 'majutsu-graph-entry-module string)
-                       (length string)))
-             (current (get-text-property
-                       pos 'majutsu-graph-entry-module string)))
-        (unless (eq current module)
-          (push (substring string pos next) parts))
-        (setq pos next)))
-    (apply #'concat (nreverse parts))))
+(defun majutsu-graph-entry--copy-properties (&optional compiled)
+  "Return graph-entry-specific copy cleanup properties for COMPILED."
+  (let ((props '(majutsu-graph-entry-profile
+                 majutsu-graph-entry-module
+                 majutsu-graph-entry-field
+                 majutsu-graph-entry-column
+                 majutsu-graph-entry-id
+                 majutsu-graph-entry-decoration
+                 majutsu-graph-entry-tail-spacer)))
+    (when compiled
+      (dolist (prefix (majutsu-graph-entry--compat-prefixes compiled))
+        (dolist (suffix '(module field column entry-id decoration tail-spacer))
+          (push (majutsu-graph-entry--property-symbol prefix suffix) props))))
+    props))
 
 (defun majutsu-graph-entry-cleanup-copied-string (string &optional compiled)
   "Strip graph-entry UI properties from copied STRING."
-  (when (stringp string)
-    (let ((props '(majutsu-graph-entry-profile
-                   majutsu-graph-entry-module
-                   majutsu-graph-entry-field
-                   majutsu-graph-entry-column
-                   majutsu-graph-entry-id
-                   majutsu-graph-entry-decoration
-                   majutsu-graph-entry-tail-spacer
-                   line-prefix
-                   wrap-prefix
-                   display)))
-      (when compiled
-        (dolist (prefix (majutsu-graph-entry--compat-prefixes compiled))
-          (dolist (suffix '(module field column entry-id decoration tail-spacer))
-            (push (majutsu-graph-entry--property-symbol prefix suffix) props))))
-      (remove-list-of-text-properties 0 (length string) props string)))
-  string)
+  (majutsu-entry-copy-cleanup-copied-string
+   string (majutsu-graph-entry--copy-properties compiled)))
 
 (defun majutsu-graph-entry-filter-buffer-substring
     (beg end &optional delete compiled)
   "Filter copied graph-entry text between BEG and END."
-  (let ((string (buffer-substring--filter beg end delete))
-        (trim-tail nil))
-    (when (and (stringp string)
-               (majutsu-graph-entry-string-has-module-p string 'heading)
-               (majutsu-graph-entry-string-has-module-p string 'tail))
-      (setq string (majutsu-graph-entry-string-remove-module string 'tail))
-      (setq trim-tail t))
-    (setq string (majutsu-graph-entry-cleanup-copied-string string compiled))
-    (when (and trim-tail (stringp string))
-      (setq string (replace-regexp-in-string "[ \t]+$" "" string)))
-    string))
+  (majutsu-entry-copy-filter-buffer-substring
+   beg end delete (majutsu-graph-entry--copy-properties compiled)))
 
 (provide 'majutsu-graph-entry)
 

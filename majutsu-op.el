@@ -17,6 +17,7 @@
 
 (require 'cl-lib)
 (require 'majutsu)
+(require 'majutsu-entry-copy)
 (require 'majutsu-selection)
 (require 'seq)
 (require 'subr-x)
@@ -507,6 +508,45 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defvar-local majutsu-op-log--cached-entries nil
   "Cached operation log entries.")
 
+(defconst majutsu-op-log--entry-copy-columns
+  '((:field current :module heading :instance 0)
+    (:field op-id-short :module heading :instance 1)
+    (:field kind :module heading :instance 2)
+    (:field desc :module heading :instance 3)
+    (:field op-id :module body :instance 4)
+    (:field user :module body :instance 5)
+    (:field workspace :module body :instance 6)
+    (:field time :module body :instance 7)
+    (:field time-ago :module body :instance 8)
+    (:field duration :module body :instance 9)
+    (:field tags :module body :instance 10))
+  "Entry-copy columns for operation log entries.")
+
+(defconst majutsu-op-log--entry-copy-layout
+  (list :name 'op-log
+        :columns majutsu-op-log--entry-copy-columns
+        :field-value-function #'majutsu-entry-copy-plist-field-value
+        :entry-id-function (lambda (entry) (plist-get entry :op-id))
+        :section-value-function (lambda (entry) (plist-get entry :op-id))
+        :section-class 'jj-op)
+  "Entry-copy layout for operation log buffers.")
+
+(defun majutsu-op-log--copy-column (field module)
+  "Return operation log copy column FIELD in MODULE."
+  (seq-find (lambda (column)
+              (and (eq (plist-get column :field) field)
+                   (eq (plist-get column :module) module)))
+            majutsu-op-log--entry-copy-columns))
+
+(defun majutsu-op-log--copy-content (entry field module text)
+  "Return TEXT tagged as operation log FIELD MODULE content for ENTRY."
+  (majutsu-entry-copy-propertize-content
+   text
+   majutsu-op-log--entry-copy-layout
+   (plist-get entry :op-id)
+   module
+   (majutsu-op-log--copy-column field module)))
+
 (defun majutsu-op-log-arguments ()
   "Return operation log arguments from the active transient, if any."
   (if (eq transient-current-command 'majutsu-op-log-transient)
@@ -542,27 +582,58 @@ result."
       " "
     (propertize "@" 'face 'font-lock-warning-face)))
 
+(defun majutsu-op--pad-right (text width)
+  "Return TEXT padded to WIDTH columns, preserving text properties."
+  (let ((text (or text "")))
+    (concat text
+            (make-string (max 0 (- width (string-width text))) ?\s))))
+
 (defun majutsu-op--format-log-entry-heading (entry)
   "Return the heading line for one operation log ENTRY."
-  (format "%s %-12s %-8s %s"
-          (majutsu-op--log-current-marker entry)
-          (plist-get entry :op-id-short)
-          (plist-get entry :kind)
-          (plist-get entry :desc)))
+  (let* ((current (majutsu-op-log--copy-content
+                   entry 'current 'heading
+                   (majutsu-op--log-current-marker entry)))
+         (short-id (majutsu-op-log--copy-content
+                    entry 'op-id-short 'heading
+                    (majutsu-op--pad-right (plist-get entry :op-id-short) 12)))
+         (kind (majutsu-op-log--copy-content
+                entry 'kind 'heading
+                (majutsu-op--pad-right (plist-get entry :kind) 8)))
+         (description (majutsu-op-log--copy-content
+                       entry 'desc 'heading
+                       (plist-get entry :desc))))
+    (string-join (list current short-id kind description) " ")))
+
+(defun majutsu-op--insert-log-entry-field (entry label field value)
+  "Insert operation log ENTRY metadata LABEL for FIELD VALUE."
+  (insert (propertize label 'face 'font-lock-keyword-face)
+          ": "
+          (majutsu-op-log--copy-content entry field 'body (or value ""))
+          "\n"))
 
 (defun majutsu-op--insert-log-entry-body (entry)
   "Insert multiline operation log body for ENTRY."
-  (majutsu-op--insert-field "Id" (plist-get entry :op-id))
-  (majutsu-op--insert-field "User" (plist-get entry :user))
-  (majutsu-op--insert-field "Workspace" (plist-get entry :workspace))
-  (majutsu-op--insert-field
-   "Time"
-   (format "%s (%s), lasted %s"
-           (plist-get entry :time)
-           (plist-get entry :time-ago)
-           (plist-get entry :duration)))
+  (majutsu-op--insert-log-entry-field entry "Id" 'op-id
+                                      (plist-get entry :op-id))
+  (majutsu-op--insert-log-entry-field entry "User" 'user
+                                      (plist-get entry :user))
+  (majutsu-op--insert-log-entry-field entry "Workspace" 'workspace
+                                      (plist-get entry :workspace))
+  (insert (propertize "Time" 'face 'font-lock-keyword-face)
+          ": "
+          (majutsu-op-log--copy-content entry 'time 'body
+                                        (plist-get entry :time))
+          " ("
+          (majutsu-op-log--copy-content entry 'time-ago 'body
+                                        (plist-get entry :time-ago))
+          "), lasted "
+          (majutsu-op-log--copy-content entry 'duration 'body
+                                        (plist-get entry :duration))
+          "\n")
   (when (majutsu-op--nonempty-field-p (plist-get entry :tags))
-    (majutsu-op--insert-colored-block (plist-get entry :tags))))
+    (majutsu-op--insert-colored-block
+     (majutsu-op-log--copy-content entry 'tags 'body
+                                   (plist-get entry :tags)))))
 
 (defun majutsu-op--wash-log-entry ()
   "Wash the current raw operation log line into one `jj-op' section."
@@ -583,13 +654,17 @@ result."
     (while (not (eobp))
       (when-let* ((entry (majutsu-op--wash-log-entry)))
         (push entry entries)))
-    (setq majutsu-op-log--cached-entries (nreverse entries))))
+    (setq majutsu-op-log--cached-entries (nreverse entries))
+    (majutsu-entry-copy-set-buffer-data
+     majutsu-op-log--entry-copy-layout
+     majutsu-op-log--cached-entries)))
 
 (defun majutsu-op-log-insert-entries ()
   "Insert operation log entries."
   (magit-insert-section (jj-op-log)
     (magit-insert-heading "Operation Log")
     (setq majutsu-op-log--cached-entries nil)
+    (majutsu-entry-copy-clear-buffer-data)
     (apply #'majutsu-jj-wash
            #'majutsu-op--wash-log-output
            'wash-anyway
@@ -606,6 +681,7 @@ result."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
   (setq majutsu-op-log--cached-entries nil)
+  (majutsu-entry-copy-clear-buffer-data)
   (majutsu-op-log-render))
 
 (defun majutsu-op-log-show-at-point ()
@@ -614,6 +690,29 @@ result."
   (if-let* ((op-id (majutsu-op--operation-at-point)))
       (majutsu-op-show op-id)
     (user-error "No operation at point")))
+
+(defun majutsu-op-log--filter-buffer-substring (beg end &optional delete)
+  "Filter copied operation log text between BEG and END."
+  (majutsu-entry-copy-filter-buffer-substring beg end delete))
+
+;;;###autoload
+(defun majutsu-op-log-copy-operation-id ()
+  "Copy the current operation log entry id."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (let ((entry (or (majutsu-entry-copy-entry-at-point
+                      majutsu-op-log--entry-copy-layout
+                      majutsu-op-log--cached-entries)
+                     (user-error "No operation at point"))))
+      (majutsu-entry-copy-entry-field-value-to-kill
+       entry 'op-id majutsu-op-log--entry-copy-layout))))
+
+;;;###autoload(autoload 'majutsu-op-log-copy-transient "majutsu-op" nil t)
+(majutsu-entry-copy-define-transient
+ majutsu-op-log-copy-transient
+ "Transient for semantic copy commands in `majutsu-op-log-mode'."
+ ("o" "Operation id" majutsu-op-log-copy-operation-id))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
@@ -626,6 +725,10 @@ result."
   :group 'majutsu
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (setq-local filter-buffer-substring-function
+              #'majutsu-op-log--filter-buffer-substring)
+  (setq-local majutsu-entry-copy-buffer-layout
+              majutsu-op-log--entry-copy-layout)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments
