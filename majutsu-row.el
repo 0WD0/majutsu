@@ -176,6 +176,8 @@
                    (plist-get col :post)
                  :default))
          (template (plist-get col :template)))
+    (when (plist-member col :instance)
+      (user-error "Column %S must not declare reserved :instance" field))
     (setq module (if (keywordp module)
                      (intern (substring (symbol-name module) 1))
                    module))
@@ -200,13 +202,14 @@
 ;;; Column lookup
 
 (defun majutsu-row-column-by-instance (compiled instance)
-  "Return column spec from COMPILED identified by INSTANCE."
+  "Return column spec from COMPILED identified by INSTANCE.
+INSTANCE is a compiler-assigned column occurrence id, not a layout key."
   (seq-find (lambda (column)
               (eql (plist-get column :instance) instance))
             (plist-get compiled :columns)))
 
 (defun majutsu-row-assign-column-instances (columns)
-  "Return COLUMNS with stable per-instance ids assigned."
+  "Return COLUMNS with compiler-internal occurrence ids assigned."
   (cl-loop for column in columns
            for idx from 0
            collect (plist-put (copy-sequence column) :instance idx)))
@@ -315,10 +318,7 @@ only declare row column values and do not duplicate the row protocol."
   (and (eq (plist-get column :field) (plist-get schema-column :field))
        (or (not (plist-member column :module))
            (eq (majutsu-row--layout-column-attr column :module)
-               (majutsu-row--layout-column-attr schema-column :module)))
-       (or (not (plist-member column :instance))
-           (eql (plist-get column :instance)
-                (plist-get schema-column :instance)))))
+               (majutsu-row--layout-column-attr schema-column :module)))))
 
 (defun majutsu-row--layout-schema-column (column schema)
   "Return the unique schema column matching COLUMN."
@@ -330,8 +330,10 @@ only declare row column values and do not duplicate the row protocol."
     (cond
      ((null matches) nil)
      ((null (cdr matches)) (car matches))
-     (t (user-error "Ambiguous row layout column %S; add :module"
-                    (plist-get column :field))))))
+     (t (user-error "Ambiguous row layout column %S/%S"
+                    (plist-get column :field)
+                    (or (majutsu-row--layout-column-attr column :module)
+                        '*))))))
 
 (defun majutsu-row--layout-merge-column-spec (spec schema)
   "Merge layout column SPEC with matching SCHEMA defaults."
@@ -972,6 +974,30 @@ Return a plist with :roots, :entries, and :diagnostics."
             :entries (nreverse entries)
             :diagnostics (nreverse diagnostics)))))
 
+(defun majutsu-row--diagnostic-position (diagnostic)
+  "Return buffer position described by row parser DIAGNOSTIC."
+  (or (plist-get diagnostic :position)
+      (when-let* ((entry (plist-get diagnostic :entry)))
+        (plist-get entry :beg))))
+
+(defun majutsu-row--format-diagnostic (diagnostic)
+  "Return a one-line message for row parser DIAGNOSTIC."
+  (let ((message (or (plist-get diagnostic :message)
+                     "Unknown row parser diagnostic"))
+        (position (majutsu-row--diagnostic-position diagnostic)))
+    (if position
+        (format "%s at %d" message position)
+      message)))
+
+(defun majutsu-row-report-diagnostics (diagnostics)
+  "Report row parser DIAGNOSTICS in the echo area."
+  (when diagnostics
+    (message "majutsu row parser: %s%s"
+             (majutsu-row--format-diagnostic (car diagnostics))
+             (if (cdr diagnostics)
+                 (format " (+%d more)" (1- (length diagnostics)))
+               ""))))
+
 (defun majutsu-row-read-buffer (compiled &optional options)
   "Read the current buffer as a row protocol stream using COMPILED."
   (majutsu-row-read-region compiled (point-min) (point-max) options))
@@ -1453,7 +1479,9 @@ When PLAIN is non-nil, omit faces and text properties."
   (let* ((result (majutsu-row-read-buffer compiled))
          (roots (plist-get result :roots))
          (entries (plist-get result :entries))
+         (diagnostics (plist-get result :diagnostics))
          (inhibit-read-only t))
+    (majutsu-row-report-diagnostics diagnostics)
     (delete-region (point-min) (point-max))
     (majutsu-row-insert-forest roots compiled)
     (setq-local majutsu-row-cached-roots roots)
@@ -1565,6 +1593,7 @@ Drops tail text when both heading and tail are present in the copied region."
 
 (defun majutsu-row-clear-buffer-data ()
   "Clear current buffer row data."
+  (setq-local majutsu-row-buffer-compiled nil)
   (setq-local majutsu-row-cached-entries nil)
   (setq-local majutsu-row-cached-roots nil)
   (setq-local majutsu-row-entry-index nil)
