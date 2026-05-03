@@ -286,13 +286,11 @@ bookmark(s) at point."
   "Template used for bookmark-list headings.")
 
 (majutsu-bookmark-define-template removed-target-heading
-  [:|commit|
-   [:concat "  - " [:majutsu-bookmark-list-commit-summary]]]
+  [:concat "  - " [:majutsu-bookmark-list-commit-summary]]
   "Template used for removed conflicted bookmark target headings.")
 
 (majutsu-bookmark-define-template added-target-heading
-  [:|commit|
-   [:concat "  + " [:majutsu-bookmark-list-commit-summary]]]
+  [:concat "  + " [:majutsu-bookmark-list-commit-summary]]
   "Template used for added conflicted bookmark target headings.")
 
 (majutsu-bookmark-define-template kind
@@ -390,45 +388,46 @@ bookmark(s) at point."
        (member value '("t" "true" "1"))
        t))
 
-(defun majutsu-bookmark--ref-row-column-template (field &optional _column)
-  "Return bookmark ref-row template form for FIELD."
-  (let ((var (intern-soft (format "majutsu-bookmark-list-template-%s" field))))
-    (if (and var (boundp var))
-        (symbol-value var)
-      (user-error "Unknown bookmark-list ref-row field %S" field))))
+(defcustom majutsu-bookmark-list-layout
+  '(:adopt-previous [:and [:remote] [:tracked]]
+    :fields
+    ((heading majutsu-bookmark-list-template-heading)
+     (kind majutsu-bookmark-list-template-kind)
+     (name majutsu-bookmark-list-template-name)
+     (remote majutsu-bookmark-list-template-remote)
+     (tracked majutsu-bookmark-list-template-tracked)
+     (commit-id majutsu-bookmark-list-template-commit-id))
+    :children
+    (:when [:conflict]
+      :nodes
+      ((:each [:removed_targets]
+        :as commit
+        :fields
+        ((heading majutsu-bookmark-list-template-removed-target-heading)
+         (kind "target")
+         (name [:method [:self 1] :name])
+         (remote [:method [:self 1] :remote])
+         (tracked "")
+         (commit-id [:commit_id])))
+       (:each [:added_targets]
+        :as commit
+        :fields
+        ((heading majutsu-bookmark-list-template-added-target-heading)
+         (kind "target")
+         (name [:method [:self 1] :name])
+         (remote [:method [:self 1] :remote])
+         (tracked "")
+         (commit-id [:commit_id]))))))
+  "Declarative row tree emitted by `jj bookmark list'."
+  :type 'sexp
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-bookmark--compiled-template-cache nil)))
 
-(defun majutsu-bookmark--target-row-column-template
-    (heading-template commit field &optional _column)
-  "Return bookmark target-row template form for FIELD.
-HEADING-TEMPLATE is a one-argument lambda template accepting COMMIT."
-  (pcase field
-    ('heading `[,heading-template ,commit])
-    ('kind "target")
-    ('name '[:method [:self 1] :name])
-    ('remote '[:if [:method [:self 1] :remote]
-                  [:method [:self 1] :remote]
-                ""])
-    ('tracked "")
-    ('commit-id `[:method ,commit :commit_id])
-    (_ (user-error "Unknown bookmark-list target-row field %S" field))))
-
-(defun majutsu-bookmark--ref-row-column-templates (compiled)
-  "Return column templates for one bookmark ref row using COMPILED."
-  (majutsu-row-column-template-alist
-   compiled #'majutsu-bookmark--ref-row-column-template))
-
-(defun majutsu-bookmark--target-row-column-templates
-    (compiled heading-template commit)
-  "Return column templates for one bookmark target row using COMPILED."
-  (majutsu-row-column-template-alist
-   compiled
-   (lambda (field column)
-     (majutsu-bookmark--target-row-column-template
-      heading-template commit field column))))
-
-(defun majutsu-bookmark--list-column-template (field)
-  "Return bookmark-list ref-row template form for FIELD."
-  (majutsu-bookmark--ref-row-column-template field))
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher 'majutsu-bookmark-list-layout
+                        #'majutsu-bookmark--invalidate-list-template))
 
 (defun majutsu-bookmark--row-record-field (entry field value)
   "Record bookmark list FIELD VALUE onto ENTRY."
@@ -462,9 +461,9 @@ HEADING-TEMPLATE is a one-argument lambda template accepting COMMIT."
   (list :name 'bookmark-list
         :self-type 'CommitRef
         :columns-var 'majutsu-bookmark-list-columns
+        :layout-var 'majutsu-bookmark-list-layout
         :default-modules majutsu-bookmark--list-field-default-modules
         :required-fields majutsu-bookmark--list-required-fields
-        :template-function 'majutsu-bookmark--list-column-template
         :default-postprocessors nil
         :field-postprocessors
         '((remote . (majutsu-bookmark--row-empty-to-nil))
@@ -479,41 +478,6 @@ HEADING-TEMPLATE is a one-argument lambda template accepting COMMIT."
         :tail-align nil
         :compat-property-prefix 'majutsu-bookmark-list))
 
-(defun majutsu-bookmark--target-row-template-form (compiled heading-template commit)
-  "Return row template form for one conflict target COMMIT.
-HEADING-TEMPLATE is a one-argument lambda template accepting COMMIT."
-  (majutsu-row-template-form
-   compiled
-   (majutsu-bookmark--target-row-column-templates
-    compiled heading-template commit)))
-
-(defun majutsu-bookmark--conflict-targets-template-form (compiled)
-  "Return target rows template form for conflicted bookmark refs."
-  `[:if [:conflict]
-       [,majutsu-row-push-token
-        "\n"
-        [:method [:removed_targets]
-         :map [:|c|
-               ,(majutsu-bookmark--target-row-template-form
-                 compiled majutsu-bookmark-list-template-removed-target-heading 'c)]
-         :join ""]
-        [:method [:added_targets]
-         :map [:|c|
-               ,(majutsu-bookmark--target-row-template-form
-                 compiled majutsu-bookmark-list-template-added-target-heading 'c)]
-         :join ""]
-        ,majutsu-row-pop-token
-        "\n"]])
-
-(defun majutsu-bookmark--list-template-form (compiled)
-  "Return template form for bookmark list row stream using COMPILED."
-  (let ((tracked-remote '[:and [:remote] [:tracked]]))
-    `[[:if ,tracked-remote [,majutsu-row-push-token "\n"]]
-      ,(majutsu-row-template-form
-        compiled (majutsu-bookmark--ref-row-column-templates compiled))
-      ,(majutsu-bookmark--conflict-targets-template-form compiled)
-      [:if ,tracked-remote [,majutsu-row-pop-token "\n"]]]))
-
 (defun majutsu-bookmark--compile-list-columns (&optional columns)
   "Compile bookmark-list COLUMNS into row metadata."
   (majutsu-row-compile (majutsu-bookmark--row-profile) columns))
@@ -521,13 +485,9 @@ HEADING-TEMPLATE is a one-argument lambda template accepting COMMIT."
 (defun majutsu-bookmark--ensure-list-template ()
   "Return cached row metadata for `jj bookmark list'."
   (or majutsu-bookmark--compiled-template-cache
-      (let* ((compiled (majutsu-bookmark--compile-list-columns
-                        majutsu-bookmark-list-columns))
-             (template (majutsu-template-compile
-                        (majutsu-bookmark--list-template-form compiled)
-                        'CommitRef)))
-        (setq majutsu-bookmark--compiled-template-cache
-              (plist-put compiled :template template)))))
+      (setq majutsu-bookmark--compiled-template-cache
+            (majutsu-bookmark--compile-list-columns
+             majutsu-bookmark-list-columns))))
 
 (defun majutsu-bookmark--list-template ()
   "Return cached row template used by `jj bookmark list'."

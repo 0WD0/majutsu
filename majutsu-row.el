@@ -292,6 +292,168 @@ only declare row column values and do not duplicate the row protocol."
       ,majutsu-row-end-token
       "\n"]))
 
+(defun majutsu-row--template-concat (&rest forms)
+  "Return one template form concatenating FORMS."
+  (setq forms (delq nil forms))
+  (cond
+   ((null forms) "")
+   ((null (cdr forms)) (car forms))
+   (t (cons :concat forms))))
+
+(defun majutsu-row--layout-plist-p (value)
+  "Return non-nil when VALUE is a row layout plist."
+  (and (consp value) (keywordp (car value))))
+
+(defun majutsu-row--layout-normalize-module (module)
+  "Return normalized layout MODULE symbol."
+  (if (keywordp module)
+      (intern (substring (symbol-name module) 1))
+    module))
+
+(defun majutsu-row--layout-field-spec-field (spec)
+  "Return field symbol described by layout field SPEC."
+  (cond
+   ((majutsu-row--layout-plist-p spec) (plist-get spec :field))
+   ((consp spec) (car spec))
+   (t (user-error "Invalid row layout field spec %S" spec))))
+
+(defun majutsu-row--layout-field-spec-template (spec)
+  "Return template form described by layout field SPEC."
+  (cond
+   ((majutsu-row--layout-plist-p spec) (plist-get spec :template))
+   ((and (consp spec) (consp (cdr spec)) (null (cddr spec))) (cadr spec))
+   ((consp spec) (cdr spec))
+   (t (user-error "Invalid row layout field spec %S" spec))))
+
+(defun majutsu-row--layout-field-spec-matches-column-p (spec column)
+  "Return non-nil when layout field SPEC applies to COLUMN."
+  (let ((field (majutsu-row--layout-field-spec-field spec))
+        (module (and (majutsu-row--layout-plist-p spec)
+                     (plist-member spec :module)
+                     (majutsu-row--layout-normalize-module
+                      (plist-get spec :module))))
+        (instance (and (majutsu-row--layout-plist-p spec)
+                       (plist-member spec :instance)
+                       (plist-get spec :instance))))
+    (and (eq field (plist-get column :field))
+         (or (null module) (eq module (plist-get column :module)))
+         (or (null instance) (eql instance (plist-get column :instance))))))
+
+(defun majutsu-row--layout-resolve-template-form (form)
+  "Resolve a row layout template FORM."
+  (if (and (symbolp form) (not (keywordp form)) (boundp form))
+      (symbol-value form)
+    form))
+
+(defun majutsu-row--layout-column-template (compiled node column)
+  "Return NODE's template for COLUMN using COMPILED."
+  (let* ((fields (plist-get node :fields))
+         (spec (seq-find (lambda (candidate)
+                           (majutsu-row--layout-field-spec-matches-column-p
+                            candidate column))
+                         fields)))
+    (cond
+     (spec
+      (majutsu-row--layout-resolve-template-form
+       (majutsu-row--layout-field-spec-template spec)))
+     ((plist-get node :defaults)
+      (majutsu-row--column-template (majutsu-row--profile compiled) column))
+     (t
+      (user-error "Missing row layout field %S"
+                  (plist-get column :field))))))
+
+(defun majutsu-row--layout-column-templates (compiled node)
+  "Return complete column template alist for layout NODE."
+  (mapcar (lambda (column)
+            (cons column
+                  (majutsu-row--layout-column-template
+                   compiled node column)))
+          (plist-get compiled :columns)))
+
+(defun majutsu-row--layout-node-list-template-form (compiled nodes)
+  "Return template form for layout NODES using COMPILED."
+  (apply #'majutsu-row--template-concat
+         (mapcar (lambda (node)
+                   (majutsu-row-layout-node-template-form compiled node))
+                 nodes)))
+
+(defun majutsu-row--layout-children-template-form (compiled children)
+  "Return child-section template form for layout CHILDREN."
+  (when children
+    (let* ((group (if (majutsu-row--layout-plist-p children)
+                      children
+                    (list :nodes children)))
+           (nodes (plist-get group :nodes))
+           (when-form (plist-get group :when))
+           (child-form (majutsu-row--layout-node-list-template-form
+                        compiled nodes)))
+      (unless (equal child-form "")
+        (let ((form (majutsu-row--template-concat
+                     majutsu-row-push-token
+                     "\n"
+                     child-form
+                     majutsu-row-pop-token
+                     "\n")))
+          (if when-form
+              `[:if ,when-form ,form ""]
+            form))))))
+
+(defun majutsu-row--layout-single-node-template-form (compiled node)
+  "Return template form for one layout NODE without :each expansion."
+  (let* ((row-form (majutsu-row-template-form
+                    compiled
+                    (majutsu-row--layout-column-templates compiled node)))
+         (children-form (majutsu-row--layout-children-template-form
+                         compiled (plist-get node :children)))
+         (body-form (majutsu-row--template-concat row-form children-form))
+         (adopt-form (plist-get node :adopt-previous)))
+    (if adopt-form
+        (majutsu-row--template-concat
+         `[:if ,adopt-form [,majutsu-row-push-token "\n"] ""]
+         body-form
+         `[:if ,adopt-form [,majutsu-row-pop-token "\n"] ""])
+      body-form)))
+
+(defun majutsu-row-layout-node-template-form (compiled node)
+  "Return template form for layout NODE using COMPILED."
+  (unless (majutsu-row--layout-plist-p node)
+    (user-error "Invalid row layout node %S" node))
+  (let ((each-form (plist-get node :each))
+        (when-form (plist-get node :when))
+        (var (or (plist-get node :as) 'it)))
+    (unless (symbolp var)
+      (user-error "Row layout :as must be a symbol, got %S" var))
+    (let ((form (if each-form
+                    `[:method ,each-form
+                      :map [:lambda (,var)
+                                    ,(majutsu-row--layout-single-node-template-form
+                                      compiled node)]
+                      :join ""]
+                  (majutsu-row--layout-single-node-template-form
+                   compiled node))))
+      (if when-form
+          `[:if ,when-form ,form ""]
+        form))))
+
+(defun majutsu-row-layout-template-form (compiled layout)
+  "Return template form for COMPILED from declarative row LAYOUT."
+  (majutsu-row-layout-node-template-form
+   compiled
+   (or (and (majutsu-row--layout-plist-p layout)
+            (plist-get layout :root))
+       layout)))
+
+(defun majutsu-row--template-form (compiled)
+  "Return final template form for COMPILED."
+  (let* ((profile (majutsu-row--profile compiled))
+         (layout-var (plist-get profile :layout-var)))
+    (if layout-var
+        (progn
+          (unless (boundp layout-var)
+            (user-error "Row layout variable %S is unbound" layout-var))
+          (majutsu-row-layout-template-form compiled (symbol-value layout-var)))
+      (majutsu-row-template-form compiled))))
+
 (defun majutsu-row-compile (profile &optional columns)
   "Compile PROFILE COLUMNS into a jj template and layout metadata."
   (let* ((source-columns
@@ -316,7 +478,7 @@ only declare row column values and do not duplicate the row protocol."
                          :columns complete
                          :module-columns module-columns))
          (template (majutsu-template-compile
-                    (majutsu-row-template-form compiled)
+                    (majutsu-row--template-form compiled)
                     (plist-get profile :self-type))))
     (plist-put compiled :template template)))
 
