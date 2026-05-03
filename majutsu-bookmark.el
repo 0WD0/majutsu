@@ -371,7 +371,8 @@ bookmark(s) at point."
        t))
 
 (defcustom majutsu-bookmark-list-layout
-  '(:columns
+  '(:adopt-previous [:and [:remote] [:tracked]]
+    :columns
     ((heading :module heading :face t
               :template majutsu-bookmark-list-template-heading)
      (kind :module metadata :face nil
@@ -387,15 +388,12 @@ bookmark(s) at point."
      (commit-id :module metadata :face nil
                 :template majutsu-bookmark-list-template-commit-id
                 :post majutsu-bookmark--row-empty-to-nil))
-    :root
-    (:adopt-previous [:and [:remote] [:tracked]]
-     :defaults t
-     :children
+    :children
     (:when [:conflict]
       :nodes
       ((:each [:removed_targets]
         :as commit
-        :fields
+        :columns
         ((heading majutsu-bookmark-list-template-removed-target-heading)
          (kind "target")
          (name [:method [:self 1] :name])
@@ -404,13 +402,13 @@ bookmark(s) at point."
          (commit-id [:commit_id])))
        (:each [:added_targets]
         :as commit
-        :fields
+        :columns
         ((heading majutsu-bookmark-list-template-added-target-heading)
          (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
          (tracked "")
-         (commit-id [:commit_id])))))))
+         (commit-id [:commit_id]))))))
   "Declarative row tree emitted by `jj bookmark list'."
   :type 'sexp
   :group 'majutsu
