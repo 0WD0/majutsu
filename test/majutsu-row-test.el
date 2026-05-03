@@ -97,6 +97,33 @@
                      ,majutsu-row-end-token
                      "\n"]))))
 
+(ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
+  "Layout lowering should keep child rows as full field-bearing rows."
+  (let* ((compiled (majutsu-row-test--compiled))
+         (layout
+          '(:fields
+            ((title "Parent")
+             (author "")
+             (body "")
+             (id "parent"))
+            :children
+            (:nodes
+             ((:each [:parents]
+               :as p
+               :fields
+               ((title [:description :first_line])
+                (author "")
+                (body "")
+                (id [:change_id :short 8])))))))
+         (template (majutsu-template-compile
+                    (majutsu-row-layout-template-form compiled layout)
+                    'Commit)))
+    (should (string-match-p (regexp-quote "self.parents().map(|p|") template))
+    (should (string-match-p (regexp-quote "p.description().first_line()") template))
+    (should (string-match-p (regexp-quote "p.change_id().short(8)") template))
+    (should (string-match-p (regexp-quote "\\x1D[") template))
+    (should (string-match-p (regexp-quote "\\x1D]") template))))
+
 (ert-deftest majutsu-row-parse-preserves-shape ()
   "Parser should preserve graph prefixes, modules, metadata, and suffix lines."
   (let* ((compiled (majutsu-row-test--compiled))
