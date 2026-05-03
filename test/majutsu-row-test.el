@@ -76,6 +76,27 @@
     (should (string-match-p (regexp-quote "\\x1dM") template))
     (should (string-match-p (regexp-quote "\\x1dE") template))))
 
+(ert-deftest majutsu-row-template-form-preserves-duplicate-column-templates ()
+  "Template construction should respect each compiled column instance."
+  (let* ((compiled
+          (majutsu-row-test--compiled
+           '((:field body :module heading :template "Heading body" :face nil)
+             (:field body :module body :template "Entry body" :face nil)
+             (:field id :module metadata :template "id" :face nil))))
+         (form (majutsu-row-template-form compiled)))
+    (should (equal form
+                   `[:concat
+                     ,majutsu-row-start-token
+                     "Heading body"
+                     ,majutsu-row-tail-token
+                     ""
+                     ,majutsu-row-body-token
+                     "Entry body"
+                     ,majutsu-row-meta-token
+                     "id"
+                     ,majutsu-row-end-token
+                     "\n"]))))
+
 (ert-deftest majutsu-row-parse-preserves-shape ()
   "Parser should preserve graph prefixes, modules, metadata, and suffix lines."
   (let* ((compiled (majutsu-row-test--compiled))
