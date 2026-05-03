@@ -51,6 +51,10 @@
 
 ** Changed
 
+- Bookmark lists use typed row layouts ::
+  Bookmark buffers now read typed =jj bookmark list -T= records and use a
+  customizable layout for headings, summaries, and conflicted targets.
+
 - Some transients can save repository-local defaults ::
   Log, diff, and Git sync transients can save defaults for the current jj
   repository without changing global Transient defaults.
