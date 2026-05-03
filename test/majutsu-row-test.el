@@ -46,6 +46,10 @@
   "Return non-nil when VALUE is yes."
   (equal value "yes"))
 
+(defun majutsu-row-test--detail-entry-id (entry)
+  "Return a derived test entry id for ENTRY."
+  (concat (majutsu-row-column entry 'id) "#detail"))
+
 (defun majutsu-row-test--raw-entry (_compiled title id &optional body prefix)
   "Return one raw test entry for _COMPILED with TITLE, ID, BODY, and PREFIX."
   (concat (or prefix "")
@@ -116,6 +120,7 @@
   "Layout roles should be transported and drive section metadata."
   (let* ((layout
           '(:role test-detail
+            :entry-id #'majutsu-row-test--detail-entry-id
             :section-class test-detail-section
             :section-value id
             :columns
@@ -142,10 +147,99 @@
       (goto-char (point-min))
       (setq entry (majutsu-row-parse-at-point compiled)))
     (should (eq (majutsu-row-role entry) 'test-detail))
-    (should (equal (majutsu-row-entry-id entry compiled) "detail-id"))
+    (should (equal (majutsu-row-entry-id entry compiled) "detail-id#detail"))
     (should (equal (majutsu-row-section-value entry compiled) "detail-id"))
     (should (eq (majutsu-row-entry-section-class entry compiled)
                 'test-detail-section))))
+
+(ert-deftest majutsu-row-entry-at-current-section-uses-magit-ident ()
+  "Current-section lookup should honor full Magit section identity."
+  (let* ((layout
+          (list :schema
+                '((title :module heading :face nil)
+                  (id :module metadata :face nil)
+                  (parent-id :module metadata :face nil))
+                :role 'parent
+                :section-class 'parent-section
+                :section-value 'id
+                :columns '((title "Parent")
+                           (id "parent")
+                           (parent-id ""))
+                :children
+                (list :nodes
+                      (list
+                       (list :role 'child
+                             :section-class 'child-section
+                             :section-value 'id
+                             :columns '((title "Child")
+                                        (id "child")
+                                        (parent-id "parent")))))))
+         (profile (append majutsu-row-test--profile
+                          (list :layout-var 'majutsu-row-test--layout)))
+         (majutsu-row-test--layout layout)
+         (compiled (majutsu-row-compile profile))
+         (raw (concat
+               majutsu-row-start-token
+               majutsu-row-role-token "parent" majutsu-row-role-token
+               "Parent 1"
+               majutsu-row-tail-token
+               majutsu-row-body-token
+               majutsu-row-meta-token
+               (majutsu-row-test--payload "p1" "")
+               majutsu-row-end-token
+               "\n"
+               majutsu-row-push-token "\n"
+               majutsu-row-start-token
+               majutsu-row-role-token "child" majutsu-row-role-token
+               "Child 1"
+               majutsu-row-tail-token
+               majutsu-row-body-token
+               majutsu-row-meta-token
+               (majutsu-row-test--payload "shared" "p1")
+               majutsu-row-end-token
+               "\n"
+               majutsu-row-pop-token "\n"
+               majutsu-row-start-token
+               majutsu-row-role-token "parent" majutsu-row-role-token
+               "Parent 2"
+               majutsu-row-tail-token
+               majutsu-row-body-token
+               majutsu-row-meta-token
+               (majutsu-row-test--payload "p2" "")
+               majutsu-row-end-token
+               "\n"
+               majutsu-row-push-token "\n"
+               majutsu-row-start-token
+               majutsu-row-role-token "child" majutsu-row-role-token
+               "Child 2"
+               majutsu-row-tail-token
+               majutsu-row-body-token
+               majutsu-row-meta-token
+               (majutsu-row-test--payload "shared" "p2")
+               majutsu-row-end-token
+               "\n"
+               majutsu-row-pop-token "\n"))
+         entries
+         second-child
+         entry)
+    (with-temp-buffer
+      (magit-section-mode)
+      (let ((inhibit-read-only t))
+        (insert raw))
+      (setq entries (majutsu-row-wash-buffer compiled))
+      (setq second-child
+            (seq-find
+             (lambda (section)
+               (and (eq (oref section type) 'child-section)
+                    (let ((parent (oref section parent)))
+                      (and parent
+                           (eq (oref parent type) 'parent-section)
+                           (equal (oref parent value) "p2")))))
+             (majutsu-row-test--collect-sections)))
+      (should second-child)
+      (goto-char (oref second-child start))
+      (setq entry (majutsu-row--entry-at-current-section compiled entries))
+      (should (equal (majutsu-row-column entry 'parent-id) "p2")))))
 
 (ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
   "Layout lowering should keep child rows as full field-bearing rows."
@@ -408,13 +502,13 @@
       (setq-local majutsu-row-cached-entries '(entry))
       (setq-local majutsu-row-cached-roots '(root))
       (setq-local majutsu-row-entry-index (make-hash-table))
-      (setq-local majutsu-row-section-value-index (make-hash-table))
+      (setq-local majutsu-row-section-ident-index (make-hash-table))
       (majutsu-row-clear-buffer-data)
       (should-not majutsu-row-buffer-compiled)
       (should-not majutsu-row-cached-entries)
       (should-not majutsu-row-cached-roots)
       (should-not majutsu-row-entry-index)
-      (should-not majutsu-row-section-value-index))))
+      (should-not majutsu-row-section-ident-index))))
 
 (ert-deftest majutsu-row-copy-field-copies-visible-field ()
   "Copying a visible field should use row text properties."
