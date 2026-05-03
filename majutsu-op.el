@@ -538,6 +538,15 @@ operations."
     ('duration '[:label "time duration" [:method [:time] :duration]])
     (_ (user-error "Unknown operation log field %S" field))))
 
+(defun majutsu-op-log--column-spec-with-template (spec)
+  "Return operation log column SPEC with an explicit row template."
+  (let* ((column (majutsu-row-column-spec-plist spec))
+         (field (plist-get column :field)))
+    (if (plist-member column :template)
+        column
+      (append column (list :template
+                           (majutsu-op-log--column-template field))))))
+
 (defun majutsu-op-log--record-field (entry field value)
   "Record canonical operation log FIELD VALUE onto ENTRY."
   (pcase field
@@ -577,9 +586,7 @@ operations."
   "Return the row profile for operation log entries."
   (list :name 'op-log
         :self-type 'Operation
-        :columns-var 'majutsu-op-log-columns
         :default-modules majutsu-op-log--field-default-modules
-        :template-function 'majutsu-op-log--column-template
         :record-field-function 'majutsu-op-log--record-field
         :entry-id-function 'majutsu-op-log--entry-id
         :section-class 'jj-op
@@ -592,7 +599,8 @@ operations."
   "Compile operation log COLUMNS into row metadata."
   (majutsu-row-compile
    (majutsu-op-log--row-profile)
-   (or columns majutsu-op-log-columns)))
+   (mapcar #'majutsu-op-log--column-spec-with-template
+           (or columns majutsu-op-log-columns))))
 
 (defun majutsu-op-log--ensure-template ()
   "Return cached compiled operation log template metadata."
