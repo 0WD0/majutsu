@@ -59,8 +59,8 @@
   nested Magit sections, and migrate bookmark lists to that shared row protocol.
 - Bookmarks: The bookmark list buffer now uses typed =jj bookmark list -T=
   machine records with customizable Majutsu template display fragments for
-  bookmark headings, commit summaries, and conflicted target headings, while
-  assigning precise section values such as =name@remote= for tracked remote
+  bookmark headings, commit summaries, and structured conflicted-target heading
+  columns, while assigning precise section values such as =name@remote= for tracked remote
   rows. The emitted bookmark tree is declared through
   ~majutsu-bookmark-list-layout~, using layout-level ~:schema~ defaults plus
   uniform node-local ~:columns~ for regular refs and conflicted target rows.

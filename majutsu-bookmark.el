@@ -336,6 +336,8 @@ bookmark(s) at point."
 (defcustom majutsu-bookmark-list-layout
   '(:schema
     ((heading :module heading :face t)
+     (target-marker :module heading :face t)
+     (target-summary :module heading :face t)
      (kind :module metadata :face nil)
      (name :module metadata :face nil)
      (remote :module metadata :face nil
@@ -358,7 +360,8 @@ bookmark(s) at point."
       ((:each [:removed_targets]
         :as commit
         :columns
-        ((heading [:concat "  - " [:majutsu-bookmark-list-commit-summary]])
+        ((target-marker "  -")
+         (target-summary [:majutsu-bookmark-list-commit-summary])
          (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
@@ -367,7 +370,8 @@ bookmark(s) at point."
        (:each [:added_targets]
         :as commit
         :columns
-        ((heading [:concat "  + " [:majutsu-bookmark-list-commit-summary]])
+        ((target-marker "  +")
+         (target-summary [:majutsu-bookmark-list-commit-summary])
          (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])

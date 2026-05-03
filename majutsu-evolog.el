@@ -127,6 +127,15 @@
     ('operation-id '[:if [:operation] [:operation :id] ""])
     (_ (user-error "Unknown evolog field %S" field))))
 
+(defun majutsu-evolog--column-spec-with-template (spec)
+  "Return evolog column SPEC with an explicit row template."
+  (let* ((column (majutsu-row-column-spec-plist spec))
+         (field (plist-get column :field)))
+    (if (plist-member column :template)
+        column
+      (append column (list :template
+                           (majutsu-evolog--column-template field))))))
+
 (defun majutsu-evolog--record-field (entry field value)
   "Record canonical evolog FIELD VALUE onto ENTRY."
   (pcase field
@@ -156,10 +165,7 @@
   "Return the row profile for `majutsu-evolog'."
   (list :name 'evolog
         :self-type 'CommitEvolutionEntry
-        :columns-var 'majutsu-evolog-entry-columns
         :default-modules majutsu-evolog--field-default-modules
-        :required-fields '(change-id commit-id operation-id)
-        :template-function 'majutsu-evolog--column-template
         :record-field-function 'majutsu-evolog--record-field
         :entry-id-function 'majutsu-evolog--entry-id
         :section-class 'jj-evolog-entry
@@ -169,8 +175,10 @@
         :compat-property-prefix 'majutsu-evolog))
 
 (defconst majutsu-evolog--entry-compiled
-  (majutsu-row-compile (majutsu-evolog--row-profile)
-                               majutsu-evolog-entry-columns)
+  (majutsu-row-compile
+   (majutsu-evolog--row-profile)
+   (mapcar #'majutsu-evolog--column-spec-with-template
+           majutsu-evolog-entry-columns))
   "Compiled row layout metadata for `majutsu-evolog'.")
 
 (defconst majutsu-evolog--entry-template
