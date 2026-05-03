@@ -61,7 +61,9 @@
   machine records with customizable Majutsu template display fragments for
   bookmark headings, commit summaries, and conflicted target headings, while
   assigning precise section values such as =name@remote= for tracked remote
-  rows.
+  rows. The emitted bookmark tree is declared through
+  ~majutsu-bookmark-list-layout~, so regular refs and conflicted target rows
+  share the same row field schema.
 - Transients: Add a generic repository-local defaults layer keyed by jj's
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
