@@ -101,8 +101,8 @@
 (defvar-local majutsu-row-entry-index nil
   "Hash table mapping stable entry ids to cached entries.")
 
-(defvar-local majutsu-row-section-value-index nil
-  "Hash table mapping section values to cached entries.")
+(defvar-local majutsu-row-section-ident-index nil
+  "Hash table mapping Magit section identities to cached entries.")
 
 ;;; Compiled helpers
 
@@ -1202,37 +1202,19 @@ Return a plist with :roots, :entries, and :diagnostics."
     (wrong-number-of-arguments
      (funcall fn entry))))
 
-(defun majutsu-row-entry-spec-value (spec entry compiled)
-  "Resolve entry value SPEC for ENTRY using COMPILED.
-Symbols name canonical row columns.  Function specs have the form
-`(:function FN)' or `(function FN)'."
+(defun majutsu-row-resolve-role-ref (ref entry compiled)
+  "Resolve role REF on ENTRY."
   (cond
-   ((null spec) nil)
-   ((keywordp spec)
-    (majutsu-row-column entry (intern (substring (symbol-name spec) 1))))
-   ((symbolp spec)
-    (majutsu-row-column entry spec))
-   ((functionp spec)
-    (majutsu-row--call-entry-function spec entry compiled))
-   ((and (consp spec) (memq (car spec) '(:function function)))
-    (majutsu-row--call-entry-function (cadr spec) entry compiled))
-   ((and (consp spec) (eq (car spec) :column))
-    (majutsu-row-entry-spec-value (cadr spec) entry compiled))
-   ((and (consp spec) (eq (car spec) :literal))
-    (cadr spec))
-   ((and (consp spec) (eq (car spec) :concat))
-    (mapconcat (lambda (part)
-                 (majutsu-row-display-string
-                  (majutsu-row-entry-spec-value part entry compiled)))
-               (cdr spec) ""))
-   ((and (consp spec) (eq (car spec) :or))
-    (seq-some (lambda (part)
-                (let ((value (majutsu-row-entry-spec-value
-                              part entry compiled)))
-                  (and (not (and (stringp value) (string-empty-p value)))
-                       value)))
-              (cdr spec)))
-   (t (user-error "Invalid row entry value spec %S" spec))))
+   ((null ref) nil)
+   ((keywordp ref)
+    (majutsu-row-column entry (intern (substring (symbol-name ref) 1))))
+   ((symbolp ref)
+    (majutsu-row-column entry ref))
+   ((functionp ref)
+    (majutsu-row--call-entry-function ref entry compiled))
+   ((and (consp ref) (eq (car ref) 'function))
+    (majutsu-row--call-entry-function (cadr ref) entry compiled))
+   (t (user-error "Invalid row role ref %S" ref))))
 
 ;;; Display helpers
 
@@ -1734,10 +1716,10 @@ Drops tail text when both heading and tail are present in the copied region."
          (role-spec (majutsu-row-role-spec entry compiled)))
     (cond
      ((plist-member role-spec :entry-id)
-      (majutsu-row-entry-spec-value
+      (majutsu-row-resolve-role-ref
        (plist-get role-spec :entry-id) entry compiled))
      ((plist-member role-spec :section-value)
-      (majutsu-row-entry-spec-value
+      (majutsu-row-resolve-role-ref
        (plist-get role-spec :section-value) entry compiled))
      ((plist-get profile :entry-id-function)
       (funcall (plist-get profile :entry-id-function) entry))
@@ -1749,22 +1731,37 @@ Drops tail text when both heading and tail are present in the copied region."
          (role-spec (majutsu-row-role-spec entry compiled)))
     (cond
      ((plist-member role-spec :section-value)
-      (majutsu-row-entry-spec-value
+      (majutsu-row-resolve-role-ref
        (plist-get role-spec :section-value) entry compiled))
      ((plist-get profile :section-value-function)
       (funcall (plist-get profile :section-value-function) entry))
      (t (majutsu-row-entry-id entry compiled)))))
 
+(defun majutsu-row-entry-section-type (entry compiled)
+  "Return the Magit section type symbol for ENTRY using COMPILED."
+  (let ((section-class (majutsu-row-entry-section-class entry compiled)))
+    (if (class-p section-class)
+        (or (car (rassq section-class magit--section-type-alist))
+            section-class)
+      section-class)))
+
+(defun majutsu-row-section-ident (entry compiled)
+  "Return Magit-style section identity for ENTRY using COMPILED."
+  (cons (cons (majutsu-row-entry-section-type entry compiled)
+              (majutsu-row-section-value entry compiled))
+        (when-let* ((parent (plist-get entry :parent)))
+          (majutsu-row-section-ident parent compiled))))
+
 (defun majutsu-row-build-indexes (compiled entries)
-  "Return (ENTRY-INDEX . SECTION-VALUE-INDEX) for COMPILED ENTRIES."
+  "Return (ENTRY-INDEX . SECTION-IDENT-INDEX) for COMPILED ENTRIES."
   (let ((entry-index (make-hash-table :test #'equal))
-        (section-value-index (make-hash-table :test #'equal)))
+        (section-ident-index (make-hash-table :test #'equal)))
     (dolist (entry entries)
       (when-let* ((id (majutsu-row-entry-id entry compiled)))
         (puthash id entry entry-index))
-      (when-let* ((value (majutsu-row-section-value entry compiled)))
-        (puthash value entry section-value-index)))
-    (cons entry-index section-value-index)))
+      (puthash (majutsu-row-section-ident entry compiled)
+               entry section-ident-index))
+    (cons entry-index section-ident-index)))
 
 ;;; Copy buffer data management
 
@@ -1775,7 +1772,7 @@ Drops tail text when both heading and tail are present in the copied region."
     (setq-local majutsu-row-cached-entries entries)
     (setq-local majutsu-row-cached-roots (or roots entries))
     (setq-local majutsu-row-entry-index (car indexes))
-    (setq-local majutsu-row-section-value-index (cdr indexes))))
+    (setq-local majutsu-row-section-ident-index (cdr indexes))))
 
 (defun majutsu-row-set-buffer-forest-data (compiled roots entries)
   "Set current buffer row COMPILED, ROOTS, and flat ENTRIES."
@@ -1787,7 +1784,7 @@ Drops tail text when both heading and tail are present in the copied region."
   (setq-local majutsu-row-cached-entries nil)
   (setq-local majutsu-row-cached-roots nil)
   (setq-local majutsu-row-entry-index nil)
-  (setq-local majutsu-row-section-value-index nil))
+  (setq-local majutsu-row-section-ident-index nil))
 
 ;;; Copy text-property lookup
 
@@ -1810,32 +1807,21 @@ Drops tail text when both heading and tail are present in the copied region."
                     (equal id (majutsu-row-entry-id entry compiled)))
                   (or entries majutsu-row-cached-entries)))))
 
-(defun majutsu-row-entry-for-section-value (value compiled &optional entries)
-  "Return entry with section VALUE using COMPILED and optional ENTRIES."
-  (when value
+(defun majutsu-row-entry-for-section-ident (ident compiled &optional entries)
+  "Return entry with Magit section IDENT using COMPILED and optional ENTRIES."
+  (when ident
     (or (and (not entries)
-             (hash-table-p majutsu-row-section-value-index)
-             (gethash value majutsu-row-section-value-index))
+             (hash-table-p majutsu-row-section-ident-index)
+             (gethash ident majutsu-row-section-ident-index))
         (seq-find (lambda (entry)
-                    (equal value (majutsu-row-section-value entry compiled)))
+                    (equal ident (majutsu-row-section-ident entry compiled)))
                   (or entries majutsu-row-cached-entries)))))
 
 (defun majutsu-row--entry-at-current-section (compiled entries)
   "Return row entry matching current Magit section using COMPILED."
   (when-let* ((section (magit-current-section)))
-    (or (let ((section-class (plist-get (majutsu-row--profile compiled)
-                                        :section-class)))
-          (when (and section-class
-                     (magit-section-match section-class section))
-            (majutsu-row-entry-for-section-value
-             (oref section value) compiled entries)))
-        (seq-some (lambda (role-spec)
-                    (let ((section-class (plist-get role-spec :section-class)))
-                      (when (and section-class
-                                 (magit-section-match section-class section))
-                        (majutsu-row-entry-for-section-value
-                         (oref section value) compiled entries))))
-                  (plist-get compiled :roles)))))
+    (majutsu-row-entry-for-section-ident
+     (magit-section-ident section) compiled entries)))
 
 (defun majutsu-row-entry-at-point (&optional compiled entries)
   "Return cached row entry at point, or nil."
