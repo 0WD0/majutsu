@@ -208,16 +208,6 @@ Also registers a variable watcher to invalidate the template cache."
   (:returns Boolean :doc "Deprecated alias for .contained_in('first_parent(@)')")
   [:method [:self] :contained_in "first_parent(@)"])
 
-(majutsu-template-defkeyword short-change-id Commit
-  (:returns Template :doc "Shortest unique change id.")
-  [:change_id :shortest 8])
-
-(majutsu-template-defkeyword short-change-id-with-offset Commit
-  (:returns Template :doc "Shortest unique change id with offset.")
-  [[:short-change-id]
-   [:label "change_offset" "/"]
-   [:change_offset]])
-
 (majutsu-template-defkeyword canonical-log-id Commit
   (:returns Template :doc "Canonical log id.")
   [:if [:or [:hidden]
@@ -237,10 +227,10 @@ Also registers a variable watcher to invalidate the template cache."
               [:if [:conflict] "conflicted"]]
    [:coalesce
     [:if [:hidden]
-        [:label "hidden" [:short-change-id-with-offset]]]
+        [:label "hidden" [:format_short_change_id_with_change_offset]]]
     [:if [:divergent]
-        [:label "divergent" [:short-change-id-with-offset]]]
-    [:short-change-id]]]
+        [:label "divergent" [:format_short_change_id_with_change_offset]]]
+    [:change_id :format_short_change_id]]]
   "Template for the change-id column.")
 
 (majutsu-log-define-column commit-id

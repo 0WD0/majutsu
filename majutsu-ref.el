@@ -25,53 +25,6 @@
 
 (require 'subr-x)
 
-;;; Commit summary template helpers
-
-(majutsu-template-defkeyword majutsu-ref-change-offset Commit
-  (:returns Template :doc "jj-compatible change-offset suffix.")
-  [:if [:change_offset]
-      [[:label "change_offset" "/"]
-       [:change_offset]]])
-
-(majutsu-template-defkeyword majutsu-ref-short-change-id-with-offset Commit
-  (:returns Template :doc "jj-compatible short change-id with change offset.")
-  [:coalesce
-   [:if [:hidden]
-       [:label "hidden"
-               [[:change_id :shortest 8]
-                [:majutsu-ref-change-offset]]]]
-   [:if [:divergent]
-       [:label "divergent"
-               [[:change_id :shortest 8]
-                [:majutsu-ref-change-offset]]]]
-   [:change_id :shortest 8]])
-
-(majutsu-template-defkeyword majutsu-ref-commit-labels Commit
-  (:returns Template :doc "jj-compatible commit labels for ref summaries.")
-  [:separate " "
-             [:coalesce
-              [:if [:hidden] [:label "hidden" "(hidden)"]]
-              [:if [:divergent] [:label "divergent" "(divergent)"]]]
-             [:if [:conflict] [:label "conflict" "(conflict)"]]])
-
-(majutsu-template-defkeyword majutsu-ref-description-summary Commit
-  (:returns Template :doc "jj-compatible description fragment for ref summaries.")
-  [:if [:description]
-      [:description :first_line]
-    [:label [:if [:empty] "empty"]
-            [:label "description placeholder" "(no description set)"]]])
-
-(majutsu-template-defkeyword majutsu-ref-default-commit-summary Commit
-  (:returns Template :doc "Default Majutsu commit summary used by ref views.")
-  [:label [:if [:current_working_copy] "working_copy"]
-          [:separate " "
-                     [:majutsu-ref-short-change-id-with-offset]
-                     [:commit_id :shortest 8]
-                     [:separate " "
-                                [:majutsu-ref-commit-labels]
-                                [:if [:empty] [:label "empty" "(empty)"]]
-                                [:majutsu-ref-description-summary]]]])
-
 ;;; CommitRef completion transport
 
 (defconst majutsu-ref--completion-field-separator (string 31)
