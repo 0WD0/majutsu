@@ -440,16 +440,17 @@ transport logical newlines safely through single-line payload segments."
     (setq entry (plist-put entry :columns columns)))
   entry)
 
+(defun majutsu-log--nonempty-column-value (entry field)
+  "Return FIELD's non-empty string value from ENTRY."
+  (let ((value (majutsu-row-column entry field)))
+    (and (stringp value)
+         (not (string-empty-p (string-trim value)))
+         (substring-no-properties value))))
+
 (defun majutsu-log--entry-id (entry)
-  "Return stable section id string from ENTRY metadata fields."
-  (or (let ((id (plist-get entry :id)))
-        (and (stringp id)
-             (not (string-empty-p (string-trim id)))
-             (substring-no-properties id)))
-      (let ((change-id (plist-get entry :change-id)))
-        (and (stringp change-id)
-             (not (string-empty-p (string-trim change-id)))
-             (substring-no-properties change-id)))
+  "Return stable section id string from ENTRY row columns."
+  (or (majutsu-log--nonempty-column-value entry 'id)
+      (majutsu-log--nonempty-column-value entry 'change-id)
       "unknown"))
 
 (defun majutsu-log--rebuild-relation-indexes (&optional entries)
@@ -463,7 +464,7 @@ When ENTRIES is nil, use `majutsu-log--cached-entries'."
       (puthash (majutsu-log--entry-id entry) entry entry-by-id))
     (dolist (entry entries)
       (let ((child-id (majutsu-log--entry-id entry)))
-        (dolist (parent-id (plist-get entry :parent-ids))
+        (dolist (parent-id (majutsu-row-column entry 'parent-ids))
           (when (and (stringp parent-id)
                      (not (string-empty-p parent-id)))
             (puthash parent-id
@@ -544,7 +545,8 @@ in the visible log layout.  If the region is active, copy it literally using
 (defun majutsu-log--visible-parent-ids (entry)
   "Return visible parent ids for ENTRY in current buffer order."
   (seq-filter #'majutsu-log--entry-for-id
-              (delete-dups (copy-sequence (or (plist-get entry :parent-ids) nil)))))
+              (delete-dups (copy-sequence
+                            (or (majutsu-row-column entry 'parent-ids) nil)))))
 
 (defun majutsu-log--visible-child-ids (entry)
   "Return visible child ids for ENTRY in current buffer order."
@@ -558,7 +560,7 @@ in the visible log layout.  If the region is active, copy it literally using
 (defun majutsu-log--format-related-candidate (id)
   "Return display string for related revision ID."
   (if-let* ((entry (majutsu-log--entry-for-id id))
-            (desc (plist-get entry :short-desc))
+            (desc (majutsu-row-column entry 'description))
             ((not (string-empty-p (string-trim desc)))))
       (format "%s  %s" id (replace-regexp-in-string "\n+" " " desc nil t))
     id))
