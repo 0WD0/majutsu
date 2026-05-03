@@ -1939,6 +1939,74 @@ Further passes (type-checking, rendering) operate on these nodes."
               (majutsu-template--make-arg :name 'type :type 'Any :optional t))
   :returns 'Any :doc "Raw literal helper."))
 
+;;; jj default template aliases
+
+(majutsu-template-defun empty_commit_marker ()
+  (:returns Template :doc "jj-compatible empty commit marker.")
+  [:label "empty" "(empty)"])
+
+(majutsu-template-defun description_placeholder ()
+  (:returns Template :doc "jj-compatible description placeholder.")
+  [:label "description placeholder" "(no description set)"])
+
+(majutsu-template-defun commit_summary_separator ()
+  (:returns Template :doc "jj-compatible commit summary separator.")
+  [:label "separator" " | "])
+
+(majutsu-template-defkeyword format_short_change_id ChangeId
+  (:returns Template :doc "jj-compatible short change id formatter.")
+  [:method [:self] :shortest 8])
+
+(majutsu-template-defkeyword format_short_commit_id CommitId
+  (:returns Template :doc "jj-compatible short commit id formatter.")
+  [:method [:self] :shortest 8])
+
+(majutsu-template-defkeyword format_change_offset Commit
+  (:returns Template :doc "jj-compatible change offset suffix.")
+  [:surround [:label "change_offset" "/"] "" [:change_offset]])
+
+(majutsu-template-defkeyword format_short_change_id_with_change_offset Commit
+  (:returns Template :doc "jj-compatible short change id with change offset.")
+  [:coalesce
+   [:if [:hidden]
+       [:label "hidden"
+               [[:change_id :format_short_change_id]
+                [:format_change_offset]]]]
+   [:if [:divergent]
+       [:label "divergent"
+               [[:change_id :format_short_change_id]
+                [:format_change_offset]]]]
+   [:change_id :format_short_change_id]])
+
+(majutsu-template-defkeyword format_commit_labels Commit
+  (:returns Template :doc "jj-compatible hidden/divergent/conflict labels.")
+  [:separate " "
+             [:coalesce
+              [:if [:hidden] [:label "hidden" "(hidden)"]]
+              [:if [:divergent] [:label "divergent" "(divergent)"]]]
+             [:if [:conflict] [:label "conflict" "(conflict)"]]])
+
+(majutsu-template-defkeyword format_commit_description_summary Commit
+  (:returns Template :doc "jj-compatible one-line commit description summary.")
+  [:if [:description]
+      [:description :first_line]
+    [:label [:if [:empty] "empty"]
+            [:description_placeholder]]])
+
+(majutsu-template-defmethod format_commit_summary_with_refs Commit
+  ((refs Template))
+  (:returns Template :doc "jj-compatible commit summary with refs.")
+  `[:label [:if [:current_working_copy] "working_copy"]
+    [:separate " "
+               [:format_short_change_id_with_change_offset]
+               [:commit_id :format_short_commit_id]
+               [:separate [:commit_summary_separator]
+                          ,refs
+                          [:separate " "
+                                     [:format_commit_labels]
+                                     [:if [:empty] [:empty_commit_marker]]
+                                     [:format_commit_description_summary]]]]])
+
 (defun majutsu-template--higher-order-form (method collection var body)
   "Return COLLECTION.METHOD(|VAR| BODY) as a template form."
   (let ((var-name (intern (majutsu-template--node->identifier var method))))
