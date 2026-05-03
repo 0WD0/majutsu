@@ -448,46 +448,55 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defvar-local majutsu-op-log--cached-entries nil
   "Cached operation log entries.")
 
-(defconst majutsu-op-log--field-default-modules
-  '((op-id-short . heading)
-    (kind . heading)
-    (description . heading)
-    (id-line . body)
-    (user-line . body)
-    (workspace-line . body)
-    (time-line . body)
-    (tags . body)
-    (op-id . metadata)
-    (user . metadata)
-    (workspace . metadata)
-    (time . metadata)
-    (time-ago . metadata)
-    (duration . metadata))
-  "Default row module placement for operation log fields.")
-
-(defcustom majutsu-op-log-columns
-  '((:field op-id-short :module heading :face t)
-    (:field kind :module heading :face t)
-    (:field description :module heading :face t)
-    (:field id-line :module body :face t)
-    (:field user-line :module body :face t)
-    (:field workspace-line :module body :face t)
-    (:field time-line :module body :face t)
-    (:field tags :module body :face t)
-    (:field op-id :module metadata :face nil)
-    (:field user :module metadata :face nil)
-    (:field workspace :module metadata :face nil)
-    (:field time :module metadata :face nil)
-    (:field time-ago :module metadata :face nil)
-    (:field duration :module metadata :face nil))
-  "Field specification controlling operation log template and rendering.
-
-Each element is a plist with at least `:field'. Supported keys are the same as
-other row views: `:field', `:module', `:face', and `:post'. Hidden
-metadata fields should keep full operation ids available for commands and copy
-operations."
-  :type '(repeat (plist :options (:field :module :face :post)))
-  :group 'majutsu)
+(defcustom majutsu-op-log-layout
+  '(:schema
+    ((op-id-short :module heading :face t)
+     (kind :module heading :face t)
+     (description :module heading :face t)
+     (id-line :module body :face t)
+     (user-line :module body :face t)
+     (workspace-line :module body :face t)
+     (time-line :module body :face t)
+     (tags :module body :face t)
+     (op-id :module metadata :face nil)
+     (user :module metadata :face nil)
+     (workspace :module metadata :face nil)
+     (time :module metadata :face nil)
+     (time-ago :module metadata :face nil)
+     (duration :module metadata :face nil))
+    :columns
+    ((op-id-short [:label "id short" [:id :short]])
+     (kind [:if [:snapshot]
+               [:label "snapshot" "snapshot"]
+             "op"])
+     (description [:label "description first_line"
+                          [:method [:description] :first_line]])
+     (id-line [:concat "Id: " [:id]])
+     (user-line [:concat "User: " [:label "user" [:user]]])
+     (workspace-line [:concat "Workspace: "
+                              [:label "workspace_name" [:workspace_name]]])
+     (time-line [:concat "Time: "
+                         [:label "time end"
+                                 [:method [:time :end]
+                                  :format "%Y-%m-%d %H:%M:%S"]]
+                         " ("
+                         [:label "time end ago" [:method [:time :end] :ago]]
+                         "), lasted "
+                         [:label "time duration" [:method [:time] :duration]]])
+     (tags [:label "tags first_line" [:method [:tags] :first_line]])
+     (op-id [:id])
+     (user [:label "user" [:user]])
+     (workspace [:label "workspace_name" [:workspace_name]])
+     (time [:label "time end"
+                   [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]])
+     (time-ago [:label "time end ago" [:method [:time :end] :ago]])
+     (duration [:label "time duration" [:method [:time] :duration]])))
+  "Declarative row layout controlling operation log rendering."
+  :type 'sexp
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-op-log--compiled-template-cache nil)))
 
 (defvar majutsu-op-log--compiled-template-cache nil
   "Cached compiled operation log row template metadata.")
@@ -497,55 +506,8 @@ operations."
   (setq majutsu-op-log--compiled-template-cache nil))
 
 (when (fboundp 'add-variable-watcher)
-  (add-variable-watcher 'majutsu-op-log-columns
+  (add-variable-watcher 'majutsu-op-log-layout
                         #'majutsu-op-log--invalidate-template-cache))
-
-(defun majutsu-op-log--column-template (field)
-  "Return majutsu-template form for operation log FIELD."
-  (pcase field
-    ('op-id-short
-     '[:label "id short" [:id :short]])
-    ('kind
-     '[:if [:snapshot]
-          [:label "snapshot" "snapshot"]
-        "op"])
-    ('description
-     '[:label "description first_line"
-       [:method [:description] :first_line]])
-    ('id-line
-     '[:concat "Id: " [:id]])
-    ('user-line
-     '[:concat "User: " [:label "user" [:user]]])
-    ('workspace-line
-     '[:concat "Workspace: " [:label "workspace_name" [:workspace_name]]])
-    ('time-line
-     '[:concat "Time: "
-       [:label "time end"
-               [:method [:time :end]
-                :format "%Y-%m-%d %H:%M:%S"]]
-       " ("
-       [:label "time end ago" [:method [:time :end] :ago]]
-       "), lasted "
-       [:label "time duration" [:method [:time] :duration]]])
-    ('tags
-     '[:label "tags first_line" [:method [:tags] :first_line]])
-    ('op-id '[:id])
-    ('user '[:label "user" [:user]])
-    ('workspace '[:label "workspace_name" [:workspace_name]])
-    ('time '[:label "time end"
-             [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]])
-    ('time-ago '[:label "time end ago" [:method [:time :end] :ago]])
-    ('duration '[:label "time duration" [:method [:time] :duration]])
-    (_ (user-error "Unknown operation log field %S" field))))
-
-(defun majutsu-op-log--column-spec-with-template (spec)
-  "Return operation log column SPEC with an explicit row template."
-  (let* ((column (majutsu-row-column-spec-plist spec))
-         (field (plist-get column :field)))
-    (if (plist-member column :template)
-        column
-      (append column (list :template
-                           (majutsu-op-log--column-template field))))))
 
 (defun majutsu-op-log--record-field (entry field value)
   "Record canonical operation log FIELD VALUE onto ENTRY."
@@ -586,7 +548,7 @@ operations."
   "Return the row profile for operation log entries."
   (list :name 'op-log
         :self-type 'Operation
-        :default-modules majutsu-op-log--field-default-modules
+        :layout-var 'majutsu-op-log-layout
         :record-field-function 'majutsu-op-log--record-field
         :entry-id-function 'majutsu-op-log--entry-id
         :section-class 'jj-op
@@ -595,18 +557,15 @@ operations."
         :tail-align nil
         :compat-property-prefix 'majutsu-op-log))
 
-(defun majutsu-op-log--compile-columns (&optional columns)
-  "Compile operation log COLUMNS into row metadata."
-  (majutsu-row-compile
-   (majutsu-op-log--row-profile)
-   (mapcar #'majutsu-op-log--column-spec-with-template
-           (or columns majutsu-op-log-columns))))
+(defun majutsu-op-log--compile-layout ()
+  "Compile operation log layout into row metadata."
+  (majutsu-row-compile (majutsu-op-log--row-profile)))
 
 (defun majutsu-op-log--ensure-template ()
   "Return cached compiled operation log template metadata."
   (or majutsu-op-log--compiled-template-cache
       (setq majutsu-op-log--compiled-template-cache
-            (majutsu-op-log--compile-columns majutsu-op-log-columns))))
+            (majutsu-op-log--compile-layout))))
 
 (defun majutsu-op-log-arguments ()
   "Return operation log arguments from the active transient, if any."
