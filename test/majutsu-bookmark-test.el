@@ -173,9 +173,9 @@
 (ert-deftest majutsu-bookmark-list-template/uses-custom-conflict-target-headings ()
   (let ((majutsu-bookmark--compiled-template-cache nil)
         (majutsu-bookmark-list-template-removed-target-heading
-         '[:|commit| ["OLD " [:commit_id :shortest 4]]])
+         '["OLD " [:commit_id :shortest 4]])
         (majutsu-bookmark-list-template-added-target-heading
-         '[:|commit| ["NEW " [:commit_id :shortest 4]]]))
+         '["NEW " [:commit_id :shortest 4]]))
     (let ((template (majutsu-bookmark--list-template)))
       (should (string-match-p (regexp-quote "OLD ") template))
       (should (string-match-p (regexp-quote "NEW ") template))
