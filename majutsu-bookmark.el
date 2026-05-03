@@ -274,7 +274,7 @@ bookmark(s) at point."
                                #'majutsu-bookmark--invalidate-list-template)))))
 
 (majutsu-bookmark-define-template commit-summary
-  '[:majutsu-ref-default-commit-summary]
+  [:method [:self] :format_commit_summary_with_refs ""]
   "Template used for bookmark-list commit summaries.")
 
 (majutsu-bookmark-define-template heading
