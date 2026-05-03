@@ -61,7 +61,9 @@
 ** Changed
 
 - Rows/Bookmarks: Extend ~majutsu-row~ to parse push/pop tree streams and render
-  nested Magit sections, and migrate bookmark lists to that shared row protocol.
+  nested Magit sections, add first-class layout node ~:role~ metadata for
+  Magit section class/value/entry-id decisions, and migrate bookmark lists to
+  that shared row protocol.
 - Bookmarks: The bookmark list buffer now uses typed =jj bookmark list -T=
   machine records with customizable Majutsu template display fragments for
   bookmark headings, commit summaries, and structured conflicted-target heading
