@@ -101,29 +101,22 @@
 
 ;;; Token helpers
 
-(defun majutsu-row-default-tokens ()
-  "Return the default row token plist."
-  (list :start majutsu-row-start-token
-        :tail majutsu-row-tail-token
-        :body majutsu-row-body-token
-        :metadata majutsu-row-meta-token
-        :end majutsu-row-end-token
-        :push majutsu-row-push-token
-        :pop majutsu-row-pop-token
-        :reset majutsu-row-reset-token))
-
-(defun majutsu-row--tokens (profile)
-  "Return token plist for PROFILE, merged over default tokens."
-  (append (plist-get profile :tokens)
-          (majutsu-row-default-tokens)))
-
 (defun majutsu-row--profile (compiled)
   "Return row profile from COMPILED."
   (plist-get compiled :profile))
 
-(defun majutsu-row--token (compiled key)
-  "Return token KEY from COMPILED."
-  (plist-get (plist-get compiled :tokens) key))
+(defun majutsu-row--token (_compiled key)
+  "Return row protocol token KEY."
+  (pcase key
+    (:start majutsu-row-start-token)
+    (:tail majutsu-row-tail-token)
+    (:body majutsu-row-body-token)
+    (:metadata majutsu-row-meta-token)
+    (:end majutsu-row-end-token)
+    (:push majutsu-row-push-token)
+    (:pop majutsu-row-pop-token)
+    (:reset majutsu-row-reset-token)
+    (_ (user-error "Unknown row token %S" key))))
 
 ;;; Current compiled access
 
@@ -252,62 +245,64 @@
             (funcall fn field)
           (user-error "Column %S has no :template" field)))))
 
-(defconst majutsu-row--no-template-override
-  (make-symbol "majutsu-row-no-template-override")
-  "Sentinel used when no row template override exists.")
-
 (defun majutsu-row-build-module-template-form (templates)
   "Return a template form joining TEMPLATES with field separators."
   (cond
    ((null templates) "")
    ((null (cdr templates)) (car templates))
    (t
-    (let ((forms nil)
-          (first t))
-      (dolist (template templates)
-        (unless first
-          (setq forms (append forms (list majutsu-row-field-separator))))
-        (setq first nil)
-        (setq forms (append forms (list template))))
-      (cons :concat forms)))))
+    (cons :concat
+          (cdr (cl-mapcan (lambda (template)
+                            (list majutsu-row-field-separator template))
+                          templates))))))
 
-(defun majutsu-row--template-override (overrides field)
-  "Return template override for FIELD from OVERRIDES."
-  (if-let* ((cell (assq field overrides)))
+(defun majutsu-row-column-template-alist (compiled template-function)
+  "Return a complete column template alist for COMPILED.
+TEMPLATE-FUNCTION is called with each field and column spec."
+  (mapcar (lambda (column)
+            (let ((field (plist-get column :field)))
+              (cons column (funcall template-function field column))))
+          (plist-get compiled :columns)))
+
+(defun majutsu-row-default-column-template-alist (compiled)
+  "Return default column templates for COMPILED."
+  (let ((profile (majutsu-row--profile compiled)))
+    (majutsu-row-column-template-alist
+     compiled
+     (lambda (_field column)
+       (majutsu-row--column-template profile column)))))
+
+(defun majutsu-row--column-template-form (column-templates column)
+  "Return COLUMN template from COLUMN-TEMPLATES."
+  (if-let* ((cell (assq column column-templates)))
       (cdr cell)
-    majutsu-row--no-template-override))
+    (user-error "Missing row template for field %S"
+                (plist-get column :field))))
 
-(defun majutsu-row-module-template-form (compiled module &optional overrides)
-  "Return template form for COMPILED MODULE.
-OVERRIDES is an alist mapping fields to replacement template forms."
-  (let* ((profile (majutsu-row--profile compiled))
-         (columns (majutsu-row-module-columns compiled module)))
-    (majutsu-row-build-module-template-form
-     (mapcar (lambda (column)
-               (let* ((field (plist-get column :field))
-                      (override (majutsu-row--template-override
-                                 overrides field)))
-                 (if (eq override majutsu-row--no-template-override)
-                     (majutsu-row--column-template profile column)
-                   override)))
-             columns))))
+(defun majutsu-row-module-template-form (compiled module column-templates)
+  "Return template form for COMPILED MODULE using COLUMN-TEMPLATES."
+  (majutsu-row-build-module-template-form
+   (mapcar (lambda (column)
+             (majutsu-row--column-template-form column-templates column))
+           (majutsu-row-module-columns compiled module))))
 
-(defun majutsu-row-template-form (compiled &optional overrides)
+(defun majutsu-row-template-form (compiled &optional column-templates)
   "Return one row template form for COMPILED.
-OVERRIDES is an alist mapping fields to replacement template forms.  This
-constructs the row transport wrapper from the compiled row metadata, so callers
-only describe field values and do not duplicate the row protocol."
-  (let ((tokens (plist-get compiled :tokens)))
+COLUMN-TEMPLATES, when non-nil, must contain every compiled column.  This
+constructs the row transport wrapper from compiled row metadata, so callers
+only declare row column values and do not duplicate the row protocol."
+  (let ((templates (or column-templates
+                       (majutsu-row-default-column-template-alist compiled))))
     `[:concat
-      ,(plist-get tokens :start)
-      ,(majutsu-row-module-template-form compiled 'heading overrides)
-      ,(plist-get tokens :tail)
-      ,(majutsu-row-module-template-form compiled 'tail overrides)
-      ,(plist-get tokens :body)
-      ,(majutsu-row-module-template-form compiled 'body overrides)
-      ,(plist-get tokens :metadata)
-      ,(majutsu-row-module-template-form compiled 'metadata overrides)
-      ,(plist-get tokens :end)
+      ,majutsu-row-start-token
+      ,(majutsu-row-module-template-form compiled 'heading templates)
+      ,majutsu-row-tail-token
+      ,(majutsu-row-module-template-form compiled 'tail templates)
+      ,majutsu-row-body-token
+      ,(majutsu-row-module-template-form compiled 'body templates)
+      ,majutsu-row-meta-token
+      ,(majutsu-row-module-template-form compiled 'metadata templates)
+      ,majutsu-row-end-token
       "\n"]))
 
 (defun majutsu-row-compile (profile &optional columns)
@@ -332,8 +327,7 @@ only describe field values and do not duplicate the row protocol."
                   majutsu-row-module-order))
          (compiled (list :profile profile
                          :columns complete
-                         :module-columns module-columns
-                         :tokens (majutsu-row--tokens profile)))
+                         :module-columns module-columns))
          (template (majutsu-template-compile
                     (majutsu-row-template-form compiled)
                     (plist-get profile :self-type))))
