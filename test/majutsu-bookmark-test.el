@@ -22,14 +22,17 @@
                          (oref section children))))))
 
 (defun majutsu-bookmark-test--row
-    (heading kind name remote tracked commit-id)
+    (heading role name remote tracked commit-id)
   "Return one raw bookmark-list row record."
   (concat majutsu-row-start-token
+          majutsu-row-role-token
+          (symbol-name role)
+          majutsu-row-role-token
           heading
           majutsu-row-tail-token
           majutsu-row-body-token
           majutsu-row-meta-token
-          (string-join (list kind name (or remote "")
+          (string-join (list name (or remote "")
                              (if tracked "t" "") (or commit-id ""))
                        majutsu-row-field-separator)
           majutsu-row-end-token
@@ -38,12 +41,12 @@
 (defun majutsu-bookmark-test--ref (name remote tracked heading)
   "Return one bookmark-list ref row record."
   (majutsu-bookmark-test--row
-   heading "ref" name remote tracked nil))
+   heading 'bookmark name remote tracked nil))
 
 (defun majutsu-bookmark-test--target (name remote _marker commit-id line)
   "Return one bookmark-list conflict target row record."
   (majutsu-bookmark-test--row
-   line "target" name remote nil commit-id))
+   line 'bookmark-target name remote nil commit-id))
 
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
@@ -156,6 +159,7 @@
     (should (string-match-p (regexp-quote "description().first_line()") template))
     (should (string-match-p (regexp-quote "label(\"bookmark\"") template))
     (should (string-match-p (regexp-quote "label(\"conflict\"") template))
+    (should (string-match-p (regexp-quote "bookmark-target") template))
     (should (string-match-p (regexp-quote "\\x1E") template))
     (should (string-match-p (regexp-quote "\\x1D") template))))
 
@@ -208,6 +212,8 @@
           origin (car (plist-get dev :children))
           target (car (plist-get origin :children)))
     (should (= (length roots) 1))
+    (should (eq (majutsu-row-role dev) 'bookmark))
+    (should (eq (majutsu-row-role target) 'bookmark-target))
     (should (equal (majutsu-row-column dev 'name) "dev"))
     (should (equal (majutsu-row-column origin 'remote) "origin"))
     (should (majutsu-row-column origin 'tracked))

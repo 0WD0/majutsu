@@ -338,7 +338,6 @@ bookmark(s) at point."
     ((heading :module heading :face t)
      (target-marker :module heading :face t)
      (target-summary :module heading :face t)
-     (kind :module metadata :face nil)
      (name :module metadata :face nil)
      (remote :module metadata :face nil
              :post majutsu-bookmark--row-empty-to-nil)
@@ -346,10 +345,12 @@ bookmark(s) at point."
               :post majutsu-bookmark--row-bool)
      (commit-id :module metadata :face nil
                 :post majutsu-bookmark--row-empty-to-nil))
+    :role bookmark
+    :section-class jj-bookmark
+    :section-value (:function majutsu-bookmark--row-ref-section-value)
     :adopt-previous [:and [:remote] [:tracked]]
     :columns
     ((heading majutsu-bookmark-list-template-heading)
-     (kind "ref")
      (name [:name])
      (remote [:remote])
      (tracked [:if [:tracked] "t" ""])
@@ -359,20 +360,24 @@ bookmark(s) at point."
       :nodes
       ((:each [:removed_targets]
         :as commit
+        :role bookmark-target
+        :section-class jj-commit
+        :section-value commit-id
         :columns
         ((target-marker "  -")
          (target-summary [:majutsu-bookmark-list-commit-summary])
-         (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
          (tracked "")
          (commit-id [:commit_id])))
        (:each [:added_targets]
         :as commit
+        :role bookmark-target
+        :section-class jj-commit
+        :section-value commit-id
         :columns
         ((target-marker "  +")
          (target-summary [:majutsu-bookmark-list-commit-summary])
-         (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
          (tracked "")
@@ -390,21 +395,13 @@ The layout-level :schema supplies shared column defaults; each node's
   (add-variable-watcher 'majutsu-bookmark-list-layout
                         #'majutsu-bookmark--invalidate-list-template))
 
-(defun majutsu-bookmark--row-section-value (entry)
-  "Return section value for bookmark list ENTRY."
-  (if (equal (majutsu-row-column entry 'kind) "target")
-      (majutsu-row-column entry 'commit-id)
-    (let ((name (majutsu-row-column entry 'name))
-          (remote (majutsu-row-column entry 'remote)))
-      (if remote
-          (concat name "@" remote)
-        name))))
-
-(defun majutsu-bookmark--row-section-class (entry)
-  "Return section class for bookmark list ENTRY."
-  (if (equal (majutsu-row-column entry 'kind) "target")
-      'jj-commit
-    'jj-bookmark))
+(defun majutsu-bookmark--row-ref-section-value (entry)
+  "Return section value for bookmark ref ENTRY."
+  (let ((name (majutsu-row-column entry 'name))
+        (remote (majutsu-row-column entry 'remote)))
+    (if remote
+        (concat name "@" remote)
+      name)))
 
 (defun majutsu-bookmark--row-profile ()
   "Return row profile for `majutsu-bookmark-list'."
@@ -412,9 +409,6 @@ The layout-level :schema supplies shared column defaults; each node's
         :self-type 'CommitRef
         :layout-var 'majutsu-bookmark-list-layout
         :default-postprocessors nil
-        :entry-id-function 'majutsu-bookmark--row-section-value
-        :section-value-function 'majutsu-bookmark--row-section-value
-        :section-class-function 'majutsu-bookmark--row-section-class
         :section-hide t
         :show-child-count nil
         :tail-align nil
