@@ -33,6 +33,10 @@
   (concat majutsu-row-record-marker "S")
   "Marker that starts an entry and heading payload.")
 
+(defconst majutsu-row-role-token
+  (concat majutsu-row-record-marker "R")
+  "Marker that brackets the optional row role payload after start.")
+
 (defconst majutsu-row-tail-token
   (concat majutsu-row-record-marker "T")
   "Marker that starts the tail payload.")
@@ -74,6 +78,7 @@
     majutsu-row-field
     majutsu-row-column
     majutsu-row-entry-id
+    majutsu-row-role
     majutsu-row-decoration
     majutsu-row-profile
     majutsu-row-tail-spacer
@@ -260,24 +265,37 @@ INSTANCE is a compiler-assigned column occurrence id, not a layout key."
              (majutsu-row--column-template-form column-templates column))
            (majutsu-row-module-columns compiled module))))
 
-(defun majutsu-row-template-form (compiled &optional column-templates)
+(defun majutsu-row--role-template-form (role)
+  "Return transport template form for ROLE."
+  (when role
+    (unless (symbolp role)
+      (user-error "Row role must be a symbol, got %S" role))
+    `[:concat ,majutsu-row-role-token ,(symbol-name role)
+      ,majutsu-row-role-token]))
+
+(defun majutsu-row-template-form (compiled &optional column-templates role)
   "Return one row template form for COMPILED.
-COLUMN-TEMPLATES, when non-nil, must contain every compiled column.  This
-constructs the row transport wrapper from compiled row metadata, so callers
-only declare row column values and do not duplicate the row protocol."
+COLUMN-TEMPLATES, when non-nil, must contain every compiled column.  ROLE,
+when non-nil, is encoded as compiler-owned row metadata after the start token.
+This constructs the row transport wrapper from compiled row metadata, so
+callers only declare row column values and do not duplicate the row protocol."
   (let ((templates (or column-templates
                        (majutsu-row-default-column-template-alist compiled))))
-    `[:concat
-      ,majutsu-row-start-token
-      ,(majutsu-row-module-template-form compiled 'heading templates)
-      ,majutsu-row-tail-token
-      ,(majutsu-row-module-template-form compiled 'tail templates)
-      ,majutsu-row-body-token
-      ,(majutsu-row-module-template-form compiled 'body templates)
-      ,majutsu-row-meta-token
-      ,(majutsu-row-module-template-form compiled 'metadata templates)
-      ,majutsu-row-end-token
-      "\n"]))
+    (apply #'vector
+           (append
+            (list :concat majutsu-row-start-token)
+            (when role
+              (list (majutsu-row--role-template-form role)))
+            (list
+             (majutsu-row-module-template-form compiled 'heading templates)
+             majutsu-row-tail-token
+             (majutsu-row-module-template-form compiled 'tail templates)
+             majutsu-row-body-token
+             (majutsu-row-module-template-form compiled 'body templates)
+             majutsu-row-meta-token
+             (majutsu-row-module-template-form compiled 'metadata templates)
+             majutsu-row-end-token
+             "\n")))))
 
 (defun majutsu-row--template-concat (&rest forms)
   "Return one template form concatenating FORMS."
@@ -367,6 +385,40 @@ only declare row column values and do not duplicate the row protocol."
   "Return column specs declared by layout NODE."
   (plist-get node :columns))
 
+(defconst majutsu-row--layout-role-property-keys
+  '(:entry-id :section-value :section-class :section-hide)
+  "Layout node keys that configure a row role.")
+
+(defun majutsu-row--normalize-role (role)
+  "Return normalized ROLE symbol."
+  (cond
+   ((null role) nil)
+   ((keywordp role) (intern (substring (symbol-name role) 1)))
+   ((symbolp role) role)
+   (t (user-error "Invalid row role %S" role))))
+
+(defun majutsu-row--layout-node-role (node)
+  "Return normalized role declared by layout NODE, or nil."
+  (majutsu-row--normalize-role (plist-get node :role)))
+
+(defun majutsu-row--layout-node-role-properties-p (node)
+  "Return non-nil if NODE declares role-only properties."
+  (seq-some (lambda (key) (plist-member node key))
+            majutsu-row--layout-role-property-keys))
+
+(defun majutsu-row--layout-node-role-spec (node)
+  "Return role spec declared by canonical layout NODE, or nil."
+  (let ((role (majutsu-row--layout-node-role node)))
+    (when (and (not role)
+               (majutsu-row--layout-node-role-properties-p node))
+      (user-error "Row layout node declares role properties without :role"))
+    (when role
+      (append (list :role role)
+              (cl-mapcan (lambda (key)
+                           (when (plist-member node key)
+                             (list key (plist-get node key))))
+                         majutsu-row--layout-role-property-keys)))))
+
 (defun majutsu-row--layout-normalize-children (profile children schema)
   "Return canonical CHILDREN group using PROFILE and SCHEMA."
   (when children
@@ -389,6 +441,10 @@ only declare row column values and do not duplicate the row protocol."
                                    (majutsu-row--layout-normalize-column
                                     profile spec schema))
                                  (majutsu-row--layout-node-columns node))))
+    (if-let* ((role (majutsu-row--layout-node-role node)))
+        (setq out (plist-put out :role role))
+      (when (majutsu-row--layout-node-role-properties-p node)
+        (user-error "Row layout node declares role properties without :role")))
     (if-let* ((children (majutsu-row--layout-normalize-children
                          profile (plist-get node :children) schema)))
         (plist-put out :children children)
@@ -459,7 +515,8 @@ only declare row column values and do not duplicate the row protocol."
   "Return template form for one layout NODE without :each expansion."
   (let* ((row-form (majutsu-row-template-form
                     compiled
-                    (majutsu-row--layout-column-templates compiled node)))
+                    (majutsu-row--layout-column-templates compiled node)
+                    (majutsu-row--layout-node-role node)))
          (children-form (majutsu-row--layout-children-template-form
                          compiled (plist-get node :children)))
          (body-form (majutsu-row--template-concat row-form children-form))
@@ -554,6 +611,45 @@ only declare row column values and do not duplicate the row protocol."
     (append (nreverse columns)
             (majutsu-row--layout-collect-columns layout seen))))
 
+(defun majutsu-row--layout-role-compatible-p (old new)
+  "Return non-nil when role specs OLD and NEW agree."
+  (equal old new))
+
+(defun majutsu-row--layout-add-role (role-spec seen)
+  "Add ROLE-SPEC to SEEN and return it if new."
+  (when role-spec
+    (let* ((role (plist-get role-spec :role))
+           (old (gethash role seen)))
+      (if old
+          (progn
+            (unless (majutsu-row--layout-role-compatible-p old role-spec)
+              (user-error "Conflicting row role %S" role))
+            nil)
+        (puthash role role-spec seen)
+        role-spec))))
+
+(defun majutsu-row--layout-collect-roles (node seen)
+  "Collect role specs from canonical layout NODE."
+  (let (roles)
+    (when-let* ((role-spec (majutsu-row--layout-add-role
+                            (majutsu-row--layout-node-role-spec node)
+                            seen)))
+      (push role-spec roles))
+    (dolist (child (majutsu-row--layout-children-nodes node))
+      (setq roles (append roles
+                          (majutsu-row--layout-collect-roles child seen))))
+    roles))
+
+(defun majutsu-row--layout-roles (layout)
+  "Return normalized role specs declared by canonical LAYOUT."
+  (majutsu-row--layout-collect-roles layout (make-hash-table :test #'eq)))
+
+(defun majutsu-row--role-index (roles)
+  "Return hash table indexing ROLES by role symbol."
+  (let ((index (make-hash-table :test #'eq)))
+    (dolist (role-spec roles index)
+      (puthash (plist-get role-spec :role) role-spec index))))
+
 ;;; Layout compilation
 
 (defun majutsu-row--module-columns-alist (columns)
@@ -573,12 +669,15 @@ only declare row column values and do not duplicate the row protocol."
 
 (defun majutsu-row--compile-layout-metadata (profile schema layout)
   "Compile PROFILE SCHEMA and canonical LAYOUT into row metadata."
-  (let ((columns (majutsu-row-assign-column-instances
-                  (majutsu-row--layout-columns schema layout))))
+  (let* ((columns (majutsu-row-assign-column-instances
+                   (majutsu-row--layout-columns schema layout)))
+         (roles (majutsu-row--layout-roles layout)))
     (list :profile profile
           :columns columns
           :module-columns (majutsu-row--module-columns-alist columns)
           :column-key-index (majutsu-row--column-key-index columns)
+          :roles roles
+          :role-index (majutsu-row--role-index roles)
           :layout-schema schema
           :layout layout)))
 
@@ -620,6 +719,24 @@ only declare row column values and do not duplicate the row protocol."
     (goto-char (or start bol))
     (when (search-forward token eol t)
       (- (point) (length token)))))
+
+(defun majutsu-row--parse-role-at (pos eol)
+  "Parse optional role payload at POS before EOL.
+Return (ROLE . NEXT-POS) when a role is present, otherwise nil."
+  (let ((token-len (length majutsu-row-role-token)))
+    (when (and (<= (+ pos token-len) eol)
+               (equal (buffer-substring pos (+ pos token-len))
+                      majutsu-row-role-token))
+      (let* ((role-start (+ pos token-len))
+             (role-end (majutsu-row-line-token-position
+                        majutsu-row-role-token pos eol role-start)))
+        (unless role-end
+          (user-error "Incomplete row role marker"))
+        (let ((role-name (buffer-substring-no-properties
+                          role-start role-end)))
+          (cons (unless (string-empty-p role-name)
+                  (intern role-name))
+                (+ role-end token-len)))))))
 
 (defun majutsu-row-parse-trailing-payloads (payload)
   "Parse tail, body, and metadata segments from PAYLOAD.
@@ -828,6 +945,7 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                        majutsu-row-start-token bol eol))))
     (when start-pos
       (let* ((indent (- start-pos bol))
+             (role nil)
              (heading-prefixes nil)
              (heading-segments nil)
              (record-end nil)
@@ -843,25 +961,30 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                    (content-start (if first-line
                                       (+ start-pos
                                          (length majutsu-row-start-token))
-                                    prefix-end))
-                   (segment-pos (majutsu-row-line-token-position
-                                 majutsu-row-tail-token
-                                 bol eol content-start)))
-              (if segment-pos
-                  (progn
-                    (push prefix heading-prefixes)
-                    (push (buffer-substring content-start segment-pos)
-                          heading-segments)
-                    (when-let* ((payloads (majutsu-row-parse-trailing-payloads
-                                           (buffer-substring segment-pos eol))))
-                      (setq record-end
-                            (+ segment-pos (plist-get payloads :end-offset)))
-                      (setq done payloads)))
-                (push prefix heading-prefixes)
-                (push (buffer-substring content-start eol) heading-segments)
-                (forward-line 1)
-                (when (eobp)
-                  (setq done :incomplete))))
+                                    prefix-end)))
+              (when first-line
+                (when-let* ((parsed-role (majutsu-row--parse-role-at
+                                          content-start eol)))
+                  (setq role (car parsed-role)
+                        content-start (cdr parsed-role))))
+              (let ((segment-pos (majutsu-row-line-token-position
+                                  majutsu-row-tail-token
+                                  bol eol content-start)))
+                (if segment-pos
+                    (progn
+                      (push prefix heading-prefixes)
+                      (push (buffer-substring content-start segment-pos)
+                            heading-segments)
+                      (when-let* ((payloads (majutsu-row-parse-trailing-payloads
+                                             (buffer-substring segment-pos eol))))
+                        (setq record-end
+                              (+ segment-pos (plist-get payloads :end-offset)))
+                        (setq done payloads)))
+                  (push prefix heading-prefixes)
+                  (push (buffer-substring content-start eol) heading-segments)
+                  (forward-line 1)
+                  (when (eobp)
+                    (setq done :incomplete)))))
             (setq first-line nil)))
         (when (plistp done)
           (let* ((profile (majutsu-row--profile compiled))
@@ -869,6 +992,7 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                               :record-end record-end
                               :end record-end
                               :row-profile (plist-get profile :name)
+                              :role role
                               :indent indent
                               :columns nil
                               :column-values nil
@@ -1060,6 +1184,56 @@ Return a plist with :roots, :entries, and :diagnostics."
         (majutsu-row-column entry (plist-get column :field))
       value)))
 
+;;; Role access
+
+(defun majutsu-row-role (entry)
+  "Return ENTRY's row role."
+  (plist-get entry :role))
+
+(defun majutsu-row-role-spec (entry compiled)
+  "Return role spec for ENTRY in COMPILED."
+  (when-let* ((role (majutsu-row-role entry)))
+    (gethash role (plist-get compiled :role-index))))
+
+(defun majutsu-row--call-entry-function (fn entry compiled)
+  "Call FN with ENTRY and COMPILED, accepting one-argument functions."
+  (condition-case _
+      (funcall fn entry compiled)
+    (wrong-number-of-arguments
+     (funcall fn entry))))
+
+(defun majutsu-row-entry-spec-value (spec entry compiled)
+  "Resolve entry value SPEC for ENTRY using COMPILED.
+Symbols name canonical row columns.  Function specs have the form
+`(:function FN)' or `(function FN)'."
+  (cond
+   ((null spec) nil)
+   ((keywordp spec)
+    (majutsu-row-column entry (intern (substring (symbol-name spec) 1))))
+   ((symbolp spec)
+    (majutsu-row-column entry spec))
+   ((functionp spec)
+    (majutsu-row--call-entry-function spec entry compiled))
+   ((and (consp spec) (memq (car spec) '(:function function)))
+    (majutsu-row--call-entry-function (cadr spec) entry compiled))
+   ((and (consp spec) (eq (car spec) :column))
+    (majutsu-row-entry-spec-value (cadr spec) entry compiled))
+   ((and (consp spec) (eq (car spec) :literal))
+    (cadr spec))
+   ((and (consp spec) (eq (car spec) :concat))
+    (mapconcat (lambda (part)
+                 (majutsu-row-display-string
+                  (majutsu-row-entry-spec-value part entry compiled)))
+               (cdr spec) ""))
+   ((and (consp spec) (eq (car spec) :or))
+    (seq-some (lambda (part)
+                (let ((value (majutsu-row-entry-spec-value
+                              part entry compiled)))
+                  (and (not (and (stringp value) (string-empty-p value)))
+                       value)))
+              (cdr spec)))
+   (t (user-error "Invalid row entry value spec %S" spec))))
+
 ;;; Display helpers
 
 (defun majutsu-row-display-string (value)
@@ -1211,9 +1385,8 @@ When PLAIN is non-nil, omit faces and text properties."
 (defun majutsu-row-render-module-parts
     (entry compiled module &optional annotate plain)
   "Return rendered ENTRY parts for MODULE using COMPILED."
-  (let* ((profile (majutsu-row--profile compiled))
-         (entry-id (funcall (plist-get profile :entry-id-function) entry))
-         parts)
+  (let ((entry-id (majutsu-row-entry-id entry compiled))
+        parts)
     (dolist (column (majutsu-row-module-columns compiled module))
       (let ((value (majutsu-row-render-column-text entry column plain)))
         (unless (if (eq module 'body)
@@ -1368,18 +1541,24 @@ When PLAIN is non-nil, omit faces and text properties."
 (defun majutsu-row-entry-section-class (entry compiled)
   "Return the Magit section class for ENTRY using COMPILED."
   (let* ((profile (majutsu-row--profile compiled))
+         (role-spec (majutsu-row-role-spec entry compiled))
          (fn (plist-get profile :section-class-function)))
-    (or (and fn (funcall fn entry))
+    (or (and (plist-member role-spec :section-class)
+             (plist-get role-spec :section-class))
+        (and fn (funcall fn entry))
         (plist-get profile :section-class)
         'magit-section)))
 
 (defun majutsu-row-entry-section-hide (entry compiled)
   "Return the initial hide value for ENTRY using COMPILED."
   (let* ((profile (majutsu-row--profile compiled))
+         (role-spec (majutsu-row-role-spec entry compiled))
          (fn (plist-get profile :section-hide-function)))
-    (if fn
-        (funcall fn entry)
-      (plist-get profile :section-hide))))
+    (cond
+     ((plist-member role-spec :section-hide)
+      (plist-get role-spec :section-hide))
+     (fn (funcall fn entry))
+     (t (plist-get profile :section-hide)))))
 
 (defun majutsu-row--call-with-child-count-policy (compiled thunk)
   "Call THUNK with COMPILED's child-count display policy."
@@ -1393,13 +1572,9 @@ When PLAIN is non-nil, omit faces and text properties."
 
 (defun majutsu-row-insert-entry (entry compiled)
   "Insert parsed ENTRY as a Magit section using COMPILED."
-  (let* ((profile (majutsu-row--profile compiled))
-         (entry-id-fn (plist-get profile :entry-id-function))
-         (section-value-fn (or (plist-get profile :section-value-function)
-                               entry-id-fn))
-         (id (funcall entry-id-fn entry))
+  (let* ((id (majutsu-row-entry-id entry compiled))
          (section-class (majutsu-row-entry-section-class entry compiled))
-         (section-value (funcall section-value-fn entry))
+         (section-value (majutsu-row-section-value entry compiled))
          (section-hide (majutsu-row-entry-section-hide entry compiled))
          (indent (or (plist-get entry :indent) 0))
          (prefixes (or (plist-get entry :heading-prefixes) (list "")))
@@ -1555,15 +1730,30 @@ Drops tail text when both heading and tail are present in the copied region."
 
 (defun majutsu-row-entry-id (entry compiled)
   "Return stable entry id for ENTRY using COMPILED."
-  (if-let* ((fn (plist-get (majutsu-row--profile compiled) :entry-id-function)))
-      (funcall fn entry)
-    (majutsu-row-column entry 'id)))
+  (let* ((profile (majutsu-row--profile compiled))
+         (role-spec (majutsu-row-role-spec entry compiled)))
+    (cond
+     ((plist-member role-spec :entry-id)
+      (majutsu-row-entry-spec-value
+       (plist-get role-spec :entry-id) entry compiled))
+     ((plist-member role-spec :section-value)
+      (majutsu-row-entry-spec-value
+       (plist-get role-spec :section-value) entry compiled))
+     ((plist-get profile :entry-id-function)
+      (funcall (plist-get profile :entry-id-function) entry))
+     (t (majutsu-row-column entry 'id)))))
 
 (defun majutsu-row-section-value (entry compiled)
   "Return Magit section value for ENTRY using COMPILED."
-  (if-let* ((fn (plist-get (majutsu-row--profile compiled) :section-value-function)))
-      (funcall fn entry)
-    (majutsu-row-entry-id entry compiled)))
+  (let* ((profile (majutsu-row--profile compiled))
+         (role-spec (majutsu-row-role-spec entry compiled)))
+    (cond
+     ((plist-member role-spec :section-value)
+      (majutsu-row-entry-spec-value
+       (plist-get role-spec :section-value) entry compiled))
+     ((plist-get profile :section-value-function)
+      (funcall (plist-get profile :section-value-function) entry))
+     (t (majutsu-row-entry-id entry compiled)))))
 
 (defun majutsu-row-build-indexes (compiled entries)
   "Return (ENTRY-INDEX . SECTION-VALUE-INDEX) for COMPILED ENTRIES."
@@ -1630,17 +1820,30 @@ Drops tail text when both heading and tail are present in the copied region."
                     (equal value (majutsu-row-section-value entry compiled)))
                   (or entries majutsu-row-cached-entries)))))
 
+(defun majutsu-row--entry-at-current-section (compiled entries)
+  "Return row entry matching current Magit section using COMPILED."
+  (when-let* ((section (magit-current-section)))
+    (or (let ((section-class (plist-get (majutsu-row--profile compiled)
+                                        :section-class)))
+          (when (and section-class
+                     (magit-section-match section-class section))
+            (majutsu-row-entry-for-section-value
+             (oref section value) compiled entries)))
+        (seq-some (lambda (role-spec)
+                    (let ((section-class (plist-get role-spec :section-class)))
+                      (when (and section-class
+                                 (magit-section-match section-class section))
+                        (majutsu-row-entry-for-section-value
+                         (oref section value) compiled entries))))
+                  (plist-get compiled :roles)))))
+
 (defun majutsu-row-entry-at-point (&optional compiled entries)
   "Return cached row entry at point, or nil."
-  (let* ((compiled (majutsu-row-current-compiled compiled))
-         (section-class (plist-get (majutsu-row--profile compiled) :section-class)))
+  (let ((compiled (majutsu-row-current-compiled compiled)))
     (or (when-let* ((entry-id (majutsu-row-text-property-near-point
                                'majutsu-row-entry-id)))
           (majutsu-row-entry-for-id entry-id compiled entries))
-        (when-let* ((section-value (and section-class
-                                        (magit-section-value-if section-class))))
-          (majutsu-row-entry-for-section-value
-           section-value compiled entries)))))
+        (majutsu-row--entry-at-current-section compiled entries))))
 
 ;;; Copy field value access
 
