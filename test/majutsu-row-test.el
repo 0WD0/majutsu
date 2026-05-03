@@ -14,10 +14,6 @@
 (defconst majutsu-row-test--profile
   (list :name 'test
         :self-type 'Commit
-        :default-modules '((title . heading)
-                           (author . tail)
-                           (body . body)
-                           (id . metadata))
         :entry-id-function (lambda (entry)
                              (or (majutsu-row-column entry 'id)
                                  "unknown"))
@@ -32,13 +28,15 @@
 
 (defun majutsu-row-test--compiled (&optional columns)
   "Return a compiled test row layout."
-  (majutsu-row-compile
-   majutsu-row-test--profile
-   (or columns
-       '((:field title :module heading :template "Title" :face nil)
-         (:field author :module tail :template "Alice" :face nil)
-         (:field body :module body :template "Body" :face nil)
-         (:field id :module metadata :template "id" :face nil)))))
+  (let ((majutsu-row-test--layout
+         `(:columns ,(or columns
+                         '((:field title :module heading :template "Title" :face nil)
+                           (:field author :module tail :template "Alice" :face nil)
+                           (:field body :module body :template "Body" :face nil)
+                           (:field id :module metadata :template "id" :face nil)))))
+        (profile (append majutsu-row-test--profile
+                         (list :layout-var 'majutsu-row-test--layout))))
+    (majutsu-row-compile profile)))
 
 (defun majutsu-row-test--payload (&rest fields)
   "Join FIELDS with the row field separator."
@@ -122,8 +120,7 @@
                       :template [:description])
                 (id [:change_id :short 8])))))))
          (profile (append majutsu-row-test--profile
-                          (list :layout-var 'majutsu-row-test--layout
-                                :default-modules nil)))
+                          (list :layout-var 'majutsu-row-test--layout)))
          (majutsu-row-test--layout layout)
          (compiled (majutsu-row-compile profile))
          (template (plist-get compiled :template)))
@@ -152,8 +149,7 @@
                       :post majutsu-row-test--yes-p
                       :template "yes")))))))
          (profile (append majutsu-row-test--profile
-                          (list :layout-var 'majutsu-row-test--layout
-                                :default-modules nil)))
+                          (list :layout-var 'majutsu-row-test--layout)))
          (majutsu-row-test--layout layout)
          (compiled (majutsu-row-compile profile))
          entry)

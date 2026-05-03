@@ -120,7 +120,7 @@
   Use the explicit file commands or the usual diff visit action instead.
 
 - ~majutsu-log-field-faces~ was removed ::
-  Configure field faces in ~majutsu-log-commit-columns~ with each field's
+  Configure field faces in ~majutsu-log-commit-layout~ with each field's
   ~:face~ property.
 
 ** Fixed
