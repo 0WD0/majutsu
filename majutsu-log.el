@@ -430,12 +430,9 @@ transport logical newlines safely through single-line payload segments."
   "Return the row profile for `majutsu-log'."
   (list :name 'log
         :self-type 'Commit
-        :columns-var 'majutsu-log-commit-columns
         :default-modules majutsu-log--field-default-modules
-        :required-fields majutsu-log--required-columns
         :default-postprocessors majutsu-log--default-column-postprocessors
         :field-postprocessors majutsu-log--field-default-postprocessors
-        :template-function 'majutsu-log--column-template
         :decode-function 'majutsu-log-post-decode-line-separator
         :record-field-function 'majutsu-log--record-field
         :entry-id-function 'majutsu-log--entry-id
@@ -453,10 +450,32 @@ Looks up `majutsu-log-template-FIELD'."
         (symbol-value var)
       (user-error "Unknown column field %S" field))))
 
+(defun majutsu-log--column-spec-field (spec)
+  "Return FIELD from log column SPEC."
+  (plist-get (majutsu-row-column-spec-plist spec) :field))
+
+(defun majutsu-log--ensure-required-column-specs (columns)
+  "Return COLUMNS with required hidden log fields appended."
+  (let ((out (copy-sequence columns)))
+    (dolist (field majutsu-log--required-columns out)
+      (unless (memq field (mapcar #'majutsu-log--column-spec-field out))
+        (setq out (append out (list field)))))))
+
+(defun majutsu-log--column-spec-with-template (spec)
+  "Return log column SPEC with an explicit row template."
+  (let* ((column (majutsu-row-column-spec-plist spec))
+         (field (plist-get column :field)))
+    (if (plist-member column :template)
+        column
+      (append column (list :template (majutsu-log--column-template field))))))
+
 (defun majutsu-log--compile-columns (&optional columns)
-  "Compile COLUMNS (or `majutsu-log-commit-columns') into a jj template string.
-Returns a plist with :template, :columns, and :module-columns."
-  (majutsu-row-compile (majutsu-log--row-profile) columns))
+  "Compile COLUMNS (or `majutsu-log-commit-columns') into row metadata."
+  (majutsu-row-compile
+   (majutsu-log--row-profile)
+   (mapcar #'majutsu-log--column-spec-with-template
+           (majutsu-log--ensure-required-column-specs
+            (or columns majutsu-log-commit-columns)))))
 
 (defun majutsu-log--ensure-template ()
   "Return cached compiled template structure, recomputing if necessary."
