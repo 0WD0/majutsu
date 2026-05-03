@@ -99,24 +99,11 @@
 (defvar-local majutsu-row-section-value-index nil
   "Hash table mapping section values to cached entries.")
 
-;;; Token helpers
+;;; Compiled helpers
 
 (defun majutsu-row--profile (compiled)
   "Return row profile from COMPILED."
   (plist-get compiled :profile))
-
-(defun majutsu-row--token (_compiled key)
-  "Return row protocol token KEY."
-  (pcase key
-    (:start majutsu-row-start-token)
-    (:tail majutsu-row-tail-token)
-    (:body majutsu-row-body-token)
-    (:metadata majutsu-row-meta-token)
-    (:end majutsu-row-end-token)
-    (:push majutsu-row-push-token)
-    (:pop majutsu-row-pop-token)
-    (:reset majutsu-row-reset-token)
-    (_ (user-error "Unknown row token %S" key))))
 
 ;;; Current compiled access
 
@@ -356,32 +343,33 @@ only declare row column values and do not duplicate the row protocol."
     (when (search-forward token eol t)
       (- (point) (length token)))))
 
-(defun majutsu-row-parse-trailing-payloads (compiled payload)
-  "Parse tail, body, and metadata segments from PAYLOAD using COMPILED.
+(defun majutsu-row-parse-trailing-payloads (payload)
+  "Parse tail, body, and metadata segments from PAYLOAD.
 Return a plist with module payloads and :end-offset, the index just after
-COMPILED's end token inside PAYLOAD.  Text after the end token belongs to the
+the end token inside PAYLOAD.  Text after the end token belongs to the
 surrounding event stream and is intentionally ignored here."
-  (let ((tail-token (majutsu-row--token compiled :tail))
-        (body-token (majutsu-row--token compiled :body))
-        (meta-token (majutsu-row--token compiled :metadata))
-        (end-token (majutsu-row--token compiled :end)))
-    (when (string-prefix-p tail-token payload)
-      (let* ((tail-start (length tail-token))
-             (body-pos (string-match (regexp-quote body-token)
-                                     payload tail-start))
-             (meta-pos (and body-pos
-                            (string-match (regexp-quote meta-token)
-                                          payload (+ body-pos (length body-token)))))
-             (end-pos (and meta-pos
-                           (string-match (regexp-quote end-token)
-                                         payload (+ meta-pos (length meta-token))))))
-        (when (and body-pos meta-pos end-pos)
-          (list :tail (substring payload tail-start body-pos)
-                :body (substring payload (+ body-pos (length body-token)) meta-pos)
-                :metadata (substring payload
-                                     (+ meta-pos (length meta-token))
-                                     end-pos)
-                :end-offset (+ end-pos (length end-token))))))))
+  (when (string-prefix-p majutsu-row-tail-token payload)
+    (let* ((tail-start (length majutsu-row-tail-token))
+           (body-pos (string-match (regexp-quote majutsu-row-body-token)
+                                   payload tail-start))
+           (meta-pos (and body-pos
+                          (string-match (regexp-quote majutsu-row-meta-token)
+                                        payload (+ body-pos
+                                                   (length majutsu-row-body-token)))))
+           (end-pos (and meta-pos
+                         (string-match (regexp-quote majutsu-row-end-token)
+                                       payload (+ meta-pos
+                                                  (length majutsu-row-meta-token))))))
+      (when (and body-pos meta-pos end-pos)
+        (list :tail (substring payload tail-start body-pos)
+              :body (substring payload (+ body-pos
+                                          (length majutsu-row-body-token))
+                               meta-pos)
+              :metadata (substring payload
+                                   (+ meta-pos
+                                      (length majutsu-row-meta-token))
+                                   end-pos)
+              :end-offset (+ end-pos (length majutsu-row-end-token)))))))
 
 (defun majutsu-row-split-module-values (payload count)
   "Split PAYLOAD into COUNT field values."
@@ -489,17 +477,16 @@ surrounding event stream and is intentionally ignored here."
   (and (stringp token)
        (looking-at-p (regexp-quote token))))
 
-(defun majutsu-row--event-at-point (compiled)
+(defun majutsu-row--event-at-point ()
   "Return (KIND . TOKEN) for the row protocol event at point."
   (seq-some
-   (pcase-lambda (`(,key . ,kind))
-     (let ((token (majutsu-row--token compiled key)))
-       (and (majutsu-row--looking-at-token-p token)
-            (cons kind token))))
-   '((:start . row)
-     (:push . push)
-     (:pop . pop)
-     (:reset . reset))))
+   (pcase-lambda (`(,token . ,kind))
+     (and (majutsu-row--looking-at-token-p token)
+          (cons kind token)))
+   `((,majutsu-row-start-token . row)
+     (,majutsu-row-push-token . push)
+     (,majutsu-row-pop-token . pop)
+     (,majutsu-row-reset-token . reset))))
 
 (defun majutsu-row--next-marker-position (start end)
   "Return next row marker position between START and END, or nil."
@@ -550,15 +537,14 @@ marker from ENTRY's source span and suffix lines."
 (defun majutsu-row--parse-entry-record-at-point (compiled)
   "Parse one row record at point using COMPILED.
 Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
-  (let* ((start-token (majutsu-row--token compiled :start))
-         (tail-token (majutsu-row--token compiled :tail))
-         (entry-beg (line-beginning-position))
+  (let* ((entry-beg (line-beginning-position))
          (bol entry-beg)
          (eol (line-end-position))
-         (start-pos (if (majutsu-row--looking-at-token-p start-token)
+         (start-pos (if (majutsu-row--looking-at-token-p
+                         majutsu-row-start-token)
                         (point)
                       (majutsu-row-line-token-position
-                       start-token bol eol))))
+                       majutsu-row-start-token bol eol))))
     (when start-pos
       (let* ((indent (- start-pos bol))
              (heading-prefixes nil)
@@ -574,17 +560,18 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
             (let* ((prefix-end (min (+ bol indent) eol))
                    (prefix (buffer-substring bol prefix-end))
                    (content-start (if first-line
-                                      (+ start-pos (length start-token))
+                                      (+ start-pos
+                                         (length majutsu-row-start-token))
                                     prefix-end))
                    (segment-pos (majutsu-row-line-token-position
-                                 tail-token bol eol content-start)))
+                                 majutsu-row-tail-token
+                                 bol eol content-start)))
               (if segment-pos
                   (progn
                     (push prefix heading-prefixes)
                     (push (buffer-substring content-start segment-pos)
                           heading-segments)
                     (when-let* ((payloads (majutsu-row-parse-trailing-payloads
-                                           compiled
                                            (buffer-substring segment-pos eol))))
                       (setq record-end
                             (+ segment-pos (plist-get payloads :end-offset)))
@@ -649,7 +636,7 @@ Return a plist with :roots, :entries, and :diagnostics."
                  suffix-owner cursor marker marker)
                 (goto-char marker)
                 (pcase-let ((`(,kind . ,token)
-                             (or (majutsu-row--event-at-point compiled)
+                             (or (majutsu-row--event-at-point)
                                  (cons 'unknown majutsu-row-record-marker))))
                   (pcase kind
                     ('row
@@ -713,9 +700,8 @@ Return a plist with :roots, :entries, and :diagnostics."
 (defun majutsu-row-parse-at-point (compiled)
   "Parse one sequentially encoded row entry at point using COMPILED."
   (let* ((entry-beg (line-beginning-position))
-         (start-token (majutsu-row--token compiled :start))
          (start-pos (majutsu-row-line-token-position
-                     start-token entry-beg (line-end-position))))
+                     majutsu-row-start-token entry-beg (line-end-position))))
     (when start-pos
       (seq-find (lambda (entry)
                   (= (plist-get entry :beg) entry-beg))
