@@ -124,12 +124,7 @@
        value t)
     value))
 
-;;; Default module/field helpers
-
-(defun majutsu-row--default-module-for-field (profile field)
-  "Return default module for FIELD using PROFILE."
-  (or (alist-get field (plist-get profile :default-modules) nil nil #'eq)
-      (user-error "Field %S requires explicit :module" field)))
+;;; Default field helpers
 
 (defun majutsu-row--default-postprocessors-for-field (profile field)
   "Return default postprocessors for FIELD using PROFILE."
@@ -173,8 +168,7 @@
          (field (plist-get col :field))
          (module (if (plist-member col :module)
                      (plist-get col :module)
-                   (majutsu-row--default-module-for-field
-                    profile field)))
+                   (user-error "Column %S requires :module" field)))
          (face (if (plist-member col :face)
                    (plist-get col :face)
                  t))
@@ -534,19 +528,18 @@ only declare row column values and do not duplicate the row protocol."
 
 (defun majutsu-row--template-form (compiled)
   "Return final template form for COMPILED."
-  (let* ((profile (majutsu-row--profile compiled))
-         (layout (majutsu-row--profile-layout profile)))
-    (if layout
-        (majutsu-row-layout-template-form compiled layout)
-      (majutsu-row-template-form compiled))))
+  (majutsu-row-layout-template-form
+   compiled
+   (majutsu-row--profile-layout (majutsu-row--profile compiled))))
 
-(defun majutsu-row-compile (profile &optional columns)
-  "Compile PROFILE COLUMNS into a jj template and layout metadata."
-  (let* ((layout (majutsu-row--profile-layout profile))
-         (layout-schema (and layout (majutsu-row--layout-schema layout)))
+(defun majutsu-row-compile (profile)
+  "Compile PROFILE layout into jj template and row metadata."
+  (let* ((layout (or (majutsu-row--profile-layout profile)
+                     (user-error "Row profile %S has no :layout-var"
+                                 (plist-get profile :name))))
+         (layout-schema (majutsu-row--layout-schema layout))
          (source-columns
-          (or columns
-              (majutsu-row--layout-columns profile layout layout-schema)))
+          (majutsu-row--layout-columns profile layout layout-schema))
          (normalized (mapcar (lambda (spec)
                                (majutsu-row-normalize-column-spec
                                 profile spec))
