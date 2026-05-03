@@ -358,7 +358,6 @@ transport logical newlines safely through single-line payload segments."
         :default-postprocessors majutsu-log--default-column-postprocessors
         :field-postprocessors majutsu-log--field-default-postprocessors
         :decode-function 'majutsu-log-post-decode-line-separator
-        :record-field-function 'majutsu-log--record-field
         :entry-id-function 'majutsu-log--entry-id
         :section-class 'jj-commit
         :section-value-function 'majutsu-log--entry-id
@@ -387,57 +386,6 @@ transport logical newlines safely through single-line payload segments."
       cmd)))
 
 ;;; Log Parsing
-
-(defun majutsu-log--apply-flags (entry value)
-  "Set flag fields on ENTRY based on VALUE string."
-  (dolist (flag (split-string (or value "") " " t))
-    (pcase flag
-      ("immutable" (setq entry (plist-put entry :immutable t)))
-      ("mutable" (setq entry (plist-put entry :immutable nil)))
-      ("conflict" (setq entry (plist-put entry :conflict t)))
-      ("git_head" (setq entry (plist-put entry :git-head t)))
-      ("root" (setq entry (plist-put entry :root t)))
-      ("@" (setq entry (plist-put entry :current_working_copy t)))))
-  entry)
-
-(defun majutsu-log--record-field (entry field value)
-  "Record canonical FIELD VALUE onto ENTRY plist and field map."
-  (pcase field
-    ('id
-     (setq entry (plist-put entry :id value)))
-    ('change-id
-     (setq entry (plist-put entry :change-id value)))
-    ('commit-id
-     (setq entry (plist-put entry :commit-id value)))
-    ('parent-ids
-     (setq entry (plist-put entry :parent-ids value)))
-    ('bookmarks
-     (setq entry (plist-put entry :bookmarks value)))
-    ('tags
-     (setq entry (plist-put entry :tags value)))
-    ('working-copies
-     (setq entry (plist-put entry :working-copies value)))
-    ('description
-     (setq entry (plist-put entry :short-desc value)))
-    ('author
-     (setq entry (plist-put entry :author value)))
-    ('timestamp
-     (setq entry (plist-put entry :timestamp value)))
-    ('long-desc
-     (setq entry (plist-put entry :long-desc value)))
-    ('flags
-     (setq entry (majutsu-log--apply-flags entry value)))
-    ('git-head
-     (when (and value (not (string-empty-p value)))
-       (setq entry (plist-put entry :git-head t))))
-    ('signature
-     (setq entry (plist-put entry :signature value)))
-    ('empty
-     (setq entry (plist-put entry :empty (not (string-empty-p value))))))
-  (let ((columns (plist-get entry :columns)))
-    (setf (alist-get field columns nil nil #'eq) value)
-    (setq entry (plist-put entry :columns columns)))
-  entry)
 
 (defun majutsu-log--nonempty-column-value (entry field)
   "Return FIELD's non-empty string value from ENTRY."
