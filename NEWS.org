@@ -67,8 +67,8 @@
   bookmark headings, commit summaries, and conflicted target headings, while
   assigning precise section values such as =name@remote= for tracked remote
   rows. The emitted bookmark tree is declared through
-  ~majutsu-bookmark-list-layout~, where each layout node declares its own row
-  columns for regular refs and conflicted target rows.
+  ~majutsu-bookmark-list-layout~, using layout-level ~:schema~ defaults plus
+  uniform node-local ~:columns~ for regular refs and conflicted target rows.
 - Transients: Add a generic repository-local defaults layer keyed by jj's
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
