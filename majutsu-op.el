@@ -18,7 +18,6 @@
 (require 'cl-lib)
 (require 'majutsu)
 (require 'majutsu-row)
-(require 'majutsu-row)
 (require 'majutsu-selection)
 (require 'seq)
 (require 'subr-x)
