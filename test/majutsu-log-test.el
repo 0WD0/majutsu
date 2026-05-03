@@ -213,6 +213,16 @@
                          (majutsu-row-module-columns compiled 'metadata))))
     (should (equal fields '(id commit-id parent-ids)))))
 
+(ert-deftest majutsu-log-entry-id-uses-row-columns ()
+  "Entry ids should come from generic row column storage."
+  (should (equal (majutsu-log--entry-id
+                  '(:columns ((id . "id-123")
+                              (change-id . "chg"))))
+                 "id-123"))
+  (should (equal (majutsu-log--entry-id
+                  '(:columns ((change-id . "chg"))))
+                 "chg")))
+
 (ert-deftest majutsu-log-post-decode-line-separator-restores-faces ()
   "\x1f decoding should keep surrounding text properties."
   (let* ((sep (aref majutsu-log--field-line-separator 0))
@@ -367,13 +377,18 @@
 
 (ert-deftest majutsu-log-rebuild-relation-indexes ()
   "Visible entries should produce parent and child lookup indexes."
-  (let* ((entries (list (list :id "child-a" :parent-ids '("parent"))
-                        (list :id "child-b" :parent-ids '("parent"))
-                        (list :id "parent" :parent-ids nil))))
+  (let* ((entries (list (list :columns '((id . "child-a")
+                                         (parent-ids . ("parent"))))
+                        (list :columns '((id . "child-b")
+                                         (parent-ids . ("parent"))))
+                        (list :columns '((id . "parent")
+                                         (parent-ids . nil))))))
     (with-temp-buffer
       (setq-local majutsu-log--cached-entries entries)
       (majutsu-log--rebuild-relation-indexes entries)
-      (should (equal (plist-get (gethash "parent" majutsu-log--entry-by-id) :id)
+      (should (equal (majutsu-row-column
+                      (gethash "parent" majutsu-log--entry-by-id)
+                      'id)
                      "parent"))
       (should (equal (gethash "parent" majutsu-log--children-by-id)
                      '("child-a" "child-b"))))))
@@ -431,6 +446,7 @@
   "Heading rendering should include additional heading fields in order."
   (let* ((compiled (majutsu-log-test--heading-aux-compiled))
          (entry (list :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Very\nLong")
                                  (timestamp . "2m"))
@@ -445,6 +461,7 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title\nMore")
                                  (author . "Very\nLong")
                                  (timestamp . "2m"))
@@ -504,6 +521,7 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -543,6 +561,7 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -573,6 +592,7 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -615,6 +635,7 @@
   "Copying mixed heading+tail text should drop the tail by default."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -637,6 +658,7 @@
   "Copying only tail text should keep the tail contents."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -666,6 +688,7 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -693,6 +716,7 @@
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -721,6 +745,7 @@
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title\nMore")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -749,6 +774,7 @@
          (entry (list :id "id-123"
                       :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m")
@@ -784,6 +810,7 @@
          (entry (list :id "id-123"
                       :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
                       :columns '((change-id . "chg")
+                                 (id . "id-123")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m")
