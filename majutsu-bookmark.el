@@ -299,34 +299,6 @@ bookmark(s) at point."
                  "(deleted)"]]]
   "Template used for bookmark-list headings.")
 
-(majutsu-bookmark-define-template removed-target-heading
-  [:concat "  - " [:majutsu-bookmark-list-commit-summary]]
-  "Template used for removed conflicted bookmark target headings.")
-
-(majutsu-bookmark-define-template added-target-heading
-  [:concat "  + " [:majutsu-bookmark-list-commit-summary]]
-  "Template used for added conflicted bookmark target headings.")
-
-(majutsu-bookmark-define-template kind
-  "ref"
-  "Template used for bookmark-list row kind values.")
-
-(majutsu-bookmark-define-template name
-  [:name]
-  "Template used for bookmark-list bookmark names.")
-
-(majutsu-bookmark-define-template remote
-  [:remote]
-  "Template used for bookmark-list remote names.")
-
-(majutsu-bookmark-define-template tracked
-  [:if [:tracked] "t" ""]
-  "Template used for bookmark-list tracked flags.")
-
-(majutsu-bookmark-define-template commit-id
-  ""
-  "Template used for bookmark-list commit ids.")
-
 (majutsu-template-defkeyword majutsu-bookmark-list-commit-summary Commit
   (:returns Template :doc "User-customizable commit summary for bookmark list entries.")
   majutsu-bookmark-list-template-commit-summary)
@@ -389,18 +361,18 @@ bookmark(s) at point."
     :adopt-previous [:and [:remote] [:tracked]]
     :columns
     ((heading majutsu-bookmark-list-template-heading)
-     (kind majutsu-bookmark-list-template-kind)
-     (name majutsu-bookmark-list-template-name)
-     (remote majutsu-bookmark-list-template-remote)
-     (tracked majutsu-bookmark-list-template-tracked)
-     (commit-id majutsu-bookmark-list-template-commit-id))
+     (kind "ref")
+     (name [:name])
+     (remote [:remote])
+     (tracked [:if [:tracked] "t" ""])
+     (commit-id ""))
     :children
     (:when [:conflict]
       :nodes
       ((:each [:removed_targets]
         :as commit
         :columns
-        ((heading majutsu-bookmark-list-template-removed-target-heading)
+        ((heading [:concat "  - " [:majutsu-bookmark-list-commit-summary]])
          (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
@@ -409,7 +381,7 @@ bookmark(s) at point."
        (:each [:added_targets]
         :as commit
         :columns
-        ((heading majutsu-bookmark-list-template-added-target-heading)
+        ((heading [:concat "  + " [:majutsu-bookmark-list-commit-summary]])
          (kind "target")
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
