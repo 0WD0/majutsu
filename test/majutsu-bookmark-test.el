@@ -189,7 +189,8 @@
       (should (string-match-p (regexp-quote "commit_id().shortest(4)") template)))))
 
 (ert-deftest majutsu-bookmark-row-output/attaches-targets-and-remote-state ()
-  (let* ((output (concat
+  (let* ((compiled (majutsu-bookmark--ensure-list-template))
+         (output (concat
                   (majutsu-bookmark-test--ref
                    "dev" "" nil "dev: rymwrkkn b052a92d summary")
                   majutsu-row-push-token "\n"
@@ -205,8 +206,7 @@
          parsed roots dev origin target)
     (with-temp-buffer
       (insert output)
-      (setq parsed (majutsu-row-read-buffer
-                    (majutsu-bookmark--ensure-list-template))))
+      (setq parsed (majutsu-row-read-buffer compiled)))
     (setq roots (plist-get parsed :roots)
           dev (car roots)
           origin (car (plist-get dev :children))
@@ -217,6 +217,8 @@
     (should (equal (majutsu-row-column dev 'name) "dev"))
     (should (equal (majutsu-row-column origin 'remote) "origin"))
     (should (majutsu-row-column origin 'tracked))
+    (should (equal (majutsu-row-entry-id target compiled)
+                   "dev@origin#4bb5dd3b"))
     (should (equal (majutsu-row-column target 'commit-id) "4bb5dd3b"))
     (should (equal (majutsu-row-column target 'heading)
                    "  + sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
