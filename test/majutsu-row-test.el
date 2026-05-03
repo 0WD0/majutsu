@@ -29,6 +29,9 @@
         :tail-align nil)
   "Row profile used by tests.")
 
+(defvar majutsu-row-test--layout nil
+  "Dynamically bound row layout used by layout tests.")
+
 (defun majutsu-row-test--compiled (&optional columns)
   "Return a compiled test row layout."
   (majutsu-row-compile
@@ -99,25 +102,32 @@
 
 (ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
   "Layout lowering should keep child rows as full field-bearing rows."
-  (let* ((compiled (majutsu-row-test--compiled))
-         (layout
-          '(:fields
-            ((title "Parent")
-             (author "")
-             (body "")
-             (id "parent"))
+  (let* ((layout
+          '(:columns
+            ((title :module heading :template "Parent" :face nil)
+             (author :module tail :template "" :face nil)
+             (body :module body :template "" :face nil)
+             (id :module metadata :template "parent" :face nil))
             :children
             (:nodes
              ((:each [:parents]
                :as p
-               :fields
+               :columns
                ((title [:description :first_line])
                 (author "")
                 (body "")
                 (id [:change_id :short 8])))))))
-         (template (majutsu-template-compile
-                    (majutsu-row-layout-template-form compiled layout)
-                    'Commit)))
+         (profile (append majutsu-row-test--profile
+                          (list :layout-var 'majutsu-row-test--layout
+                                :default-modules nil
+                                :required-fields nil
+                                :template-function nil)))
+         (majutsu-row-test--layout layout)
+         (compiled (majutsu-row-compile profile))
+         (template (plist-get compiled :template)))
+    (should (equal (mapcar (lambda (column) (plist-get column :field))
+                           (plist-get compiled :columns))
+                   '(title author body id)))
     (should (string-match-p (regexp-quote "self.parents().map(|p|") template))
     (should (string-match-p (regexp-quote "p.description().first_line()") template))
     (should (string-match-p (regexp-quote "p.change_id().short(8)") template))
