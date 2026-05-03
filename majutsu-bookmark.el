@@ -376,23 +376,24 @@ bookmark(s) at point."
        t))
 
 (defcustom majutsu-bookmark-list-layout
-  '(:adopt-previous [:and [:remote] [:tracked]]
-    :columns
-    ((heading :module heading :face t
-              :template majutsu-bookmark-list-template-heading)
-     (kind :module metadata :face nil
-           :template majutsu-bookmark-list-template-kind)
-     (name :module metadata :face nil
-           :template majutsu-bookmark-list-template-name)
+  '(:schema
+    ((heading :module heading :face t)
+     (kind :module metadata :face nil)
+     (name :module metadata :face nil)
      (remote :module metadata :face nil
-             :template majutsu-bookmark-list-template-remote
              :post majutsu-bookmark--row-empty-to-nil)
      (tracked :module metadata :face nil
-              :template majutsu-bookmark-list-template-tracked
               :post majutsu-bookmark--row-bool)
      (commit-id :module metadata :face nil
-                :template majutsu-bookmark-list-template-commit-id
                 :post majutsu-bookmark--row-empty-to-nil))
+    :adopt-previous [:and [:remote] [:tracked]]
+    :columns
+    ((heading majutsu-bookmark-list-template-heading)
+     (kind majutsu-bookmark-list-template-kind)
+     (name majutsu-bookmark-list-template-name)
+     (remote majutsu-bookmark-list-template-remote)
+     (tracked majutsu-bookmark-list-template-tracked)
+     (commit-id majutsu-bookmark-list-template-commit-id))
     :children
     (:when [:conflict]
       :nodes
@@ -414,7 +415,9 @@ bookmark(s) at point."
          (remote [:method [:self 1] :remote])
          (tracked "")
          (commit-id [:commit_id]))))))
-  "Declarative row tree emitted by `jj bookmark list'."
+  "Declarative row tree emitted by `jj bookmark list'.
+The layout-level :schema supplies shared column defaults; each node's
+:columns declares the row values for that node with the same column syntax."
   :type 'sexp
   :group 'majutsu
   :set (lambda (symbol value)

@@ -45,6 +45,10 @@
   "Join FIELDS with the row field separator."
   (string-join fields majutsu-row-field-separator))
 
+(defun majutsu-row-test--yes-p (value &optional _ctx)
+  "Return non-nil when VALUE is yes."
+  (equal value "yes"))
+
 (defun majutsu-row-test--raw-entry (_compiled title id &optional body prefix)
   "Return one raw test entry for _COMPILED with TITLE, ID, BODY, and PREFIX."
   (concat (or prefix "")
@@ -103,19 +107,20 @@
 (ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
   "Layout lowering should keep child rows as full field-bearing rows."
   (let* ((layout
-          '(:columns
-            ((title :module heading :template "Parent" :face nil)
-             (author :module tail :template "" :face nil)
-             (body :module body :template "" :face nil)
-             (id :module metadata :template "parent" :face nil))
+          '(:schema
+            ((title :module heading :face nil)
+             (id :module metadata :face nil))
+            :columns
+            ((title "Parent")
+             (id "parent"))
             :children
             (:nodes
              ((:each [:parents]
                :as p
                :columns
                ((title [:description :first_line])
-                (author "")
-                (body "")
+                (body :module body :face nil
+                      :template [:description])
                 (id [:change_id :short 8])))))))
          (profile (append majutsu-row-test--profile
                           (list :layout-var 'majutsu-row-test--layout
@@ -127,12 +132,50 @@
          (template (plist-get compiled :template)))
     (should (equal (mapcar (lambda (column) (plist-get column :field))
                            (plist-get compiled :columns))
-                   '(title author body id)))
+                   '(title id body)))
     (should (string-match-p (regexp-quote "self.parents().map(|p|") template))
     (should (string-match-p (regexp-quote "p.description().first_line()") template))
     (should (string-match-p (regexp-quote "p.change_id().short(8)") template))
     (should (string-match-p (regexp-quote "\\x1D[") template))
     (should (string-match-p (regexp-quote "\\x1D]") template))))
+
+(ert-deftest majutsu-row-layout-node-local-columns-configure-schema ()
+  "Child-local columns should configure schema like root columns."
+  (let* ((layout
+          '(:schema
+            ((title :module heading :face nil)
+             (id :module metadata :face nil))
+            :columns
+            ((title "Parent")
+             (id "parent"))
+            :children
+            (:nodes
+             ((:columns
+               ((flag :module metadata :face nil
+                      :post majutsu-row-test--yes-p
+                      :template "yes")))))))
+         (profile (append majutsu-row-test--profile
+                          (list :layout-var 'majutsu-row-test--layout
+                                :default-modules nil
+                                :required-fields nil
+                                :template-function nil)))
+         (majutsu-row-test--layout layout)
+         (compiled (majutsu-row-compile profile))
+         entry)
+    (should (equal (mapcar (lambda (column) (plist-get column :field))
+                           (plist-get compiled :columns))
+                   '(title id flag)))
+    (with-temp-buffer
+      (insert (concat majutsu-row-start-token
+                      "Title"
+                      majutsu-row-tail-token
+                      majutsu-row-body-token
+                      majutsu-row-meta-token
+                      (majutsu-row-test--payload "parent" "yes")
+                      majutsu-row-end-token))
+      (goto-char (point-min))
+      (setq entry (majutsu-row-parse-at-point compiled)))
+    (should (eq (majutsu-row-column entry 'flag) t))))
 
 (ert-deftest majutsu-row-parse-preserves-shape ()
   "Parser should preserve graph prefixes, modules, metadata, and suffix lines."
