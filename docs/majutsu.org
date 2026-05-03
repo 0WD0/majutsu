@@ -158,7 +158,7 @@ Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI
 The log buffer is the heart of Majutsu. It displays the history graph using a custom template DSL that mirrors the =jj log= output but adds interactivity.
 
 *** Log Display
-Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
+Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-layout~ (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
 
 *** Log Options Transient
 - Key: l (majutsu-log-transient) ::
@@ -206,16 +206,22 @@ Parsing is strictly sequential and positional (not key/value based):
 3. Parse =T -> B -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
 4. Keep lines between current entry =E= and next entry =S= attached to the current section heading area (graph continuation lines).
 
-*** ~majutsu-log-commit-columns~ Schema
-Each item in ~majutsu-log-commit-columns~ is a plist:
+*** ~majutsu-log-commit-layout~ Schema
+~majutsu-log-commit-layout~ is a declarative row layout.  Its top-level
+~:schema~ declares shared column configuration, and each node's ~:columns~
+declares the values emitted for that row.
 
-- ~:field~ :: Field symbol mapped to a ~majutsu-log-template-<field>~ variable.
+Schema entries and inline column entries use the same keys:
+
+- ~:field~ :: Field symbol.  Compact entries may write ~(field TEMPLATE)~.
 - ~:module~ :: One of ~heading~, ~tail~, ~body~, ~metadata~.
 - ~:face~ :: Highlight policy for that field.
 - ~:post~ :: Optional postprocessor function (or function list).
+- ~:template~ :: Majutsu template form emitted for that row column.
 
-Only these keys are used by the current parser/renderer.
-Majutsu ensures hidden metadata fields ~id~, ~commit-id~, and ~parent-ids~ are always available even if omitted from user configuration.
+Hidden metadata fields such as ~id~, ~commit-id~, and ~parent-ids~ should be
+kept in the layout when commands need stable identity, relation navigation, or
+commit-hash copying.
 
 **** Module Semantics
 - ~heading~ :: Visible anchor-line content on the left (can span physical lines before the tail segment begins).
@@ -259,15 +265,27 @@ after the field's default postprocessors.
 *** Configuration Examples
 **** Minimal layout
 #+begin_src emacs-lisp
-(setq majutsu-log-commit-columns
-      '((:field change-id   :module heading  :face t)
-        (:field description :module heading  :face t)
-        (:field author      :module tail     :face magit-log-author)
-        (:field timestamp   :module tail     :face magit-log-date)
-        (:field long-desc   :module body     :face t)
-        (:field id          :module metadata :face nil)
-        (:field commit-id   :module metadata :face nil)
-        (:field flags       :module metadata :face nil)))
+(setq majutsu-log-commit-layout
+      '(:schema
+        ((change-id :module heading  :face t)
+         (description :module heading  :face t)
+         (author :module tail :face magit-log-author)
+         (timestamp :module tail :face magit-log-date)
+         (long-desc :module body :face t)
+         (id :module metadata :face nil)
+         (commit-id :module metadata :face nil)
+         (parent-ids :module metadata :face nil)
+         (flags :module metadata :face nil))
+        :columns
+        ((change-id majutsu-log-template-change-id)
+         (description majutsu-log-template-description)
+         (author majutsu-log-template-author)
+         (timestamp majutsu-log-template-timestamp)
+         (long-desc majutsu-log-template-long-desc)
+         (id majutsu-log-template-id)
+         (commit-id majutsu-log-template-commit-id)
+         (parent-ids majutsu-log-template-parent-ids)
+         (flags majutsu-log-template-flags))))
 #+end_src
 
 **** Keep heading multiline + encoded body multiline
@@ -286,15 +304,19 @@ after the field's default postprocessors.
 (defun my-log-trim (value &optional _ctx)
   (if (stringp value) (string-trim-right value) value))
 
-(setq majutsu-log-commit-columns
-      '((:field description :module heading :face t :post my-log-trim)
-        (:field id :module metadata :face nil)))
+(setq majutsu-log-commit-layout
+      '(:schema
+        ((description :module heading :face t :post my-log-trim)
+         (id :module metadata :face nil))
+        :columns
+        ((description majutsu-log-template-description)
+         (id majutsu-log-template-id))))
 #+end_src
 
 *** Migration Notes
 Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
 The historical ~right-margin~ placement has been replaced by the ~tail~ module, which renders real text on the anchor line with right alignment.
-Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
+Move fields between visual areas by changing ~:module~ in ~:schema~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
 
 *** Copying From Structured Row Buffers
 Majutsu now provides both default copy filtering and explicit semantic copy commands for structured row buffers such as ~majutsu-log-mode~ and ~majutsu-evolog-mode~. These commands are available through the dispatcher copy submenu and via ~M-x~.
@@ -819,7 +841,7 @@ Evil bindings are available in normal state:
 - User Option: majutsu-jj-environment :: Extra =KEY=VALUE= entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by =majutsu-process=.
 
 ** Display Options
-- User Option: majutsu-log-commit-columns :: Ordered log field layout for log rendering. It also controls face policy per field using ~:face~. For protocol details, module semantics, and schema examples, see /Inspecting -> Log Buffer/.
+- User Option: majutsu-log-commit-layout :: Declarative log row layout for rendering. It controls column schema, templates, face policy, and postprocessing. For protocol details, module semantics, and schema examples, see /Inspecting -> Log Buffer/.
 - Variable: majutsu-log-template-<field> :: Template forms consumed by log fields. For newline and control-character rules, see /Inspecting -> Log Buffer/.
 - User Option: majutsu-log-sections-hook :: Hook run to insert sections in the log buffer.
 - User Option: majutsu-display-buffer-function :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).

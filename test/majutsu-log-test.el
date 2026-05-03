@@ -19,9 +19,51 @@
 (require 'majutsu-log)
 (require 'majutsu-section)
 
+(defconst majutsu-log-test--required-columns
+  '((:field id :module metadata :face nil)
+    (:field commit-id :module metadata :face nil)
+    (:field parent-ids :module metadata :face nil))
+  "Hidden metadata fields required by log parser tests.")
+
+(defun majutsu-log-test--column-template (field)
+  "Return test template for log FIELD."
+  (let ((var (intern-soft (format "majutsu-log-template-%s" field))))
+    (if (and var (boundp var))
+        (symbol-value var)
+      (user-error "Unknown log test field %S" field))))
+
+(defun majutsu-log-test--column-spec-field (spec)
+  "Return FIELD from test column SPEC."
+  (plist-get (majutsu-row-column-spec-plist spec) :field))
+
+(defun majutsu-log-test--ensure-required-columns (columns)
+  "Return COLUMNS with required hidden metadata appended."
+  (let ((out (copy-sequence columns)))
+    (dolist (spec majutsu-log-test--required-columns out)
+      (let ((field (majutsu-log-test--column-spec-field spec)))
+        (unless (memq field (mapcar #'majutsu-log-test--column-spec-field out))
+          (setq out (append out (list spec))))))))
+
+(defun majutsu-log-test--column-with-template (spec)
+  "Return test column SPEC with a concrete template."
+  (let* ((column (majutsu-row-column-spec-plist spec))
+         (field (plist-get column :field)))
+    (if (plist-member column :template)
+        column
+      (append column (list :template
+                           (majutsu-log-test--column-template field))))))
+
+(defun majutsu-log-test--compile-columns (columns)
+  "Compile test COLUMNS through a temporary log layout."
+  (let ((majutsu-log-commit-layout
+         `(:columns ,(mapcar #'majutsu-log-test--column-with-template
+                              (majutsu-log-test--ensure-required-columns
+                               columns)))))
+    (majutsu-row-compile (majutsu-log--row-profile))))
+
 (defun majutsu-log-test--base-compiled ()
   "Return a compact compiled layout for parser tests."
-  (majutsu-log--compile-columns
+  (majutsu-log-test--compile-columns
    '((:field change-id :module heading :face t)
      (:field description :module heading :face t)
      (:field long-desc :module body :face t)
@@ -31,7 +73,7 @@
 
 (defun majutsu-log-test--heading-aux-compiled ()
   "Return a layout with auxiliary heading fields."
-  (majutsu-log--compile-columns
+  (majutsu-log-test--compile-columns
    '((:field change-id :module heading :face t)
      (:field description :module heading :face t)
      (:field author :module heading :face nil)
@@ -40,7 +82,7 @@
 
 (defun majutsu-log-test--tail-compiled ()
   "Return a layout with auxiliary tail fields."
-  (majutsu-log--compile-columns
+  (majutsu-log-test--compile-columns
    '((:field change-id :module heading :face t)
      (:field description :module heading :face t)
      (:field author :module tail :face nil)
@@ -50,7 +92,7 @@
 
 (defun majutsu-log-test--relations-compiled ()
   "Return a layout that includes relation metadata."
-  (majutsu-log--compile-columns
+  (majutsu-log-test--compile-columns
    '((:field change-id :module heading :face t)
      (:field description :module heading :face t)
      (:field id :module metadata :face nil)
@@ -125,11 +167,13 @@
   (should (equal (majutsu-template-compile majutsu-log-template-parent-ids 'Commit)
                  "self.parents().map(|p| if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))).join(\"\\x1C\")")))
 
-(ert-deftest majutsu-log-default-column-schema-contains-module-and-face ()
-  "Normalized column specs should include module/face/post metadata."
-  (let ((spec (majutsu-row-normalize-column-spec
-               (majutsu-log--row-profile) 'description)))
-    (should (eq (plist-get spec :field) 'description))
+(ert-deftest majutsu-log-default-layout-schema-contains-module-and-face ()
+  "Compiled default layout should include module/face/post metadata."
+  (let* ((compiled (majutsu-log--compile-layout))
+         (spec (seq-find (lambda (column)
+                           (eq (plist-get column :field) 'description))
+                         (plist-get compiled :columns))))
+    (should spec)
     (should (eq (plist-get spec :module) 'heading))
     (should (eq (plist-get spec :face) t))
     (should (equal (plist-get spec :post) nil))))
@@ -138,11 +182,11 @@
   "Explicit `:post :default' should retain field-specific defaults."
   (let ((spec (majutsu-row-normalize-column-spec
                (majutsu-log--row-profile)
-               '(:field parent-ids :post :default))))
+               '(:field parent-ids :module metadata :post :default))))
     (should (equal (plist-get spec :post)
                    '(majutsu-log-post-split-list-separator)))))
 
-(ert-deftest majutsu-log-compile-columns-emits-sequential-markers ()
+(ert-deftest majutsu-log-layout-emits-sequential-markers ()
   "Compiled log template should include S/T/B/M/E markers in order."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (tpl (prin1-to-string (plist-get compiled :template)))
@@ -161,9 +205,9 @@
     (should (< b-pos m-pos))
     (should (< m-pos e-pos))))
 
-(ert-deftest majutsu-log-compile-columns-adds-required-hidden-metadata-fields ()
-  "Compiling columns should preserve hidden transport fields needed by log semantics."
-  (let* ((compiled (majutsu-log--compile-columns
+(ert-deftest majutsu-log-test-layout-adds-hidden-metadata-fields ()
+  "Test layouts should preserve hidden transport fields needed by log semantics."
+  (let* ((compiled (majutsu-log-test--compile-columns
                     '((:field description :module heading :face t))))
          (fields (mapcar (lambda (column) (plist-get column :field))
                          (majutsu-row-module-columns compiled 'metadata))))
@@ -337,7 +381,7 @@
 (ert-deftest majutsu-log-postprocessor-runs-per-field ()
   "Field-level :post handlers should run after parsing."
   (let* ((compiled
-          (majutsu-log--compile-columns
+          (majutsu-log-test--compile-columns
            `((:field description :module heading :face t :post majutsu-log-test--post-wrap)
              (:field id :module metadata :face nil))))
          (raw (concat
@@ -362,7 +406,7 @@
 (ert-deftest majutsu-log-postprocessor-runs-per-column-instance ()
   "Module-specific `:post' results should be stored per column instance."
   (let* ((compiled
-          (majutsu-log--compile-columns
+          (majutsu-log-test--compile-columns
            '((:field description :module heading :face nil :post majutsu-log-test--post-by-module)
              (:field description :module body :face nil :post majutsu-log-test--post-by-module)
              (:field id :module metadata :face nil))))
