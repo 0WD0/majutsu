@@ -112,6 +112,41 @@
          (majutsu-row-test--layout layout))
     (should-error (majutsu-row-compile profile) :type 'user-error)))
 
+(ert-deftest majutsu-row-role-drives-section-identity ()
+  "Layout roles should be transported and drive section metadata."
+  (let* ((layout
+          '(:role test-detail
+            :section-class test-detail-section
+            :section-value id
+            :columns
+            ((title :module heading :template "Detail" :face nil)
+             (id :module metadata :template "detail-id" :face nil))))
+         (profile (append majutsu-row-test--profile
+                          (list :layout-var 'majutsu-row-test--layout)))
+         (majutsu-row-test--layout layout)
+         (compiled (majutsu-row-compile profile))
+         (raw (concat majutsu-row-start-token
+                      majutsu-row-role-token "test-detail"
+                      majutsu-row-role-token
+                      "Detail"
+                      majutsu-row-tail-token
+                      majutsu-row-body-token
+                      majutsu-row-meta-token
+                      "detail-id"
+                      majutsu-row-end-token))
+         entry)
+    (should (string-match-p (regexp-quote "test-detail")
+                            (plist-get compiled :template)))
+    (with-temp-buffer
+      (insert raw)
+      (goto-char (point-min))
+      (setq entry (majutsu-row-parse-at-point compiled)))
+    (should (eq (majutsu-row-role entry) 'test-detail))
+    (should (equal (majutsu-row-entry-id entry compiled) "detail-id"))
+    (should (equal (majutsu-row-section-value entry compiled) "detail-id"))
+    (should (eq (majutsu-row-entry-section-class entry compiled)
+                'test-detail-section))))
+
 (ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
   "Layout lowering should keep child rows as full field-bearing rows."
   (let* ((layout
