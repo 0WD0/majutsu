@@ -363,33 +363,6 @@ bookmark(s) at point."
       [:label "conflict" "(conflicted):"]
     [:method [:normal_target] :majutsu-bookmark-list-commit-summary]])
 
-(defcustom majutsu-bookmark-list-columns
-  '((:field heading :module heading :face t)
-    (:field kind :module metadata :face nil)
-    (:field name :module metadata :face nil)
-    (:field remote :module metadata :face nil)
-    (:field tracked :module metadata :face nil)
-    (:field commit-id :module metadata :face nil))
-  "Row fields transported by `majutsu-bookmark-list'."
-  :type '(repeat (plist :options (:field :module :face :post)))
-  :group 'majutsu
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (setq majutsu-bookmark--compiled-template-cache nil)))
-
-(defconst majutsu-bookmark--list-field-default-modules
-  '((heading . heading)
-    (kind . metadata)
-    (name . metadata)
-    (remote . metadata)
-    (tracked . metadata)
-    (commit-id . metadata))
-  "Default row module placement for bookmark list fields.")
-
-(defconst majutsu-bookmark--list-required-fields
-  '(heading kind name remote tracked commit-id)
-  "Fields required by the bookmark-list row parser.")
-
 (defun majutsu-bookmark--row-empty-to-nil (value &optional _ctx)
   "Return nil for empty bookmark row VALUE."
   (and (stringp value)
@@ -403,15 +376,26 @@ bookmark(s) at point."
        t))
 
 (defcustom majutsu-bookmark-list-layout
-  '(:adopt-previous [:and [:remote] [:tracked]]
-    :fields
-    ((heading majutsu-bookmark-list-template-heading)
-     (kind majutsu-bookmark-list-template-kind)
-     (name majutsu-bookmark-list-template-name)
-     (remote majutsu-bookmark-list-template-remote)
-     (tracked majutsu-bookmark-list-template-tracked)
-     (commit-id majutsu-bookmark-list-template-commit-id))
-    :children
+  '(:columns
+    ((heading :module heading :face t
+              :template majutsu-bookmark-list-template-heading)
+     (kind :module metadata :face nil
+           :template majutsu-bookmark-list-template-kind)
+     (name :module metadata :face nil
+           :template majutsu-bookmark-list-template-name)
+     (remote :module metadata :face nil
+             :template majutsu-bookmark-list-template-remote
+             :post majutsu-bookmark--row-empty-to-nil)
+     (tracked :module metadata :face nil
+              :template majutsu-bookmark-list-template-tracked
+              :post majutsu-bookmark--row-bool)
+     (commit-id :module metadata :face nil
+                :template majutsu-bookmark-list-template-commit-id
+                :post majutsu-bookmark--row-empty-to-nil))
+    :root
+    (:adopt-previous [:and [:remote] [:tracked]]
+     :defaults t
+     :children
     (:when [:conflict]
       :nodes
       ((:each [:removed_targets]
@@ -431,7 +415,7 @@ bookmark(s) at point."
          (name [:method [:self 1] :name])
          (remote [:method [:self 1] :remote])
          (tracked "")
-         (commit-id [:commit_id]))))))
+         (commit-id [:commit_id])))))))
   "Declarative row tree emitted by `jj bookmark list'."
   :type 'sexp
   :group 'majutsu
@@ -442,17 +426,6 @@ bookmark(s) at point."
 (when (fboundp 'add-variable-watcher)
   (add-variable-watcher 'majutsu-bookmark-list-layout
                         #'majutsu-bookmark--invalidate-list-template))
-
-(defun majutsu-bookmark--row-record-field (entry field value)
-  "Record bookmark list FIELD VALUE onto ENTRY."
-  (pcase field
-    ('kind (setq entry (plist-put entry :kind value)))
-    ('name (setq entry (plist-put entry :name value)))
-    ('remote (setq entry (plist-put entry :remote value)))
-    ('tracked (setq entry (plist-put entry :tracked value)))
-    ('commit-id (setq entry (plist-put entry :commit-id value)))
-    ('heading (setq entry (plist-put entry :heading value))))
-  (majutsu-row-record-canonical-field entry field value))
 
 (defun majutsu-bookmark--row-section-value (entry)
   "Return section value for bookmark list ENTRY."
@@ -474,16 +447,8 @@ bookmark(s) at point."
   "Return row profile for `majutsu-bookmark-list'."
   (list :name 'bookmark-list
         :self-type 'CommitRef
-        :columns-var 'majutsu-bookmark-list-columns
         :layout-var 'majutsu-bookmark-list-layout
-        :default-modules majutsu-bookmark--list-field-default-modules
-        :required-fields majutsu-bookmark--list-required-fields
         :default-postprocessors nil
-        :field-postprocessors
-        '((remote . (majutsu-bookmark--row-empty-to-nil))
-          (tracked . (majutsu-bookmark--row-bool))
-          (commit-id . (majutsu-bookmark--row-empty-to-nil)))
-        :record-field-function 'majutsu-bookmark--row-record-field
         :entry-id-function 'majutsu-bookmark--row-section-value
         :section-value-function 'majutsu-bookmark--row-section-value
         :section-class-function 'majutsu-bookmark--row-section-class
@@ -492,16 +457,15 @@ bookmark(s) at point."
         :tail-align nil
         :compat-property-prefix 'majutsu-bookmark-list))
 
-(defun majutsu-bookmark--compile-list-columns (&optional columns)
-  "Compile bookmark-list COLUMNS into row metadata."
-  (majutsu-row-compile (majutsu-bookmark--row-profile) columns))
+(defun majutsu-bookmark--compile-list-layout ()
+  "Compile bookmark-list layout into row metadata."
+  (majutsu-row-compile (majutsu-bookmark--row-profile)))
 
 (defun majutsu-bookmark--ensure-list-template ()
   "Return cached row metadata for `jj bookmark list'."
   (or majutsu-bookmark--compiled-template-cache
       (setq majutsu-bookmark--compiled-template-cache
-            (majutsu-bookmark--compile-list-columns
-             majutsu-bookmark-list-columns))))
+            (majutsu-bookmark--compile-list-layout))))
 
 (defun majutsu-bookmark--list-template ()
   "Return cached row template used by `jj bookmark list'."

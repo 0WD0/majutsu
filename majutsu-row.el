@@ -158,6 +158,8 @@
   "Normalize one column SPEC using PROFILE."
   (let* ((col (cond
                ((and (plistp spec) (plist-get spec :field)) spec)
+               ((and (consp spec) (symbolp (car spec)) (plistp (cdr spec)))
+                (append (list :field (car spec)) (cdr spec)))
                ((symbolp spec) (list :field spec))
                (t (user-error "Invalid column spec: %S" spec))))
          (field (plist-get col :field))
@@ -223,14 +225,21 @@
 
 ;;; Compile
 
+(defun majutsu-row-resolve-template-form (form)
+  "Resolve symbolic row template FORM."
+  (if (and (symbolp form) (not (keywordp form)) (boundp form))
+      (symbol-value form)
+    form))
+
 (defun majutsu-row--column-template (profile column)
   "Return template form for COLUMN using PROFILE."
-  (or (plist-get column :template)
-      (let ((fn (plist-get profile :template-function))
-            (field (plist-get column :field)))
-        (if fn
-            (funcall fn field)
-          (user-error "Column %S has no :template" field)))))
+  (if (plist-member column :template)
+      (majutsu-row-resolve-template-form (plist-get column :template))
+    (let ((fn (plist-get profile :template-function))
+          (field (plist-get column :field)))
+      (if fn
+          (funcall fn field)
+        (user-error "Column %S has no :template" field)))))
 
 (defun majutsu-row-build-module-template-form (templates)
   "Return a template form joining TEMPLATES with field separators."
@@ -341,9 +350,7 @@ only declare row column values and do not duplicate the row protocol."
 
 (defun majutsu-row--layout-resolve-template-form (form)
   "Resolve a row layout template FORM."
-  (if (and (symbolp form) (not (keywordp form)) (boundp form))
-      (symbol-value form)
-    form))
+  (majutsu-row-resolve-template-form form))
 
 (defun majutsu-row--layout-column-template (compiled node column)
   "Return NODE's template for COLUMN using COMPILED."
@@ -443,23 +450,34 @@ only declare row column values and do not duplicate the row protocol."
             (plist-get layout :root))
        layout)))
 
+(defun majutsu-row--profile-layout (profile)
+  "Return declarative row layout for PROFILE, if any."
+  (when-let* ((layout-var (plist-get profile :layout-var)))
+    (unless (boundp layout-var)
+      (user-error "Row layout variable %S is unbound" layout-var))
+    (symbol-value layout-var)))
+
+(defun majutsu-row--layout-columns (layout)
+  "Return column specs declared by LAYOUT."
+  (when (majutsu-row--layout-plist-p layout)
+    (plist-get layout :columns)))
+
 (defun majutsu-row--template-form (compiled)
   "Return final template form for COMPILED."
   (let* ((profile (majutsu-row--profile compiled))
-         (layout-var (plist-get profile :layout-var)))
-    (if layout-var
-        (progn
-          (unless (boundp layout-var)
-            (user-error "Row layout variable %S is unbound" layout-var))
-          (majutsu-row-layout-template-form compiled (symbol-value layout-var)))
+         (layout (majutsu-row--profile-layout profile)))
+    (if layout
+        (majutsu-row-layout-template-form compiled layout)
       (majutsu-row-template-form compiled))))
 
 (defun majutsu-row-compile (profile &optional columns)
   "Compile PROFILE COLUMNS into a jj template and layout metadata."
-  (let* ((source-columns
+  (let* ((layout (majutsu-row--profile-layout profile))
+         (source-columns
           (or columns
               (when-let* ((var (plist-get profile :columns-var)))
-                (symbol-value var))))
+                (symbol-value var))
+              (majutsu-row--layout-columns layout)))
          (normalized (mapcar (lambda (spec)
                                (majutsu-row-normalize-column-spec
                                 profile spec))
