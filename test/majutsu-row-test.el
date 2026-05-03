@@ -101,6 +101,17 @@
                      ,majutsu-row-end-token
                      "\n"]))))
 
+(ert-deftest majutsu-row-compile-rejects-layout-instance ()
+  "Layout declarations should not use compiler-internal :instance."
+  (let* ((layout
+          '(:columns
+            ((title :module heading :template "Title" :face nil
+                    :instance 0))))
+         (profile (append majutsu-row-test--profile
+                          (list :layout-var 'majutsu-row-test--layout)))
+         (majutsu-row-test--layout layout))
+    (should-error (majutsu-row-compile profile) :type 'user-error)))
+
 (ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
   "Layout lowering should keep child rows as full field-bearing rows."
   (let* ((layout
@@ -256,6 +267,18 @@
                            (eq (plist-get entry :parent) parent))
                          children))))
 
+(ert-deftest majutsu-row-wash-buffer-reports-diagnostics ()
+  "Washing should surface parser diagnostics instead of dropping them."
+  (let ((compiled (majutsu-row-test--compiled))
+        reported)
+    (with-temp-buffer
+      (insert majutsu-row-push-token "\n")
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (setq reported (apply #'format format-string args)))))
+        (majutsu-row-wash-buffer compiled)))
+    (should (string-match-p "Row push without previous entry" reported))))
+
 (ert-deftest majutsu-row-insert-forest-creates-nested-magit-sections ()
   "Renderer should put child entries inside the parent section body."
   (let* ((compiled (majutsu-row-test--compiled))
@@ -341,6 +364,22 @@
       (should (equal (majutsu-row-filter-buffer-substring
                       (point-min) (point-max) nil compiled)
                      "Title\n")))))
+
+(ert-deftest majutsu-row-clear-buffer-data-clears-compiled ()
+  "Clearing row data should remove all buffer-local row state."
+  (let ((compiled (majutsu-row-test--compiled)))
+    (with-temp-buffer
+      (setq-local majutsu-row-buffer-compiled compiled)
+      (setq-local majutsu-row-cached-entries '(entry))
+      (setq-local majutsu-row-cached-roots '(root))
+      (setq-local majutsu-row-entry-index (make-hash-table))
+      (setq-local majutsu-row-section-value-index (make-hash-table))
+      (majutsu-row-clear-buffer-data)
+      (should-not majutsu-row-buffer-compiled)
+      (should-not majutsu-row-cached-entries)
+      (should-not majutsu-row-cached-roots)
+      (should-not majutsu-row-entry-index)
+      (should-not majutsu-row-section-value-index))))
 
 (ert-deftest majutsu-row-copy-field-copies-visible-field ()
   "Copying a visible field should use row text properties."
