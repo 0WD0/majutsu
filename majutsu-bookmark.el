@@ -347,7 +347,7 @@ bookmark(s) at point."
                 :post majutsu-bookmark--row-empty-to-nil))
     :role bookmark
     :section-class jj-bookmark
-    :section-value (:function majutsu-bookmark--row-ref-section-value)
+    :section-value #'majutsu-bookmark--row-ref-section-value
     :adopt-previous [:and [:remote] [:tracked]]
     :columns
     ((heading majutsu-bookmark-list-template-heading)
@@ -361,6 +361,7 @@ bookmark(s) at point."
       ((:each [:removed_targets]
         :as commit
         :role bookmark-target
+        :entry-id #'majutsu-bookmark--row-target-entry-id
         :section-class jj-commit
         :section-value commit-id
         :columns
@@ -373,6 +374,7 @@ bookmark(s) at point."
        (:each [:added_targets]
         :as commit
         :role bookmark-target
+        :entry-id #'majutsu-bookmark--row-target-entry-id
         :section-class jj-commit
         :section-value commit-id
         :columns
@@ -402,6 +404,12 @@ The layout-level :schema supplies shared column defaults; each node's
     (if remote
         (concat name "@" remote)
       name)))
+
+(defun majutsu-bookmark--row-target-entry-id (entry)
+  "Return stable unique entry id for bookmark conflict target ENTRY."
+  (when-let* ((bookmark (majutsu-bookmark--row-ref-section-value entry))
+              (commit-id (majutsu-row-column entry 'commit-id)))
+    (concat bookmark "#" commit-id)))
 
 (defun majutsu-bookmark--row-profile ()
   "Return row profile for `majutsu-bookmark-list'."
