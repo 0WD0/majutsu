@@ -193,30 +193,6 @@ or (inline VALUE) for `--opt=VALUE' and short `-oVALUE' forms."
 Log records are transported as single lines, then this separator is
 decoded back to literal newlines after field splitting.")
 
-(defconst majutsu-log--field-default-modules
-  '((id . metadata)
-    (change-id . heading)
-    (commit-id . metadata)
-    (parent-ids . metadata)
-    (bookmarks . heading)
-    (tags . heading)
-    (working-copies . heading)
-    (flags . metadata)
-    (git-head . heading)
-    (signature . heading)
-    (empty . heading)
-    (description . heading)
-    (author . tail)
-    (timestamp . tail)
-    (long-desc . body))
-  "Default module placement for known log fields.")
-
-(defconst majutsu-log--required-columns '(id commit-id parent-ids)
-  "Fields that must exist in `majutsu-log-commit-columns'.
-These fields are transported even when users omit them from visible layout,
-so log semantics such as stable identity, commit-hash copying, and relation
-navigation remain available.")
-
 (defconst majutsu-log--default-column-postprocessors nil
   "Default postprocessors appended to every column instance.")
 
@@ -225,36 +201,45 @@ navigation remain available.")
     (timestamp . (majutsu-log-post-remove-ago-suffix)))
   "Field-specific default postprocessors appended after global defaults.")
 
-(defcustom majutsu-log-commit-columns
-  '((:field change-id :module heading :face t)
-    (:field commit-id :module tail :face t)
-    (:field bookmarks :module heading :face magit-branch-local)
-    (:field tags :module heading :face magit-tag)
-    (:field working-copies :module heading :face magit-branch-remote)
-    (:field empty :module heading :face t)
-    (:field git-head :module heading :face t)
-    (:field description :module heading :face t)
-    (:field author :module tail :face magit-log-author)
-    (:field timestamp :module tail :face magit-log-date)
-    (:field long-desc :module body :face t)
-    (:field id :module metadata :face nil)
-    (:field commit-id :module metadata :face nil)
-    (:field flags :module metadata :face nil))
-  "Field specification controlling log template and rendering.
-
-Each element is a plist with at least `:field'. Supported keys:
-- :field  - symbol identifying a known field.
-- :module - one of `heading', `tail', `body', or `metadata'.
-- :face   - t (preserve jj highlighting), nil (strip), or FACE (override).
-- :post   - postprocessor function or function list for field value transforms.
-
-When `:face' is omitted, it defaults to t.
-
-`heading' is the only module that may emit physical newlines. Other modules
-remain in the sequential payload tail and should encode logical newlines as
-`majutsu-log--field-line-separator' (\\x1f)."
-  :type '(repeat (plist :options (:field :module :face :post)))
-  :group 'majutsu)
+(defcustom majutsu-log-commit-layout
+  '(:schema
+    ((change-id :module heading :face t)
+     (commit-id :module tail :face t)
+     (bookmarks :module heading :face magit-branch-local)
+     (tags :module heading :face magit-tag)
+     (working-copies :module heading :face magit-branch-remote)
+     (empty :module heading :face t)
+     (git-head :module heading :face t)
+     (description :module heading :face t)
+     (author :module tail :face magit-log-author)
+     (timestamp :module tail :face magit-log-date)
+     (long-desc :module body :face t)
+     (id :module metadata :face nil)
+     (commit-id :module metadata :face nil)
+     (parent-ids :module metadata :face nil)
+     (flags :module metadata :face nil))
+    :columns
+    ((change-id majutsu-log-template-change-id)
+     (commit-id :module tail :template majutsu-log-template-commit-id)
+     (bookmarks majutsu-log-template-bookmarks)
+     (tags majutsu-log-template-tags)
+     (working-copies majutsu-log-template-working-copies)
+     (empty majutsu-log-template-empty)
+     (git-head majutsu-log-template-git-head)
+     (description majutsu-log-template-description)
+     (author majutsu-log-template-author)
+     (timestamp majutsu-log-template-timestamp)
+     (long-desc majutsu-log-template-long-desc)
+     (id majutsu-log-template-id)
+     (commit-id :module metadata :template majutsu-log-template-commit-id)
+     (parent-ids majutsu-log-template-parent-ids)
+     (flags majutsu-log-template-flags)))
+  "Declarative row layout controlling log template and rendering."
+  :type 'sexp
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-log--compiled-template-cache nil)))
 
 (defmacro majutsu-log-define-column (name template doc)
   "Define a log column template variable for NAME with default TEMPLATE and DOC.
@@ -400,6 +385,10 @@ can survive transport through the single-line log format.")
   (setq majutsu-log--children-by-id nil)
   (setq majutsu-log--buffer-compiled nil))
 
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher 'majutsu-log-commit-layout
+                        #'majutsu-log--invalidate-template-cache))
+
 (defun majutsu-log-post-decode-line-separator (value &optional _ctx)
   "Decode `majutsu-log--field-line-separator' inside VALUE.
 
@@ -430,7 +419,7 @@ transport logical newlines safely through single-line payload segments."
   "Return the row profile for `majutsu-log'."
   (list :name 'log
         :self-type 'Commit
-        :default-modules majutsu-log--field-default-modules
+        :layout-var 'majutsu-log-commit-layout
         :default-postprocessors majutsu-log--default-column-postprocessors
         :field-postprocessors majutsu-log--field-default-postprocessors
         :decode-function 'majutsu-log-post-decode-line-separator
@@ -442,46 +431,15 @@ transport logical newlines safely through single-line payload segments."
         :tail-align t
         :compat-property-prefix 'majutsu-log))
 
-(defun majutsu-log--column-template (field)
-  "Return majutsu-template form for FIELD.
-Looks up `majutsu-log-template-FIELD'."
-  (let ((var (intern-soft (format "majutsu-log-template-%s" field))))
-    (if (and var (boundp var))
-        (symbol-value var)
-      (user-error "Unknown column field %S" field))))
-
-(defun majutsu-log--column-spec-field (spec)
-  "Return FIELD from log column SPEC."
-  (plist-get (majutsu-row-column-spec-plist spec) :field))
-
-(defun majutsu-log--ensure-required-column-specs (columns)
-  "Return COLUMNS with required hidden log fields appended."
-  (let ((out (copy-sequence columns)))
-    (dolist (field majutsu-log--required-columns out)
-      (unless (memq field (mapcar #'majutsu-log--column-spec-field out))
-        (setq out (append out (list field)))))))
-
-(defun majutsu-log--column-spec-with-template (spec)
-  "Return log column SPEC with an explicit row template."
-  (let* ((column (majutsu-row-column-spec-plist spec))
-         (field (plist-get column :field)))
-    (if (plist-member column :template)
-        column
-      (append column (list :template (majutsu-log--column-template field))))))
-
-(defun majutsu-log--compile-columns (&optional columns)
-  "Compile COLUMNS (or `majutsu-log-commit-columns') into row metadata."
-  (majutsu-row-compile
-   (majutsu-log--row-profile)
-   (mapcar #'majutsu-log--column-spec-with-template
-           (majutsu-log--ensure-required-column-specs
-            (or columns majutsu-log-commit-columns)))))
+(defun majutsu-log--compile-layout ()
+  "Compile `majutsu-log-commit-layout' into row metadata."
+  (majutsu-row-compile (majutsu-log--row-profile)))
 
 (defun majutsu-log--ensure-template ()
   "Return cached compiled template structure, recomputing if necessary."
   (or majutsu-log--compiled-template-cache
       (setq majutsu-log--compiled-template-cache
-            (majutsu-log--compile-columns majutsu-log-commit-columns))))
+            (majutsu-log--compile-layout))))
 
 (defun majutsu-log--build-args ()
   "Build argument list for `jj log' using current log variables."

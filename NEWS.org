@@ -147,7 +147,7 @@
 - Diff: Remove the dedicated ~v~ binding from diff file sections, following
   Magit's split between explicit file commands and diff-specific visits.
 - Log: Remove ~majutsu-log-field-faces~; configure field faces directly in
-  ~majutsu-log-commit-columns~ using each field's ~:face~ property.
+  ~majutsu-log-commit-layout~ using each field's ~:face~ property.
 
 ** Fixed
 
