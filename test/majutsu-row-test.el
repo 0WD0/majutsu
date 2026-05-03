@@ -18,8 +18,6 @@
                            (author . tail)
                            (body . body)
                            (id . metadata))
-        :required-fields '(id)
-        :template-function (lambda (field) (symbol-name field))
         :entry-id-function (lambda (entry)
                              (or (majutsu-row-column entry 'id)
                                  "unknown"))
@@ -39,7 +37,8 @@
    (or columns
        '((:field title :module heading :template "Title" :face nil)
          (:field author :module tail :template "Alice" :face nil)
-         (:field body :module body :template "Body" :face nil)))))
+         (:field body :module body :template "Body" :face nil)
+         (:field id :module metadata :template "id" :face nil)))))
 
 (defun majutsu-row-test--payload (&rest fields)
   "Join FIELDS with the row field separator."
@@ -69,8 +68,8 @@
                  (mapcar #'majutsu-row-test--collect-sections
                          (oref section children))))))
 
-(ert-deftest majutsu-row-compile-adds-required-metadata ()
-  "Compiled layouts should append hidden required metadata fields."
+(ert-deftest majutsu-row-compile-groups-explicit-metadata ()
+  "Compiled layouts should group explicit metadata fields."
   (let* ((compiled (majutsu-row-test--compiled))
          (metadata-fields
           (mapcar (lambda (column) (plist-get column :field))
@@ -124,9 +123,7 @@
                 (id [:change_id :short 8])))))))
          (profile (append majutsu-row-test--profile
                           (list :layout-var 'majutsu-row-test--layout
-                                :default-modules nil
-                                :required-fields nil
-                                :template-function nil)))
+                                :default-modules nil)))
          (majutsu-row-test--layout layout)
          (compiled (majutsu-row-compile profile))
          (template (plist-get compiled :template)))
@@ -156,9 +153,7 @@
                       :template "yes")))))))
          (profile (append majutsu-row-test--profile
                           (list :layout-var 'majutsu-row-test--layout
-                                :default-modules nil
-                                :required-fields nil
-                                :template-function nil)))
+                                :default-modules nil)))
          (majutsu-row-test--layout layout)
          (compiled (majutsu-row-compile profile))
          entry)
