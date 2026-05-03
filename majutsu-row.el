@@ -211,7 +211,7 @@
            for idx from 0
            collect (plist-put (copy-sequence column) :instance idx)))
 
-;;; Compile
+;;; Row template lowering
 
 (defun majutsu-row-resolve-template-form (form)
   "Resolve symbolic row template FORM."
@@ -284,6 +284,8 @@ only declare row column values and do not duplicate the row protocol."
    ((null (cdr forms)) (car forms))
    (t (cons :concat forms))))
 
+;;; Layout normalization
+
 (defun majutsu-row--layout-plist-p (value)
   "Return non-nil when VALUE is a row layout plist."
   (and (consp value) (keywordp (car value))))
@@ -337,10 +339,22 @@ only declare row column values and do not duplicate the row protocol."
          (schema-column (majutsu-row--layout-schema-column column schema)))
     (append column schema-column)))
 
+(defun majutsu-row--layout-normalize-column (profile spec schema)
+  "Return normalized layout column SPEC using PROFILE and SCHEMA."
+  (majutsu-row-normalize-column-spec
+   profile
+   (majutsu-row--layout-merge-column-spec spec schema)))
+
 (defun majutsu-row--layout-column-key (column)
   "Return schema identity key for normalized layout COLUMN."
   (list (plist-get column :field)
         (plist-get column :module)))
+
+(defun majutsu-row--column-key-index (columns)
+  "Return hash table indexing COLUMNS by layout column key."
+  (let ((index (make-hash-table :test #'equal)))
+    (dolist (column columns index)
+      (puthash (majutsu-row--layout-column-key column) column index))))
 
 (defun majutsu-row--layout-column-compatible-p (old new)
   "Return non-nil when normalized columns OLD and NEW can share schema."
@@ -351,37 +365,52 @@ only declare row column values and do not duplicate the row protocol."
   "Return column specs declared by layout NODE."
   (plist-get node :columns))
 
+(defun majutsu-row--layout-normalize-children (profile children schema)
+  "Return canonical CHILDREN group using PROFILE and SCHEMA."
+  (when children
+    (let* ((group (if (majutsu-row--layout-plist-p children)
+                      (copy-sequence children)
+                    (list :nodes children)))
+           (nodes (mapcar (lambda (node)
+                            (majutsu-row--layout-normalize-node
+                             profile node schema))
+                          (plist-get group :nodes))))
+      (plist-put group :nodes nodes))))
+
+(defun majutsu-row--layout-normalize-node (profile node schema)
+  "Return canonical layout NODE using PROFILE and SCHEMA."
+  (unless (majutsu-row--layout-plist-p node)
+    (user-error "Invalid row layout node %S" node))
+  (let ((out (copy-sequence node)))
+    (setq out (plist-put out :columns
+                         (mapcar (lambda (spec)
+                                   (majutsu-row--layout-normalize-column
+                                    profile spec schema))
+                                 (majutsu-row--layout-node-columns node))))
+    (if-let* ((children (majutsu-row--layout-normalize-children
+                         profile (plist-get node :children) schema)))
+        (plist-put out :children children)
+      out)))
+
+;;; Layout template lowering
+
 (defun majutsu-row--layout-column-by-key (compiled key)
   "Return compiled layout column identified by KEY."
-  (seq-find (lambda (column)
-              (equal key (majutsu-row--layout-column-key column)))
-            (plist-get compiled :columns)))
-
-(defun majutsu-row--layout-column-template-from-spec (column spec)
-  "Return template for COLUMN from merged layout SPEC."
-  (if (plist-member spec :template)
-      (majutsu-row-resolve-template-form (plist-get spec :template))
-    (majutsu-row--column-template column)))
+  (gethash key (plist-get compiled :column-key-index)))
 
 (defun majutsu-row--layout-declared-column-templates (compiled node)
-  "Return templates declared directly by layout NODE."
-  (let ((profile (majutsu-row--profile compiled))
-        (schema (plist-get compiled :layout-schema))
-        (seen (make-hash-table :test #'equal))
+  "Return templates declared directly by canonical layout NODE."
+  (let ((seen (make-hash-table :test #'equal))
         templates)
-    (dolist (spec (majutsu-row--layout-node-columns node))
-      (let* ((merged (majutsu-row--layout-merge-column-spec spec schema))
-             (normalized (majutsu-row-normalize-column-spec profile merged))
-             (key (majutsu-row--layout-column-key normalized))
+    (dolist (node-column (majutsu-row--layout-node-columns node))
+      (let* ((key (majutsu-row--layout-column-key node-column))
              (column (majutsu-row--layout-column-by-key compiled key)))
         (unless column
           (user-error "Unknown row layout column %S" key))
         (when (gethash key seen)
           (user-error "Duplicate row layout column %S" key))
         (puthash key t seen)
-        (push (cons column
-                    (majutsu-row--layout-column-template-from-spec
-                     column merged))
+        (push (cons column (majutsu-row--column-template node-column))
               templates)))
     (nreverse templates)))
 
@@ -472,6 +501,8 @@ only declare row column values and do not duplicate the row protocol."
       (user-error "Row layout variable %S is unbound" layout-var))
     (symbol-value layout-var)))
 
+;;; Layout column collection
+
 (defun majutsu-row--layout-children-nodes (node)
   "Return child nodes declared by layout NODE."
   (let ((children (plist-get node :children)))
@@ -483,82 +514,86 @@ only declare row column values and do not duplicate the row protocol."
      ((listp children) children)
      (t (user-error "Invalid row layout children %S" children)))))
 
-(defun majutsu-row--layout-add-column-spec (profile spec schema seen)
-  "Add layout column SPEC to SEEN and return merged spec if new."
-  (let* ((merged (majutsu-row--layout-merge-column-spec spec schema))
-         (normalized (majutsu-row-normalize-column-spec profile merged))
-         (key (majutsu-row--layout-column-key normalized))
+(defun majutsu-row--layout-add-column (column seen)
+  "Add normalized COLUMN to SEEN and return it if new."
+  (let* ((key (majutsu-row--layout-column-key column))
          (old (gethash key seen)))
     (if old
         (progn
-          (unless (majutsu-row--layout-column-compatible-p old normalized)
+          (unless (majutsu-row--layout-column-compatible-p old column)
             (user-error "Conflicting row layout column %S" key))
           nil)
-      (puthash key normalized seen)
-      merged)))
+      (puthash key column seen)
+      column)))
 
-(defun majutsu-row--layout-collect-columns (profile node schema seen)
-  "Collect schema columns from layout NODE, using SCHEMA and SEEN."
+(defun majutsu-row--layout-collect-columns (node seen)
+  "Collect normalized columns from canonical layout NODE."
   (let (columns)
-    (dolist (spec (majutsu-row--layout-node-columns node))
-      (when-let* ((column (majutsu-row--layout-add-column-spec
-                           profile spec schema seen)))
-        (push column columns)))
+    (dolist (column (majutsu-row--layout-node-columns node))
+      (when-let* ((new-column (majutsu-row--layout-add-column
+                               column seen)))
+        (push new-column columns)))
     (setq columns (nreverse columns))
     (dolist (child (majutsu-row--layout-children-nodes node))
       (setq columns
             (append columns
                     (majutsu-row--layout-collect-columns
-                     profile child schema seen))))
+                     child seen))))
     columns))
 
-(defun majutsu-row--layout-columns (profile layout &optional schema)
-  "Return column specs declared by all nodes in LAYOUT."
-  (when (majutsu-row--layout-plist-p layout)
-    (let ((schema (or schema (majutsu-row--layout-schema layout)))
-          (seen (make-hash-table :test #'equal))
-          columns)
-      (dolist (spec schema)
-        (when-let* ((column (majutsu-row--layout-add-column-spec
-                             profile spec nil seen)))
-          (push column columns)))
-      (append (nreverse columns)
-              (majutsu-row--layout-collect-columns
-               profile layout schema seen)))))
+(defun majutsu-row--layout-columns (schema layout)
+  "Return normalized columns declared by SCHEMA and canonical LAYOUT."
+  (let ((seen (make-hash-table :test #'equal))
+        columns)
+    (dolist (column schema)
+      (when-let* ((new-column (majutsu-row--layout-add-column
+                               column seen)))
+        (push new-column columns)))
+    (append (nreverse columns)
+            (majutsu-row--layout-collect-columns layout seen))))
 
-(defun majutsu-row--template-form (compiled)
-  "Return final template form for COMPILED."
-  (majutsu-row-layout-template-form
-   compiled
-   (majutsu-row--profile-layout (majutsu-row--profile compiled))))
+;;; Layout compilation
+
+(defun majutsu-row--module-columns-alist (columns)
+  "Return module-to-columns alist for COLUMNS."
+  (mapcar (lambda (module)
+            (cons module
+                  (seq-filter (lambda (column)
+                                (eq (plist-get column :module) module))
+                              columns)))
+          majutsu-row-module-order))
+
+(defun majutsu-row--normalize-layout-schema (profile schema)
+  "Return normalized layout SCHEMA using PROFILE."
+  (mapcar (lambda (spec)
+            (majutsu-row-normalize-column-spec profile spec))
+          schema))
+
+(defun majutsu-row--compile-layout-metadata (profile schema layout)
+  "Compile PROFILE SCHEMA and canonical LAYOUT into row metadata."
+  (let ((columns (majutsu-row-assign-column-instances
+                  (majutsu-row--layout-columns schema layout))))
+    (list :profile profile
+          :columns columns
+          :module-columns (majutsu-row--module-columns-alist columns)
+          :column-key-index (majutsu-row--column-key-index columns)
+          :layout-schema schema
+          :layout layout)))
 
 (defun majutsu-row-compile (profile)
   "Compile PROFILE layout into jj template and row metadata."
-  (let* ((layout (or (majutsu-row--profile-layout profile)
-                     (user-error "Row profile %S has no :layout-var"
-                                 (plist-get profile :name))))
-         (layout-schema (majutsu-row--layout-schema layout))
-         (source-columns
-          (majutsu-row--layout-columns profile layout layout-schema))
-         (normalized (mapcar (lambda (spec)
-                               (majutsu-row-normalize-column-spec
-                                profile spec))
-                             source-columns))
-         (complete (majutsu-row-assign-column-instances normalized))
-         (module-columns
-          (mapcar (lambda (module)
-                    (cons module
-                          (seq-filter (lambda (column)
-                                        (eq (plist-get column :module) module))
-                                      complete)))
-                  majutsu-row-module-order))
-         (compiled (list :profile profile
-                         :columns complete
-                         :module-columns module-columns
-                         :layout-schema layout-schema))
+  (let* ((raw-layout (or (majutsu-row--profile-layout profile)
+                         (user-error "Row profile %S has no :layout-var"
+                                     (plist-get profile :name))))
+         (raw-schema (majutsu-row--layout-schema raw-layout))
+         (schema (majutsu-row--normalize-layout-schema profile raw-schema))
+         (layout (majutsu-row--layout-normalize-node
+                  profile raw-layout raw-schema))
+         (compiled (majutsu-row--compile-layout-metadata
+                    profile schema layout))
+         (template-form (majutsu-row-layout-template-form compiled layout))
          (template (majutsu-template-compile
-                    (majutsu-row--template-form compiled)
-                    (plist-get profile :self-type))))
+                    template-form (plist-get profile :self-type))))
     (plist-put compiled :template template)))
 
 ;;; String splitting/joining
