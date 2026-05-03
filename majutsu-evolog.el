@@ -105,37 +105,18 @@
     ,majutsu-evolog--operation-line-template]
   "Visible evolog entry template, equivalent to jj's builtin_evolog_compact.")
 
-(defconst majutsu-evolog--field-default-modules
-  '((display . heading)
-    (change-id . metadata)
-    (commit-id . metadata)
-    (operation-id . metadata))
-  "Default row module placement for evolog fields.")
-
-(defconst majutsu-evolog-entry-columns
-  '((:field display :module heading :face t)
-    (:field change-id :module metadata :face nil)
-    (:field commit-id :module metadata :face nil)
-    (:field operation-id :module metadata :face nil))
-  "Field specification controlling evolog row transport.")
-
-(defun majutsu-evolog--column-template (field)
-  "Return majutsu-template form for evolog FIELD."
-  (pcase field
-    ('display majutsu-evolog--entry-display-template)
-    ('change-id '[:commit :change_id])
-    ('commit-id '[:commit :commit_id])
-    ('operation-id '[:if [:operation] [:operation :id] ""])
-    (_ (user-error "Unknown evolog field %S" field))))
-
-(defun majutsu-evolog--column-spec-with-template (spec)
-  "Return evolog column SPEC with an explicit row template."
-  (let* ((column (majutsu-row-column-spec-plist spec))
-         (field (plist-get column :field)))
-    (if (plist-member column :template)
-        column
-      (append column (list :template
-                           (majutsu-evolog--column-template field))))))
+(defconst majutsu-evolog-entry-layout
+  `(:schema
+    ((display :module heading :face t)
+     (change-id :module metadata :face nil)
+     (commit-id :module metadata :face nil)
+     (operation-id :module metadata :face nil))
+    :columns
+    ((display ,majutsu-evolog--entry-display-template)
+     (change-id [:commit :change_id])
+     (commit-id [:commit :commit_id])
+     (operation-id [:if [:operation] [:operation :id] ""])))
+  "Declarative row layout for `majutsu-evolog'.")
 
 (defun majutsu-evolog--record-field (entry field value)
   "Record canonical evolog FIELD VALUE onto ENTRY."
@@ -166,7 +147,7 @@
   "Return the row profile for `majutsu-evolog'."
   (list :name 'evolog
         :self-type 'CommitEvolutionEntry
-        :default-modules majutsu-evolog--field-default-modules
+        :layout-var 'majutsu-evolog-entry-layout
         :record-field-function 'majutsu-evolog--record-field
         :entry-id-function 'majutsu-evolog--entry-id
         :section-class 'jj-evolog-entry
@@ -176,10 +157,7 @@
         :compat-property-prefix 'majutsu-evolog))
 
 (defconst majutsu-evolog--entry-compiled
-  (majutsu-row-compile
-   (majutsu-evolog--row-profile)
-   (mapcar #'majutsu-evolog--column-spec-with-template
-           majutsu-evolog-entry-columns))
+  (majutsu-row-compile (majutsu-evolog--row-profile))
   "Compiled row layout metadata for `majutsu-evolog'.")
 
 (defconst majutsu-evolog--entry-template
