@@ -138,6 +138,19 @@
 
 ;;; Column normalization
 
+(defun majutsu-row-column-spec-plist (spec)
+  "Return plist representation of column SPEC."
+  (cond
+   ((and (plistp spec) (plist-get spec :field)) spec)
+   ((and (consp spec) (symbolp (car spec)))
+    (let ((tail (cdr spec)))
+      (cond
+       ((plistp tail) (append (list :field (car spec)) tail))
+       ((null (cdr tail)) (list :field (car spec) :template (car tail)))
+       (t (list :field (car spec) :template tail)))))
+   ((symbolp spec) (list :field spec))
+   (t (user-error "Invalid column spec: %S" spec))))
+
 (defun majutsu-row-normalize-postprocessors (profile post field)
   "Normalize POST for FIELD using PROFILE into a function list."
   (let* ((defaults (majutsu-row--default-postprocessors-for-field
@@ -154,14 +167,9 @@
         (user-error "Column %S has non-callable postprocessor %S" field fn)))
     fns))
 
-(defun majutsu-row-normalize-column-spec (profile spec)
-  "Normalize one column SPEC using PROFILE."
-  (let* ((col (cond
-               ((and (plistp spec) (plist-get spec :field)) spec)
-               ((and (consp spec) (symbolp (car spec)) (plistp (cdr spec)))
-                (append (list :field (car spec)) (cdr spec)))
-               ((symbolp spec) (list :field spec))
-               (t (user-error "Invalid column spec: %S" spec))))
+(defun majutsu-row-normalize-column-spec (profile spec &optional defaults)
+  "Normalize one column SPEC using PROFILE and optional DEFAULTS."
+  (let* ((col (append (majutsu-row-column-spec-plist spec) defaults))
          (field (plist-get col :field))
          (module (if (plist-member col :module)
                      (plist-get col :module)
@@ -319,43 +327,70 @@ only declare row column values and do not duplicate the row protocol."
       (intern (substring (symbol-name module) 1))
     module))
 
-(defun majutsu-row--layout-column-spec-plist (spec)
-  "Return plist portion of layout column SPEC, if any."
-  (cond
-   ((majutsu-row--layout-plist-p spec) spec)
-   ((and (consp spec) (symbolp (car spec)) (plistp (cdr spec)))
-    (cdr spec))))
+(defun majutsu-row--layout-root-node (layout)
+  "Return root node described by LAYOUT."
+  (or (and (majutsu-row--layout-plist-p layout)
+           (plist-get layout :root))
+      layout))
 
-(defun majutsu-row--layout-column-spec-field (spec)
-  "Return field symbol described by layout column SPEC."
-  (cond
-   ((majutsu-row--layout-plist-p spec) (plist-get spec :field))
-   ((consp spec) (car spec))
-   (t (user-error "Invalid row layout column spec %S" spec))))
+(defun majutsu-row--layout-column-bases (layout)
+  "Return layout-wide column default plists declared by LAYOUT."
+  (when (majutsu-row--layout-plist-p layout)
+    (mapcar #'majutsu-row-column-spec-plist
+            (plist-get layout :schema))))
 
-(defun majutsu-row--layout-column-spec-template (spec)
-  "Return template form described by layout column SPEC."
-  (let ((plist (majutsu-row--layout-column-spec-plist spec)))
+(defun majutsu-row--layout-column-attr (column attr)
+  "Return normalized layout COLUMN ATTR when present."
+  (when (plist-member column attr)
+    (let ((value (plist-get column attr)))
+      (if (eq attr :module)
+          (majutsu-row--layout-normalize-module value)
+        value))))
+
+(defun majutsu-row--layout-column-base-matches-p (column base)
+  "Return non-nil when BASE can provide defaults for COLUMN."
+  (and (eq (plist-get column :field) (plist-get base :field))
+       (or (not (plist-member column :module))
+           (eq (majutsu-row--layout-column-attr column :module)
+               (majutsu-row--layout-column-attr base :module)))
+       (or (not (plist-member column :instance))
+           (eql (plist-get column :instance)
+                (plist-get base :instance)))))
+
+(defun majutsu-row--layout-column-base (column bases)
+  "Return the unique default column from BASES for COLUMN."
+  (let ((matches (seq-filter
+                  (lambda (base)
+                    (majutsu-row--layout-column-base-matches-p column base))
+                  bases)))
     (cond
-     ((and plist (plist-member plist :template)) (plist-get plist :template))
-     ((and (consp spec) (consp (cdr spec)) (null (cddr spec))) (cadr spec))
-     ((and (consp spec) (not plist)) (cdr spec))
-     (t (user-error "Invalid row layout column template %S" spec)))))
+     ((null matches) nil)
+     ((null (cdr matches)) (car matches))
+     (t (user-error "Ambiguous row layout column %S; add :module"
+                    (plist-get column :field))))))
 
-(defun majutsu-row--layout-column-spec-matches-column-p (spec column)
-  "Return non-nil when layout column SPEC applies to COLUMN."
-  (let* ((plist (majutsu-row--layout-column-spec-plist spec))
-         (field (majutsu-row--layout-column-spec-field spec))
-         (module (and plist
-                      (plist-member plist :module)
-                      (majutsu-row--layout-normalize-module
-                       (plist-get plist :module))))
-         (instance (and plist
-                        (plist-member plist :instance)
-                        (plist-get plist :instance))))
-    (and (eq field (plist-get column :field))
-         (or (null module) (eq module (plist-get column :module)))
-         (or (null instance) (eql instance (plist-get column :instance))))))
+(defun majutsu-row--layout-merge-column-spec (spec bases)
+  "Merge layout column SPEC with matching default from BASES."
+  (let* ((column (majutsu-row-column-spec-plist spec))
+         (base (majutsu-row--layout-column-base column bases)))
+    (append column base)))
+
+(defun majutsu-row--layout-column-key (column)
+  "Return schema identity key for normalized layout COLUMN."
+  (list (plist-get column :field)
+        (plist-get column :module)))
+
+(defun majutsu-row--layout-column-compatible-p (old new)
+  "Return non-nil when normalized columns OLD and NEW can share schema."
+  (and (eq (plist-get old :face) (plist-get new :face))
+       (equal (plist-get old :post) (plist-get new :post))))
+
+(defun majutsu-row--layout-column-spec-matches-column-p (profile spec bases column)
+  "Return non-nil when layout column SPEC applies to compiled COLUMN."
+  (let* ((merged (majutsu-row--layout-merge-column-spec spec bases))
+         (normalized (majutsu-row-normalize-column-spec profile merged)))
+    (equal (majutsu-row--layout-column-key normalized)
+           (majutsu-row--layout-column-key column))))
 
 (defun majutsu-row--layout-resolve-template-form (form)
   "Resolve a row layout template FORM."
@@ -363,25 +398,27 @@ only declare row column values and do not duplicate the row protocol."
 
 (defun majutsu-row--layout-node-columns (node)
   "Return column specs declared by layout NODE."
-  (or (plist-get node :columns)
-      (plist-get node :fields)))
+  (plist-get node :columns))
 
 (defun majutsu-row--layout-column-template (compiled node column)
   "Return NODE's template for COLUMN using COMPILED."
-  (let* ((columns (majutsu-row--layout-node-columns node))
+  (let* ((profile (majutsu-row--profile compiled))
+         (bases (plist-get compiled :layout-column-bases))
+         (columns (majutsu-row--layout-node-columns node))
          (spec (seq-find (lambda (candidate)
                            (majutsu-row--layout-column-spec-matches-column-p
-                            candidate column))
+                            profile candidate bases column))
                          columns)))
     (cond
      (spec
-      (majutsu-row--layout-resolve-template-form
-       (majutsu-row--layout-column-spec-template spec)))
+      (let ((merged (majutsu-row--layout-merge-column-spec spec bases)))
+        (if (plist-member merged :template)
+            (majutsu-row--layout-resolve-template-form
+             (plist-get merged :template))
+          (majutsu-row--column-template profile column))))
      ((plist-get node :defaults)
-      (majutsu-row--column-template (majutsu-row--profile compiled) column))
-     (t
-      (user-error "Missing row layout column %S"
-                  (plist-get column :field))))))
+      (majutsu-row--column-template profile column))
+     (t ""))))
 
 (defun majutsu-row--layout-column-templates (compiled node)
   "Return complete column template alist for layout NODE."
@@ -460,9 +497,7 @@ only declare row column values and do not duplicate the row protocol."
   "Return template form for COMPILED from declarative row LAYOUT."
   (majutsu-row-layout-node-template-form
    compiled
-   (or (and (majutsu-row--layout-plist-p layout)
-            (plist-get layout :root))
-       layout)))
+   (majutsu-row--layout-root-node layout)))
 
 (defun majutsu-row--profile-layout (profile)
   "Return declarative row layout for PROFILE, if any."
@@ -482,47 +517,48 @@ only declare row column values and do not duplicate the row protocol."
      ((listp children) children)
      (t (user-error "Invalid row layout children %S" children)))))
 
-(defun majutsu-row--layout-column-key (spec)
-  "Return schema identity key for layout column SPEC."
-  (let* ((plist (majutsu-row--layout-column-spec-plist spec))
-         (field (majutsu-row--layout-column-spec-field spec))
-         (module (and plist
-                      (plist-member plist :module)
-                      (majutsu-row--layout-normalize-module
-                       (plist-get plist :module))))
-         (instance (and plist
-                        (plist-member plist :instance)
-                        (plist-get plist :instance))))
-    (list field module instance)))
+(defun majutsu-row--layout-add-column-spec (profile spec bases seen)
+  "Add layout column SPEC to SEEN and return merged spec if new."
+  (let* ((merged (majutsu-row--layout-merge-column-spec spec bases))
+         (normalized (majutsu-row-normalize-column-spec profile merged))
+         (key (majutsu-row--layout-column-key normalized))
+         (old (gethash key seen)))
+    (if old
+        (progn
+          (unless (majutsu-row--layout-column-compatible-p old normalized)
+            (user-error "Conflicting row layout column %S" key))
+          nil)
+      (puthash key normalized seen)
+      merged)))
 
-(defun majutsu-row--layout-collect-columns (node seen)
-  "Collect schema columns from layout NODE, using SEEN hash table."
+(defun majutsu-row--layout-collect-columns (profile node bases seen)
+  "Collect schema columns from layout NODE, using BASES and SEEN."
   (let (columns)
     (dolist (spec (majutsu-row--layout-node-columns node))
-      (let* ((key (majutsu-row--layout-column-key spec))
-             (field (car key))
-             (module (cadr key))
-             (instance (caddr key))
-             (field-key (list field :any))
-             (qualified (or module instance)))
-        (unless (or (gethash key seen)
-                    (and (not qualified) (gethash field-key seen)))
-          (puthash key t seen)
-          (puthash field-key t seen)
-          (push spec columns))))
+      (when-let* ((column (majutsu-row--layout-add-column-spec
+                           profile spec bases seen)))
+        (push column columns)))
     (setq columns (nreverse columns))
     (dolist (child (majutsu-row--layout-children-nodes node))
       (setq columns
             (append columns
-                    (majutsu-row--layout-collect-columns child seen))))
+                    (majutsu-row--layout-collect-columns
+                     profile child bases seen))))
     columns))
 
-(defun majutsu-row--layout-columns (layout)
+(defun majutsu-row--layout-columns (profile layout &optional bases)
   "Return column specs declared by all nodes in LAYOUT."
   (when (majutsu-row--layout-plist-p layout)
-    (majutsu-row--layout-collect-columns
-     (or (plist-get layout :root) layout)
-     (make-hash-table :test #'equal))))
+    (let ((bases (or bases (majutsu-row--layout-column-bases layout)))
+          (seen (make-hash-table :test #'equal))
+          columns)
+      (dolist (spec bases)
+        (when-let* ((column (majutsu-row--layout-add-column-spec
+                             profile spec nil seen)))
+          (push column columns)))
+      (append (nreverse columns)
+              (majutsu-row--layout-collect-columns
+               profile (majutsu-row--layout-root-node layout) bases seen)))))
 
 (defun majutsu-row--template-form (compiled)
   "Return final template form for COMPILED."
@@ -535,11 +571,14 @@ only declare row column values and do not duplicate the row protocol."
 (defun majutsu-row-compile (profile &optional columns)
   "Compile PROFILE COLUMNS into a jj template and layout metadata."
   (let* ((layout (majutsu-row--profile-layout profile))
+         (layout-column-bases (and layout
+                                   (majutsu-row--layout-column-bases layout)))
          (source-columns
           (or columns
               (when-let* ((var (plist-get profile :columns-var)))
                 (symbol-value var))
-              (majutsu-row--layout-columns layout)))
+              (majutsu-row--layout-columns
+               profile layout layout-column-bases)))
          (normalized (mapcar (lambda (spec)
                                (majutsu-row-normalize-column-spec
                                 profile spec))
@@ -556,7 +595,8 @@ only declare row column values and do not duplicate the row protocol."
                   majutsu-row-module-order))
          (compiled (list :profile profile
                          :columns complete
-                         :module-columns module-columns))
+                         :module-columns module-columns
+                         :layout-column-bases layout-column-bases))
          (template (majutsu-template-compile
                     (majutsu-row--template-form compiled)
                     (plist-get profile :self-type))))
