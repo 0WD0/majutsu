@@ -417,18 +417,18 @@ transport logical newlines safely through single-line payload segments."
 
 (defun majutsu-log--row-profile ()
   "Return the row profile for `majutsu-log'."
-  (list :name 'log
-        :self-type 'Commit
-        :layout-var 'majutsu-log-commit-layout
-        :default-postprocessors majutsu-log--default-column-postprocessors
-        :field-postprocessors majutsu-log--field-default-postprocessors
-        :decode-function 'majutsu-log-post-decode-line-separator
-        :entry-id-function 'majutsu-log--entry-id
-        :section-class 'jj-commit
-        :section-value-function 'majutsu-log--entry-id
-        :section-hide nil
-        :tail-align t
-        :compat-property-prefix 'majutsu-log))
+  (majutsu-row-make-profile
+   :name 'log
+   :self-type 'Commit
+   :layout-var 'majutsu-log-commit-layout
+   :default-postprocessors majutsu-log--default-column-postprocessors
+   :field-postprocessors majutsu-log--field-default-postprocessors
+   :decode-function 'majutsu-log-post-decode-line-separator
+   :entry-id-function 'majutsu-log--entry-id
+   :section-class 'jj-commit
+   :section-value-function 'majutsu-log--entry-id
+   :tail-align t
+   :compat-property-prefix 'majutsu-log))
 
 (defun majutsu-log--compile-layout ()
   "Compile `majutsu-log-commit-layout' into row metadata."
