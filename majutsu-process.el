@@ -25,6 +25,7 @@
 (require 'majutsu-base)
 (require 'majutsu-mode)
 (require 'majutsu-jj)
+(require 'majutsu-section)
 (require 'ansi-color)
 (require 'seq)
 (require 'subr-x)
@@ -327,7 +328,7 @@ it."
            (not (seq-some (lambda (window)
                             (eq (window-buffer window) buffer))
                           (window-list))))
-      (magit-section-hide section)))))
+      (majutsu-section-hide section)))))
 
 (defun majutsu--process--error-usage (process-buf)
   (and majutsu-show-process-buffer-hint
