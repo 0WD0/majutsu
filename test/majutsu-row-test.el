@@ -12,15 +12,15 @@
 (require 'majutsu-row)
 
 (defconst majutsu-row-test--profile
-  (list :name 'test
-        :self-type 'Commit
-        :entry-id-function (lambda (entry)
-                             (or (majutsu-row-column entry 'id)
-                                 "unknown"))
-        :section-class 'magit-section
-        :section-value-function (lambda (entry)
-                                  (majutsu-row-column entry 'id))
-        :tail-align nil)
+  (majutsu-row-make-profile
+   :name 'test
+   :self-type 'Commit
+   :entry-id-function (lambda (entry)
+                        (or (majutsu-row-column entry 'id)
+                            "unknown"))
+   :section-class 'magit-section
+   :section-value-function (lambda (entry)
+                             (majutsu-row-column entry 'id)))
   "Row profile used by tests.")
 
 (defvar majutsu-row-test--layout nil
@@ -83,6 +83,22 @@
     (should (string-match-p (regexp-quote "\\x1dB") template))
     (should (string-match-p (regexp-quote "\\x1dM") template))
     (should (string-match-p (regexp-quote "\\x1dE") template))))
+
+(ert-deftest majutsu-row-make-profile-applies-shared-defaults ()
+  "Profile helper should seed shared defaults."
+  (let ((profile (majutsu-row-make-profile
+                  :name 'test
+                  :self-type 'Commit
+                  :layout-var 'majutsu-row-test--layout
+                  :section-hide t
+                  :tail-align t)))
+    (should (eq (plist-get profile :decode-function)
+                'majutsu-row-post-decode-line-separator))
+    (should-not (plist-get profile :default-postprocessors))
+    (should-not (plist-get profile :field-postprocessors))
+    (should (eq (plist-get profile :show-child-count) :inherit))
+    (should (eq (plist-get profile :section-hide) t))
+    (should (eq (plist-get profile :tail-align) t))))
 
 (ert-deftest majutsu-row-template-form-preserves-duplicate-column-templates ()
   "Template construction should respect each compiled column instance."

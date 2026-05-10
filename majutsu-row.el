@@ -129,6 +129,35 @@
        value t)
     value))
 
+;;; Profile helpers
+
+(defconst majutsu-row-base-profile
+  '(:default-postprocessors nil
+    :field-postprocessors nil
+    :decode-function majutsu-row-post-decode-line-separator
+    :record-field-function nil
+    :entry-id-function nil
+    :section-class nil
+    :section-class-function nil
+    :section-value-function nil
+    :section-hide nil
+    :section-hide-function nil
+    :show-child-count :inherit
+    :tail-align nil
+    :compat-property-prefix nil)
+  "Shared defaults for row profiles.")
+
+(defun majutsu-row-make-profile (&rest properties)
+  "Return a row profile plist seeded from `majutsu-row-base-profile'.
+PROPERTIES are alternating keyword/value pairs that override the defaults."
+  (let ((profile (copy-sequence majutsu-row-base-profile)))
+    (while properties
+      (when (null (cdr properties))
+        (user-error "Row profile property %S lacks a value"
+                    (car properties)))
+      (setq profile (plist-put profile (pop properties) (pop properties))))
+    profile))
+
 ;;; Default field helpers
 
 (defun majutsu-row--default-postprocessors-for-field (profile field)
