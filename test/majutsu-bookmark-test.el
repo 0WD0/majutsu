@@ -151,8 +151,17 @@
     (should-not (string-match-p "format_commit_ref" template))
     (should-not (string-match-p "format_commit_summary_with_refs" template))
     (should-not (string-match-p ":map-join" template))
-    (should (string-match-p "self\.removed_targets().map" template))
-    (should (string-match-p "self\.added_targets().map" template))
+    (should (string-match-p (regexp-quote "self.primary().name()") template))
+    (should (string-match-p (regexp-quote "self.primary().tracked()") template))
+    (should (string-match-p (regexp-quote "self.primary().removed_targets().map(|target|") template))
+    (should (string-match-p (regexp-quote "self.primary().added_targets().map(|target|") template))
+    (should (string-match-p (regexp-quote "self.tracked_refs().map(|ref|") template))
+    (should (string-match-p (regexp-quote "ref.removed_targets().map(|target|") template))
+    (should (string-match-p (regexp-quote "ref.added_targets().map(|target|") template))
+    (should-not (string-match-p (regexp-quote "self.name()") template))
+    (should-not (string-match-p (regexp-quote "self.remote()") template))
+    (should-not (string-match-p (regexp-quote "commit.name()") template))
+    (should-not (string-match-p (regexp-quote "commit.remote()") template))
     (should (string-match-p (regexp-quote ".join(\"\")") template))
     (should (string-match-p (regexp-quote "change_id().shortest(8)") template))
     (should (string-match-p (regexp-quote "commit_id().shortest(8)") template))
@@ -165,8 +174,8 @@
 
 (ert-deftest majutsu-bookmark-list-template/uses-custom-display-templates ()
   (let ((majutsu-bookmark--compiled-template-cache nil)
-        (majutsu-bookmark-list-template-heading
-         '[:separate " :: " [:majutsu-bookmark-list-name] "CUSTOM-HEADING"])
+        (majutsu-bookmark-list-template-group-heading
+         '[:separate " :: " [:primary :majutsu-bookmark-list-name] "CUSTOM-HEADING"])
         (majutsu-bookmark-list-template-commit-summary
          '["CUSTOM-SUMMARY " [:commit_id :shortest 4]]))
     (let ((template (majutsu-bookmark--list-template)))
@@ -180,6 +189,7 @@
          '["TARGET " [:commit_id :shortest 4]]))
     (let* ((compiled (majutsu-bookmark--ensure-list-template))
            (template (plist-get compiled :template)))
+      (should-not (string-match-p (regexp-quote ":adopt-previous") template))
       (should (equal (mapcar (lambda (column) (plist-get column :field))
                              (majutsu-row-module-columns compiled 'heading))
                      '(heading target-marker target-summary)))

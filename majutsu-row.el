@@ -519,14 +519,8 @@ callers only declare row column values and do not duplicate the row protocol."
                     (majutsu-row--layout-node-role node)))
          (children-form (majutsu-row--layout-children-template-form
                          compiled (plist-get node :children)))
-         (body-form (majutsu-row--template-concat row-form children-form))
-         (adopt-form (plist-get node :adopt-previous)))
-    (if adopt-form
-        (majutsu-row--template-concat
-         `[:if ,adopt-form [,majutsu-row-push-token "\n"] ""]
-         body-form
-         `[:if ,adopt-form [,majutsu-row-pop-token "\n"] ""])
-      body-form)))
+         (body-form (majutsu-row--template-concat row-form children-form)))
+    body-form))
 
 (defun majutsu-row-layout-node-template-form (compiled node)
   "Return template form for layout NODE using COMPILED."
