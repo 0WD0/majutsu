@@ -391,6 +391,7 @@ bookmark(s) at point."
     :children
     (:nodes
      ((:each [:primary :removed_targets]
+       :as target
        :when [:primary :conflict]
        :role bookmark-target
        :entry-id #'majutsu-bookmark--row-target-entry-id
@@ -404,6 +405,7 @@ bookmark(s) at point."
         (tracked "")
         (commit-id [:commit_id])))
       (:each [:primary :added_targets]
+       :as target
        :when [:primary :conflict]
        :role bookmark-target
        :entry-id #'majutsu-bookmark--row-target-entry-id
@@ -430,6 +432,7 @@ bookmark(s) at point."
        :children
        (:nodes
         ((:each [:removed_targets]
+          :as target
           :when [:conflict]
           :role bookmark-target
           :entry-id #'majutsu-bookmark--row-target-entry-id
@@ -443,6 +446,7 @@ bookmark(s) at point."
            (tracked "")
            (commit-id [:commit_id])))
          (:each [:added_targets]
+          :as target
           :when [:conflict]
           :role bookmark-target
           :entry-id #'majutsu-bookmark--row-target-entry-id
@@ -484,14 +488,13 @@ The layout-level :schema supplies shared column defaults; each node's
 
 (defun majutsu-bookmark--row-profile ()
   "Return row profile for `majutsu-bookmark-list'."
-  (list :name 'bookmark-list
-        :self-type 'RefListItem
-        :layout-var 'majutsu-bookmark-list-layout
-        :default-postprocessors nil
-        :section-hide t
-        :show-child-count nil
-        :tail-align nil
-        :compat-property-prefix 'majutsu-bookmark-list))
+  (majutsu-row-make-profile
+   :name 'bookmark-list
+   :self-type 'RefListItem
+   :layout-var 'majutsu-bookmark-list-layout
+   :section-hide t
+   :show-child-count nil
+   :compat-property-prefix 'majutsu-bookmark-list))
 
 (defun majutsu-bookmark--compile-list-layout ()
   "Compile bookmark-list layout into row metadata."
