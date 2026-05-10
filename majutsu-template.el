@@ -1243,6 +1243,9 @@ bare keyword self dispatch."
     (CommitRef
      :doc "Commit reference (bookmark/tag)."
      :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
+    (RefListItem
+     :doc "Bookmark/tag list group object."
+     :converts ((Boolean . no) (Serialize . yes) (Template . no)))
     (ConfigValue
      :doc "Configuration value."
      :converts ((Boolean . no) (Serialize . yes) (Template . yes)))
@@ -1425,6 +1428,9 @@ bare keyword self dispatch."
      (tracking_ahead_count :returns SizeHint :keyword t)
      (tracking_behind_count :returns SizeHint :keyword t)
      (synced :returns Boolean :keyword t))
+    (RefListItem
+     (primary :returns CommitRef :keyword t)
+     (tracked_refs :returns (:list CommitRef) :keyword t))
     (ConfigValue
      (as_boolean :returns Boolean :keyword t)
      (as_integer :returns Integer :keyword t)
