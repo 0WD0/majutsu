@@ -22,7 +22,6 @@
 (require 'majutsu-row)
 (require 'majutsu-template)
 
-(require 'json)
 (require 'seq)
 (require 'subr-x)
 
@@ -60,19 +59,6 @@ Splits at the last \"@\"."
   (apply #'append
          (mapcar (lambda (remote) (list "--remote" remote))
                  remotes)))
-
-(defun majutsu--bookmark-remote-name-candidates ()
-  "Return remote bookmark names for completion (unique, plain strings)."
-  (let* ((template "if(remote && present, json(name) ++ \"\\n\", \"\")")
-         (args '("bookmark" "list" "--quiet" "--all-remotes" "-T"))
-         (lines (majutsu-jj-lines args template))
-         (names (delq nil
-                      (mapcar (lambda (line)
-                                (condition-case nil
-                                    (json-parse-string line)
-                                  (error nil)))
-                              lines))))
-    (delete-dups (seq-filter #'stringp names))))
 
 (defun majutsu--get-bookmark-names (&optional scope)
   "Return bookmark names for completion.
