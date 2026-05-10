@@ -305,8 +305,8 @@ This mirrors Magit's behavior."
              (lambda (&rest args)
                (pcase args
                  (`("workspace" "list" "-T" "name ++ \"\\n\"") '("ws-a" "ws-b"))
-                 (`("bookmark" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main" "feature"))
-                 (`("tag" "list" "--quiet" "-T" "name ++ \"\\n\"") '("v1.0" "main"))
+                 (`("bookmark" "list" "--quiet" "-T" "self.primary().name() ++ \"\\n\"") '("main" "feature"))
+                 (`("tag" "list" "--quiet" "-T" "self.primary().name() ++ \"\\n\"") '("v1.0" "main"))
                  (_ nil)))))
     (should (equal (majutsu-jj-revset-candidates "main")
                    '("main" "@" "@-" "@+" "ws-a@" "ws-b@" "feature" "v1.0")))))
@@ -449,8 +449,8 @@ This mirrors Magit's behavior."
              (lambda (&rest args)
                (pcase args
                  (`("workspace" "list" "-T" "name ++ \"\\n\"") '("ws-a"))
-                 (`("bookmark" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main"))
-                 (`("tag" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main" "v1.0"))
+                 (`("bookmark" "list" "--quiet" "-T" "self.primary().name() ++ \"\\n\"") '("main"))
+                 (`("tag" "list" "--quiet" "-T" "self.primary().name() ++ \"\\n\"") '("main" "v1.0"))
                  (_ nil)))))
     (let* ((data (majutsu-jj-revset-candidate-data "main"))
            (sources (plist-get data :sources))

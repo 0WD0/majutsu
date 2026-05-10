@@ -52,52 +52,87 @@
     ('remote-untracked 'remote-untracked)
     (_ (user-error "Unknown ref name scope: %S" scope))))
 
+(defun majutsu-ref--primary-local-name-line-form ()
+  "Return a template form for one local primary ref-name line."
+  '[:if [:and [:primary :present]
+              [:not [:primary :remote]]]
+       [[:primary :name] "\n"]
+     ""])
+
+(defun majutsu-ref--primary-remote-name-line-form ()
+  "Return a template form for one remote primary ref-name line."
+  '[:if [:and [:primary :present]
+              [:primary :remote]]
+       [[:primary :name] "@" [:primary :remote] "\n"]
+     ""])
+
+(defun majutsu-ref--tracked-remote-name-line-form ()
+  "Return a template form for one tracked remote ref-name line."
+  '[:if [:and [:present] [:remote]]
+       [[:name] "@" [:remote] "\n"]
+     ""])
+
+(defun majutsu-ref--primary-completion-line-form ()
+  "Return a template form for one structured primary completion line."
+  `[:concat
+    [:join ,majutsu-ref--completion-field-separator
+           [:primary :name]
+           [:if [:primary :remote] [:primary :remote] ""]
+           [:if [:primary :conflict] "t" ""]
+           [:if [:primary :present] "t" ""]
+           [:if [:primary :tracked] "t" ""]
+           [:if [:primary :synced] "t" ""]]
+    "\n"])
+
+(defun majutsu-ref--tracked-completion-line-form ()
+  "Return a template form for one structured tracked-ref completion line."
+  `[:concat
+    [:join ,majutsu-ref--completion-field-separator
+           [:name]
+           [:if [:remote] [:remote] ""]
+           [:if [:conflict] "t" ""]
+           [:if [:present] "t" ""]
+           [:if [:tracked] "t" ""]
+           [:if [:synced] "t" ""]]
+    "\n"])
+
 (defun majutsu-ref--names-template-form (scope)
-  "Return a CommitRef name template form for SCOPE."
+  "Return a RefListItem name template form for SCOPE."
   (pcase (majutsu-ref--normalize-scope scope)
     ('local
-     '[:if [:and [:not [:remote]] [:present]]
-          [[:name] "\n"]
-        ""])
+     (majutsu-ref--primary-local-name-line-form))
     ('remote
-     '[:if [:and [:remote] [:present]]
-          [[:name] "@" [:remote] "\n"]
-        ""])
+     `[:concat
+       ,(majutsu-ref--primary-remote-name-line-form)
+       [:map-join [:str ""] [:tracked_refs] ref
+                  ,(majutsu-ref--tracked-remote-name-line-form)]])
     ('remote-tracked
-     '[:if [:and [:and [:remote] [:present]] [:tracked]]
-          [[:name] "@" [:remote] "\n"]
-        ""])
+     `[:map-join [:str ""] [:tracked_refs] ref
+       ,(majutsu-ref--tracked-remote-name-line-form)])
     ('remote-untracked
-     '[:if [:and [:and [:remote] [:present]] [:not [:tracked]]]
-          [[:name] "@" [:remote] "\n"]
-        ""])))
+     (majutsu-ref--primary-remote-name-line-form))))
 
 (defconst majutsu-ref--names-templates
   (mapcar (lambda (scope)
             (cons scope
                   (majutsu-template-compile
                    (majutsu-ref--names-template-form scope)
-                   'CommitRef)))
+                   'RefListItem)))
           '(local remote remote-tracked remote-untracked))
-  "Compiled CommitRef name templates keyed by normalized scope.")
+  "Compiled RefListItem name templates keyed by normalized scope.")
 
 (defun majutsu-ref--names-template (scope)
-  "Return compiled CommitRef name template for SCOPE."
+  "Return compiled RefListItem name template for SCOPE."
   (alist-get (majutsu-ref--normalize-scope scope)
              majutsu-ref--names-templates))
 
 (defconst majutsu-ref--completion-template
   (majutsu-template-compile
    `[:concat
-     [:join ,majutsu-ref--completion-field-separator
-            [:name]
-            [:if [:remote] [:remote] ""]
-            [:if [:conflict] "t" ""]
-            [:if [:present] "t" ""]
-            [:if [:tracked] "t" ""]
-            [:if [:synced] "t" ""]]
-     "\n"]
-   'CommitRef)
+     ,(majutsu-ref--primary-completion-line-form)
+     [:map-join [:str ""] [:tracked_refs] ref
+                ,(majutsu-ref--tracked-completion-line-form)]]
+   'RefListItem)
   "Template used to collect structured CommitRef completion metadata.
 This uses `join' rather than `separate' because empty fields are meaningful
 in the machine transport format.")
