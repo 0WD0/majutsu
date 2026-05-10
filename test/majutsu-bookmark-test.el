@@ -185,6 +185,8 @@
          '["TARGET " [:commit_id :shortest 4]]))
     (let* ((compiled (majutsu-bookmark--ensure-list-template))
            (template (plist-get compiled :template)))
+      (should (string-match-p (regexp-quote "self.remote()") template))
+      (should (string-match-p (regexp-quote "self.tracked()") template))
       (should (equal (mapcar (lambda (column) (plist-get column :field))
                              (majutsu-row-module-columns compiled 'heading))
                      '(heading target-marker target-summary)))

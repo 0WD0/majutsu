@@ -368,7 +368,7 @@ bookmark(s) at point."
     (:when [:conflict]
       :nodes
       ((:each [:removed_targets]
-        :as commit
+        :as target
         :role bookmark-target
         :entry-id #'majutsu-bookmark--row-target-entry-id
         :section-class jj-commit
@@ -381,7 +381,7 @@ bookmark(s) at point."
          (tracked "")
          (commit-id [:commit_id])))
        (:each [:added_targets]
-        :as commit
+        :as target
         :role bookmark-target
         :entry-id #'majutsu-bookmark--row-target-entry-id
         :section-class jj-commit
