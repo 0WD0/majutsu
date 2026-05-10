@@ -256,9 +256,7 @@
 
 (ert-deftest majutsu-bookmark-track/reads-patterns-and-calls-jj ()
   (let (called)
-    (cl-letf (((symbol-function 'majutsu--bookmark-remote-name-candidates)
-               (lambda () '("main" "dev")))
-              ((symbol-function 'majutsu-remote-candidate-data)
+    (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
                (lambda (&optional _directory)
                  (list :candidates '("origin" "upstream")
                        :entries (make-hash-table :test #'equal))))
