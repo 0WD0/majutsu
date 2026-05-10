@@ -66,6 +66,10 @@
   rows. The emitted bookmark tree is declared through
   ~majutsu-bookmark-list-layout~, using layout-level ~:schema~ defaults plus
   uniform node-local ~:columns~ for regular refs and conflicted target rows.
+- Bookmarks/Templates: Treat =RefListItem= as an explicit group object. It now
+  exposes only =primary()= and =tracked_refs()=; bookmark/tag templates must
+  access primary-ref fields through =primary()= instead of relying on forwarding
+  or direct =self= rendering.
 - Transients: Add a generic repository-local defaults layer keyed by jj's
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
