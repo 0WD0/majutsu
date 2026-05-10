@@ -144,16 +144,15 @@
 
 (defun majutsu-evolog--row-profile ()
   "Return the row profile for `majutsu-evolog'."
-  (list :name 'evolog
-        :self-type 'CommitEvolutionEntry
-        :layout-var 'majutsu-evolog-entry-layout
-        :record-field-function 'majutsu-evolog--record-field
-        :entry-id-function 'majutsu-evolog--entry-id
-        :section-class 'jj-evolog-entry
-        :section-value-function 'majutsu-evolog--entry-id
-        :section-hide nil
-        :tail-align nil
-        :compat-property-prefix 'majutsu-evolog))
+  (majutsu-row-make-profile
+   :name 'evolog
+   :self-type 'CommitEvolutionEntry
+   :layout-var 'majutsu-evolog-entry-layout
+   :record-field-function 'majutsu-evolog--record-field
+   :entry-id-function 'majutsu-evolog--entry-id
+   :section-class 'jj-evolog-entry
+   :section-value-function 'majutsu-evolog--entry-id
+   :compat-property-prefix 'majutsu-evolog))
 
 (defconst majutsu-evolog--entry-compiled
   (majutsu-row-compile (majutsu-evolog--row-profile))

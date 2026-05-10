@@ -544,16 +544,15 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 
 (defun majutsu-op-log--row-profile ()
   "Return the row profile for operation log entries."
-  (list :name 'op-log
-        :self-type 'Operation
-        :layout-var 'majutsu-op-log-layout
-        :record-field-function 'majutsu-op-log--record-field
-        :entry-id-function 'majutsu-op-log--entry-id
-        :section-class 'jj-op
-        :section-value-function 'majutsu-op-log--entry-id
-        :section-hide nil
-        :tail-align nil
-        :compat-property-prefix 'majutsu-op-log))
+  (majutsu-row-make-profile
+   :name 'op-log
+   :self-type 'Operation
+   :layout-var 'majutsu-op-log-layout
+   :record-field-function 'majutsu-op-log--record-field
+   :entry-id-function 'majutsu-op-log--entry-id
+   :section-class 'jj-op
+   :section-value-function 'majutsu-op-log--entry-id
+   :compat-property-prefix 'majutsu-op-log))
 
 (defun majutsu-op-log--compile-layout ()
   "Compile operation log layout into row metadata."

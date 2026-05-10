@@ -422,14 +422,13 @@ The layout-level :schema supplies shared column defaults; each node's
 
 (defun majutsu-bookmark--row-profile ()
   "Return row profile for `majutsu-bookmark-list'."
-  (list :name 'bookmark-list
-        :self-type 'CommitRef
-        :layout-var 'majutsu-bookmark-list-layout
-        :default-postprocessors nil
-        :section-hide t
-        :show-child-count nil
-        :tail-align nil
-        :compat-property-prefix 'majutsu-bookmark-list))
+  (majutsu-row-make-profile
+   :name 'bookmark-list
+   :self-type 'CommitRef
+   :layout-var 'majutsu-bookmark-list-layout
+   :section-hide t
+   :show-child-count nil
+   :compat-property-prefix 'majutsu-bookmark-list))
 
 (defun majutsu-bookmark--compile-list-layout ()
   "Compile bookmark-list layout into row metadata."
