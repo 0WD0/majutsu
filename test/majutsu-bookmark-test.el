@@ -21,9 +21,12 @@
                  (mapcar #'majutsu-bookmark-test--sections
                          (oref section children))))))
 
-(defun majutsu-bookmark-test--row
-    (heading role name remote tracked commit-id)
-  "Return one raw bookmark-list row record."
+(cl-defun majutsu-bookmark-test--row
+    (heading role name remote tracked commit-id &optional children
+             (newline t newline-supplied-p))
+  "Return one raw bookmark-list row record.
+CHILDREN, when non-nil, is inserted into the body stream before metadata.
+When NEWLINE is non-nil or omitted, append a trailing newline."
   (concat majutsu-row-start-token
           majutsu-row-role-token
           (symbol-name role)
@@ -31,22 +34,29 @@
           heading
           majutsu-row-tail-token
           majutsu-row-body-token
+          (or children "")
           majutsu-row-meta-token
           (string-join (list name (or remote "")
                              (if tracked "t" "") (or commit-id ""))
                        majutsu-row-field-separator)
           majutsu-row-end-token
-          "\n"))
+          (if (or (not newline-supplied-p) newline) "\n" "")))
 
-(defun majutsu-bookmark-test--ref (name remote tracked heading)
+(defun majutsu-bookmark-test--inline-child-stream (&rest rows)
+  "Return an inline child stream containing ROWS."
+  (concat majutsu-row-push-token
+          (apply #'concat rows)
+          majutsu-row-pop-token))
+
+(defun majutsu-bookmark-test--ref (name remote tracked heading &optional children newline)
   "Return one bookmark-list ref row record."
   (majutsu-bookmark-test--row
-   heading 'bookmark name remote tracked nil))
+   heading 'bookmark name remote tracked nil children newline))
 
-(defun majutsu-bookmark-test--target (name remote _marker commit-id line)
+(defun majutsu-bookmark-test--target (name remote _marker commit-id line &optional children newline)
   "Return one bookmark-list conflict target row record."
   (majutsu-bookmark-test--row
-   line 'bookmark-target name remote nil commit-id))
+   line 'bookmark-target name remote nil commit-id children newline))
 
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
@@ -192,19 +202,19 @@
 
 (ert-deftest majutsu-bookmark-row-output/attaches-targets-and-remote-state ()
   (let* ((compiled (majutsu-bookmark--ensure-list-template))
-         (output (concat
-                  (majutsu-bookmark-test--ref
-                   "dev" "" nil "dev: rymwrkkn b052a92d summary")
-                  majutsu-row-push-token "\n"
-                  (majutsu-bookmark-test--ref
-                   "dev" "origin" t
-                   "  @origin (ahead by 2 commits, behind by at least 10 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary")
-                  majutsu-row-push-token "\n"
-                  (majutsu-bookmark-test--target
-                   "dev" "origin" "+" "4bb5dd3b"
-                   "  + sxwtxlqt/1 4bb5dd3b (hidden) summary")
-                  majutsu-row-pop-token "\n"
-                  majutsu-row-pop-token "\n"))
+         (output
+          (majutsu-bookmark-test--ref
+           "dev" "" nil "dev: rymwrkkn b052a92d summary"
+           (majutsu-bookmark-test--inline-child-stream
+            (majutsu-bookmark-test--ref
+             "dev" "origin" t
+             "  @origin (ahead by 2 commits, behind by at least 10 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary"
+             (majutsu-bookmark-test--inline-child-stream
+              (majutsu-bookmark-test--target
+               "dev" "origin" "+" "4bb5dd3b"
+               "  + sxwtxlqt/1 4bb5dd3b (hidden) summary"
+               nil nil))
+             nil))))
          parsed roots dev origin target)
     (with-temp-buffer
       (insert output)
@@ -226,14 +236,14 @@
                    "  + sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
 
 (ert-deftest majutsu-bookmark-wash-list/nests-tracked-remotes-under-local-bookmark ()
-  (let* ((output (concat
-                  (majutsu-bookmark-test--ref
-                   "dev" "" nil "dev: rymwrkkn b052a92d summary")
-                  majutsu-row-push-token "\n"
-                  (majutsu-bookmark-test--ref
-                   "dev" "origin" t
-                   "  @origin (ahead by 2 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary")
-                  majutsu-row-pop-token "\n")))
+  (let* ((output
+          (majutsu-bookmark-test--ref
+           "dev" "" nil "dev: rymwrkkn b052a92d summary"
+           (majutsu-bookmark-test--inline-child-stream
+            (majutsu-bookmark-test--ref
+             "dev" "origin" t
+             "  @origin (ahead by 2 commits): sxwtxlqt/1 4bb5dd3b (hidden) summary"
+             nil nil)))))
     (with-temp-buffer
       (majutsu-bookmark-list-mode)
       (let ((inhibit-read-only t))
@@ -262,15 +272,16 @@
           (should (string-match-p "^  @origin" (buffer-string))))))))
 
 (ert-deftest majutsu-bookmark-wash-list/sectionizes-conflicted-targets ()
-  (let* ((output (concat
-                  (majutsu-bookmark-test--ref
-                   "topic" "" nil "topic (conflicted):")
-                  majutsu-row-push-token "\n"
-                  (majutsu-bookmark-test--target
-                   "topic" "" "-" "old123" "  - old-target")
-                  (majutsu-bookmark-test--target
-                   "topic" "" "+" "new123" "  + new-target")
-                  majutsu-row-pop-token "\n")))
+  (let* ((output
+          (majutsu-bookmark-test--ref
+           "topic" "" nil "topic (conflicted):"
+           (majutsu-bookmark-test--inline-child-stream
+            (majutsu-bookmark-test--target
+             "topic" "" "-" "old123" "  - old-target"
+             nil nil)
+            (majutsu-bookmark-test--target
+             "topic" "" "+" "new123" "  + new-target"
+             nil nil)))))
     (with-temp-buffer
       (majutsu-bookmark-list-mode)
       (let ((inhibit-read-only t))
