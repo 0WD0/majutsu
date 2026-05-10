@@ -129,6 +129,35 @@
        value t)
     value))
 
+;;; Profile helpers
+
+(defconst majutsu-row-base-profile
+  '(:default-postprocessors nil
+    :field-postprocessors nil
+    :decode-function majutsu-row-post-decode-line-separator
+    :record-field-function nil
+    :entry-id-function nil
+    :section-class nil
+    :section-class-function nil
+    :section-value-function nil
+    :section-hide nil
+    :section-hide-function nil
+    :show-child-count :inherit
+    :tail-align nil
+    :compat-property-prefix nil)
+  "Shared defaults for row profiles.")
+
+(defun majutsu-row-make-profile (&rest properties)
+  "Return a row profile plist seeded from `majutsu-row-base-profile'.
+PROPERTIES are alternating keyword/value pairs that override the defaults."
+  (let ((profile (copy-sequence majutsu-row-base-profile)))
+    (while properties
+      (when (null (cdr properties))
+        (user-error "Row profile property %S lacks a value"
+                    (car properties)))
+      (setq profile (plist-put profile (pop properties) (pop properties))))
+    profile))
+
 ;;; Default field helpers
 
 (defun majutsu-row--default-postprocessors-for-field (profile field)
@@ -1538,13 +1567,14 @@ When PLAIN is non-nil, omit faces and text properties."
 
 (defun majutsu-row--call-with-child-count-policy (compiled thunk)
   "Call THUNK with COMPILED's child-count display policy."
-  (let* ((profile (majutsu-row--profile compiled))
-         (has-policy (plist-member profile :show-child-count))
-         (policy (plist-get profile :show-child-count)))
-    (if (and has-policy (not (eq policy :inherit)))
-        (let ((magit-section-show-child-count policy))
-          (funcall thunk))
-      (funcall thunk))))
+  (let ((policy (plist-get (majutsu-row--profile compiled)
+                           :show-child-count)))
+    (cond
+     ((or (null policy) (eq policy :inherit))
+      (funcall thunk))
+     (t
+      (let ((magit-section-show-child-count policy))
+        (funcall thunk))))))
 
 (defun majutsu-row-insert-entry (entry compiled)
   "Insert parsed ENTRY as a Magit section using COMPILED."
