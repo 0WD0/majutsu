@@ -302,10 +302,15 @@ INSTANCE is a compiler-assigned column occurrence id, not a layout key."
     `[:concat ,majutsu-row-role-token ,(symbol-name role)
       ,majutsu-row-role-token]))
 
-(defun majutsu-row-template-form (compiled &optional column-templates role)
+(cl-defun majutsu-row-template-form
+    (compiled &optional column-templates role body-suffix
+              (newline t newline-supplied-p))
   "Return one row template form for COMPILED.
 COLUMN-TEMPLATES, when non-nil, must contain every compiled column.  ROLE,
 when non-nil, is encoded as compiler-owned row metadata after the start token.
+BODY-SUFFIX, when non-nil, is inserted after the body module and before the
+metadata module.
+When NEWLINE is non-nil, append a trailing newline to the row transport.
 This constructs the row transport wrapper from compiled row metadata, so
 callers only declare row column values and do not duplicate the row protocol."
   (let ((templates (or column-templates
@@ -320,11 +325,15 @@ callers only declare row column values and do not duplicate the row protocol."
              majutsu-row-tail-token
              (majutsu-row-module-template-form compiled 'tail templates)
              majutsu-row-body-token
-             (majutsu-row-module-template-form compiled 'body templates)
+             (majutsu-row-module-template-form compiled 'body templates))
+            (when body-suffix
+              (list body-suffix))
+            (list
              majutsu-row-meta-token
              (majutsu-row-module-template-form compiled 'metadata templates)
-             majutsu-row-end-token
-             "\n")))))
+             majutsu-row-end-token)
+            (when (or (not newline-supplied-p) newline)
+              (list "\n"))))))
 
 (defun majutsu-row--template-concat (&rest forms)
   "Return one template form concatenating FORMS."
@@ -516,7 +525,7 @@ callers only declare row column values and do not duplicate the row protocol."
   "Return template form for layout NODES using COMPILED."
   (apply #'majutsu-row--template-concat
          (mapcar (lambda (node)
-                   (majutsu-row-layout-node-template-form compiled node))
+                   (majutsu-row-layout-node-template-form compiled node t))
                  nodes)))
 
 (defun majutsu-row--layout-children-template-form (compiled children)
@@ -532,27 +541,28 @@ callers only declare row column values and do not duplicate the row protocol."
       (unless (equal child-form "")
         (let ((form (majutsu-row--template-concat
                      majutsu-row-push-token
-                     "\n"
                      child-form
-                     majutsu-row-pop-token
-                     "\n")))
+                     majutsu-row-pop-token)))
           (if when-form
               `[:if ,when-form ,form ""]
             form))))))
 
-(defun majutsu-row--layout-single-node-template-form (compiled node)
-  "Return template form for one layout NODE without :each expansion."
-  (let* ((row-form (majutsu-row-template-form
+(defun majutsu-row--layout-single-node-template-form (compiled node &optional inline)
+  "Return template form for one layout NODE without :each expansion.
+When INLINE is non-nil, omit the trailing newline for the rendered node."
+  (let* ((children-form (majutsu-row--layout-children-template-form
+                         compiled (plist-get node :children)))
+         (row-form (majutsu-row-template-form
                     compiled
                     (majutsu-row--layout-column-templates compiled node)
-                    (majutsu-row--layout-node-role node)))
-         (children-form (majutsu-row--layout-children-template-form
-                         compiled (plist-get node :children)))
-         (body-form (majutsu-row--template-concat row-form children-form)))
-    body-form))
+                    (majutsu-row--layout-node-role node)
+                    children-form
+                    (not inline))))
+    row-form))
 
-(defun majutsu-row-layout-node-template-form (compiled node)
-  "Return template form for layout NODE using COMPILED."
+(defun majutsu-row-layout-node-template-form (compiled node &optional inline)
+  "Return template form for layout NODE using COMPILED.
+When INLINE is non-nil, omit the trailing newline for the rendered node."
   (unless (majutsu-row--layout-plist-p node)
     (user-error "Invalid row layout node %S" node))
   (let ((each-form (plist-get node :each))
@@ -564,10 +574,10 @@ callers only declare row column values and do not duplicate the row protocol."
                     `[:method ,each-form
                       :map [:lambda (,var)
                                     ,(majutsu-row--layout-single-node-template-form
-                                      compiled node)]
+                                      compiled node inline)]
                       :join ""]
                   (majutsu-row--layout-single-node-template-form
-                   compiled node))))
+                   compiled node inline))))
       (if when-form
           `[:if ,when-form ,form ""]
         form))))
@@ -761,33 +771,79 @@ Return (ROLE . NEXT-POS) when a role is present, otherwise nil."
                   (intern role-name))
                 (+ role-end token-len)))))))
 
-(defun majutsu-row-parse-trailing-payloads (payload)
-  "Parse tail, body, and metadata segments from PAYLOAD.
-Return a plist with module payloads and :end-offset, the index just after
-the end token inside PAYLOAD.  Text after the end token belongs to the
-surrounding event stream and is intentionally ignored here."
-  (when (string-prefix-p majutsu-row-tail-token payload)
-    (let* ((tail-start (length majutsu-row-tail-token))
-           (body-pos (string-match (regexp-quote majutsu-row-body-token)
-                                   payload tail-start))
-           (meta-pos (and body-pos
-                          (string-match (regexp-quote majutsu-row-meta-token)
-                                        payload (+ body-pos
-                                                   (length majutsu-row-body-token)))))
-           (end-pos (and meta-pos
-                         (string-match (regexp-quote majutsu-row-end-token)
-                                       payload (+ meta-pos
-                                                  (length majutsu-row-meta-token))))))
-      (when (and body-pos meta-pos end-pos)
-        (list :tail (substring payload tail-start body-pos)
-              :body (substring payload (+ body-pos
-                                          (length majutsu-row-body-token))
-                               meta-pos)
-              :metadata (substring payload
-                                   (+ meta-pos
-                                      (length majutsu-row-meta-token))
-                                   end-pos)
-              :end-offset (+ end-pos (length majutsu-row-end-token)))))))
+(defun majutsu-row--parse-inline-child-stream-at-point (compiled start end)
+  "Parse inline child stream from START to END using COMPILED.
+Return a plist with :children and :end-pos when the stream is well-formed,
+or nil otherwise."
+  (save-excursion
+    (goto-char start)
+    (catch 'done
+      (let (children)
+        (while (< (point) end)
+          (cond
+           ((majutsu-row--looking-at-token-p majutsu-row-pop-token)
+            (forward-char (length majutsu-row-pop-token))
+            (throw 'done (list :children (nreverse children)
+                               :end-pos (point))))
+           ((majutsu-row--looking-at-token-p majutsu-row-start-token)
+            (if-let* ((parsed (majutsu-row--parse-entry-record-at-point
+                               compiled (point))))
+                (let ((entry (car parsed))
+                      (record-end (cdr parsed)))
+                  (push entry children)
+                  (goto-char record-end))
+              (throw 'done nil)))
+           ((looking-at-p "[ \t\n]+")
+            (skip-chars-forward " \t\n"))
+           (t
+            (throw 'done nil)))))
+      nil)))
+
+(defun majutsu-row-parse-trailing-payloads (compiled tail-pos eol)
+  "Parse tail, body, child stream, and metadata from the current line.
+TAIL-POS points at the tail token and EOL is the end of the physical line
+containing the row.  Return a plist with module payloads, :children, and
+:record-end when the row is well-formed."
+  (save-excursion
+    (goto-char tail-pos)
+    (when (majutsu-row--looking-at-token-p majutsu-row-tail-token)
+      (let* ((tail-start (+ tail-pos (length majutsu-row-tail-token)))
+             (body-pos (majutsu-row-line-token-position
+                        majutsu-row-body-token tail-start eol tail-start)))
+        (when body-pos
+          (let* ((body-start (+ body-pos (length majutsu-row-body-token)))
+                 (push-pos (majutsu-row-line-token-position
+                            majutsu-row-push-token body-start eol body-start))
+                 (meta-pos (majutsu-row-line-token-position
+                            majutsu-row-meta-token body-start eol body-start))
+                 (child-result (and push-pos
+                                    (or (null meta-pos) (< push-pos meta-pos))
+                                    (majutsu-row--parse-inline-child-stream-at-point
+                                     compiled
+                                     (+ push-pos (length majutsu-row-push-token))
+                                     eol)))
+                 (body-end (if child-result
+                               push-pos
+                             meta-pos))
+                 (metadata-start (if child-result
+                                     (plist-get child-result :end-pos)
+                                   meta-pos))
+                 (meta-end (and metadata-start
+                                (save-excursion
+                                  (goto-char metadata-start)
+                                  (when (majutsu-row--looking-at-token-p
+                                         majutsu-row-meta-token)
+                                    (+ metadata-start
+                                       (length majutsu-row-meta-token))))))
+                 (end-pos (and meta-end
+                               (majutsu-row-line-token-position
+                                majutsu-row-end-token meta-end eol meta-end))))
+            (when (and body-end metadata-start end-pos)
+              (list :tail (buffer-substring tail-start body-pos)
+                    :body (buffer-substring body-start body-end)
+                    :children (plist-get child-result :children)
+                    :metadata (buffer-substring meta-end end-pos)
+                    :record-end (+ end-pos (length majutsu-row-end-token))))))))))
 
 (defun majutsu-row-split-module-values (payload count)
   "Split PAYLOAD into COUNT field values."
@@ -891,6 +947,23 @@ surrounding event stream and is intentionally ignored here."
       (setq entry (plist-put entry :modules modules)))
     entry))
 
+(defun majutsu-row--collect-entry-tree (entry)
+  "Return ENTRY and all descendants in preorder."
+  (cons entry
+        (apply #'append
+               (mapcar #'majutsu-row--collect-entry-tree
+                       (plist-get entry :children)))))
+
+(defun majutsu-row--rebase-entry-tree (entry parent depth)
+  "Rebase ENTRY and descendants onto PARENT at DEPTH."
+  (plist-put entry :parent parent)
+  (plist-put entry :depth depth)
+  (plist-put entry :children
+             (mapcar (lambda (child)
+                       (majutsu-row--rebase-entry-tree child entry (1+ depth)))
+                     (plist-get entry :children)))
+  entry)
+
 ;;; Parse
 
 (defun majutsu-row--looking-at-token-p (token)
@@ -955,10 +1028,12 @@ marker from ENTRY's source span and suffix lines."
       (plist-put entry :end entry-end)))
   entry)
 
-(defun majutsu-row--parse-entry-record-at-point (compiled)
+(defun majutsu-row--parse-entry-record-at-point (compiled &optional stream-start)
   "Parse one row record at point using COMPILED.
+When STREAM-START is non-nil, treat it as the current stream origin for prefix
+calculation while keeping the physical line end as the record boundary.
 Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
-  (let* ((entry-beg (line-beginning-position))
+  (let* ((entry-beg (or stream-start (line-beginning-position)))
          (bol entry-beg)
          (eol (line-end-position))
          (start-pos (if (majutsu-row--looking-at-token-p
@@ -999,9 +1074,8 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                       (push (buffer-substring content-start segment-pos)
                             heading-segments)
                       (when-let* ((payloads (majutsu-row-parse-trailing-payloads
-                                             (buffer-substring segment-pos eol))))
-                        (setq record-end
-                              (+ segment-pos (plist-get payloads :end-offset)))
+                                             compiled segment-pos eol)))
+                        (setq record-end (plist-get payloads :record-end))
                         (setq done payloads)))
                   (push prefix heading-prefixes)
                   (push (buffer-substring content-start eol) heading-segments)
@@ -1036,6 +1110,12 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                          entry 'body (plist-get done :body) compiled))
             (setq entry (majutsu-row-record-module-fields
                          entry 'metadata (plist-get done :metadata) compiled))
+            (when-let* ((children (plist-get done :children)))
+              (setq entry (plist-put entry :children
+                                     (mapcar (lambda (child)
+                                               (majutsu-row--rebase-entry-tree
+                                                child entry (1+ (plist-get entry :depth))))
+                                             children))))
             (cons entry record-end)))))))
 
 (defun majutsu-row--attach-entry (entry stack)
@@ -1054,7 +1134,7 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
 (defun majutsu-row-read-region (compiled beg end &optional _options)
   "Read row protocol events between BEG and END using COMPILED.
 Return a plist with :roots, :entries, and :diagnostics."
-  (let (roots entries diagnostics stack last-entry suffix-owner)
+  (let (roots entries diagnostics suffix-owner)
     (save-excursion
       (let ((cursor beg))
         (while (< cursor end)
@@ -1070,14 +1150,13 @@ Return a plist with :roots, :entries, and :diagnostics."
                     ('row
                      (if-let* ((parsed (majutsu-row--parse-entry-record-at-point
                                         compiled)))
-                         (let* ((entry (car parsed))
-                                (record-end (cdr parsed))
-                                (root (majutsu-row--attach-entry entry stack)))
-                           (when root
-                             (push root roots))
-                           (push entry entries)
-                           (setq last-entry entry
-                                 suffix-owner entry
+                         (let ((entry (car parsed))
+                               (record-end (cdr parsed)))
+                           (push entry roots)
+                           (setq entries (nconc entries
+                                                (majutsu-row--collect-entry-tree
+                                                 entry)))
+                           (setq suffix-owner entry
                                  cursor record-end))
                        (push (list :position marker
                                    :message "Incomplete row record")
@@ -1085,25 +1164,19 @@ Return a plist with :roots, :entries, and :diagnostics."
                        (setq suffix-owner nil
                              cursor (+ marker (length token)))))
                     ('push
-                     (if last-entry
-                         (push last-entry stack)
-                       (push (list :position marker
-                                   :message "Row push without previous entry")
-                             diagnostics))
+                     (push (list :position marker
+                                 :message "Row push without previous entry")
+                           diagnostics)
                      (setq suffix-owner nil
                            cursor (+ marker (length token))))
                     ('pop
-                     (if stack
-                         (setq last-entry (pop stack))
-                       (push (list :position marker
-                                   :message "Row pop without parent")
-                             diagnostics))
+                     (push (list :position marker
+                                 :message "Row pop without parent")
+                           diagnostics)
                      (setq suffix-owner nil
                            cursor (+ marker (length token))))
                     ('reset
-                     (setq stack nil
-                           last-entry nil
-                           suffix-owner nil
+                     (setq suffix-owner nil
                            cursor (+ marker (length token))))
                     (_
                      (push (list :position marker
@@ -1112,14 +1185,10 @@ Return a plist with :roots, :entries, and :diagnostics."
                      (setq suffix-owner nil
                            cursor (min end (1+ marker)))))))
             (majutsu-row--finalize-entry-gap suffix-owner cursor end nil)
-            (setq cursor end))))
-      (dolist (entry stack)
-        (push (list :entry entry
-                    :message "Unclosed row stack entry")
-              diagnostics))
-      (list :roots (nreverse roots)
-            :entries (nreverse entries)
-            :diagnostics (nreverse diagnostics)))))
+            (setq cursor end)))))
+    (list :roots (nreverse roots)
+          :entries entries
+          :diagnostics (nreverse diagnostics))))
 
 (defun majutsu-row--diagnostic-position (diagnostic)
   "Return buffer position described by row parser DIAGNOSTIC."
