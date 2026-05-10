@@ -50,16 +50,39 @@
   "Return a derived test entry id for ENTRY."
   (concat (majutsu-row-column entry 'id) "#detail"))
 
-(defun majutsu-row-test--raw-entry (_compiled title id &optional body prefix)
-  "Return one raw test entry for _COMPILED with TITLE, ID, BODY, and PREFIX."
+(defun majutsu-row-test--raw-entry (_compiled title id &optional body prefix children)
+  "Return one raw test entry for _COMPILED with TITLE, ID, BODY, PREFIX, and CHILDREN."
   (concat (or prefix "")
           majutsu-row-start-token
           title
           majutsu-row-tail-token
           majutsu-row-body-token
           (or body "")
+          (or children "")
           majutsu-row-meta-token
           (majutsu-row-test--payload id)
+          majutsu-row-end-token))
+
+(defun majutsu-row-test--inline-child-stream (&rest rows)
+  "Return an inline child stream containing ROWS."
+  (concat majutsu-row-push-token
+          (apply #'concat rows)
+          majutsu-row-pop-token))
+
+(defun majutsu-row-test--raw-role-entry (_compiled role title id &optional parent-id body prefix children)
+  "Return one raw role-bearing test entry."
+  (concat (or prefix "")
+          majutsu-row-start-token
+          majutsu-row-role-token
+          (symbol-name role)
+          majutsu-row-role-token
+          title
+          majutsu-row-tail-token
+          majutsu-row-body-token
+          (or body "")
+          (or children "")
+          majutsu-row-meta-token
+          (majutsu-row-test--payload id (or parent-id ""))
           majutsu-row-end-token))
 
 (defun majutsu-row-test--collect-sections (&optional section)
@@ -195,46 +218,18 @@
          (majutsu-row-test--layout layout)
          (compiled (majutsu-row-compile profile))
          (raw (concat
-               majutsu-row-start-token
-               majutsu-row-role-token "parent" majutsu-row-role-token
-               "Parent 1"
-               majutsu-row-tail-token
-               majutsu-row-body-token
-               majutsu-row-meta-token
-               (majutsu-row-test--payload "p1" "")
-               majutsu-row-end-token
+               (majutsu-row-test--raw-role-entry
+                compiled 'parent "Parent 1" "p1" "" nil "○ "
+                (majutsu-row-test--inline-child-stream
+                 (majutsu-row-test--raw-role-entry
+                  compiled 'child "Child 1" "shared" "p1")))
                "\n"
-               majutsu-row-push-token "\n"
-               majutsu-row-start-token
-               majutsu-row-role-token "child" majutsu-row-role-token
-               "Child 1"
-               majutsu-row-tail-token
-               majutsu-row-body-token
-               majutsu-row-meta-token
-               (majutsu-row-test--payload "shared" "p1")
-               majutsu-row-end-token
-               "\n"
-               majutsu-row-pop-token "\n"
-               majutsu-row-start-token
-               majutsu-row-role-token "parent" majutsu-row-role-token
-               "Parent 2"
-               majutsu-row-tail-token
-               majutsu-row-body-token
-               majutsu-row-meta-token
-               (majutsu-row-test--payload "p2" "")
-               majutsu-row-end-token
-               "\n"
-               majutsu-row-push-token "\n"
-               majutsu-row-start-token
-               majutsu-row-role-token "child" majutsu-row-role-token
-               "Child 2"
-               majutsu-row-tail-token
-               majutsu-row-body-token
-               majutsu-row-meta-token
-               (majutsu-row-test--payload "shared" "p2")
-               majutsu-row-end-token
-               "\n"
-               majutsu-row-pop-token "\n"))
+               (majutsu-row-test--raw-role-entry
+                compiled 'parent "Parent 2" "p2" "" nil "○ "
+                (majutsu-row-test--inline-child-stream
+                 (majutsu-row-test--raw-role-entry
+                  compiled 'child "Child 2" "shared" "p2")))
+               "\n"))
          entries
          second-child
          entry)
@@ -353,14 +348,13 @@
     (should (equal (majutsu-row-column entry 'id) "id-1"))))
 
 (ert-deftest majutsu-row-read-buffer-builds-stack-tree ()
-  "Stream parser should use inline push/pop markers to build children."
+  "Stream parser should use inline child streams to build children."
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
-               (majutsu-row-test--raw-entry compiled "Parent" "parent" nil "○ ")
-               majutsu-row-push-token
-               "\n"
-               (majutsu-row-test--raw-entry compiled "Child" "child" nil "│ ")
-               majutsu-row-pop-token
+               (majutsu-row-test--raw-entry
+                compiled "Parent" "parent" nil "○ "
+                (majutsu-row-test--inline-child-stream
+                 (majutsu-row-test--raw-entry compiled "Child" "child" nil)))
                "\n"
                (majutsu-row-test--raw-entry compiled "Sibling" "sibling" nil "○ ")
                "\n"))
@@ -385,18 +379,14 @@
     (should (equal (majutsu-row-column sibling 'id) "sibling"))))
 
 (ert-deftest majutsu-row-read-buffer-pop-restores-parent ()
-  "A pop should restore the popped parent as the next push target."
+  "Multiple inline children should stay under the same parent."
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
-               (majutsu-row-test--raw-entry compiled "Parent" "parent" nil "○ ")
-               majutsu-row-push-token
-               "\n"
-               (majutsu-row-test--raw-entry compiled "Child 1" "child-1" nil "│ ")
-               majutsu-row-pop-token
-               majutsu-row-push-token
-               "\n"
-               (majutsu-row-test--raw-entry compiled "Child 2" "child-2" nil "│ ")
-               majutsu-row-pop-token
+               (majutsu-row-test--raw-entry
+                compiled "Parent" "parent" nil "○ "
+                (majutsu-row-test--inline-child-stream
+                 (majutsu-row-test--raw-entry compiled "Child 1" "child-1" nil)
+                 (majutsu-row-test--raw-entry compiled "Child 2" "child-2" nil)))
                "\n"))
          parsed parent children)
     (with-temp-buffer
@@ -428,11 +418,10 @@
   "Renderer should put child entries inside the parent section body."
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
-               (majutsu-row-test--raw-entry compiled "Parent" "parent" "Parent body" "○ ")
-               majutsu-row-push-token
-               "\n"
-               (majutsu-row-test--raw-entry compiled "Child" "child" nil "│ ")
-               majutsu-row-pop-token
+               (majutsu-row-test--raw-entry
+                compiled "Parent" "parent" "Parent body" "○ "
+                (majutsu-row-test--inline-child-stream
+                 (majutsu-row-test--raw-entry compiled "Child" "child" nil)))
                "\n"))
          parsed parent-section child-section)
     (with-temp-buffer
