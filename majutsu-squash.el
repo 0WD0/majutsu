@@ -47,7 +47,12 @@ a jj-commit section, add --revision from that section."
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
-      (mapcar (##if (string-prefix-p "--revisions=" %) (concat "--revision=" (substring % 12)))
+      (mapcar (##cond
+               ((string-prefix-p "--revisions=" %)
+                (concat "--revision=" (substring % 12)))
+               ((string-prefix-p "--to=" %)
+                (concat "--into=" (substring % 5)))
+               (t %))
               majutsu-buffer-diff-range))))
 
 (defun majutsu-squash-execute (args)
