@@ -479,8 +479,7 @@ The layout-level :schema supplies shared column defaults; each node's
    :self-type 'RefListItem
    :layout-var 'majutsu-bookmark-list-layout
    :section-hide t
-   :show-child-count nil
-   :compat-property-prefix 'majutsu-bookmark-list))
+   :show-child-count nil))
 
 (defun majutsu-bookmark--compile-list-layout ()
   "Compile bookmark-list layout into row metadata."
