@@ -230,7 +230,7 @@ commit-hash copying.
 **** Module Semantics
 - ~heading~ :: Visible anchor-line content on the left (can span physical lines before the tail segment begins).
 - ~tail~ :: Single-line auxiliary content rendered on the anchor line with right alignment. It remains searchable as real text, but copying a mixed heading+tail region drops the tail text by default; copying the tail alone preserves it.
-- Rendered log spans are tagged with ~majutsu-log-module~, ~majutsu-log-field~, ~majutsu-log-column~, ~majutsu-log-entry-id~, and ~majutsu-log-decoration~ so explicit copy commands can distinguish content from graph/tail decorations.
+- Rendered row spans are tagged with ~majutsu-row-module~, ~majutsu-row-field~, ~majutsu-row-column~, ~majutsu-row-entry-id~, and ~majutsu-row-decoration~ so explicit copy commands can distinguish content from graph/tail decorations.
 - Hidden transport fields always include ~id~, ~commit-id~, and ~parent-ids~, even if you omit them from visible layout. That keeps stable identity, relation navigation, and commit-hash copying available.
 - ~body~ :: Foldable section body.
 - ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.

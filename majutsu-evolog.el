@@ -151,8 +151,7 @@
    :record-field-function 'majutsu-evolog--record-field
    :entry-id-function 'majutsu-evolog--entry-id
    :section-class 'jj-evolog-entry
-   :section-value-function 'majutsu-evolog--entry-id
-   :compat-property-prefix 'majutsu-evolog))
+   :section-value-function 'majutsu-evolog--entry-id))
 
 (defconst majutsu-evolog--entry-compiled
   (majutsu-row-compile (majutsu-evolog--row-profile))

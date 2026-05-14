@@ -363,8 +363,7 @@ transport logical newlines safely through single-line payload segments."
    :entry-id-function 'majutsu-log--entry-id
    :section-class 'jj-commit
    :section-value-function 'majutsu-log--entry-id
-   :tail-align t
-   :compat-property-prefix 'majutsu-log))
+   :tail-align t))
 
 (defun majutsu-log--compile-layout ()
   "Compile `majutsu-log-commit-layout' into row metadata."
