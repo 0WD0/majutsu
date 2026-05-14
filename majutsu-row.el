@@ -1214,17 +1214,25 @@ Return a plist with :roots, :entries, and :diagnostics."
   "Read the current buffer as a row protocol stream using COMPILED."
   (majutsu-row-read-region compiled (point-min) (point-max) options))
 
-(defun majutsu-row-parse-at-point (compiled)
-  "Parse one sequentially encoded row entry at point using COMPILED."
+(defun majutsu-row-parse-at-point (compiled &optional end)
+  "Parse one sequentially encoded row entry at point using COMPILED.
+When END is non-nil, do not read beyond END while attaching suffix lines."
   (let* ((entry-beg (line-beginning-position))
+         (limit (or end (point-max)))
          (start-pos (majutsu-row-line-token-position
                      majutsu-row-start-token entry-beg (line-end-position))))
     (when start-pos
-      (seq-find (lambda (entry)
-                  (= (plist-get entry :beg) entry-beg))
-                (plist-get (majutsu-row-read-region
-                            compiled entry-beg (point-max))
-                           :entries)))))
+      (save-excursion
+        (goto-char entry-beg)
+        (when-let* ((parsed (majutsu-row--parse-entry-record-at-point compiled)))
+          (let* ((entry (car parsed))
+                 (record-end (cdr parsed))
+                 (next-marker (and (< record-end limit)
+                                   (majutsu-row--next-marker-position
+                                    record-end limit))))
+            (majutsu-row--finalize-entry-gap entry record-end
+                                             (or next-marker limit)
+                                             next-marker)))))))
 
 (defun majutsu-row-parse-buffer (compiled)
   "Parse all sequentially encoded row entries in current buffer."
@@ -1709,27 +1717,73 @@ When PLAIN is non-nil, omit faces and text properties."
 
 ;;; Wash
 
-(defun majutsu-row-wash-entry (compiled)
-  "Wash the entry at point using COMPILED."
+(defun majutsu-row--diagnostic-for-current-line ()
+  "Return a parser diagnostic for the current physical line, or nil."
+  (let* ((bol (line-beginning-position))
+         (eol (line-end-position))
+         (marker (majutsu-row--next-marker-position bol eol)))
+    (when marker
+      (save-excursion
+        (goto-char marker)
+        (pcase-let ((`(,kind . ,_token)
+                     (or (majutsu-row--event-at-point)
+                         (cons 'unknown majutsu-row-record-marker))))
+          (when-let* ((message (pcase kind
+                                 ('row "Incomplete row record")
+                                 ('push "Row push without previous entry")
+                                 ('pop "Row pop without parent")
+                                 ('reset nil)
+                                 (_ "Unknown row protocol marker"))))
+            (list :position marker
+                  :message message)))))))
+
+(defun majutsu-row--delete-current-line ()
+  "Delete the current physical line and leave point at its old start."
+  (let ((beg (line-beginning-position))
+        (end (save-excursion
+               (forward-line 1)
+               (point))))
+    (delete-region beg end)
+    (goto-char beg)))
+
+(defun majutsu-row-wash-entry (compiled &optional end)
+  "Wash the entry at point using COMPILED.
+When END is non-nil, do not read beyond END while attaching suffix lines."
   (when-let* ((entry (save-excursion
-                       (majutsu-row-parse-at-point compiled))))
+                       (majutsu-row-parse-at-point compiled end))))
     (let ((beg (plist-get entry :beg))
-          (end (plist-get entry :end)))
-      (delete-region beg end)
+          (entry-end (plist-get entry :end)))
+      (delete-region beg entry-end)
       (goto-char beg)
       (majutsu-row-insert-entry entry compiled)
       entry)))
 
 (defun majutsu-row-wash-buffer (compiled)
-  "Wash all row entries in the current narrowed buffer."
-  (let* ((result (majutsu-row-read-buffer compiled))
-         (roots (plist-get result :roots))
-         (entries (plist-get result :entries))
-         (diagnostics (plist-get result :diagnostics))
-         (inhibit-read-only t))
+  "Wash all row entries in the current narrowed buffer.
+This consumes one root row at a time in Magit wash style."
+  (let ((inhibit-read-only t)
+        roots
+        entries
+        diagnostics)
+    (goto-char (point-min))
+    (magit-wash-sequence
+     (lambda ()
+       (cond
+        ((eobp) nil)
+        ((when-let* ((entry (majutsu-row-wash-entry compiled (point-max))))
+           (push entry roots)
+           (dolist (node (majutsu-row--collect-entry-tree entry))
+             (push node entries))
+           t))
+        (t
+         (when-let* ((diagnostic (majutsu-row--diagnostic-for-current-line)))
+           (push diagnostic diagnostics))
+         (majutsu-row--delete-current-line)
+         (not (eobp))))))
+    (setq roots (nreverse roots)
+          entries (nreverse entries)
+          diagnostics (nreverse diagnostics))
     (majutsu-row-report-diagnostics diagnostics)
-    (delete-region (point-min) (point-max))
-    (majutsu-row-insert-forest roots compiled)
     (setq-local majutsu-row-cached-roots roots)
     entries))
 
