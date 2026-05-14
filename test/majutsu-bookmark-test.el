@@ -25,8 +25,8 @@
     (heading role name remote tracked commit-id &optional children
              (newline t newline-supplied-p))
   "Return one raw bookmark-list row record.
-CHILDREN, when non-nil, is inserted into the body stream before metadata.
-When NEWLINE is non-nil or omitted, append a trailing newline."
+CHILDREN, when non-nil, is inserted as an explicit child stream before
+metadata.  When NEWLINE is non-nil or omitted, append a trailing newline."
   (concat majutsu-row-start-token
           majutsu-row-role-token
           (symbol-name role)
@@ -34,6 +34,7 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
           heading
           majutsu-row-tail-token
           majutsu-row-body-token
+          (and children majutsu-row-children-token)
           (or children "")
           majutsu-row-meta-token
           (string-join (list name (or remote "")
@@ -43,7 +44,7 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
           (if (or (not newline-supplied-p) newline) "\n" "")))
 
 (defun majutsu-bookmark-test--inline-child-stream (&rest rows)
-  "Return an inline child stream containing ROWS."
+  "Return a transport child stream containing ROWS."
   (concat majutsu-row-push-token
           (apply #'concat rows)
           majutsu-row-pop-token))

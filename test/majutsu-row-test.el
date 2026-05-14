@@ -58,13 +58,14 @@
           majutsu-row-tail-token
           majutsu-row-body-token
           (or body "")
+          (and children majutsu-row-children-token)
           (or children "")
           majutsu-row-meta-token
           (majutsu-row-test--payload id)
           majutsu-row-end-token))
 
 (defun majutsu-row-test--inline-child-stream (&rest rows)
-  "Return an inline child stream containing ROWS."
+  "Return a transport child stream containing ROWS."
   (concat majutsu-row-push-token
           (apply #'concat rows)
           majutsu-row-pop-token))
@@ -80,6 +81,7 @@
           majutsu-row-tail-token
           majutsu-row-body-token
           (or body "")
+          (and children majutsu-row-children-token)
           (or children "")
           majutsu-row-meta-token
           (majutsu-row-test--payload id (or parent-id ""))
@@ -143,6 +145,30 @@
                      "id"
                      ,majutsu-row-end-token
                      "\n"]))))
+
+(ert-deftest majutsu-row-template-form-emits-explicit-children-token ()
+  "Template construction should encode children using an explicit token."
+  (let* ((compiled
+          (majutsu-row-test--compiled
+           '((:field title :module heading :template "Heading" :face nil)
+             (:field id :module metadata :template "id" :face nil))))
+         (form (majutsu-row-template-form
+                compiled
+                :children "CHILDREN"
+                :newline nil)))
+    (should (equal form
+                   `[:concat
+                     ,majutsu-row-start-token
+                     "Heading"
+                     ,majutsu-row-tail-token
+                     ""
+                     ,majutsu-row-body-token
+                     ""
+                     ,majutsu-row-children-token
+                     "CHILDREN"
+                     ,majutsu-row-meta-token
+                     "id"
+                     ,majutsu-row-end-token]))))
 
 (ert-deftest majutsu-row-compile-rejects-layout-instance ()
   "Layout declarations should not use compiler-internal :instance."
@@ -281,6 +307,7 @@
     (should (string-match-p (regexp-quote "self.parents().map(|p|") template))
     (should (string-match-p (regexp-quote "p.description().first_line()") template))
     (should (string-match-p (regexp-quote "p.change_id().short(8)") template))
+    (should (string-match-p (regexp-quote "\\x1DC") template))
     (should (string-match-p (regexp-quote "\\x1D[") template))
     (should (string-match-p (regexp-quote "\\x1D]") template))))
 
