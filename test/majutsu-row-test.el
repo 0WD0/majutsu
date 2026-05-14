@@ -441,6 +441,36 @@
         (majutsu-row-wash-buffer compiled)))
     (should (string-match-p "Row push without previous entry" reported))))
 
+(ert-deftest majutsu-row-wash-buffer-caches-roots-in-stream-order ()
+  "Washing should accumulate roots in the order they are streamed."
+  (let* ((compiled (majutsu-row-test--compiled))
+         (raw (concat
+               (majutsu-row-test--raw-entry
+                compiled "Parent" "parent" nil "○ "
+                (majutsu-row-test--inline-child-stream
+                 (majutsu-row-test--raw-entry compiled "Child" "child" nil)))
+               "\n"
+               (majutsu-row-test--raw-entry compiled "Sibling" "sibling" nil "○ ")
+               "\n"))
+         entries)
+    (with-temp-buffer
+      (magit-section-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (test-root)
+        (insert raw)
+        (setq entries (majutsu-row-wash-buffer compiled)))
+      (should (equal (mapcar (lambda (entry)
+                               (majutsu-row-column entry 'id))
+                             entries)
+                     '("parent" "child" "sibling")))
+      (should (equal (mapcar (lambda (entry)
+                               (majutsu-row-column entry 'id))
+                             majutsu-row-cached-roots)
+                     '("parent" "sibling")))
+      (goto-char (point-min))
+      (should (search-forward "Parent" nil t))
+      (should (search-forward "Sibling" nil t)))))
+
 (ert-deftest majutsu-row-insert-forest-creates-nested-magit-sections ()
   "Renderer should put child entries inside the parent section body."
   (let* ((compiled (majutsu-row-test--compiled))
