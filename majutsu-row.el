@@ -45,6 +45,10 @@
   (concat majutsu-row-record-marker "B")
   "Marker that starts the body payload.")
 
+(defconst majutsu-row-children-token
+  (concat majutsu-row-record-marker "C")
+  "Marker that starts an inline child stream.")
+
 (defconst majutsu-row-meta-token
   (concat majutsu-row-record-marker "M")
   "Marker that starts the metadata payload.")
@@ -303,13 +307,13 @@ INSTANCE is a compiler-assigned column occurrence id, not a layout key."
       ,majutsu-row-role-token]))
 
 (cl-defun majutsu-row-template-form
-    (compiled &optional column-templates role body-suffix
+    (compiled &key column-templates role children
               (newline t newline-supplied-p))
   "Return one row template form for COMPILED.
 COLUMN-TEMPLATES, when non-nil, must contain every compiled column.  ROLE,
 when non-nil, is encoded as compiler-owned row metadata after the start token.
-BODY-SUFFIX, when non-nil, is inserted after the body module and before the
-metadata module.
+CHILDREN, when non-nil, is encoded as an explicit inline child stream after the
+body module and before the metadata module.
 When NEWLINE is non-nil, append a trailing newline to the row transport.
 This constructs the row transport wrapper from compiled row metadata, so
 callers only declare row column values and do not duplicate the row protocol."
@@ -326,8 +330,9 @@ callers only declare row column values and do not duplicate the row protocol."
              (majutsu-row-module-template-form compiled 'tail templates)
              majutsu-row-body-token
              (majutsu-row-module-template-form compiled 'body templates))
-            (when body-suffix
-              (list body-suffix))
+            (when children
+              (list majutsu-row-children-token
+                    children))
             (list
              majutsu-row-meta-token
              (majutsu-row-module-template-form compiled 'metadata templates)
@@ -529,7 +534,7 @@ callers only declare row column values and do not duplicate the row protocol."
                  nodes)))
 
 (defun majutsu-row--layout-children-template-form (compiled children)
-  "Return child-section template form for layout CHILDREN."
+  "Return inline child-stream template form for layout CHILDREN."
   (when children
     (let* ((group (if (majutsu-row--layout-plist-p children)
                       children
@@ -554,10 +559,11 @@ When INLINE is non-nil, omit the trailing newline for the rendered node."
                          compiled (plist-get node :children)))
          (row-form (majutsu-row-template-form
                     compiled
+                    :column-templates
                     (majutsu-row--layout-column-templates compiled node)
-                    (majutsu-row--layout-node-role node)
-                    children-form
-                    (not inline))))
+                    :role (majutsu-row--layout-node-role node)
+                    :children children-form
+                    :newline (not inline))))
     row-form))
 
 (defun majutsu-row-layout-node-template-form (compiled node &optional inline)
@@ -773,31 +779,33 @@ Return (ROLE . NEXT-POS) when a role is present, otherwise nil."
 
 (defun majutsu-row--parse-inline-child-stream-at-point (compiled start end)
   "Parse inline child stream from START to END using COMPILED.
-Return a plist with :children and :end-pos when the stream is well-formed,
-or nil otherwise."
+START points at the push token that begins the child stream.  Return a plist
+with :children and :end-pos when the stream is well-formed, or nil otherwise."
   (save-excursion
     (goto-char start)
-    (catch 'done
-      (let (children)
-        (while (< (point) end)
-          (cond
-           ((majutsu-row--looking-at-token-p majutsu-row-pop-token)
-            (forward-char (length majutsu-row-pop-token))
-            (throw 'done (list :children (nreverse children)
-                               :end-pos (point))))
-           ((majutsu-row--looking-at-token-p majutsu-row-start-token)
-            (if-let* ((parsed (majutsu-row--parse-entry-record-at-point
-                               compiled (point))))
-                (let ((entry (car parsed))
-                      (record-end (cdr parsed)))
-                  (push entry children)
-                  (goto-char record-end))
-              (throw 'done nil)))
-           ((looking-at-p "[ \t\n]+")
-            (skip-chars-forward " \t\n"))
-           (t
-            (throw 'done nil)))))
-      nil)))
+    (when (majutsu-row--looking-at-token-p majutsu-row-push-token)
+      (forward-char (length majutsu-row-push-token))
+      (catch 'done
+        (let (children)
+          (while (< (point) end)
+            (cond
+             ((majutsu-row--looking-at-token-p majutsu-row-pop-token)
+              (forward-char (length majutsu-row-pop-token))
+              (throw 'done (list :children (nreverse children)
+                                 :end-pos (point))))
+             ((majutsu-row--looking-at-token-p majutsu-row-start-token)
+              (if-let* ((parsed (majutsu-row--parse-entry-record-at-point
+                                 compiled (point))))
+                  (let ((entry (car parsed))
+                        (record-end (cdr parsed)))
+                    (push entry children)
+                    (goto-char record-end))
+                (throw 'done nil)))
+             ((looking-at-p "[ \t\n]+")
+              (skip-chars-forward " \t\n"))
+             (t
+              (throw 'done nil)))))
+        nil))))
 
 (defun majutsu-row-parse-trailing-payloads (compiled tail-pos eol)
   "Parse tail, body, child stream, and metadata from the current line.
@@ -812,19 +820,20 @@ containing the row.  Return a plist with module payloads, :children, and
                         majutsu-row-body-token tail-start eol tail-start)))
         (when body-pos
           (let* ((body-start (+ body-pos (length majutsu-row-body-token)))
-                 (push-pos (majutsu-row-line-token-position
-                            majutsu-row-push-token body-start eol body-start))
-                 (meta-pos (majutsu-row-line-token-position
-                            majutsu-row-meta-token body-start eol body-start))
-                 (child-result (and push-pos
-                                    (or (null meta-pos) (< push-pos meta-pos))
+                 (children-pos (majutsu-row-line-token-position
+                                majutsu-row-children-token
+                                body-start eol body-start))
+                 (meta-pos (and (null children-pos)
+                                (majutsu-row-line-token-position
+                                 majutsu-row-meta-token
+                                 body-start eol body-start)))
+                 (body-end (or children-pos meta-pos))
+                 (child-result (and children-pos
                                     (majutsu-row--parse-inline-child-stream-at-point
                                      compiled
-                                     (+ push-pos (length majutsu-row-push-token))
+                                     (+ children-pos
+                                        (length majutsu-row-children-token))
                                      eol)))
-                 (body-end (if child-result
-                               push-pos
-                             meta-pos))
                  (metadata-start (if child-result
                                      (plist-get child-result :end-pos)
                                    meta-pos))
