@@ -147,8 +147,7 @@
     :section-hide nil
     :section-hide-function nil
     :show-child-count :inherit
-    :tail-align nil
-    :compat-property-prefix nil)
+    :tail-align nil)
   "Shared defaults for row profiles.")
 
 (defun majutsu-row-make-profile (&rest properties)
@@ -1349,77 +1348,37 @@ When END is non-nil, do not read beyond END while attaching suffix lines."
      ((null face) (substring-no-properties text))
      (t (propertize (substring-no-properties text) 'font-lock-face face)))))
 
-;;; Compat property helpers
-
-(defun majutsu-row--compat-prefixes (compiled)
-  "Return compatibility property prefixes for COMPILED."
-  (let* ((profile (majutsu-row--profile compiled))
-         (prefixes (or (plist-get profile :compat-property-prefixes)
-                       (plist-get profile :compat-property-prefix))))
-    (ensure-list prefixes)))
-
-(defun majutsu-row--property-symbol (prefix suffix)
-  "Return property symbol PREFIX-SUFFIX."
-  (intern (format "%s-%s" prefix suffix)))
-
-(defun majutsu-row--append-compat-properties (props compiled values)
-  "Append compatibility property VALUES to PROPS for COMPILED."
-  (dolist (prefix (majutsu-row--compat-prefixes compiled) props)
-    (while values
-      (let ((suffix (pop values))
-            (value (pop values)))
-        (setq props
-              (append props
-                      (list (majutsu-row--property-symbol prefix suffix)
-                            value)))))))
-
 ;;; Content/deco properties
 
 (defun majutsu-row-content-properties
     (compiled entry-id module &optional column)
   "Return content properties for ENTRY-ID in MODULE."
-  (let ((props `(majutsu-row-profile
-                 ,(plist-get (majutsu-row--profile compiled) :name)
-                 majutsu-row-module ,module
-                 majutsu-row-entry-id ,entry-id)))
+  (let ((props (list 'majutsu-row-profile
+                     (plist-get (majutsu-row--profile compiled) :name)
+                     'majutsu-row-module module
+                     'majutsu-row-entry-id entry-id)))
     (when column
-      (setq props (append props
-                          `(majutsu-row-field ,(plist-get column :field)
-                            majutsu-row-column ,(plist-get column :instance)))))
-    (majutsu-row--append-compat-properties
-     props compiled
-     (append (list 'module module 'entry-id entry-id)
-             (when column
-               (list 'field (plist-get column :field)
-                     'column (plist-get column :instance)))))))
+      (setq props (nconc props
+                         (list 'majutsu-row-field (plist-get column :field)
+                               'majutsu-row-column (plist-get column :instance)))))
+    props))
 
 (defun majutsu-row-decoration-properties
     (compiled entry-id module decoration)
   "Return decoration properties for ENTRY-ID in MODULE."
-  (majutsu-row--append-compat-properties
-   (append
-    `(majutsu-row-profile
-      ,(plist-get (majutsu-row--profile compiled) :name)
-      majutsu-row-module ,module
-      majutsu-row-entry-id ,entry-id
-      majutsu-row-decoration ,decoration))
-   compiled
-   (list 'module module 'entry-id entry-id 'decoration decoration)))
+  (list 'majutsu-row-profile
+        (plist-get (majutsu-row--profile compiled) :name)
+        'majutsu-row-module module
+        'majutsu-row-entry-id entry-id
+        'majutsu-row-decoration decoration))
 
-(defun majutsu-row-tail-spacer-properties (compiled entry-id display)
+(defun majutsu-row-tail-spacer-properties (_compiled entry-id display)
   "Return tail spacer properties for ENTRY-ID and DISPLAY."
-  (majutsu-row--append-compat-properties
-   (append
-    `(majutsu-row-module tail
-      majutsu-row-entry-id ,entry-id
-      majutsu-row-decoration tail-spacer
-      majutsu-row-tail-spacer t
-      display ,display))
-   compiled
-   (list 'module 'tail
-         'entry-id entry-id
-         'decoration 'tail-spacer
-         'tail-spacer t)))
+  (list 'majutsu-row-module 'tail
+        'majutsu-row-entry-id entry-id
+        'majutsu-row-decoration 'tail-spacer
+        'majutsu-row-tail-spacer t
+        'display display))
 
 ;;; Propertize helpers
 
@@ -1789,21 +1748,12 @@ This consumes one root row at a time in Magit wash style."
 
 ;;; Copy property cleanup
 
-(defun majutsu-row--copy-properties (&optional compiled)
-  "Return text properties removed from copied row text."
-  (let ((props (copy-sequence majutsu-row--ui-properties)))
-    (when compiled
-      (dolist (prefix (majutsu-row--compat-prefixes compiled))
-        (dolist (suffix '(module field column entry-id decoration tail-spacer))
-          (push (majutsu-row--property-symbol prefix suffix) props))))
-    props))
-
-(defun majutsu-row-cleanup-copied-string (string &optional compiled)
+(defun majutsu-row-cleanup-copied-string (string)
   "Strip row UI properties from copied STRING."
   (when (stringp string)
     (remove-list-of-text-properties
      0 (length string)
-     (majutsu-row--copy-properties compiled)
+     majutsu-row--ui-properties
      string))
   string)
 
@@ -1836,7 +1786,7 @@ This consumes one root row at a time in Magit wash style."
     (apply #'concat (nreverse parts))))
 
 (defun majutsu-row-filter-buffer-substring
-    (beg end &optional delete compiled)
+    (beg end &optional delete _compiled)
   "Filter copied row text between BEG and END.
 Drops tail text when both heading and tail are present in the copied region."
   (let ((string (buffer-substring--filter beg end delete))
@@ -1846,7 +1796,7 @@ Drops tail text when both heading and tail are present in the copied region."
                (majutsu-row-string-has-module-p string 'tail))
       (setq string (majutsu-row-string-remove-module string 'tail))
       (setq trim-tail t))
-    (setq string (majutsu-row-cleanup-copied-string string compiled))
+    (setq string (majutsu-row-cleanup-copied-string string))
     (when (and trim-tail (stringp string))
       (setq string (replace-regexp-in-string "[ \t]+$" "" string)))
     string))

@@ -552,8 +552,7 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
    :record-field-function 'majutsu-op-log--record-field
    :entry-id-function 'majutsu-op-log--entry-id
    :section-class 'jj-op
-   :section-value-function 'majutsu-op-log--entry-id
-   :compat-property-prefix 'majutsu-op-log))
+   :section-value-function 'majutsu-op-log--entry-id))
 
 (defun majutsu-op-log--compile-layout ()
   "Compile operation log layout into row metadata."
