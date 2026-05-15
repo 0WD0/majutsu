@@ -100,6 +100,24 @@
     (should (or (eq reader 'majutsu-transient-read-remote-name)
                 (equal reader '(function majutsu-transient-read-remote-name))))))
 
+(ert-deftest majutsu-gerrit-upload-transient/uses-rest-backed-review-readers ()
+  "Review metadata readers should use the Gerrit completion helpers."
+  (let* ((reviewer (transient-get-suffix 'majutsu-gerrit-upload-transient "-v"))
+         (cc (transient-get-suffix 'majutsu-gerrit-upload-transient "-C"))
+         (label (transient-get-suffix 'majutsu-gerrit-upload-transient "-l"))
+         (topic (transient-get-suffix 'majutsu-gerrit-upload-transient "-T"))
+         (hashtag (transient-get-suffix 'majutsu-gerrit-upload-transient "-H")))
+    (should (eq (majutsu-gerrit-test--suffix-reader reviewer)
+                'majutsu-gerrit-upload--read-reviewer))
+    (should (eq (majutsu-gerrit-test--suffix-reader cc)
+                'majutsu-gerrit-upload--read-cc))
+    (should (eq (majutsu-gerrit-test--suffix-reader label)
+                'majutsu-gerrit-upload--read-label))
+    (should (eq (majutsu-gerrit-test--suffix-reader topic)
+                'majutsu-gerrit-upload--read-topic))
+    (should (eq (majutsu-gerrit-test--suffix-reader hashtag)
+                'majutsu-gerrit-upload--read-hashtag))))
+
 (ert-deftest majutsu-gerrit-upload-repo-args/keeps-stable-policy-only ()
   "Repository defaults should omit change-specific and dangerous options."
   (should (equal (majutsu-gerrit-upload--repo-args
@@ -198,6 +216,156 @@
     (should (equal (majutsu-gerrit-upload--read-remote-branch
                     "Remote branch: " nil nil)
                    "feature/new"))))
+
+(ert-deftest majutsu-gerrit--project-from-remote-url/parses-common-forms ()
+  (should (equal (majutsu-gerrit--project-from-remote-url
+                  "https://review.gerrithub.io/team/project")
+                 "team/project"))
+  (should (equal (majutsu-gerrit--project-from-remote-url
+                  "ssh://user@review.example.com:29418/team/project")
+                 "team/project"))
+  (should (equal (majutsu-gerrit--project-from-remote-url
+                  "user@review.example.com:team/project.git")
+                 "team/project")))
+
+(ert-deftest majutsu-gerrit--base-url-from-remote-url/parses-common-forms ()
+  (should (equal (majutsu-gerrit--base-url-from-remote-url
+                  "https://review.gerrithub.io/team/project")
+                 "https://review.gerrithub.io"))
+  (should (equal (majutsu-gerrit--base-url-from-remote-url
+                  "ssh://user@review.example.com:29418/team/project")
+                 "https://review.example.com"))
+  (should (equal (majutsu-gerrit--base-url-from-remote-url
+                  "user@review.example.com:team/project.git")
+                 "https://review.example.com")))
+
+(ert-deftest majutsu-gerrit--base-url-from-review-url/preserves-subpath ()
+  (should (equal (majutsu-gerrit--base-url-from-review-url
+                  "https://review.example.com/gerrit/")
+                 "https://review.example.com/gerrit")))
+
+(ert-deftest majutsu-gerrit-account-candidate-data/prefers-email-and-annotates ()
+  (let ((majutsu-gerrit--completion-cache (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'majutsu-gerrit--rest-base-url)
+               (lambda (&rest _args) "https://review.example.com"))
+              ((symbol-function 'majutsu-gerrit--rest-get)
+               (lambda (&rest _args)
+                 '(((name . "Alice Example")
+                    (username . "alice")
+                    (email . "alice@example.com"))
+                   ((name . "Bob Builder")
+                    (username . "bob"))))))
+      (let* ((payload (majutsu-gerrit-account-candidate-data "gerrit" "/repo"))
+             (annotations (plist-get payload :annotations))
+             (entries (plist-get payload :entries)))
+        (should (equal (plist-get payload :candidates)
+                       '("alice@example.com" "bob")))
+        (should (equal (gethash "alice@example.com" annotations)
+                       "Alice Example @alice"))
+        (should (equal (gethash "bob" annotations)
+                       "Bob Builder"))
+        (should (equal (plist-get (gethash "alice@example.com" entries) :username)
+                       "alice"))))))
+
+(ert-deftest majutsu-gerrit-topic-candidate-data/dedupes-and-counts ()
+  (cl-letf (((symbol-function 'majutsu-gerrit--project-open-changes)
+             (lambda (&rest _args)
+               '(((topic . "alpha"))
+                 ((topic . "alpha"))
+                 ((topic . "beta"))))))
+    (let* ((payload (majutsu-gerrit-topic-candidate-data "gerrit" "/repo"))
+           (annotations (plist-get payload :annotations)))
+      (should (equal (plist-get payload :candidates)
+                     '("alpha" "beta")))
+      (should (equal (gethash "alpha" annotations)
+                     "topic (2 open)"))
+      (should (equal (gethash "beta" annotations)
+                     "topic (1 open)")))))
+
+(ert-deftest majutsu-gerrit-hashtag-candidate-data/dedupes-and-counts ()
+  (cl-letf (((symbol-function 'majutsu-gerrit--project-open-changes)
+             (lambda (&rest _args)
+               '(((hashtags . ("one" "two")))
+                 ((hashtags . ("two" "three")))
+                 ((hashtags . ("two")))))))
+    (let* ((payload (majutsu-gerrit-hashtag-candidate-data "gerrit" "/repo"))
+           (annotations (plist-get payload :annotations)))
+      (should (equal (plist-get payload :candidates)
+                     '("one" "three" "two")))
+      (should (equal (gethash "two" annotations)
+                     "hashtag (3 open)")))))
+
+(ert-deftest majutsu-gerrit-label-candidate-data/filters-permitted-votes ()
+  (let ((changes
+         '(((labels
+             . ((Code-Review
+                 . ((values
+                     . ((-2 . "Do not submit")
+                        (-1 . "Needs work")
+                        (0 . "No score")
+                        (1 . "Looks good")
+                        (2 . "Approved")))
+                    (all
+                     . (((username . "alice")
+                         (permitted_voting_range
+                          . ((min . -1) (max . 1))))))))))))))
+    (cl-letf (((symbol-function 'majutsu-gerrit--auth-user)
+               (lambda (&rest _args) "alice"))
+              ((symbol-function 'majutsu-gerrit--project-open-changes)
+               (lambda (&rest _args) changes)))
+      (let* ((payload (majutsu-gerrit-label-candidate-data "gerrit" "/repo"))
+             (annotations (plist-get payload :annotations)))
+        (should (equal (plist-get payload :candidates)
+                       '("Code-Review" "Code-Review+0" "Code-Review-1")))
+        (should (equal (gethash "Code-Review" annotations)
+                       "Code-Review +1 Looks good"))
+        (should-not (member "Code-Review+2" (plist-get payload :candidates)))))))
+
+(ert-deftest majutsu-gerrit-upload-read-reviewer/forwards-rest-payload ()
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _dir) "/repo"))
+              ((symbol-function 'majutsu-gerrit-account-candidate-data)
+               (lambda (&rest args)
+                 (setq seen (plist-put seen :payload-args args))
+                 '(:category majutsu-gerrit-account
+                   :candidates ("alice@example.com"))))
+              ((symbol-function 'majutsu-completing-read-multiple-payload)
+               (lambda (&rest args)
+                 (setq seen (plist-put seen :reader-args args))
+                 '("alice@example.com"))))
+      (should (equal (majutsu-gerrit-upload--read-reviewer
+                      "Reviewer" nil nil)
+                     '("alice@example.com")))
+      (should (equal (plist-get seen :payload-args)
+                     '(nil "/repo" nil)))
+      (should (equal (nth 0 (plist-get seen :reader-args))
+                     "Reviewer"))
+      (should (equal (nth 7 (plist-get seen :reader-args))
+                     'majutsu-gerrit-account))
+      (should (equal (nth 9 (plist-get seen :reader-args))
+                     "/repo")))))
+
+(ert-deftest majutsu-gerrit-upload-read-topic/forwards-project-payload ()
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _dir) "/repo"))
+              ((symbol-function 'majutsu-gerrit-topic-candidate-data)
+               (lambda (&rest args)
+                 (setq seen (plist-put seen :payload-args args))
+                 '(:category majutsu-gerrit-topic
+                   :candidates ("alpha"))))
+              ((symbol-function 'majutsu-completing-read-payload)
+               (lambda (&rest args)
+                 (setq seen (plist-put seen :reader-args args))
+                 "alpha")))
+      (should (equal (majutsu-gerrit-upload--read-topic
+                      "Topic" nil nil)
+                     "alpha"))
+      (should (equal (plist-get seen :payload-args)
+                     '(nil "/repo")))
+      (should (equal (nth 7 (plist-get seen :reader-args))
+                     'majutsu-gerrit-topic)))))
 
 (provide 'majutsu-gerrit-test)
 ;;; majutsu-gerrit-test.el ends here
