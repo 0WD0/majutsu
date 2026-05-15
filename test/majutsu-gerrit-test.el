@@ -243,19 +243,13 @@
                   "user@review.example.com:team/project.git")
                  "https://review.example.com")))
 
-(ert-deftest majutsu-gerrit--connection-specs/ssh-remote-ignores-ssh-port ()
+(ert-deftest majutsu-gerrit--shared-spec/ssh-remote-requires-explicit-web-origin ()
   (cl-letf (((symbol-function 'majutsu-gerrit--remote-url)
              (lambda (&rest _args)
-               "ssh://admin@192.168.110.139:29418/majutsu")))
-    (should (equal (majutsu-gerrit--connection-specs)
-                   '((:gerrit-host "192.168.110.139"
-                      :gerrit-prefix "/a"
-                      :egerrit-url "192.168.110.139"
-                      :ssl t)
-                     (:gerrit-host "192.168.110.139"
-                      :gerrit-prefix "/a"
-                      :egerrit-url "192.168.110.139"
-                      :ssl nil))))))
+               "ssh://admin@192.168.110.139:29418/majutsu"))
+            ((symbol-function 'majutsu-gerrit--config-get)
+             (lambda (_key) nil)))
+    (should-not (majutsu-gerrit--shared-spec))))
 
 (ert-deftest majutsu-gerrit--base-url-from-review-url/preserves-subpath ()
   (should (equal (majutsu-gerrit--base-url-from-review-url
@@ -277,23 +271,21 @@
     (should (equal (gethash "bob" annotations)
                    "Bob Builder"))))
 
-(ert-deftest majutsu-gerrit-account-candidate-data/prefers-provider-order ()
-  (let ((majutsu-gerrit-provider-preference '(gerrit egerrit)))
-    (cl-letf (((symbol-function 'majutsu-gerrit--gerrit-account-candidate-data)
-               (lambda (&rest _args) '(:candidates ("alice"))))
-              ((symbol-function 'majutsu-gerrit--egerrit-account-candidate-data)
-               (lambda (&rest _args) '(:candidates ("bob")))))
-      (should (equal (majutsu-gerrit-account-candidate-data)
-                     '(:candidates ("alice")))))))
+(ert-deftest majutsu-gerrit-account-candidate-data/prefers-gerrit-el-first ()
+  (cl-letf (((symbol-function 'majutsu-gerrit--gerrit-account-candidate-data)
+             (lambda (&rest _args) '(:candidates ("alice"))))
+            ((symbol-function 'majutsu-gerrit--egerrit-account-candidate-data)
+             (lambda (&rest _args) '(:candidates ("bob")))))
+    (should (equal (majutsu-gerrit-account-candidate-data)
+                   '(:candidates ("alice"))))))
 
-(ert-deftest majutsu-gerrit-account-candidate-data/falls-back-to-next-provider ()
-  (let ((majutsu-gerrit-provider-preference '(gerrit egerrit)))
-    (cl-letf (((symbol-function 'majutsu-gerrit--gerrit-account-candidate-data)
-               (lambda (&rest _args) nil))
-              ((symbol-function 'majutsu-gerrit--egerrit-account-candidate-data)
-               (lambda (&rest _args) '(:candidates ("bob@example.com")))))
-      (should (equal (majutsu-gerrit-account-candidate-data)
-                     '(:candidates ("bob@example.com")))))))
+(ert-deftest majutsu-gerrit-account-candidate-data/falls-back-to-egerrit ()
+  (cl-letf (((symbol-function 'majutsu-gerrit--gerrit-account-candidate-data)
+             (lambda (&rest _args) nil))
+            ((symbol-function 'majutsu-gerrit--egerrit-account-candidate-data)
+             (lambda (&rest _args) '(:candidates ("bob@example.com")))))
+    (should (equal (majutsu-gerrit-account-candidate-data)
+                   '(:candidates ("bob@example.com"))))))
 
 (ert-deftest majutsu-gerrit--gerrit-account-candidate-data/borrows-gerrit-el-accounts ()
   (cl-letf (((symbol-function 'majutsu-gerrit--with-gerrit-context)
@@ -322,14 +314,13 @@
       (should (equal (gethash "alice@example.com" annotations)
                      "Alice Example  alice@example.com")))))
 
-(ert-deftest majutsu-gerrit-topic-candidate-data/prefers-provider-order ()
-  (let ((majutsu-gerrit-provider-preference '(gerrit egerrit)))
-    (cl-letf (((symbol-function 'majutsu-gerrit--gerrit-topic-candidate-data)
-               (lambda (&rest _args) '(:candidates ("alpha"))))
-              ((symbol-function 'majutsu-gerrit--egerrit-topic-candidate-data)
-               (lambda (&rest _args) '(:candidates ("beta")))))
-      (should (equal (majutsu-gerrit-topic-candidate-data)
-                     '(:candidates ("alpha")))))))
+(ert-deftest majutsu-gerrit-topic-candidate-data/prefers-gerrit-el-first ()
+  (cl-letf (((symbol-function 'majutsu-gerrit--gerrit-topic-candidate-data)
+             (lambda (&rest _args) '(:candidates ("alpha"))))
+            ((symbol-function 'majutsu-gerrit--egerrit-topic-candidate-data)
+             (lambda (&rest _args) '(:candidates ("beta")))))
+    (should (equal (majutsu-gerrit-topic-candidate-data)
+                   '(:candidates ("alpha"))))))
 
 (ert-deftest majutsu-gerrit--gerrit-topic-candidate-data/borrows-open-review-topics ()
   (cl-letf (((symbol-function 'majutsu-gerrit--remote-url)
@@ -351,11 +342,10 @@
                      "topic (2 open)")))))
 
 (ert-deftest majutsu-gerrit-label-candidate-data/uses-egerrit-borrowed-candidates ()
-  (let ((majutsu-gerrit-provider-preference '(gerrit egerrit)))
-    (cl-letf (((symbol-function 'majutsu-gerrit--egerrit-label-candidate-data)
-               (lambda (&rest _args) '(:candidates ("Code-Review")))))
-      (should (equal (majutsu-gerrit-label-candidate-data)
-                     '(:candidates ("Code-Review")))))))
+  (cl-letf (((symbol-function 'majutsu-gerrit--egerrit-label-candidate-data)
+             (lambda (&rest _args) '(:candidates ("Code-Review")))))
+    (should (equal (majutsu-gerrit-label-candidate-data)
+                   '(:candidates ("Code-Review"))))))
 
 (ert-deftest majutsu-gerrit--egerrit-label-candidate-data/converts-review-candidates ()
   (cl-letf (((symbol-function 'majutsu-gerrit--remote-url)
