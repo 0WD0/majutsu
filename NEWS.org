@@ -72,6 +72,11 @@
   repeated fetch remotes/branches, repeated clone branches, and repeated
   =git push --option= values. Clone sources now use the same URL/path handling
   as remote URLs.
+- Gerrit: Upload review metadata prompts now reuse Gerrit REST completion
+  strategies inspired by =gerrit.el= and =egerrit=. Reviewer/CC prompts query
+  active accounts, topic/hashtag prompts reuse open-project metadata, and
+  label prompts offer project label votes while filtering to the authenticated
+  user's permitted voting range when Gerrit exposes it.
 - Log: The log transient's =-r/--revision= filter is now a normal transient
   argument stored with the rest of the log arguments. It uses Majutsu's standard
   revset expression reader like diff =-r=, prefills the current filter for
