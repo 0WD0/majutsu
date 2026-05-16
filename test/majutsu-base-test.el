@@ -73,6 +73,30 @@
       (should (eq seen-category 'majutsu-remote))
       (should (eq seen-history 'majutsu-remote-name-history)))))
 
+(ert-deftest majutsu-completing-read-annotated/exposes-annotations-and-category ()
+  (let (seen-category seen-history seen-annotation)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt table _predicate require-match _initial hist _default)
+                 (should require-match)
+                 (setq seen-history hist)
+                 (let* ((metadata (funcall table "" nil 'metadata))
+                        (properties (cdr metadata))
+                        (annotation-function
+                         (cdr (assq 'annotation-function properties))))
+                   (setq seen-category (cdr (assq 'category properties))
+                         seen-annotation (funcall annotation-function "main")))
+                 "main")))
+      (should (equal (majutsu-completing-read-annotated
+                      "Branch"
+                      '("main" "dev")
+                      (lambda (candidate)
+                        (and (equal candidate "main") "default branch"))
+                      nil t nil 'majutsu-branch-history nil 'majutsu-branch)
+                     "main"))
+      (should (eq seen-category 'majutsu-branch))
+      (should (eq seen-history 'majutsu-branch-history))
+      (should (equal seen-annotation " default branch")))))
+
 (ert-deftest majutsu-completing-read-multiple-payload/uses-payload-category ()
   (let (seen-category seen-history)
     (cl-letf (((symbol-function 'completing-read-multiple)

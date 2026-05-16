@@ -229,7 +229,7 @@ end with a question mark and space."
    ((and action (memq action majutsu-no-confirm)) t)
    (t (majutsu-y-or-n-p prompt action))))
 
-;;; Completing Read
+;;; Selection readers
 
 (defun majutsu--make-completion-table (candidates &optional category)
   "Wrap CANDIDATES in a completion table.
@@ -276,6 +276,29 @@ REQUIRE-MATCH follows `majutsu-completing-read'."
               (user-error "Nothing selected")
             nil)
         value))))
+
+(defun majutsu-completing-read-annotated
+    (prompt collection annotation-function &optional predicate require-match
+            initial-input hist def category)
+  "Read one value from COLLECTION with annotations from ANNOTATION-FUNCTION.
+COLLECTION is a list of candidate strings.  ANNOTATION-FUNCTION is called once
+for each candidate and should return a string annotation or nil.  CATEGORY is
+forwarded as completion metadata.  REQUIRE-MATCH follows
+`majutsu-completing-read'."
+  (let ((annotations (and annotation-function
+                          (make-hash-table :test #'equal))))
+    (when annotations
+      (dolist (candidate collection)
+        (when-let* ((annotation (funcall annotation-function candidate))
+                    ((stringp annotation))
+                    ((not (string-empty-p annotation))))
+          (puthash candidate annotation annotations))))
+    (majutsu-completing-read-payload
+     prompt
+     (list :category category
+           :candidates collection
+           :annotations annotations)
+     predicate require-match initial-input hist def category)))
 
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
