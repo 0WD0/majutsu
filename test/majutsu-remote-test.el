@@ -28,6 +28,7 @@
                  "rad rad://z4fugm4aenykjpk8tpvvqjvwtzvwj (push: rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk...)"))))
     (let* ((payload (majutsu-remote-candidate-data))
            (entries (plist-get payload :entries))
+           (suffix-function (plist-get payload :annotation-suffix-function))
            (origin (gethash "origin" entries))
            (rad (gethash "rad" entries)))
       (should (equal (plist-get payload :candidates) '("origin" "rad")))
@@ -35,7 +36,11 @@
       (should (equal (plist-get rad :fetch-url)
                      "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj"))
       (should (equal (plist-get rad :push-url)
-                     "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk...")))))
+                     "rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk..."))
+      (should (functionp suffix-function))
+      (should (string-match-p "git remote" (funcall suffix-function "rad")))
+      (should (string-match-p "push:rad://z4fugm4aenykjpk8tpvvqjvwtzvwj/z6Mk..."
+                              (funcall suffix-function "rad"))))))
 
 (ert-deftest majutsu-read-remote-name/uses-history-and-category ()
   (let (seen-history seen-category)

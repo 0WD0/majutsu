@@ -17,7 +17,6 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-ref)
 
 (require 'seq)
 (require 'subr-x)

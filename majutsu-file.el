@@ -393,6 +393,35 @@ Results are cached in `majutsu-file--list-cache`."
       (error nil))
     entries))
 
+(defun majutsu-file--completion-status-face (status)
+  "Return a face for file STATUS."
+  (pcase status
+    ((or "added" "copied") 'success)
+    ("deleted" 'error)
+    ("renamed" 'warning)
+    ("modified" 'majutsu-completion-key)
+    (_ 'majutsu-completion-documentation)))
+
+(defun majutsu-file--completion-suffix (entry)
+  "Return aligned completion suffix for file ENTRY."
+  (let ((status (plist-get entry :status))
+        (file-type (or (plist-get entry :file-type) "file")))
+    (majutsu-completion-annotation
+     (majutsu-completion-column
+      (if (plist-get entry :conflict) "conflict" file-type)
+      10 (if (plist-get entry :conflict) 'warning 'majutsu-completion-key))
+     (majutsu-completion-column
+      status 10 (majutsu-file--completion-status-face status))
+     (majutsu-completion-column
+      (and (plist-get entry :executable) "executable")
+      10 'majutsu-completion-type))))
+
+(defun majutsu-file--completion-suffix-function (entries)
+  "Return candidate suffix function backed by file ENTRIES."
+  (majutsu-completion-entry-suffix-function
+   entries
+   #'majutsu-file--completion-suffix))
+
 (defun majutsu-file-candidate-data (&optional revset root candidates)
   "Return completion payload for file CANDIDATES in REVSET at ROOT."
   (let* ((revset (or revset "@"))
@@ -413,7 +442,9 @@ Results are cached in `majutsu-file--list-cache`."
         (puthash path (gethash path statuses) entries)))
     (list :category 'majutsu-file
           :candidates candidates
-          :entries entries)))
+          :entries entries
+          :annotation-suffix-function
+          (majutsu-file--completion-suffix-function entries))))
 
 (defvar majutsu-file-path-history nil
   "Minibuffer history for repo-relative file path prompts.")

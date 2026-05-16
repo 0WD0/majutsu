@@ -85,7 +85,7 @@
         (should (plist-get v2 :conflict))
         (should (equal (plist-get v2 :untracked-remotes) '("fork")))))))
 
-(ert-deftest majutsu-tag-read-exact-names/uses-name-history-and-category ()
+(ert-deftest majutsu-tag-read-exact-names/uses-name-history ()
   (let* ((payload (list :candidates '("v1.0" "v1.1")
                         :entries (make-hash-table :test #'equal)))
          seen-history

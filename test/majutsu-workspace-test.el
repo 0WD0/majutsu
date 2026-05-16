@@ -65,6 +65,26 @@
       (should (equal (plist-get (car entries) :root)
                      "/ssh:demo:/home/demo/repo-main/")))))
 
+(ert-deftest majutsu-workspace-parse-list-output/strips-ansi-escapes ()
+  "Structured workspace parsing should tolerate ANSI-colored jj output."
+  (let* ((sep majutsu-workspace--field-separator)
+         (default-directory "/tmp/main/")
+         (output (concat
+                  "\x1b[1m@\x1b[0m" sep
+                  "\x1b[35mdefault\x1b[0m" sep
+                  "\x1b[36mwnurqwps\x1b[0m" sep
+                  "\x1b[32m6acd46b7\x1b[0m" sep
+                  "\x1b[33mMain wc\x1b[0m" sep
+                  "\x1b[34m/tmp/main\x1b[0m\n"))
+         (entries (majutsu-workspace-parse-list-output output)))
+    (should (equal (length entries) 1))
+    (should (equal (plist-get (car entries) :name) "default"))
+    (should (plist-get (car entries) :current))
+    (should (equal (plist-get (car entries) :change-id) "wnurqwps"))
+    (should (equal (plist-get (car entries) :commit-id) "6acd46b7"))
+    (should (equal (plist-get (car entries) :desc) "Main wc"))
+    (should (equal (plist-get (car entries) :root) "/tmp/main/"))))
+
 (ert-deftest majutsu-workspace--names/uses-structured-list-entries ()
   "Workspace names should be derived from structured entries."
   (cl-letf (((symbol-function 'majutsu-workspace-list-entries)
@@ -87,13 +107,34 @@
   "Workspace candidate payload should preserve names and structured entries."
   (cl-letf (((symbol-function 'majutsu-workspace-list-entries)
              (lambda (&optional _directory)
-               '((:name "ws-a" :current t :root "/tmp/ws-a/")
+               '((:name "ws-a" :current t :root "/tmp/ws-a/" :change-id "abc12345" :desc "Main")
                  (:name "ws-b" :current nil :root "/tmp/ws-b/")))))
     (let* ((payload (majutsu-workspace-candidate-data))
-           (entries (plist-get payload :entries)))
+           (entries (plist-get payload :entries))
+           (suffix-function (plist-get payload :annotation-suffix-function)))
       (should (equal (plist-get payload :candidates) '("ws-a" "ws-b")))
       (should (equal (plist-get (gethash "ws-a" entries) :root) "/tmp/ws-a/"))
-      (should-not (plist-get (gethash "ws-b" entries) :current)))))
+      (should-not (plist-get (gethash "ws-b" entries) :current))
+      (should (functionp suffix-function))
+      (should (string-match-p "current" (funcall suffix-function "ws-a")))
+      (should (string-match-p "abc12345" (funcall suffix-function "ws-a")))
+      (should (string-match-p "Main" (funcall suffix-function "ws-a"))))))
+
+(ert-deftest majutsu-workspace-candidate-data/completion-suffix-captures-root-context ()
+  "Workspace completion suffixes should keep sibling-relative root labels."
+  (let ((payload
+         (let ((default-directory "/tmp/parent/main/"))
+           (cl-letf (((symbol-function 'majutsu-workspace-list-entries)
+                      (lambda (&optional _directory)
+                        '((:name "main" :current t :root "/tmp/parent/main/")
+                          (:name "feature" :current nil :root "/tmp/parent/feature/")))))
+             (majutsu-workspace-candidate-data)))))
+    (let* ((default-directory "/tmp/unrelated/")
+           (suffix-function (plist-get payload :annotation-suffix-function))
+           (suffix (funcall suffix-function "feature")))
+      (should (string-match-p "workspace" suffix))
+      (should (string-match-p "feature" suffix))
+      (should-not (string-match-p "/tmp/parent/feature" suffix)))))
 
 (ert-deftest majutsu-workspace-read-name/uses-history-and-category ()
   "Workspace name reader should expose dedicated history and category."

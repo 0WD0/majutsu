@@ -305,10 +305,14 @@ This mirrors Magit's behavior."
                                                 'majutsu-revision
                                                 "@"))
            (metadata (funcall table "" nil 'metadata))
-           (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+           (annotation (cdr (assq 'annotation-function (cdr metadata))))
+           (affixation (cdr (assq 'affixation-function (cdr metadata)))))
       (should (equal (all-completions "" table) '("@" "main")))
       (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
       (should (equal (funcall annotation "main") " Main bookmark"))
+      (should (functionp affixation))
+      (should (string-match-p "Main bookmark"
+                              (nth 2 (car (funcall affixation '("main"))))))
       (should-not (funcall annotation "@")))))
 
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
@@ -323,12 +327,20 @@ This mirrors Magit's behavior."
     (let* ((data (majutsu-jj-revset-candidate-data "main"))
            (sources (plist-get data :sources))
            (annotations (plist-get data :annotations))
+           (entries (plist-get data :entries))
+           (suffix-function (plist-get data :annotation-suffix-function))
            (annotation (majutsu-jj--revset-annotation-function sources)))
       (should (eq (plist-get data :category) 'majutsu-revision))
       (should (equal (funcall annotation "@") "  [pseudo]"))
       (should (equal (funcall annotation "ws-a@") "  [workspace]"))
       (should (equal (funcall annotation "main") "  [bookmark,tag]"))
-      (should (equal (gethash "main" annotations) "  [bookmark,tag]")))))
+      (should (equal (gethash "main" annotations) "  [bookmark,tag]"))
+      (should (equal (plist-get (gethash "main" entries) :kind) 'bookmark))
+      (should (equal (plist-get (gethash "main" entries) :sources)
+                     '(bookmark tag)))
+      (should (functionp suffix-function))
+      (should (string-match-p "bookmark" (funcall suffix-function "main")))
+      (should (string-match-p "bookmark,tag" (funcall suffix-function "main"))))))
 
 (ert-deftest majutsu-read-revset/uses-completion-and-allows-free-form ()
   "Revset reader should use completion metadata and allow free-form input."

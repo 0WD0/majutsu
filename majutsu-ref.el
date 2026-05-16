@@ -19,6 +19,7 @@
 ;;; Code:
 
 (require 'majutsu-base)
+(require 'majutsu-completion)
 (require 'majutsu-jj)
 (require 'majutsu-template)
 
@@ -141,6 +142,51 @@ KIND is `bookmark' or `tag'.  SCOPE is one of `local', `remote',
         (push entry entries)))
     (nreverse entries)))
 
+(defun majutsu-ref--completion-remote-field (label remotes face)
+  "Format LABEL for REMOTES using FACE."
+  (when remotes
+    (let* ((remotes (delete-dups (copy-sequence remotes)))
+           (count (length remotes)))
+      (majutsu-completion-field
+       (if (= count 1)
+           (format "%s@%s" label (car remotes))
+         (format "%s@%s%s"
+                 label
+                 (string-join (seq-take remotes 2) ",")
+                 (if (> count 2)
+                     (format ",… (%d)" count)
+                   "")))
+       face))))
+
+(defun majutsu-ref--completion-suffix (kind entry)
+  "Return aligned completion suffix for ref KIND and ENTRY."
+  (majutsu-completion-annotation
+   (majutsu-completion-column (majutsu-ref--command kind) 9 'majutsu-completion-key)
+   (majutsu-completion-column
+    (if (plist-get entry :local) "local" "remote only")
+    11 'majutsu-completion-type)
+   (majutsu-completion-column
+    (and (plist-get entry :synced) "synced")
+    8 'success)
+   (majutsu-completion-column
+    (and (plist-get entry :conflict) "conflicted")
+    10 'warning)
+   (majutsu-completion-column
+    (majutsu-ref--completion-remote-field
+     "tracked" (plist-get entry :tracked-remotes) nil)
+    22 'success)
+   (majutsu-completion-column
+    (majutsu-ref--completion-remote-field
+     "untracked" (plist-get entry :untracked-remotes) nil)
+    22 'majutsu-completion-documentation)))
+
+(defun majutsu-ref--completion-suffix-function (kind entries)
+  "Return candidate suffix function for ref KIND using ENTRIES."
+  (majutsu-completion-entry-suffix-function
+   entries
+   (lambda (entry)
+     (majutsu-ref--completion-suffix kind entry))))
+
 (defun majutsu-ref-candidate-data (kind &optional candidates directory)
   "Return completion payload for ref KIND in DIRECTORY.
 When CANDIDATES is non-nil, use it instead of derived local ref candidates."
@@ -178,7 +224,9 @@ When CANDIDATES is non-nil, use it instead of derived local ref candidates."
       (error nil))
     (list :category (majutsu-ref--category kind)
           :candidates (or candidates local-candidates)
-          :entries entries)))
+          :entries entries
+          :annotation-suffix-function
+          (majutsu-ref--completion-suffix-function kind entries))))
 
 (defun majutsu-ref-read (kind prompt payload history &optional default require-match directory)
   "Read one ref of KIND with PROMPT from structured PAYLOAD.
