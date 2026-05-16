@@ -506,13 +506,15 @@ transport logical newlines safely through single-line payload segments."
                                          majutsu-log--children-by-id)
                                 nil)))))
 
-(defun majutsu-log--format-related-candidate (id)
-  "Return display string for related revision ID."
-  (if-let* ((entry (majutsu-log--entry-for-id id))
-            (desc (majutsu-row-column entry 'description))
-            ((not (string-empty-p (string-trim desc)))))
-      (format "%s  %s" id (replace-regexp-in-string "\n+" " " desc nil t))
-    id))
+(defun majutsu-log--related-id-annotation (id)
+  "Return completion annotation for related revision ID."
+  (when-let* ((entry (majutsu-log--entry-for-id id))
+              (desc (majutsu-row-column entry 'description))
+              (desc (replace-regexp-in-string "[\n\r\t ]+" " "
+                                              (string-trim desc)
+                                              nil t))
+              ((not (string-empty-p desc))))
+    desc))
 
 (defun majutsu-log--read-related-id (ids prompt)
   "Read one relation target from IDS using PROMPT.
@@ -523,11 +525,9 @@ When IDS contains a single element, return it without prompting."
       (`() nil)
       (`(,id) id)
       (_
-       (let* ((candidates (mapcar (lambda (id)
-                                    (cons (majutsu-log--format-related-candidate id) id))
-                                  ids))
-              (choice (completing-read prompt (mapcar #'car candidates) nil t)))
-         (cdr (assoc choice candidates)))))))
+       (majutsu-completing-read-annotated
+        prompt ids #'majutsu-log--related-id-annotation
+        nil t nil nil nil 'majutsu-revision)))))
 
 (defun majutsu-log--goto-related (ids prompt empty-message)
   "Jump to one of IDS using PROMPT, or signal EMPTY-MESSAGE."

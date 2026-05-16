@@ -551,6 +551,19 @@ This mirrors Magit's behavior."
         (should (eq seen-history 'majutsu-read-revset-history))
         (should (equal seen-default "@"))))))
 
+(ert-deftest majutsu-read-single-revset/completion-args-do-not-prefetch-payload ()
+  "Selection-style rev readers should defer jj completion until completion runs."
+  (let (payload-called)
+    (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+               (lambda (&rest _args)
+                 (setq payload-called t)
+                 (ert-fail "Should not prefetch completion payload")))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args) "main")))
+      (should (equal (majutsu-read-single-revset "Rev" "@" '("diff" "--from"))
+                     "main"))
+      (should-not payload-called))))
+
 (ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
   "Revset reader should use plain minibuffer input and allow free-form text."
   (let (seen-keymap seen-history seen-default)

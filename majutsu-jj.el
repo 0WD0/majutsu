@@ -686,17 +686,13 @@ in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
                       (majutsu-thing-at-point 'jj-revision t)
                       (majutsu-revision-at-point)
                       "@"))
-         (payload (if completion-args
-                      (majutsu-jj--completion-payload
-                       (append completion-args '(""))
-                       'majutsu-revision)
-                    (majutsu-jj-revset-candidate-data default)))
          (table (if completion-args
                     (majutsu-jj--completion-table completion-args
                                                   'majutsu-revision
                                                   default)
-                  (majutsu-jj--payload-table payload
-                                             'majutsu-revision default))))
+                  (majutsu-jj--payload-table
+                   (majutsu-jj-revset-candidate-data default)
+                   'majutsu-revision default))))
     (let ((value (completing-read (format-prompt prompt default)
                                   table nil nil nil
                                   (or history 'majutsu-read-revset-history)
