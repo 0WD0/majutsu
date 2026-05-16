@@ -772,6 +772,35 @@ Runs: =jj git fetch=
 - Key: W :: Save stable upload options as defaults for this jj repository. Majutsu remembers =--remote=, =--remote-branch=, =--notify=, and =--ignore-attention-set=, but not revisions, dry-run, metadata, state, or submit-related flags.
 Runs: =jj gerrit upload=
 
+Reviewer/CC/topic/label prompts opportunistically borrow completion helpers from
+installed =gerrit.el= and/or =egerrit= when available. These integrations are
+optional: Majutsu does not depend on either package, and the prompts fall back
+to ordinary free-form minibuffer input when no provider is available.
+
+If you already use one of those packages, configure it normally and Majutsu
+will reuse that configuration. For =gerrit.el=, the important settings are
+=gerrit-host= (plus =gerrit-use-ssl= / =gerrit-rest-endpoint-prefix= if
+needed) and authentication via Emacs =auth-source=. See
+[[https://github.com/twmr/gerrit.el#authentication][gerrit.el's authentication documentation]].
+For =egerrit=, set =egerrit-request-url= and configure credentials through
+=auth-source= as described in its README.
+
+Borrowed REST-backed completion is enabled only when Majutsu can determine a
+reliable Gerrit web/API origin. Explicit =gerrit.el= / =egerrit= configuration
+works, and HTTP(S) remotes work directly. For SSH remotes such as
+=ssh://user@host:29418/project=, configure Gerrit's web URL explicitly, for
+example:
+
+#+begin_src sh
+jj config set --repo gerrit.review-url http://host:8080
+#+end_src
+
+Majutsu intentionally does not guess a web/API URL from SSH port =29418=.
+This setting is not required for =jj gerrit upload= itself; upstream jj uses
+=gerrit.review-url= only to generate =Link:= trailers instead of =Change-Id:=
+trailers. Majutsu also uses it as a reliable web/API base for borrowed Gerrit
+completion when no explicit provider configuration is present.
+
 ** Remotes
 - Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.
 - Key: l (majutsu-git-remote-list) :: List remotes.
