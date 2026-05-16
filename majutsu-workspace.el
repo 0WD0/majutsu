@@ -26,6 +26,7 @@
 
 ;;; Code:
 
+(require 'ansi-color)
 (require 'cl-lib)
 (require 'subr-x)
 
@@ -158,8 +159,9 @@ Each entry contains:
 - :desc       first-line description of the working-copy commit
 - :root       workspace root directory, or nil if unavailable"
   (let ((entries nil)
-        (plan (or plan (majutsu-workspace--ensure-template-plan))))
-    (dolist (line (split-string (or output "") "\n" t))
+        (plan (or plan (majutsu-workspace--ensure-template-plan)))
+        (output (ansi-color-filter-apply (or output ""))))
+    (dolist (line (split-string output "\n" t))
       (when-let* ((entry (majutsu-workspace--parse-line line plan)))
         (push entry entries)))
     (nreverse entries)))
@@ -171,20 +173,34 @@ Each entry contains:
 Entries are parsed from `jj workspace list -T ...`."
   (let* ((default-directory (or directory default-directory))
          (plan (majutsu-workspace--ensure-template-plan))
-         (output (with-temp-buffer
-                   (majutsu-jj-insert "workspace" "list" "-T" (plist-get plan :template))
-                   (buffer-string))))
+         (output (majutsu-jj-buffer-string
+                  "workspace" "list" "-T" (plist-get plan :template))))
     (majutsu-workspace-parse-list-output output plan)))
 
-(defun majutsu-workspace--completion-suffix (entry)
-  "Return aligned completion suffix for workspace ENTRY."
+(defun majutsu-workspace--root-label (root &optional directory)
+  "Return a plain display label for workspace ROOT.
+DIRECTORY is the base directory used to prefer sibling-relative roots."
+  (when root
+    (let* ((base (file-name-as-directory (or directory default-directory)))
+           (parent (file-name-directory (directory-file-name base)))
+           (relative (and parent
+                          (equal (file-remote-p root) (file-remote-p parent))
+                          (ignore-errors (file-relative-name root parent)))))
+      (cond
+       ((and relative (not (string-prefix-p ".." relative)))
+        (directory-file-name relative))
+       (t
+        (abbreviate-file-name (directory-file-name root)))))))
+
+(defun majutsu-workspace--completion-suffix (entry &optional directory)
+  "Return aligned completion suffix for workspace ENTRY.
+DIRECTORY is the base directory used to label workspace roots."
   (majutsu-completion-annotation
    (majutsu-completion-column
     (if (plist-get entry :current) "current" "workspace")
     10 (if (plist-get entry :current) 'success 'majutsu-completion-key))
    (majutsu-completion-column
-    (when-let* ((root (plist-get entry :root)))
-      (abbreviate-file-name root))
+    (majutsu-workspace--root-label (plist-get entry :root) directory)
     28 'majutsu-completion-file-name)
    (majutsu-completion-column
     (plist-get entry :change-id)
@@ -195,11 +211,13 @@ Entries are parsed from `jj workspace list -T ...`."
       desc)
     'majutsu-completion-documentation)))
 
-(defun majutsu-workspace--completion-suffix-function (entries)
-  "Return candidate suffix function backed by workspace ENTRIES."
+(defun majutsu-workspace--completion-suffix-function (entries &optional directory)
+  "Return candidate suffix function backed by workspace ENTRIES.
+DIRECTORY is captured so suffix rendering stays stable in the minibuffer."
   (majutsu-completion-entry-suffix-function
    entries
-   #'majutsu-workspace--completion-suffix))
+   (lambda (entry)
+     (majutsu-workspace--completion-suffix entry directory))))
 
 (defun majutsu-workspace-candidate-data (&optional directory)
   "Return completion payload for workspace names in DIRECTORY."
@@ -219,7 +237,8 @@ Entries are parsed from `jj workspace list -T ...`."
           :entry-list entry-list
           :entries entries
           :annotation-suffix-function
-          (majutsu-workspace--completion-suffix-function entries))))
+          (majutsu-workspace--completion-suffix-function
+           entries default-directory))))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."
@@ -321,19 +340,9 @@ Returns the directory path or nil."
 ROOT should be a normalized directory path or nil."
   (if (not root)
       (propertize "-" 'font-lock-face 'shadow)
-    (let* ((base (file-name-as-directory default-directory))
-           (parent (file-name-directory (directory-file-name base)))
-           (relative (and parent
-                          (equal (file-remote-p root) (file-remote-p parent))
-                          (ignore-errors (file-relative-name root parent))))
-           (display (cond
-                     ((and relative (not (string-prefix-p ".." relative)))
-                      (directory-file-name relative))
-                     (t
-                      (abbreviate-file-name (directory-file-name root))))))
-      (propertize display
-                  'font-lock-face 'shadow
-                  'help-echo root))))
+    (propertize (majutsu-workspace--root-label root)
+                'font-lock-face 'shadow
+                'help-echo root)))
 
 (defun majutsu-workspace--format-entry (entry name-width)
   "Format workspace ENTRY for insertion, padding name to NAME-WIDTH."
