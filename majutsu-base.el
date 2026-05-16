@@ -236,6 +236,14 @@ end with a question mark and space."
 When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
   (majutsu-completion-table candidates category))
 
+(defun majutsu--completion-collection-member-p (candidate collection)
+  "Return non-nil when COLLECTION already contains CANDIDATE.
+COLLECTION may contain plain strings or (CANDIDATE . ANNOTATION) items."
+  (seq-some (lambda (item)
+              (equal candidate
+                     (if (consp item) (car item) item)))
+            collection))
+
 (defun majutsu-completing-read (prompt collection &optional predicate require-match
                                        initial-input hist def category)
   "Read a choice with completion, preserving CATEGORY metadata.
@@ -244,7 +252,8 @@ for completion UI styling (icons, grouping).
 
 When REQUIRE-MATCH is nil, empty input returns nil.  When REQUIRE-MATCH
 is `any', require non-empty input without requiring a candidate match."
-  (when (and def (listp collection) (not (member def collection)))
+  (when (and def (listp collection)
+             (not (majutsu--completion-collection-member-p def collection)))
     (setq collection (cons def collection)))
   (let* ((table (if category
                     (majutsu--make-completion-table collection category)
@@ -258,7 +267,6 @@ is `any', require non-empty input without requiring a candidate match."
             (user-error "Nothing selected")
           nil)
       value)))
-
 (defun majutsu-completing-read-payload
     (prompt payload &optional predicate require-match initial-input hist def category context directory)
   "Read one value from structured completion PAYLOAD.
@@ -277,29 +285,6 @@ REQUIRE-MATCH follows `majutsu-completing-read'."
             nil)
         value))))
 
-(defun majutsu-completing-read-annotated
-    (prompt collection annotation-function &optional predicate require-match
-            initial-input hist def category)
-  "Read one value from COLLECTION with annotations from ANNOTATION-FUNCTION.
-COLLECTION is a list of candidate strings.  ANNOTATION-FUNCTION is called once
-for each candidate and should return a string annotation or nil.  CATEGORY is
-forwarded as completion metadata.  REQUIRE-MATCH follows
-`majutsu-completing-read'."
-  (let ((annotations (and annotation-function
-                          (make-hash-table :test #'equal))))
-    (when annotations
-      (dolist (candidate collection)
-        (when-let* ((annotation (funcall annotation-function candidate))
-                    ((stringp annotation))
-                    ((not (string-empty-p annotation))))
-          (puthash candidate annotation annotations))))
-    (majutsu-completing-read-payload
-     prompt
-     (list :category category
-           :candidates collection
-           :annotations annotations)
-     predicate require-match initial-input hist def category)))
-
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
   "Read multiple choices with completion, preserving CATEGORY metadata.
@@ -307,7 +292,8 @@ Like `completing-read-multiple' but uses `format-prompt' and supports CATEGORY.
 
 When REQUIRE-MATCH is `any', require at least one non-empty input without
 requiring a candidate match."
-  (when (and def (listp collection) (not (member def collection)))
+  (when (and def (listp collection)
+             (not (majutsu--completion-collection-member-p def collection)))
     (setq collection (cons def collection)))
   (let* ((table (if category
                     (majutsu--make-completion-table collection category)

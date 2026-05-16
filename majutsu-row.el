@@ -1971,15 +1971,15 @@ Drops tail text when both heading and tail are present in the copied region."
                                 (cons (symbol-name field) field))
                               (majutsu-row-entry-copyable-fields
                                entry compiled)))
+         (items (mapcar (lambda (cell)
+                          (cons (car cell)
+                                (majutsu-row-entry-field-candidate-preview
+                                 entry (cdr cell))))
+                        field-alist))
          (default (car (rassoc default-field field-alist)))
-         (choice (majutsu-completing-read-annotated
+         (choice (majutsu-completing-read
                   (or prompt "Copy entry field: ")
-                  (mapcar #'car field-alist)
-                  (lambda (candidate)
-                    (majutsu-row-entry-field-candidate-preview
-                     entry
-                     (alist-get candidate field-alist nil nil #'equal)))
-                  nil t nil nil default 'majutsu-row-field)))
+                  items nil t nil nil default 'majutsu-row-field)))
     (or (alist-get choice field-alist nil nil #'equal)
         (user-error "Unknown entry field %S" choice))))
 

@@ -525,8 +525,13 @@ When IDS contains a single element, return it without prompting."
       (`() nil)
       (`(,id) id)
       (_
-       (majutsu-completing-read-annotated
-        prompt ids #'majutsu-log--related-id-annotation
+       (majutsu-completing-read
+        prompt
+        (mapcar (lambda (id)
+                  (if-let* ((annotation (majutsu-log--related-id-annotation id)))
+                      (cons id annotation)
+                    id))
+                ids)
         nil t nil nil nil 'majutsu-revision)))))
 
 (defun majutsu-log--goto-related (ids prompt empty-message)
