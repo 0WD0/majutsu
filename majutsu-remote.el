@@ -74,11 +74,11 @@
           (when-let* ((entry (majutsu-remote--parse-list-line line))
                       (name (plist-get entry :name)))
             (unless (gethash name entries)
-              (setq candidates (append candidates (list name))))
+              (push name candidates))
             (puthash name entry entries)))
       (error nil))
     (list :category 'majutsu-remote
-          :candidates candidates
+          :candidates (nreverse candidates)
           :entries entries
           :annotation-suffix-function
           (majutsu-remote--completion-suffix-function entries))))

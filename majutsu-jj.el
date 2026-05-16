@@ -259,12 +259,12 @@ CATEGORY defaults to `majutsu-revision'."
          candidates)
     (dolist (entry entries)
       (when-let* ((candidate (plist-get entry :value)))
-        (setq candidates (append candidates (list candidate)))
+        (push candidate candidates)
         (puthash candidate entry entry-table)
         (when-let* ((annotation (plist-get entry :annotation)))
           (puthash candidate annotation annotations))))
     (list :category category
-          :candidates candidates
+          :candidates (nreverse candidates)
           :annotations annotations
           :entries entry-table
           :annotation-suffix-function
@@ -586,7 +586,7 @@ The return value is a plist with keys :category, :candidates,
     (cl-labels ((add (candidate source)
                   (when (and (stringp candidate) (not (string-empty-p candidate)))
                     (unless (gethash candidate sources)
-                      (setq ordered (append ordered (list candidate))))
+                      (push candidate ordered))
                     (majutsu-jj--add-revset-source sources candidate source))))
       (dolist (pseudo '("@" "@-" "@+"))
         (add pseudo 'pseudo))
@@ -596,6 +596,7 @@ The return value is a plist with keys :category, :candidates,
         (add name 'bookmark))
       (dolist (name tags)
         (add name 'tag)))
+    (setq ordered (nreverse ordered))
     (let* ((candidates (if (and default (not (string-empty-p default)))
                            (cons default (delete default ordered))
                          ordered))

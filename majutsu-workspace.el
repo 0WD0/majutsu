@@ -230,10 +230,10 @@ DIRECTORY is captured so suffix rendering stays stable in the minibuffer."
     (dolist (entry entry-list)
       (when-let* ((name (plist-get entry :name)))
         (unless (gethash name entries)
-          (setq candidates (append candidates (list name))))
+          (push name candidates))
         (puthash name entry entries)))
     (list :category 'majutsu-workspace
-          :candidates candidates
+          :candidates (nreverse candidates)
           :entry-list entry-list
           :entries entries
           :annotation-suffix-function
