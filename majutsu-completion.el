@@ -195,11 +195,12 @@ and absent from ITEMS, is prepended without annotation."
         (puthash (majutsu-completion--item-candidate item)
                  annotation
                  annotations)))
-    (let ((annotation-function (majutsu-completion--annotation-function annotations)))
-      (lambda (string predicate action)
-        (if (eq action 'metadata)
-            (majutsu-completion--metadata category annotation-function)
-          (complete-with-action action candidates string predicate))))))
+    (let* ((annotation-function (majutsu-completion--annotation-function annotations))
+           (suffix-function (majutsu-completion-annotation-suffix-function annotations))
+           (affixation-function (majutsu-completion-affixation-function suffix-function))
+           (metadata (cdr (majutsu-completion--metadata
+                           category annotation-function affixation-function))))
+      (completion-table-with-metadata candidates metadata))))
 
 (defun majutsu-completion-payload-category (payload &optional category)
   "Return completion CATEGORY or PAYLOAD's :category."
@@ -246,10 +247,7 @@ standard completion metadata plus Majutsu's internal
          (candidates (majutsu-completion--add-default
                       (plist-get payload :candidates) default))
          (metadata (majutsu-completion-payload-metadata payload category)))
-    (lambda (string predicate action)
-      (if (eq action 'metadata)
-          metadata
-        (complete-with-action action candidates string predicate)))))
+    (completion-table-with-metadata candidates (cdr metadata))))
 
 (provide 'majutsu-completion)
 ;;; majutsu-completion.el ends here
