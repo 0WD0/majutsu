@@ -59,11 +59,11 @@
 (ert-deftest majutsu-completing-read-payload/uses-payload-category ()
   (let (seen-category seen-history)
     (cl-letf (((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate require-match _initial hist _default)
+               (lambda (_prompt collection _predicate require-match _initial hist _default)
                  (should-not require-match)
-                 (setq seen-history hist)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 (setq seen-history hist
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("origin")))
                  "origin")))
       (should (equal (majutsu-completing-read-payload
                       "Remote"
@@ -73,14 +73,36 @@
       (should (eq seen-category 'majutsu-remote))
       (should (eq seen-history 'majutsu-remote-name-history)))))
 
+(ert-deftest majutsu-completing-read/accepts-annotated-items ()
+  (let (seen-category seen-history seen-annotation)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt collection _predicate require-match _initial hist _default)
+                 (should require-match)
+                 (setq seen-history hist
+                       seen-category (plist-get completion-extra-properties :category)
+                       seen-annotation (funcall (plist-get completion-extra-properties
+                                                            :annotation-function)
+                                                "main"))
+                 (should (equal collection '(("main" . "default branch") "dev")))
+                 "main")))
+      (should (equal (majutsu-completing-read
+                      "Branch"
+                      '(("main" . "default branch") "dev")
+                      nil t nil 'majutsu-branch-history
+                      "main" 'majutsu-branch)
+                     "main"))
+      (should (eq seen-category 'majutsu-branch))
+      (should (eq seen-history 'majutsu-branch-history))
+      (should (equal seen-annotation " default branch")))))
+
 (ert-deftest majutsu-completing-read-multiple-payload/uses-payload-category ()
   (let (seen-category seen-history)
     (cl-letf (((symbol-function 'completing-read-multiple)
-               (lambda (_prompt table _predicate require-match _initial hist _default)
+               (lambda (_prompt collection _predicate require-match _initial hist _default)
                  (should-not require-match)
-                 (setq seen-history hist)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 (setq seen-history hist
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("ws-a")))
                  '("ws-a"))))
       (should (equal (majutsu-completing-read-multiple-payload
                       "Workspace"

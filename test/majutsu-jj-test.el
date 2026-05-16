@@ -272,8 +272,8 @@ This mirrors Magit's behavior."
                  (`("bookmark" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main" "feature"))
                  (`("tag" "list" "--quiet" "-T" "name ++ \"\\n\"") '("v1.0" "main"))
                  (_ nil)))))
-    (should (equal (majutsu-jj-revset-candidates "main")
-                   '("main" "@" "@-" "@+" "ws-a@" "ws-b@" "feature" "v1.0")))))
+    (should (equal (majutsu-jj-revset-candidates)
+                   '("@" "@-" "@+" "ws-a@" "ws-b@" "main" "feature" "v1.0")))))
 
 (ert-deftest majutsu-jj-completion-items/uses-native-complete-env ()
   "Native completion should invoke jj's COMPLETE protocol."
@@ -295,25 +295,24 @@ This mirrors Magit's behavior."
       (should (equal seen-args '("--" "jj" "log" "-r" "ma")))
       (should (equal seen-complete "fish")))))
 
-(ert-deftest majutsu-jj-completion-table/exposes-annotations-and-default ()
+(ert-deftest majutsu-jj-completion-table/exposes-annotations ()
   "Native completion tables should expose metadata annotations."
   (cl-letf (((symbol-function 'majutsu-jj-completion-items)
              (lambda (args)
                (should (equal args '("log" "-r" "")))
                '(("main" . "Main bookmark")))))
     (let* ((table (majutsu-jj--completion-table '("log" "-r")
-                                                'majutsu-revision
-                                                "@"))
+                                                'majutsu-revision))
            (metadata (funcall table "" nil 'metadata))
            (annotation (cdr (assq 'annotation-function (cdr metadata))))
            (affixation (cdr (assq 'affixation-function (cdr metadata)))))
-      (should (equal (all-completions "" table) '("@" "main")))
+      (should (equal (all-completions "" table) '("main")))
       (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
       (should (equal (funcall annotation "main") " Main bookmark"))
       (should (functionp affixation))
       (should (string-match-p "Main bookmark"
                               (nth 2 (car (funcall affixation '("main"))))))
-      (should-not (funcall annotation "@")))))
+      (should-not (funcall annotation "dev")))))
 
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
   "Candidate data should preserve source kinds for metadata annotations."
@@ -324,7 +323,7 @@ This mirrors Magit's behavior."
                  (`("bookmark" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main"))
                  (`("tag" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main" "v1.0"))
                  (_ nil)))))
-    (let* ((data (majutsu-jj-revset-candidate-data "main"))
+    (let* ((data (majutsu-jj-revset-candidate-data))
            (sources (plist-get data :sources))
            (annotations (plist-get data :annotations))
            (entries (plist-get data :entries))
@@ -350,7 +349,7 @@ This mirrors Magit's behavior."
       (puthash "main" '(bookmark tag) sources)
       (puthash "main" "  [bookmark,tag]" annotations)
       (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
-                 (lambda (_default)
+                 (lambda ()
                    (list :category 'majutsu-revision
                          :candidates '("@" "main")
                          :annotations annotations
@@ -380,7 +379,7 @@ This mirrors Magit's behavior."
       (puthash "main" '(bookmark) sources)
       (puthash "main" "  [bookmark]" annotations)
       (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
-                 (lambda (_default)
+                 (lambda ()
                    (list :category 'majutsu-revision
                          :candidates '("@" "main")
                          :annotations annotations
@@ -446,6 +445,25 @@ This mirrors Magit's behavior."
                "literal-rev")))
     (should (equal (majutsu-revision-at-point) "section-rev"))))
 
+(ert-deftest majutsu-read-single-revset/defaults-to-literal-thing-before-context ()
+  (let (seen-default)
+    (cl-letf (((symbol-function 'majutsu-thing-at-point)
+               (lambda (_thing &optional _no-properties)
+                 "main@origin"))
+              ((symbol-function 'majutsu-revision-at-point)
+               (lambda () "context"))
+              ((symbol-function 'majutsu-jj-revset-candidate-data)
+               (lambda ()
+                 (list :category 'majutsu-revision
+                       :candidates '("main@origin"))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _table _predicate _require-match _initial hist default)
+                 (setq seen-default (list hist default))
+                 default)))
+      (should (equal (majutsu-read-single-revset "Rev") "main@origin"))
+      (should (equal seen-default
+                     '(majutsu-read-revset-history "main@origin"))))))
+
 
 (ert-deftest majutsu-read-revset/defaults-to-literal-thing-before-context ()
   (let (seen-default)
@@ -455,7 +473,7 @@ This mirrors Magit's behavior."
               ((symbol-function 'majutsu-revision-at-point)
                (lambda () "context"))
               ((symbol-function 'majutsu-jj-revset-candidate-data)
-               (lambda (_default)
+               (lambda ()
                  (list :category 'majutsu-revision
                        :candidates '("main@origin"))))
               ((symbol-function 'read-from-minibuffer)
