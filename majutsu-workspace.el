@@ -29,6 +29,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 
+(require 'majutsu-completion)
 (require 'majutsu-mode)
 (require 'majutsu-process)
 (require 'majutsu-template)
@@ -175,6 +176,31 @@ Entries are parsed from `jj workspace list -T ...`."
                    (buffer-string))))
     (majutsu-workspace-parse-list-output output plan)))
 
+(defun majutsu-workspace--completion-suffix (entry)
+  "Return aligned completion suffix for workspace ENTRY."
+  (majutsu-completion-annotation
+   (majutsu-completion-column
+    (if (plist-get entry :current) "current" "workspace")
+    10 (if (plist-get entry :current) 'success 'majutsu-completion-key))
+   (majutsu-completion-column
+    (when-let* ((root (plist-get entry :root)))
+      (abbreviate-file-name root))
+    28 'majutsu-completion-file-name)
+   (majutsu-completion-column
+    (plist-get entry :change-id)
+    8 'majutsu-completion-number)
+   (majutsu-completion-field
+    (when-let* ((desc (plist-get entry :desc))
+                ((not (string-empty-p desc))))
+      desc)
+    'majutsu-completion-documentation)))
+
+(defun majutsu-workspace--completion-suffix-function (entries)
+  "Return candidate suffix function backed by workspace ENTRIES."
+  (majutsu-completion-entry-suffix-function
+   entries
+   #'majutsu-workspace--completion-suffix))
+
 (defun majutsu-workspace-candidate-data (&optional directory)
   "Return completion payload for workspace names in DIRECTORY."
   (let* ((default-directory (or directory default-directory))
@@ -191,7 +217,9 @@ Entries are parsed from `jj workspace list -T ...`."
     (list :category 'majutsu-workspace
           :candidates candidates
           :entry-list entry-list
-          :entries entries)))
+          :entries entries
+          :annotation-suffix-function
+          (majutsu-workspace--completion-suffix-function entries))))
 
 (defun majutsu-workspace--names (&optional directory)
   "Return a list of workspace names for DIRECTORY."

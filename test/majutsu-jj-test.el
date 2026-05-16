@@ -354,7 +354,7 @@ This mirrors Magit's behavior."
     (cl-letf (((symbol-function 'majutsu-process-file)
                (lambda (_program _infile destination _display &rest args)
                  (setq calls (append calls (list (list :args args
-                                                      :complete (getenv "COMPLETE")))))
+                                                       :complete (getenv "COMPLETE")))))
                  (pcase (length calls)
                    (1 1)
                    (2 (when (eq destination t)
@@ -400,16 +400,19 @@ This mirrors Magit's behavior."
                                                   'majutsu-revision
                                                   "@"))
              (metadata (funcall table "" nil 'metadata))
-             (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+             (annotation (cdr (assq 'annotation-function (cdr metadata))))
+             (affixation (cdr (assq 'affixation-function (cdr metadata)))))
         (should (equal (all-completions "" table) '("@" "main")))
         (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
         (should (equal (funcall annotation "main") " Main bookmark"))
-        (should-not (assq 'affixation-function (cdr metadata)))
+        (should (functionp affixation))
+        (should (string-match-p "Main bookmark"
+                                (nth 2 (car (funcall affixation '("main"))))))
         (should-not (funcall annotation "@"))))))
 
 (ert-deftest majutsu-jj-completion-table/completes-revset-expressions-dynamically ()
   "Native completion tables should send the current revset expression to jj."
-  (let (calls prewarmed-contexts)
+  (let (calls)
     (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
                (lambda (args category)
                  (push args calls)
@@ -424,24 +427,22 @@ This mirrors Magit's behavior."
                      (puthash candidate (concat "Help for " candidate) annotations))
                    (list :category 'majutsu-revision
                          :candidates (and candidate (list candidate))
-                         :annotations annotations))))
-              ((symbol-function 'majutsu-completion-prewarm-payload)
-               (lambda (_payload _category context _directory)
-                 (push context prewarmed-contexts))))
+                         :annotations annotations)))))
       (let* ((table (majutsu-jj--completion-table '("diff" "-r")
                                                   'majutsu-revision))
              (metadata (funcall table "" nil 'metadata))
-             (annotation (cdr (assq 'annotation-function (cdr metadata)))))
+             (annotation (cdr (assq 'annotation-function (cdr metadata))))
+             (affixation (cdr (assq 'affixation-function (cdr metadata)))))
         (should (equal (all-completions "main | " table)
                        '("main | dev")))
         (should (equal (all-completions "trunk()..ma" table)
                        '("trunk()..main")))
         (should (member '("diff" "-r" "main | ") calls))
         (should (member '("diff" "-r" "trunk()..ma") calls))
-        (should (member "main | " prewarmed-contexts))
-        (should (member "trunk()..ma" prewarmed-contexts))
         (should (equal (funcall annotation "main | dev")
-                       " Help for main | dev"))))))
+                       " Help for main | dev"))
+        (should (string-match-p "Help for main | dev"
+                                (nth 2 (car (funcall affixation '("main | dev"))))))))))
 
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
   "Candidate data should preserve source kinds for metadata annotations."
@@ -456,6 +457,7 @@ This mirrors Magit's behavior."
            (sources (plist-get data :sources))
            (annotations (plist-get data :annotations))
            (entries (plist-get data :entries))
+           (suffix-function (plist-get data :annotation-suffix-function))
            (annotation (majutsu-jj--revset-annotation-function sources)))
       (should (eq (plist-get data :category) 'majutsu-revision))
       (should (equal (funcall annotation "@") "  [pseudo]"))
@@ -464,11 +466,14 @@ This mirrors Magit's behavior."
       (should (equal (gethash "main" annotations) "  [bookmark,tag]"))
       (should (equal (plist-get (gethash "main" entries) :kind) 'bookmark))
       (should (equal (plist-get (gethash "main" entries) :sources)
-                     '(bookmark tag))))))
+                     '(bookmark tag)))
+      (should (functionp suffix-function))
+      (should (string-match-p "bookmark" (funcall suffix-function "main")))
+      (should (string-match-p "bookmark,tag" (funcall suffix-function "main"))))))
 
 (ert-deftest majutsu-jj-revset-completion-at-point/uses-current-expression ()
   "Revset CAPF should ask jj about the current full expression."
-  (let (calls prewarmed-contexts)
+  (let (calls)
     (with-temp-buffer
       (insert "main | ")
       (goto-char (point-max))
@@ -487,10 +492,7 @@ This mirrors Magit's behavior."
                        (list :category 'majutsu-revision
                              :candidates '("main | dev")
                              :annotations annotations
-                             :entries entries))))
-                  ((symbol-function 'majutsu-completion-prewarm-payload)
-                   (lambda (_payload _category context _directory)
-                     (push context prewarmed-contexts))))
+                             :entries entries)))))
           (pcase-let ((`(,beg ,end ,table . ,props)
                        (majutsu-jj-revset-completion-at-point)))
             (should (= beg 1))
@@ -503,8 +505,7 @@ This mirrors Magit's behavior."
             (should (hash-table-p (plist-get props :majutsu-revision-entries)))
             (should (equal (all-completions "main | " table)
                            '("main | dev")))
-            (should (member '("diff" "-r" "main | ") calls))
-            (should (member "main | " prewarmed-contexts))))))))
+            (should (member '("diff" "-r" "main | ") calls))))))))
 
 (ert-deftest majutsu-jj--revset-minibuffer-setup/installs-capf ()
   "Revset minibuffer setup should install the CAPF helper locally."
@@ -538,8 +539,6 @@ This mirrors Magit's behavior."
                    (list :category 'majutsu-revision
                          :candidates '("main")
                          :annotations annotations)))
-                ((symbol-function 'majutsu-completion-prewarm-payload)
-                 (lambda (&rest _args)))
                 ((symbol-function 'completing-read)
                  (lambda (_prompt table _predicate _require-match _initial hist def)
                    (let ((metadata (funcall table "" nil 'metadata)))
@@ -559,8 +558,6 @@ This mirrors Magit's behavior."
                (lambda (_default)
                  (list :category 'majutsu-revision
                        :candidates '("@" "main"))))
-              ((symbol-function 'majutsu-completion-prewarm-payload)
-               (lambda (&rest _args)))
               ((symbol-function 'read-from-minibuffer)
                (lambda (_prompt _initial keymap _read hist default &optional _inherit)
                  (setq seen-keymap keymap
@@ -577,8 +574,6 @@ This mirrors Magit's behavior."
   (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
              (lambda (_default)
                (list :category 'majutsu-revision :candidates '("@"))))
-            ((symbol-function 'majutsu-completion-prewarm-payload)
-             (lambda (&rest _args)))
             ((symbol-function 'read-from-minibuffer)
              (lambda (&rest _args) "")))
     (should (equal (majutsu-read-revset "Rev" "@") "@"))))
@@ -590,8 +585,6 @@ This mirrors Magit's behavior."
                (lambda (_default)
                  (list :category 'majutsu-revision
                        :candidates '("@" "main"))))
-              ((symbol-function 'majutsu-completion-prewarm-payload)
-               (lambda (&rest _args)))
               ((symbol-function 'read-from-minibuffer)
                (lambda (_prompt initial keymap _read hist default &optional _inherit)
                  (setq seen-initial initial
@@ -663,8 +656,6 @@ This mirrors Magit's behavior."
                (lambda (_default)
                  (list :category 'majutsu-revision
                        :candidates '("main@origin"))))
-              ((symbol-function 'majutsu-completion-prewarm-payload)
-               (lambda (&rest _args)))
               ((symbol-function 'completing-read)
                (lambda (_prompt _table _predicate _require-match _initial hist default)
                  (setq seen-default (list hist default))
@@ -684,8 +675,6 @@ This mirrors Magit's behavior."
                (lambda (_default)
                  (list :category 'majutsu-revision
                        :candidates '("main@origin"))))
-              ((symbol-function 'majutsu-completion-prewarm-payload)
-               (lambda (&rest _args)))
               ((symbol-function 'read-from-minibuffer)
                (lambda (_prompt _initial _keymap _read _hist default &optional _inherit)
                  (setq seen-default default)

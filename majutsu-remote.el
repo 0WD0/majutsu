@@ -16,6 +16,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-completion)
 
 (require 'subr-x)
 
@@ -45,6 +46,24 @@
             :push-url (when-let* ((push (match-string 3 raw)))
                         (string-trim push))))))
 
+(defun majutsu-remote--completion-suffix (entry)
+  "Return aligned completion suffix for remote ENTRY."
+  (let ((fetch (plist-get entry :fetch-url))
+        (push (plist-get entry :push-url)))
+    (majutsu-completion-annotation
+     (majutsu-completion-column "git remote" 10 'majutsu-completion-key)
+     (majutsu-completion-column fetch 28 'majutsu-completion-file-name)
+     (majutsu-completion-field
+      (and push (not (equal push fetch))
+           (format "push:%s" push))
+      'majutsu-completion-documentation))))
+
+(defun majutsu-remote--completion-suffix-function (entries)
+  "Return candidate suffix function backed by remote ENTRIES."
+  (majutsu-completion-entry-suffix-function
+   entries
+   #'majutsu-remote--completion-suffix))
+
 (defun majutsu-remote-candidate-data (&optional directory)
   "Return completion payload for Git remote names in DIRECTORY."
   (let ((default-directory (or directory default-directory))
@@ -60,7 +79,9 @@
       (error nil))
     (list :category 'majutsu-remote
           :candidates candidates
-          :entries entries)))
+          :entries entries
+          :annotation-suffix-function
+          (majutsu-remote--completion-suffix-function entries))))
 
 (defun majutsu-remote-names (&optional directory)
   "Return a list of Git remote names for DIRECTORY."

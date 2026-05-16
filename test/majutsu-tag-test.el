@@ -88,17 +88,13 @@
         (should (plist-get v2 :conflict))
         (should (equal (plist-get v2 :untracked-remotes) '("fork")))))))
 
-(ert-deftest majutsu-tag-read-exact-names/uses-name-history-and-prewarm ()
+(ert-deftest majutsu-tag-read-exact-names/uses-name-history ()
   (let* ((payload (list :candidates '("v1.0" "v1.1")
                         :entries (make-hash-table :test #'equal)))
-         seen-prewarm
          seen-history
          seen-category)
     (cl-letf (((symbol-function 'majutsu-tag-candidate-data)
                (lambda (&optional _directory) payload))
-              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
-               (lambda (category prewarm-payload &optional revset directory)
-                 (setq seen-prewarm (list category prewarm-payload revset directory))))
               ((symbol-function 'completing-read-multiple)
                (lambda (_prompt collection _predicate _require-match
                                 _initial history _default)
@@ -108,9 +104,7 @@
                  '("v1.0"))))
       (should (equal (majutsu-tag--read-exact-names "Set tag(s)") '("v1.0")))
       (should (eq seen-history 'majutsu-tag-name-history))
-      (should (eq seen-category 'majutsu-tag))
-      (should (equal (car seen-prewarm) 'majutsu-tag))
-      (should (equal (cadr seen-prewarm) payload)))))
+      (should (eq seen-category 'majutsu-tag)))))
 
 (ert-deftest majutsu-tag-at-point/uses-tag-section-value ()
   (cl-letf (((symbol-function 'magit-section-value-if)
@@ -126,8 +120,6 @@
                (lambda () "v1.0"))
               ((symbol-function 'majutsu-tag-candidate-data)
                (lambda (&optional _directory) payload))
-              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
-               (lambda (&rest _args) nil))
               ((symbol-function 'completing-read-multiple)
                (lambda (_prompt _collection _predicate _require-match _initial _history default)
                  (setq seen-default default)
@@ -141,8 +133,6 @@
          seen-history)
     (cl-letf (((symbol-function 'majutsu-tag-candidate-data)
                (lambda (&optional _directory) payload))
-              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
-               (lambda (&rest _args) nil))
               ((symbol-function 'completing-read-multiple)
                (lambda (&rest args)
                  (setq seen-history (nth 5 args))

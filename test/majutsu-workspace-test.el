@@ -87,17 +87,22 @@
   "Workspace candidate payload should preserve names and structured entries."
   (cl-letf (((symbol-function 'majutsu-workspace-list-entries)
              (lambda (&optional _directory)
-               '((:name "ws-a" :current t :root "/tmp/ws-a/")
+               '((:name "ws-a" :current t :root "/tmp/ws-a/" :change-id "abc12345" :desc "Main")
                  (:name "ws-b" :current nil :root "/tmp/ws-b/")))))
     (let* ((payload (majutsu-workspace-candidate-data))
-           (entries (plist-get payload :entries)))
+           (entries (plist-get payload :entries))
+           (suffix-function (plist-get payload :annotation-suffix-function)))
       (should (equal (plist-get payload :candidates) '("ws-a" "ws-b")))
       (should (equal (plist-get (gethash "ws-a" entries) :root) "/tmp/ws-a/"))
-      (should-not (plist-get (gethash "ws-b" entries) :current)))))
+      (should-not (plist-get (gethash "ws-b" entries) :current))
+      (should (functionp suffix-function))
+      (should (string-match-p "current" (funcall suffix-function "ws-a")))
+      (should (string-match-p "abc12345" (funcall suffix-function "ws-a")))
+      (should (string-match-p "Main" (funcall suffix-function "ws-a"))))))
 
 (ert-deftest majutsu-workspace-read-name/uses-history-and-category ()
   "Workspace name reader should expose dedicated history and category."
-  (let (seen-history seen-category prewarm)
+  (let (seen-history seen-category)
     (cl-letf (((symbol-function 'magit-section-value-if)
                (lambda (&rest _args) nil))
               ((symbol-function 'majutsu-workspace-candidate-data)
@@ -110,9 +115,6 @@
                    (list :candidates '("ws-a" "ws-b")
                          :entry-list entry-list
                          :entries entries))))
-              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
-               (lambda (&rest args)
-                 (setq prewarm args)))
               ((symbol-function 'completing-read)
                (lambda (_prompt table _predicate _require-match _initial history _default)
                  (setq seen-history history)
@@ -121,8 +123,7 @@
                  "ws-b")))
       (should (equal (majutsu-workspace--read-name "Workspace") "ws-b"))
       (should (eq seen-history 'majutsu-workspace-name-history))
-      (should (eq seen-category 'majutsu-workspace))
-      (should (eq (car prewarm) 'majutsu-workspace)))))
+      (should (eq seen-category 'majutsu-workspace)))))
 
 (ert-deftest majutsu-workspace-visit/binds-default-directory ()
   "Ensure visiting another workspace updates buffer context."
