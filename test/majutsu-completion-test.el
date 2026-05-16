@@ -30,10 +30,21 @@
          (metadata (funcall table "" nil 'metadata))
          (annotation (cdr (assq 'annotation-function (cdr metadata)))))
     (should (equal (all-completions "" table) '("@" "main" "dev")))
+    (should (eq (cdr (assq 'display-sort-function (cdr metadata))) #'identity))
+    (should (eq (cdr (assq 'cycle-sort-function (cdr metadata))) #'identity))
     (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
     (should (equal (funcall annotation "main") " Main bookmark"))
     (should-not (funcall annotation "dev"))
     (should-not (funcall annotation "@"))))
+
+(ert-deftest majutsu-completion-table/omits-empty-annotation-metadata ()
+  "Plain completion tables should not shadow category annotators."
+  (dolist (items '(("main" "dev") (("main" . "") "dev")))
+    (let* ((table (majutsu-completion-table items 'majutsu-revision))
+           (metadata (funcall table "" nil 'metadata))
+           (properties (cdr metadata)))
+      (should-not (assq 'annotation-function properties))
+      (should-not (assq 'affixation-function properties)))))
 
 (ert-deftest majutsu-completion-payload-items/uses-annotation-hash ()
   "Structured payloads should become annotated completion items."

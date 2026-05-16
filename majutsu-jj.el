@@ -394,24 +394,35 @@ Each returned item is (CANDIDATE . HELP)."
     (plist-get entry :help)
     'majutsu-completion-documentation)))
 
+(defun majutsu-jj--completion-annotation (annotations candidate)
+  "Return metadata annotation for CANDIDATE from ANNOTATIONS."
+  (when-let* ((annotation (and (hash-table-p annotations)
+                               (gethash candidate annotations)))
+              ((stringp annotation))
+              ((not (string-empty-p annotation))))
+    (if (string-prefix-p " " annotation)
+        annotation
+      (concat " " annotation))))
+
+(defun majutsu-jj--completion-suffix (category entries annotations candidate)
+  "Return completion suffix for CANDIDATE in CATEGORY."
+  (or (and (eq category 'majutsu-revision)
+           (when-let* ((entry (and (hash-table-p entries)
+                                   (gethash candidate entries))))
+             (majutsu-jj--completion-revision-suffix entry)))
+      (majutsu-completion-string-suffix
+       (and (hash-table-p annotations)
+            (gethash candidate annotations)))))
+
 (defun majutsu-jj--completion-suffix-function (category entries annotations)
   "Return candidate suffix function for completion CATEGORY.
 ENTRIES and ANNOTATIONS are candidate-indexed hash tables."
-  (pcase category
-    ('majutsu-revision
-     (let ((entry-suffix-function
-            (majutsu-completion-entry-suffix-function
-             entries
-             #'majutsu-jj--completion-revision-suffix))
-           (annotation-suffix-function
-            (majutsu-completion-annotation-suffix-function annotations)))
-       (lambda (candidate)
-         (or (and entry-suffix-function
-                  (funcall entry-suffix-function candidate))
-             (and annotation-suffix-function
-                  (funcall annotation-suffix-function candidate))))))
-    (_
-     (majutsu-completion-annotation-suffix-function annotations))))
+  (when (or (and (eq category 'majutsu-revision)
+                 (hash-table-p entries)
+                 (> (hash-table-count entries) 0))
+            (majutsu-completion-annotation-suffix-function annotations))
+    (lambda (candidate)
+      (majutsu-jj--completion-suffix category entries annotations candidate))))
 
 (defun majutsu-jj--revision-margin-label (entry)
   "Return a fixed-width short kind label for revision completion ENTRY."
@@ -501,10 +512,19 @@ expression arguments such as revsets continue completing after operators
 like `|' or `..'.  CATEGORY, when non-nil, is exposed in completion
 metadata.  DEFAULT, when non-empty and missing from jj's candidates, is
 added first."
-  (let ((payload-cache (make-hash-table :test #'equal))
-        (annotations (make-hash-table :test #'equal))
-        (entries (make-hash-table :test #'equal))
-        (metadata-category (or category 'majutsu-revision)))
+  (let* ((payload-cache (make-hash-table :test #'equal))
+         (annotations (make-hash-table :test #'equal))
+         (entries (make-hash-table :test #'equal))
+         (metadata-category (or category 'majutsu-revision))
+         (metadata
+          (majutsu-completion-payload-metadata
+           (list :category metadata-category
+                 :annotation-function
+                 (apply-partially #'majutsu-jj--completion-annotation annotations)
+                 :annotation-suffix-function
+                 (apply-partially #'majutsu-jj--completion-suffix
+                                  metadata-category entries annotations))
+           metadata-category)))
     (cl-labels
         ((payload-for
            (string)
@@ -524,14 +544,7 @@ added first."
                  payload))))
       (lambda (string predicate action)
         (if (eq action 'metadata)
-            (majutsu-completion-payload-metadata
-             (list :category metadata-category
-                   :annotations annotations
-                   :entries entries
-                   :annotation-suffix-function
-                   (majutsu-jj--completion-suffix-function
-                    metadata-category entries annotations))
-             metadata-category)
+            metadata
           (complete-with-action
            action
            (majutsu-jj--completion-candidates (payload-for string) default)

@@ -88,13 +88,25 @@ ITEM may be a string or a cons cell (CANDIDATE . ANNOTATION)."
 ANNOTATION-FUNCTION and AFFIXATION-FUNCTION are attached when non-nil."
   `(metadata
     (display-sort-function . identity)
+    (cycle-sort-function . identity)
     ,@(and category `((category . ,category)))
     ,@(and annotation-function `((annotation-function . ,annotation-function)))
     ,@(and affixation-function `((affixation-function . ,affixation-function)))))
 
+(defun majutsu-completion--annotation-present-p (annotations)
+  "Return non-nil if ANNOTATIONS contains displayable text."
+  (and (hash-table-p annotations)
+       (catch 'found
+         (maphash (lambda (_candidate annotation)
+                    (when (and (stringp annotation)
+                               (not (string-empty-p annotation)))
+                      (throw 'found t)))
+                  annotations)
+         nil)))
+
 (defun majutsu-completion--annotation-function (annotations)
   "Return annotation function backed by ANNOTATIONS hash table."
-  (when (hash-table-p annotations)
+  (when (majutsu-completion--annotation-present-p annotations)
     (lambda (candidate)
       (when-let* ((annotation (gethash candidate annotations))
                   ((stringp annotation))
@@ -146,7 +158,7 @@ FACE defaults to `majutsu-completion-documentation'."
 (defun majutsu-completion-annotation-suffix-function (annotations &optional face)
   "Return suffix function backed by ANNOTATIONS hash table.
 FACE is forwarded to `majutsu-completion-string-suffix'."
-  (when (hash-table-p annotations)
+  (when (majutsu-completion--annotation-present-p annotations)
     (lambda (candidate)
       (majutsu-completion-string-suffix (gethash candidate annotations) face))))
 
@@ -154,7 +166,7 @@ FACE is forwarded to `majutsu-completion-string-suffix'."
   "Return candidate suffix function backed by ENTRIES.
 ENTRY-SUFFIX-FUNCTION is called with one entry from ENTRIES.  Candidates
 without entries simply get no suffix."
-  (when (hash-table-p entries)
+  (when (and (hash-table-p entries) (> (hash-table-count entries) 0))
     (lambda (candidate)
       (when-let* ((entry (gethash candidate entries)))
         (funcall entry-suffix-function entry)))))
