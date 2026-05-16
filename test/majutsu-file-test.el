@@ -75,7 +75,7 @@
                        (lambda () root))
                       ((symbol-function 'majutsu-file--resolve-single-rev-info)
                        (lambda (_rev) '(:change-id "abcdef123456"
-                                       :commit-id "0123456789ab")))
+                                        :commit-id "0123456789ab")))
                       ((symbol-function 'majutsu-file--short-id)
                        (lambda (_id) "abcdef12"))
                       ((symbol-function 'majutsu-file-revert-buffer)
@@ -291,23 +291,23 @@
                          '(:change-id "change-id" :commit-id "deadbeef")))
                       ((symbol-function 'magit-find-file)
                        (lambda (rev file)
-                          (setq opened-buf (generate-new-buffer " *magit-blob*"))
+                         (setq opened-buf (generate-new-buffer " *magit-blob*"))
                          (with-current-buffer opened-buf
                            (insert "zero\nfirst\nsecond\n"))
                          (setq seen-rev rev
                                seen-file file
                                seen-dir default-directory)
                          opened-buf)))
-               (majutsu-blob-visit-magit)
-               (should (equal seen-rev "deadbeef"))
-               (should (equal seen-file "src/a.el"))
-               (should (equal seen-dir root))
-               (should (equal majutsu-buffer-blob-commit-id "deadbeef"))
-               (with-current-buffer opened-buf
-                 (should (= (line-number-at-pos) line))
-                 (should (= (current-column) col)))
-               (when (buffer-live-p opened-buf)
-                 (kill-buffer opened-buf)))))
+              (majutsu-blob-visit-magit)
+              (should (equal seen-rev "deadbeef"))
+              (should (equal seen-file "src/a.el"))
+              (should (equal seen-dir root))
+              (should (equal majutsu-buffer-blob-commit-id "deadbeef"))
+              (with-current-buffer opened-buf
+                (should (= (line-number-at-pos) line))
+                (should (= (current-column) col)))
+              (when (buffer-live-p opened-buf)
+                (kill-buffer opened-buf)))))
       (delete-directory root t)
       (delete-directory other t))))
 
@@ -351,9 +351,9 @@
           (setq-local majutsu-buffer-blob-commit-id nil)
           (majutsu-blob-mode 1)
           (cl-letf (((symbol-function 'majutsu-file--resolve-single-rev-info)
-                      (lambda (_revset) nil))
-                     ((symbol-function 'magit-find-file)
-                      (lambda (&rest _args) (error "unexpected"))))
+                     (lambda (_revset) nil))
+                    ((symbol-function 'magit-find-file)
+                     (lambda (&rest _args) (error "unexpected"))))
             (should-error (majutsu-blob-visit-magit) :type 'user-error)))
       (delete-directory root t))))
 
