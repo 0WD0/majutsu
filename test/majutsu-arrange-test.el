@@ -86,6 +86,28 @@
     (should (equal seen-bindings
                    '((majutsu-arrange--session (:session ("@ | mine()") "/repo/")))))))
 
+(ert-deftest majutsu-arrange-read-anchor-ids/uses-annotated-selection-reader ()
+  "Anchor readers should expose revision metadata through shared completion APIs."
+  (let* ((parent (majutsu-arrange-test--node "A" '("root") 'external-parent))
+         (target (majutsu-arrange-test--node "B" '("A")))
+         (session (majutsu-arrange-test--session
+                   (list target parent)
+                   '("B") '("A") nil "B"))
+         (subject (majutsu-arrange--make-subject session 'single '("B"))))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt collection _predicate require-match _initial _hist _default)
+                 (should require-match)
+                 (let ((annotation-function
+                        (plist-get completion-extra-properties :annotation-function)))
+                   (should (eq (plist-get completion-extra-properties :category)
+                               'majutsu-revision))
+                   (should (equal (mapcar #'car collection) '("A")))
+                   (should (string-match-p "parent" (funcall annotation-function "A")))
+                   (should (string-match-p "commit A" (funcall annotation-function "A"))))
+                 "A")))
+      (should (equal (majutsu-arrange--read-anchor-ids session subject "Anchor")
+                     '("A"))))))
+
 (ert-deftest majutsu-arrange-parse-node-line ()
   "Machine template lines should parse into arrange nodes."
   (let* ((line (string-join
