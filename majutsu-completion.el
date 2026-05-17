@@ -61,10 +61,10 @@
 (defun majutsu-completion-parse-annotated-line (line)
   "Parse LINE as CANDIDATE<TAB>ANNOTATION.
 Return CANDIDATE or (CANDIDATE . ANNOTATION).  Return nil for empty lines."
-  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.+\\)\\)?\\'" line)
+  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
     (let ((candidate (match-string 1 line))
           (annotation (match-string 2 line)))
-      (if annotation
+      (if (and annotation (not (string-empty-p annotation)))
           (cons candidate annotation)
         candidate))))
 
