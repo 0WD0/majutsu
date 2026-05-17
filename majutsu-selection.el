@@ -283,7 +283,7 @@ Arguments are ignored for backward compatibility."
                                          #'majutsu-selection--locate-default)))
                      (majutsu-selection--render-overlay
                       session id (car data) locate-fn)))
-                  active-ids)))))
+                 active-ids)))))
 
 (defun majutsu-selection-clear (&optional id)
   "Clear selections.

@@ -17,9 +17,6 @@
 ;;; Code:
 
 (require 'majutsu)
-(require 'majutsu-file)
-(require 'majutsu-selection)
-(require 'majutsu-interactive)
 
 (defclass majutsu-restore-option (majutsu-selection-option)
   ())
