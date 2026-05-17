@@ -81,6 +81,7 @@ afterward."
   "b"   'majutsu-bookmark
   "y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
+  "X"   'majutsu-op-transient
   "Z"   'majutsu-workspace
   "%"   'majutsu-workspace
   "a"   'majutsu-absorb
@@ -554,8 +555,6 @@ when the user has strict .dir-locals.el settings."
 
 (defvar-local majutsu-buffer-log-args nil
   "Remembered log arguments for the current log buffer.")
-(defvar-local majutsu-buffer-log-revsets nil
-  "Revision set argument for the current log buffer.")
 (defvar-local majutsu-buffer-log-filesets nil
   "Filesets filter for the current log buffer.")
 

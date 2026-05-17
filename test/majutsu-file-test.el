@@ -75,7 +75,7 @@
                        (lambda () root))
                       ((symbol-function 'majutsu-file--resolve-single-rev-info)
                        (lambda (_rev) '(:change-id "abcdef123456"
-                                       :commit-id "0123456789ab")))
+                                        :commit-id "0123456789ab")))
                       ((symbol-function 'majutsu-file--short-id)
                        (lambda (_id) "abcdef12"))
                       ((symbol-function 'majutsu-file-revert-buffer)
@@ -135,6 +135,7 @@
       (let* ((payload (majutsu-file-candidate-data "@" "/tmp/repo/"
                                                    '("src/a.el" "src/new.el")))
              (entries (plist-get payload :entries))
+             (suffix-function (plist-get payload :annotation-suffix-function))
              (a (gethash "src/a.el" entries))
              (new (gethash "src/new.el" entries)))
         (should (eq (plist-get payload :category) 'majutsu-file))
@@ -143,11 +144,15 @@
         (should (plist-get a :executable))
         (should (equal (plist-get a :status) "modified"))
         (should (equal (plist-get new :file-type) "symlink"))
-        (should (equal (plist-get new :status) "added"))))))
+        (should (equal (plist-get new :status) "added"))
+        (should (functionp suffix-function))
+        (should (string-match-p "modified" (funcall suffix-function "src/a.el")))
+        (should (string-match-p "executable" (funcall suffix-function "src/a.el")))
+        (should (string-match-p "symlink" (funcall suffix-function "src/new.el")))))))
 
 (ert-deftest majutsu-file-read-path/uses-history-and-category ()
   "File path reader should expose dedicated history and file category."
-  (let (seen-history seen-category seen-prewarm)
+  (let (seen-history seen-category)
     (cl-letf (((symbol-function 'majutsu-file--list)
                (lambda (_revset _root)
                  '("src/a.el" "src/b.el")))
@@ -156,26 +161,22 @@
                  (list :category 'majutsu-file
                        :candidates candidates
                        :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
-               (lambda (&rest args)
-                 (setq seen-prewarm args)))
               ((symbol-function 'majutsu-file--path-at-point)
                (lambda (_root)
                  "src/a.el"))
               ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("src/a.el" "src/b.el")))
                  "src/b.el")))
       (should (equal (majutsu-file--read-path "@" "/tmp/repo") "src/b.el"))
       (should (eq seen-history 'majutsu-file-path-history))
-      (should (eq seen-category 'majutsu-file))
-      (should (eq (car seen-prewarm) 'majutsu-file)))))
+      (should (eq seen-category 'majutsu-file)))))
 
 (ert-deftest majutsu-read-files/uses-default-history-and-category ()
   "File multi-reader should default to file-path history and category."
-  (let (seen-history seen-category seen-prewarm)
+  (let (seen-history seen-category)
     (cl-letf (((symbol-function 'majutsu-file--root)
                (lambda ()
                  "/tmp/repo"))
@@ -184,24 +185,20 @@
                  (list :category 'majutsu-file
                        :candidates candidates
                        :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'majutsu-marginalia-prewarm-candidate-data)
-               (lambda (&rest args)
-                 (setq seen-prewarm args)))
               ((symbol-function 'majutsu-file--path-at-point)
                (lambda (_root)
                  "src/a.el"))
               ((symbol-function 'completing-read-multiple)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("src/a.el" "src/b.el")))
                  '("src/b.el"))))
       (should (equal (majutsu-read-files "Files" nil nil
                                          (lambda () '("src/a.el" "src/b.el")))
                      '("src/b.el")))
       (should (eq seen-history 'majutsu-file-path-history))
-      (should (eq seen-category 'majutsu-file))
-      (should (eq (car seen-prewarm) 'majutsu-file)))))
+      (should (eq seen-category 'majutsu-file)))))
 
 (ert-deftest majutsu-file-revert-buffer/noop-when-revision-unchanged ()
   "Revert should be a no-op when change-id and commit-id are unchanged."
@@ -372,23 +369,23 @@
                          '(:change-id "change-id" :commit-id "deadbeef")))
                       ((symbol-function 'magit-find-file)
                        (lambda (rev file)
-                          (setq opened-buf (generate-new-buffer " *magit-blob*"))
+                         (setq opened-buf (generate-new-buffer " *magit-blob*"))
                          (with-current-buffer opened-buf
                            (insert "zero\nfirst\nsecond\n"))
                          (setq seen-rev rev
                                seen-file file
                                seen-dir default-directory)
                          opened-buf)))
-               (majutsu-blob-visit-magit)
-               (should (equal seen-rev "deadbeef"))
-               (should (equal seen-file "src/a.el"))
-               (should (equal seen-dir root))
-               (should (equal majutsu-buffer-blob-commit-id "deadbeef"))
-               (with-current-buffer opened-buf
-                 (should (= (line-number-at-pos) line))
-                 (should (= (current-column) col)))
-               (when (buffer-live-p opened-buf)
-                 (kill-buffer opened-buf)))))
+              (majutsu-blob-visit-magit)
+              (should (equal seen-rev "deadbeef"))
+              (should (equal seen-file "src/a.el"))
+              (should (equal seen-dir root))
+              (should (equal majutsu-buffer-blob-commit-id "deadbeef"))
+              (with-current-buffer opened-buf
+                (should (= (line-number-at-pos) line))
+                (should (= (current-column) col)))
+              (when (buffer-live-p opened-buf)
+                (kill-buffer opened-buf)))))
       (delete-directory root t)
       (delete-directory other t))))
 
@@ -432,9 +429,9 @@
           (setq-local majutsu-buffer-blob-commit-id nil)
           (majutsu-blob-mode 1)
           (cl-letf (((symbol-function 'majutsu-file--resolve-single-rev-info)
-                      (lambda (_revset) nil))
-                     ((symbol-function 'magit-find-file)
-                      (lambda (&rest _args) (error "unexpected"))))
+                     (lambda (_revset) nil))
+                    ((symbol-function 'magit-find-file)
+                     (lambda (&rest _args) (error "unexpected"))))
             (should-error (majutsu-blob-visit-magit) :type 'user-error)))
       (delete-directory root t))))
 

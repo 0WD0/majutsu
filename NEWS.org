@@ -34,9 +34,9 @@
   or frame.
 - Log: Add visible DAG relation navigation. ~[~ jumps to a parent revision and
   ~]~ jumps to a child revision, prompting when multiple visible targets exist.
-- Log: Add semantic copy commands under the log dispatcher copy submenu for
-  section values, rendered fields, hidden entry fields, commit hashes, and
-  visible modules.
+- Log/Evolog/Operations: Add shared row copy commands under the dispatcher
+  copy submenu for section values, rendered fields, hidden entry fields,
+  commit hashes, and visible modules.
 - JJ descriptions: Add save/history/search/diff commands for description
   buffers, including ~majutsu-jjdescription-save-message~,
   ~majutsu-jjdescription-prev-message~,
@@ -50,6 +50,52 @@
 
 ** Changed
 
+- Rows/Bookmarks: Extend ~majutsu-row~ to parse push/pop tree streams and render
+  nested Magit sections, add first-class layout node ~:role~ metadata for
+  Magit section class/value/entry-id decisions, use simple field/function
+  references for role entry specs, align row↔section lookup with Magit's
+  section identity model, and migrate bookmark lists to that shared row
+  protocol.
+- Completion: Stop mutating ~marginalia-annotators~ and rely on standard
+  completion metadata directly for optional Marginalia annotations, while also
+  dropping the leftover dependence on Marginalia's private alignment text
+  property, replacing borrowed Marginalia styling with Majutsu-owned
+  completion faces and separator settings, and no longer fabricating generic
+  fallback suffixes for candidates without structured metadata.
+- Bookmarks: The bookmark list buffer now uses typed =jj bookmark list -T=
+  machine records with customizable Majutsu template display fragments for
+  bookmark headings, commit summaries, and structured conflicted-target heading
+  columns, while assigning precise section values such as =name@remote= for tracked remote
+  rows. The emitted bookmark tree is declared through
+  ~majutsu-bookmark-list-layout~, using layout-level ~:schema~ defaults plus
+  uniform node-local ~:columns~ for regular refs and conflicted target rows.
+- Bookmarks/Templates: Treat =RefListItem= as an explicit group object. It now
+  exposes only =primary()= and =tracked_refs()=; bookmark/tag templates must
+  access primary-ref fields through =primary()= instead of relying on forwarding
+  or direct =self= rendering.
+- Transients: Add a generic repository-local defaults layer keyed by jj's
+  secure repo =config-id=. Log, diff, and Git sync transients can save current
+  arguments as defaults for only the current repository, while global defaults
+  continue to use Transient's normal storage.
+- Remotes: Add shared remote readers and completion payloads for exact remote
+  names, new remote names, and remote name patterns. Git and bookmark commands
+  now use the same remote history, completion category, remote-list parsing,
+  and remote-at-point defaulting.
+- Git: Remote management now follows the upstream =remote add [OPTIONS]
+  REMOTE URL= shape more closely: adding a remote prompts for a new remote name
+  and URL/path positional, rejects existing names, and exposes =--fetch-tags=
+  and =--push-url=. =remote remove=, =rename=, and =set-url= now read existing
+  remotes more carefully and default to the remote at point in remote-list
+  buffers. =remote set-url= supports explicit =--fetch= and =--push= URL
+  updates.
+- Git: Expose simple upstream options that were missing from the transients:
+  repeated fetch remotes/branches, repeated clone branches, and repeated
+  =git push --option= values. Clone sources now use the same URL/path handling
+  as remote URLs.
+- Log: The log transient's =-r/--revision= filter is now a normal transient
+  argument stored with the rest of the log arguments. It uses Majutsu's standard
+  revset expression reader like diff =-r=, prefills the current filter for
+  editing, and clears the filter when submitted empty.
 - Completion: Standardize history-aware readers and completion categories for
   revsets, bookmark/tag names and patterns, remote names/patterns,
   workspace names, and repo-relative file paths, and add optional
@@ -60,12 +106,10 @@
   point, so expression arguments such as =main | = and =trunk()..ma= keep jj's
   native semantics while still allowing users to move the candidate list into a
   minibuffer for annotation-based filtering. Native jj revset completion now
-  includes other workspace working-copy refs in =<workspace>@= form. Revision
-  Marginalia payloads are
-  cached per minibuffer input context, so annotations remain structured while
-  editing revset expressions. The optional Marginalia integration now shows
-  richer bookmark, tag, remote, workspace, revision, and file annotations based
-  on structured completion payloads.
+  includes other workspace working-copy refs in =<workspace>@= form. Structured
+  completion payloads are now exposed through standard completion metadata, and
+  the optional Marginalia integration uses those builtin annotations to show
+  richer bookmark, tag, remote, workspace, revision, and file details.
 - Thing-at-point: Rework JJ at-point accessors in a more Magit-like style.
   Revset readers and commands such as ~majutsu-edit-changeset~,
   ~majutsu-new-dwim~, and ~majutsu-diff-dwim~ now prefer a literal
@@ -105,7 +149,7 @@
 - Diff: Remove the dedicated ~v~ binding from diff file sections, following
   Magit's split between explicit file commands and diff-specific visits.
 - Log: Remove ~majutsu-log-field-faces~; configure field faces directly in
-  ~majutsu-log-commit-columns~ using each field's ~:face~ property.
+  ~majutsu-log-commit-layout~ using each field's ~:face~ property.
 
 ** Fixed
 

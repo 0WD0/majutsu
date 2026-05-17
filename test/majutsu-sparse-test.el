@@ -74,10 +74,10 @@
   "Sparse pattern reader should expose path-like completion metadata."
   (let (seen-history seen-category)
     (cl-letf (((symbol-function 'completing-read-multiple)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("src" "lib")))
                  '("src"))))
       (should (equal (majutsu-sparse--read-patterns "Sparse" '("src" "lib"))
                      '("src")))

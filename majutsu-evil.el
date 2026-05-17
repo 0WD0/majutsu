@@ -18,6 +18,11 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-op-log-show-at-point "majutsu-op" ())
+(declare-function majutsu-op-show-default-action "majutsu-op" ())
+(declare-function majutsu-op-show-diff-at-point "majutsu-op" ())
+(declare-function majutsu-op-show-evolog-at-point "majutsu-op" ())
+(declare-function majutsu-op-transient "majutsu-op" ())
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
 (declare-function evil-normalize-keymaps "evil-core" (&optional state))
@@ -108,6 +113,9 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
     (dolist (mode '(majutsu-mode
                     majutsu-log-mode
                     majutsu-op-log-mode
+                    majutsu-op-show-mode
+                    majutsu-op-diff-mode
+                    majutsu-evolog-mode
                     majutsu-diff-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
@@ -155,6 +163,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "V") nil
     (kbd "d") #'majutsu-diff
     (kbd "D") #'majutsu-diff-dwim
+    (kbd "X") #'majutsu-op-transient
     (kbd "*") #'majutsu-workspace
     (kbd "E") #'majutsu-ediff
     (kbd "?") #'majutsu-dispatch
@@ -203,6 +212,18 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "O") #'majutsu-new-dwim
     (kbd "I") #'majutsu-new-with-before
     (kbd "A") #'majutsu-new-with-after)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-log-mode-map
+    (kbd "RET") #'majutsu-op-log-show-at-point
+    (kbd "d") #'majutsu-op-log-show-at-point)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-show-mode-map
+    (kbd "RET") #'majutsu-op-show-default-action
+    (kbd "v") #'majutsu-op-show-evolog-at-point)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-diff-mode-map
+    (kbd "RET") #'majutsu-op-show-default-action
+    (kbd "v") #'majutsu-op-show-evolog-at-point)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-arrange-mode-map
     (kbd "j") #'majutsu-arrange-next

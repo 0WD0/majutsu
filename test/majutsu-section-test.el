@@ -25,11 +25,17 @@
 
 (ert-deftest majutsu-section-hide/preserves-final-newline-for-commit-sections ()
   "Hiding a commit section should keep the final newline visible."
-  (let* ((compiled (majutsu-log--compile-columns
-                    '((:field change-id :module heading :face t)
-                      (:field description :module heading :face t)
-                      (:field long-desc :module body :face t)
-                      (:field id :module metadata :face nil))))
+  (let* ((majutsu-log-commit-layout
+          '(:columns
+            ((change-id :module heading :face t
+                        :template majutsu-log-template-change-id)
+             (description :module heading :face t
+                          :template majutsu-log-template-description)
+             (long-desc :module body :face t
+                        :template majutsu-log-template-long-desc)
+             (id :module metadata :face nil
+                 :template majutsu-log-template-id))))
+         (compiled (majutsu-row-compile (majutsu-log--row-profile)))
          (entry-1 (majutsu-section-test--log-entry
                    :id "id-1"
                    :indent 2
@@ -47,8 +53,8 @@
       (majutsu-log-mode)
       (setq buffer-read-only nil)
       (magit-insert-section (lograph)
-        (majutsu-log--insert-entry entry-1 compiled)
-        (majutsu-log--insert-entry entry-2 compiled))
+        (majutsu-row-insert-entry entry-1 compiled)
+        (majutsu-row-insert-entry entry-2 compiled))
       (goto-char (point-min))
       (search-forward "chg1")
       (let* ((section (magit-current-section))

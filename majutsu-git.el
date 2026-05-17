@@ -17,9 +17,13 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-remote)
 
 (require 'seq)
 (require 'subr-x)
+
+(declare-function majutsu-repository-transient-prefix "majutsu-core")
+(declare-function majutsu-transient-read-remote-patterns "majutsu-remote")
 
 ;;; majutsu-git
 
@@ -27,53 +31,30 @@
   "Start `jj git ARGS' asynchronously, for side-effects."
   (majutsu-start-jj (append '("git") args) success-msg finish-callback))
 
-(defun majutsu-git--parse-remote-list-line (line)
-  "Parse one `jj git remote list` LINE into a plist."
-  (let ((raw (string-trim (substring-no-properties (or line "")))))
-    (when (and (not (string-empty-p raw))
-               (string-match "\\`\\([^ \\t]+\\)[ \\t]+\\(.+?\\)\\(?:[ \\t]+(push: \\(.*\\))\\)?\\'" raw))
-      (list :name (match-string 1 raw)
-            :fetch-url (string-trim (match-string 2 raw))
-            :push-url (when-let* ((push (match-string 3 raw)))
-                        (string-trim push))))))
+(defvar majutsu-git-url-history nil
+  "Minibuffer history for Git remote URLs and paths.")
 
-(defun majutsu-git-remote-candidate-data (&optional directory)
-  "Return completion payload for Git remote names in DIRECTORY."
-  (let ((default-directory (or directory default-directory))
-        (entries (make-hash-table :test #'equal))
-        candidates)
-    (condition-case _
-        (dolist (line (or (majutsu-jj-lines "git" "remote" "list") '()))
-          (when-let* ((entry (majutsu-git--parse-remote-list-line line))
-                      (name (plist-get entry :name)))
-            (unless (gethash name entries)
-              (setq candidates (append candidates (list name))))
-            (puthash name entry entries)))
-      (error nil))
-    (list :category 'majutsu-remote
-          :candidates candidates
-          :entries entries)))
+(defun majutsu-git--read-url-or-path (prompt)
+  "Read a Git URL or local path with PROMPT."
+  (majutsu-read-string prompt nil 'majutsu-git-url-history))
 
-(defun majutsu-git--remote-names (&optional directory)
-  "Return a list of Git remote names for DIRECTORY."
-  (plist-get (majutsu-git-remote-candidate-data directory) :candidates))
+(defun majutsu-git--transient-read-url-or-path (prompt initial-input _history)
+  "Read a Git URL/path transient value with PROMPT and INITIAL-INPUT."
+  (majutsu-read-string prompt initial-input 'majutsu-git-url-history))
 
-(defvar majutsu-remote-name-history nil
-  "Minibuffer history for exact remote-name input.")
+(defun majutsu-git--pathish-url-p (value)
+  "Return non-nil if VALUE should be converted as a local path for jj."
+  (and (stringp value)
+       (or (file-remote-p value)
+           (file-name-absolute-p value)
+           (string= value "~")
+           (string-prefix-p "~/" value))))
 
-(defun majutsu-git--read-remote (prompt &optional require-match default)
-  "Read a Git remote name with PROMPT.
-If REQUIRE-MATCH is non-nil, require an existing remote name.  DEFAULT
-is preselected when non-nil."
-  (let* ((root (ignore-errors (majutsu--toplevel-safe)))
-         (payload (majutsu-git-remote-candidate-data root)))
-    (unless (plist-get payload :candidates)
-      (setq payload (plist-put payload :candidates '("origin"))))
-    (majutsu-completing-read-payload prompt payload
-                                     nil (or require-match 'any) nil
-                                     'majutsu-remote-name-history
-                                     default 'majutsu-remote nil
-                                     (or root default-directory))))
+(defun majutsu-git--url-or-path-arg (value)
+  "Return VALUE converted for jj when it is an Emacs local/remote path."
+  (if (majutsu-git--pathish-url-p value)
+      (majutsu-convert-filename-for-jj (expand-file-name value))
+    value))
 
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."
@@ -82,6 +63,21 @@ is preselected when non-nil."
               (majutsu-convert-filename-for-jj
                (expand-file-name (substring arg (length prefix)))))
     arg))
+
+(defun majutsu-git--expand-url-option-arg (arg prefix)
+  "If ARG begins with PREFIX, convert its URL/path value for jj."
+  (if (and (stringp arg) (string-prefix-p prefix arg))
+      (concat prefix (majutsu-git--url-or-path-arg
+                      (substring arg (length prefix))))
+    arg))
+
+(defun majutsu-git--expand-remote-url-arg (arg)
+  "Convert ARG as a remote URL option or positional URL/path."
+  (let* ((expanded (majutsu-git--expand-url-option-arg arg "--fetch="))
+         (expanded (majutsu-git--expand-url-option-arg expanded "--push=")))
+    (if (equal expanded arg)
+        (majutsu-git--url-or-path-arg arg)
+      expanded)))
 
 (transient-define-suffix majutsu-git-push (args)
   "Push to git remote with ARGS."
@@ -148,55 +144,61 @@ is preselected when non-nil."
 
 (defun majutsu-git-remote-add (args)
   "Add a Git remote. Prompts for name and URL; respects ARGS from transient."
-  (interactive (list (transient-args 'majutsu-git-remote-transient)))
-  (when-let* ((remote (majutsu-git--read-remote "Remote name" nil))
-              (url (read-string (format "URL for %s: " remote))))
-    (let* ((fetch-tags (seq-find (lambda (a) (string-prefix-p "--fetch-tags=" a)) args))
-           (cmd-args (append '("remote" "add")
-                             (when fetch-tags (list fetch-tags))
-                             (list remote url)))
-           (exit (majutsu-run-jj "git" cmd-args)))
-      (when (zerop exit)
-        (message "Added remote %s" remote)))))
+  (interactive (list (transient-args 'majutsu-git-remote-add-transient)))
+  (let* ((args (mapcar (lambda (arg)
+                         (majutsu-git--expand-url-option-arg arg "--push-url="))
+                       args))
+         (remote (majutsu-read-new-remote-name "Remote name"))
+         (url (majutsu-git--url-or-path-arg
+               (majutsu-git--read-url-or-path (format "URL for %s" remote))))
+         (exit (majutsu-run-jj
+                "git" (append '("remote" "add") args (list remote url)))))
+    (when (zerop exit)
+      (message "Added remote %s" remote))))
 
 (defun majutsu-git-remote-remove ()
   "Remove a Git remote and forget its bookmarks."
   (interactive)
-  (let ((remote (majutsu-git--read-remote "Remove remote: ")))
-    (when (and remote (not (string-empty-p remote)))
-      (let* ((cmd-args (list "remote" "remove" remote))
-             (exit (majutsu-run-jj "git" cmd-args)))
-        (when (zerop exit)
-          (message "Removed remote %s" remote))))))
+  (let* ((remote (majutsu-read-remote-name "Remove remote" t))
+         (cmd-args (list "remote" "remove" remote))
+         (exit (majutsu-run-jj "git" cmd-args)))
+    (when (zerop exit)
+      (message "Removed remote %s" remote))))
 
 (defun majutsu-git-remote-rename ()
   "Rename a Git remote."
   (interactive)
-  (let* ((old (majutsu-git--read-remote "Rename remote:" t))
-         (new (and old (majutsu-git--read-remote (format "New name for %s" old) nil))))
-    (when (and old new)
-      (let* ((cmd-args (list "remote" "rename" old new))
-             (exit (majutsu-run-jj "git" cmd-args)))
-        (when (zerop exit)
-          (message "Renamed remote %s -> %s" old new))))))
+  (let* ((old (majutsu-read-remote-name "Rename remote" t))
+         (new (majutsu-read-new-remote-name (format "New name for %s" old)))
+         (cmd-args (list "remote" "rename" old new))
+         (exit (majutsu-run-jj "git" cmd-args)))
+    (when (zerop exit)
+      (message "Renamed remote %s -> %s" old new))))
 
-(defun majutsu-git-remote-set-url ()
+(defun majutsu-git-remote-set-url (args)
   "Set URL of a Git remote."
-  (interactive)
-  (let* ((remote (majutsu-git--read-remote "Set URL for remote: "))
-         (url (and remote (read-string (format "New URL for %s: " remote)))))
-    (when (and remote (not (string-empty-p url)))
-      (let* ((cmd-args (list "remote" "set-url" remote url))
-             (exit (majutsu-run-jj "git" cmd-args)))
-        (when (zerop exit)
-          (message "Set URL for %s" remote))))))
+  (interactive (list (transient-args 'majutsu-git-remote-set-url-transient)))
+  (let* ((remote (cl-loop for arg in args
+                          when (string-prefix-p "--remote=" arg)
+                          return (substring arg 9)))
+         (args (cl-loop for arg in args
+                        unless (string-prefix-p "--remote=" arg)
+                        collect arg)))
+    (unless remote
+      (user-error "Remote is required"))
+    (let* ((args (mapcar #'majutsu-git--expand-remote-url-arg args))
+           (exit (majutsu-run-jj
+                  "git" (append '("remote" "set-url") (list remote) args))))
+      (when (zerop exit)
+        (message "Set URL for %s" remote)))))
 
 (defun majutsu-git-clone (args)
   "Clone a Git repo into a new jj repo.
 Prompts for SOURCE and optional DEST; uses ARGS."
   (interactive (list (transient-args 'majutsu-git-clone-transient)))
-  (let* ((source (read-string "Source (URL or path): "))
-         (dest   (let ((d (read-directory-name "Destination (optional): " nil nil t)))
+  (let* ((source (majutsu-git--url-or-path-arg
+                  (majutsu-git--read-url-or-path "Source (URL or path)")))
+         (dest   (let ((d (read-directory-name "Destination (optional): " nil nil nil)))
                    (when (and d (not (string-empty-p (expand-file-name d))))
                      ;; If user picks current dir, treat as empty and let jj default
                      (let ((dd (directory-file-name d)))
@@ -244,13 +246,133 @@ Prompts for SOURCE and optional DEST; uses ARGS."
       (kill-new dir)
       (message "Git root: %s (copied)" dir))))
 
-(transient-define-argument majutsu-git-push:-b ()
+(defun majutsu-git-push--read-revset (prompt initial-input _history)
+  "Read revset for `jj git push --revision='."
+  (majutsu-read-revset prompt initial-input '("git" "push" "-r")))
+
+(defun majutsu-git-push--read-change (prompt initial-input _history)
+  "Read change id for `jj git push --change='."
+  (majutsu-read-single-revset prompt initial-input '("git" "push" "-c")))
+
+(transient-define-argument majutsu-git-push:--revision ()
+  :description "Revisions"
+  :class 'transient-option
+  :shortarg "-r"
+  :argument "--revision="
+  :multi-value 'repeat
+  :prompt "Revisions: "
+  :reader #'majutsu-git-push--read-revset)
+
+(transient-define-argument majutsu-git-push:--change ()
+  :description "Change"
+  :class 'transient-option
+  :shortarg "-c"
+  :argument "--change="
+  :prompt "Change: "
+  :reader #'majutsu-git-push--read-change)
+
+(transient-define-argument majutsu-git-push:--named ()
+  :description "Named X=REV"
+  :class 'transient-option
+  :key "-N"
+  :argument "--named="
+  :prompt "Named (X=REV): ")
+
+(transient-define-argument majutsu-git-push:--option ()
+  :description "Git option"
+  :class 'transient-option
+  :shortarg "-o"
+  :argument "--option="
+  :multi-value 'repeat
+  :prompt "Git push option: ")
+
+(transient-define-argument majutsu-git-fetch:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :multi-value 'repeat
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-patterns)
+
+(transient-define-argument majutsu-git-push:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-name)
+
+(transient-define-argument majutsu-git-clone:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-name)
+
+(transient-define-argument majutsu-git:--branch ()
+  :description "Branch"
+  :class 'transient-option
+  :shortarg "-b"
+  :argument "--branch="
+  :multi-value 'repeat
+  :prompt "Branch: ")
+
+(transient-define-argument majutsu-git:--bookmark ()
   :description "Bookmark"
   :class 'transient-option
   :shortarg "-b"
   :argument "--bookmark="
   :multi-value 'repeat
   :reader #'majutsu-read-bookmark-patterns)
+
+(transient-define-argument majutsu-git-remote-add:--push-url ()
+  :description "Push URL"
+  :class 'transient-option
+  :key "-P"
+  :argument "--push-url="
+  :prompt "Push URL: "
+  :reader #'majutsu-git--transient-read-url-or-path)
+
+(transient-define-argument majutsu-git-remote-set-url:--fetch ()
+  :description "Fetch URL"
+  :class 'transient-option
+  :key "-f"
+  :argument "--fetch="
+  :prompt "Fetch URL: "
+  :reader #'majutsu-git--transient-read-url-or-path)
+
+(transient-define-argument majutsu-git-remote-set-url:--push ()
+  :description "Push URL"
+  :class 'transient-option
+  :key "-p"
+  :argument "--push="
+  :prompt "Push URL: "
+  :reader #'majutsu-git--transient-read-url-or-path)
+
+(transient-define-argument majutsu-git-remote-set-url:--remote ()
+  :description "Remote"
+  :class 'transient-option
+  :key "-R"
+  :argument "--remote="
+  :prompt "Remote: "
+  :reader #'majutsu-transient-read-remote-name)
+
+(defun majutsu-git-push--repo-args (args)
+  "Keep only stable `jj git push' ARGS for repository defaults."
+  (seq-filter (lambda (arg)
+                (or (string-prefix-p "--remote=" arg)
+                    (member arg '("--all" "--tracked" "--deleted"
+                                  "--allow-empty-description" "--allow-private"))))
+              args))
+
+(defun majutsu-git-fetch--repo-args (args)
+  "Keep only stable `jj git fetch' ARGS for repository defaults."
+  (seq-filter (lambda (arg)
+                (or (string-prefix-p "--remote=" arg)
+                    (member arg '("--tracked" "--all-remotes"))))
+              args))
 
 ;;; Git Transients
 
@@ -277,34 +399,71 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
   :man-page "jj-git-push"
+  :class 'majutsu-repository-transient-prefix
+  :repo-namespace 'majutsu-git
+  :repo-key 'majutsu-git-push
+  :repo-filter #'majutsu-git-push--repo-args
   [:description "JJ Git Push"
    :class transient-columns
    ["Arguments"
-    ("-R" "Remote" "--remote=" :choices majutsu-git--remote-names)
-    (majutsu-git-push:-b)
+    (majutsu-git-push:--remote)
+    (majutsu-git:--bookmark)
     ("-a" "All bookmarks" "--all")
     ("-t" "Tracked only" "--tracked")
     ("-D" "Deleted" "--deleted")
     ("-E" "Allow empty desc" "--allow-empty-description")
     ("-P" "Allow private" "--allow-private")
-    ("-r" "Revisions" "--revisions=")
-    ("-c" "Change" "--change=")
-    ("-N" "Named X=REV" "--named=")
+    (majutsu-git-push:--revision)
+    (majutsu-git-push:--change)
+    (majutsu-git-push:--named)
+    (majutsu-git-push:--option)
     ("-y" "Dry run" "--dry-run")]
    [("p" "Push" majutsu-git-push)
+    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
+     :transient t)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
   :man-page "jj-git-fetch"
+  :class 'majutsu-repository-transient-prefix
+  :repo-namespace 'majutsu-git
+  :repo-key 'majutsu-git-fetch
+  :repo-filter #'majutsu-git-fetch--repo-args
   [:description "JJ Git Fetch"
    :class transient-columns
    ["Arguments"
-    ("-R" "Remote" "--remote=" :choices majutsu-git--remote-names)
-    ("-B" "Branch" "--branch=")
+    (majutsu-git-fetch:--remote)
+    (majutsu-git:--branch)
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)
+    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
+     :transient t)
+    ("q" "Quit" transient-quit-one)]])
+
+(transient-define-prefix majutsu-git-remote-add-transient ()
+  "Transient for adding a Git remote."
+  :man-page "jj-git-remote-add"
+  [:description "JJ Git Remote Add"
+   :class transient-columns
+   ["Arguments"
+    ("-T" "Fetch tags" "--fetch-tags="
+     :choices ("all" "included" "none"))
+    (majutsu-git-remote-add:--push-url)]
+   [("a" "Add" majutsu-git-remote-add)
+    ("q" "Quit" transient-quit-one)]])
+
+(transient-define-prefix majutsu-git-remote-set-url-transient ()
+  "Transient for setting Git remote URLs."
+  :man-page "jj-git-remote-set-url"
+  [:description "JJ Git Remote Set URL"
+   :class transient-columns
+   ["Arguments"
+    (majutsu-git-remote-set-url:--remote)
+    (majutsu-git-remote-set-url:--fetch)
+    (majutsu-git-remote-set-url:--push)]
+   [("u" "Set URL" majutsu-git-remote-set-url)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-remote-transient ()
@@ -312,15 +471,12 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :man-page "jj-git-remote"
   [:description "JJ Git Remote"
    :class transient-columns
-   ["Arguments (add)"
-    ("-T" "Fetch tags" "--fetch-tags="
-     :choices ("all" "included" "none"))]
    ["Actions"
     ("l" "List" majutsu-git-remote-list)
-    ("a" "Add" majutsu-git-remote-add)
+    ("a" "Add" majutsu-git-remote-add-transient)
     ("d" "Remove" majutsu-git-remote-remove)
     ("r" "Rename" majutsu-git-remote-rename)
-    ("u" "Set URL" majutsu-git-remote-set-url)
+    ("u" "Set URL" majutsu-git-remote-set-url-transient)
     ("q" "Quit" transient-quit-one)]])
 
 (transient-define-prefix majutsu-git-clone-transient ()
@@ -329,11 +485,12 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [:description "JJ Git Clone"
    :class transient-columns
    ["Arguments"
-    ("-R" "Remote name" "--remote=")
+    (majutsu-git-clone:--remote)
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
-    ("-d" "Depth" "--depth=")
-    ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))]
+    ("-d" "Depth" "--depth=" :reader #'transient-read-number-N+)
+    ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))
+    (majutsu-git:--branch)]
    [("c" "Clone" majutsu-git-clone)
     ("q" "Quit" transient-quit-one)]])
 

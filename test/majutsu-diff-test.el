@@ -19,6 +19,15 @@
 (require 'cl-lib)
 (require 'majutsu)
 
+(defmacro majutsu-diff-test--with-transient-context (prefix suffix &rest body)
+  "Run BODY as if transient PREFIX were reading infix SUFFIX."
+  `(cl-letf (((symbol-function 'transient-prefix-object)
+              (lambda () (get ,prefix 'transient--prefix)))
+             ((symbol-function 'transient-suffix-object)
+              (lambda (&optional _command)
+                (get ,suffix 'transient--suffix))))
+     ,@body))
+
 (ert-deftest majutsu-diff-inserts-toggleable-sections ()
   "Diff sections should create headings so users can toggle them."
   (with-temp-buffer
@@ -112,71 +121,73 @@
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
-(ert-deftest majutsu-diff-transient-revset-completion-args/use-current-command-context ()
+(ert-deftest majutsu-diff-transient-revset-completion-args/uses-transient-objects ()
   "Transient revset readers should complete in the matching jj context."
-  (let ((transient-current-command 'majutsu-diff)
-        (this-command 'majutsu-diff:--from))
+  (majutsu-diff-test--with-transient-context
+      'majutsu-diff 'majutsu-diff:--from
     (should (equal (majutsu-diff--transient-revset-completion-args)
                    '("diff" "--from"))))
-  (let ((transient-current-command 'majutsu-rebase)
-        (this-command 'majutsu-rebase:--after))
+  (majutsu-diff-test--with-transient-context
+      'majutsu-rebase 'majutsu-rebase:--after
     (should (equal (majutsu-diff--transient-revset-completion-args)
                    '("rebase" "--insert-after"))))
-  (let ((transient-current-command 'majutsu-new)
-        (this-command 'majutsu-new:-r))
+  (majutsu-diff-test--with-transient-context
+      'majutsu-new 'majutsu-new:-r
     (should (equal (majutsu-diff--transient-revset-completion-args)
                    '("new" "-r")))))
 
-(ert-deftest majutsu-diff-transient-revset-completion-args/falls-back-to-suffix-name ()
-  "Transient revset readers should infer jj context from `this-command'."
-  (let ((transient-current-command nil)
-        (transient-current-prefix nil)
-        (this-command 'majutsu-diff:--from))
+(ert-deftest majutsu-diff-transient-revset-completion-args/uses-suffix-argument ()
+  "Transient revset readers should read the jj option from the infix object."
+  (majutsu-diff-test--with-transient-context
+      'majutsu-restore 'majutsu-restore:--changes-in
     (should (equal (majutsu-diff--transient-revset-completion-args)
-                   '("diff" "--from"))))
-  (let ((transient-current-command nil)
-        (transient-current-prefix nil)
-        (this-command 'majutsu-restore:--changes-in))
+                   '("restore" "--changes-in"))))
+  (majutsu-diff-test--with-transient-context
+      'majutsu-split 'majutsu-split:--insert-before
     (should (equal (majutsu-diff--transient-revset-completion-args)
-                   '("restore" "--changes-in")))))
+                   '("split" "--insert-before")))))
 
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
   "Transient single-revision readers should pass native jj completion context."
-  (let ((transient-current-command 'majutsu-restore)
-        (this-command 'majutsu-restore:--changes-in)
-        current-prefix-arg
-        seen-default
-        seen-completion-args)
-    (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
-               (lambda () "@"))
-              ((symbol-function 'majutsu-read-single-revset)
-               (lambda (_prompt default completion-args &optional _history)
-                 (setq seen-default default
-                       seen-completion-args completion-args)
-                 "main")))
-      (should (equal (majutsu-diff--transient-read-revset "Changes in: " nil nil)
-                     "main"))
-      (should (equal seen-default "@"))
-      (should (equal seen-completion-args '("restore" "--changes-in"))))))
+  (let (current-prefix-arg seen-default seen-completion-args)
+    (majutsu-diff-test--with-transient-context
+        'majutsu-restore 'majutsu-restore:--changes-in
+      (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
+                 (lambda () "@"))
+                ((symbol-function 'majutsu-read-single-revset)
+                 (lambda (_prompt default completion-args &optional _history)
+                   (setq seen-default default
+                         seen-completion-args completion-args)
+                   "main")))
+        (should (equal (majutsu-diff--transient-read-revset "Changes in: " nil nil)
+                       "main"))
+        (should (equal seen-default "@"))
+        (should (equal seen-completion-args '("restore" "--changes-in")))))))
 
 (ert-deftest majutsu-diff-transient-read-revset/uses-expression-reader-for--revisions ()
   "The `-r/--revisions' infix should keep using the expression reader."
-  (let ((transient-current-command 'majutsu-diff)
-        (this-command 'majutsu-diff:-r)
-        current-prefix-arg
-        seen)
-    (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
-               (lambda () "@"))
-              ((symbol-function 'majutsu-read-revset)
-               (lambda (_prompt default completion-args)
-                 (setq seen (list default completion-args))
-                 "main | dev"))
-              ((symbol-function 'majutsu-read-single-revset)
-               (lambda (&rest _args)
-                 (ert-fail "Should not use single reader for --revisions"))))
-      (should (equal (majutsu-diff--transient-read-revset "Revisions: " nil nil)
-                     "main | dev"))
-      (should (equal seen '("@" ("diff" "-r")))))))
+  (let (current-prefix-arg seen)
+    (majutsu-diff-test--with-transient-context
+        'majutsu-diff 'majutsu-diff:-r
+      (cl-letf (((symbol-function 'majutsu-diff--transient-default-revset)
+                 (lambda () "@"))
+                ((symbol-function 'majutsu-read-revset)
+                 (lambda (_prompt default completion-args)
+                   (setq seen (list default completion-args))
+                   "main | dev"))
+                ((symbol-function 'majutsu-read-single-revset)
+                 (lambda (&rest _args)
+                   (ert-fail "Should not use single reader for --revisions"))))
+        (should (equal (majutsu-diff--transient-read-revset "Revisions: " nil nil)
+                       "main | dev"))
+        (should (equal seen '("@" ("diff" "--revisions"))))))))
+
+(ert-deftest majutsu-diff-repo-default-action/is-available ()
+  "The diff transient should expose generic repository-local defaults."
+  (let ((suffix (transient-get-suffix 'majutsu-diff "W")))
+    (should suffix)
+    (should (eq (plist-get (cdr suffix) :command)
+                'majutsu-transient-save-repository-defaults))))
 
 (ert-deftest majutsu-diff--r-argument/uses-native-revset-reader ()
   "The `-r' diff infix should use the native revset reader."

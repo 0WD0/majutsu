@@ -224,6 +224,36 @@
             [:raw "outer" :Commit]])
           "if(outer.root(), inner.description(), outer.description())"))
 
+(ert-deftest test-majutsu-template-curried-lambda-captures-outer-binding ()
+  (mt--is (majutsu-tpl
+           [[[:|marker|
+              [:|commit|
+               [:concat marker " " commit]]]
+             "-"]
+            "C"])
+          "concat(\"-\", \" \", \"C\")")
+  (mt--is (majutsu-tpl
+           [:method [:raw "xs"]
+            :map [:|c|
+                  [[[:|marker|
+                     [:|commit|
+                      [:concat marker " " commit]]]
+                    "-"]
+                   c]]
+            :join ""])
+          "xs.map(|c| concat(\"-\", \" \", c)).join(\"\")"))
+
+(ert-deftest test-majutsu-template-curried-lambda-captures-outer-self ()
+  (mt--is (majutsu-tpl
+           [[[:|outer|
+              [:|inner|
+               [:concat [:method [:self 1] :description]
+                        " -> "
+                        [:method [:self] :description]]]]
+             [:raw "lhs" :Commit]]
+            [:raw "rhs" :Commit]])
+          "concat(lhs.description(), \" -> \", rhs.description())"))
+
 (ert-deftest test-majutsu-template-defspecial-basic ()
   (mt--is (majutsu-tpl [:test-special-wrap [:str "x"]])
           "concat(\"<\", \"x\", \">\")"))
@@ -543,6 +573,7 @@
 (ert-deftest test-majutsu-template-builtin-type-registry ()
   (let ((any (majutsu-template--lookup-type 'Any))
         (commit (majutsu-template--lookup-type 'Commit))
+        (reflist (majutsu-template--lookup-type 'RefListItem))
         (string-type (majutsu-template--lookup-type 'String))
         (refsymbol (majutsu-template--lookup-type 'RefSymbol))
         (option (majutsu-template--lookup-type 'Option)))
@@ -552,6 +583,9 @@
     (should (equal (majutsu-template--type-name commit) 'Commit))
     (should (eq (alist-get 'Serialize (majutsu-template--type-converts-to commit)) 'yes))
     (should (eq (alist-get 'Template (majutsu-template--type-converts-to commit)) 'no))
+    (should reflist)
+    (should (eq (alist-get 'Serialize (majutsu-template--type-converts-to reflist)) 'yes))
+    (should (eq (alist-get 'Template (majutsu-template--type-converts-to reflist)) 'no))
     (should string-type)
     (should (eq (alist-get 'Template (majutsu-template--type-converts-to string-type)) 'yes))
     (should refsymbol)
@@ -569,7 +603,9 @@
   (should (majutsu-template--type-supports-capability-p 'String 'Stringify))
   (should (majutsu-template--type-supports-capability-p 'ConfigValue 'Serialize))
   (should (majutsu-template--type-supports-capability-p 'Any 'Template))
+  (should-not (majutsu-template--type-supports-capability-p 'RefListItem 'Template))
   (should (majutsu-template--type-convertible-p 'Unknown 'Template))
+  (should-not (majutsu-template--type-convertible-p 'RefListItem 'Template))
   (should-not (majutsu-template--type-convertible-p 'Unknown 'Lambda))
   (should (majutsu-template--type-convertible-p 'StringLiteral 'String))
   (should (majutsu-template--type-convertible-p 'RefSymbol 'String))
@@ -604,6 +640,14 @@
     (should (eq (majutsu-template-node-type node) 'RepoPath)))
   (let ((node (majutsu-template--rewrite '[:method [:raw "ref" :CommitRef] :normal_target :description])))
     (should (eq (majutsu-template-node-type node) 'String)))
+  (should-error (majutsu-template-compile '[:name] 'RefListItem)
+                :type 'error)
+  (should-error (majutsu-template-compile '[:primary] 'CommitRef)
+                :type 'error)
+  (should (equal (majutsu-template-compile '[:primary :name] 'RefListItem)
+                 "self.primary().name()"))
+  (should (equal (majutsu-template-compile '[:primary :removed_targets] 'RefListItem)
+                 "self.primary().removed_targets()"))
   (let ((node (majutsu-template--rewrite '[:method [:raw "op" :Operation] :workspace_name])))
     (should (eq (majutsu-template-node-type node) 'String)))
   (let ((node (majutsu-template--rewrite '[:method [:raw "ts" :Timestamp] :since [:raw "start" :Timestamp] :duration])))
@@ -730,15 +774,36 @@
   (let ((meta (majutsu-template--lookup-method 'Commit "files")))
     (should meta)
     (should (equal (majutsu-template--fn-returns meta) '(:list TreeEntry))))
+  (let ((meta (majutsu-template--lookup-method 'RefListItem "primary")))
+    (should meta)
+    (should (equal (majutsu-template--fn-returns meta) 'CommitRef)))
+  (let ((meta (majutsu-template--lookup-method 'RefListItem "tracked_refs")))
+    (should meta)
+    (should (equal (majutsu-template--fn-returns meta) '(:list CommitRef))))
+  (should-not (majutsu-template--lookup-method 'RefListItem "name"))
+  (should-not (majutsu-template--lookup-method 'CommitRef "primary"))
+  (should-not (majutsu-template--lookup-method 'CommitRef "tracked_refs"))
   (let ((meta (majutsu-template--lookup-method 'CommitRef "normal_target")))
     (should meta)
     (should (equal (majutsu-template--fn-returns meta) '(:option Commit))))
   (let ((meta (majutsu-template--lookup-method 'Operation "workspace_name")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'String)))
+  (let ((meta (majutsu-template--lookup-method 'CommitEvolutionEntry "operation")))
+    (should meta)
+    (should (equal (majutsu-template--fn-returns meta) '(:option Operation))))
   (let ((meta (majutsu-template--lookup-method 'Commit "git_head")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'Boolean)))
+  (let ((meta (majutsu-template--lookup-method 'Commit "format_commit_summary_with_refs")))
+    (should meta)
+    (should (eq (majutsu-template--fn-returns meta) 'Template)))
+  (let ((meta (majutsu-template--lookup-method 'ChangeId "format_short_change_id")))
+    (should meta)
+    (should (eq (majutsu-template--fn-returns meta) 'Template)))
+  (let ((meta (majutsu-template--lookup-method 'CommitId "format_short_commit_id")))
+    (should meta)
+    (should (eq (majutsu-template--fn-returns meta) 'Template)))
   (let ((meta (majutsu-template--lookup-method 'RefSymbol "len")))
     (should meta)
     (should (eq (majutsu-template--fn-owner meta) 'RefSymbol))
@@ -749,6 +814,13 @@
   (let ((meta (majutsu-template--lookup-method 'WorkspaceRef "root")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'Template))))
+
+(ert-deftest test-majutsu-template-evolog-operation-option-compiles ()
+  "CommitEvolutionEntry.operation should be usable as an optional value."
+  (mt--is (majutsu-template-compile
+           '[:if [:operation] [:operation :id :short] ""]
+           'CommitEvolutionEntry)
+          "if(self.operation(), self.operation().id().short(), \"\")"))
 
 (ert-deftest test-majutsu-template-method-dispatch-kinds ()
   (should (eq (majutsu-template--type-ref-dispatch-kind 'Commit) 'Commit))

@@ -64,6 +64,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("y" "Duplicate"         majutsu-duplicate)
     ("Y" "Duplicate (dwim)"  majutsu-duplicate-dwim)
     ("Z" "Workspaces"        majutsu-workspace)
+    ("X" "Operations"        majutsu-op-transient)
     ("C-/" "Undo"            majutsu-undo)
     ("C-?" "Redo"            majutsu-redo)]]
   ["Essential commands"
@@ -75,14 +76,22 @@ Instead of invoking this alias for `majutsu-log' using
    [("C-x m"    "Show all key bindings"    describe-mode)]]
   ["Log commands"
    :if-derived majutsu-log-mode
-   [("w" "Copy…"             majutsu-log-copy-transient)]])
+   [("w" "Copy…"             majutsu-log-copy-transient)]]
+  ["Evolution log commands"
+   :if-derived majutsu-evolog-mode
+   [("w" "Copy…"             majutsu-evolog-copy-transient)]]
+  ["Operation log commands"
+   :if-derived majutsu-op-log-mode
+   [("w" "Copy…"             majutsu-op-log-copy-transient)]])
 
 (provide 'majutsu)
 
 (cl-eval-when (load eval)
   (require 'majutsu-template)
   (require 'majutsu-jjdescription)
-  (require 'majutsu-marginalia)
+  (require 'majutsu-ref)
+  (require 'majutsu-remote)
+  (require 'majutsu-row)
   (require 'majutsu-log)
   (require 'majutsu-diff)
   (require 'majutsu-ediff)
@@ -108,6 +117,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-metaedit)
   (require 'majutsu-new)
   (require 'majutsu-op)
+  (require 'majutsu-evolog)
   (require 'majutsu-workspace)
   (require 'majutsu-conflict))
 

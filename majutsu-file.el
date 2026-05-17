@@ -338,18 +338,7 @@ Results are cached in `majutsu-file--list-cache`."
 
 (defun majutsu-file--split-completion-fields (value)
   "Split file completion VALUE by `majutsu-file--completion-field-separator'."
-  (if (not (stringp value))
-      nil
-    (let ((start 0)
-          (len (length value))
-          (sep (aref majutsu-file--completion-field-separator 0))
-          out)
-      (dotimes (idx len)
-        (when (eq (aref value idx) sep)
-          (push (substring value start idx) out)
-          (setq start (1+ idx))))
-      (push (substring value start len) out)
-      (nreverse out))))
+  (majutsu--split-fields value majutsu-file--completion-field-separator))
 
 (defun majutsu-file--parse-completion-line (line)
   "Parse one file completion LINE into a plist."
@@ -358,8 +347,8 @@ Results are cached in `majutsu-file--list-cache`."
     (when (and (stringp path) (not (string-empty-p path)))
       (list :path path
             :file-type (nth 1 fields)
-            :executable (equal (nth 2 fields) "t")
-            :conflict (equal (nth 3 fields) "t")))))
+            :executable (majutsu--field-bool-p (nth 2 fields))
+            :conflict (majutsu--field-bool-p (nth 3 fields))))))
 
 (defun majutsu-file--completion-entries (revset root)
   "Return structured file completion entries for REVSET in ROOT."
@@ -404,6 +393,35 @@ Results are cached in `majutsu-file--list-cache`."
       (error nil))
     entries))
 
+(defun majutsu-file--completion-status-face (status)
+  "Return a face for file STATUS."
+  (pcase status
+    ((or "added" "copied") 'success)
+    ("deleted" 'error)
+    ("renamed" 'warning)
+    ("modified" 'majutsu-completion-key)
+    (_ 'majutsu-completion-documentation)))
+
+(defun majutsu-file--completion-suffix (entry)
+  "Return aligned completion suffix for file ENTRY."
+  (let ((status (plist-get entry :status))
+        (file-type (or (plist-get entry :file-type) "file")))
+    (majutsu-completion-annotation
+     (majutsu-completion-column
+      (if (plist-get entry :conflict) "conflict" file-type)
+      10 (if (plist-get entry :conflict) 'warning 'majutsu-completion-key))
+     (majutsu-completion-column
+      status 10 (majutsu-file--completion-status-face status))
+     (majutsu-completion-column
+      (and (plist-get entry :executable) "executable")
+      10 'majutsu-completion-type))))
+
+(defun majutsu-file--completion-suffix-function (entries)
+  "Return candidate suffix function backed by file ENTRIES."
+  (majutsu-completion-entry-suffix-function
+   entries
+   #'majutsu-file--completion-suffix))
+
 (defun majutsu-file-candidate-data (&optional revset root candidates)
   "Return completion payload for file CANDIDATES in REVSET at ROOT."
   (let* ((revset (or revset "@"))
@@ -424,7 +442,9 @@ Results are cached in `majutsu-file--list-cache`."
         (puthash path (gethash path statuses) entries)))
     (list :category 'majutsu-file
           :candidates candidates
-          :entries entries)))
+          :entries entries
+          :annotation-suffix-function
+          (majutsu-file--completion-suffix-function entries))))
 
 (defvar majutsu-file-path-history nil
   "Minibuffer history for repo-relative file path prompts.")

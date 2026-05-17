@@ -155,6 +155,41 @@ for a class of actions that would normally ask for confirmation."
 
 ;;; Utilities
 
+(defun majutsu--split-fields (value separator &optional max-fields)
+  "Split VALUE at one-character SEPARATOR, preserving empty fields.
+When MAX-FIELDS is non-nil, split at most MAX-FIELDS fields and leave the
+remaining text in the last field.  Text properties are preserved."
+  (when (stringp value)
+    (let ((start 0)
+          (len (length value))
+          (sep (if (characterp separator) separator (aref separator 0)))
+          out)
+      (catch 'done
+        (dotimes (idx len)
+          (when (and max-fields
+                     (>= (length out) (1- max-fields)))
+            (throw 'done nil))
+          (when (eq (aref value idx) sep)
+            (push (substring value start idx) out)
+            (setq start (1+ idx)))))
+      (push (substring value start len) out)
+      (nreverse out))))
+
+(defun majutsu--field-string (value)
+  "Return VALUE as a plain machine-field string."
+  (substring-no-properties (or value "")))
+
+(defun majutsu--field-bool-p (value)
+  "Return non-nil when machine-field VALUE is true."
+  (equal (majutsu--field-string value) "t"))
+
+(defun majutsu--append-unique (items item &optional testfn)
+  "Return ITEMS with ITEM appended unless already present.
+TESTFN defaults to `equal'."
+  (if (cl-member item items :test (or testfn #'equal))
+      items
+    (append items (list item))))
+
 (defun majutsu--ensure-flag (args flag &optional position)
   "Return ARGS ensuring FLAG is present once.
 POSITION may be `front' to insert FLAG at the beginning; otherwise FLAG
@@ -194,28 +229,23 @@ end with a question mark and space."
    ((and action (memq action majutsu-no-confirm)) t)
    (t (majutsu-y-or-n-p prompt action))))
 
-;;; Completing Read
-
-(defun majutsu--make-completion-table (candidates &optional category)
-  "Wrap CANDIDATES in a completion table.
-When CATEGORY is non-nil, set it in metadata to control UI icons/styling."
-  (majutsu-completion-table candidates category))
+;;; Selection readers
 
 (defun majutsu-completing-read (prompt collection &optional predicate require-match
                                        initial-input hist def category)
   "Read a choice with completion, preserving CATEGORY metadata.
 Like `completing-read' but uses `format-prompt' and supports CATEGORY
-for completion UI styling (icons, grouping).
+for completion UI styling (icons, grouping).  COLLECTION may contain
+plain strings or (CANDIDATE . ANNOTATION) items.
 
 When REQUIRE-MATCH is nil, empty input returns nil.  When REQUIRE-MATCH
 is `any', require non-empty input without requiring a candidate match."
-  (when (and def (listp collection) (not (member def collection)))
-    (setq collection (cons def collection)))
-  (let* ((table (if category
-                    (majutsu--make-completion-table collection category)
-                  collection))
+  (let* ((completion-extra-properties
+          (if (listp collection)
+              (majutsu-completion-items-properties collection category)
+            (majutsu-completion-properties category)))
          (value (completing-read (format-prompt prompt def)
-                                 table predicate
+                                 collection predicate
                                  (if (eq require-match 'any) nil require-match)
                                  initial-input hist def)))
     (if (equal value "")
@@ -227,35 +257,38 @@ is `any', require non-empty input without requiring a candidate match."
 (defun majutsu-completing-read-payload
     (prompt payload &optional predicate require-match initial-input hist def category context directory)
   "Read one value from structured completion PAYLOAD.
-PAYLOAD may provide :category for completion styling.  CONTEXT and
-DIRECTORY are forwarded to Marginalia cache prewarming.  REQUIRE-MATCH
-follows `majutsu-completing-read'."
-  (let ((table (majutsu-completion-payload-table payload category def)))
-    (majutsu-completion-prewarm-payload payload category context directory)
-    (let ((value (completing-read (format-prompt prompt def)
-                                  table predicate
-                                  (if (eq require-match 'any) nil require-match)
-                                  initial-input hist def)))
-      (if (equal value "")
-          (if require-match
-              (user-error "Nothing selected")
-            nil)
-        value))))
+PAYLOAD may provide :category and richer completion metadata.  CONTEXT and
+DIRECTORY are accepted for API compatibility within Majutsu and are ignored.
+REQUIRE-MATCH follows `majutsu-completing-read'."
+  (ignore context directory)
+  (let* ((completion-extra-properties
+          (majutsu-completion-payload-properties payload category))
+         (collection (plist-get payload :candidates))
+         (value (completing-read (format-prompt prompt def)
+                                 collection predicate
+                                 (if (eq require-match 'any) nil require-match)
+                                 initial-input hist def)))
+    (if (equal value "")
+        (if require-match
+            (user-error "Nothing selected")
+          nil)
+      value)))
 
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
   "Read multiple choices with completion, preserving CATEGORY metadata.
-Like `completing-read-multiple' but uses `format-prompt' and supports CATEGORY.
+Like `completing-read-multiple' but uses `format-prompt' and supports
+CATEGORY.  COLLECTION may contain plain strings or
+(CANDIDATE . ANNOTATION) items.
 
 When REQUIRE-MATCH is `any', require at least one non-empty input without
 requiring a candidate match."
-  (when (and def (listp collection) (not (member def collection)))
-    (setq collection (cons def collection)))
-  (let* ((table (if category
-                    (majutsu--make-completion-table collection category)
-                  collection))
+  (let* ((completion-extra-properties
+          (if (listp collection)
+              (majutsu-completion-items-properties collection category)
+            (majutsu-completion-properties category)))
          (values (completing-read-multiple (format-prompt prompt def)
-                                           table predicate
+                                           collection predicate
                                            (if (eq require-match 'any) nil require-match)
                                            initial-input hist def)))
     (when (and (eq require-match 'any) (null values))
@@ -265,18 +298,20 @@ requiring a candidate match."
 (defun majutsu-completing-read-multiple-payload
     (prompt payload &optional predicate require-match initial-input hist def category context directory)
   "Read multiple values from structured completion PAYLOAD.
-PAYLOAD may provide :category for completion styling.  CONTEXT and
-DIRECTORY are forwarded to Marginalia cache prewarming.  REQUIRE-MATCH
-follows `majutsu-completing-read-multiple'."
-  (let ((table (majutsu-completion-payload-table payload category def)))
-    (majutsu-completion-prewarm-payload payload category context directory)
-    (let ((values (completing-read-multiple (format-prompt prompt def)
-                                            table predicate
-                                            (if (eq require-match 'any) nil require-match)
-                                            initial-input hist def)))
-      (when (and (eq require-match 'any) (null values))
-        (user-error "Nothing selected"))
-      values)))
+PAYLOAD may provide :category and richer completion metadata.  CONTEXT and
+DIRECTORY are accepted for API compatibility within Majutsu and are ignored.
+REQUIRE-MATCH follows `majutsu-completing-read-multiple'."
+  (ignore context directory)
+  (let* ((completion-extra-properties
+          (majutsu-completion-payload-properties payload category))
+         (collection (plist-get payload :candidates))
+         (values (completing-read-multiple (format-prompt prompt def)
+                                           collection predicate
+                                           (if (eq require-match 'any) nil require-match)
+                                           initial-input hist def)))
+    (when (and (eq require-match 'any) (null values))
+      (user-error "Nothing selected"))
+    values))
 
 (defun majutsu-read-string (prompt &optional initial-input history default-value)
   "Read a string from the minibuffer, prompting with PROMPT.
