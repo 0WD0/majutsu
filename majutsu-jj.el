@@ -396,10 +396,7 @@ Each returned item is (CANDIDATE . HELP)."
 
 (defun majutsu-jj--completion-annotation (annotations candidate)
   "Return metadata annotation for CANDIDATE from ANNOTATIONS."
-  (when-let* ((annotation (and (hash-table-p annotations)
-                               (gethash candidate annotations)))
-              ((stringp annotation))
-              ((not (string-empty-p annotation))))
+  (when-let* ((annotation (gethash candidate annotations)))
     (if (string-prefix-p " " annotation)
         annotation
       (concat " " annotation))))
@@ -407,18 +404,14 @@ Each returned item is (CANDIDATE . HELP)."
 (defun majutsu-jj--completion-suffix (category entries annotations candidate)
   "Return completion suffix for CANDIDATE in CATEGORY."
   (or (and (eq category 'majutsu-revision)
-           (when-let* ((entry (and (hash-table-p entries)
-                                   (gethash candidate entries))))
+           (when-let* ((entry (gethash candidate entries)))
              (majutsu-jj--completion-revision-suffix entry)))
-      (majutsu-completion-string-suffix
-       (and (hash-table-p annotations)
-            (gethash candidate annotations)))))
+      (majutsu-completion-string-suffix (gethash candidate annotations))))
 
 (defun majutsu-jj--completion-suffix-function (category entries annotations)
   "Return candidate suffix function for completion CATEGORY.
 ENTRIES and ANNOTATIONS are candidate-indexed hash tables."
   (when (or (and (eq category 'majutsu-revision)
-                 (hash-table-p entries)
                  (> (hash-table-count entries) 0))
             (majutsu-completion-annotation-suffix-function annotations))
     (lambda (candidate)
@@ -668,12 +661,10 @@ DEFAULT is inserted first in the candidate list when non-nil."
             :exclusive 'no
             :category 'majutsu-revision
             :annotation-function (lambda (candidate)
-                                   (and (hash-table-p annotations)
-                                        (gethash candidate annotations)))
+                                   (gethash candidate annotations))
             :company-kind (lambda (candidate)
                             (majutsu-jj--revision-company-kind
-                             (and (hash-table-p entries)
-                                  (gethash candidate entries))))
+                             (gethash candidate entries)))
             :company-doc-buffer (majutsu-jj--revision-doc-buffer-function entries)
             :majutsu-revision-entries entries))))
 

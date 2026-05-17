@@ -72,7 +72,10 @@ ITEM may be a string or a cons cell (CANDIDATE . ANNOTATION)."
 
 (defun majutsu-completion--item-annotation (item)
   "Return completion annotation from ITEM, if any."
-  (and (consp item) (cdr item)))
+  (let ((annotation (and (consp item) (cdr item))))
+    (and (stringp annotation)
+         (not (string-empty-p annotation))
+         annotation)))
 
 (defun majutsu-completion--add-default (items default)
   "Return ITEMS with DEFAULT prepended when appropriate."
@@ -93,24 +96,21 @@ ANNOTATION-FUNCTION and AFFIXATION-FUNCTION are attached when non-nil."
     ,@(and annotation-function `((annotation-function . ,annotation-function)))
     ,@(and affixation-function `((affixation-function . ,affixation-function)))))
 
-(defun majutsu-completion--annotation-present-p (annotations)
-  "Return non-nil if ANNOTATIONS contains displayable text."
-  (and (hash-table-p annotations)
-       (catch 'found
-         (maphash (lambda (_candidate annotation)
-                    (when (and (stringp annotation)
-                               (not (string-empty-p annotation)))
-                      (throw 'found t)))
-                  annotations)
-         nil)))
+(defun majutsu-completion--annotation-table (items)
+  "Return candidate annotation table for ITEMS, or nil."
+  (let (annotations)
+    (dolist (item items)
+      (when-let* ((annotation (majutsu-completion--item-annotation item)))
+        (unless annotations
+          (setq annotations (make-hash-table :test #'equal)))
+        (puthash (majutsu-completion--item-candidate item) annotation annotations)))
+    annotations))
 
 (defun majutsu-completion--annotation-function (annotations)
   "Return annotation function backed by ANNOTATIONS hash table."
-  (when (majutsu-completion--annotation-present-p annotations)
+  (when (and annotations (> (hash-table-count annotations) 0))
     (lambda (candidate)
-      (when-let* ((annotation (gethash candidate annotations))
-                  ((stringp annotation))
-                  ((not (string-empty-p annotation))))
+      (when-let* ((annotation (gethash candidate annotations)))
         (if (string-prefix-p " " annotation)
             annotation
           (concat " " annotation))))))
@@ -158,7 +158,7 @@ FACE defaults to `majutsu-completion-documentation'."
 (defun majutsu-completion-annotation-suffix-function (annotations &optional face)
   "Return suffix function backed by ANNOTATIONS hash table.
 FACE is forwarded to `majutsu-completion-string-suffix'."
-  (when (majutsu-completion--annotation-present-p annotations)
+  (when (and annotations (> (hash-table-count annotations) 0))
     (lambda (candidate)
       (majutsu-completion-string-suffix (gethash candidate annotations) face))))
 
@@ -166,7 +166,7 @@ FACE is forwarded to `majutsu-completion-string-suffix'."
   "Return candidate suffix function backed by ENTRIES.
 ENTRY-SUFFIX-FUNCTION is called with one entry from ENTRIES.  Candidates
 without entries simply get no suffix."
-  (when (and (hash-table-p entries) (> (hash-table-count entries) 0))
+  (when (and entries (> (hash-table-count entries) 0))
     (lambda (candidate)
       (when-let* ((entry (gethash candidate entries)))
         (funcall entry-suffix-function entry)))))
@@ -201,12 +201,7 @@ when non-nil, is exposed in completion metadata.  DEFAULT, when non-empty
 and absent from ITEMS, is prepended without annotation."
   (let* ((items (majutsu-completion--add-default items default))
          (candidates (mapcar #'majutsu-completion--item-candidate items))
-         (annotations (make-hash-table :test #'equal)))
-    (dolist (item items)
-      (when-let* ((annotation (majutsu-completion--item-annotation item)))
-        (puthash (majutsu-completion--item-candidate item)
-                 annotation
-                 annotations)))
+         (annotations (majutsu-completion--annotation-table items)))
     (let* ((annotation-function (majutsu-completion--annotation-function annotations))
            (suffix-function (majutsu-completion-annotation-suffix-function annotations))
            (affixation-function (majutsu-completion-affixation-function suffix-function))
@@ -224,9 +219,8 @@ PAYLOAD should contain :candidates and may contain :annotations, a hash
 mapping candidates to annotation strings."
   (let ((annotations (plist-get payload :annotations)))
     (mapcar (lambda (candidate)
-              (if (and (hash-table-p annotations)
-                       (gethash candidate annotations))
-                  (cons candidate (gethash candidate annotations))
+              (if-let* ((annotation (and annotations (gethash candidate annotations))))
+                  (cons candidate annotation)
                 candidate))
             (plist-get payload :candidates))))
 
