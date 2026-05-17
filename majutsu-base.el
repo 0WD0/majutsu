@@ -231,12 +231,6 @@ end with a question mark and space."
 
 ;;; Selection readers
 
-(defun majutsu--make-completion-table (candidates &optional category default)
-  "Wrap CANDIDATES in a completion table.
-When CATEGORY is non-nil, set it in metadata to control UI icons/styling.
-DEFAULT, when non-empty and missing, is prepended by the completion table."
-  (majutsu-completion-table candidates category default))
-
 (defun majutsu-completing-read (prompt collection &optional predicate require-match
                                        initial-input hist def category)
   "Read a choice with completion, preserving CATEGORY metadata.
@@ -246,11 +240,15 @@ plain strings or (CANDIDATE . ANNOTATION) items.
 
 When REQUIRE-MATCH is nil, empty input returns nil.  When REQUIRE-MATCH
 is `any', require non-empty input without requiring a candidate match."
-  (let* ((table (if (listp collection)
-                    (majutsu--make-completion-table collection category def)
-                  collection))
+  (let* ((completion-extra-properties
+          (if (listp collection)
+              (majutsu-completion-items-properties collection category)
+            (majutsu-completion-properties category)))
+         (collection (if (listp collection)
+                         (mapcar #'majutsu-completion--item-candidate collection)
+                       collection))
          (value (completing-read (format-prompt prompt def)
-                                 table predicate
+                                 collection predicate
                                  (if (eq require-match 'any) nil require-match)
                                  initial-input hist def)))
     (if (equal value "")
@@ -266,16 +264,18 @@ PAYLOAD may provide :category and richer completion metadata.  CONTEXT and
 DIRECTORY are accepted for API compatibility within Majutsu and are ignored.
 REQUIRE-MATCH follows `majutsu-completing-read'."
   (ignore context directory)
-  (let ((table (majutsu-completion-payload-table payload category def)))
-    (let ((value (completing-read (format-prompt prompt def)
-                                  table predicate
-                                  (if (eq require-match 'any) nil require-match)
-                                  initial-input hist def)))
-      (if (equal value "")
-          (if require-match
-              (user-error "Nothing selected")
-            nil)
-        value))))
+  (let* ((completion-extra-properties
+          (majutsu-completion-payload-properties payload category))
+         (collection (plist-get payload :candidates))
+         (value (completing-read (format-prompt prompt def)
+                                 collection predicate
+                                 (if (eq require-match 'any) nil require-match)
+                                 initial-input hist def)))
+    (if (equal value "")
+        (if require-match
+            (user-error "Nothing selected")
+          nil)
+      value)))
 
 (defun majutsu-completing-read-multiple (prompt collection &optional predicate require-match
                                                 initial-input hist def category)
@@ -286,11 +286,15 @@ CATEGORY.  COLLECTION may contain plain strings or
 
 When REQUIRE-MATCH is `any', require at least one non-empty input without
 requiring a candidate match."
-  (let* ((table (if (listp collection)
-                    (majutsu--make-completion-table collection category def)
-                  collection))
+  (let* ((completion-extra-properties
+          (if (listp collection)
+              (majutsu-completion-items-properties collection category)
+            (majutsu-completion-properties category)))
+         (collection (if (listp collection)
+                         (mapcar #'majutsu-completion--item-candidate collection)
+                       collection))
          (values (completing-read-multiple (format-prompt prompt def)
-                                           table predicate
+                                           collection predicate
                                            (if (eq require-match 'any) nil require-match)
                                            initial-input hist def)))
     (when (and (eq require-match 'any) (null values))
@@ -304,14 +308,16 @@ PAYLOAD may provide :category and richer completion metadata.  CONTEXT and
 DIRECTORY are accepted for API compatibility within Majutsu and are ignored.
 REQUIRE-MATCH follows `majutsu-completing-read-multiple'."
   (ignore context directory)
-  (let ((table (majutsu-completion-payload-table payload category def)))
-    (let ((values (completing-read-multiple (format-prompt prompt def)
-                                            table predicate
-                                            (if (eq require-match 'any) nil require-match)
-                                            initial-input hist def)))
-      (when (and (eq require-match 'any) (null values))
-        (user-error "Nothing selected"))
-      values)))
+  (let* ((completion-extra-properties
+          (majutsu-completion-payload-properties payload category))
+         (collection (plist-get payload :candidates))
+         (values (completing-read-multiple (format-prompt prompt def)
+                                           collection predicate
+                                           (if (eq require-match 'any) nil require-match)
+                                           initial-input hist def)))
+    (when (and (eq require-match 'any) (null values))
+      (user-error "Nothing selected"))
+    values))
 
 (defun majutsu-read-string (prompt &optional initial-input history default-value)
   "Read a string from the minibuffer, prompting with PROMPT.

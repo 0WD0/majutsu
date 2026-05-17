@@ -649,13 +649,12 @@
                  (lambda (format-string &rest args)
                    (apply #'format format-string args)))
                 ((symbol-function 'completing-read)
-                 (lambda (_prompt table &rest _)
-                   (let* ((metadata (funcall table "" nil 'metadata))
-                          (properties (cdr metadata))
-                          (annotation-function
-                           (cdr (assq 'annotation-function properties))))
-                     (should (eq (cdr (assq 'category properties))
+                 (lambda (_prompt collection &rest _)
+                   (let ((annotation-function
+                          (plist-get completion-extra-properties :annotation-function)))
+                     (should (eq (plist-get completion-extra-properties :category)
                                  'majutsu-row-field))
+                     (should (equal collection '("title" "author" "id")))
                      (should (equal (funcall annotation-function "id")
                                     " id-1")))
                    "id")))

@@ -98,9 +98,9 @@
               ((symbol-function 'completing-read-multiple)
                (lambda (_prompt collection _predicate _require-match
                                 _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall collection "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("v1.0" "v1.1")))
                  '("v1.0"))))
       (should (equal (majutsu-tag--read-exact-names "Set tag(s)") '("v1.0")))
       (should (eq seen-history 'majutsu-tag-name-history))

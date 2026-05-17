@@ -96,6 +96,14 @@ ANNOTATION-FUNCTION and AFFIXATION-FUNCTION are attached when non-nil."
     ,@(and annotation-function `((annotation-function . ,annotation-function)))
     ,@(and affixation-function `((affixation-function . ,affixation-function)))))
 
+(defun majutsu-completion-properties (&optional category annotation-function affixation-function)
+  "Return `completion-extra-properties' plist for CATEGORY."
+  `(,@(and category `(:category ,category))
+    :display-sort-function identity
+    :cycle-sort-function identity
+    ,@(and annotation-function `(:annotation-function ,annotation-function))
+    ,@(and affixation-function `(:affixation-function ,affixation-function))))
+
 (defun majutsu-completion--annotation-table (items)
   "Return candidate annotation table for ITEMS, or nil."
   (let (annotations)
@@ -194,6 +202,14 @@ suffix string to display, or nil for no suffix."
                          (funcall suffix-function candidate))))
                 candidates)))))
 
+(defun majutsu-completion-items-properties (items &optional category)
+  "Return completion properties for static ITEMS."
+  (let* ((annotations (majutsu-completion--annotation-table items))
+         (annotation-function (majutsu-completion--annotation-function annotations))
+         (suffix-function (majutsu-completion-annotation-suffix-function annotations))
+         (affixation-function (majutsu-completion-affixation-function suffix-function)))
+    (majutsu-completion-properties category annotation-function affixation-function)))
+
 (defun majutsu-completion-table (items &optional category default)
   "Return a completion table for ITEMS.
 ITEMS may contain strings or (CANDIDATE . ANNOTATION) pairs.  CATEGORY,
@@ -201,13 +217,11 @@ when non-nil, is exposed in completion metadata.  DEFAULT, when non-empty
 and absent from ITEMS, is prepended without annotation."
   (let* ((items (majutsu-completion--add-default items default))
          (candidates (mapcar #'majutsu-completion--item-candidate items))
-         (annotations (majutsu-completion--annotation-table items)))
-    (let* ((annotation-function (majutsu-completion--annotation-function annotations))
-           (suffix-function (majutsu-completion-annotation-suffix-function annotations))
-           (affixation-function (majutsu-completion-affixation-function suffix-function))
-           (metadata (cdr (majutsu-completion--metadata
-                           category annotation-function affixation-function))))
-      (completion-table-with-metadata candidates metadata))))
+         (metadata (cdr (majutsu-completion-payload-metadata
+                         (list :category category
+                               :candidates candidates
+                               :annotations (majutsu-completion--annotation-table items))))))
+    (completion-table-with-metadata candidates metadata)))
 
 (defun majutsu-completion-payload-category (payload &optional category)
   "Return completion CATEGORY or PAYLOAD's :category."
@@ -224,13 +238,8 @@ mapping candidates to annotation strings."
                 candidate))
             (plist-get payload :candidates))))
 
-(defun majutsu-completion-payload-metadata (payload &optional category)
-  "Return completion metadata for structured PAYLOAD.
-CATEGORY overrides PAYLOAD's :category when non-nil.
-
-Besides standard completion metadata keys, PAYLOAD may provide the internal
-key =:annotation-suffix-function=, a function from candidate string to suffix
-string used to build an aligned `affixation-function'."
+(defun majutsu-completion-payload-functions (payload &optional category)
+  "Return (CATEGORY ANNOTATION-FUNCTION AFFIXATION-FUNCTION) for PAYLOAD."
   (let* ((category (majutsu-completion-payload-category payload category))
          (annotation-function (or (plist-get payload :annotation-function)
                                   (majutsu-completion--annotation-function
@@ -241,7 +250,22 @@ string used to build an aligned `affixation-function'."
          (affixation-function (or (plist-get payload :affixation-function)
                                   (majutsu-completion-affixation-function
                                    suffix-function))))
-    (majutsu-completion--metadata category annotation-function affixation-function)))
+    (list category annotation-function affixation-function)))
+
+(defun majutsu-completion-payload-properties (payload &optional category)
+  "Return `completion-extra-properties' plist for structured PAYLOAD."
+  (apply #'majutsu-completion-properties
+         (majutsu-completion-payload-functions payload category)))
+
+(defun majutsu-completion-payload-metadata (payload &optional category)
+  "Return completion metadata for structured PAYLOAD.
+CATEGORY overrides PAYLOAD's :category when non-nil.
+
+Besides standard completion metadata keys, PAYLOAD may provide the internal
+key =:annotation-suffix-function=, a function from candidate string to suffix
+string used to build an aligned `affixation-function'."
+  (apply #'majutsu-completion--metadata
+         (majutsu-completion-payload-functions payload category)))
 
 (defun majutsu-completion-payload-table (payload &optional category default)
   "Return a completion table for structured PAYLOAD.

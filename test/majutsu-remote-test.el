@@ -42,10 +42,10 @@
                  (list :candidates '("origin" "upstream")
                        :entries (make-hash-table :test #'equal))))
               ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("origin" "upstream")))
                  "origin")))
       (should (equal (majutsu-read-remote-name "Remote") "origin"))
       (should (eq seen-history 'majutsu-remote-name-history))
@@ -122,9 +122,9 @@
                (lambda (_prompt collection _predicate require-match initial hist _default)
                  (setq seen-history hist
                        seen-require-match require-match
-                       seen-initial initial)
-                 (let ((metadata (funcall collection "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                       seen-initial initial
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("origin" "upstream")))
                  "glob:*")))
       (should (equal (majutsu-read-remote-pattern "Remote" "orig") "glob:*"))
       (should-not seen-require-match)
@@ -140,9 +140,9 @@
                        :entries (make-hash-table :test #'equal))))
               ((symbol-function 'completing-read-multiple)
                (lambda (_prompt collection _predicate _require-match _initial hist _default)
-                 (setq seen-history hist)
-                 (let ((metadata (funcall collection "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 (setq seen-history hist
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("origin" "upstream")))
                  '("origin"))))
       (should (equal (majutsu-read-remote-patterns "Remote(s)" '("origin" "upstream"))
                      '("origin")))

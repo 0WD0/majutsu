@@ -541,8 +541,15 @@ This mirrors Magit's behavior."
                          :annotations annotations)))
                 ((symbol-function 'completing-read)
                  (lambda (_prompt table _predicate _require-match _initial hist def)
-                   (let ((metadata (funcall table "" nil 'metadata)))
-                     (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision)))
+                   (let* ((metadata (funcall table "" nil 'metadata))
+                          (properties (cdr metadata))
+                          (annotation-function
+                           (cdr (assq 'annotation-function properties))))
+                     (should (eq (cdr (assq 'category properties))
+                                 'majutsu-revision))
+                     (should (equal (all-completions "" table) '("@" "main")))
+                     (should (equal (funcall annotation-function "main")
+                                    " Main bookmark")))
                    (setq seen-history hist
                          seen-default def)
                    "main")))

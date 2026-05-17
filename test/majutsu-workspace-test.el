@@ -152,10 +152,10 @@
                          :entry-list entry-list
                          :entries entries))))
               ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("ws-a" "ws-b")))
                  "ws-b")))
       (should (equal (majutsu-workspace--read-name "Workspace") "ws-b"))
       (should (eq seen-history 'majutsu-workspace-name-history))
