@@ -140,11 +140,6 @@ argument when completion happens after whitespace."
 Each item is (CANDIDATE . HELP)."
   (majutsu-jj-completion-items (majutsu--jj-completion-argv command)))
 
-(defun majutsu--jj-completion-table (items)
-  "Return a completion table for completion ITEMS.
-ITEMS is a list of (CANDIDATE . HELP)."
-  (majutsu-completion-table items))
-
 (defun majutsu--jj-command-completion-bounds ()
   "Return minibuffer token bounds for jj command completion."
   (let ((end (point)))
@@ -159,7 +154,7 @@ ITEMS is a list of (CANDIDATE . HELP)."
          (items (majutsu--jj-completion-items input)))
     (if items
         (pcase-let ((`(,beg . ,end) (majutsu--jj-command-completion-bounds)))
-          (completion-in-region beg end (majutsu--jj-completion-table items)))
+          (completion-in-region beg end (majutsu-completion-table items)))
       (minibuffer-message "No jj completions"))))
 
 (defun majutsu--start-shell-command (command)

@@ -60,10 +60,13 @@
 
 (defun majutsu-completion-parse-annotated-line (line)
   "Parse LINE as CANDIDATE<TAB>ANNOTATION.
-Return (CANDIDATE . ANNOTATION).  Return nil for empty lines."
-  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
-    (cons (match-string 1 line)
-          (match-string 2 line))))
+Return CANDIDATE or (CANDIDATE . ANNOTATION).  Return nil for empty lines."
+  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.+\\)\\)?\\'" line)
+    (let ((candidate (match-string 1 line))
+          (annotation (match-string 2 line)))
+      (if annotation
+          (cons candidate annotation)
+        candidate))))
 
 (defun majutsu-completion--item-candidate (item)
   "Return completion candidate from ITEM.
@@ -72,10 +75,7 @@ ITEM may be a string or a cons cell (CANDIDATE . ANNOTATION)."
 
 (defun majutsu-completion--item-annotation (item)
   "Return completion annotation from ITEM, if any."
-  (let ((annotation (and (consp item) (cdr item))))
-    (and (stringp annotation)
-         (not (string-empty-p annotation))
-         annotation)))
+  (and (consp item) (cdr item)))
 
 (defun majutsu-completion--add-default (items default)
   "Return ITEMS with DEFAULT prepended when appropriate."
@@ -86,11 +86,10 @@ ITEM may be a string or a cons cell (CANDIDATE . ANNOTATION)."
       (cons default items)
     items))
 
-(defun majutsu-completion--metadata (&optional category annotation-function affixation-function)
-  "Return completion metadata for CATEGORY.
+(defun majutsu-completion-metadata (&optional category annotation-function affixation-function)
+  "Return completion metadata alist for CATEGORY.
 ANNOTATION-FUNCTION and AFFIXATION-FUNCTION are attached when non-nil."
-  `(metadata
-    (display-sort-function . identity)
+  `((display-sort-function . identity)
     (cycle-sort-function . identity)
     ,@(and category `((category . ,category)))
     ,@(and annotation-function `((annotation-function . ,annotation-function)))
@@ -217,10 +216,10 @@ when non-nil, is exposed in completion metadata.  DEFAULT, when non-empty
 and absent from ITEMS, is prepended without annotation."
   (let* ((items (majutsu-completion--add-default items default))
          (candidates (mapcar #'majutsu-completion--item-candidate items))
-         (metadata (cdr (majutsu-completion-payload-metadata
-                         (list :category category
-                               :candidates candidates
-                               :annotations (majutsu-completion--annotation-table items))))))
+         (metadata (majutsu-completion-payload-metadata
+                    (list :category category
+                          :candidates candidates
+                          :annotations (majutsu-completion--annotation-table items)))))
     (completion-table-with-metadata candidates metadata)))
 
 (defun majutsu-completion-payload-category (payload &optional category)
@@ -258,13 +257,13 @@ mapping candidates to annotation strings."
          (majutsu-completion-payload-functions payload category)))
 
 (defun majutsu-completion-payload-metadata (payload &optional category)
-  "Return completion metadata for structured PAYLOAD.
+  "Return completion metadata alist for structured PAYLOAD.
 CATEGORY overrides PAYLOAD's :category when non-nil.
 
 Besides standard completion metadata keys, PAYLOAD may provide the internal
 key =:annotation-suffix-function=, a function from candidate string to suffix
 string used to build an aligned `affixation-function'."
-  (apply #'majutsu-completion--metadata
+  (apply #'majutsu-completion-metadata
          (majutsu-completion-payload-functions payload category)))
 
 (defun majutsu-completion-payload-table (payload &optional category default)
@@ -277,7 +276,7 @@ standard completion metadata plus Majutsu's internal
          (candidates (majutsu-completion--add-default
                       (plist-get payload :candidates) default))
          (metadata (majutsu-completion-payload-metadata payload category)))
-    (completion-table-with-metadata candidates (cdr metadata))))
+    (completion-table-with-metadata candidates metadata)))
 
 (provide 'majutsu-completion)
 ;;; majutsu-completion.el ends here

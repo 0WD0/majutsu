@@ -510,14 +510,15 @@ added first."
          (entries (make-hash-table :test #'equal))
          (metadata-category (or category 'majutsu-revision))
          (metadata
-          (majutsu-completion-payload-metadata
-           (list :category metadata-category
-                 :annotation-function
-                 (apply-partially #'majutsu-jj--completion-annotation annotations)
-                 :annotation-suffix-function
-                 (apply-partially #'majutsu-jj--completion-suffix
-                                  metadata-category entries annotations))
-           metadata-category)))
+          `(metadata . ,(majutsu-completion-payload-metadata
+                         (list :category metadata-category
+                               :annotation-function
+                               (apply-partially #'majutsu-jj--completion-annotation
+                                                annotations)
+                               :annotation-suffix-function
+                               (apply-partially #'majutsu-jj--completion-suffix
+                                                metadata-category entries annotations))
+                         metadata-category))))
     (cl-labels
         ((payload-for
            (string)
@@ -624,17 +625,6 @@ workspace working-copy refs (`<workspace>@`), bookmarks, and tags.
 DEFAULT, when non-nil, is inserted first so users can accept it quickly."
   (plist-get (majutsu-jj-revset-candidate-data default) :candidates))
 
-(defun majutsu-jj--payload-table (payload &optional category default)
-  "Return a completion table for PAYLOAD."
-  (majutsu-completion-payload-table payload category default))
-
-(defun majutsu-jj--revset-completion-table (&optional default)
-  "Return a completion table for revset input.
-DEFAULT is inserted first in the candidate list when non-nil."
-  (majutsu-jj--payload-table
-   (majutsu-jj-revset-candidate-data default)
-   'majutsu-revision default))
-
 (defun majutsu-jj--revset-minibuffer-input ()
   "Return revset minibuffer contents before point."
   (buffer-substring-no-properties (minibuffer-prompt-end) (point)))
@@ -653,7 +643,7 @@ DEFAULT is inserted first in the candidate list when non-nil."
          (payload (majutsu-jj--revset-completion-payload input))
          (entries (plist-get payload :entries))
          (annotations (plist-get payload :annotations))
-         (table (majutsu-jj--payload-table
+         (table (majutsu-completion-payload-table
                  payload 'majutsu-revision
                  majutsu-jj--revset-completion-default)))
     (when (plist-get payload :candidates)
@@ -694,7 +684,7 @@ in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
                     (majutsu-jj--completion-table completion-args
                                                   'majutsu-revision
                                                   default)
-                  (majutsu-jj--payload-table
+                  (majutsu-completion-payload-table
                    (majutsu-jj-revset-candidate-data default)
                    'majutsu-revision default))))
     (let ((value (completing-read (format-prompt prompt default)
