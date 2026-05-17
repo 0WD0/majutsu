@@ -301,14 +301,18 @@ completion is not available."
             :failed)))
     (error :failed)))
 
-(defun majutsu-jj--fish-completion-entry (item)
-  "Return structured completion entry parsed from fish completion ITEM."
-  (let ((candidate (if (consp item) (car item) item))
-        (annotation (and (consp item) (cdr item))))
-    (when (and (stringp candidate) (not (string-empty-p candidate)))
+(defun majutsu-jj--fish-completion-entry (line)
+  "Return structured completion entry parsed from fish completion LINE."
+  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
+    (let ((candidate (match-string 1 line))
+          (annotation (match-string 2 line)))
       (list :value candidate
-            :annotation annotation
-            :help annotation))))
+            :annotation (and annotation
+                             (not (string-empty-p annotation))
+                             annotation)
+            :help (and annotation
+                       (not (string-empty-p annotation))
+                       annotation)))))
 
 (defun majutsu-jj--fish-completion-items (args)
   "Return jj shell completion items for ARGS using fish output format."
@@ -320,16 +324,14 @@ completion is not available."
                             nil t nil
                             (append '("--" "jj") args))))
           (when (zerop exit)
-            (delq nil
-                  (mapcar #'majutsu-completion-parse-annotated-line
-                          (split-string (buffer-string) "\n" t))))))
+            (split-string (buffer-string) "\n" t))))
     (error nil)))
 
 (defun majutsu-jj--fish-completion-payload (args &optional category)
   "Return jj shell completion payload for ARGS using fish output format."
   (majutsu-jj--completion-payload-from-entries
-   (mapcar #'majutsu-jj--fish-completion-entry
-           (majutsu-jj--fish-completion-items args))
+   (delq nil (mapcar #'majutsu-jj--fish-completion-entry
+                     (majutsu-jj--fish-completion-items args)))
    category))
 
 (defun majutsu-jj--completion-payload (args &optional category)
@@ -345,9 +347,14 @@ fall back to jj's shell completion protocol for older jj versions."
 (defun majutsu-jj-completion-items (args)
   "Return jj native completion items for ARGS.
 ARGS are command-line arguments after the leading jj executable name.
-Each returned item is (CANDIDATE . HELP)."
-  (majutsu-completion-payload-items
-   (majutsu-jj--completion-payload args 'majutsu-revision)))
+Each returned item is a string or (CANDIDATE . HELP)."
+  (let* ((payload (majutsu-jj--completion-payload args 'majutsu-revision))
+         (annotations (plist-get payload :annotations)))
+    (mapcar (lambda (candidate)
+              (if-let* ((annotation (and annotations (gethash candidate annotations))))
+                  (cons candidate annotation)
+                candidate))
+            (plist-get payload :candidates))))
 
 (defun majutsu-jj--completion-revision-kind-label (kind)
   "Return display label for revision completion KIND."
@@ -487,16 +494,6 @@ ENTRIES and ANNOTATIONS are candidate-indexed hash tables."
 (with-eval-after-load 'corfu
   (add-hook 'corfu-margin-formatters #'majutsu-jj--corfu-revision-margin-formatter t))
 
-(defun majutsu-jj--completion-candidates (payload default)
-  "Return completion candidates from PAYLOAD, prepending DEFAULT if needed."
-  (let ((candidates (copy-sequence (or (plist-get payload :candidates) nil))))
-    (if (and default
-             (stringp default)
-             (not (string-empty-p default))
-             (not (member default candidates)))
-        (cons default candidates)
-      candidates)))
-
 (defun majutsu-jj--completion-table (args &optional category default)
   "Return a dynamic Emacs completion table using jj native completion.
 ARGS are command-line arguments before the value being completed.  The
@@ -539,7 +536,9 @@ added first."
        (lambda (string predicate action)
          (complete-with-action
           action
-          (majutsu-jj--completion-candidates (payload-for string) default)
+          (majutsu-completion-add-default
+           (copy-sequence (or (plist-get (payload-for string) :candidates) nil))
+           default)
           string predicate))
        metadata))))
 

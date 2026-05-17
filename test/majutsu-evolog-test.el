@@ -151,7 +151,7 @@
                           (plist-get completion-extra-properties :annotation-function)))
                      (should (eq (plist-get completion-extra-properties :category)
                                  'majutsu-row-field))
-                     (should (member "operation-id" collection))
+                     (should (assoc "operation-id" collection))
                      (should (equal (funcall annotation-function "operation-id")
                                     " op-full")))
                    "operation-id")))

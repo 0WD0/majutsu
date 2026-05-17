@@ -13,20 +13,11 @@
 (require 'ert)
 (require 'majutsu-completion)
 
-(ert-deftest majutsu-completion-parse-annotated-line/basic ()
-  "Parse candidate/help lines emitted by jj's fish completion."
-  (should (equal (majutsu-completion-parse-annotated-line "log\tShow revision history")
-                 '("log" . "Show revision history")))
-  (should (equal (majutsu-completion-parse-annotated-line "log")
-                 "log"))
-  (should-not (majutsu-completion-parse-annotated-line "")))
-
 (ert-deftest majutsu-completion-table/exposes-category-annotations-and-default ()
   "Completion table should expose shared metadata consistently."
   (let* ((table (majutsu-completion-table
-                 '(("main" . "Main bookmark") "dev")
-                 'majutsu-revision
-                 "@"))
+                 '("@" ("main" . "Main bookmark") "dev")
+                 'majutsu-revision))
          (metadata (funcall table "" nil 'metadata))
          (annotation (cdr (assq 'annotation-function (cdr metadata)))))
     (should (equal (all-completions "" table) '("@" "main" "dev")))
@@ -44,15 +35,6 @@
          (properties (cdr metadata)))
     (should-not (assq 'annotation-function properties))
     (should-not (assq 'affixation-function properties))))
-
-(ert-deftest majutsu-completion-payload-items/uses-annotation-hash ()
-  "Structured payloads should become annotated completion items."
-  (let ((annotations (make-hash-table :test #'equal)))
-    (puthash "main" "Main bookmark" annotations)
-    (should (equal (majutsu-completion-payload-items
-                    (list :candidates '("main" "dev")
-                          :annotations annotations))
-                   '(("main" . "Main bookmark") "dev")))))
 
 (ert-deftest majutsu-completion-metadata/returns-alist ()
   "Completion metadata should match `completion-table-with-metadata'."

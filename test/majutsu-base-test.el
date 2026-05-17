@@ -83,7 +83,7 @@
                        seen-annotation (funcall (plist-get completion-extra-properties
                                                             :annotation-function)
                                                 "main"))
-                 (should (equal collection '("main" "dev")))
+                 (should (equal collection '(("main" . "default branch") "dev")))
                  "main")))
       (should (equal (majutsu-completing-read
                       "Branch"

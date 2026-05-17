@@ -358,11 +358,11 @@ This mirrors Magit's behavior."
                  (pcase (length calls)
                    (1 1)
                    (2 (when (eq destination t)
-                        (insert "main\tMain bookmark\n"))
+                        (insert "main\tMain bookmark\ndev\nempty\t\n"))
                       0)
                    (_ (ert-fail "Unexpected extra completion invocation"))))))
       (should (equal (majutsu-jj-completion-items '("log" "-r" "ma"))
-                     '(("main" . "Main bookmark"))))
+                     '(("main" . "Main bookmark") "dev" "empty")))
       (should (equal calls
                      '((:args ("util" "complete" "--format" "json"
                                "--index" "3" "--" "jj" "log" "-r" "ma")

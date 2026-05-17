@@ -244,9 +244,6 @@ is `any', require non-empty input without requiring a candidate match."
           (if (listp collection)
               (majutsu-completion-items-properties collection category)
             (majutsu-completion-properties category)))
-         (collection (if (listp collection)
-                         (mapcar #'majutsu-completion--item-candidate collection)
-                       collection))
          (value (completing-read (format-prompt prompt def)
                                  collection predicate
                                  (if (eq require-match 'any) nil require-match)
@@ -290,9 +287,6 @@ requiring a candidate match."
           (if (listp collection)
               (majutsu-completion-items-properties collection category)
             (majutsu-completion-properties category)))
-         (collection (if (listp collection)
-                         (mapcar #'majutsu-completion--item-candidate collection)
-                       collection))
          (values (completing-read-multiple (format-prompt prompt def)
                                            collection predicate
                                            (if (eq require-match 'any) nil require-match)
