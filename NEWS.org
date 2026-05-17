@@ -76,8 +76,6 @@
 
 ** Fixed
 
-- Squash: ~majutsu-squash~ now correctly inherits ~--from~ and ~--to~ from the
-  diff buffer.  ~--to~ is mapped to squash's ~--into~, and ~--from~ is preserved as-is.
 - Transients: Use a consistent ~RET~ execute binding in ~majutsu-squash~ and
   ~majutsu-split~ while keeping ~s~.
 - Ediff: Quitting ~majutsu-ediff-resolve~ without edits no longer writes a
