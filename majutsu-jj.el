@@ -510,15 +510,14 @@ added first."
          (entries (make-hash-table :test #'equal))
          (metadata-category (or category 'majutsu-revision))
          (metadata
-          `(metadata . ,(majutsu-completion-payload-metadata
-                         (list :category metadata-category
-                               :annotation-function
-                               (apply-partially #'majutsu-jj--completion-annotation
-                                                annotations)
-                               :annotation-suffix-function
-                               (apply-partially #'majutsu-jj--completion-suffix
-                                                metadata-category entries annotations))
-                         metadata-category))))
+          (majutsu-completion-payload-metadata
+           (list :category metadata-category
+                 :annotation-function
+                 (apply-partially #'majutsu-jj--completion-annotation annotations)
+                 :annotation-suffix-function
+                 (apply-partially #'majutsu-jj--completion-suffix
+                                  metadata-category entries annotations))
+           metadata-category)))
     (cl-labels
         ((payload-for
            (string)
@@ -536,13 +535,13 @@ added first."
                               (puthash candidate entry entries))
                             payload-entries))
                  payload))))
-      (lambda (string predicate action)
-        (if (eq action 'metadata)
-            metadata
-          (complete-with-action
-           action
-           (majutsu-jj--completion-candidates (payload-for string) default)
-           string predicate))))))
+      (completion-table-with-metadata
+       (lambda (string predicate action)
+         (complete-with-action
+          action
+          (majutsu-jj--completion-candidates (payload-for string) default)
+          string predicate))
+       metadata))))
 
 (defun majutsu-jj--revset-annotation-function (sources)
   "Return annotation function from candidate SOURCES table."
