@@ -189,25 +189,32 @@
                  (setq transient-args-remote remote)
                  '("main" "dev")))
               ((symbol-function 'completing-read)
-               (lambda (_prompt _collection &rest _rest) "main")))
+               (lambda (_prompt collection _predicate require-match _initial _hist _default)
+                 (should-not require-match)
+                 (should (equal collection '("main" "dev")))
+                 "main")))
       (should (equal (majutsu-gerrit-upload--read-remote-branch
                       "Remote branch: " nil nil)
                      "main"))
       (should (equal transient-args-remote "gerrit")))))
 
 (ert-deftest majutsu-gerrit-upload-read-remote-branch/passes-branches-to-completing-read ()
-  "Reader should present remote branch names as completion candidates."
-  (let (seen-collection)
+  "Reader should present remote branch names with a dedicated category."
+  (let (seen-category seen-history)
     (cl-letf (((symbol-function 'transient-get-value)
                (lambda () nil))
               ((symbol-function 'majutsu-gerrit--remote-branch-names)
                (lambda (_remote) '("main" "dev")))
               ((symbol-function 'completing-read)
-               (lambda (_prompt collection &rest _rest)
-                 (setq seen-collection collection)
+               (lambda (_prompt collection _predicate require-match _initial hist _default)
+                 (should-not require-match)
+                 (setq seen-history hist
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("main" "dev")))
                  "dev")))
       (majutsu-gerrit-upload--read-remote-branch "Remote branch: " nil nil)
-      (should (equal seen-collection '("main" "dev"))))))
+      (should (eq seen-category 'majutsu-gerrit-remote-branch))
+      (should (eq seen-history 'majutsu-gerrit-remote-branch-history)))))
 
 (ert-deftest majutsu-gerrit-upload-read-remote-branch/allows-free-input ()
   "Reader should allow arbitrary input when no branch matches."
@@ -216,7 +223,10 @@
             ((symbol-function 'majutsu-gerrit--remote-branch-names)
              (lambda (_remote) '("main" "dev")))
             ((symbol-function 'completing-read)
-             (lambda (_prompt _collection &rest _rest) "feature/new")))
+             (lambda (_prompt collection _predicate require-match _initial _hist _default)
+               (should-not require-match)
+               (should (equal collection '("main" "dev")))
+               "feature/new")))
     (should (equal (majutsu-gerrit-upload--read-remote-branch
                     "Remote branch: " nil nil)
                    "feature/new"))))
