@@ -13,7 +13,7 @@
 (require 'ert)
 (require 'majutsu-completion)
 
-(ert-deftest majutsu-completion-table/exposes-category-annotations-and-default ()
+(ert-deftest majutsu-completion-table/exposes-category-and-annotations ()
   "Completion table should expose shared metadata consistently."
   (let* ((table (majutsu-completion-table
                  '("@" ("main" . "Main bookmark") "dev")
@@ -36,9 +36,10 @@
     (should-not (assq 'annotation-function properties))
     (should-not (assq 'affixation-function properties))))
 
-(ert-deftest majutsu-completion-metadata/returns-alist ()
+(ert-deftest majutsu-completion-payload-metadata/returns-alist ()
   "Completion metadata should match `completion-table-with-metadata'."
-  (should (equal (majutsu-completion-metadata 'majutsu-revision)
+  (should (equal (majutsu-completion-payload-metadata
+                  (list :category 'majutsu-revision))
                  '((display-sort-function . identity)
                    (cycle-sort-function . identity)
                    (category . majutsu-revision)))))

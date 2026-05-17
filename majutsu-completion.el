@@ -58,24 +58,6 @@
   "Face used for file-name completion metadata."
   :group 'majutsu-completion)
 
-(defun majutsu-completion-add-default (candidates default)
-  "Return CANDIDATES with DEFAULT prepended when appropriate."
-  (if (and default
-           (stringp default)
-           (not (string-empty-p default))
-           (not (member default candidates)))
-      (cons default candidates)
-    candidates))
-
-(defun majutsu-completion-metadata (&optional category annotation-function affixation-function)
-  "Return completion metadata alist for CATEGORY.
-ANNOTATION-FUNCTION and AFFIXATION-FUNCTION are attached when non-nil."
-  `((display-sort-function . identity)
-    (cycle-sort-function . identity)
-    ,@(and category `((category . ,category)))
-    ,@(and annotation-function `((annotation-function . ,annotation-function)))
-    ,@(and affixation-function `((affixation-function . ,affixation-function)))))
-
 (defun majutsu-completion-properties (&optional category annotation-function affixation-function)
   "Return `completion-extra-properties' plist for CATEGORY."
   `(,@(and category `(:category ,category))
@@ -216,20 +198,24 @@ CATEGORY overrides PAYLOAD's :category when non-nil.
 Besides standard completion metadata keys, PAYLOAD may provide the internal
 key =:annotation-suffix-function=, a function from candidate string to suffix
 string used to build an aligned `affixation-function'."
-  (apply #'majutsu-completion-metadata
-         (majutsu-completion--payload-functions payload category)))
+  (let* ((functions (majutsu-completion--payload-functions payload category))
+         (category (nth 0 functions))
+         (annotation-function (nth 1 functions))
+         (affixation-function (nth 2 functions)))
+    `((display-sort-function . identity)
+      (cycle-sort-function . identity)
+      ,@(and category `((category . ,category)))
+      ,@(and annotation-function `((annotation-function . ,annotation-function)))
+      ,@(and affixation-function `((affixation-function . ,affixation-function))))))
 
-(defun majutsu-completion-payload-table (payload &optional category default)
+(defun majutsu-completion-payload-table (payload &optional category)
   "Return a completion table for structured PAYLOAD.
-CATEGORY overrides PAYLOAD's :category when non-nil.  DEFAULT is prepended
-when non-empty and missing from PAYLOAD's candidate list.  PAYLOAD may carry
+CATEGORY overrides PAYLOAD's :category when non-nil.  PAYLOAD may carry
 standard completion metadata plus Majutsu's internal
 =:annotation-suffix-function= helper key."
   (let* ((category (or category (plist-get payload :category)))
-         (candidates (majutsu-completion-add-default
-                      (plist-get payload :candidates) default))
          (metadata (majutsu-completion-payload-metadata payload category)))
-    (completion-table-with-metadata candidates metadata)))
+    (completion-table-with-metadata (plist-get payload :candidates) metadata)))
 
 (provide 'majutsu-completion)
 ;;; majutsu-completion.el ends here
