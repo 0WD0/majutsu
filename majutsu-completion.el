@@ -198,10 +198,8 @@ CATEGORY overrides PAYLOAD's :category when non-nil.
 Besides standard completion metadata keys, PAYLOAD may provide the internal
 key =:annotation-suffix-function=, a function from candidate string to suffix
 string used to build an aligned `affixation-function'."
-  (let* ((functions (majutsu-completion--payload-functions payload category))
-         (category (nth 0 functions))
-         (annotation-function (nth 1 functions))
-         (affixation-function (nth 2 functions)))
+  (pcase-let ((`(,category ,annotation-function ,affixation-function)
+               (majutsu-completion--payload-functions payload category)))
     `((display-sort-function . identity)
       (cycle-sort-function . identity)
       ,@(and category `((category . ,category)))
@@ -213,9 +211,9 @@ string used to build an aligned `affixation-function'."
 CATEGORY overrides PAYLOAD's :category when non-nil.  PAYLOAD may carry
 standard completion metadata plus Majutsu's internal
 =:annotation-suffix-function= helper key."
-  (let* ((category (or category (plist-get payload :category)))
-         (metadata (majutsu-completion-payload-metadata payload category)))
-    (completion-table-with-metadata (plist-get payload :candidates) metadata)))
+  (completion-table-with-metadata
+   (plist-get payload :candidates)
+   (majutsu-completion-payload-metadata payload category)))
 
 (provide 'majutsu-completion)
 ;;; majutsu-completion.el ends here

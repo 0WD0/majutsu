@@ -409,6 +409,19 @@ This mirrors Magit's behavior."
                                 (nth 2 (car (funcall affixation '("main"))))))
         (should-not (funcall annotation "dev"))))))
 
+(ert-deftest majutsu-jj-completion-table/metadata-does-not-query-jj ()
+  "Native completion metadata should be stable and side-effect free."
+  (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+             (lambda (&rest _args)
+               (ert-fail "Metadata must not query jj completions"))))
+    (let* ((table (majutsu-jj--completion-table '("log" "-r")
+                                                'majutsu-revision))
+           (metadata (funcall table "" nil 'metadata))
+           (properties (cdr metadata)))
+      (should (eq (cdr (assq 'category properties)) 'majutsu-revision))
+      (should (functionp (cdr (assq 'annotation-function properties))))
+      (should (functionp (cdr (assq 'affixation-function properties)))))))
+
 (ert-deftest majutsu-jj-completion-table/completes-revset-expressions-dynamically ()
   "Native completion tables should send the current revset expression to jj."
   (let (calls)
