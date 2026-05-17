@@ -186,7 +186,7 @@ a jj-commit section, add --revision from that section."
                   ("--revision=" "--insert-after=")
                   ("--revision=" "--insert-before=")
                   ("--revision=" "--from=")
-                  ("--revision=" "--to="))
+                  ("--revision=" "--into="))
   [
    :description "JJ Squash"
    ["Selection"
