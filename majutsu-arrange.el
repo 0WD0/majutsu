@@ -210,9 +210,8 @@
 
 (defun majutsu-arrange--parse-node-line (line &optional role)
   "Parse one machine template LINE into an arrange node with ROLE."
-  (let* ((fields (split-string (or line "")
-                               (regexp-quote majutsu-arrange--field-separator)
-                               nil))
+  (let* ((fields (majutsu--split-fields (or line "")
+                                        majutsu-arrange--field-separator))
          (change-id (nth 0 fields))
          (commit-id (nth 1 fields))
          (short-change-id (nth 2 fields))
@@ -865,27 +864,31 @@ Use SCOPE and IDS when non-nil; otherwise use SESSION's current subject state."
              (majutsu-arrange-session-subject-scope session))
     (majutsu-arrange--rerender)))
 
-(defun majutsu-arrange--anchor-candidates (session subject)
-  "Return completion candidates for anchors outside SUBJECT in SESSION."
+(defun majutsu-arrange--anchor-ids (session subject)
+  "Return anchor revision ids outside SUBJECT in SESSION."
   (let ((subject-set (majutsu-arrange--id-set
                       (majutsu-arrange-subject-ids subject)))
-        candidates)
+        ids)
     (dolist (id (majutsu-arrange--display-order session))
       (unless (gethash id subject-set)
-        (when-let* ((node (majutsu-arrange--node session id)))
-          (push (cons (format "%s  %-8s  %s"
-                              (pcase (majutsu-arrange-node-role node)
-                                ('target "target ")
-                                ('external-parent "parent ")
-                                ('external-child "child  ")
-                                (_ "node   "))
-                              (or (majutsu-arrange-node-short-change-id node)
-                                  (majutsu-arrange-node-short-commit-id node)
-                                  "")
-                              (or (majutsu-arrange-node-description node) ""))
-                      id)
-                candidates))))
-    (nreverse candidates)))
+        (when (majutsu-arrange--node session id)
+          (push id ids))))
+    (nreverse ids)))
+
+(defun majutsu-arrange--anchor-annotation (session id)
+  "Return completion annotation for arrange anchor ID in SESSION."
+  (when-let* ((node (majutsu-arrange--node session id)))
+    (string-trim-right
+     (format "%s  %-8s  %s"
+             (pcase (majutsu-arrange-node-role node)
+               ('target "target ")
+               ('external-parent "parent ")
+               ('external-child "child  ")
+               (_ "node   "))
+             (or (majutsu-arrange-node-short-change-id node)
+                 (majutsu-arrange-node-short-commit-id node)
+                 "")
+             (or (majutsu-arrange-node-description node) "")))))
 
 (defun majutsu-arrange--read-anchor-ids (session subject prompt)
   "Read anchor ids for SUBJECT in SESSION with PROMPT.
@@ -895,9 +898,13 @@ If the current selection is outside SUBJECT, use it as the anchor."
                        (majutsu-arrange-subject-ids subject))))
     (if (and selected (not (gethash selected subject-set)))
         (list selected)
-      (let* ((candidates (majutsu-arrange--anchor-candidates session subject))
-             (choice (completing-read prompt candidates nil t)))
-        (list (cdr (assoc choice candidates)))))))
+      (list
+       (majutsu-completing-read
+        prompt
+        (mapcar (lambda (id)
+                  (cons id (majutsu-arrange--anchor-annotation session id)))
+                (majutsu-arrange--anchor-ids session subject))
+        nil t nil nil nil 'majutsu-revision)))))
 
 (defun majutsu-arrange--move-subject-command (operation anchor-prompt mutator)
   "Apply OPERATION using anchor read by ANCHOR-PROMPT and graph MUTATOR."
