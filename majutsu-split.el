@@ -25,7 +25,7 @@
   ())
 
 (defclass majutsu-split--toggle-option (majutsu-selection-toggle-option)
-  ())
+  ((if-not :initform #'majutsu-interactive-selection-available-p)))
 
 (defun majutsu-split--default-args ()
   "Return default args from diff buffer context."

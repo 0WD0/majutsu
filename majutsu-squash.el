@@ -22,7 +22,7 @@
   ())
 
 (defclass majutsu-squash--toggle-option (majutsu-selection-toggle-option)
-  ())
+  ((if-not :initform #'majutsu-interactive-selection-available-p)))
 
 ;;; majutsu-squash
 

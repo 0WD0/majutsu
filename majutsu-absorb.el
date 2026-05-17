@@ -25,7 +25,7 @@
   ())
 
 (defclass majutsu-absorb--toggle-option (majutsu-selection-toggle-option)
-  ())
+  ((if-not :initform #'majutsu-interactive-selection-available-p)))
 
 (defun majutsu-absorb--default-args ()
   "Return default args from diff buffer context."

@@ -25,7 +25,7 @@
   ())
 
 (defclass majutsu-restore--toggle-option (majutsu-selection-toggle-option)
-  ())
+  ((if-not :initform #'majutsu-interactive-selection-available-p)))
 
 ;;; Abandon
 
