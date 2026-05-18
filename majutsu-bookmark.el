@@ -510,8 +510,6 @@ With prefix ALL, include remote bookmarks."
          (entries (majutsu-row-wash-buffer compiled)))
     (if (null entries)
         (magit-cancel-section)
-      (majutsu-row-set-buffer-data
-       compiled entries majutsu-row-cached-roots)
       (insert "\n"))))
 
 (defun majutsu-bookmark-list-refresh-buffer ()
