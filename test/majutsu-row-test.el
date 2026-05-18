@@ -50,8 +50,8 @@
   "Return a derived test entry id for ENTRY."
   (concat (majutsu-row-column entry 'id) "#detail"))
 
-(defun majutsu-row-test--raw-entry (_compiled title id &optional body prefix children)
-  "Return one raw test entry for _COMPILED with TITLE, ID, BODY, PREFIX, and CHILDREN."
+(defun majutsu-row-test--raw-entry (title id &optional body prefix children)
+  "Return one raw test entry with TITLE, ID, BODY, PREFIX, and CHILDREN."
   (concat (or prefix "")
           majutsu-row-start-token
           title
@@ -70,7 +70,7 @@
           (apply #'concat rows)
           majutsu-row-pop-token))
 
-(defun majutsu-row-test--raw-role-entry (_compiled role title id &optional parent-id body prefix children)
+(defun majutsu-row-test--raw-role-entry (role title id &optional parent-id body prefix children)
   "Return one raw role-bearing test entry."
   (concat (or prefix "")
           majutsu-row-start-token
@@ -245,16 +245,16 @@
          (compiled (majutsu-row-compile profile))
          (raw (concat
                (majutsu-row-test--raw-role-entry
-                compiled 'parent "Parent 1" "p1" "" nil "○ "
+                'parent "Parent 1" "p1" "" nil "○ "
                 (majutsu-row-test--inline-child-stream
                  (majutsu-row-test--raw-role-entry
-                  compiled 'child "Child 1" "shared" "p1")))
+                  'child "Child 1" "shared" "p1")))
                "\n"
                (majutsu-row-test--raw-role-entry
-                compiled 'parent "Parent 2" "p2" "" nil "○ "
+                'parent "Parent 2" "p2" "" nil "○ "
                 (majutsu-row-test--inline-child-stream
                  (majutsu-row-test--raw-role-entry
-                  compiled 'child "Child 2" "shared" "p2")))
+                  'child "Child 2" "shared" "p2")))
                "\n"))
          entries
          second-child
@@ -275,7 +275,7 @@
              (majutsu-row-test--collect-sections)))
       (should second-child)
       (goto-char (oref second-child start))
-      (setq entry (majutsu-row--entry-at-current-section compiled entries))
+      (setq entry (majutsu-row--entry-at-current-section))
       (should (equal (majutsu-row-column entry 'parent-id) "p2")))))
 
 (ert-deftest majutsu-row-layout-template-form-builds-child-row-tree ()
@@ -379,11 +379,11 @@
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
                (majutsu-row-test--raw-entry
-                compiled "Parent" "parent" nil "○ "
+                "Parent" "parent" nil "○ "
                 (majutsu-row-test--inline-child-stream
-                 (majutsu-row-test--raw-entry compiled "Child" "child" nil)))
+                 (majutsu-row-test--raw-entry "Child" "child" nil)))
                "\n"
-               (majutsu-row-test--raw-entry compiled "Sibling" "sibling" nil "○ ")
+               (majutsu-row-test--raw-entry "Sibling" "sibling" nil "○ ")
                "\n"))
          parsed roots entries parent child sibling)
     (with-temp-buffer
@@ -410,10 +410,10 @@
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
                (majutsu-row-test--raw-entry
-                compiled "Parent" "parent" nil "○ "
+                "Parent" "parent" nil "○ "
                 (majutsu-row-test--inline-child-stream
-                 (majutsu-row-test--raw-entry compiled "Child 1" "child-1" nil)
-                 (majutsu-row-test--raw-entry compiled "Child 2" "child-2" nil)))
+                 (majutsu-row-test--raw-entry "Child 1" "child-1" nil)
+                 (majutsu-row-test--raw-entry "Child 2" "child-2" nil)))
                "\n"))
          parsed parent children)
     (with-temp-buffer
@@ -446,11 +446,11 @@
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
                (majutsu-row-test--raw-entry
-                compiled "Parent" "parent" nil "○ "
+                "Parent" "parent" nil "○ "
                 (majutsu-row-test--inline-child-stream
-                 (majutsu-row-test--raw-entry compiled "Child" "child" nil)))
+                 (majutsu-row-test--raw-entry "Child" "child" nil)))
                "\n"
-               (majutsu-row-test--raw-entry compiled "Sibling" "sibling" nil "○ ")
+               (majutsu-row-test--raw-entry "Sibling" "sibling" nil "○ ")
                "\n"))
          entries)
     (with-temp-buffer
@@ -476,9 +476,9 @@
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
                (majutsu-row-test--raw-entry
-                compiled "Parent" "parent" "Parent body" "○ "
+                "Parent" "parent" "Parent body" "○ "
                 (majutsu-row-test--inline-child-stream
-                 (majutsu-row-test--raw-entry compiled "Child" "child" nil)))
+                 (majutsu-row-test--raw-entry "Child" "child" nil)))
                "\n"))
          parsed parent-section child-section)
     (with-temp-buffer
@@ -553,7 +553,7 @@
       (setq buffer-read-only nil)
       (majutsu-row-insert-entry entry compiled)
       (should (equal (majutsu-row-filter-buffer-substring
-                      (point-min) (point-max) nil compiled)
+                      (point-min) (point-max) nil)
                      "Title\n")))))
 
 (ert-deftest majutsu-row-clear-buffer-data-clears-compiled ()
@@ -586,8 +586,7 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-row-buffer-compiled compiled)
-      (setq-local majutsu-row-cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Alice")
@@ -614,8 +613,7 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-row-buffer-compiled compiled)
-      (setq-local majutsu-row-cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -641,8 +639,7 @@
     (with-temp-buffer
       (magit-section-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-row-buffer-compiled compiled)
-      (setq-local majutsu-row-cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")

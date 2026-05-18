@@ -86,8 +86,8 @@
     (should (equal (substring-no-properties
                     (get-text-property (point) 'line-prefix))
                    "│  "))
-    (should (= (length majutsu-evolog--cached-entries) 1))
-    (let ((entry (car majutsu-evolog--cached-entries)))
+    (should (= (length majutsu-row-cached-entries) 1))
+    (let ((entry (car majutsu-row-cached-entries)))
       (should (equal (plist-get entry :change-id) "change-full"))
       (should (equal (plist-get entry :commit-id) "commit-full"))
       (should (equal (plist-get entry :operation-id) "op-full")))))
