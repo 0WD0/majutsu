@@ -443,9 +443,6 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defvar-local majutsu-op-log--args nil
   "Arguments used for the current operation log buffer.")
 
-(defvar-local majutsu-op-log--cached-entries nil
-  "Cached operation log entries.")
-
 (defcustom majutsu-op-log-layout
   '(:schema
     ((op-id-short :module heading :face t)
@@ -583,8 +580,8 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 When LOG-OUTPUT is nil, run jj in BUF or the current buffer and cache the
 result."
   (with-current-buffer (or buf (current-buffer))
-    (if (and majutsu-op-log--cached-entries (not log-output))
-        majutsu-op-log--cached-entries
+    (if (and majutsu-row-cached-entries (not log-output))
+        majutsu-row-cached-entries
       (let* ((cmd-args (unless log-output (majutsu-op--log-command-args)))
              (entries
               (with-temp-buffer
@@ -594,7 +591,6 @@ result."
                 (majutsu-row-parse-buffer
                  (majutsu-op-log--ensure-template)))))
         (unless log-output
-          (setq majutsu-op-log--cached-entries entries)
           (majutsu-row-set-buffer-data
            (majutsu-op-log--ensure-template)
            entries))
@@ -602,18 +598,12 @@ result."
 
 (defun majutsu-op--wash-log-output (_args)
   "Wash raw `jj op log` output in the current narrowed region."
-  (let ((compiled (majutsu-op-log--ensure-template)))
-    (setq majutsu-op-log--cached-entries
-          (majutsu-row-wash-buffer compiled))
-    (majutsu-row-set-buffer-data
-     compiled
-     majutsu-op-log--cached-entries)))
+  (majutsu-row-wash-buffer (majutsu-op-log--ensure-template)))
 
 (defun majutsu-op-log-insert-entries ()
   "Insert operation log entries."
   (magit-insert-section (jj-op-log)
     (magit-insert-heading "Operation Log")
-    (setq majutsu-op-log--cached-entries nil)
     (majutsu-row-clear-buffer-data)
     (apply #'majutsu-jj-wash
            #'majutsu-op--wash-log-output
@@ -630,7 +620,6 @@ result."
   "Refresh the op log buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
-  (setq majutsu-op-log--cached-entries nil)
   (majutsu-row-clear-buffer-data)
   (majutsu-op-log-render))
 
@@ -641,23 +630,11 @@ result."
       (majutsu-op-show op-id)
     (user-error "No operation at point")))
 
-(defun majutsu-op-log--filter-buffer-substring (beg end &optional delete)
-  "Filter copied operation log text between BEG and END."
-  (majutsu-row-filter-buffer-substring
-   beg end delete (majutsu-op-log--ensure-template)))
-
 ;;;###autoload
 (defun majutsu-op-log-copy-operation-id ()
   "Copy the current operation log entry id."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-op-log--ensure-template))
-           (entry (or (majutsu-row-entry-at-point
-                       compiled majutsu-op-log--cached-entries)
-                      (user-error "No operation at point"))))
-      (majutsu-row-entry-field-value-to-kill
-       entry 'op-id))))
+  (majutsu-row-copy-entry-field-at-point 'op-id "No operation at point"))
 
 ;;;###autoload(autoload 'majutsu-op-log-copy-transient "majutsu-op" nil t)
 (majutsu-row-define-copy-transient
@@ -677,9 +654,7 @@ result."
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function
-              #'majutsu-op-log--filter-buffer-substring)
-  (setq-local majutsu-row-buffer-compiled
-              (majutsu-op-log--ensure-template))
+              #'majutsu-row-filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments

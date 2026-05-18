@@ -116,10 +116,9 @@
 
 ;;; Current compiled access
 
-(defun majutsu-row-current-compiled (&optional compiled)
-  "Return COMPILED or the current buffer's compiled row metadata."
-  (or compiled
-      majutsu-row-buffer-compiled
+(defun majutsu-row-current-compiled ()
+  "Return the current buffer's compiled row metadata."
+  (or majutsu-row-buffer-compiled
       (user-error "No compiled row data in current buffer")))
 
 ;;; Post-decode
@@ -1382,7 +1381,7 @@ When END is non-nil, do not read beyond END while attaching suffix lines."
         'majutsu-row-entry-id entry-id
         'majutsu-row-decoration decoration))
 
-(defun majutsu-row-tail-spacer-properties (_compiled entry-id display)
+(defun majutsu-row-tail-spacer-properties (entry-id display)
   "Return tail spacer properties for ENTRY-ID and DISPLAY."
   (list 'majutsu-row-module 'tail
         'majutsu-row-entry-id entry-id
@@ -1575,7 +1574,7 @@ When PLAIN is non-nil, omit faces and text properties."
       (add-text-properties
        spacer-pos (point)
        (majutsu-row-tail-spacer-properties
-        compiled entry-id
+        entry-id
         (and tail-align
              (majutsu-row-tail-spacer-display tail window))))
       (insert tail))
@@ -1753,7 +1752,7 @@ This consumes one root row at a time in Magit wash style."
           entries (nreverse entries)
           diagnostics (nreverse diagnostics))
     (majutsu-row-report-diagnostics diagnostics)
-    (setq-local majutsu-row-cached-roots roots)
+    (majutsu-row-set-buffer-data compiled entries roots)
     entries))
 
 ;;; Copy property cleanup
@@ -1795,8 +1794,7 @@ This consumes one root row at a time in Magit wash style."
         (setq pos next)))
     (apply #'concat (nreverse parts))))
 
-(defun majutsu-row-filter-buffer-substring
-    (beg end &optional delete _compiled)
+(defun majutsu-row-filter-buffer-substring (beg end &optional delete)
   "Filter copied row text between BEG and END.
 Drops tail text when both heading and tail are present in the copied region."
   (let ((string (buffer-substring--filter beg end delete))
@@ -1875,10 +1873,6 @@ Drops tail text when both heading and tail are present in the copied region."
     (setq-local majutsu-row-entry-index (car indexes))
     (setq-local majutsu-row-section-ident-index (cdr indexes))))
 
-(defun majutsu-row-set-buffer-forest-data (compiled roots entries)
-  "Set current buffer row COMPILED, ROOTS, and flat ENTRIES."
-  (majutsu-row-set-buffer-data compiled entries roots))
-
 (defun majutsu-row-clear-buffer-data ()
   "Clear current buffer row data."
   (setq-local majutsu-row-buffer-compiled nil)
@@ -1898,39 +1892,29 @@ Drops tail text when both heading and tail are present in the copied region."
 
 ;;; Copy entry lookup
 
-(defun majutsu-row-entry-for-id (id compiled &optional entries)
-  "Return entry ID using COMPILED and optional ENTRIES."
-  (when (and id (not (and (stringp id) (string-empty-p id))))
-    (or (and (not entries)
-             (hash-table-p majutsu-row-entry-index)
-             (gethash id majutsu-row-entry-index))
-        (seq-find (lambda (entry)
-                    (equal id (majutsu-row-entry-id entry compiled)))
-                  (or entries majutsu-row-cached-entries)))))
+(defun majutsu-row-entry-for-id (id)
+  "Return cached row entry with ID."
+  (when (and id
+             (not (and (stringp id) (string-empty-p id)))
+             (hash-table-p majutsu-row-entry-index))
+    (gethash id majutsu-row-entry-index)))
 
-(defun majutsu-row-entry-for-section-ident (ident compiled &optional entries)
-  "Return entry with Magit section IDENT using COMPILED and optional ENTRIES."
-  (when ident
-    (or (and (not entries)
-             (hash-table-p majutsu-row-section-ident-index)
-             (gethash ident majutsu-row-section-ident-index))
-        (seq-find (lambda (entry)
-                    (equal ident (majutsu-row-section-ident entry compiled)))
-                  (or entries majutsu-row-cached-entries)))))
+(defun majutsu-row-entry-for-section-ident (ident)
+  "Return cached row entry with Magit section IDENT."
+  (when (and ident (hash-table-p majutsu-row-section-ident-index))
+    (gethash ident majutsu-row-section-ident-index)))
 
-(defun majutsu-row--entry-at-current-section (compiled entries)
-  "Return row entry matching current Magit section using COMPILED."
+(defun majutsu-row--entry-at-current-section ()
+  "Return row entry matching the current Magit section."
   (when-let* ((section (magit-current-section)))
-    (majutsu-row-entry-for-section-ident
-     (magit-section-ident section) compiled entries)))
+    (majutsu-row-entry-for-section-ident (magit-section-ident section))))
 
-(defun majutsu-row-entry-at-point (&optional compiled entries)
+(defun majutsu-row-entry-at-point ()
   "Return cached row entry at point, or nil."
-  (let ((compiled (majutsu-row-current-compiled compiled)))
-    (or (when-let* ((entry-id (majutsu-row-text-property-near-point
-                               'majutsu-row-entry-id)))
-          (majutsu-row-entry-for-id entry-id compiled entries))
-        (majutsu-row--entry-at-current-section compiled entries))))
+  (or (when-let* ((entry-id (majutsu-row-text-property-near-point
+                             'majutsu-row-entry-id)))
+        (majutsu-row-entry-for-id entry-id))
+      (majutsu-row--entry-at-current-section)))
 
 ;;; Copy field value access
 
@@ -2017,14 +2001,16 @@ Drops tail text when both heading and tail are present in the copied region."
 
 ;;; Interactive copy commands
 
-(defun majutsu-row--copy-region-or-entry (compiled entries fn)
-  "Copy active region, or call FN with current COMPILED and entry."
+(defun majutsu-row-current-entry (&optional message)
+  "Return the current cached row entry, or signal MESSAGE."
+  (or (majutsu-row-entry-at-point)
+      (user-error "%s" (or message "No entry at point"))))
+
+(defun majutsu-row--copy-region-or (thunk)
+  "Copy active region, or call THUNK."
   (if (use-region-p)
       (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-row-current-compiled compiled))
-           (entry (or (majutsu-row-entry-at-point compiled entries)
-                      (user-error "No entry at point"))))
-      (funcall fn compiled entry))))
+    (funcall thunk)))
 
 (defun majutsu-row--column-at-point (compiled)
   "Return compiled row column described by text properties at point."
@@ -2050,30 +2036,32 @@ Drops tail text when both heading and tail are present in the copied region."
     (body (or (majutsu-row-render-body entry compiled nil t) ""))))
 
 ;;;###autoload
-(defun majutsu-row-copy-field (&optional compiled entries)
+(defun majutsu-row-copy-field ()
   "Copy the rendered value of the structured field at point.
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (majutsu-row--copy-region-or-entry
-   compiled entries
-   (lambda (compiled entry)
-     (let ((column (majutsu-row--column-at-point compiled)))
+  (majutsu-row--copy-region-or
+   (lambda ()
+     (let* ((entry (majutsu-row-current-entry))
+            (compiled (majutsu-row-current-compiled))
+            (column (majutsu-row--column-at-point compiled)))
        (unless column
          (user-error "No entry field at point"))
        (majutsu-row-copy-string
         (majutsu-row-render-column-text entry column t))))))
 
 ;;;###autoload
-(defun majutsu-row-copy-module (&optional compiled entries)
+(defun majutsu-row-copy-module ()
   "Copy the rendered structured module at point.
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (majutsu-row--copy-region-or-entry
-   compiled entries
-   (lambda (compiled entry)
-     (let* ((module (majutsu-row-text-property-near-point
+  (majutsu-row--copy-region-or
+   (lambda ()
+     (let* ((entry (majutsu-row-current-entry))
+            (compiled (majutsu-row-current-compiled))
+            (module (majutsu-row-text-property-near-point
                      'majutsu-row-module))
             (text (majutsu-row--visible-module-text entry compiled module)))
        (unless text
@@ -2081,7 +2069,7 @@ When the region is active, copy it literally using `copy-region-as-kill'."
        (majutsu-row-copy-string text)))))
 
 ;;;###autoload
-(defun majutsu-row-copy-entry-field (&optional compiled entries)
+(defun majutsu-row-copy-entry-field ()
   "Copy a canonical field from the current structured entry.
 
 Unlike `majutsu-row-copy-field', this can target fields that are parsed and
@@ -2090,22 +2078,29 @@ prompts with completion over the current entry's available canonical fields.
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (majutsu-row--copy-region-or-entry
-   compiled entries
-   (lambda (compiled entry)
-     (let ((field (majutsu-row-read-entry-field entry compiled)))
+  (majutsu-row--copy-region-or
+   (lambda ()
+     (let* ((entry (majutsu-row-current-entry))
+            (compiled (majutsu-row-current-compiled))
+            (field (majutsu-row-read-entry-field entry compiled)))
        (majutsu-row-entry-field-value-to-kill entry field)))))
 
+(defun majutsu-row-copy-entry-field-at-point (field &optional no-entry-message)
+  "Copy canonical FIELD from the current entry.
+When the region is active, copy it literally using `copy-region-as-kill'."
+  (majutsu-row--copy-region-or
+   (lambda ()
+     (majutsu-row-entry-field-value-to-kill
+      (majutsu-row-current-entry no-entry-message)
+      field))))
+
 ;;;###autoload
-(defun majutsu-row-copy-commit-id (&optional compiled entries)
+(defun majutsu-row-copy-commit-id ()
   "Copy the current structured entry's commit hash.
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (majutsu-row--copy-region-or-entry
-   compiled entries
-   (lambda (_compiled entry)
-     (majutsu-row-entry-field-value-to-kill entry 'commit-id))))
+  (majutsu-row-copy-entry-field-at-point 'commit-id))
 
 ;;; Copy transient macro
 

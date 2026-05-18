@@ -300,25 +300,17 @@ can survive transport through the single-line log format.")
 (defvar majutsu-log--compiled-template-cache nil
   "Cached structure holding the compiled log template and column metadata.")
 
-(defvar-local majutsu-log--cached-entries nil
-  "Cached log entries for the current buffer.")
-
 (defvar-local majutsu-log--entry-by-id nil
   "Hash table mapping visible log entry ids to parsed entry plists.")
 
 (defvar-local majutsu-log--children-by-id nil
   "Hash table mapping visible parent ids to visible child id lists.")
 
-(defvar-local majutsu-log--buffer-compiled nil
-  "Compiled column/layout metadata used to render the current buffer.")
-
 (defun majutsu-log--invalidate-template-cache (&rest _)
   "Reset cached compiled template when layout changes."
   (setq majutsu-log--compiled-template-cache nil)
-  (setq majutsu-log--cached-entries nil)
   (setq majutsu-log--entry-by-id nil)
-  (setq majutsu-log--children-by-id nil)
-  (setq majutsu-log--buffer-compiled nil))
+  (setq majutsu-log--children-by-id nil))
 
 (when (fboundp 'add-variable-watcher)
   (add-variable-watcher 'majutsu-log-commit-layout
@@ -400,10 +392,8 @@ transport logical newlines safely through single-line payload segments."
       "unknown"))
 
 (defun majutsu-log--rebuild-relation-indexes (&optional entries)
-  "Rebuild visible relation indexes from ENTRIES.
-
-When ENTRIES is nil, use `majutsu-log--cached-entries'."
-  (let ((entries (or entries majutsu-log--cached-entries))
+  "Rebuild visible relation indexes from ENTRIES or cached row entries."
+  (let ((entries (or entries majutsu-row-cached-entries))
         (entry-by-id (make-hash-table :test #'equal))
         (children-by-id (make-hash-table :test #'equal)))
     (dolist (entry entries)
@@ -435,58 +425,6 @@ When ENTRIES is nil, use `majutsu-log--cached-entries'."
   "Return current `jj-commit' section id or signal a user error."
   (or (magit-section-value-if 'jj-commit)
       (user-error "No changeset at point")))
-
-(defun majutsu-log--current-compiled ()
-  "Return compiled column/layout metadata for the current buffer."
-  (or majutsu-log--buffer-compiled
-      majutsu-log--compiled-template-cache
-      (majutsu-log--ensure-template)))
-
-;;;###autoload
-(defun majutsu-log-copy-field ()
-  "Copy the rendered value of the log field at point.
-
-When the region is active, copy it literally using `copy-region-as-kill'."
-  (interactive)
-  (majutsu-row-copy-field
-   (majutsu-log--current-compiled)
-   majutsu-log--cached-entries))
-
-;;;###autoload
-(defun majutsu-log-copy-module ()
-  "Copy the rendered log module at point.
-
-When the region is active, copy it literally using `copy-region-as-kill'."
-  (interactive)
-  (majutsu-row-copy-module
-   (majutsu-log--current-compiled)
-   majutsu-log--cached-entries))
-
-;;;###autoload
-(defun majutsu-log-copy-entry-field ()
-  "Copy a canonical field from the current log entry.
-
-Unlike `majutsu-log-copy-field', this can target fields that are parsed and
-stored on the entry but not currently visible in the rendered log line.  When
-called interactively, prompt with completion over the current entry's
-available canonical fields.  If the region is active, copy it literally using
-`copy-region-as-kill'."
-  (interactive)
-  (majutsu-row-copy-entry-field
-   (majutsu-log--current-compiled)
-   majutsu-log--cached-entries))
-
-;;;###autoload
-(defun majutsu-log-copy-commit-id ()
-  "Copy the current entry's commit hash.
-
-This copies the canonical hidden `commit-id' field, even when it is not shown
-in the visible log layout.  If the region is active, copy it literally using
-`copy-region-as-kill'."
-  (interactive)
-  (majutsu-row-copy-commit-id
-   (majutsu-log--current-compiled)
-   majutsu-log--cached-entries))
 
 (defun majutsu-log--visible-parent-ids (entry)
   "Return visible parent ids for ENTRY in current buffer order."
@@ -568,30 +506,16 @@ When WINDOW is nil, use the current row tail owner window."
   (when (eq window (selected-window))
     (majutsu-log--refresh-tail-window window)))
 
-(defun majutsu-log--filter-buffer-substring (beg end &optional delete)
-  "Filter copied log text between BEG and END.
-
-When a copied region contains both heading and tail text, drop the tail text
-from the copied result by default. Copying tail text alone preserves it."
-  (majutsu-row-filter-buffer-substring
-   beg end delete (majutsu-log--current-compiled)))
-
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
 
 This function is meant to be used as a WASHER for `majutsu-jj-wash'."
   (let* ((compiled (majutsu-log--ensure-template)))
-    (setq majutsu-log--cached-entries nil)
     (majutsu-row-clear-buffer-data)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
-    (setq-local majutsu-log--buffer-compiled compiled)
-    (setq majutsu-log--cached-entries
-          (majutsu-row-wash-buffer compiled))
-    (majutsu-row-set-buffer-data
-     compiled
-     majutsu-log--cached-entries)
-    (majutsu-log--rebuild-relation-indexes majutsu-log--cached-entries)
+    (majutsu-log--rebuild-relation-indexes
+     (majutsu-row-wash-buffer compiled))
     (insert "\n")))
 
 (defun majutsu-log-insert-logs ()
@@ -769,7 +693,7 @@ Return non-nil when the section could be located."
   :group 'majutsu
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-  (setq-local filter-buffer-substring-function #'majutsu-log--filter-buffer-substring)
+  (setq-local filter-buffer-substring-function #'majutsu-row-filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t)
   (add-hook 'text-scale-mode-hook #'majutsu-log--after-text-scale-change nil t)
   (add-hook 'window-size-change-functions #'majutsu-log--after-window-size-change nil t))
@@ -787,7 +711,6 @@ Return non-nil when the section could be located."
 (defun majutsu-log-refresh-buffer ()
   "Refresh the current Majutsu log buffer."
   (majutsu--assert-mode 'majutsu-log-mode)
-  (setq majutsu-log--cached-entries nil)
   (majutsu-row-clear-buffer-data)
   (setq majutsu-log--entry-by-id nil)
   (setq majutsu-log--children-by-id nil)
