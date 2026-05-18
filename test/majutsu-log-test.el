@@ -387,7 +387,6 @@
                         (list :columns '((id . "parent")
                                          (parent-ids . nil))))))
     (with-temp-buffer
-      (setq-local majutsu-log--cached-entries entries)
       (majutsu-log--rebuild-relation-indexes entries)
       (should (equal (majutsu-row-column
                       (gethash "parent" majutsu-log--entry-by-id)
@@ -700,7 +699,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -712,8 +711,8 @@
         (majutsu-copy-section-value))
       (should (equal copied "id-123")))))
 
-(ert-deftest majutsu-log-copy-field-copies-field-value-at-point ()
-  "`majutsu-log-copy-field' should copy the rendered field value at point."
+(ert-deftest majutsu-row-copy-field-copies-log-field-value-at-point ()
+  "`majutsu-row-copy-field' should copy the rendered log field value at point."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
@@ -728,7 +727,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Alice")
@@ -738,11 +737,11 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-log-copy-field))
+        (majutsu-row-copy-field))
       (should (equal copied "Alice")))))
 
-(ert-deftest majutsu-log-copy-module-copies-heading-content-without-decoration ()
-  "`majutsu-log-copy-module' should copy heading content without graph/tail decoration."
+(ert-deftest majutsu-row-copy-module-copies-log-heading-content-without-decoration ()
+  "`majutsu-row-copy-module' should copy log heading content without graph/tail decoration."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
@@ -757,7 +756,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -766,11 +765,11 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-log-copy-module))
+        (majutsu-row-copy-module))
       (should (equal copied "chg Title\nMore")))))
 
-(ert-deftest majutsu-log-copy-entry-field-copies-hidden-metadata ()
-  "`majutsu-log-copy-entry-field' should copy hidden canonical metadata fields."
+(ert-deftest majutsu-row-copy-entry-field-copies-log-hidden-metadata ()
+  "`majutsu-row-copy-entry-field' should copy hidden log canonical metadata fields."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
@@ -787,7 +786,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -802,11 +801,11 @@
                                    (string-match-p "commit-id" candidate))
                                  candidates)
                        (car candidates)))))
-        (majutsu-log-copy-entry-field))
+        (majutsu-row-copy-entry-field))
       (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
 
-(ert-deftest majutsu-log-copy-commit-id-copies-hidden-hash ()
-  "`majutsu-log-copy-commit-id' should copy the canonical hidden commit hash."
+(ert-deftest majutsu-row-copy-commit-id-copies-log-hidden-hash ()
+  "`majutsu-row-copy-commit-id' should copy the canonical hidden log commit hash."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
@@ -823,7 +822,7 @@
       (require 'magit-section)
       (majutsu-log-mode)
       (setq buffer-read-only nil)
-      (setq-local majutsu-log--cached-entries (list entry))
+      (majutsu-row-set-buffer-data compiled (list entry))
       (majutsu-row-insert-entry entry compiled)
       (goto-char (point-min))
       (search-forward "Title")
@@ -832,7 +831,7 @@
                 ((symbol-function 'message)
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
-        (majutsu-log-copy-commit-id))
+        (majutsu-row-copy-commit-id))
       (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
 
 (ert-deftest majutsu-repository-config-id/reads-jj-config-id-file ()
@@ -1050,7 +1049,7 @@
           (should (string-match-p "Title1 Alice 2m" output))
           (should (string-match-p "Title2 Bob 1h" output))
           (should-not (string-match-p (regexp-quote majutsu-row-start-token) output))
-          (should (= 2 (length majutsu-log--cached-entries))))))))
+          (should (= 2 (length majutsu-row-cached-entries))))))))
 
 (ert-deftest majutsu-log-goto-parent-selects-specific-parent ()
   "Parent navigation should prompt when multiple visible parents exist."
