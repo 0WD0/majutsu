@@ -171,9 +171,6 @@
 (defvar-local majutsu-evolog--args nil
   "Arguments used for the current evolog buffer.")
 
-(defvar-local majutsu-evolog--cached-entries nil
-  "Parsed evolog graph entries for the current buffer.")
-
 (defun majutsu-evolog--command-args (revset &optional args)
   "Return jj arguments for evolog REVSET with ARGS."
   (append majutsu-evolog--read-only-global-args
@@ -183,11 +180,7 @@
 
 (defun majutsu-evolog--wash-output (_args)
   "Wash raw `jj evolog` output in the current narrowed region."
-  (setq majutsu-evolog--cached-entries
-        (majutsu-row-wash-buffer majutsu-evolog--entry-compiled))
-  (majutsu-row-set-buffer-data
-   majutsu-evolog--entry-compiled
-   majutsu-evolog--cached-entries))
+  (majutsu-row-wash-buffer majutsu-evolog--entry-compiled))
 
 (defun majutsu-evolog--insert-entries ()
   "Insert evolog output for the current buffer."
@@ -200,16 +193,10 @@
             (or majutsu-evolog--revset "@")
             majutsu-evolog--args))))
 
-(defun majutsu-evolog--filter-buffer-substring (beg end &optional delete)
-  "Filter copied evolog text between BEG and END."
-  (majutsu-row-filter-buffer-substring
-   beg end delete majutsu-evolog--entry-compiled))
-
 (defun majutsu-evolog-refresh-buffer ()
   "Refresh the current evolog buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-evolog-mode)
-  (setq majutsu-evolog--cached-entries nil)
   (majutsu-row-clear-buffer-data)
   (magit-insert-section (evologbuf)
     (majutsu-evolog--insert-entries)))
@@ -230,9 +217,7 @@
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function
-              #'majutsu-evolog--filter-buffer-substring)
-  (setq-local majutsu-row-buffer-compiled
-              majutsu-evolog--entry-compiled))
+              #'majutsu-row-filter-buffer-substring))
 
 (defun majutsu-evolog--buffer-name (revset)
   "Return buffer name for evolog REVSET."
