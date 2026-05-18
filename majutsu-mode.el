@@ -74,6 +74,7 @@ afterward."
   "s"   'majutsu-squash
   "S"   'majutsu-split
   "d"   'majutsu-diff
+  "e"   'majutsu-edit-changeset
   "r"   'majutsu-rebase
   "V"   'majutsu-revert
   "b"   'majutsu-bookmark
