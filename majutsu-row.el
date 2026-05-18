@@ -1311,6 +1311,16 @@ When END is non-nil, do not read beyond END while attaching suffix lines."
     (majutsu-row--call-entry-function (cadr ref) entry compiled))
    (t (user-error "Invalid row role ref %S" ref))))
 
+(defun majutsu-row--role-property-cell (role-spec key)
+  "Return (KEY . VALUE) from ROLE-SPEC, or nil when KEY is absent."
+  (when (plist-member role-spec key)
+    (cons key (plist-get role-spec key))))
+
+(defun majutsu-row--role-ref-cell (role-spec key entry compiled)
+  "Return (KEY . VALUE) for resolved ROLE-SPEC KEY, or nil if absent."
+  (when-let* ((cell (majutsu-row--role-property-cell role-spec key)))
+    (cons key (majutsu-row-resolve-role-ref (cdr cell) entry compiled))))
+
 ;;; Display helpers
 
 (defun majutsu-row-display-string (value)
@@ -1580,8 +1590,7 @@ When PLAIN is non-nil, omit faces and text properties."
   (let* ((profile (majutsu-row--profile compiled))
          (role-spec (majutsu-row-role-spec entry compiled))
          (fn (plist-get profile :section-class-function)))
-    (or (and (plist-member role-spec :section-class)
-             (plist-get role-spec :section-class))
+    (or (cdr (majutsu-row--role-property-cell role-spec :section-class))
         (and fn (funcall fn entry))
         (plist-get profile :section-class)
         'magit-section)))
@@ -1591,11 +1600,12 @@ When PLAIN is non-nil, omit faces and text properties."
   (let* ((profile (majutsu-row--profile compiled))
          (role-spec (majutsu-row-role-spec entry compiled))
          (fn (plist-get profile :section-hide-function)))
-    (cond
-     ((plist-member role-spec :section-hide)
-      (plist-get role-spec :section-hide))
-     (fn (funcall fn entry))
-     (t (plist-get profile :section-hide)))))
+    (if-let* ((cell (majutsu-row--role-property-cell
+                     role-spec :section-hide)))
+        (cdr cell)
+      (if fn
+          (funcall fn entry)
+        (plist-get profile :section-hide)))))
 
 (defun majutsu-row--call-with-child-count-policy (compiled thunk)
   "Call THUNK with COMPILED's child-count display policy."
@@ -1807,28 +1817,26 @@ Drops tail text when both heading and tail are present in the copied region."
   "Return stable entry id for ENTRY using COMPILED."
   (let* ((profile (majutsu-row--profile compiled))
          (role-spec (majutsu-row-role-spec entry compiled)))
-    (cond
-     ((plist-member role-spec :entry-id)
-      (majutsu-row-resolve-role-ref
-       (plist-get role-spec :entry-id) entry compiled))
-     ((plist-member role-spec :section-value)
-      (majutsu-row-resolve-role-ref
-       (plist-get role-spec :section-value) entry compiled))
-     ((plist-get profile :entry-id-function)
-      (funcall (plist-get profile :entry-id-function) entry))
-     (t (majutsu-row-column entry 'id)))))
+    (if-let* ((cell (majutsu-row--role-ref-cell
+                     role-spec :entry-id entry compiled)))
+        (cdr cell)
+      (if-let* ((cell (majutsu-row--role-ref-cell
+                       role-spec :section-value entry compiled)))
+          (cdr cell)
+        (if-let* ((fn (plist-get profile :entry-id-function)))
+            (funcall fn entry)
+          (majutsu-row-column entry 'id))))))
 
 (defun majutsu-row-section-value (entry compiled)
   "Return Magit section value for ENTRY using COMPILED."
   (let* ((profile (majutsu-row--profile compiled))
          (role-spec (majutsu-row-role-spec entry compiled)))
-    (cond
-     ((plist-member role-spec :section-value)
-      (majutsu-row-resolve-role-ref
-       (plist-get role-spec :section-value) entry compiled))
-     ((plist-get profile :section-value-function)
-      (funcall (plist-get profile :section-value-function) entry))
-     (t (majutsu-row-entry-id entry compiled)))))
+    (if-let* ((cell (majutsu-row--role-ref-cell
+                     role-spec :section-value entry compiled)))
+        (cdr cell)
+      (if-let* ((fn (plist-get profile :section-value-function)))
+          (funcall fn entry)
+        (majutsu-row-entry-id entry compiled)))))
 
 (defun majutsu-row-entry-section-type (entry compiled)
   "Return the Magit section type symbol for ENTRY using COMPILED."
@@ -2009,35 +2017,52 @@ Drops tail text when both heading and tail are present in the copied region."
 
 ;;; Interactive copy commands
 
+(defun majutsu-row--copy-region-or-entry (compiled entries fn)
+  "Copy active region, or call FN with current COMPILED and entry."
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (let* ((compiled (majutsu-row-current-compiled compiled))
+           (entry (or (majutsu-row-entry-at-point compiled entries)
+                      (user-error "No entry at point"))))
+      (funcall fn compiled entry))))
+
+(defun majutsu-row--column-at-point (compiled)
+  "Return compiled row column described by text properties at point."
+  (let ((instance (majutsu-row-text-property-near-point
+                   'majutsu-row-column))
+        (field (majutsu-row-text-property-near-point
+                'majutsu-row-field))
+        (module (majutsu-row-text-property-near-point
+                 'majutsu-row-module)))
+    (or (and instance
+             (majutsu-row-column-by-instance compiled instance))
+        (and field module
+             (seq-find (lambda (candidate)
+                         (and (eq (plist-get candidate :field) field)
+                              (eq (plist-get candidate :module) module)))
+                       (plist-get compiled :columns))))))
+
+(defun majutsu-row--visible-module-text (entry compiled module)
+  "Return plain rendered text for visible MODULE on ENTRY."
+  (cl-case module
+    (heading (majutsu-row-render-heading-content entry compiled nil t))
+    (tail (or (majutsu-row-render-tail entry compiled nil t) ""))
+    (body (or (majutsu-row-render-body entry compiled nil t) ""))))
+
 ;;;###autoload
 (defun majutsu-row-copy-field (&optional compiled entries)
   "Copy the rendered value of the structured field at point.
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-row-current-compiled compiled))
-           (entry (or (majutsu-row-entry-at-point compiled entries)
-                      (user-error "No entry at point")))
-           (instance (majutsu-row-text-property-near-point
-                      'majutsu-row-column))
-           (field (majutsu-row-text-property-near-point
-                   'majutsu-row-field))
-           (module (majutsu-row-text-property-near-point
-                    'majutsu-row-module))
-           (column (or (and instance
-                            (majutsu-row-column-by-instance
-                             compiled instance))
-                       (and field module
-                            (seq-find (lambda (candidate)
-                                        (and (eq (plist-get candidate :field) field)
-                                             (eq (plist-get candidate :module) module)))
-                                      (plist-get compiled :columns))))))
-      (unless column
-        (user-error "No entry field at point"))
-      (majutsu-row-copy-string
-       (majutsu-row-render-column-text entry column t)))))
+  (majutsu-row--copy-region-or-entry
+   compiled entries
+   (lambda (compiled entry)
+     (let ((column (majutsu-row--column-at-point compiled)))
+       (unless column
+         (user-error "No entry field at point"))
+       (majutsu-row-copy-string
+        (majutsu-row-render-column-text entry column t))))))
 
 ;;;###autoload
 (defun majutsu-row-copy-module (&optional compiled entries)
@@ -2045,24 +2070,15 @@ When the region is active, copy it literally using `copy-region-as-kill'."
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-row-current-compiled compiled))
-           (entry (or (majutsu-row-entry-at-point compiled entries)
-                      (user-error "No entry at point")))
-           (module (majutsu-row-text-property-near-point
-                    'majutsu-row-module))
-           (text (cl-case module
-                   (heading (majutsu-row-render-heading-content
-                             entry compiled nil t))
-                   (tail (or (majutsu-row-render-tail entry compiled nil t)
-                             ""))
-                   (body (or (majutsu-row-render-body entry compiled nil t)
-                             ""))
-                   (t nil))))
-      (unless text
-        (user-error "No entry module at point"))
-      (majutsu-row-copy-string text))))
+  (majutsu-row--copy-region-or-entry
+   compiled entries
+   (lambda (compiled entry)
+     (let* ((module (majutsu-row-text-property-near-point
+                     'majutsu-row-module))
+            (text (majutsu-row--visible-module-text entry compiled module)))
+       (unless text
+         (user-error "No entry module at point"))
+       (majutsu-row-copy-string text)))))
 
 ;;;###autoload
 (defun majutsu-row-copy-entry-field (&optional compiled entries)
@@ -2074,13 +2090,11 @@ prompts with completion over the current entry's available canonical fields.
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-row-current-compiled compiled))
-           (entry (or (majutsu-row-entry-at-point compiled entries)
-                      (user-error "No entry at point")))
-           (field (majutsu-row-read-entry-field entry compiled)))
-      (majutsu-row-entry-field-value-to-kill entry field))))
+  (majutsu-row--copy-region-or-entry
+   compiled entries
+   (lambda (compiled entry)
+     (let ((field (majutsu-row-read-entry-field entry compiled)))
+       (majutsu-row-entry-field-value-to-kill entry field)))))
 
 ;;;###autoload
 (defun majutsu-row-copy-commit-id (&optional compiled entries)
@@ -2088,12 +2102,10 @@ When the region is active, copy it literally using `copy-region-as-kill'."
 
 When the region is active, copy it literally using `copy-region-as-kill'."
   (interactive)
-  (if (use-region-p)
-      (call-interactively #'copy-region-as-kill)
-    (let* ((compiled (majutsu-row-current-compiled compiled))
-           (entry (or (majutsu-row-entry-at-point compiled entries)
-                      (user-error "No entry at point"))))
-      (majutsu-row-entry-field-value-to-kill entry 'commit-id))))
+  (majutsu-row--copy-region-or-entry
+   compiled entries
+   (lambda (_compiled entry)
+     (majutsu-row-entry-field-value-to-kill entry 'commit-id))))
 
 ;;; Copy transient macro
 
