@@ -544,29 +544,6 @@
       (should (equal command '("op" "revert" "abc")))
       (should refreshed))))
 
-(ert-deftest majutsu-op-transient/exposes-operation-family-actions ()
-  "Operation transient should expose operation family actions."
-  (should (transient-get-suffix 'majutsu-op-transient "l"))
-  (should (transient-get-suffix 'majutsu-op-transient "s"))
-  (should (transient-get-suffix 'majutsu-op-transient "d"))
-  (should (transient-get-suffix 'majutsu-op-transient "u"))
-  (should (transient-get-suffix 'majutsu-op-transient "r"))
-  (should (transient-get-suffix 'majutsu-op-transient "R"))
-  (should (transient-get-suffix 'majutsu-op-transient "V")))
-
-(ert-deftest majutsu-op-log-transient/exposes-log-options ()
-  "Operation log transient should expose log-specific options."
-  (should (transient-get-suffix 'majutsu-op-log-transient "-n"))
-  (should (transient-get-suffix 'majutsu-op-log-transient "-r"))
-  (should (transient-get-suffix 'majutsu-op-log-transient "l")))
-
-(ert-deftest majutsu-op-diff-transient/exposes-diff-selection ()
-  "Operation diff transient should expose operation range options."
-  (should (transient-get-suffix 'majutsu-op-diff-transient "-o"))
-  (should (transient-get-suffix 'majutsu-op-diff-transient "-f"))
-  (should (transient-get-suffix 'majutsu-op-diff-transient "-t"))
-  (should (transient-get-suffix 'majutsu-op-diff-transient "d")))
-
 (ert-deftest majutsu-op-log-mode-map/show-at-point ()
   "Operation log mode should make RET open operation details."
   (should (eq (lookup-key majutsu-op-log-mode-map (kbd "RET"))

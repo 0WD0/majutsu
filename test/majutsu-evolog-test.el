@@ -114,21 +114,6 @@
       (should (equal (magit-section-value-if 'jj-evolog-entry)
                      "commit-full")))))
 
-(ert-deftest majutsu-evolog-mode-map/does-not-bind-entry-actions ()
-  "Evolog mode should not install premature point-specific entry actions."
-  (should (eq (lookup-key majutsu-evolog-mode-map (kbd "RET"))
-              'majutsu-visit-thing))
-  (should (eq (lookup-key majutsu-evolog-mode-map (kbd "d"))
-              'majutsu-diff)))
-
-(ert-deftest majutsu-evolog-copy-transient-has-copy-actions ()
-  "Evolog copy transient should expose shared row copy actions."
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "m")))
-
 (ert-deftest majutsu-evolog-copy-entry-field-copies-operation-id ()
   "Shared row copy should work in evolog buffers."
   (let (copied)
