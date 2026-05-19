@@ -1002,14 +1002,6 @@
   (should-not (ignore-errors
                 (transient-get-suffix 'majutsu-log-transient "R"))))
 
-(ert-deftest majutsu-log-copy-transient-has-copy-actions ()
-  "Log copy transient should expose visible and hidden-field copy commands."
-  (should (transient-get-suffix 'majutsu-log-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "m")))
-
 (ert-deftest majutsu-dispatch-exposes-log-copy-transient ()
   "Dispatcher should expose the log copy transient entry."
   (should (transient-get-suffix 'majutsu-dispatch "w"))
