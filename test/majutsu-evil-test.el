@@ -51,8 +51,8 @@
     (should (member '(majutsu-op-diff-mode normal) calls))
     (should (member '(majutsu-evolog-mode normal) calls))))
 
-(ert-deftest majutsu-evil-test-log-family-owns-duplicate-keybindings ()
-  "Evil duplicate keys should be installed on log-family maps, not all Majutsu maps."
+(ert-deftest majutsu-evil-test-duplicate-stays-dispatch-only ()
+  "Evil setup should not install direct duplicate bindings."
   (let ((featurep-original (symbol-function 'featurep))
         calls)
     (cl-letf (((symbol-function 'featurep)
@@ -72,19 +72,15 @@
                         majutsu-conflict-mode-hook
                         majutsu-annotate-mode-hook))
           (remove-hook hook #'evil-normalize-keymaps))))
-    (should (seq-some
-             (lambda (call)
-               (and (eq (nth 0 call) 'normal)
-                    (eq (nth 1 call) majutsu--log-mode-map)
-                    (equal (nth 2 call)
-                           (list (kbd "y") #'majutsu-duplicate
-                                 (kbd "Y") #'majutsu-duplicate-dwim))))
-             calls))
     (should-not (seq-some
                  (lambda (call)
                    (and (eq (nth 0 call) 'normal)
-                        (eq (nth 1 call) majutsu-mode-map)
                         (member (kbd "y") (nth 2 call))))
+                 calls))
+    (should-not (seq-some
+                 (lambda (call)
+                   (and (eq (nth 0 call) 'normal)
+                        (member (kbd "Y") (nth 2 call))))
                  calls))))
 
 (ert-deftest majutsu-evil-test-dispatch-keys-match-evil-bindings ()
