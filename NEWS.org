@@ -64,6 +64,7 @@
 - Template DSL: Align builtin helper, method, conversion, and operator
   metadata with upstream =jj=, including option/list receivers, ~RefSymbol~,
   literal-only parameters, ~if()~, and helper return types.
+- Absorb: =--into= should accept =<REVSETS>= (repeatable)
 
 ** Removed
 

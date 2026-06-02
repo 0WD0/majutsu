@@ -34,9 +34,10 @@
   "Use current transient args when absorb transient is active."
   (let ((transient-current-command 'majutsu-absorb))
     (cl-letf (((symbol-function 'transient-args)
-               (lambda (&rest _) '("--from=@" "--into=mutable()"))))
+               (lambda (&rest _)
+                 '("--from=@" "--into=@-" "--into=main"))))
       (should (equal (majutsu-absorb-arguments)
-                     '("--from=@" "--into=mutable()"))))))
+                     '("--from=@" "--into=@-" "--into=main"))))))
 
 (ert-deftest majutsu-absorb-arguments-default-from-point ()
   "Outside transient, default --from to commit at point."

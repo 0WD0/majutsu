@@ -1205,12 +1205,12 @@ Open the Absorb transient.
 Source revision (@samp{--from}@comma{} default @samp{@@}).
 @item @kbd{-t}
 @kindex -t
-Destination revset filter (@samp{--into}@comma{} default @samp{mutable()}).
+Destination revset filters (@samp{--into}@comma{} repeatable@comma{} default @samp{mutable()}).
 @item @kbd{--}
 @kindex --
 Limit absorb to specific filesets.
 @end table
-Runs: @samp{jj absorb --from REV --into REVSET [FILESETS...]}
+Runs: @samp{jj absorb --from REV --into REVSETS... [FILESETS...]}
 
 @node Rebasing
 @section Rebasing

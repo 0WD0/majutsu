@@ -464,9 +464,9 @@ Runs: =jj squash --from SRC --into DEST [FILESETS...]=
 ** Absorbing
 - Key: a (Emacs/Evil) / ? A (majutsu-absorb) :: Open the Absorb transient.
 - Key: -f :: Source revision (=--from=, default =@=).
-- Key: -t :: Destination revset filter (=--into=, default =mutable()=).
+- Key: -t :: Destination revset filters (=--into=, repeatable, default =mutable()=).
 - Key: -- :: Limit absorb to specific filesets.
-Runs: =jj absorb --from REV --into REVSET [FILESETS...]=
+Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 
 ** Rebasing
 - Key: r (majutsu-rebase) :: Open the Rebase transient. This is one of Majutsu's most powerful features, allowing you to visually select sources and destinations.

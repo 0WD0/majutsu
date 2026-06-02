@@ -80,6 +80,7 @@ jj-commit section, add --from from that section."
   :selection-face '(:background "dark cyan" :foreground "white")
   :key "-t"
   :argument "--into="
+  :multi-value 'repeat
   :reader #'majutsu-diff--transient-read-revset)
 
 (transient-define-argument majutsu-absorb:from ()
@@ -92,7 +93,8 @@ jj-commit section, add --from from that section."
   :description "Into (toggle at point)"
   :class 'majutsu-absorb--toggle-option
   :key "t"
-  :argument "--into=")
+  :argument "--into="
+  :multi-value 'repeat)
 
 (transient-define-argument majutsu-absorb:-- ()
   :description "Limit to files"
