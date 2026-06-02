@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'transient)
 
 (declare-function majutsu-op-log-show-at-point "majutsu-op" ())
 (declare-function majutsu-op-show-default-action "majutsu-op" ())
@@ -56,6 +57,22 @@ When nil, Majutsu leaves Evil's state untouched."
           (const :tag "Replace" replace)
           (symbol :tag "Custom state"))
   :group 'majutsu-evil)
+
+(defvar majutsu-evil--dispatch-layout-backup nil
+  "Original transient layout for `majutsu-dispatch' before Evil key changes.")
+
+(defvar majutsu-evil--dispatch-keys-changed nil
+  "Whether `majutsu-dispatch' has been adjusted for Evil bindings.")
+
+(defconst majutsu-evil--dispatch-key-changes
+  '(("k" "x" majutsu-abandon)
+    ("l" "L" majutsu-log-transient)
+    ("V" "_" majutsu-revert)
+    ("Z" "*" majutsu-workspace)
+    ("C-/" "u" majutsu-undo)
+    ("C-?" "C-r" majutsu-redo)
+    ("$" "`" majutsu-process-buffer))
+  "Dispatcher key changes that mirror Majutsu Evil bindings.")
 
 (defun majutsu-evil--bind-conflict-side-keys (map before)
   "Bind 1-9 in MAP to conflict side commands.
@@ -105,6 +122,23 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
   (if (bound-and-true-p majutsu-blob-edit-mode)
       (evil-insert-state)
     (majutsu-blob-edit-start)))
+
+(defun majutsu-evil--adjust-dispatch ()
+  "Adjust `majutsu-dispatch' keys to match Majutsu Evil bindings."
+  (unless majutsu-evil--dispatch-keys-changed
+    (setq majutsu-evil--dispatch-layout-backup
+          (copy-tree (get 'majutsu-dispatch 'transient--layout) t))
+    (pcase-dolist (`(,_from ,to ,command) majutsu-evil--dispatch-key-changes)
+      (transient-suffix-put 'majutsu-dispatch command :key to))
+    (setq majutsu-evil--dispatch-keys-changed t)))
+
+(defun majutsu-evil-revert-dispatch ()
+  "Revert Evil-specific `majutsu-dispatch' key changes."
+  (interactive)
+  (when majutsu-evil--dispatch-layout-backup
+    (put 'majutsu-dispatch 'transient--layout
+         (copy-tree majutsu-evil--dispatch-layout-backup t)))
+  (setq majutsu-evil--dispatch-keys-changed nil))
 
 (defun majutsu-evil--set-initial-state ()
   "Register initial Evil states for Majutsu modes."
@@ -263,7 +297,8 @@ Safe to call multiple times.  Set
   (interactive)
   (when (and (featurep 'evil) majutsu-evil-enable-integration)
     (majutsu-evil--set-initial-state)
-    (majutsu-evil--define-mode-keys)))
+    (majutsu-evil--define-mode-keys)
+    (majutsu-evil--adjust-dispatch)))
 
 (with-eval-after-load 'evil
   (majutsu-evil-setup))
