@@ -65,6 +65,12 @@
 
 ** Changed
 
+- Direct duplicate ~y~ / ~Y~ bindings were removed ::
+  Open ~majutsu-duplicate~ from the dispatcher with ~? y~.  The standalone
+  ~majutsu-duplicate-dwim~ command was removed, and the Duplicate transient
+  now executes through ~majutsu-duplicate-execute~.  This leaves Evil's yank
+  keys free.
+
 - Evil dispatcher entries show Evil-facing keys ::
   The top-level dispatcher now mirrors buffer bindings such as ~x~, ~L~, ~_~,
   ~*~, ~u~, ~C-r~, and ~`~ when Evil integration is enabled.

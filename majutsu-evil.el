@@ -187,10 +187,6 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd ">") #'majutsu-sparse
     (kbd "RET") #'majutsu-visit-thing)
 
-  (majutsu-evil--define-keys 'normal 'majutsu-mode-map
-    (kbd "y") #'majutsu-duplicate
-    (kbd "Y") #'majutsu-duplicate-dwim)
-
   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
     (kbd "+") #'majutsu-diff-more-context
     (kbd "=") #'majutsu-diff-less-context

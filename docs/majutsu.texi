@@ -1330,14 +1330,10 @@ Runs: @samp{jj rebase -s SRC -o DEST}
 @section Duplicating
 
 @table @asis
-@item @kbd{y} (@code{majutsu-duplicate})
-@kindex y
+@item @kbd{? y} (@code{majutsu-duplicate})
+@kindex ? y
 @findex majutsu-duplicate
 Open the Duplicate transient. Allows selecting source revisions and destination.
-@item @kbd{Y} (@code{majutsu-duplicate-dwim})
-@kindex Y
-@findex majutsu-duplicate-dwim
-Duplicate the revision at point onto its current parent.
 @item @kbd{-r}
 @kindex -r
 Source revisions to duplicate.

@@ -72,7 +72,7 @@ by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffer
 | ~R~                    | Restore                   |
 | ~s~                    | Squash                    |
 | ~S~                    | Split                     |
-| ~y~                    | Duplicate                 |
+| ~? y~                  | Duplicate                 |
 | ~Z~ / ~*~                | Workspaces                |
 | ~C-/~ / ~u~              | Undo                      |
 | ~C-?~ / ~C-r~            | Redo                      |

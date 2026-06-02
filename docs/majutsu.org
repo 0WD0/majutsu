@@ -538,8 +538,7 @@ Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 Runs: =jj rebase -s SRC -o DEST=
 
 ** Duplicating
-- Key: y (majutsu-duplicate) :: Open the Duplicate transient. Allows selecting source revisions and destination.
-- Key: Y (majutsu-duplicate-dwim) :: Duplicate the revision at point onto its current parent.
+- Key: ? y (majutsu-duplicate) :: Open the Duplicate transient. Allows selecting source revisions and destination.
 - Key: -r :: Source revisions to duplicate.
 - Key: -o :: Destination (=--onto=).
 - Key: -A / -B :: Insert after or before constraints.
