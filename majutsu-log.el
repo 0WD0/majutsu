@@ -702,7 +702,6 @@ Return non-nil when the section could be located."
   "]" 'majutsu-log-goto-child
   "O" 'majutsu-new-dwim
   "D" 'majutsu-diff-dwim
-  "Y" 'majutsu-duplicate-dwim
   "B" 'majutsu-new-with-before
   "A" 'majutsu-new-with-after)
 

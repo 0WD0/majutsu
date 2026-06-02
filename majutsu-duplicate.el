@@ -40,15 +40,13 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
           (push (concat "-r=" rev) args))))
     args))
 
-;;;###autoload(autoload 'majutsu-duplicate-dwim "majutsu-duplicate" nil t)
-(transient-define-suffix majutsu-duplicate-dwim ()
-  "Duplicate the changeset at point.
-With prefix ARG, open the duplicate transient."
+;;;###autoload(autoload 'majutsu-duplicate-execute "majutsu-duplicate" nil t)
+(transient-define-suffix majutsu-duplicate-execute (args)
+  "Execute jj duplicate using the current transient selections."
   :description "Duplicate changes"
   :class 'majutsu-transient-default-action-suffix
-  (interactive)
-  (let ((args  (majutsu-duplicate-arguments)))
-    (majutsu-run-jj "duplicate" args)))
+  (interactive (list (majutsu-duplicate-arguments)))
+  (majutsu-run-jj "duplicate" args))
 
 ;;; Duplicate Transient
 (transient-define-argument majutsu-duplicate:-r ()
@@ -112,7 +110,7 @@ With prefix ARG, open the duplicate transient."
     (majutsu-duplicate:--after)
     (majutsu-duplicate:--before)]
    ["Actions"
-    ("y" "Duplicate changes" majutsu-duplicate-dwim)]]
+    ("y" "Duplicate changes" majutsu-duplicate-execute)]]
   (interactive)
   (transient-setup
    'majutsu-duplicate nil nil

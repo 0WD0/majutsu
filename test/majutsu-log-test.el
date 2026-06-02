@@ -1002,11 +1002,10 @@
   (should-not (ignore-errors
                 (transient-get-suffix 'majutsu-log-transient "R"))))
 
-(ert-deftest majutsu-log-mode-map/does-not-bind-evil-only-duplicate-actions ()
-  "Plain Emacs log buffers should not bind Evil-only duplicate keys."
+(ert-deftest majutsu-log-mode-map/does-not-bind-duplicate-actions ()
+  "Log buffers should leave duplicate actions to the dispatcher."
   (should (eq (lookup-key majutsu-log-mode-map (kbd "y")) nil))
-  (should (eq (lookup-key majutsu-log-mode-map (kbd "Y"))
-              'majutsu-duplicate-dwim)))
+  (should (eq (lookup-key majutsu-log-mode-map (kbd "Y")) nil)))
 
 (ert-deftest majutsu-log-refresh/ignores-derived-log-family-buffers ()
   "Generic log refresh should not treat evolog/oplog buffers as the main log."

@@ -59,6 +59,11 @@
   The dispatcher now displays remapped top-level keys such as ~x~, ~L~, ~_~,
   ~*~, ~u~, ~C-r~, and ~`~.
 
+- Duplicate commands moved out of ~y~ / ~Y~ ::
+  Use ~? y~ for ~majutsu-duplicate~.  The separate ~majutsu-duplicate-dwim~
+  command was removed; the transient's execute action is now
+  ~majutsu-duplicate-execute~.  This leaves Evil yank keys free.
+
 - Some transients can save repository-local defaults ::
   Log, diff, and Git sync transients can save defaults for the current jj
   repository without changing global Transient defaults.

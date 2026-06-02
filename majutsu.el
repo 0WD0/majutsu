@@ -61,7 +61,6 @@ Instead of invoking this alias for `majutsu-log' using
     ("S" "Split"             majutsu-split)
     ("a" "Absorb"            majutsu-absorb)
     ("y" "Duplicate"         majutsu-duplicate)
-    ("Y" "Duplicate (dwim)"  majutsu-duplicate-dwim)
     (">" "Sparse"            majutsu-sparse)
     ("Z" "Workspaces"        majutsu-workspace)
     ("X" "Operations"        majutsu-op-transient)
