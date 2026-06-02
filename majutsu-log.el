@@ -668,6 +668,18 @@ Return non-nil when the section could be located."
 
 ;;; Log Mode
 
+(defvar-keymap majutsu--log-mode-map
+  :doc "Parent keymap for Majutsu log-family modes."
+  :parent majutsu-mode-map)
+
+(define-derived-mode majutsu--log-mode majutsu-mode "Majutsu Log Base"
+  "Internal parent mode for Majutsu log-family buffers."
+  :interactive nil
+  :group 'majutsu
+  (setq-local line-number-mode nil)
+  (setq-local filter-buffer-substring-function
+              #'majutsu-row-filter-buffer-substring))
+
 (defcustom majutsu-log-mode-hook (list #'bug-reference-mode)
   "Hook run after entering `majutsu-log-mode'."
   :group 'majutsu
@@ -682,7 +694,8 @@ Return non-nil when the section could be located."
 
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."
-  :parent majutsu-mode-map
+  :parent majutsu--log-mode-map
+  "y" 'majutsu-duplicate
   "n" 'majutsu-goto-next-changeset
   "p" 'majutsu-goto-prev-changeset
   "[" 'majutsu-log-goto-parent
@@ -693,12 +706,10 @@ Return non-nil when the section could be located."
   "B" 'majutsu-new-with-before
   "A" 'majutsu-new-with-after)
 
-(define-derived-mode majutsu-log-mode majutsu-mode "Majutsu Log"
+(define-derived-mode majutsu-log-mode majutsu--log-mode "Majutsu Log"
   "Major mode for interacting with jj version control system."
   :group 'majutsu
-  (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-  (setq-local filter-buffer-substring-function #'majutsu-row-filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t)
   (add-hook 'text-scale-mode-hook #'majutsu-log--after-text-scale-change nil t)
   (add-hook 'window-size-change-functions #'majutsu-log--after-window-size-change nil t))

@@ -17,6 +17,7 @@
 
 (require 'cl-lib)
 (require 'majutsu)
+(require 'majutsu-log)
 (require 'majutsu-row)
 (require 'majutsu-selection)
 (require 'seq)
@@ -644,17 +645,14 @@ result."
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
-  :parent majutsu-mode-map
+  :parent majutsu--log-mode-map
   "RET" 'majutsu-op-log-show-at-point
   "d" 'majutsu-op-log-show-at-point)
 
-(define-derived-mode majutsu-op-log-mode majutsu-mode "Majutsu Op Log"
+(define-derived-mode majutsu-op-log-mode majutsu--log-mode "Majutsu Op Log"
   "Major mode for viewing jj operation log."
   :group 'majutsu
-  (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-  (setq-local filter-buffer-substring-function
-              #'majutsu-row-filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments

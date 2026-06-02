@@ -980,6 +980,42 @@
   (should-not (ignore-errors
                 (transient-get-suffix 'majutsu-log-transient "R"))))
 
+(ert-deftest majutsu-log-mode-map/binds-log-actions ()
+  "Log buffers should own log-oriented duplicate keys."
+  (should (eq (lookup-key majutsu-log-mode-map (kbd "y"))
+              'majutsu-duplicate))
+  (should (eq (lookup-key majutsu-log-mode-map (kbd "Y"))
+              'majutsu-duplicate-dwim)))
+
+(ert-deftest majutsu-log-refresh/ignores-derived-log-family-buffers ()
+  "Generic log refresh should not treat evolog/oplog buffers as the main log."
+  (let ((default-directory "/tmp/repo/")
+        refreshed)
+    (cl-letf (((symbol-function 'majutsu--buffer-root)
+               (lambda (&optional _buffer) "/tmp/repo/"))
+              ((symbol-function 'majutsu-toplevel)
+               (lambda (&optional _directory) "/tmp/repo/"))
+              ((symbol-function 'majutsu-refresh-buffer)
+               (lambda ()
+                 (push (buffer-name) refreshed))))
+      (let ((evolog (generate-new-buffer " *majutsu test evolog*"))
+            (log (generate-new-buffer " *majutsu test log*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer evolog
+                (majutsu-evolog-mode)
+                (setq-local majutsu--default-directory "/tmp/repo/"))
+              (with-current-buffer log
+                (majutsu-log-mode)
+                (setq-local majutsu--default-directory "/tmp/repo/"))
+              (with-current-buffer evolog
+                (majutsu-log-refresh))
+              (should (equal refreshed (list (buffer-name log)))))
+          (mapc (lambda (buffer)
+                  (when (buffer-live-p buffer)
+                    (kill-buffer buffer)))
+                (list evolog log)))))))
+
 (ert-deftest majutsu-dispatch-exposes-log-copy-transient ()
   "Dispatcher should expose the log copy transient entry."
   (should (transient-get-suffix 'majutsu-dispatch "w"))
