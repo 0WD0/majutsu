@@ -81,7 +81,6 @@ afterward."
   "r"   'majutsu-rebase
   "V"   'majutsu-revert
   "b"   'majutsu-bookmark
-  "y"   'majutsu-duplicate
   "G"   'majutsu-git-transient
   "X"   'majutsu-op-transient
   "Z"   'majutsu-workspace
@@ -536,7 +535,7 @@ Refresh the current buffer if its major mode derives from
             (majutsu-refresh-buffer)
           (ignore-errors (majutsu-refresh-buffer))))
       (when (and root
-                 (not (derived-mode-p 'majutsu-log-mode))
+                 (not (derived-mode-p 'majutsu--log-mode))
                  (fboundp 'majutsu-log-refresh))
         (when-let* ((buffer (majutsu--find-mode-buffer 'majutsu-log-mode root)))
           (with-current-buffer buffer
