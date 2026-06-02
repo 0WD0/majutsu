@@ -51,6 +51,89 @@
     (should (member '(majutsu-op-diff-mode normal) calls))
     (should (member '(majutsu-evolog-mode normal) calls))))
 
+(ert-deftest majutsu-evil-test-log-family-owns-duplicate-keybindings ()
+  "Evil duplicate keys should be installed on log-family maps, not all Majutsu maps."
+  (let ((featurep-original (symbol-function 'featurep))
+        calls)
+    (cl-letf (((symbol-function 'featurep)
+               (lambda (feature &optional subfeature)
+                 (if (eq feature 'evil)
+                     t
+                   (funcall featurep-original feature subfeature))))
+              ((symbol-function 'evil-normalize-keymaps)
+               (lambda (&rest _)))
+              ((symbol-function 'evil-define-key*)
+               (lambda (state keymap &rest bindings)
+                 (push (list state keymap bindings) calls))))
+      (unwind-protect
+          (majutsu-evil--define-mode-keys)
+        (dolist (hook '(majutsu-blob-mode-hook
+                        majutsu-blob-edit-mode-hook
+                        majutsu-conflict-mode-hook
+                        majutsu-annotate-mode-hook))
+          (remove-hook hook #'evil-normalize-keymaps))))
+    (should (seq-some
+             (lambda (call)
+               (and (eq (nth 0 call) 'normal)
+                    (eq (nth 1 call) majutsu--log-mode-map)
+                    (equal (nth 2 call)
+                           (list (kbd "y") #'majutsu-duplicate
+                                 (kbd "Y") #'majutsu-duplicate-dwim))))
+             calls))
+    (should-not (seq-some
+                 (lambda (call)
+                   (and (eq (nth 0 call) 'normal)
+                        (eq (nth 1 call) majutsu-mode-map)
+                        (member (kbd "y") (nth 2 call))))
+                 calls))))
+
+(ert-deftest majutsu-evil-test-dispatch-keys-match-evil-bindings ()
+  "Evil setup should update dispatcher suffix keys for visible help."
+  (let ((original (copy-tree (get 'majutsu-dispatch 'transient--layout) t)))
+    (unwind-protect
+        (progn
+          (setq majutsu-evil--dispatch-keys-changed nil)
+          (majutsu-evil--adjust-dispatch)
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-abandon))
+                                     :key)
+                         "x"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-log-transient))
+                                     :key)
+                         "L"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-revert))
+                                     :key)
+                         "_"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-workspace))
+                                     :key)
+                         "*"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-undo))
+                                     :key)
+                         "u"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-redo))
+                                     :key)
+                         "C-r"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-process-buffer))
+                                     :key)
+                         "`"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-duplicate))
+                                     :key)
+                         "y"))
+          (should (equal (plist-get (cdr (transient-get-suffix
+                                           'majutsu-dispatch 'majutsu-duplicate-dwim))
+                                     :key)
+                         "Y")))
+      (put 'majutsu-dispatch 'transient--layout original)
+      (setq majutsu-evil--dispatch-keys-changed nil
+            majutsu-evil--dispatch-layout-backup nil))))
+
 (ert-deftest majutsu-evil-test-op-mode-keybindings ()
   "Operation mode maps should receive Evil-specific bindings."
   (let ((featurep-original (symbol-function 'featurep))

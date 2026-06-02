@@ -695,7 +695,6 @@ Return non-nil when the section could be located."
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."
   :parent majutsu--log-mode-map
-  "y" 'majutsu-duplicate
   "n" 'majutsu-goto-next-changeset
   "p" 'majutsu-goto-prev-changeset
   "[" 'majutsu-log-goto-parent
