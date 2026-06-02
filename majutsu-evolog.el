@@ -209,15 +209,12 @@
 
 (defvar-keymap majutsu-evolog-mode-map
   :doc "Keymap for `majutsu-evolog-mode'."
-  :parent majutsu-mode-map)
+  :parent majutsu--log-mode-map)
 
-(define-derived-mode majutsu-evolog-mode majutsu-mode "Majutsu Evolog"
+(define-derived-mode majutsu-evolog-mode majutsu--log-mode "Majutsu Evolog"
   "Major mode for viewing jj change evolution history."
   :group 'majutsu
-  (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-  (setq-local filter-buffer-substring-function
-              #'majutsu-row-filter-buffer-substring))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
 
 (defun majutsu-evolog--buffer-name (revset)
   "Return buffer name for evolog REVSET."
