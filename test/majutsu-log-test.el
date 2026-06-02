@@ -980,10 +980,9 @@
   (should-not (ignore-errors
                 (transient-get-suffix 'majutsu-log-transient "R"))))
 
-(ert-deftest majutsu-log-mode-map/binds-log-actions ()
-  "Log buffers should own log-oriented duplicate keys."
-  (should (eq (lookup-key majutsu-log-mode-map (kbd "y"))
-              'majutsu-duplicate))
+(ert-deftest majutsu-log-mode-map/does-not-bind-evil-only-duplicate-actions ()
+  "Plain Emacs log buffers should not bind Evil-only duplicate keys."
+  (should (eq (lookup-key majutsu-log-mode-map (kbd "y")) nil))
   (should (eq (lookup-key majutsu-log-mode-map (kbd "Y"))
               'majutsu-duplicate-dwim)))
 

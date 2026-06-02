@@ -55,6 +55,10 @@
 
 ** Changed
 
+- Evil: Keep ~y~ / ~Y~ duplicate bindings on log-family buffers instead of
+  generic Majutsu buffers, so diff buffers no longer steal Evil's yank key.
+  The Majutsu dispatcher now mirrors Evil top-level key changes such as ~x~,
+  ~L~, ~_~, ~*~, ~u~, ~C-r~, and ~`~.
 - Rows/Bookmarks: Extend ~majutsu-row~ to parse push/pop tree streams and render
   nested Magit sections, add first-class layout node ~:role~ metadata for
   Magit section class/value/entry-id decisions, use simple field/function
