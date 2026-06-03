@@ -79,6 +79,41 @@ When nil, do not override whatever `auto-mode-alist' selects."
   :group 'majutsu
   :type 'string)
 
+(defcustom majutsu-jjdescription-summary-max-length 68
+  "Column beyond which summary line characters are highlighted.
+
+This uses the same default as `git-commit-summary-max-length'.
+Set to nil to disable overlong summary highlighting."
+  :group 'majutsu
+  :type '(choice (const :tag "Disable" nil)
+                 (natnum :tag "Column")))
+
+(defcustom majutsu-jjdescription-fill-column
+  (if (boundp 'git-commit-fill-column)
+      git-commit-fill-column
+    72)
+  "Column used as `fill-column' in JJ description buffers.
+
+This mirrors `git-commit-fill-column' for JJ description buffers.
+Set to nil to leave `fill-column' unchanged."
+  :group 'majutsu
+  :type '(choice (const :tag "Use default fill-column" nil)
+                 (integer :tag "Column")))
+
+(defun majutsu-jjdescription-setup-auto-fill ()
+  "Turn on Auto Fill mode in JJ description buffers.
+Ensure auto filling happens everywhere except in the summary line."
+  (auto-fill-mode 1)
+  (setq-local comment-auto-fill-only-comments nil)
+  (setq-local auto-fill-function
+              #'majutsu-jjdescription--auto-fill-except-summary))
+
+(defun majutsu-jjdescription--auto-fill-except-summary ()
+  "Do not auto-fill the summary line."
+  (unless (eq (line-beginning-position)
+              (car-safe (majutsu-jjdescription--summary-range)))
+    (do-auto-fill)))
+
 (with-eval-after-load 'recentf
   (add-to-list 'recentf-exclude majutsu-jjdescription-regexp))
 
@@ -268,6 +303,16 @@ Added to `font-lock-extend-region-functions'."
         (set-match-data (list beg end))
         t))))
 
+(defun majutsu-jjdescription--summary-regexp ()
+  "Return regexp matching summary parts like `git-commit-summary-regexp'."
+  (concat
+   ;; Leading empty lines and comments.
+   (format "\\`\\(?:^\\(?:\\s-*\\|%s.*\\)\n\\)*"
+           (regexp-quote (majutsu-jjdescription--comment-prefix)))
+   ;; Summary line before and after the configured maximum length.
+   (format "\\(.\\{0,%d\\}\\)\\(.*\\)"
+           (or majutsu-jjdescription-summary-max-length most-positive-fixnum))))
+
 (defun majutsu-jjdescription--ignore-rest-comment-matcher (limit)
   "Match text after ignore-rest as comments before LIMIT."
   (majutsu-jjdescription--refresh-ignore-rest-pos)
@@ -302,6 +347,10 @@ Added to `font-lock-extend-region-functions'."
         (ignore-rest-re (majutsu-jjdescription--ignore-rest-line-re)))
     `((majutsu-jjdescription--summary-matcher
        (0 '(face git-commit-summary font-lock-face git-commit-summary) t))
+      ,@(when (integerp majutsu-jjdescription-summary-max-length)
+          `((,(majutsu-jjdescription--summary-regexp)
+             (2 '(face git-commit-overlong-summary
+                  font-lock-face git-commit-overlong-summary) t t))))
       (,comment-line-re
        (0 '(face font-lock-comment-face font-lock-face font-lock-comment-face) append))
       (,ignore-rest-re
@@ -573,8 +622,11 @@ available to `majutsu-jjdescription-setup' in `find-file-hook'."
           (with-editor-mode t))
       (normal-mode t)))
 
-  ;; Setup comments
+  ;; Setup comments and line length.
   (majutsu-jjdescription-setup-comments)
+  (when majutsu-jjdescription-fill-column
+    (setq-local fill-column majutsu-jjdescription-fill-column))
+  (majutsu-jjdescription-setup-auto-fill)
 
   ;; Ensure with-editor-mode is enabled
   (unless with-editor-mode
@@ -601,10 +653,13 @@ available to `majutsu-jjdescription-setup' in `find-file-hook'."
     (majutsu-jjdescription-setup)))
 
 (defun majutsu-jjdescription-setup-font-lock-in-buffer ()
-  "Refresh JJ description font-lock after major-mode changes."
+  "Refresh JJ description setup after major-mode changes."
   (when (and buffer-file-name
              (string-match-p majutsu-jjdescription-regexp buffer-file-name))
     (majutsu-jjdescription-setup-comments)
+    (when majutsu-jjdescription-fill-column
+      (setq-local fill-column majutsu-jjdescription-fill-column))
+    (majutsu-jjdescription-setup-auto-fill)
     (majutsu-jjdescription-setup-font-lock)))
 
 (defun majutsu-jjdescription--set-global-hooks (enable)
