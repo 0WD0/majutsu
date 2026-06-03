@@ -529,7 +529,12 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
                       "committer.email() ++ \"\\0\""
                       "committer.timestamp().format(\"%a %b %e %T %Y %z\") ++ \"\\0\"")
                     " ++ "))
-         (fields (majutsu-jj-items "log" "--no-graph" "-r" rev "-T" template)))
+         (fields (with-temp-buffer
+                   (majutsu-jj-insert "log" "--no-graph" "-r" rev "-T" template)
+                   ;; Preserve empty fields.  `majutsu-jj-items' intentionally
+                   ;; drops them, which shifts header values for unbookmarked
+                   ;; revisions.
+                   (butlast (split-string (buffer-string) "\0")))))
     (pcase-let ((`(,bookmarks ,remote-bookmarks ,commit-id
                   ,author-name ,author-email ,author-date
                   ,committer-name ,committer-email ,committer-date)
@@ -544,17 +549,28 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
             :committer-email committer-email
             :committer-date committer-date))))
 
+(defun majutsu-diff--propertize-ref (ref face)
+  "Return REF propertized like a Magit ref label using FACE."
+  (propertize ref 'font-lock-face face))
+
 (defun majutsu-diff--format-refs (fields)
   "Return a display string for revision refs in FIELDS."
   (string-join (delete-dups
-                (append (split-string (or (plist-get fields :bookmarks) "") " " t)
+                (append (mapcar (lambda (ref)
+                                  (majutsu-diff--propertize-ref
+                                   ref 'magit-branch-local))
+                                (split-string (or (plist-get fields :bookmarks) "")
+                                              " " t))
                         (delq nil
                               (mapcar (lambda (ref)
                                         (if (string-match "\\`\\([^@]+\\)@\\(.+\\)\\'" ref)
                                             (unless (string= (match-string 2 ref) "git")
-                                              (format "%s/%s" (match-string 2 ref)
-                                                      (match-string 1 ref)))
-                                          ref))
+                                              (majutsu-diff--propertize-ref
+                                               (format "%s/%s" (match-string 2 ref)
+                                                       (match-string 1 ref))
+                                               'magit-branch-remote))
+                                          (majutsu-diff--propertize-ref
+                                           ref 'magit-branch-remote)))
                                       (split-string (or (plist-get fields :remote-bookmarks) "")
                                                     " " t)))))
                " "))
@@ -567,7 +583,9 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
       (let ((refs (majutsu-diff--format-refs fields)))
         (unless (string-empty-p refs)
           (insert refs " ")))
-      (insert (plist-get fields :commit-id) "\n")
+      (insert (propertize (plist-get fields :commit-id)
+                          'font-lock-face 'magit-hash)
+              "\n")
       (insert (format "Author:     %s <%s>\n"
                       (plist-get fields :author-name)
                       (plist-get fields :author-email)))
