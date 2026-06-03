@@ -47,6 +47,100 @@ Splits at the last \"@\"."
          (mapcar (lambda (remote) (list "--remote" remote))
                  remotes)))
 
+(defconst majutsu-bookmark--list-field-separator (char-to-string #x1f)
+  "Field separator used by the structured bookmark list template.")
+
+(defconst majutsu-bookmark--list-template
+  (let ((sep " ++ \"\\x1f\" ++ "))
+    (concat
+     "name" sep
+     "if(remote, remote, \"\")" sep
+     "if(present, \"1\", \"0\")" sep
+     "if(conflict, \"1\", \"0\")" sep
+     "if(tracked, \"1\", \"0\")" sep
+     "if(tracking_present, \"1\", \"0\")" sep
+     "if(synced, \"1\", \"0\")" sep
+     "if(normal_target, normal_target.change_id().shortest(8), \"\")" sep
+     "if(normal_target, normal_target.commit_id().shortest(8), \"\")" sep
+     "if(normal_target, normal_target.author().name(), \"\")" sep
+     "if(normal_target, normal_target.author().timestamp().ago(), \"\")" sep
+     "if(normal_target, normal_target.description().first_line(), \"\")" sep
+     "if(tracking_present, tracking_ahead_count.exact(), \"\")" sep
+     "if(tracking_present, tracking_behind_count.exact(), \"\")"
+     " ++ \"\\n\""))
+  "Template for `jj bookmark list' structured rows.")
+
+(defcustom majutsu-bookmark-list-max-name-width 34
+  "Maximum width of the bookmark name column in bookmark list buffers."
+  :group 'majutsu
+  :type 'integer)
+
+(defcustom majutsu-bookmark-list-max-where-width 14
+  "Maximum width of the local/remote column in bookmark list buffers."
+  :group 'majutsu
+  :type 'integer)
+
+(defcustom majutsu-bookmark-list-max-author-width 18
+  "Maximum width of the author column in bookmark list buffers."
+  :group 'majutsu
+  :type 'integer)
+
+(defun majutsu-bookmark--non-empty (string)
+  "Return STRING when it is a non-empty string, else nil."
+  (and (stringp string) (not (string-empty-p string)) string))
+
+(defun majutsu-bookmark--bool-field (field)
+  "Return non-nil when structured bookmark FIELD is true."
+  (string= field "1"))
+
+(defun majutsu-bookmark-parse-list-output (output)
+  "Parse structured `jj bookmark list' OUTPUT.
+
+Return a list of plists with keys such as `:name', `:remote',
+`:change-id', `:commit-id', `:author', and `:description'."
+  (let ((entries nil))
+    (dolist (line (split-string (or output "") "\n" t))
+      (let ((fields (split-string line
+                                  (regexp-quote majutsu-bookmark--list-field-separator)
+                                  nil)))
+        (when (>= (length fields) 14)
+          (let ((name (nth 0 fields)))
+            (when (majutsu-bookmark--non-empty name)
+              (push (list :name name
+                          :remote (majutsu-bookmark--non-empty (nth 1 fields))
+                          :present (majutsu-bookmark--bool-field (nth 2 fields))
+                          :conflict (majutsu-bookmark--bool-field (nth 3 fields))
+                          :tracked (majutsu-bookmark--bool-field (nth 4 fields))
+                          :tracking-present (majutsu-bookmark--bool-field (nth 5 fields))
+                          :synced (majutsu-bookmark--bool-field (nth 6 fields))
+                          :change-id (majutsu-bookmark--non-empty (nth 7 fields))
+                          :commit-id (majutsu-bookmark--non-empty (nth 8 fields))
+                          :author (majutsu-bookmark--non-empty (nth 9 fields))
+                          :age (majutsu-bookmark--non-empty (nth 10 fields))
+                          :description (or (nth 11 fields) "")
+                          :ahead (majutsu-bookmark--non-empty (nth 12 fields))
+                          :behind (majutsu-bookmark--non-empty (nth 13 fields)))
+                    entries))))))
+    (nreverse entries)))
+
+(defun majutsu-bookmark--entry-at-point ()
+  "Return bookmark entry plist at point, or nil."
+  (let ((value (magit-section-value-if 'jj-bookmark)))
+    (cond
+     ((and (listp value) (plist-member value :name)) value)
+     ((stringp value)
+      (let ((ref (majutsu--bookmark-split-remote-ref value)))
+        (list :name (car ref) :remote (cdr ref) :present t)))
+     (t nil))))
+
+(defun majutsu-bookmark--entry-ref (entry)
+  "Return full bookmark ref for ENTRY."
+  (let ((name (plist-get entry :name))
+        (remote (plist-get entry :remote)))
+    (if remote
+        (format "%s@%s" name remote)
+      name)))
+
 (defun majutsu--bookmark-remote-name-candidates ()
   "Return remote bookmark names for completion (unique, plain strings)."
   (let* ((template "if(remote && present, json(name) ++ \"\\n\", \"\")")
@@ -182,34 +276,145 @@ With prefix ALL, include remote bookmarks."
 (defun majutsu-bookmark--list-args ()
   "Return arguments for `jj bookmark list'."
   (append '("bookmark" "list" "--quiet")
-          (and majutsu-bookmark--list-all '("--all-remotes"))))
+          (and majutsu-bookmark--list-all '("--all-remotes"))
+          (list "-T" majutsu-bookmark--list-template)))
 
-(defun majutsu-bookmark--line-name (line)
-  "Return the bookmark name parsed from LINE."
-  (let* ((raw (string-trim (substring-no-properties line)))
-         (token (car (split-string raw "[ \t]+" t))))
-    (when token
-      (string-remove-suffix ":" token))))
+(defun majutsu-bookmark--bounded-width (entries getter minimum maximum)
+  "Return display width for ENTRIES using GETTER, bounded by MINIMUM and MAXIMUM."
+  (min maximum
+       (apply #'max minimum
+              (mapcar (lambda (entry)
+                        (string-width (or (funcall getter entry) "")))
+                      entries))))
+
+(defun majutsu-bookmark--entry-where (entry)
+  "Return local/remote location string for bookmark ENTRY."
+  (if-let* ((remote (plist-get entry :remote)))
+      (concat "@" remote)
+    "local"))
+
+(defun majutsu-bookmark--entry-state (entry)
+  "Return state string for bookmark ENTRY."
+  (cond
+   ((plist-get entry :conflict) "conflict")
+   ((not (plist-get entry :present)) "deleted")
+   ((not (plist-get entry :remote)) "")
+   ((plist-get entry :tracked)
+    (if (plist-get entry :synced)
+        "tracked"
+      (let ((ahead (plist-get entry :ahead))
+            (behind (plist-get entry :behind)))
+        (if (or ahead behind)
+            (format "+%s/-%s" (or ahead "?") (or behind "?"))
+          "tracked"))))
+   (t "untracked")))
+
+(defun majutsu-bookmark--entry-state-face (entry)
+  "Return face for bookmark ENTRY's state."
+  (cond
+   ((plist-get entry :conflict) 'error)
+   ((not (plist-get entry :present)) 'warning)
+   ((not (plist-get entry :remote)) 'shadow)
+   ((plist-get entry :tracked) 'font-lock-keyword-face)
+   (t 'shadow)))
+
+(defun majutsu-bookmark--table-widths (entries)
+  "Return column width plist for bookmark ENTRIES."
+  (list :name (majutsu-bookmark--bounded-width
+               entries (lambda (entry) (plist-get entry :name))
+               4 majutsu-bookmark-list-max-name-width)
+        :where (majutsu-bookmark--bounded-width
+                entries #'majutsu-bookmark--entry-where
+                5 majutsu-bookmark-list-max-where-width)
+        :state (majutsu-bookmark--bounded-width
+                entries #'majutsu-bookmark--entry-state
+                5 12)
+        :author (majutsu-bookmark--bounded-width
+                 entries (lambda (entry) (plist-get entry :author))
+                 6 majutsu-bookmark-list-max-author-width)
+        :age (majutsu-bookmark--bounded-width
+              entries (lambda (entry) (plist-get entry :age))
+              3 14)))
+
+(defun majutsu-bookmark--column (text width &optional face help)
+  "Return TEXT padded or truncated to WIDTH.
+Optionally apply FACE and HELP echo."
+  (let* ((raw (or text ""))
+         (display (if (string-empty-p raw) "-" raw))
+         (truncated (truncate-string-to-width display width nil nil "…"))
+         (padded (concat truncated
+                         (make-string (max 0 (- width (string-width truncated))) ?\s))))
+    (when face
+      (setq padded (propertize padded 'font-lock-face face)))
+    (when help
+      (setq padded (propertize padded 'help-echo help)))
+    padded))
+
+(defun majutsu-bookmark--format-header (widths)
+  "Return bookmark table header using WIDTHS."
+  (propertize
+   (concat (majutsu-bookmark--column "Name" (plist-get widths :name))
+           " "
+           (majutsu-bookmark--column "Where" (plist-get widths :where))
+           " "
+           (majutsu-bookmark--column "State" (plist-get widths :state))
+           " Change   Commit   "
+           (majutsu-bookmark--column "Author" (plist-get widths :author))
+           " "
+           (majutsu-bookmark--column "Age" (plist-get widths :age))
+           " Description")
+   'font-lock-face 'magit-section-heading))
+
+(defun majutsu-bookmark--format-entry (entry widths)
+  "Format bookmark ENTRY as one aligned table row using WIDTHS."
+  (let* ((remote (plist-get entry :remote))
+         (name (plist-get entry :name))
+         (change-id (plist-get entry :change-id))
+         (commit-id (plist-get entry :commit-id))
+         (target-face (if change-id 'magit-hash 'shadow))
+         (branch-face (if remote 'magit-branch-remote 'magit-branch-local)))
+    (concat (majutsu-bookmark--column name (plist-get widths :name)
+                                      branch-face (majutsu-bookmark--entry-ref entry))
+            " "
+            (majutsu-bookmark--column (majutsu-bookmark--entry-where entry)
+                                      (plist-get widths :where)
+                                      branch-face)
+            " "
+            (majutsu-bookmark--column (majutsu-bookmark--entry-state entry)
+                                      (plist-get widths :state)
+                                      (majutsu-bookmark--entry-state-face entry))
+            " "
+            (majutsu-bookmark--column change-id 8 target-face)
+            " "
+            (majutsu-bookmark--column commit-id 8 target-face)
+            " "
+            (majutsu-bookmark--column (plist-get entry :author)
+                                      (plist-get widths :author)
+                                      'magit-log-author)
+            " "
+            (majutsu-bookmark--column (plist-get entry :age)
+                                      (plist-get widths :age)
+                                      'magit-log-date)
+            " "
+            (or (plist-get entry :description) ""))))
 
 (defun majutsu-bookmark--wash-list (_args)
   "Wash `jj bookmark list' output into bookmark sections."
-  (let ((count 0))
-    (magit-wash-sequence
-     (lambda ()
-       (let* ((line (buffer-substring (line-beginning-position)
-                                      (line-end-position)))
-              (trimmed (string-trim (substring-no-properties line)))
-              (name (and (not (string-empty-p trimmed))
-                         (majutsu-bookmark--line-name line))))
-         (delete-region (line-beginning-position)
-                        (min (point-max) (1+ (line-end-position))))
-         (when name
-           (setq count (1+ count))
-           (magit-insert-section (jj-bookmark name t)
-             (magit-insert-heading line)))
-         t)))
-    (if (zerop count)
+  (let* ((entries (majutsu-bookmark-parse-list-output
+                   (buffer-substring-no-properties (point-min) (point-max))))
+         (widths (and entries (majutsu-bookmark--table-widths entries))))
+    (delete-region (point-min) (point-max))
+    (if (null entries)
         (magit-cancel-section)
+      (magit-insert-heading
+        (if majutsu-bookmark--list-all
+            "Bookmarks (all remotes)"
+          "Bookmarks"))
+      (insert "\n" (majutsu-bookmark--format-header widths) "\n")
+      (dolist (entry entries)
+        (magit-insert-section (jj-bookmark entry t)
+          (magit-insert-heading
+            (majutsu-bookmark--format-entry entry widths))))
       (insert "\n"))))
 
 (defun majutsu-bookmark-list-refresh-buffer ()

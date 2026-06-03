@@ -76,6 +76,53 @@
       (let ((template (cadr (member "-T" seen-args))))
         (should (string-match-p (regexp-quote "!tracked") template))))))
 
+(ert-deftest majutsu-bookmark-list-args/uses-structured-template ()
+  (let ((majutsu-bookmark--list-all nil))
+    (let ((args (majutsu-bookmark--list-args)))
+      (should (equal (seq-take args 3) '("bookmark" "list" "--quiet")))
+      (should (member "-T" args))
+      (should (equal (cadr (member "-T" args)) majutsu-bookmark--list-template))
+      (should-not (member "--all-remotes" args)))))
+
+(ert-deftest majutsu-bookmark-list-args/all-remotes ()
+  (let ((majutsu-bookmark--list-all t))
+    (should (member "--all-remotes" (majutsu-bookmark--list-args)))))
+
+(ert-deftest majutsu-bookmark-parse-list-output/basic ()
+  (let* ((sep majutsu-bookmark--list-field-separator)
+         (line (string-join '("main" "" "1" "0" "0" "0" "1"
+                              "kzsquqlr" "32730a15" "Arthur Heymans"
+                              "2 weeks ago" "Add libgfxinit support" "" "")
+                            sep)))
+    (should (equal (majutsu-bookmark-parse-list-output (concat line "\n"))
+                   '((:name "main"
+                      :remote nil
+                      :present t
+                      :conflict nil
+                      :tracked nil
+                      :tracking-present nil
+                      :synced t
+                      :change-id "kzsquqlr"
+                      :commit-id "32730a15"
+                      :author "Arthur Heymans"
+                      :age "2 weeks ago"
+                      :description "Add libgfxinit support"
+                      :ahead nil
+                      :behind nil))))))
+
+(ert-deftest majutsu-bookmark-parse-list-output/remote-tracked ()
+  (let* ((sep majutsu-bookmark--list-field-separator)
+         (line (string-join '("main" "origin" "1" "0" "1" "1" "0"
+                              "kzsquqlr" "32730a15" "Arthur Heymans"
+                              "2 weeks ago" "Add libgfxinit support" "2" "1")
+                            sep))
+         (entry (car (majutsu-bookmark-parse-list-output line))))
+    (should (equal (plist-get entry :remote) "origin"))
+    (should (plist-get entry :tracked))
+    (should (equal (majutsu-bookmark--entry-ref entry) "main@origin"))
+    (should (equal (majutsu-bookmark--entry-state entry) "+2/-1"))))
+
+
 (ert-deftest majutsu-bookmark-track/reads-patterns-and-calls-jj ()
   (let (called)
     (cl-letf (((symbol-function 'majutsu--bookmark-remote-name-candidates)
