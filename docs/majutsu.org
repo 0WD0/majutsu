@@ -653,19 +653,49 @@ In Jujutsu, bookmarks are similar to Git branches but are explicitly tracked. Th
 - Key: b (majutsu-bookmark) ::
   Open the bookmark transient.
 
-- Key: l (majutsu-bookmark-list) :: List all bookmarks.
+- Key: l (majutsu-bookmark-list) :: List bookmarks in a dedicated buffer.
 - Key: c (majutsu-bookmark-create) :: Create a new bookmark at point.
 - Key: a (majutsu-bookmark-advance) :: Advance bookmarks using jj's configured default selection and target.
 - Key: A (majutsu-bookmark-advance-to) :: Advance bookmarks using jj's default selection to an explicit target revset.
 - Key: p (majutsu-bookmark-advance-patterns) :: Advance specific bookmark name(s)/pattern(s) using jj's configured default target.
-- Key: s (majutsu-bookmark-set) :: Set or move an existing bookmark to the current revision.
-- Key: m (majutsu-bookmark-move) :: Move a bookmark.
-- Key: M (majutsu-bookmark-move-allow-backwards) :: Move bookmark(s) with =--allow-backwards=.
+- Key: s (majutsu-bookmark-set) :: Create or update bookmark name(s) to a revision. This is the raw =jj bookmark set= operation; it can create names and can move existing names when permitted by jj.
+- Key: m (majutsu-bookmark-move) :: Move existing bookmark(s) to a target revision. Unlike =set=, this never creates a new bookmark.
+- Key: M (majutsu-bookmark-move-allow-backwards) :: Move existing bookmark(s) with =--allow-backwards=.
 - Key: r (majutsu-bookmark-rename) :: Rename a bookmark.
 - Key: d (majutsu-bookmark-delete) :: Delete a bookmark; this deletion propagates to remotes.
 - Key: f (majutsu-bookmark-forget) :: Forget a bookmark locally without affecting remotes.
 - Key: t (majutsu-bookmark-track) :: Track a remote bookmark to create a local one.
 - Key: u (majutsu-bookmark-untrack) :: Untrack a remote bookmark.
+
+** Bookmark List Buffer
+~majutsu-bookmark-list~ renders =jj bookmark list= using a structured template
+instead of raw jj text. Rows show aligned columns for name, local/remote
+location, tracking state, change id, commit id, author, age, and description.
+With a prefix argument, the list includes all remote bookmarks; inside the list,
+~A~ toggles that remote visibility.
+
+The bookmark list has row-local commands. When point is on a local bookmark row,
+these commands act on that bookmark without prompting for the bookmark name:
+
+- Key: RET (majutsu-bookmark-visit-target) :: Visit the bookmark target in the log buffer.
+- Key: n (majutsu-bookmark-new) :: Create a new change on top of the selected bookmark target and return to the log at =@=.
+- Key: c (majutsu-bookmark-create) :: Create another bookmark at the selected bookmark target.
+- Key: d (majutsu-bookmark-delete) :: Delete the selected local bookmark.
+- Key: f (majutsu-bookmark-forget) :: Forget the selected local bookmark without remote deletion propagation.
+- Key: r (majutsu-bookmark-rename) :: Rename the selected local bookmark; prompts only for the new name.
+- Key: m (majutsu-bookmark-move) :: Move the selected local bookmark; prompts only for the target revision.
+- Key: M (majutsu-bookmark-move-allow-backwards) :: Move the selected local bookmark with =--allow-backwards=.
+- Key: a / p (majutsu-bookmark-advance-patterns) :: Advance the selected local bookmark using jj's configured default target.
+
+When point is on a remote bookmark row:
+
+- Key: t (majutsu-bookmark-track) :: Track that exact remote bookmark.
+- Key: u (majutsu-bookmark-untrack) :: Untrack that exact remote bookmark when it is already tracked; untracked rows fall back to the normal prompts.
+
+If point is not on a suitable row, the commands fall back to the same completion
+prompts used by the transient. The bookmark-list buffer intentionally does not
+bind ~s~: =jj bookmark set= is available in the transient, but ~move~ is the
+clearer row-local operation for existing bookmarks.
 
 * Tags
 ** Understanding Tags

@@ -108,7 +108,8 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
     (dolist (mode '(majutsu-mode
                     majutsu-log-mode
                     majutsu-op-log-mode
-                    majutsu-diff-mode))
+                    majutsu-diff-mode
+                    majutsu-bookmark-list-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
 (defun majutsu-evil--adjust-section-bindings ()
@@ -158,6 +159,22 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "?") #'majutsu-dispatch
     (kbd ">") #'majutsu-sparse
     (kbd "RET") #'majutsu-visit-thing)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-bookmark-list-mode-map
+    (kbd "RET") #'majutsu-bookmark-visit-target
+    (kbd "n") #'majutsu-bookmark-new
+    (kbd "c") #'majutsu-bookmark-create
+    (kbd "f") #'majutsu-bookmark-forget
+    (kbd "d") #'majutsu-bookmark-delete
+    (kbd "r") #'majutsu-bookmark-rename
+    (kbd "m") #'majutsu-bookmark-move
+    (kbd "M") #'majutsu-bookmark-move-allow-backwards
+    (kbd "a") #'majutsu-bookmark-advance-patterns
+    (kbd "p") #'majutsu-bookmark-advance-patterns
+    (kbd "s") #'undefined
+    (kbd "t") #'majutsu-bookmark-track
+    (kbd "u") #'majutsu-bookmark-untrack
+    (kbd "A") #'majutsu-bookmark-list-toggle-all-remotes)
 
   (majutsu-evil--define-keys 'normal 'majutsu-mode-map
     (kbd "y") #'majutsu-duplicate

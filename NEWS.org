@@ -40,6 +40,14 @@
 
 ** Changed
 
+- Bookmarks: Bookmark list buffers now render structured, aligned rows with
+  local/remote location, tracking state, change id, commit id, author, age,
+  and description columns. The list also has row-local actions: =RET= visits
+  the target in the log, =n= creates a new child change, local rows support
+  delete/forget/rename/move/advance without prompting for the bookmark name,
+  and remote rows support exact track plus exact untrack for already-tracked
+  rows. The row UI intentionally leaves
+  raw =jj bookmark set= in the transient instead of binding it in the list.
 - Workspace: Workspace lists now show resolved roots when available and
   treat unavailable roots as empty data instead of raw jj errors. Internally
   this now uses one structured =jj workspace list -T= parse pipeline.
