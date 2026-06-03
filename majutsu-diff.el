@@ -49,7 +49,9 @@
 ;;;; Diff Mode
 
 (defcustom majutsu-diff-sections-hook
-  (list #'majutsu-insert-diff
+  (list #'majutsu-insert-diff-revision-headers
+        #'majutsu-insert-diff-revision-message
+        #'majutsu-insert-diff
         ;; #'majutsu-insert-xref-buttons
         )
   "Hook run to insert sections into a `majutsu-diff-mode' buffer."
@@ -506,6 +508,100 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
       (narrow-to-region start (point))
       (goto-char (point-min))
       (majutsu-diff-wash-diffs args))))
+
+(defun majutsu-diff--message-revision ()
+  "Return the single revision whose message should be shown, or nil."
+  (let* ((revs (majutsu-diff--revisions))
+         (rev (cdr revs)))
+    (when (= (length (majutsu-jj-items "log" "--no-graph" "-r" rev
+                                      "-T" "change_id ++ \"\\0\""))
+             1)
+      rev)))
+
+(defun majutsu-diff--revision-header-fields (rev)
+  "Return header fields for REV as a plist."
+  (let* ((template (string-join
+                    '("bookmarks ++ \"\\0\""
+                      "remote_bookmarks ++ \"\\0\""
+                      "commit_id ++ \"\\0\""
+                      "author.name() ++ \"\\0\""
+                      "author.email() ++ \"\\0\""
+                      "author.timestamp().format(\"%a %b %e %T %Y %z\") ++ \"\\0\""
+                      "committer.name() ++ \"\\0\""
+                      "committer.email() ++ \"\\0\""
+                      "committer.timestamp().format(\"%a %b %e %T %Y %z\") ++ \"\\0\"")
+                    " ++ "))
+         (fields (majutsu-jj-items "log" "--no-graph" "-r" rev "-T" template)))
+    (pcase-let ((`(,bookmarks ,remote-bookmarks ,commit-id
+                  ,author-name ,author-email ,author-date
+                  ,committer-name ,committer-email ,committer-date)
+                 fields))
+      (list :bookmarks bookmarks
+            :remote-bookmarks remote-bookmarks
+            :commit-id commit-id
+            :author-name author-name
+            :author-email author-email
+            :author-date author-date
+            :committer-name committer-name
+            :committer-email committer-email
+            :committer-date committer-date))))
+
+(defun majutsu-diff--format-refs (fields)
+  "Return a display string for revision refs in FIELDS."
+  (string-join (delete-dups
+                (append (split-string (or (plist-get fields :bookmarks) "") " " t)
+                        (delq nil
+                              (mapcar (lambda (ref)
+                                        (if (string-match "\\`\\([^@]+\\)@\\(.+\\)\\'" ref)
+                                            (unless (string= (match-string 2 ref) "git")
+                                              (format "%s/%s" (match-string 2 ref)
+                                                      (match-string 1 ref)))
+                                          ref))
+                                      (split-string (or (plist-get fields :remote-bookmarks) "")
+                                                    " " t)))))
+               " "))
+
+(defun majutsu-insert-diff-revision-headers ()
+  "Insert revision metadata into a diff buffer."
+  (when-let* ((rev (majutsu-diff--message-revision))
+              (fields (majutsu-diff--revision-header-fields rev)))
+    (magit-insert-section (commit-headers)
+      (let ((refs (majutsu-diff--format-refs fields)))
+        (unless (string-empty-p refs)
+          (insert refs " ")))
+      (insert (plist-get fields :commit-id) "\n")
+      (insert (format "Author:     %s <%s>\n"
+                      (plist-get fields :author-name)
+                      (plist-get fields :author-email)))
+      (insert (format "AuthorDate: %s\n"
+                      (plist-get fields :author-date)))
+      (insert (format "Commit:     %s <%s>\n"
+                      (plist-get fields :committer-name)
+                      (plist-get fields :committer-email)))
+      (insert (format "CommitDate: %s\n\n"
+                      (plist-get fields :committer-date))))))
+
+(defun majutsu-insert-diff-revision-message ()
+  "Insert the described revision's message into a diff buffer."
+  (when-let* ((rev (majutsu-diff--message-revision))
+              (message (with-temp-buffer
+                         (majutsu-jj-insert "log" "--no-graph" "-r" rev
+                                            "-T" "description ++ \"\\n\"")
+                         (string-trim-right (buffer-string)))))
+    (magit-insert-section
+        ( commit-message nil nil
+          :heading-highlight-face 'magit-diff-revision-summary-highlight)
+      (if (string-empty-p message)
+          (save-excursion (insert "(no description)\n\n"))
+        (save-excursion
+          (insert message)
+          (unless (bolp)
+            (insert "\n"))
+          (insert "\n")))
+      (add-face-text-property (point) (progn (forward-line) (point))
+                              'magit-diff-revision-summary t)
+      (magit-insert-heading)
+      (goto-char (point-max)))))
 
 (defun majutsu-insert-diff ()
   "Insert a diff section and wash it."

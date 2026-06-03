@@ -308,6 +308,11 @@ Majutsu now provides both default copy filtering and explicit semantic copy comm
 This keeps ordinary Emacs copying predictable while still offering precise log-aware copy operations when you want semantic rather than purely visual text.
 
 ** Diffing
+Diff buffers for a single target revision include revision headers and the
+revision description as collapsible sections before the diff, similar to Magit
+revision buffers.  The diff section remains unchanged and keeps its normal
+hunk/file navigation and editing commands.
+
 *** Diff Transient
 - Key: d (majutsu-diff) ::
   Open the Diff transient.
