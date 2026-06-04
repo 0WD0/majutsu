@@ -1341,8 +1341,12 @@ With prefix STYLE, cycle between `all' and `t'."
             (cons (if (eq backend 'color-words) "--color=debug" "--color=never")
                   (seq-remove (lambda (arg) (string-prefix-p "--color" arg))
                               majutsu-jj-global-arguments)))
-           (majutsu-process-apply-ansi-colors
-            (majutsu-diff--backend-uses-ansi-p backend)))
+           ;; Diff buffers are used as patch source by interactive commands.
+           ;; For the regular git backend we force `--color=never', so applying
+           ;; `ansi-color' here is unnecessary and corrupts file contents that
+           ;; contain literal ANSI escape sequences.  Color-words handles its
+           ;; own ANSI/debug output in its washer.
+           (majutsu-process-apply-ansi-colors nil))
       (if (eq backend 'color-words)
           (progn
             ;; No diff-mode keywords — ANSI faces via `font-lock-face'
