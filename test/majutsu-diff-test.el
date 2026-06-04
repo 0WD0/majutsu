@@ -111,6 +111,21 @@
                     "--ignore-all-space"))
                  '("--stat" "--context=5" "--ignore-all-space"))))
 
+(ert-deftest majutsu-diff-refresh-buffer-does-not-ansi-wash-git-diff ()
+  "Git diff buffers must preserve literal ANSI escapes in file content."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args '("--git"))
+    (setq-local majutsu-buffer-diff-range '("--revisions=@"))
+    (let (seen-ansi seen-global-args)
+      (cl-letf (((symbol-function 'magit-run-section-hook)
+                 (lambda (&rest _)
+                   (setq seen-ansi majutsu-process-apply-ansi-colors
+                         seen-global-args majutsu-jj-global-arguments))))
+        (majutsu-diff-refresh-buffer))
+      (should-not seen-ansi)
+      (should (member "--color=never" seen-global-args)))))
+
 (ert-deftest majutsu-diff-set-buffer-args-does-not-clear-filesets ()
   "Updating diff args must not clear existing filesets unless requested."
   (with-temp-buffer
