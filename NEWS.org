@@ -49,6 +49,10 @@
   Add anonymous functions, ~[:|arg| body]~ syntax, compile-time lambda
   application, and ~majutsu-template-defspecial~.
 
+- Operation history and evolution browsing ::
+  ~X~ opens operation commands; ~v~ opens evolog.  Majutsu also adds
+  ~op log~ / ~op diff~ transients and operation restore/revert actions.
+
 ** Changed
 
 - Bookmark lists use typed row layouts ::

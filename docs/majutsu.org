@@ -460,15 +460,16 @@ Resolve entry points are available both from the Ediff transient and as direct c
   Show the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output such as remote fetches.
 
 ** Operations (Experimental)
-- Key: X (majutsu-op-transient) :: Open the operation dispatcher with log, show, diff, restore, revert, undo, and redo actions.
+- Key: X (majutsu-op-transient) :: Open the operation dispatcher with log, diff, restore, revert, undo, and redo actions.
+- Key: v (majutsu-evolog) :: Open the evolution log for the revision at point. Evil users keep the ordinary global =v= visual binding; contextual =v= is still available in operation diff buffers.
 - Command: majutsu-op-log-transient :: Open the operation-log menu. Supports =--limit= and =--reversed=.
 - Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors.
-  Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first tag line such as =args:=. Read-only operation views pass =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing. Press =RET= or =d= on an operation to show details.
-- Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation.
-  Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= for the point-specific default action and =v= to open that change's evolution log. Commit lines behave like normal =jj-commit= sections, while =d= keeps the ordinary Majutsu diff command from the parent mode.
-- Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to=, reusing the same sectionized changed commit/ref view.
-- Command: majutsu-evolog :: View =jj evolog= with its graph preserved and each entry parsed through Majutsu's structured row protocol. Entries render as compact =jj= evolog sections; full change, commit, and optional operation IDs are kept as hidden metadata and are available through the shared ~? w~ copy submenu. =RET= and =d= currently use the ordinary parent-mode behavior rather than an evolog-specific patch action.
+  Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first attribute line such as =args:=. Read-only operation views pass =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing. Press =d= on an operation to open the operation-diff transient prefilled from point/selection, =u= to restore to it, and =r= to revert it.
+- Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to=, using a sectionized changed commit/ref view. Explicit =--from= / =--to= endpoints get lightweight operation metadata headers before the changed sections. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= or contextual =v= to open that change's evolution log. =d= remains the ordinary Majutsu diff transient rather than an operation-specific at-point wrapper. =(absent)= ref targets intentionally have no evolog action target.
+- Command: majutsu-evolog :: View =jj evolog= with its graph preserved and each entry parsed through Majutsu's structured row protocol. Entries render as compact =jj= evolog sections; full change, commit, and optional operation IDs are kept as hidden metadata and are available through the shared ~? w~ copy submenu. The operation id can be absent for entries such as root/initial history. =RET= and =d= currently use the ordinary parent-mode behavior rather than an evolog-specific patch action.
 - Commands: majutsu-op-restore / majutsu-op-revert :: Restore to an operation or revert an individual operation after confirmation.
+
+These read-only views pin themselves at the current operation only to avoid snapshots. They do not yet provide ordinary log/diff buffers for arbitrary historical =--at-op= states.
 
 * Manipulating
 ** Creating Changes
