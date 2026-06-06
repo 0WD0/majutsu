@@ -3,6 +3,12 @@
 
 * [Unreleased]
 
+** Breaking changes
+
+- The Squash transient now uses =--from= for source revisions ::
+  The =-r/--revision= shortcut was removed.  Use =-f/--from= instead.
+  Diff =--revisions= selections are carried into squash as =--from= sources.
+
 ** Added
 
 - Bug references in logs and description buffers ::
