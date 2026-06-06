@@ -13,6 +13,44 @@
 (require 'ert)
 (require 'majutsu-interactive)
 
+(ert-deftest majutsu-interactive-run-with-patch/inserts-tool-before-filesets ()
+  "Patch runner should keep jj options before filesets."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive--write-patch)
+               (lambda (_patch) "/tmp/patch.diff"))
+              ((symbol-function 'majutsu-interactive--build-tool-config)
+               (lambda (_patch-file _reverse)
+                 '("--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch")))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called (flatten-tree args)))))
+      (majutsu-interactive-run-with-patch
+       "restore" '("--from=A" "--to=B") '("src/a.el") "PATCH")
+      (should (equal called
+                     '("restore" "--from=A" "--to=B"
+                       "-i" "--tool" "majutsu-applypatch"
+                       "--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch"
+                       "--" "src/a.el"))))))
+
+(ert-deftest majutsu-interactive-run-with-patch/normalizes-structured-filesets ()
+  "Patch runner should also normalize transient-files groups."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive--write-patch)
+               (lambda (_patch) "/tmp/patch.diff"))
+              ((symbol-function 'majutsu-interactive--build-tool-config)
+               (lambda (_patch-file _reverse)
+                 '("--config" "tool=config")))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called (flatten-tree args)))))
+      (majutsu-interactive-run-with-patch
+       "split" '("--revision=@") '("src/a.el") "PATCH" t)
+      (should (equal called
+                     '("split" "--revision=@"
+                       "-i" "--tool" "majutsu-applypatch"
+                       "--config" "tool=config"
+                       "--" "src/a.el"))))))
+
 (ert-deftest majutsu-interactive--build-tool-config/strips-tramp-prefix ()
   "Tool config should pass local remote paths to jj merge-tool args."
   (let ((config

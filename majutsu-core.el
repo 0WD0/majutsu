@@ -198,6 +198,29 @@ global session value, global saved value, and finally DEFAULT-PROPERTY on MODE."
     (setf (alist-get key transient-values) value)
     (transient-save-values)))
 
+(defun majutsu-filesets-split-transient-value (value)
+  "Return (ARGS FILESETS) from transient VALUE.
+ARGS contains ordinary option arguments.  FILESETS contains the values
+from `transient-files' groups, without the -- separator."
+  (let (args filesets)
+    (dolist (arg value)
+      (if (and (consp arg) (equal (car arg) "--"))
+          (setq filesets (append filesets (cdr arg)))
+        (push arg args)))
+    (list (nreverse args) filesets)))
+
+(defun majutsu-filesets-build-transient-value (args filesets)
+  "Return transient value for ARGS and FILESETS."
+  (if filesets
+      `(("--" ,@filesets) ,@args)
+    args))
+
+(defun majutsu-jj-append-filesets (args filesets)
+  "Return jj ARGS followed by -- and FILESETS."
+  (if filesets
+      (append args (cons "--" filesets))
+    args))
+
 (defclass majutsu-repository-transient-prefix (transient-prefix)
   ((repo-namespace :initarg :repo-namespace :initform nil)
    (repo-key :initarg :repo-key :initform nil)

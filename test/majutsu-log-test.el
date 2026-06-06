@@ -788,6 +788,27 @@
           (should (equal seen-command '("config" "path" "--repo"))))
       (delete-directory dir t))))
 
+(ert-deftest majutsu-filesets-split-transient-value/splits-structured-args ()
+  "Transient fileset helpers should keep args and filesets separate."
+  (dolist (case '(((("--" "src/a.el") "--from=A" "--to=B")
+                  ("--from=A" "--to=B")
+                  ("src/a.el"))
+                 (("--from=A" "--to=B")
+                  ("--from=A" "--to=B")
+                  nil)))
+    (pcase-let ((`(,value ,args ,filesets) case))
+      (should (equal (majutsu-filesets-split-transient-value value)
+                     (list args filesets))))))
+
+(ert-deftest majutsu-filesets-build-and-append/keeps-boundaries-explicit ()
+  "Filesets should be structured for transients and separated for jj."
+  (should (equal (majutsu-filesets-build-transient-value
+                  '("--from=A") '("src/a.el"))
+                 '(("--" "src/a.el") "--from=A")))
+  (should (equal (majutsu-jj-append-filesets
+                  '("--from=A" "--to=B") '("src/a.el"))
+                 '("--from=A" "--to=B" "--" "src/a.el"))))
+
 (ert-deftest majutsu-transient-default-value/prefers-repository-defaults ()
   "Generic transient defaults should prefer repo-local values."
   (let ((transient-values nil)
@@ -867,7 +888,7 @@
       (should (equal (oref obj argument) "--revision=")))))
 
 (ert-deftest majutsu-log-build-args/uses-revision-argument-directly ()
-  "Log -r should live in ARGS instead of a separate revset field."
+  "Log -r should live in ARGS, with filesets after --."
   (let ((majutsu-log--compiled-template-cache '(:template "TPL")))
     (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))
       (unwind-protect
@@ -875,7 +896,8 @@
             (majutsu-log--set-value
              'majutsu-log-mode '("--revision=mine()" "--no-graph") '("src"))
             (should (equal (majutsu-log--build-args)
-                           '("log" "--revision=mine()" "--no-graph" "-T" "TPL" "src"))))
+                           '("log" "--revision=mine()" "--no-graph"
+                             "-T" "TPL" "--" "src"))))
         (majutsu-log--set-value 'majutsu-log-mode nil nil)))))
 
 (ert-deftest majutsu-log-transient-read-revset/empty-input-clears ()

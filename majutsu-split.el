@@ -37,24 +37,26 @@
 (defun majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-split)))
-  (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         ;; Generate patch for SELECTED content (invert=nil)
-         ;; This is what goes into the first commit
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
-         (args (if patch
-                   (seq-remove (lambda (arg)
-                                 (or (string= arg "--interactive")
-                                     (transient-arg-value "--tool=" (list arg))))
-                               args)
-                 args)))
+  (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
+               (selection-buf (majutsu-interactive--selection-buffer))
+               ;; Generate patch for SELECTED content (invert=nil)
+               ;; This is what goes into the first commit
+               (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
+               (args (if patch
+                         (seq-remove (lambda (arg)
+                                       (or (string= arg "--interactive")
+                                           (transient-arg-value "--tool=" (list arg))))
+                                     args)
+                       args)))
     (if patch
         (progn
           ;; reverse=t means reset $right to $left, then apply patch forward
           ;; Result: $right = selected content = first commit
-          (majutsu-interactive-run-with-patch "split" args patch t)
+          (majutsu-interactive-run-with-patch "split" args filesets patch t)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (majutsu-run-jj-with-editor (cons "split" args)))))
+      (majutsu-run-jj-with-editor
+       (cons "split" (majutsu-jj-append-filesets args filesets))))))
 
 ;;;; Infix Commands
 

@@ -131,6 +131,10 @@
   In =majutsu-diff-mode=, ~+~ adds context, ~=~ removes context, and =~=
   resets to the default.
 
+- Filesets are passed after option arguments ::
+  Split, Squash, Restore, and Absorb no longer build commands like
+  ~jj squash -- FILE --from=REV~.
+
 * [0.6.0] - 2026-02-09
 
 ** Added

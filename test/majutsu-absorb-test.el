@@ -60,5 +60,19 @@
       (should (equal called
                      '("absorb" "--from=@" "--into=mutable()"))))))
 
+(ert-deftest majutsu-absorb-execute-places-structured-filesets-after-options ()
+  "Execute absorb with transient filesets after option arguments."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq called args)
+                 0))
+              ((symbol-function 'message)
+               (lambda (&rest _) nil)))
+      (majutsu-absorb-execute '(("--" "src/a.el") "--from=@" "--into=mutable()"))
+      (should (equal called
+                     '("absorb" "--from=@" "--into=mutable()"
+                       "--" "src/a.el"))))))
+
 (provide 'majutsu-absorb-test)
 ;;; majutsu-absorb-test.el ends here
