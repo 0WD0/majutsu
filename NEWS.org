@@ -87,7 +87,8 @@
   inherited diff =--revisions= revsets, and passes an explicit =--into= default
   when no destination is selected.  With an existing source selection, the
   current log section is preferred as the destination when it is outside the
-  source set; otherwise Majutsu uses the source set's external parent.
+  source set; otherwise Majutsu uses the source set's external parent.  When a
+  destination is selected without a source, the source defaults to =@=.
 - Remotes: Add shared remote readers and completion payloads for exact remote
   names, new remote names, and remote name patterns. Git and bookmark commands
   now use the same remote history, completion category, remote-list parsing,

@@ -13,11 +13,11 @@
 (require 'majutsu-squash)
 
 (ert-deftest majutsu-squash-values/parses-prefix-values ()
-  "Parse transient-style option values."
+  "Parse transient-style option values before fileset separator."
   (should (equal (majutsu-squash--values
                   '("--from=a" "--from=b" "--" "--from=c")
                   "--from=")
-                 '("a" "b" "c"))))
+                 '("a" "b"))))
 
 (ert-deftest majutsu-squash-arguments/use-transient-args-without-defaults ()
   "Opening the transient should not prefill point/diff defaults into args."
@@ -68,6 +68,13 @@
              (lambda () "B")))
     (should (equal (majutsu-squash--normalize-args '("--from=C" "--into=A"))
                    '("--from=C" "--into=A")))))
+
+(ert-deftest majutsu-squash-normalize/defaults-source-to-at-with-explicit-destination ()
+  "When destination is explicit but source is omitted, source defaults to @."
+  (cl-letf (((symbol-function 'majutsu-squash--default-args)
+             (lambda () '("--from=B"))))
+    (should (equal (majutsu-squash--normalize-args '("--into=A"))
+                   '("--into=A" "--from=@")))))
 
 (ert-deftest majutsu-squash-normalize/inserts-destination-before-filesets ()
   "Infer --into before the fileset separator."
