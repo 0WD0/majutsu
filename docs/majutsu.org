@@ -495,8 +495,7 @@ Runs: =jj commit=
 Runs: =jj edit REV=
 
 ** Squashing
-- Key: s (majutsu-squash) :: Open the Squash transient. You can select multiple source revisions (=--from=) to squash into a destination (=--into=).
-- Key: -r :: Revision to squash.
+- Key: s (majutsu-squash) :: Open the Squash transient. You can select multiple source revisions (=--from=) to squash into a destination (=--into=). If no destination is selected, Majutsu passes an explicit =--into=: the current log section when it is outside the selected source set, otherwise the source set's unique external parent.
 - Key: -f :: Source revisions (=--from=).
 - Key: -t :: Destination revision (=--into=).
 - Key: -o :: Onto destination.
@@ -593,8 +592,9 @@ Interactive selection is integrated into the Split (~S~), Squash (~s~), and Rest
 
 *** Diff Context Inheritance
 When opening Split, Squash, or Restore from a Diff buffer, the transient automatically inherits the diff's context:
-- All three commands inherit =--revisions= as their target revision (=--revision= for Split/Squash)
-- Restore additionally inherits =--from= and =--to= parameters, allowing selective restoration between arbitrary revisions
+- Split inherits =--revisions= as its target revision (=--revision=).
+- Squash inherits =--revisions= as source revisions (=--from=), including revset expressions. It does not inherit arbitrary diff =--from= / =--to= ranges.
+- Restore additionally inherits =--from= and =--to= parameters, allowing selective restoration between arbitrary revisions.
 
 This means you can:
 1. View a diff with specific =--from= / =--to= revisions
@@ -611,13 +611,13 @@ The meaning of "selected" differs by operation:
 **** Split and Squash
 For Split and Squash, *selected content is what gets moved*:
 - *Split*: Selected hunks/regions go into the *first* commit; unselected content stays in the second commit.
-- *Squash*: Selected hunks/regions get *squashed into the parent*; unselected content remains in the current revision.
+- *Squash*: Selected hunks/regions get *squashed into the selected or inferred destination*; unselected content remains in the source revision.
 
-Example: You have a revision with changes to files A, B, and C. You want to squash only the changes to file A into the parent:
+Example: You have a revision with changes to files A, B, and C. You want to squash only the changes to file A into the selected or inferred destination:
 1. Open the diff for the revision (~D~)
 2. Open Squash transient (~s~)
 3. Press ~F~ on file A to select all its hunks
-4. Execute squash - file A's changes go to parent, B and C stay
+4. Execute squash - file A's changes go to the destination, B and C stay
 
 **** Restore
 For Restore, selected content is what gets *restored* (undone):
