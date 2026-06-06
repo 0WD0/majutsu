@@ -107,12 +107,15 @@ Defaults are added only when executing, not when opening the transient.  Majutsu
 adds a source default and an explicit --into expression; jj remains responsible
 for resolving revsets and reporting ambiguous or invalid command arguments."
   (let* ((explicit-sources (majutsu-squash--source-values args))
+         (explicit-destination (majutsu-squash--has-destination-p args))
+         (source-default (if explicit-destination
+                             '("--from=@")
+                           (or (majutsu-squash--default-args) '("--from=@"))))
          (args (if explicit-sources
                    args
-                 (majutsu-squash--append-before-filesets
-                  args (or (majutsu-squash--default-args) '("--from=@")))))
+                 (majutsu-squash--append-before-filesets args source-default)))
          (sources (majutsu-squash--source-values args)))
-    (if (or (majutsu-squash--has-destination-p args)
+    (if (or explicit-destination
             (majutsu-squash--none-source-p sources))
         args
       (majutsu-squash--append-before-filesets
