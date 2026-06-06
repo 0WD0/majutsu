@@ -495,7 +495,7 @@ Runs: =jj commit=
 Runs: =jj edit REV=
 
 ** Squashing
-- Key: s (majutsu-squash) :: Open the Squash transient. You can select multiple source revisions (=--from=) to squash into a destination (=--into=). If no destination is selected, Majutsu passes an explicit =--into=: the current log section when it is outside the selected source set, otherwise the source set's unique external parent.
+- Key: s (majutsu-squash) :: Open the Squash transient. You can select multiple source revisions (=--from=) to squash into a destination (=--into=). If no destination is selected, Majutsu passes an explicit =--into=: the current log section when it is outside the selected source set, otherwise the source set's unique external parent. If a destination is selected but no source is selected, the source defaults to =@=.
 - Key: -f :: Source revisions (=--from=).
 - Key: -t :: Destination revision (=--into=).
 - Key: -o :: Onto destination.
