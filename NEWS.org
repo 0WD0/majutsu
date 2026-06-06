@@ -170,6 +170,9 @@
 - Evil: Restore evil-collection-style diff-context bindings in
   =majutsu-diff-mode=: ~+~ adds context, ~=~ removes context, and =~=
   resets to the default.
+- Filesets: Split, Squash, Restore, and Absorb now emit transient fileset
+  selections after option arguments, fixing commands such as
+  ~jj squash -- FILE --from=REV~ being parsed as invalid filesets.
 
 * [0.6.0] - 2026-02-09
 

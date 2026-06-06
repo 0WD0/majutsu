@@ -36,12 +36,6 @@
   (seq-keep (lambda (arg) (transient-arg-value "--from=" (list arg)))
             args))
 
-(defun majutsu-squash--append-before-filesets (args newargs)
-  "Append NEWARGS to ARGS before an explicit -- fileset separator."
-  (if-let* ((pos (cl-position "--" args :test #'equal)))
-      (append (seq-subseq args 0 pos) newargs (seq-subseq args pos))
-    (append args newargs)))
-
 (defun majutsu-squash--remove-interactive-tool-args (args)
   "Remove native interactive/tool arguments from ARGS."
   (let (out)
@@ -155,11 +149,12 @@ return the same context defaults that execution would use."
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (majutsu-squash-arguments)))
-  (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         ;; Generate patch for SELECTED content (invert=nil).
-         ;; This is what gets squashed into the destination.
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
-         (patch-source (and patch (majutsu-squash--patch-source-revset selection-buf))))
+  (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
+               (selection-buf (majutsu-interactive--selection-buffer))
+               ;; Generate patch for SELECTED content (invert=nil).
+               ;; This is what gets squashed into the destination.
+               (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
+               (patch-source (and patch (majutsu-squash--patch-source-revset selection-buf))))
     (when patch
       (majutsu-squash--check-patch-source args patch-source)
       (setq args (majutsu-squash--remove-interactive-tool-args args)))
@@ -188,10 +183,11 @@ return the same context defaults that execution would use."
         (progn
           ;; reverse=t means reset $right to $left, then apply patch forward.
           ;; Result: $right = selected content = what gets squashed.
-          (majutsu-interactive-run-with-patch "squash" args patch t)
+          (majutsu-interactive-run-with-patch "squash" args filesets patch t)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (majutsu-run-jj-with-editor (cons "squash" args)))))
+      (majutsu-run-jj-with-editor
+       (cons "squash" (majutsu-jj-append-filesets args filesets))))))
 
 ;;;; Readers
 

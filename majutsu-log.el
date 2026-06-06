@@ -104,7 +104,7 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
   "Return PREFIX annotated with current log arguments."
   (pcase-let* ((`(,args ,filesets)
                 (majutsu-log--get-value 'majutsu-log-mode 'current))
-               (args (append args (and filesets (cons "--" filesets)))))
+               (args (majutsu-jj-append-filesets args filesets)))
     (if args
         (format "%s (%s)" prefix (string-join args " "))
       prefix)))
@@ -373,7 +373,7 @@ transport logical newlines safely through single-line payload segments."
     (let ((cmd '("log")))
       (setq cmd (append cmd args))
       (setq cmd (append cmd (list "-T" (plist-get (majutsu-log--ensure-template) :template))))
-      (setq cmd (append cmd filesets))
+      (setq cmd (majutsu-jj-append-filesets cmd filesets))
       cmd)))
 
 ;;; Log Parsing
@@ -836,15 +836,13 @@ minibuffer for editing.  Empty input clears the filter."
 ;;;; Prefix Methods
 
 (cl-defmethod transient-prefix-value ((obj majutsu-log-prefix))
-  "Return (args files) from transient value."
-  (let ((args (cl-call-next-method obj)))
-    (list (seq-filter #'atom args)
-          (cdr (assoc "--" args)))))
+  "Return (args filesets) from transient value."
+  (majutsu-filesets-split-transient-value (cl-call-next-method obj)))
 
 (cl-defmethod transient-init-value ((obj majutsu-log-prefix))
   (pcase-let ((`(,args ,filesets)
                (majutsu-log--get-value (oref obj major-mode) 'prefix)))
-    (oset obj value (if filesets `(("--" ,@filesets) ,@args) args))))
+    (oset obj value (majutsu-filesets-build-transient-value args filesets))))
 
 (cl-defmethod transient-set-value ((obj majutsu-log-prefix))
   (let* ((obj (oref obj prototype))

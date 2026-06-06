@@ -101,6 +101,30 @@
         (should-not (text-properties-at 0 (oref diffstat-file value)))
         (should-not (text-properties-at 0 (oref diff-file value)))))))
 
+(ert-deftest majutsu-insert-diff/puts-filesets-after-separator ()
+  "Diff command construction should pass filesets after --."
+  (let (called heading)
+    (with-temp-buffer
+      (magit-section-mode)
+      (majutsu-diff-mode)
+      (setq buffer-read-only nil
+            majutsu-buffer-diff-args '("--git")
+            majutsu-buffer-diff-range '("--from=A" "--to=B")
+            majutsu-buffer-diff-filesets '("src/a.el"))
+      (cl-letf (((symbol-function 'majutsu-diff--backend-washer)
+                 (lambda (&rest _) #'ignore))
+                ((symbol-function 'magit-insert-heading)
+                 (lambda (text) (setq heading text)))
+                ((symbol-function 'majutsu-jj-wash)
+                 (lambda (_washer _keep-error args)
+                   (setq called args))))
+        (majutsu-insert-diff)
+        (should (equal called
+                       '("diff" "--git" "--from=A" "--to=B"
+                         "--" "src/a.el")))
+        (should (equal heading
+                       "jj diff --git --from=A --to=B -- src/a.el"))))))
+
 (ert-deftest majutsu-diff-remembered-args-filters-only-formatting-options ()
   "Only diff formatting options should be remembered per buffer."
   (should (equal (majutsu-diff--remembered-args

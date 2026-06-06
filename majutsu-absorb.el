@@ -54,7 +54,10 @@ jj-commit section, add --from from that section."
 (defun majutsu-absorb-execute (args)
   "Execute jj absorb with ARGS from the transient."
   (interactive (list (majutsu-absorb-arguments)))
-  (let ((exit (apply #'majutsu-run-jj "absorb" args)))
+  (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
+               (exit (apply #'majutsu-run-jj
+                            "absorb"
+                            (majutsu-jj-append-filesets args filesets))))
     (when (zerop exit)
       (message "Absorb completed"))))
 
@@ -131,9 +134,7 @@ jj-commit section, add --from from that section."
                        majutsu-buffer-diff-filesets)
                   majutsu-buffer-diff-filesets)))
          (default-args (majutsu-absorb--default-args))
-         (value (if files
-                    (append default-args (list (cons "--" files)))
-                  default-args)))
+         (value (majutsu-filesets-build-transient-value default-args files)))
     (transient-setup
      'majutsu-absorb nil nil
      :scope (majutsu-selection-session-begin)

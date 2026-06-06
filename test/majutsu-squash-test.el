@@ -77,6 +77,81 @@
       (should (equal called
                      '(("squash" "--from=B" "--into=parents(roots((B)))")))))))
 
+(ert-deftest majutsu-squash-execute/defaults-to-working-copy-parent ()
+  "No source defaults to @ and its external parent."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+               (lambda (&rest _) nil))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-squash--default-args)
+               (lambda () nil))
+              ((symbol-function 'majutsu-squash--point-revision)
+               (lambda () nil)))
+      (majutsu-squash-execute nil)
+      (should (equal called
+                     '(("squash" "--from=@" "--into=parents(roots((@)))")))))))
+
+(ert-deftest majutsu-squash-execute/uses-context-default-source ()
+  "Execution-time context defaults become --from when user selected no source."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+               (lambda (&rest _) nil))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-squash--default-args)
+               (lambda () '("--from=B")))
+              ((symbol-function 'majutsu-squash--point-revision)
+               (lambda () nil)))
+      (majutsu-squash-execute nil)
+      (should (equal called
+                     '(("squash" "--from=B" "--into=parents(roots((B)))")))))))
+
+(ert-deftest majutsu-squash-execute/keeps-explicit-destination ()
+  "Do not infer destination when user selected one."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+               (lambda (&rest _) nil))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-squash--point-revision)
+               (lambda () "B")))
+      (majutsu-squash-execute '("--from=C" "--into=A"))
+      (should (equal called
+                     '(("squash" "--from=C" "--into=A")))))))
+
+(ert-deftest majutsu-squash-execute/keeps-literal-none-source-for-jj-noop ()
+  "Do not add --into for literal --from=none(); let jj keep no-op behavior."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+               (lambda (&rest _) nil))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-squash--point-revision)
+               (lambda () "B")))
+      (majutsu-squash-execute '("--from=none()"))
+      (should (equal called
+                     '(("squash" "--from=none()")))))))
+
+(ert-deftest majutsu-squash-execute/places-structured-filesets-after-options ()
+  "Transient fileset groups should be emitted after completed options."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+               (lambda (&rest _) nil))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-squash--point-revision)
+               (lambda () nil)))
+      (majutsu-squash-execute '(("--" "majutsu-squash.el") "--from=B"))
+      (should (equal called
+                     '(("squash" "--from=B" "--into=parents(roots((B)))"
+                        "--" "majutsu-squash.el")))))))
+
 (ert-deftest majutsu-squash-execute/patch-removes-native-interactive-tool-args ()
   "Patch mode injects Majutsu's tool and strips native tool args."
   (let (called cleared)
@@ -95,6 +170,7 @@
       (should (equal called
                      '("squash"
                        ("--from=B" "--into=parents(roots((B)))")
+                       nil
                        "PATCH" t)))
       (should cleared))))
 
