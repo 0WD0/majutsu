@@ -10,8 +10,8 @@
 (require 'transient)
 (require 'majutsu-evolog)
 
-(defun majutsu-evolog-test--raw-entry (&optional heading)
-  "Return one row encoded evolog test entry with HEADING."
+(defun majutsu-evolog-test--raw-entry (&optional heading operation-id)
+  "Return one row encoded evolog test entry with HEADING and OPERATION-ID."
   (concat "○  "
           majutsu-row-start-token
           (or heading
@@ -23,7 +23,7 @@
           majutsu-row-meta-token
           "change-full" majutsu-row-field-separator
           "commit-full" majutsu-row-field-separator
-          "op-full"
+          (if (null operation-id) "op-full" operation-id)
           majutsu-row-end-token
           "\n"))
 
@@ -42,6 +42,9 @@
     (should (string-match-p "self.commit().committer().timestamp().local().format"
                             majutsu-evolog--entry-template))
     (should (string-match-p "self.operation().id().short()"
+                            majutsu-evolog--entry-template))
+    (should (string-match-p (regexp-quote
+                             "if(self.operation(), self.operation().id(), \"\")")
                             majutsu-evolog--entry-template))
     (should-not (string-match-p "builtin_evolog_compact"
                                 majutsu-evolog--entry-template))
@@ -91,6 +94,26 @@
       (should (equal (plist-get entry :change-id) "change-full"))
       (should (equal (plist-get entry :commit-id) "commit-full"))
       (should (equal (plist-get entry :operation-id) "op-full")))))
+
+(ert-deftest majutsu-evolog-wash-output/handles-entry-without-operation ()
+  "Evolog entries without an operation should still render and hide empty ids."
+  (with-temp-buffer
+    (magit-section-mode)
+    (setq buffer-read-only nil)
+    (insert (majutsu-evolog-test--raw-entry
+             (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
+                     "│  feat(op): phase1")
+             ""))
+    (goto-char (point-min))
+    (majutsu-evolog--wash-output nil)
+    (goto-char (point-min))
+    (should (equal (magit-section-value-if 'jj-evolog-entry)
+                   "commit-full"))
+    (let ((entry (car majutsu-row-cached-entries)))
+      (should (equal (plist-get entry :operation-id) ""))
+      (should-not (memq 'operation-id
+                        (majutsu-row-entry-copyable-fields
+                         entry majutsu-evolog--entry-compiled))))))
 
 (ert-deftest majutsu-evolog-refresh-buffer/inserts-compact-entry-sections ()
   "Evolog refresh should render compact row sections, not details."
