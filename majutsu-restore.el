@@ -69,20 +69,23 @@ In diff buffer on a file section, restore only that file."
 (defun majutsu-restore-execute (args)
   "Execute jj restore with ARGS from the transient."
   (interactive (list (transient-args 'majutsu-restore)))
-  (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf t t))
-         (args (if patch
-                   (seq-remove (lambda (arg)
-                                 (or (string= arg "--interactive")
-                                     (transient-arg-value "--tool=" (list arg))))
-                               args)
-                 args)))
+  (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
+               (selection-buf (majutsu-interactive--selection-buffer))
+               (patch (majutsu-interactive-build-patch-if-selected selection-buf t t))
+               (args (if patch
+                         (seq-remove (lambda (arg)
+                                       (or (string= arg "--interactive")
+                                           (transient-arg-value "--tool=" (list arg))))
+                                     args)
+                       args)))
     (if patch
         (progn
-          (majutsu-interactive-run-with-patch "restore" args patch)
+          (majutsu-interactive-run-with-patch "restore" args filesets patch)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (let ((exit (apply #'majutsu-run-jj "restore" args)))
+      (let ((exit (apply #'majutsu-run-jj
+                         "restore"
+                         (majutsu-jj-append-filesets args filesets))))
         (when (zerop exit)
           (message "Restored successfully"))))))
 
@@ -181,9 +184,7 @@ In diff buffer on a file section, restore only that file."
                  ((and (derived-mode-p 'majutsu-diff-mode) majutsu-buffer-diff-filesets)
                   majutsu-buffer-diff-filesets)))
          (default-args (majutsu-restore--default-args))
-         (value (if files
-                    (append default-args (list (cons "--" files)))
-                  default-args)))
+         (value (majutsu-filesets-build-transient-value default-args files)))
     (transient-setup
      'majutsu-restore nil nil
      :scope (majutsu-selection-session-begin)

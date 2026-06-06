@@ -307,9 +307,9 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
   (pcase-let ((`(,args ,range ,filesets)
                (majutsu-diff--get-value (oref obj major-mode) 'prefix)))
     (oset obj value
-          (if filesets
-              `(("--" ,@filesets) ,@range ,@args)
-            (append range args)))))
+          (majutsu-filesets-build-transient-value
+           (append range args)
+           filesets))))
 
 (cl-defmethod transient-prefix-value ((obj majutsu-diff-prefix))
   "Return (ARGS RANGE FILESETS) for the Majutsu diff transient.
@@ -317,10 +317,11 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 ARGS are remembered diff formatting arguments.  RANGE is a list of jj
 diff range arguments derived from `-r' or `--from/--to'.  FILESETS is a
 list of filesets (path filters)."
-  (let* ((raw (cl-call-next-method obj))
-         (args (majutsu-diff--remembered-args raw))
-         (range (majutsu-diff--extract-range-args raw))
-         (filesets (cdr (assoc "--" raw))))
+  (pcase-let* ((`(,raw ,filesets)
+                (majutsu-filesets-split-transient-value
+                 (cl-call-next-method obj)))
+               (args (majutsu-diff--remembered-args raw))
+               (range (majutsu-diff--extract-range-args raw)))
     (list args range filesets)))
 
 (cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
@@ -516,10 +517,11 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
 
 (defun majutsu-insert-diff ()
   "Insert a diff section and wash it."
-  (let* ((args (append (list "diff")
-                       majutsu-buffer-diff-args
-                       majutsu-buffer-diff-range
-                       majutsu-buffer-diff-filesets))
+  (let* ((args (majutsu-jj-append-filesets
+                (append (list "diff")
+                        majutsu-buffer-diff-args
+                        majutsu-buffer-diff-range)
+                majutsu-buffer-diff-filesets))
          (backend (majutsu-diff--sync-backend args))
          (washer (majutsu-diff--backend-washer backend)))
     (magit-insert-section (diff-root)

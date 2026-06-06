@@ -658,15 +658,15 @@ When REVERSE is non-nil, the script will apply the patch in reverse."
 
 ;;; Pending Operation Flow
 
-(defun majutsu-interactive-run-with-patch (command args patch &optional reverse)
-  "Run jj COMMAND with ARGS, applying PATCH via custom tool.
+(defun majutsu-interactive-run-with-patch (command args filesets patch &optional reverse)
+  "Run jj COMMAND with ARGS and FILESETS, applying PATCH via custom tool.
 If REVERSE is non-nil, apply the patch in reverse using git apply -R."
   (let* ((patch-file (majutsu-interactive--write-patch patch))
          (tool-config (majutsu-interactive--build-tool-config patch-file reverse))
-         (full-args (append (list command)
-                            args
-                            (list "-i" "--tool" "majutsu-applypatch")
-                            tool-config)))
+         (args (append args
+                       (list "-i" "--tool" "majutsu-applypatch")
+                       tool-config))
+         (full-args (cons command (majutsu-jj-append-filesets args filesets))))
     (majutsu-run-jj-with-editor full-args)))
 
 ;;; _
