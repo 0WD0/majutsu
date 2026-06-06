@@ -82,6 +82,12 @@
   secure repo =config-id=. Log, diff, and Git sync transients can save current
   arguments as defaults for only the current repository, while global defaults
   continue to use Transient's normal storage.
+- Squash: Remove the user-facing =-r/--revision= shortcut from the transient.
+  Majutsu now treats =--from= as the canonical squash source, including
+  inherited diff =--revisions= revsets, and passes an explicit =--into= default
+  when no destination is selected.  With an existing source selection, the
+  current log section is preferred as the destination when it is outside the
+  source set; otherwise Majutsu uses the source set's external parent.
 - Remotes: Add shared remote readers and completion payloads for exact remote
   names, new remote names, and remote name patterns. Git and bookmark commands
   now use the same remote history, completion category, remote-list parsing,

@@ -11,13 +11,15 @@
 
 ;;; Commentary:
 
-;; This library provides jj squash transients, managing from and into
-;; selections and assembling flags.
+;; This library provides jj squash transients, managing source and destination
+;; selections and assembling flags.  Majutsu uses --from as the canonical source
+;; selection and adds an explicit --into default when no destination is selected.
 
 ;;; Code:
 
 (require 'majutsu)
 
+(declare-function majutsu-read-revset "majutsu-jj" (prompt &optional default completion-args))
 (declare-function majutsu-transient-default-revset "majutsu-core" ())
 (defvar majutsu-buffer-diff-range)
 
@@ -25,70 +27,210 @@
   ())
 
 (defclass majutsu-squash--toggle-option (majutsu-selection-toggle-option)
-  ((if-not :initform #'majutsu-interactive-selection-available-p)))
+  ((if-not :initform #'majutsu-squash-interactive-selection-available-p)))
 
-;;; majutsu-squash
+;;; Arguments
+
+(defconst majutsu-squash--destination-prefixes
+  '("--into=" "--to=" "--onto=" "--destination="
+    "--insert-after=" "--after=" "--insert-before=" "--before=")
+  "Squash arguments that already specify destination or placement.")
+
+(defun majutsu-squash--values (args prefix)
+  "Return values in ARGS whose string argument starts with PREFIX."
+  (seq-keep (lambda (arg)
+              (and (stringp arg)
+                   (string-prefix-p prefix arg)
+                   (substring arg (length prefix))))
+            args))
+
+(defun majutsu-squash--source-values (args)
+  "Return --from values in ARGS."
+  (majutsu-squash--values args "--from="))
+
+(defun majutsu-squash--has-destination-p (args)
+  "Return non-nil if ARGS already specify a destination or placement."
+  (seq-some (lambda (arg)
+              (and (stringp arg)
+                   (seq-some (lambda (prefix)
+                               (string-prefix-p prefix arg))
+                             majutsu-squash--destination-prefixes)))
+            args))
+
+(defun majutsu-squash--append-before-filesets (args newargs)
+  "Append NEWARGS to ARGS before an explicit -- fileset separator."
+  (if-let* ((pos (cl-position "--" args :test #'equal)))
+      (append (seq-subseq args 0 pos) newargs (seq-subseq args pos))
+    (append args newargs)))
+
+(defun majutsu-squash--remove-interactive-tool-args (args)
+  "Remove native interactive/tool arguments from ARGS."
+  (let (out)
+    (while args
+      (let ((arg (pop args)))
+        (cond
+         ((member arg '("-i" "--interactive")))
+         ((and (stringp arg) (string-prefix-p "--tool=" arg)))
+         ((equal arg "--tool")
+          (when args (pop args)))
+         (t
+          (push arg out)))))
+    (nreverse out)))
+
+(defun majutsu-squash--source-revset (sources)
+  "Return a revset union expression for SOURCES."
+  (mapconcat (lambda (source) (format "(%s)" source)) sources " | "))
+
+(defun majutsu-squash--point-revision ()
+  "Return the jj commit revision at point in the selection buffer."
+  (with-current-buffer (majutsu-interactive--selection-buffer)
+    (magit-section-value-if 'jj-commit)))
+
+(defun majutsu-squash--none-source-p (sources)
+  "Return non-nil when SOURCES is the literal empty source none()."
+  (and (= (length sources) 1)
+       (equal (string-trim (car sources)) "none()")))
+
+(defun majutsu-squash--destination-revset (source-revset explicit-source)
+  "Return inferred destination revset for SOURCE-REVSET.
+If EXPLICIT-SOURCE is non-nil and point is on a commit outside SOURCE-REVSET,
+prefer point as the destination.  Otherwise use SOURCE-REVSET's external parent.
+The resulting revset is intentionally left for jj to resolve."
+  (let ((parent (format "parents(roots(%s))" source-revset)))
+    (if-let* ((point (and explicit-source (majutsu-squash--point-revision))))
+        (format "coalesce((%s) ~ (%s), %s)" point source-revset parent)
+      parent)))
+
+(defun majutsu-squash--normalize-args (args)
+  "Return squash ARGS with Majutsu's execution-time defaults.
+Defaults are added only when executing, not when opening the transient.  Majutsu
+adds a source default and an explicit --into expression; jj remains responsible
+for resolving revsets and reporting ambiguous or invalid command arguments."
+  (let* ((explicit-sources (majutsu-squash--source-values args))
+         (args (if explicit-sources
+                   args
+                 (majutsu-squash--append-before-filesets
+                  args (or (majutsu-squash--default-args) '("--from=@")))))
+         (sources (majutsu-squash--source-values args)))
+    (if (or (majutsu-squash--has-destination-p args)
+            (majutsu-squash--none-source-p sources))
+        args
+      (majutsu-squash--append-before-filesets
+       args (list (concat "--into="
+                          (majutsu-squash--destination-revset
+                           (majutsu-squash--source-revset sources)
+                           explicit-sources)))))))
+
+;;; Defaults
+
+(defun majutsu-squash--diff-default-args ()
+  "Return default squash args from a diff buffer context."
+  (let* ((range majutsu-buffer-diff-range)
+         (from (majutsu-squash--values range "--from="))
+         (to (majutsu-squash--values range "--to="))
+         (revisions (majutsu-squash--values range "--revisions=")))
+    (cond
+     ;; Arbitrary --from/--to diff buffers do not describe a squash source.
+     ((or from to) nil)
+     (revisions
+      (mapcar (lambda (rev) (concat "--from=" rev)) revisions)))))
+
+(defun majutsu-squash--log-default-args ()
+  "Return default squash args from log point or region."
+  (or (when-let* ((revsets (magit-region-values 'jj-commit t)))
+        (mapcar (lambda (rev) (concat "--from=" rev)) revsets))
+      (when-let* ((rev (magit-section-value-if 'jj-commit)))
+        (list (concat "--from=" rev)))))
+
+(defun majutsu-squash--default-args ()
+  "Return source defaults from the current diff/log context."
+  (with-current-buffer (majutsu-interactive--selection-buffer)
+    (if (derived-mode-p 'majutsu-diff-mode)
+        (majutsu-squash--diff-default-args)
+      (majutsu-squash--log-default-args))))
 
 (defun majutsu-squash-arguments ()
   "Return the current squash arguments.
-If inside the transient, return transient args.
-Otherwise, if no --revision/--from/--into is set and point is on
-a jj-commit section, add --revision from that section."
-  (let ((args (if (eq transient-current-command 'majutsu-squash)
-                  (transient-args 'majutsu-squash)
-                '())))
-    (unless (cl-some (lambda (arg)
-                       (or (string-prefix-p "--revision=" arg)
-                           (string-prefix-p "--from=" arg)
-                           (string-prefix-p "--into=" arg)))
-                     args)
-      (when-let* ((rev (magit-section-value-if 'jj-commit)))
-        (push (concat "--revision=" rev) args)))
-    args))
+Inside the transient, return transient args unchanged.  Outside the transient,
+return the same context defaults that execution would use."
+  (if (eq transient-current-command 'majutsu-squash)
+      (transient-args 'majutsu-squash)
+    (or (majutsu-squash--default-args) '())))
 
-(defun majutsu-squash--default-args ()
-  "Return default args from diff buffer context."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
+;;; Patch selection safety
+
+(defun majutsu-squash--patch-source-revset (&optional buffer)
+  "Return a source revset when BUFFER is a safe squash patch-selection buffer."
+  (with-current-buffer (or buffer (majutsu-interactive--selection-buffer))
     (when (derived-mode-p 'majutsu-diff-mode)
-      (mapcar (##if (string-prefix-p "--revisions=" %) (concat "--revision=" (substring % 12)))
-              majutsu-buffer-diff-range))))
+      (let* ((range majutsu-buffer-diff-range)
+             (from (majutsu-squash--values range "--from="))
+             (to (majutsu-squash--values range "--to="))
+             (revisions (majutsu-squash--values range "--revisions=")))
+        (cond
+         ((or from to) nil)
+         ((null range) "@")
+         ((= (length revisions) 1) (car revisions)))))))
+
+(defun majutsu-squash-interactive-selection-available-p ()
+  "Return non-nil when squash patch selection is available."
+  (and (majutsu-interactive-selection-available-p)
+       (majutsu-squash--patch-source-revset)))
+
+(defun majutsu-squash--check-patch-source (args patch-source)
+  "Signal if ARGS select a source incompatible with PATCH-SOURCE."
+  (let ((sources (majutsu-squash--source-values args)))
+    (unless patch-source
+      (user-error "Patch selection for squash requires a revision diff"))
+    (unless (or (null sources)
+                (and (= (length sources) 1)
+                     (equal (car sources) patch-source)))
+      (user-error "Patch selection for squash requires the diff source"))))
+
+;;; Execution
 
 (defun majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
   (interactive (list (majutsu-squash-arguments)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         ;; Generate patch for SELECTED content (invert=nil)
-         ;; This is what gets squashed into parent
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil)))
+         ;; Generate patch for SELECTED content (invert=nil).
+         ;; This is what gets squashed into the destination.
+         (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
+         (patch-source (and patch (majutsu-squash--patch-source-revset selection-buf))))
+    (when patch
+      (majutsu-squash--check-patch-source args patch-source)
+      (setq args (majutsu-squash--remove-interactive-tool-args args)))
+    (setq args (majutsu-squash--normalize-args args))
     (if patch
         (progn
-          ;; reverse=t means reset $right to $left, then apply patch forward
-          ;; Result: $right = selected content = what gets squashed
+          ;; reverse=t means reset $right to $left, then apply patch forward.
+          ;; Result: $right = selected content = what gets squashed.
           (majutsu-interactive-run-with-patch "squash" args patch t)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
       (majutsu-run-jj-with-editor (cons "squash" args)))))
 
+;;;; Readers
+
+(defun majutsu-squash--read-source-revset (prompt initial-input _history)
+  "Read a source revset expression for squash."
+  (unless current-prefix-arg
+    (majutsu-read-revset
+     prompt
+     (or initial-input (majutsu-transient-default-revset))
+     '("squash" "--from"))))
+
 ;;;; Infix Commands
 
-(transient-define-argument majutsu-squash:--revision ()
-  :description "Revision"
-  :class 'majutsu-squash-option
-  :selection-label "[REV]"
-  :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-r"
-  :argument "--revision="
-  :reader #'majutsu-transient-read-revset)
-
 (transient-define-argument majutsu-squash:--from ()
-  :description "From"
+  :description "Source revisions"
   :class 'majutsu-squash-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :key "-f"
   :argument "--from="
   :multi-value 'repeat
-  :reader #'majutsu-transient-read-revset)
+  :reader #'majutsu-squash--read-source-revset)
 
 (transient-define-argument majutsu-squash:--into ()
   :description "Into"
@@ -129,41 +271,35 @@ a jj-commit section, add --revision from that section."
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
-(transient-define-argument majutsu-squash:revision ()
-  :description "Revision (toggle at point)"
-  :class 'majutsu-squash--toggle-option
-  :key "r"
-  :argument "--revision=")
-
 (transient-define-argument majutsu-squash:from ()
-  :description "From (toggle at point)"
+  :description "Source at point (toggle)"
   :class 'majutsu-squash--toggle-option
   :key "f"
   :argument "--from="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-squash:into ()
-  :description "Into (toggle at point)"
+  :description "Into at point"
   :class 'majutsu-squash--toggle-option
   :key "t"
   :argument "--into=")
 
 (transient-define-argument majutsu-squash:onto ()
-  :description "Onto (toggle at point)"
+  :description "Onto at point"
   :class 'majutsu-squash--toggle-option
   :key "o"
   :argument "--onto="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-squash:insert-after ()
-  :description "Insert after (toggle at point)"
+  :description "Insert after point"
   :class 'majutsu-squash--toggle-option
   :key "a"
   :argument "--insert-after="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-squash:insert-before ()
-  :description "Insert before (toggle at point)"
+  :description "Insert before point"
   :class 'majutsu-squash--toggle-option
   :key "b"
   :argument "--insert-before="
@@ -185,33 +321,31 @@ a jj-commit section, add --revision from that section."
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
   :transient-non-suffix t
-  :incompatible '(("--revision=" "--onto=")
-                  ("--revision=" "--insert-after=")
-                  ("--revision=" "--insert-before=")
-                  ("--revision=" "--from=")
-                  ("--revision=" "--into="))
+  :incompatible '(("--into=" "--onto=")
+                  ("--into=" "--insert-after=")
+                  ("--into=" "--insert-before=")
+                  ("--onto=" "--insert-after=")
+                  ("--onto=" "--insert-before="))
   [
    :description "JJ Squash"
    ["Selection"
-    (majutsu-squash:--revision)
     (majutsu-squash:--from)
     (majutsu-squash:--into)
     (majutsu-squash:--onto)
     (majutsu-squash:--insert-after)
     (majutsu-squash:--insert-before)
-    (majutsu-squash:revision)
     (majutsu-squash:from)
     (majutsu-squash:into)
     (majutsu-squash:onto)
     (majutsu-squash:insert-after)
     (majutsu-squash:insert-before)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
-   ["Patch Selection" :if majutsu-interactive-selection-available-p
+   ["Patch Selection" :if majutsu-squash-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
-   ["Paths" :if-not majutsu-interactive-selection-available-p
+   ["Paths" :if-not majutsu-squash-interactive-selection-available-p
     (majutsu-squash:--)]
    ["Options"
     ("-k" "Keep emptied commit" ("-k" "--keep-emptied"))
@@ -223,8 +357,7 @@ a jj-commit section, add --revision from that section."
   (transient-setup
    'majutsu-squash nil nil
    :scope
-   (majutsu-selection-session-begin)
-   :value (or (majutsu-squash--default-args) '())))
+   (majutsu-selection-session-begin)))
 
 ;;; _
 (provide 'majutsu-squash)
