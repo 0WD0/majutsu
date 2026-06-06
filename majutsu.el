@@ -45,6 +45,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("C" "Commit"            majutsu-commit)
     ("m" "Metaedit"          majutsu-metaedit)
     ("d" "Diff"              majutsu-diff)
+    ("v" "Evolution log"     majutsu-evolog)
     ("D" "Diff (dwim)"       majutsu-diff-dwim)
     ("e" "Edit change"       majutsu-edit-changeset)
     ("E" "Ediff"             majutsu-ediff)]

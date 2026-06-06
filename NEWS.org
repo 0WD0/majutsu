@@ -5,12 +5,14 @@
 
 ** Added
 
-- Operations: Add ~majutsu-op-transient~ on ~X~, dedicated ~op log~ / ~op diff~
-  transients, a color-preserving structured multiline ~jj op log~ view, expanded
-  sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, graph-preserving
-  ~majutsu-evolog~ view, and ~op restore~ / ~op revert~ actions.
-  Read-only operation/evolution views use =--at-op=@ --ignore-working-copy= to
-  avoid snapshotting while browsing.
+- Operations: Add ~majutsu-op-transient~ on ~X~, top-level ~majutsu-evolog~ on
+  ~v~, dedicated ~op log~ / ~op diff~ transients, a color-preserving structured
+  multiline ~jj op log~ view with current-operation markers, direct
+  restore/revert point actions, point-prefilled operation-diff transients from
+  ~d~, expanded sectionized ~majutsu-op-diff~ buffers,
+  graph-preserving ~majutsu-evolog~ view, and ~op
+  restore~ / ~op revert~ actions.  Read-only operation/evolution views use
+  =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
 - Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
