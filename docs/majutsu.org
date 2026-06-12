@@ -636,14 +636,15 @@ Renamed and copied files are handled correctly:
 - Key: -r / -m / -a / -t :: Set revision, message, author, and author timestamp.
 - Key: -c / -u / -U / -f :: Toggle update-change-id, update-author, update-author-timestamp, or force-rewrite.
 - Key: -I :: Ignore immutable revisions.
-Runs: =jj metaedit --revisions REV [OPTIONS...]=
+Runs: =jj metaedit [OPTIONS...] REV=
 
 ** Simplifying Parents
 - Key: ? P (majutsu-simplify-parents) :: Open the Simplify Parents transient.
 - Key: -s :: Simplify specified revision(s) together with descendant trees (=--source=).
-- Key: -r :: Simplify specified revision(s) only (=--revisions=). If neither is set, Majutsu defaults to region or point revision(s), fallback =@=.
+- Key: -r :: Simplify specified revision(s) only (=--revision=).
 - Key: -I :: Ignore immutable revisions.
-Runs: =jj simplify-parents [--source REVSET] [--revisions REVSET]=
+If neither =--source= nor =--revision= is set, the Simplify action defaults to selected region revisions, then the revision at point, then =@=.
+Runs: =jj simplify-parents [--source REVSET] [--revision REVSET]=
 
 * Bookmarks
 ** Understanding Bookmarks

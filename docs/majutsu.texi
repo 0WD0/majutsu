@@ -1635,7 +1635,7 @@ Toggle update-change-id@comma{} update-author@comma{} update-author-timestamp@co
 @kindex -I
 Ignore immutable revisions.
 @end table
-Runs: @samp{jj metaedit --revisions REV [OPTIONS...]}
+Runs: @samp{jj metaedit [OPTIONS...] REV}
 
 @node Simplifying Parents
 @section Simplifying Parents
@@ -1650,12 +1650,13 @@ Open the Simplify Parents transient.
 Simplify specified revision(s) together with descendant trees (@samp{--source}).
 @item @kbd{-r}
 @kindex -r
-Simplify specified revision(s) only (@samp{--revisions}). If neither is set@comma{} Majutsu defaults to region or point revision(s)@comma{} fallback @samp{@@}.
+Simplify specified revision(s) only (@samp{--revision}).
 @item @kbd{-I}
 @kindex -I
 Ignore immutable revisions.
 @end table
-Runs: @samp{jj simplify-parents [--source REVSET] [--revisions REVSET]}
+If neither @samp{--source} nor @samp{--revision} is set@comma{} the Simplify action defaults to selected region revisions@comma{} then the revision at point@comma{} then @samp{@@}.
+Runs: @samp{jj simplify-parents [--source REVSET] [--revision REVSET]}
 
 @node Bookmarks
 @chapter Bookmarks

@@ -18,7 +18,7 @@
   a single revision from the region, point, or =@= fallback and exposes
   metadata edit/update flags.
 - Commands: Add ~majutsu-simplify-parents~ transient with both =--source=
-  and =--revisions= options.
+  and =--revision= options.
 - File inspection: Add ~majutsu-find-file-other-window~ and
   ~majutsu-find-file-other-frame~ for opening blob buffers in another window
   or frame.
