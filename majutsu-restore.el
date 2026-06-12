@@ -168,7 +168,7 @@ In diff buffer on a file section, restore only that file."
    ["Paths" :if-not majutsu-interactive-selection-available-p
     (majutsu-restore:--)]
    ["Options"
-    ("-i" "Interactive" "--interactive")
+    ("-i" "Interactive" ("-i" "--interactive"))
     ("-d" "Restore descendants" "--restore-descendants")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"

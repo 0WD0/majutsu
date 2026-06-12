@@ -165,8 +165,8 @@
    ["Paths" :if-not majutsu-interactive-selection-available-p
     (majutsu-split:--)]
    ["Options"
-    ("-i" "Interactive" "--interactive")
-    ("-p" "Parallel" "--parallel")
+    ("-i" "Interactive" ("-i" "--interactive"))
+    ("-p" "Parallel" ("-p" "--parallel"))
     ("-e" "Editor" "--editor")
     ("-t" "Tool" "--tool=")
     (majutsu-transient-arg-ignore-immutable)]

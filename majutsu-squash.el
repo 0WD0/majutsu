@@ -211,7 +211,7 @@ a jj-commit section, add --revision from that section."
    ["Paths" :if-not majutsu-interactive-selection-available-p
     (majutsu-squash:--)]
    ["Options"
-    ("-k" "Keep emptied commit" "-k")
+    ("-k" "Keep emptied commit" ("-k" "--keep-emptied"))
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute squash" majutsu-squash-execute)
