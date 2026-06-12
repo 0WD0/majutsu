@@ -31,30 +31,9 @@
 
 ;;; Arguments
 
-(defconst majutsu-squash--destination-prefixes
-  '("--into=" "--to=" "--onto=" "--destination="
-    "--insert-after=" "--after=" "--insert-before=" "--before=")
-  "Squash arguments that already specify destination or placement.")
-
-(defun majutsu-squash--values (args prefix)
-  "Return values in ARGS whose string argument starts with PREFIX."
-  (seq-keep (lambda (arg)
-              (and (stringp arg)
-                   (string-prefix-p prefix arg)
-                   (substring arg (length prefix))))
-            args))
-
 (defun majutsu-squash--source-values (args)
   "Return --from values in ARGS."
-  (majutsu-squash--values args "--from="))
-
-(defun majutsu-squash--has-destination-p (args)
-  "Return non-nil if ARGS already specify a destination or placement."
-  (seq-some (lambda (arg)
-              (and (stringp arg)
-                   (seq-some (lambda (prefix)
-                               (string-prefix-p prefix arg))
-                             majutsu-squash--destination-prefixes)))
+  (seq-keep (lambda (arg) (transient-arg-value "--from=" (list arg)))
             args))
 
 (defun majutsu-squash--append-before-filesets (args newargs)
@@ -70,7 +49,7 @@
       (let ((arg (pop args)))
         (cond
          ((member arg '("-i" "--interactive")))
-         ((and (stringp arg) (string-prefix-p "--tool=" arg)))
+         ((transient-arg-value "--tool=" (list arg)))
          ((equal arg "--tool")
           (when args (pop args)))
          (t
@@ -129,9 +108,11 @@ for resolving revsets and reporting ambiguous or invalid command arguments."
 (defun majutsu-squash--diff-default-args ()
   "Return default squash args from a diff buffer context."
   (let* ((range majutsu-buffer-diff-range)
-         (from (majutsu-squash--values range "--from="))
-         (to (majutsu-squash--values range "--to="))
-         (revisions (majutsu-squash--values range "--revisions=")))
+         (from (transient-arg-value "--from=" range))
+         (to (transient-arg-value "--to=" range))
+         (revisions (seq-keep (lambda (arg)
+                                (transient-arg-value "--revisions=" (list arg)))
+                              range)))
     (cond
      ;; Arbitrary --from/--to diff buffers do not describe a squash source.
      ((or from to) nil)
@@ -167,9 +148,11 @@ return the same context defaults that execution would use."
   (with-current-buffer (or buffer (majutsu-interactive--selection-buffer))
     (when (derived-mode-p 'majutsu-diff-mode)
       (let* ((range majutsu-buffer-diff-range)
-             (from (majutsu-squash--values range "--from="))
-             (to (majutsu-squash--values range "--to="))
-             (revisions (majutsu-squash--values range "--revisions=")))
+             (from (transient-arg-value "--from=" range))
+             (to (transient-arg-value "--to=" range))
+             (revisions (seq-keep (lambda (arg)
+                                    (transient-arg-value "--revisions=" (list arg)))
+                                  range)))
         (cond
          ((or from to) nil)
          ((null range) "@")
@@ -203,7 +186,27 @@ return the same context defaults that execution would use."
     (when patch
       (majutsu-squash--check-patch-source args patch-source)
       (setq args (majutsu-squash--remove-interactive-tool-args args)))
-    (setq args (majutsu-squash--normalize-args args))
+    (let* ((explicit-sources (majutsu-squash--source-values args))
+           (explicit-destination
+            (seq-some (lambda (arg) (transient-arg-value arg args))
+                      '("--into=" "--to=" "--onto=" "--destination="
+                        "--insert-after=" "--after="
+                        "--insert-before=" "--before=")))
+           (source-default (if explicit-destination
+                               '("--from=@")
+                             (or (majutsu-squash--default-args) '("--from=@")))))
+      (unless explicit-sources
+        (setq args (append args source-default)))
+      (let ((sources (majutsu-squash--source-values args)))
+        (unless (or explicit-destination
+                    (majutsu-squash--none-source-p sources))
+          (setq args (append
+                      args
+                      (list (concat
+                             "--into="
+                             (majutsu-squash--destination-revset
+                              (majutsu-squash--source-revset sources)
+                              explicit-sources))))))))
     (if patch
         (progn
           ;; reverse=t means reset $right to $left, then apply patch forward.

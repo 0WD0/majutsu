@@ -82,7 +82,7 @@ With prefix ARG, open the new transient for interactive selection."
   :selection-label "[PARENT]"
   :selection-face '(:background "dark orange" :foreground "black")
   :key "-r"
-  :argument "-r"
+  :argument "-r="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
@@ -110,7 +110,7 @@ With prefix ARG, open the new transient for interactive selection."
   :description "Parent (toggle at point)"
   :class 'majutsu-new--toggle-option
   :key "r"
-  :argument "-r"
+  :argument "-r="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-new:after ()
@@ -156,13 +156,11 @@ a jj-commit section, add -r from that section."
   (let ((args (if (eq transient-current-command 'majutsu-new)
                   (transient-args 'majutsu-new)
                 '())))
-    (unless (cl-some (lambda (arg)
-                       (or (string-prefix-p "-r" arg)
-                           (string-prefix-p "--insert-after=" arg)
-                           (string-prefix-p "--insert-before=" arg)))
-                     args)
+    (unless (or (transient-arg-value "-r=" args)
+                (transient-arg-value "--insert-after=" args)
+                (transient-arg-value "--insert-before=" args))
       (when-let* ((rev (magit-section-value-if 'jj-commit)))
-        (push (concat "-r" rev) args)))
+        (push (concat "-r=" rev) args)))
     args))
 
 ;;;###autoload
@@ -176,7 +174,7 @@ a jj-commit section, add -r from that section."
 (defun majutsu-new--selection-summary ()
   "Return a list summarizing the current jj new selections."
   (let (parts)
-    (when-let* ((values (majutsu-selection-values "-r")))
+    (when-let* ((values (majutsu-selection-values "-r=")))
       (push (format "Parents: %s"
                     (string-join values ", "))
             parts))

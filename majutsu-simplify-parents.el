@@ -24,12 +24,6 @@
 (defclass majutsu-simplify-parents--toggle-option (majutsu-selection-toggle-option)
   ())
 
-(defun majutsu-simplify-parents--target-arg-p (arg)
-  "Return non-nil when ARG selects simplify-parents targets."
-  (and (stringp arg)
-       (or (string-prefix-p "--source=" arg)
-           (string-prefix-p "--revision=" arg))))
-
 (defun majutsu-simplify-parents--dwim-args ()
   "Return DWIM target args for simplify-parents execution."
   (mapcar (lambda (rev) (concat "--revision=" rev))
@@ -42,7 +36,8 @@
 (defun majutsu-simplify-parents-execute (args)
   "Execute jj simplify-parents with ARGS from transient."
   (interactive (list (transient-args 'majutsu-simplify-parents-transient)))
-  (let* ((args (if (seq-some #'majutsu-simplify-parents--target-arg-p args)
+  (let* ((args (if (or (transient-arg-value "--source=" args)
+                       (transient-arg-value "--revision=" args))
                    args
                  (append args (majutsu-simplify-parents--dwim-args))))
          (exit (apply #'majutsu-run-jj "simplify-parents" args)))
