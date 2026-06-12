@@ -57,7 +57,7 @@
   :key "-s"
   :argument "--source="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-simplify-parents:--revision ()
   :description "Revision"
@@ -67,7 +67,7 @@
   :key "-r"
   :argument "--revision="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-simplify-parents:source ()
   :description "Source (toggle at point)"

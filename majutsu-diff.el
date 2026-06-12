@@ -285,58 +285,6 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
   "Return the subset of ARGS that restrict `jj diff' range."
   (seq-filter #'majutsu-diff--range-arg-p args))
 
-(defun majutsu-diff--transient-original-buffer ()
-  (and (buffer-live-p transient--original-buffer)
-       transient--original-buffer))
-
-(defun majutsu-diff--transient-default-revset ()
-  (with-current-buffer (or (majutsu-diff--transient-original-buffer)
-                           (current-buffer))
-    (or (magit-section-value-if 'jj-commit) "@")))
-
-(defun majutsu-diff--transient-jj-command-args ()
-  "Return jj subcommand args for the active revset transient."
-  (pcase transient-current-command
-    ('majutsu-absorb '("absorb"))
-    ('majutsu-diff '("diff"))
-    ('majutsu-duplicate '("duplicate"))
-    ('majutsu-new '("new"))
-    ('majutsu-rebase '("rebase"))
-    ('majutsu-restore '("restore"))
-    ('majutsu-revert '("revert"))
-    ('majutsu-simplify-parents-transient '("simplify-parents"))
-    ('majutsu-split '("split"))
-    ('majutsu-squash '("squash"))))
-
-(defun majutsu-diff--transient-jj-option-arg ()
-  "Return jj option arg for the active revset infix command."
-  (let ((name (symbol-name this-command)))
-    (cond
-     ((string-match-p ":-r\\'" name) "-r")
-     ((string-match-p ":--branch\\'" name) "--branch")
-     ((string-match-p ":--changes-in\\'" name) "--changes-in")
-     ((string-match-p ":--from\\'" name) "--from")
-     ((string-match-p "\\(:--insert-after\\|:--after\\)\\'" name) "--insert-after")
-     ((string-match-p "\\(:--insert-before\\|:--before\\)\\'" name) "--insert-before")
-     ((string-match-p ":--into\\'" name) "--into")
-     ((string-match-p ":--onto\\'" name) "--onto")
-     ((string-match-p ":--revisions\\'" name) "--revisions")
-     ((string-match-p ":--revision\\'" name) "--revision")
-     ((string-match-p ":--source\\'" name) "--source")
-     ((string-match-p ":--to\\'" name) "--to"))))
-
-(defun majutsu-diff--transient-revset-completion-args ()
-  "Return jj native completion context for the active revset reader."
-  (when-let* ((command (majutsu-diff--transient-jj-command-args))
-              (option (majutsu-diff--transient-jj-option-arg)))
-    (append command (list option))))
-
-(defun majutsu-diff--transient-read-revset (prompt initial-input _history)
-  (unless current-prefix-arg
-    (majutsu-read-revset prompt
-                         (or initial-input (majutsu-diff--transient-default-revset))
-                         (majutsu-diff--transient-revset-completion-args))))
-
 ;;; Arguments
 ;;;; Prefix Classes
 
@@ -1531,7 +1479,8 @@ REVSET is passed to jj diff using `--revisions='."
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
-  :prompt "Revisions: ")
+  :prompt "Revisions: "
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-diff:revisions ()
   :description "Revisions (toggle at point)"
@@ -1548,7 +1497,7 @@ REVSET is passed to jj diff using `--revisions='."
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-f"
   :argument "--from="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-diff:--to ()
   :description "To"
@@ -1558,7 +1507,7 @@ REVSET is passed to jj diff using `--revisions='."
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :key "-t"
   :argument "--to="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-diff:from ()
   :description "From (toggle at point)"

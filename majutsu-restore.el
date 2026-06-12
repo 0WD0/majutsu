@@ -94,7 +94,7 @@ In diff buffer on a file section, restore only that file."
   :selection-face '(:background "dark orange" :foreground "black")
   :key "-f"
   :argument "--from="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-restore:--to ()
   :description "To"
@@ -103,7 +103,7 @@ In diff buffer on a file section, restore only that file."
   :selection-face '(:background "dark cyan" :foreground "white")
   :key "-t"
   :argument "--to="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-restore:--changes-in ()
   :description "Changes in"
@@ -112,7 +112,7 @@ In diff buffer on a file section, restore only that file."
   :selection-face '(:background "dark magenta" :foreground "white")
   :key "-c"
   :argument "--changes-in="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-restore:from ()
   :description "From (toggle at point)"

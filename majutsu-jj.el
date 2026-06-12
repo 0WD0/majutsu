@@ -286,6 +286,31 @@ DEFAULT is inserted first in the candidate list when non-nil."
    (majutsu-jj-revset-candidate-data default)
    'majutsu-revision default))
 
+(defun majutsu-read-single-revset (prompt &optional default completion-args history)
+  "Prompt user with PROMPT to read a single revision selector.
+
+Unlike `majutsu-read-revset', this reader is intended for arguments such as
+`--from' and `--to' which accept one revision selector rather than a full
+revset expression.  When COMPLETION-ARGS is non-nil, use jj's native completer
+in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
+  (let* ((default (or default
+                      (majutsu-thing-at-point 'jj-revision t)
+                      (majutsu-revision-at-point)
+                      "@"))
+         (table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision
+                                                  default)
+                  (majutsu-jj--revset-completion-table default)))
+         (value (completing-read (format-prompt prompt default)
+                                 table nil nil nil
+                                 (or history 'majutsu-read-revset-history)
+                                 default)))
+    (cond
+     ((not (string-empty-p value)) value)
+     ((and default (not (string-empty-p default))) default)
+     (t (user-error "Need non-empty input")))))
+
 (defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.
 Completion candidates include workspaces, bookmarks, and tags, while
@@ -307,9 +332,10 @@ revset value being read."
                                  table nil nil nil
                                  'majutsu-read-revset-history
                                  default)))
-    (if (string-empty-p value)
-        (user-error "Need non-empty input")
-      value)))
+    (cond
+     ((not (string-empty-p value)) value)
+     ((and default (not (string-empty-p default))) default)
+     (t (user-error "Need non-empty input")))))
 
 (defun majutsu-read-optional-revset (prompt &optional default initial-input history completion-args)
   "Prompt user with PROMPT to read an optional revset string.

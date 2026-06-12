@@ -115,6 +115,61 @@ Note: <escape> does not affect the plain Emacs region."
 
 ;;; Shared Transients
 
+(defun majutsu-transient-original-buffer ()
+  "Return the transient's original buffer when it is live."
+  (and (boundp 'transient--original-buffer)
+       (buffer-live-p transient--original-buffer)
+       transient--original-buffer))
+
+(defun majutsu-transient-default-revset ()
+  "Return the default revset for transient revset readers."
+  (with-current-buffer (or (majutsu-transient-original-buffer)
+                           (current-buffer))
+    (or (magit-section-value-if 'jj-commit) "@")))
+
+(defun majutsu-transient-prefix-command ()
+  "Return the current transient prefix command."
+  (oref (transient-prefix-object) command))
+
+(defun majutsu-transient-jj-command-args ()
+  "Return jj subcommand args for the active revset transient."
+  (pcase (majutsu-transient-prefix-command)
+    ('majutsu-absorb '("absorb"))
+    ('majutsu-diff '("diff"))
+    ('majutsu-ediff '("diff"))
+    ('majutsu-duplicate '("duplicate"))
+    ('majutsu-new '("new"))
+    ('majutsu-rebase '("rebase"))
+    ('majutsu-restore '("restore"))
+    ('majutsu-revert '("revert"))
+    ('majutsu-simplify-parents-transient '("simplify-parents"))
+    ('majutsu-split '("split"))
+    ('majutsu-squash '("squash"))))
+
+(defun majutsu-transient-jj-option-arg ()
+  "Return jj option arg for the active revset infix command."
+  (string-remove-suffix "=" (oref (transient-suffix-object) argument)))
+
+(defun majutsu-transient-revset-completion-args ()
+  "Return jj native completion context for the active revset reader."
+  (when-let* ((command (majutsu-transient-jj-command-args))
+              (option (majutsu-transient-jj-option-arg)))
+    (append command (list option))))
+
+(defun majutsu-transient-expression-revset-p ()
+  "Return non-nil if the active transient argument accepts a revset expression."
+  (member (majutsu-transient-jj-option-arg)
+          '("-r" "--revisions" "--revision" "--source" "--branch")))
+
+(defun majutsu-transient-read-revset (prompt initial-input _history)
+  "Read a revset value for transient infix options."
+  (unless current-prefix-arg
+    (let ((default (or initial-input (majutsu-transient-default-revset)))
+          (completion-args (majutsu-transient-revset-completion-args)))
+      (if (majutsu-transient-expression-revset-p)
+          (majutsu-read-revset prompt default completion-args)
+        (majutsu-read-single-revset prompt default completion-args)))))
+
 (transient-define-argument majutsu-transient-arg-ignore-immutable ()
   :description "Ignore immutable"
   :class 'transient-switch

@@ -78,7 +78,7 @@ destination, fill with --revisions and --insert-after defaults."
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-revert:--onto ()
   :description "Onto"
@@ -88,7 +88,7 @@ destination, fill with --revisions and --insert-after defaults."
   :key "-o"
   :argument "--onto="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-revert:--insert-after ()
   :description "Insert after"
@@ -98,7 +98,7 @@ destination, fill with --revisions and --insert-after defaults."
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-revert:--insert-before ()
   :description "Insert before"
@@ -108,7 +108,7 @@ destination, fill with --revisions and --insert-after defaults."
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-revert:revisions ()
   :description "Revisions (toggle at point)"
