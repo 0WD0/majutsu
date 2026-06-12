@@ -68,7 +68,7 @@ jj-commit section, add --from from that section."
   :class 'majutsu-absorb-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :key "-f"
+  :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-transient-read-revset)
 
@@ -77,7 +77,7 @@ jj-commit section, add --from from that section."
   :class 'majutsu-absorb-option
   :selection-label "[INTO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :key "-t"
+  :shortarg "-t"
   :argument "--into="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)

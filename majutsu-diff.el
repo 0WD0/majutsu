@@ -1554,7 +1554,7 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:--summary ()
   :description "Show summary"
   :class 'transient-switch
-  :key "-s"
+  :shortarg "-s"
   :argument "--summary")
 
 (transient-define-argument majutsu-diff:--context ()
@@ -1579,7 +1579,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "-r"
+  :shortarg "-r"
   :argument "--revisions="
   :multi-value 'repeat
   :prompt "Revisions: "
@@ -1598,7 +1598,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "-f"
+  :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-transient-read-revset)
 
@@ -1608,7 +1608,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "-t"
+  :shortarg "-t"
   :argument "--to="
   :reader #'majutsu-transient-read-revset)
 
@@ -1628,13 +1628,13 @@ REVSET is passed to jj diff using `--revisions='."
 (transient-define-argument majutsu-diff:-b ()
   :description "Ignore changes in amount of whitespace"
   :class 'transient-switch
-  :key "-b"
+  :shortarg "-b"
   :argument "--ignore-space-change")
 
 (transient-define-argument majutsu-diff:-w ()
   :description "Ignore whitespace"
   :class 'transient-switch
-  :key "-w"
+  :shortarg "-w"
   :argument "--ignore-all-space")
 
 (defun majutsu-diff-save-arguments ()

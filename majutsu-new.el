@@ -73,7 +73,7 @@ With prefix ARG, open the new transient for interactive selection."
 (transient-define-argument majutsu-new-infix-no-edit ()
   :description "No edit"
   :class 'transient-switch
-  :shortarg "-e"
+  :key "-e"
   :argument "--no-edit")
 
 (transient-define-argument majutsu-new:-r ()
@@ -81,7 +81,7 @@ With prefix ARG, open the new transient for interactive selection."
   :class 'majutsu-new-option
   :selection-label "[PARENT]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :key "-r"
+  :shortarg "-r"
   :argument "-r="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -91,7 +91,7 @@ With prefix ARG, open the new transient for interactive selection."
   :class 'majutsu-new-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :key "-A"
+  :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -101,7 +101,7 @@ With prefix ARG, open the new transient for interactive selection."
   :class 'majutsu-new-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :key "-B"
+  :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)

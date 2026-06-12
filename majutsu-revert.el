@@ -29,15 +29,15 @@
   "Return the current revert arguments.
 If inside the transient, return transient args unchanged.
 Otherwise, if point is on a revision and args are missing source or
-destination, fill with --revisions and --insert-after defaults."
+destination, fill with --revision and --insert-after defaults."
   (let* ((inside-transient (eq transient-current-command 'majutsu-revert))
          (args (if inside-transient
                    (transient-args 'majutsu-revert)
                  '())))
     (unless inside-transient
       (when-let* ((rev (magit-section-value-if 'jj-commit)))
-        (unless (transient-arg-value "--revisions=" args)
-          (setq args (append args (list (concat "--revisions=" rev)))))
+        (unless (transient-arg-value "--revision=" args)
+          (setq args (append args (list (concat "--revision=" rev)))))
         (unless (or (transient-arg-value "--onto=" args)
                     (transient-arg-value "--insert-after=" args)
                     (transient-arg-value "--insert-before=" args))
@@ -62,13 +62,13 @@ destination, fill with --revisions and --insert-after defaults."
 
 ;;; Revert transient
 
-(transient-define-argument majutsu-revert:--revisions ()
+(transient-define-argument majutsu-revert:--revision ()
   :description "Revisions"
   :class 'majutsu-revert-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-r"
-  :argument "--revisions="
+  :shortarg "-r"
+  :argument "--revision="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
@@ -77,7 +77,7 @@ destination, fill with --revisions and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
-  :key "-o"
+  :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -87,7 +87,7 @@ destination, fill with --revisions and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :key "-A"
+  :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -97,16 +97,16 @@ destination, fill with --revisions and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :key "-B"
+  :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
-(transient-define-argument majutsu-revert:revisions ()
+(transient-define-argument majutsu-revert:revision ()
   :description "Revisions (toggle at point)"
   :class 'majutsu-revert--toggle-option
   :key "r"
-  :argument "--revisions="
+  :argument "--revision="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-revert:onto ()
@@ -141,8 +141,8 @@ destination, fill with --revisions and --insert-after defaults."
   [:description
    "JJ Revert"
    ["Selection"
-    (majutsu-revert:--revisions)
-    (majutsu-revert:revisions)
+    (majutsu-revert:--revision)
+    (majutsu-revert:revision)
     ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Destination"

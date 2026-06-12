@@ -229,7 +229,7 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :key "-f"
+  :shortarg "-f"
   :argument "--from="
   :multi-value 'repeat
   :reader #'majutsu-squash--read-source-revset)
@@ -239,7 +239,7 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[INTO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :key "-t"
+  :shortarg "-t"
   :argument "--into="
   :reader #'majutsu-transient-read-revset)
 
@@ -248,7 +248,7 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
-  :key "-o"
+  :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -258,7 +258,7 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :key "-A"
+  :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -268,7 +268,7 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :key "-B"
+  :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)

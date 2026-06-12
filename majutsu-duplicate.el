@@ -57,7 +57,7 @@ With prefix ARG, open the duplicate transient."
   :class 'majutsu-duplicate-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-r"
+  :shortarg "-r"
   :argument "-r="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -67,7 +67,7 @@ With prefix ARG, open the duplicate transient."
   :class 'majutsu-duplicate-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
-  :key "-o"
+  :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -77,7 +77,7 @@ With prefix ARG, open the duplicate transient."
   :class 'majutsu-duplicate-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :key "-A"
+  :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -87,7 +87,7 @@ With prefix ARG, open the duplicate transient."
   :class 'majutsu-duplicate-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :key "-B"
+  :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)

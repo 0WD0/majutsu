@@ -49,7 +49,7 @@
   :class 'majutsu-simplify-parents-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-s"
+  :shortarg "-s"
   :argument "--source="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -59,7 +59,7 @@
   :class 'majutsu-simplify-parents-option
   :selection-label "[REV]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :key "-r"
+  :shortarg "-r"
   :argument "--revision="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
