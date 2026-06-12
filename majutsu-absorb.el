@@ -28,14 +28,12 @@
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
-      (when-let* ((source
-                   (seq-some (lambda (arg)
-                               (cond
-                                ((string-prefix-p "--revisions=" arg)
-                                 (concat "--from=" (substring arg 12)))
-                                ((string-prefix-p "--from=" arg)
-                                 arg)))
-                             majutsu-buffer-diff-range)))
+      (when-let* ((source (or (when-let* ((rev (transient-arg-value
+                                                "--revisions=" majutsu-buffer-diff-range)))
+                                (concat "--from=" rev))
+                              (when-let* ((from (transient-arg-value
+                                                 "--from=" majutsu-buffer-diff-range)))
+                                (concat "--from=" from)))))
         (list source)))))
 
 (defun majutsu-absorb-arguments ()
@@ -46,10 +44,8 @@ jj-commit section, add --from from that section."
   (let ((args (if (eq transient-current-command 'majutsu-absorb)
                   (transient-args 'majutsu-absorb)
                 '())))
-    (unless (cl-some (lambda (arg)
-                       (or (string-prefix-p "--from=" arg)
-                           (string-prefix-p "--into=" arg)))
-                     args)
+    (unless (or (transient-arg-value "--from=" args)
+                (transient-arg-value "--into=" args))
       (when-let* ((rev (magit-section-value-if 'jj-commit)))
         (push (concat "--from=" rev) args)))
     args))

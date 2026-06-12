@@ -690,15 +690,6 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 
 ;;; op restore/revert
 
-(defun majutsu-op--extract-target-operation (args)
-  "Return (OPERATION . ARGS) after stripping pseudo --operation= from ARGS."
-  (let (operation rest)
-    (dolist (arg args)
-      (if (string-prefix-p "--operation=" arg)
-          (setq operation (substring arg (length "--operation=")))
-        (push arg rest)))
-    (cons operation (nreverse rest))))
-
 (defun majutsu-op--run-confirmed (action prompt command)
   "Run COMMAND after confirming ACTION with PROMPT."
   (if (not (majutsu-confirm action prompt))
@@ -725,24 +716,30 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defun majutsu-op-restore-execute (args)
   "Execute jj op restore with transient ARGS."
   (interactive (list (transient-args 'majutsu-op-restore-transient)))
-  (pcase-let* ((`(,operation . ,rest) (majutsu-op--extract-target-operation args)))
+  (let ((operation (transient-arg-value "--operation=" args))
+        (args (seq-remove (lambda (arg)
+                            (transient-arg-value "--operation=" (list arg)))
+                          args)))
     (unless operation
       (user-error "Please select an operation first"))
     (majutsu-op--run-confirmed
      'op-restore
      (format "Restore repository state to operation %s? " operation)
-     (append '("op" "restore") rest (list operation)))))
+     (append '("op" "restore") args (list operation)))))
 
 (defun majutsu-op-revert-execute (args)
   "Execute jj op revert with transient ARGS."
   (interactive (list (transient-args 'majutsu-op-revert-transient)))
-  (pcase-let* ((`(,operation . ,rest) (majutsu-op--extract-target-operation args)))
+  (let ((operation (transient-arg-value "--operation=" args))
+        (args (seq-remove (lambda (arg)
+                            (transient-arg-value "--operation=" (list arg)))
+                          args)))
     (unless operation
       (user-error "Please select an operation first"))
     (majutsu-op--run-confirmed
      'op-revert
      (format "Revert operation %s? " operation)
-     (append '("op" "revert") rest (list operation)))))
+     (append '("op" "revert") args (list operation)))))
 
 ;;;###autoload(autoload 'majutsu-op-restore-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-restore-transient ()
@@ -1015,25 +1012,16 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defvar-local majutsu-op-diff--args nil
   "Arguments used for the current operation diff buffer.")
 
-(defun majutsu-op--diff-arg-value (prefix args)
-  "Return the value for PREFIX in ARGS."
-  (seq-some (lambda (arg)
-              (and (string-prefix-p prefix arg)
-                   (substring arg (length prefix))))
-            args))
-
 (defun majutsu-op--diff-buffer-heading (args)
   "Return a heading for operation diff ARGS."
-  (cond
-   ((majutsu-op--diff-arg-value "--operation=" args)
-    (format "Operation Diff %s"
-            (majutsu-op--diff-arg-value "--operation=" args)))
-   ((or (majutsu-op--diff-arg-value "--from=" args)
-        (majutsu-op--diff-arg-value "--to=" args))
-    (format "Operation Diff %s..%s"
-            (or (majutsu-op--diff-arg-value "--from=" args) "@-")
-            (or (majutsu-op--diff-arg-value "--to=" args) "@")))
-   (t "Operation Diff")))
+  (let ((operation (transient-arg-value "--operation=" args))
+        (from (transient-arg-value "--from=" args))
+        (to (transient-arg-value "--to=" args)))
+    (cond
+     (operation (format "Operation Diff %s" operation))
+     ((or from to)
+      (format "Operation Diff %s..%s" (or from "@-") (or to "@")))
+     (t "Operation Diff"))))
 
 (defun majutsu-op--insert-diff-endpoint (label operation)
   "Insert metadata for operation diff endpoint LABEL OPERATION."
@@ -1053,8 +1041,8 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 
 (defun majutsu-op--insert-diff-endpoints (args)
   "Insert explicit from/to operation metadata for operation diff ARGS."
-  (let ((from (majutsu-op--diff-arg-value "--from=" args))
-        (to (majutsu-op--diff-arg-value "--to=" args)))
+  (let ((from (transient-arg-value "--from=" args))
+        (to (transient-arg-value "--to=" args)))
     (when (or from to)
       (magit-insert-section (jj-op-diff-endpoints)
         (magit-insert-heading "Operations")

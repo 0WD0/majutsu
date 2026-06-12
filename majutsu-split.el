@@ -28,9 +28,10 @@
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
     (when (derived-mode-p 'majutsu-diff-mode)
-      (mapcar (##if (string-prefix-p "--revisions=" %)
-                    (concat "--revision=" (substring % 12))
-                    %)
+      (mapcar (lambda (arg)
+                (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
+                    (concat "--revision=" rev)
+                  arg))
               majutsu-buffer-diff-range))))
 
 (defun majutsu-split-execute (args)
@@ -43,7 +44,7 @@
          (args (if patch
                    (seq-remove (lambda (arg)
                                  (or (string= arg "--interactive")
-                                     (string-prefix-p "--tool=" arg)))
+                                     (transient-arg-value "--tool=" (list arg))))
                                args)
                  args)))
     (if patch

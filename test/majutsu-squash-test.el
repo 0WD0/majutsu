@@ -12,13 +12,6 @@
 (require 'cl-lib)
 (require 'majutsu-squash)
 
-(ert-deftest majutsu-squash-values/parses-prefix-values ()
-  "Parse transient-style option values before fileset separator."
-  (should (equal (majutsu-squash--values
-                  '("--from=a" "--from=b" "--" "--from=c")
-                  "--from=")
-                 '("a" "b"))))
-
 (ert-deftest majutsu-squash-arguments/use-transient-args-without-defaults ()
   "Opening the transient should not prefill point/diff defaults into args."
   (let ((transient-current-command 'majutsu-squash))

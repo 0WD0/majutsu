@@ -32,11 +32,9 @@
   "Execute rebase with selected source and destinations.
 ARGS are passed from the transient."
   (interactive (list (transient-args 'majutsu-rebase)))
-  (let ((has-dest (seq-some (lambda (arg)
-                              (or (string-prefix-p "--onto=" arg)
-                                  (string-prefix-p "--insert-after=" arg)
-                                  (string-prefix-p "--insert-before=" arg)))
-                            args)))
+  (let ((has-dest (or (transient-arg-value "--onto=" args)
+                      (transient-arg-value "--insert-after=" args)
+                      (transient-arg-value "--insert-before=" args))))
     (if has-dest
         (when (majutsu-confirm 'rebase "Rebase with current selections? ")
           (let ((all-args (cons "rebase" args)))

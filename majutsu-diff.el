@@ -284,19 +284,13 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
             (push arg out))))))
     (nreverse out)))
 
-(defconst majutsu-diff--range-arg-prefixes
-  '("--revisions=" "--from=" "--to=")
-  "Prefixes for arguments that restrict the diff range.")
-
-(defun majutsu-diff--range-arg-p (arg)
-  "Return non-nil if ARG is a `jj diff' range argument."
-  (and (stringp arg)
-       (seq-some (lambda (prefix) (string-prefix-p prefix arg))
-                 majutsu-diff--range-arg-prefixes)))
-
 (defun majutsu-diff--extract-range-args (args)
   "Return the subset of ARGS that restrict `jj diff' range."
-  (seq-filter #'majutsu-diff--range-arg-p args))
+  (seq-filter (lambda (arg)
+                (or (transient-arg-value "--revisions=" (list arg))
+                    (transient-arg-value "--from=" (list arg))
+                    (transient-arg-value "--to=" (list arg))))
+              args))
 
 ;;; Arguments
 ;;;; Prefix Classes
@@ -1152,12 +1146,6 @@ through while the background changes to indicate focus."
   (when-let* ((file (majutsu-file-at-point)))
     (find-file (expand-file-name file default-directory))))
 
-(defun majutsu-diff--range-value (range prefix)
-  "Return the value in RANGE for argument starting with PREFIX."
-  (when range
-    (when-let* ((arg (seq-find (lambda (item) (string-prefix-p prefix item)) range)))
-      (substring arg (length prefix)))))
-
 (defun majutsu-diff--on-removed-line-p ()
   "Return non-nil if point is on a removed diff line."
   (if-let* ((info (majutsu-diff--color-words-line-info)))
@@ -1180,9 +1168,9 @@ INFO is the plist from `majutsu-color-words-line-info-at-point'."
   "Return (FROM-REV . TO-REV) for the current diff buffer.
 FROM-REV is the old/left side, TO-REV is the new/right side."
   (let* ((range majutsu-buffer-diff-range)
-         (from (majutsu-diff--range-value range "--from="))
-         (to (majutsu-diff--range-value range "--to="))
-         (revisions (majutsu-diff--range-value range "--revisions=")))
+         (from (transient-arg-value "--from=" range))
+         (to (transient-arg-value "--to=" range))
+         (revisions (transient-arg-value "--revisions=" range)))
     (cond
      ;; -r REV: diff of a single revision's changes
      ((and range (equal (car range) "-r") (cadr range))
@@ -1247,8 +1235,8 @@ If on a removed line, return the from-rev; otherwise return the to-rev."
   "Return non-nil if the current diff should visit the workspace file.
 This is true when diffing the working copy (@) on the new/right side."
   (let* ((range majutsu-buffer-diff-range)
-         (to (majutsu-diff--range-value range "--to="))
-         (revisions (majutsu-diff--range-value range "--revisions=")))
+         (to (transient-arg-value "--to=" range))
+         (revisions (transient-arg-value "--revisions=" range)))
     (cond
      ;; Explicit --to=@ means we're looking at working copy changes
      ((equal to "@") t)

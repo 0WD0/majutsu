@@ -47,7 +47,7 @@ revision argument is present. Outside the transient, return defaults."
                    (transient-args 'majutsu-metaedit-transient)
                  '()))
          (rev-args (seq-filter (lambda (arg)
-                                 (string-prefix-p "-r=" arg))
+                                 (transient-arg-value "-r=" (list arg)))
                                args)))
     (cond
      ((null rev-args)
