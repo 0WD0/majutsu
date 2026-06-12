@@ -51,7 +51,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-s"
+  :shortarg "-s"
   :argument "--source="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -61,18 +61,18 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[BRANCH]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-b"
+  :shortarg "-b"
   :argument "--branch="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
-(transient-define-argument majutsu-rebase:--revisions ()
+(transient-define-argument majutsu-rebase:--revision ()
   :description "Revisions"
   :class 'majutsu-rebase-option
   :selection-label "[REVS]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :key "-r"
-  :argument "--revisions="
+  :shortarg "-r"
+  :argument "--revision="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
@@ -81,7 +81,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
-  :key "-o"
+  :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -91,7 +91,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :key "-A"
+  :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -101,7 +101,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :key "-B"
+  :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -120,11 +120,11 @@ ARGS are passed from the transient."
   :argument "--branch="
   :multi-value 'repeat)
 
-(transient-define-argument majutsu-rebase:revisions ()
+(transient-define-argument majutsu-rebase:revision ()
   :description "Revisions (toggle at point)"
   :class 'majutsu-rebase--toggle-option
   :key "r"
-  :argument "--revisions="
+  :argument "--revision="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-rebase:onto ()
@@ -153,8 +153,8 @@ ARGS are passed from the transient."
   "Internal transient for jj rebase operations."
   :man-page "jj-rebase"
   :incompatible '(("--source=" "--branch=")
-                  ("--source=" "--revisions=")
-                  ("--branch=" "--revisions=")
+                  ("--source=" "--revision=")
+                  ("--branch=" "--revision=")
                   ("--onto=" "--insert-after=")
                   ("--onto=" "--insert-before="))
   :transient-non-suffix t
@@ -163,10 +163,10 @@ ARGS are passed from the transient."
    ["Source"
     (majutsu-rebase:--source)
     (majutsu-rebase:--branch)
-    (majutsu-rebase:--revisions)
+    (majutsu-rebase:--revision)
     (majutsu-rebase:source)
     (majutsu-rebase:branch)
-    (majutsu-rebase:revisions)]
+    (majutsu-rebase:revision)]
    ["Destination"
     (majutsu-rebase:--onto)
     (majutsu-rebase:--after)

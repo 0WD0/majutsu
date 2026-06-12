@@ -757,7 +757,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "-r"
+  :shortarg "-r"
   :argument "--revisions="
   :multi-value 'repeat
   :prompt "Revisions: ")
@@ -775,7 +775,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "-f"
+  :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-ediff--transient-read-revset)
 
@@ -785,7 +785,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "-t"
+  :shortarg "-t"
   :argument "--to="
   :reader #'majutsu-ediff--transient-read-revset)
 

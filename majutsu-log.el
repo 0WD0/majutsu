@@ -885,7 +885,7 @@ minibuffer for editing.  Empty input clears the filter."
 (transient-define-argument majutsu-log:--limit ()
   :description "Limit"
   :class 'transient-option
-  :key "-n"
+  :shortarg "-n"
   :argument "--limit="
   :reader #'transient-read-number-N+)
 
@@ -898,7 +898,7 @@ minibuffer for editing.  Empty input clears the filter."
 (transient-define-argument majutsu-log:--no-graph ()
   :description "Hide graph"
   :class 'transient-switch
-  :key "-G"
+  :shortarg "-G"
   :argument "--no-graph")
 
 (transient-define-argument majutsu-log:-- ()

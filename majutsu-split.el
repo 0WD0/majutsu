@@ -65,7 +65,7 @@
   :class 'majutsu-split-option
   :selection-label "[REV]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :key "-r"
+  :shortarg "-r"
   :argument "--revision="
   :reader #'majutsu-transient-read-revset)
 
@@ -74,7 +74,7 @@
   :class 'majutsu-split-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
-  :key "-o"
+  :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -84,7 +84,7 @@
   :class 'majutsu-split-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
-  :key "-A"
+  :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
@@ -94,14 +94,14 @@
   :class 'majutsu-split-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
-  :key "-B"
+  :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-split:--message ()
   :description "Message"
-  :key "-m"
+  :shortarg "-m"
   :argument "--message="
   :reader #'read-string)
 
