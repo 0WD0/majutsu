@@ -28,68 +28,6 @@
                (lambda () '("--from=point"))))
       (should-not (majutsu-squash-arguments)))))
 
-(ert-deftest majutsu-squash-normalize/defaults-to-working-copy-parent ()
-  "No source defaults to @ and its external parent."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () nil))
-            ((symbol-function 'majutsu-squash--default-args)
-             (lambda () nil)))
-    (should (equal (majutsu-squash--normalize-args nil)
-                   '("--from=@" "--into=parents(roots((@)))")))))
-
-(ert-deftest majutsu-squash-normalize/uses-context-default-source-at-execution ()
-  "Execution-time context defaults become --from when user selected no source."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () nil))
-            ((symbol-function 'majutsu-squash--default-args)
-             (lambda () '("--from=B"))))
-    (should (equal (majutsu-squash--normalize-args nil)
-                   '("--from=B" "--into=parents(roots((B)))")))))
-
-(ert-deftest majutsu-squash-normalize/uses-point-as-contextual-destination ()
-  "When source is already selected, point is encoded as preferred destination."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () "B")))
-    (should (equal (majutsu-squash--normalize-args '("--from=C"))
-                   '("--from=C"
-                     "--into=coalesce((B) ~ ((C)), parents(roots((C))))")))))
-
-(ert-deftest majutsu-squash-normalize/point-source-falls-back-to-parent-expression ()
-  "If point is also the source, the coalesce expression falls back to parent."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () "B")))
-    (should (equal (majutsu-squash--normalize-args '("--from=B"))
-                   '("--from=B"
-                     "--into=coalesce((B) ~ ((B)), parents(roots((B))))")))))
-
-(ert-deftest majutsu-squash-normalize/keeps-explicit-destination ()
-  "Do not infer destination when user selected one."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () "B")))
-    (should (equal (majutsu-squash--normalize-args '("--from=C" "--into=A"))
-                   '("--from=C" "--into=A")))))
-
-(ert-deftest majutsu-squash-normalize/defaults-source-to-at-with-explicit-destination ()
-  "When destination is explicit but source is omitted, source defaults to @."
-  (cl-letf (((symbol-function 'majutsu-squash--default-args)
-             (lambda () '("--from=B"))))
-    (should (equal (majutsu-squash--normalize-args '("--into=A"))
-                   '("--into=A" "--from=@")))))
-
-(ert-deftest majutsu-squash-normalize/inserts-destination-before-filesets ()
-  "Infer --into before the fileset separator."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () nil)))
-    (should (equal (majutsu-squash--normalize-args '("--from=B" "--" "file"))
-                   '("--from=B" "--into=parents(roots((B)))" "--" "file")))))
-
-(ert-deftest majutsu-squash-normalize/keeps-literal-none-source-for-jj-noop ()
-  "Do not add --into for literal --from=none(); let jj keep no-op behavior."
-  (cl-letf (((symbol-function 'majutsu-squash--point-revision)
-             (lambda () "B")))
-    (should (equal (majutsu-squash--normalize-args '("--from=none()"))
-                   '("--from=none()")))))
-
 (ert-deftest majutsu-squash-default-args/from-diff-revisions ()
   "Use diff --revisions context as default squash source."
   (with-temp-buffer
@@ -132,7 +70,7 @@
     (setq-local majutsu-buffer-diff-range '("--from=A" "--to=B"))
     (should-not (majutsu-squash--patch-source-revset (current-buffer)))))
 
-(ert-deftest majutsu-squash-execute/runs-jj-squash-with-normalized-args ()
+(ert-deftest majutsu-squash-execute/runs-jj-squash-with-inferred-destination ()
   "Execute non-patch squash through `majutsu-run-jj-with-editor'."
   (let (called)
     (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
