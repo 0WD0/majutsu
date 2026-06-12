@@ -101,29 +101,6 @@ The resulting revset is intentionally left for jj to resolve."
         (format "coalesce((%s) ~ (%s), %s)" point source-revset parent)
       parent)))
 
-(defun majutsu-squash--normalize-args (args)
-  "Return squash ARGS with Majutsu's execution-time defaults.
-Defaults are added only when executing, not when opening the transient.  Majutsu
-adds a source default and an explicit --into expression; jj remains responsible
-for resolving revsets and reporting ambiguous or invalid command arguments."
-  (let* ((explicit-sources (majutsu-squash--source-values args))
-         (explicit-destination (majutsu-squash--has-destination-p args))
-         (source-default (if explicit-destination
-                             '("--from=@")
-                           (or (majutsu-squash--default-args) '("--from=@"))))
-         (args (if explicit-sources
-                   args
-                 (majutsu-squash--append-before-filesets args source-default)))
-         (sources (majutsu-squash--source-values args)))
-    (if (or explicit-destination
-            (majutsu-squash--none-source-p sources))
-        args
-      (majutsu-squash--append-before-filesets
-       args (list (concat "--into="
-                          (majutsu-squash--destination-revset
-                           (majutsu-squash--source-revset sources)
-                           explicit-sources)))))))
-
 ;;; Defaults
 
 (defun majutsu-squash--diff-default-args ()
