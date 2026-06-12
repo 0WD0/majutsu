@@ -34,13 +34,13 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
   (let ((args (if (eq transient-current-command 'majutsu-duplicate)
                   (transient-args 'majutsu-duplicate)
                 '())))
-    (unless (cl-some (lambda (arg) (string-prefix-p "-r" arg)) args)
+    (unless (transient-arg-value "-r=" args)
       (let ((revsets (or (magit-region-values nil t)
                          (and (magit-section-value-if 'jj-commit)
                               (list (magit-section-value-if 'jj-commit)))
                          (list "@"))))
         (dolist (rev revsets)
-          (push (concat "-r" rev) args))))
+          (push (concat "-r=" rev) args))))
     args))
 
 ;;;###autoload
@@ -58,7 +58,7 @@ With prefix ARG, open the duplicate transient."
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :key "-r"
-  :argument "-r"
+  :argument "-r="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
 
@@ -96,7 +96,7 @@ With prefix ARG, open the duplicate transient."
   :description "Source (toggle at point)"
   :class 'majutsu-duplicate--toggle-option
   :key "r"
-  :argument "-r"
+  :argument "-r="
   :multi-value 'repeat)
 
 (transient-define-argument majutsu-duplicate:onto ()

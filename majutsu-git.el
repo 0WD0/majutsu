@@ -58,17 +58,16 @@
 
 (defun majutsu-git--expand-option-arg (arg prefix)
   "If ARG begins with PREFIX, expand the file name part."
-  (if (and (stringp arg) (string-prefix-p prefix arg))
+  (if-let* ((value (transient-arg-value prefix (list arg))))
       (concat prefix
               (majutsu-convert-filename-for-jj
-               (expand-file-name (substring arg (length prefix)))))
+               (expand-file-name value)))
     arg))
 
 (defun majutsu-git--expand-url-option-arg (arg prefix)
   "If ARG begins with PREFIX, convert its URL/path value for jj."
-  (if (and (stringp arg) (string-prefix-p prefix arg))
-      (concat prefix (majutsu-git--url-or-path-arg
-                      (substring arg (length prefix))))
+  (if-let* ((value (transient-arg-value prefix (list arg))))
+      (concat prefix (majutsu-git--url-or-path-arg value))
     arg))
 
 (defun majutsu-git--expand-remote-url-arg (arg)
@@ -178,12 +177,10 @@
 (defun majutsu-git-remote-set-url (args)
   "Set URL of a Git remote."
   (interactive (list (transient-args 'majutsu-git-remote-set-url-transient)))
-  (let* ((remote (cl-loop for arg in args
-                          when (string-prefix-p "--remote=" arg)
-                          return (substring arg 9)))
-         (args (cl-loop for arg in args
-                        unless (string-prefix-p "--remote=" arg)
-                        collect arg)))
+  (let* ((remote (transient-arg-value "--remote=" args))
+         (args (seq-remove (lambda (arg)
+                             (transient-arg-value "--remote=" (list arg)))
+                           args)))
     (unless remote
       (user-error "Remote is required"))
     (let* ((args (mapcar #'majutsu-git--expand-remote-url-arg args))
@@ -362,7 +359,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (defun majutsu-git-push--repo-args (args)
   "Keep only stable `jj git push' ARGS for repository defaults."
   (seq-filter (lambda (arg)
-                (or (string-prefix-p "--remote=" arg)
+                (or (transient-arg-value "--remote=" (list arg))
                     (member arg '("--all" "--tracked" "--deleted"
                                   "--allow-empty-description" "--allow-private"))))
               args))
@@ -370,7 +367,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (defun majutsu-git-fetch--repo-args (args)
   "Keep only stable `jj git fetch' ARGS for repository defaults."
   (seq-filter (lambda (arg)
-                (or (string-prefix-p "--remote=" arg)
+                (or (transient-arg-value "--remote=" (list arg))
                     (member arg '("--tracked" "--all-remotes"))))
               args))
 
