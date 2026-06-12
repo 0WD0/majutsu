@@ -556,10 +556,10 @@ Runs: =jj restore --from REV [FILESETS...]= or =jj restore --changes-in REV [FIL
 
 ** Reverting
 - Key: V (vanilla) / _ (evil) (majutsu-revert) :: Open the Revert transient to create reverse changes in a new revision.
-- Key: -r :: Source revisions to revert (=--revisions=).
+- Key: -r :: Source revisions to revert (=--revision=).
 - Key: -o :: Apply reverse changes on top of revisions (=--onto=).
 - Key: -A / -B :: Insert reverse changes after or before selected revisions.
-Runs: =jj revert --revisions REV --onto DEST=
+Runs: =jj revert --revision REV --onto DEST=
 
 ** Sparse Working Copy
 - Key: > (majutsu-sparse) :: Open the sparse working copy transient (set, add, remove, list, edit).

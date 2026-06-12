@@ -79,37 +79,37 @@ revision argument is present. Outside the transient, return defaults."
 (transient-define-argument majutsu-metaedit:--author ()
   :description "Author"
   :class 'transient-option
-  :shortarg "-a"
+  :key "-a"
   :argument "--author=")
 
 (transient-define-argument majutsu-metaedit:--author-timestamp ()
   :description "Author timestamp"
   :class 'transient-option
-  :shortarg "-t"
+  :key "-t"
   :argument "--author-timestamp=")
 
 (transient-define-argument majutsu-metaedit:--update-change-id ()
   :description "Update change-id"
   :class 'transient-switch
-  :shortarg "-c"
+  :key "-c"
   :argument "--update-change-id")
 
 (transient-define-argument majutsu-metaedit:--update-author ()
   :description "Update author"
   :class 'transient-switch
-  :shortarg "-u"
+  :key "-u"
   :argument "--update-author")
 
 (transient-define-argument majutsu-metaedit:--update-author-timestamp ()
   :description "Update author timestamp"
   :class 'transient-switch
-  :shortarg "-U"
+  :key "-U"
   :argument "--update-author-timestamp")
 
 (transient-define-argument majutsu-metaedit:--force-rewrite ()
   :description "Force rewrite"
   :class 'transient-switch
-  :shortarg "-f"
+  :key "-f"
   :argument "--force-rewrite")
 
 ;;;###autoload
