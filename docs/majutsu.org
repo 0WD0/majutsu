@@ -351,6 +351,7 @@ The diff buffer is highly interactive:
 - Key: + (majutsu-diff-more-context) :: Increase the context for diff hunks by COUNT lines.
 - Key: 0 (majutsu-diff-default-context) :: Reset the context for diff hunks to the default height.
 - Key: t (majutsu-diff-toggle-refine-hunk) :: Toggle word-level refinement.
+- Key: T (majutsu-diff-toggle-fontify-hunk) :: Toggle syntax highlighting within diff hunks. With a prefix argument, cycle between highlighting the current hunk on selection and highlighting all hunks immediately.
 
 When Evil mode is active, Majutsu follows evil-collection's
 conventions for Magit diff buffers: ~+~ still increases context, ~=~
@@ -813,6 +814,7 @@ Evil bindings are available in normal state:
 
 ** Diff Options
 - User Option: majutsu-diff-refine-hunk :: Whether to show word-granularity differences inside hunks. =nil= disables, =t= refines current hunk, ='all= refines all hunks.
+- User Option: majutsu-diff-fontify-hunk :: Whether to apply syntax highlighting to diff hunks. =nil= disables, =t= fontifies a hunk when it becomes current, and ='all= fontifies all hunks immediately. This is synchronous and can be slow on large diffs.
 - User Option: majutsu-diff-refine-ignore-whitespace :: Whether to ignore whitespace while refining hunks.
 - User Option: majutsu-diff-refine-max-chars :: Skip word refinement when a hunk spans more than this many characters.
 - User Option: majutsu-diff-paint-whitespace :: Whether to highlight whitespace issues inside diff hunks.

@@ -34,6 +34,7 @@
 (require 'smerge-mode)
 
 (declare-function majutsu-find-file "majutsu-file" (revset path))
+(declare-function majutsu-find-file-noselect "majutsu-file" (rev file &optional revert))
 (declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
 (declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
@@ -69,6 +70,23 @@
           (const :tag "Refine currently selected hunk" t)))
 
 (put 'majutsu-diff-refine-hunk 'permanent-local t)
+
+(defcustom majutsu-diff-fontify-hunk nil
+  "Whether to apply syntax highlighting to diff hunks.
+
+`nil'  Never fontify hunks.
+`all'  Fontify all hunks immediately.
+`t'    Fontify each hunk once it becomes the current section and keep the
+       fontification when another section is selected.  This variant exists
+       for performance reasons.
+
+This is experimental and can be slow because fontification is synchronous."
+  :group 'majutsu
+  :type '(choice (const :tag "No syntax highlighting" nil)
+          (const :tag "Immediately highlight all hunks" all)
+          (const :tag "Highlight currently selected hunk" t)))
+
+(put 'majutsu-diff-fontify-hunk 'permanent-local t)
 
 (defcustom majutsu-diff-refine-ignore-whitespace smerge-refine-ignore-whitespace
   "Whether to ignore whitespace while refining hunks."
@@ -689,6 +707,75 @@ Assumes point is at the start of the diff output."
   "Return a formatted heading string for FILE using parsed LINES."
   (format "%-11s %s" (majutsu--diff-file-status lines) file))
 
+;;; Syntax highlighting
+
+(defun majutsu-diff--update-hunk-syntax (&optional section)
+  "Apply syntax highlighting overlays to hunk SECTION.
+When SECTION is nil, walk all hunk sections."
+  (if section
+      (when (and (not (oref section hidden))
+                 (not (oref section fontified))
+                 (not (oref section combined))
+                 (fboundp 'diff-syntax-fontify-props)
+                 (fboundp 'diff-hunk-text)
+                 (not (eq majutsu-diff-backend 'color-words)))
+        (oset section fontified t)
+        (save-excursion
+          (goto-char (oref section content))
+          (let* ((file (magit-section-parent-value section))
+                 (revs (majutsu-diff--revisions))
+                 (old (majutsu-diff--get-hunk-syntax section (car revs) file t))
+                 (new (majutsu-diff--get-hunk-syntax
+                       section
+                       (if (majutsu-diff--visit-workspace-p) nil (cdr revs))
+                       file nil)))
+            (while (< (point) (oref section end))
+              (pcase-dolist (`(,beg ,end ,face)
+                             (pcase (char-after)
+                               (?- (pop old))
+                               (?+ (pop new))
+                               (?\s (pop old)
+                                    (pop new))))
+                (let ((ov (make-overlay (+ (point) 1 beg)
+                                        (+ (point) 1 end)
+                                        nil t)))
+                  (overlay-put ov 'evaporate t)
+                  (overlay-put ov 'face face)
+                  (overlay-put ov 'majutsu-diff-syntax t)))
+              (forward-line 1)))))
+    (cl-labels ((walk (node)
+                  (if (magit-section-match 'jj-hunk node)
+                      (unless (oref node combined)
+                        (majutsu-diff--update-hunk-syntax node))
+                    (dolist (child (oref node children))
+                      (walk child)))))
+      (walk magit-root-section))))
+
+(defun majutsu-diff--get-hunk-syntax (section rev file from)
+  "Return syntax fontification props for SECTION side REV FILE.
+When FROM is non-nil, fontify the old side; otherwise fontify the new side."
+  (with-demoted-errors "Error getting hunk syntax highlighting: %S"
+    (let ((args (majutsu-diff--get-hunk-text section from)))
+      (when (and args (not (listp (car (cadr args)))))
+        (require 'majutsu-file)
+        (with-current-buffer (majutsu-find-file-noselect rev file)
+          (save-excursion
+            (apply #'diff-syntax-fontify-props nil args)))))))
+
+(defun majutsu-diff--get-hunk-text (section from)
+  "Return text and line range for SECTION side.
+When FROM is non-nil, return removed/context text; otherwise return
+added/context text."
+  (let* ((range (if from (oref section from-range) (oref section to-range)))
+         (line (car range))
+         (lines (cadr range)))
+    (when range
+      (list (string-trim-right
+             (diff-hunk-text (buffer-substring-no-properties
+                              (oref section start) (oref section end))
+                             (not from) nil))
+            (list line lines)))))
+
 ;;; Refinement
 
 (defun majutsu-diff--update-hunk-refinement (&optional section allow-remove)
@@ -961,8 +1048,11 @@ side, non-underlined colored = shared context within a change."
   ;; For both backends, delegate to the unified refinement handler.
   ;; Color-words uses `majutsu-diff--color-words-refine-hunk' internally;
   ;; the git backend uses `diff-refine-hunk'.
-  (when (eq majutsu-diff-refine-hunk t)
-    (majutsu-diff--update-hunk-refinement section)))
+  (unless (oref section combined)
+    (when (eq majutsu-diff-fontify-hunk t)
+      (majutsu-diff--update-hunk-syntax section))
+    (when (eq majutsu-diff-refine-hunk t)
+      (majutsu-diff--update-hunk-refinement section))))
 
 (defun majutsu-diff--color-words-paint (section highlight)
   "Apply or remove a focus background overlay for a color-words SECTION.
@@ -1306,10 +1396,21 @@ With prefix STYLE, cycle between `all' and `t'."
                 (not majutsu-diff-refine-hunk)))
   (majutsu-diff--update-hunk-refinement))
 
+(defun majutsu-diff-toggle-fontify-hunk (&optional style)
+  "Toggle syntax highlighting within hunks.
+With prefix STYLE, cycle between `all' and `t'."
+  (interactive "P")
+  (setq-local majutsu-diff-fontify-hunk
+              (if style
+                  (if (eq majutsu-diff-fontify-hunk t) 'all t)
+                (if majutsu-diff-fontify-hunk nil 'all)))
+  (majutsu-diff--update-hunk-syntax))
+
 (defvar-keymap majutsu-diff-mode-map
   :doc "Keymap for `majutsu-diff-mode'."
   :parent majutsu-mode-map
   "t" #'majutsu-diff-toggle-refine-hunk
+  "T" #'majutsu-diff-toggle-fontify-hunk
   "+" #'majutsu-diff-more-context
   "-" #'majutsu-diff-less-context
   "0" #'majutsu-diff-default-context
@@ -1354,6 +1455,8 @@ With prefix STYLE, cycle between `all' and `t'."
         (majutsu-diff--set-left-margin 0))
       (magit-insert-section (diffbuf)
         (magit-run-section-hook 'majutsu-diff-sections-hook))
+      (when (eq majutsu-diff-fontify-hunk 'all)
+        (majutsu-diff--update-hunk-syntax))
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement)))))
 

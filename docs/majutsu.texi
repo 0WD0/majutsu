@@ -886,6 +886,10 @@ Reset the context for diff hunks to the default height.
 @kindex t
 @findex majutsu-diff-toggle-refine-hunk
 Toggle word-level refinement.
+@item @kbd{T} (@code{majutsu-diff-toggle-fontify-hunk})
+@kindex T
+@findex majutsu-diff-toggle-fontify-hunk
+Toggle syntax highlighting within diff hunks. With a prefix argument@comma{} cycle between highlighting the current hunk on selection and highlighting all hunks immediately.
 @end table
 
 When Evil mode is active@comma{} Majutsu follows evil-collection's
@@ -2190,6 +2194,10 @@ Function used by @code{q} to bury/quit Majutsu buffers (default: @samp{majutsu-m
 
 @defopt majutsu-diff-refine-hunk
 Whether to show word-granularity differences inside hunks. @samp{nil} disables@comma{} @samp{t} refines current hunk@comma{} @samp{'all} refines all hunks.
+@end defopt
+
+@defopt majutsu-diff-fontify-hunk
+Whether to apply syntax highlighting to diff hunks. @samp{nil} disables@comma{} @samp{t} fontifies a hunk when it becomes current@comma{} and @samp{'all} fontifies all hunks immediately. This is synchronous and can be slow on large diffs.
 @end defopt
 
 @defopt majutsu-diff-refine-ignore-whitespace
