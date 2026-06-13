@@ -159,7 +159,8 @@ The process section should use root as command directory."
   (let ((default-directory "/repo/sub/")
         seen-process-cwd
         seen-finish-root
-        seen-prefix-pwd)
+        seen-prefix-pwd
+        seen-args)
     (with-temp-buffer
       (let ((process-buf (current-buffer)))
         (setq default-directory "/repo/")
@@ -175,9 +176,11 @@ The process section should use root as command directory."
                      (setq seen-prefix-pwd pwd)
                      (insert "\n")
                      'dummy-section))
-                  ((symbol-function 'process-file)
-                   (lambda (&rest _args)
+                  ((symbol-function 'majutsu--call-process-responsive)
+                   (lambda (_program _process-buf _section root &rest args)
                      (setq seen-process-cwd default-directory)
+                     (setq seen-finish-root root)
+                     (setq seen-args args)
                      0))
                   ((symbol-function 'majutsu-process-finish)
                    (lambda (exit _process-buf _command-buf default-dir _section)
@@ -186,7 +189,8 @@ The process section should use root as command directory."
           (should (= 0 (majutsu-call-jj "status"))))))
     (should (equal seen-prefix-pwd "/repo/"))
     (should (equal seen-process-cwd "/repo/"))
-    (should (equal seen-finish-root "/repo/"))))
+    (should (equal seen-finish-root "/repo/"))
+    (should (equal seen-args '("status")))))
 
 (ert-deftest majutsu-process-test-start-jj-uses-process-environment-helper ()
   "`majutsu-start-jj' should apply helper environment via start-process."
@@ -223,37 +227,65 @@ The process section should use root as command directory."
           (when (buffer-live-p buf)
             (kill-buffer buf)))))))
 
-(ert-deftest majutsu-process-test-call-jj-uses-process-environment-helper ()
-  "`majutsu-call-jj' should bind environment from helper output."
-  (let ((default-directory "/repo/sub/")
+(ert-deftest majutsu-process-test-responsive-call-uses-process-environment-helper ()
+  "`majutsu--call-process-responsive' should bind helper environment."
+  (let ((process-environment (cons "COLUMNS=80" process-environment))
         seen-env-args
-        seen-columns)
+        seen-columns
+        process)
     (with-temp-buffer
       (let ((process-buf (current-buffer)))
-        (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-                   (lambda (&optional _directory) "/repo/"))
-                  ((symbol-function 'majutsu-process-jj-arguments)
-                   (lambda (args) args))
-                  ((symbol-function 'majutsu-process-environment)
+        (cl-letf (((symbol-function 'majutsu-process-environment)
                    (lambda (args)
                      (setq seen-env-args args)
                      (cons "COLUMNS=234" process-environment)))
-                  ((symbol-function 'majutsu-process-buffer)
-                   (lambda (&optional _nodisplay)
-                     process-buf))
-                  ((symbol-function 'majutsu--process-insert-section)
-                   (lambda (_pwd _program _args &optional _err _errlog _face)
-                     (insert "\n")
-                     'dummy-section))
-                  ((symbol-function 'process-file)
-                   (lambda (&rest _args)
+                  ((symbol-function 'start-file-process)
+                   (lambda (name buffer _program &rest _args)
                      (setq seen-columns (getenv "COLUMNS"))
-                     0))
-                  ((symbol-function 'majutsu-process-finish)
-                   (lambda (exit _process-buf _command-buf _default-dir _section)
-                     exit)))
-          (should (= 0 (majutsu-call-jj "diff" "--stat")))))
-      (should (equal seen-env-args '("diff" "--stat")))
-      (should (equal seen-columns "234")))))
+                     (setq process
+                           (make-process :name (format "%s-test" name)
+                                         :buffer buffer
+                                         :command (list "true")))))
+                  ((symbol-function 'majutsu--process-display-buffer)
+                   (lambda (_process) nil)))
+          (unwind-protect
+              (should (= 0 (majutsu--call-process-responsive
+                            "jj" process-buf 'dummy-section "/repo/"
+                            "diff" "--stat")))
+            (when (and process (process-live-p process))
+              (delete-process process))))))
+    (should (equal seen-env-args '("diff" "--stat")))
+    (should (equal seen-columns "234"))))
+
+(ert-deftest majutsu-process-test-responsive-call-suppresses-default-sentinel-output ()
+  "`majutsu--call-process-responsive' should not pollute its output buffer."
+  (with-temp-buffer
+    (let ((process-buf (current-buffer)))
+      (cl-letf (((symbol-function 'majutsu-process-environment)
+                 (lambda (_args) process-environment))
+                ((symbol-function 'majutsu--process-display-buffer)
+                 (lambda (_process) nil)))
+        (should (= 0 (majutsu--call-process-responsive
+                      "true" process-buf 'dummy-section "/repo/")))
+        ;; Give any pending sentinel notification one more chance to run.
+        (accept-process-output nil 0.05)
+        (should-not (string-match-p "Process .*\\(?:finished\\|exited\\)"
+                                    (buffer-string)))))))
+
+(ert-deftest majutsu-process-test-process-wait-accepts-output-for-any-process ()
+  "`majutsu--process-wait' should not wait only on the jj process."
+  (let ((statuses '(run run exit))
+        calls)
+    (cl-letf (((symbol-function 'process-status)
+               (lambda (_process) (pop statuses)))
+              ((symbol-function 'accept-process-output)
+               (lambda (&rest args)
+                 (push args calls)
+                 nil))
+              ((symbol-function 'process-exit-status)
+               (lambda (_process) 0)))
+      (should (= 0 (majutsu--process-wait 'fake-process))))
+    (should (equal (nreverse calls)
+                   '((nil 0.1) (nil 0.1))))))
 
 ;;; majutsu-process-test.el ends here
