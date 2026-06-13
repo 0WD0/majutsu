@@ -427,9 +427,7 @@ repository's log buffer (see `majutsu-refresh')."
     (oset section value process)
     (with-current-buffer process-buf
       (set-marker (process-mark process) (point)))
-    (if (fboundp 'with-editor-set-process-filter)
-        (with-editor-set-process-filter process #'majutsu--process-filter)
-      (set-process-filter process #'majutsu--process-filter))
+    (majutsu--process-install-filter process)
     (set-process-sentinel process #'majutsu--process-sentinel)
     (when input
       (with-current-buffer input
@@ -525,6 +523,12 @@ Return non-nil when LINE is consumed as a control packet."
                                           proc string))
       (set-marker (process-mark proc) (point)))))
 
+(defun majutsu--process-install-filter (process)
+  "Install Majutsu's process filter on PROCESS."
+  (if (fboundp 'with-editor-set-process-filter)
+      (with-editor-set-process-filter process #'majutsu--process-filter)
+    (set-process-filter process #'majutsu--process-filter)))
+
 (defun majutsu--process-sentinel (process _event)
   "Default sentinel used by `majutsu-start-process'."
   (when (memq (process-status process) '(exit signal))
@@ -589,6 +593,51 @@ process terminates."
       (process-put process 'finish-callback finish-callback))
     process))
 
+(defun majutsu--process-wait (process)
+  "Wait for PROCESS to finish while continuing to service Emacs subprocesses.
+
+This is used for commands that are synchronous from Majutsu's point of
+view, but may need another Emacs subprocess to run concurrently.  In
+particular, GnuPG setups using an Emacs-based pinentry need Emacs to keep
+servicing the server/pinentry process while jj is waiting for GPG."
+  (while (eq (process-status process) 'run)
+    ;; Wait for any process, not just PROCESS.  Pinentry-emacs talks to
+    ;; Emacs through another process; waiting only for jj would reproduce
+    ;; the same apparent freeze/deadlock as `process-file'.
+    (accept-process-output nil 0.1))
+  (process-exit-status process))
+
+(defun majutsu--call-process-responsive (program process-buf section root &rest args)
+  "Run PROGRAM with ARGS synchronously without blocking Emacs subprocesses.
+
+Output is appended to PROCESS-BUF at SECTION, using the same filter as
+`majutsu-start-process'.  Return the process exit status."
+  (let* ((process-environment (majutsu-process-environment args))
+         (default-process-coding-system '(utf-8-unix . utf-8-unix))
+         (process (apply #'start-file-process (file-name-nondirectory program)
+                         process-buf program args))
+         exit)
+    (set-process-query-on-exit-flag process nil)
+    (process-put process 'section section)
+    (process-put process 'command-buf (current-buffer))
+    (process-put process 'default-dir root)
+    (ignore-errors
+      (oset section process process)
+      (oset section value process))
+    (with-current-buffer process-buf
+      (set-marker (process-mark process) (point)))
+    ;; `majutsu-call-jj' handles finalization explicitly after this helper
+    ;; returns.  Suppress Emacs' default sentinel, which would otherwise append
+    ;; "Process ... finished" status text to the Majutsu process buffer.
+    (set-process-sentinel process #'ignore)
+    (majutsu--process-install-filter process)
+    (majutsu--process-display-buffer process)
+    (unwind-protect
+        (setq exit (majutsu--process-wait process))
+      (when (and (not exit) (process-live-p process))
+        (delete-process process)))
+    exit))
+
 (defun majutsu-call-jj (&rest args)
   "Call jj synchronously in a separate process, for side-effects.
 
@@ -596,7 +645,11 @@ Process output goes into a new section in the buffer returned by
 `majutsu-process-buffer'.  Return the exit code.
 
 Unlike `majutsu-start-jj', this does not implicitly refresh any Majutsu
-buffers.  Call `majutsu-refresh' explicitly when desired."
+buffers.  Call `majutsu-refresh' explicitly when desired.
+
+This function waits using `accept-process-output' rather than
+`process-file', so Emacs can continue to service subprocesses such as an
+Emacs-based GPG pinentry while jj is running."
   (let* ((default-directory (majutsu--toplevel-safe default-directory))
          (jj (majutsu-jj--executable))
          (args (majutsu-process-jj-arguments args))
@@ -609,7 +662,8 @@ buffers.  Call `majutsu-refresh' explicitly when desired."
                     (prog1 (majutsu--process-insert-section pwd jj args nil nil)
                       (backward-char 1))))
                  (inhibit-read-only t)
-                 (exit (apply #'majutsu-process-file jj nil process-buf nil args)))
+                 (exit (apply #'majutsu--call-process-responsive
+                              jj process-buf section process-root args)))
       (setq exit (majutsu-process-finish exit process-buf (current-buffer) process-root section))
       exit)))
 

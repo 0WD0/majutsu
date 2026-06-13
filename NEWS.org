@@ -123,6 +123,8 @@
 
 ** Fixed
 
+- Process: Synchronous jj commands now wait responsively so Emacs-based
+  GPG/pinentry prompts can be serviced instead of appearing to freeze Emacs.
 - Transients: Use a consistent ~RET~ execute binding in ~majutsu-squash~ and
   ~majutsu-split~ while keeping ~s~.
 - Ediff: Quitting ~majutsu-ediff-resolve~ without edits no longer writes a
