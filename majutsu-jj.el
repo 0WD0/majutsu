@@ -369,13 +369,14 @@ refs (`<workspace>@'), bookmarks, and tags."
    (majutsu-jj-revset-candidate-data)
    'majutsu-revision))
 
-(defun majutsu-read-single-revset (prompt &optional default completion-args history)
+(defun majutsu-read-single-revset (prompt &optional default completion-args history initial-input)
   "Prompt user with PROMPT to read a single revision selector.
 
 Unlike `majutsu-read-revset', this reader is intended for arguments such as
 `--from' and `--to' which accept one revision selector rather than a full
 revset expression.  When COMPLETION-ARGS is non-nil, use jj's native completer
-in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
+in that command context.  HISTORY defaults to `majutsu-read-revset-history'.
+INITIAL-INPUT, when non-nil, is inserted into the minibuffer."
   (let* ((default (or default
                       (majutsu-thing-at-point 'jj-revision t)
                       (majutsu-revision-at-point)
@@ -387,12 +388,34 @@ in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
                    (majutsu-jj-revset-candidate-data)
                    'majutsu-revision))))
     (let ((value (completing-read (format-prompt prompt default)
-                                  table nil nil nil
+                                  table nil nil initial-input
                                   (or history 'majutsu-read-revset-history)
                                   default)))
       (if (string-empty-p value)
           (user-error "Need non-empty input")
         value))))
+
+(defun majutsu-read-optional-single-revset (prompt &optional default initial-input history completion-args)
+  "Prompt user with PROMPT to read an optional single revision selector.
+
+Completion candidates include workspaces, bookmarks, and tags.  Empty
+input returns nil instead of signaling an error.  DEFAULT is shown in
+`format-prompt' when non-nil, and INITIAL-INPUT is inserted into the
+minibuffer when non-nil.  HISTORY defaults to
+`majutsu-read-revset-history'.  When COMPLETION-ARGS is non-nil, use
+jj's native completer in that command context."
+  (let* ((table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision)
+                  (majutsu-completion-payload-table
+                   (majutsu-jj-revset-candidate-data)
+                   'majutsu-revision)))
+         (value (completing-read (format-prompt prompt default)
+                                 table nil nil initial-input
+                                 (or history 'majutsu-read-revset-history)
+                                 default)))
+    (unless (string-empty-p value)
+      value)))
 
 (defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.

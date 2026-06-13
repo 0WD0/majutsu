@@ -34,6 +34,7 @@
 (require 'smerge-mode)
 
 (declare-function majutsu-read-revset "majutsu-jj" (prompt &optional default completion-args))
+(declare-function majutsu-read-single-revset "majutsu-jj" (prompt &optional default completion-args history initial-input))
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-find-file-noselect "majutsu-file" (rev file &optional revert))
 (declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
@@ -1582,7 +1583,7 @@ REVSET is passed to jj diff using `--revisions='."
   :shortarg "-r"
   :argument "--revisions="
   :multi-value 'repeat
-  :prompt "Revisions: "
+  :prompt "Revisions"
   :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-diff:revisions ()

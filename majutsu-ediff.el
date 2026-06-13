@@ -717,10 +717,6 @@ Called by `jj resolve` merge editor command via emacsclient."
   (when (derived-mode-p 'majutsu-diff-mode)
     majutsu-buffer-diff-range))
 
-(defun majutsu-ediff--transient-read-revset (prompt _initial-input _history)
-  "Read a revset for ediff transient with PROMPT."
-  (majutsu-read-revset prompt))
-
 ;;;###autoload(autoload 'majutsu-ediff "majutsu-ediff" nil t)
 (transient-define-prefix majutsu-ediff ()
   "Show differences using Ediff."
@@ -760,7 +756,8 @@ Called by `jj resolve` merge editor command via emacsclient."
   :shortarg "-r"
   :argument "--revisions="
   :multi-value 'repeat
-  :prompt "Revisions: ")
+  :prompt "Revisions"
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-ediff:revisions ()
   :description "Revisions (toggle at point)"
@@ -777,7 +774,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :shortarg "-f"
   :argument "--from="
-  :reader #'majutsu-ediff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-ediff:--to ()
   :description "To"
@@ -787,7 +784,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :shortarg "-t"
   :argument "--to="
-  :reader #'majutsu-ediff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-ediff:from ()
   :description "From (toggle at point)"

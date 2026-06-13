@@ -16,6 +16,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'crm)
 (require 'magit-section)
 (require 'subr-x)
 (require 'transient)
@@ -331,6 +332,19 @@ ID must be a single selection category."
   ((format :initform " %k %d"))
   "Option class for toggling selection at point.")
 
+(cl-defmethod transient-init-value :after ((obj majutsu-selection-option))
+  (when (and (eq (oref obj multi-value) 'repeat)
+             (slot-boundp obj 'argument)
+             (slot-boundp obj 'value)
+             (listp (oref obj value)))
+    (let ((argument (oref obj argument)))
+      (oset obj value
+            (mapcar (lambda (value)
+                      (or (and (stringp value)
+                               (transient-arg-value argument (list value)))
+                          value))
+                    (oref obj value))))))
+
 (cl-defmethod transient-infix-set ((obj majutsu-selection-option) value)
   (cl-call-next-method)
   (when (and (not majutsu-selection--infix-syncing)
@@ -347,12 +361,17 @@ ID must be a single selection category."
           (transient-infix-set other value)))))
   (majutsu-selection-render))
 
-;; TODO: 应该有更加准确的处理方式
 (cl-defmethod transient-infix-read :around ((obj majutsu-selection-option))
   (let ((value (cl-call-next-method)))
-    (if (majutsu-selection--selection-multi-p obj)
-        (ensure-list value)
-      value)))
+    (if (not (majutsu-selection--selection-multi-p obj))
+        value
+      (cond
+       ((null value) nil)
+       ((listp value) value)
+       ((and (eq (oref obj multi-value) 'repeat)
+             (stringp value))
+        (split-string value crm-separator t))
+       (t (list value))))))
 
 (cl-defmethod transient-infix-read ((obj majutsu-selection-toggle-option))
   (with-current-buffer (or (and (boundp 'transient--original-buffer)

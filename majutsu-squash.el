@@ -19,8 +19,7 @@
 
 (require 'majutsu)
 
-(declare-function majutsu-read-revset "majutsu-jj" (prompt &optional default completion-args))
-(declare-function majutsu-transient-default-revset "majutsu-core" ())
+(declare-function majutsu-read-optional-revset "majutsu-jj" (prompt &optional default initial-input history completion-args))
 (defvar majutsu-buffer-diff-range)
 
 (defclass majutsu-squash-option (majutsu-selection-option)
@@ -214,13 +213,11 @@ return the same context defaults that execution would use."
 
 ;;;; Readers
 
-(defun majutsu-squash--read-source-revset (prompt initial-input _history)
+(defun majutsu-squash--read-source-revset (prompt initial-input history)
   "Read a source revset expression for squash."
   (unless current-prefix-arg
-    (majutsu-read-revset
-     prompt
-     (or initial-input (majutsu-transient-default-revset))
-     '("squash" "--from"))))
+    (majutsu-read-optional-revset
+     prompt nil initial-input history '("squash" "--from"))))
 
 ;;;; Infix Commands
 
