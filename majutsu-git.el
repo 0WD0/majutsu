@@ -19,6 +19,7 @@
 (require 'majutsu)
 (require 'majutsu-remote)
 
+(require 'crm)
 (require 'seq)
 (require 'subr-x)
 
@@ -243,13 +244,16 @@ Prompts for SOURCE and optional DEST; uses ARGS."
       (kill-new dir)
       (message "Git root: %s (copied)" dir))))
 
-(defun majutsu-git-push--read-revset (prompt initial-input _history)
+(defun majutsu-git-push--read-revset (prompt initial-input history)
   "Read revset for `jj git push --revision='."
-  (majutsu-read-revset prompt initial-input '("git" "push" "-r")))
+  (when-let* ((value (majutsu-read-optional-revset
+                      prompt nil initial-input history '("git" "push" "-r"))))
+    (split-string value crm-separator t)))
 
-(defun majutsu-git-push--read-change (prompt initial-input _history)
+(defun majutsu-git-push--read-change (prompt initial-input history)
   "Read change id for `jj git push --change='."
-  (majutsu-read-single-revset prompt initial-input '("git" "push" "-c")))
+  (majutsu-read-optional-single-revset
+   prompt nil initial-input history '("git" "push" "-c")))
 
 (transient-define-argument majutsu-git-push:--revision ()
   :description "Revisions"
