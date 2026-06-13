@@ -104,36 +104,10 @@
 
 (ert-deftest majutsu--jj-insert/returns-exit-code-on-success ()
   "majutsu--jj-insert should return 0 on success when return-error is nil."
-  (cl-letf (((symbol-function 'process-file)
-             (lambda (_program _infile _destination _display &rest _args) 0)))
+  (cl-letf (((symbol-function 'majutsu--process-file-responsive)
+             (lambda (_program _infile _destination &rest _args) 0)))
     (with-temp-buffer
       (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0)))))
-
-(ert-deftest majutsu--jj-insert/forces-wide-columns-for-diffstat ()
-  "Diffstat commands should run with widened `COLUMNS'."
-  (let ((majutsu-jj-diffstat-columns 80)
-        seen-columns)
-    (cl-letf (((symbol-function 'process-file)
-               (lambda (_program _infile _destination _display &rest _args)
-                 (setq seen-columns (getenv "COLUMNS"))
-                 0)))
-      (with-temp-buffer
-        (let ((process-environment (cons "COLUMNS=10" process-environment)))
-          (should (equal (majutsu--jj-insert nil "diff" "--stat") 0))
-          (should (equal seen-columns "80")))))))
-
-(ert-deftest majutsu--jj-insert/keeps-columns-for-non-diffstat ()
-  "Non-diffstat commands should keep inherited `COLUMNS'."
-  (let ((majutsu-jj-diffstat-columns 80)
-        seen-columns)
-    (cl-letf (((symbol-function 'process-file)
-               (lambda (_program _infile _destination _display &rest _args)
-                 (setq seen-columns (getenv "COLUMNS"))
-                 0)))
-      (with-temp-buffer
-        (let ((process-environment (cons "COLUMNS=10" process-environment)))
-          (should (equal (majutsu--jj-insert nil "log" "-r" "@") 0))
-          (should (equal seen-columns "10")))))))
 
 (ert-deftest majutsu-process-environment/overrides-columns-for-diffstat ()
   "Environment helper should replace inherited COLUMNS for diffstat commands."
@@ -159,8 +133,8 @@
   "`majutsu-jj-wash' should run diffstat with widened `COLUMNS'."
   (let ((majutsu-jj-diffstat-columns 80)
         seen-columns)
-    (cl-letf (((symbol-function 'process-file)
-               (lambda (_program _infile _destination _display &rest _args)
+    (cl-letf (((symbol-function 'majutsu--process-file-responsive)
+               (lambda (_program _infile _destination &rest _args)
                  (setq seen-columns (getenv "COLUMNS"))
                  (insert "x\n")
                  0)))
@@ -175,20 +149,19 @@
 
 (ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
   "majutsu--jj-insert should return error message when return-error is t and command fails."
-  (cl-letf (((symbol-function 'process-file)
-             (lambda (_program _infile _destination _display &rest _args)
-               ;; Simulate error by writing to stderr file
-               1))
-            ((symbol-function 'make-nearby-temp-file)
-             (lambda (_prefix) "/tmp/test-err"))
-            ((symbol-function 'insert-file-contents)
-             (lambda (file) (insert "Error: something went wrong")))
-            ((symbol-function 'delete-file)
-             (lambda (_file) nil)))
-    (with-temp-buffer
-      (let ((result (majutsu--jj-insert t "log" "-r" "invalid")))
-        (should (stringp result))
-        (should (string-match-p "something went wrong" result))))))
+  (let ((err-file (make-temp-file "majutsu-jj-err")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'majutsu-process-file)
+                   (lambda (_program _infile destination &rest _args)
+                     (write-region "Error: something went wrong" nil
+                                   (if (consp destination) (cadr destination) destination)
+                                   nil 'silent)
+                     1)))
+          (with-temp-buffer
+            (let ((result (majutsu--jj-insert t "log" "-r" "invalid")))
+              (should (stringp result))
+              (should (string-match-p "something went wrong" result)))))
+      (ignore-errors (delete-file err-file)))))
 
 (ert-deftest majutsu-jj--executable/picks-remote-value ()
   "Executable selection should use remote override on TRAMP paths."
@@ -244,10 +217,15 @@
                  (when (and (equal path default-directory)
                             (null identification))
                    "/ssh:demo:")))
-              ((symbol-function 'process-file)
-               (lambda (_program _infile _destination _display &rest _args)
+              ((symbol-function 'majutsu--process-file-responsive)
+               (lambda (_program _infile destination &rest _args)
+                 (should (eq destination t))
+                 (should (equal default-directory "/ssh:demo:/tmp/"))
                  (insert "/home/demo/repo\n")
-                 0)))
+                 0))
+              ((symbol-function 'process-file)
+               (lambda (&rest _args)
+                 (ert-fail "Remote toplevel should use responsive process runner"))))
       (should (equal (majutsu-toplevel)
                      "/ssh:demo:/home/demo/repo/")))))
 

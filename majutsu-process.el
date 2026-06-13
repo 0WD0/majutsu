@@ -567,13 +567,111 @@ place similarly to Magit's `magit-process-environment'."
                           env))
       env)))
 
+(defun majutsu--process-destination-buffer (destination)
+  "Return the output buffer represented by process DESTINATION."
+  (cond
+   ((eq destination t) (current-buffer))
+   ((bufferp destination) destination)
+   ((stringp destination) (get-buffer-create destination))
+   ((null destination) nil)))
+
+(defun majutsu--process-file-supported-p (infile destination)
+  "Return non-nil when the responsive runner supports INFILE and DESTINATION."
+  (and (or (null infile) (stringp infile))
+       (if (consp destination)
+           (and (memq (length destination) '(1 2))
+                (or (null (car destination))
+                    (eq (car destination) t)
+                    (bufferp (car destination))
+                    (stringp (car destination)))
+                (or (null (cadr destination))
+                    (eq (cadr destination) t)
+                    (stringp (cadr destination))))
+         (or (null destination)
+             (eq destination t)
+             (bufferp destination)
+             (stringp destination)))))
+
+(defun majutsu--process-file-insert-filter (marker)
+  "Return a process filter that inserts output at MARKER."
+  (lambda (_process string)
+    (when-let* ((buffer (marker-buffer marker)))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (goto-char marker)
+          (insert string)
+          (set-marker marker (point)))))))
+
+(defun majutsu--process-file-send-input (process infile)
+  "Send INFILE to PROCESS and close its input stream."
+  (cond
+   ((null infile)
+    (ignore-errors (process-send-eof process)))
+   ((stringp infile)
+    (with-temp-buffer
+      (insert-file-contents infile)
+      (when (process-live-p process)
+        (process-send-region process (point-min) (point-max))
+        (process-send-eof process))))
+   (t (error "Unsupported process input file: %S" infile))))
+
+(defun majutsu--process-file-responsive (program infile destination &rest args)
+  "Run PROGRAM with ARGS synchronously while servicing Emacs subprocesses."
+  (let* ((destinations (if (consp destination)
+                           (list (car destination) (cadr destination))
+                         (list destination t)))
+         (stdout-destination (car destinations))
+         (stderr-destination (cadr destinations))
+         (stdout-buffer (majutsu--process-destination-buffer stdout-destination))
+         (stdout-marker (and stdout-buffer
+                             (copy-marker (with-current-buffer stdout-buffer
+                                            (point))
+                                          t)))
+         (stderr-buffer (and (not (eq stderr-destination t))
+                             (generate-new-buffer " *majutsu-stderr*")))
+         (process (make-process
+                   :name (file-name-nondirectory program)
+                   :buffer stdout-buffer
+                   :command (cons program args)
+                   :connection-type 'pipe
+                   :coding default-process-coding-system
+                   :noquery t
+                   :filter (and stdout-marker
+                                (majutsu--process-file-insert-filter stdout-marker))
+                   :sentinel #'ignore
+                   :stderr stderr-buffer
+                   :file-handler t))
+         exit)
+    (unwind-protect
+        (progn
+          (majutsu--process-file-send-input process infile)
+          (setq exit (majutsu--process-wait process))
+          (when (and (stringp stderr-destination) stderr-buffer)
+            (with-current-buffer stderr-buffer
+              (write-region (point-min) (point-max) stderr-destination nil 'silent)))
+          exit)
+      (when (process-live-p process)
+        (delete-process process))
+      (when stdout-marker
+        (set-marker stdout-marker nil))
+      (when (buffer-live-p stderr-buffer)
+        (kill-buffer stderr-buffer)))))
+
 (defun majutsu-process-file (program &optional infile destination display &rest args)
   "Run PROGRAM synchronously like `process-file' with Majutsu process defaults.
 
-This centralizes subprocess environment and coding behavior for jj invocations."
+This centralizes subprocess environment and coding behavior for jj invocations.
+Unlike `process-file', this implementation waits via
+`accept-process-output', so Emacs can service subprocesses such as an
+Emacs-based GPG pinentry while jj is running."
   (let ((process-environment (majutsu-process-environment args))
         (default-process-coding-system '(utf-8-unix . utf-8-unix)))
-    (apply #'process-file program infile destination display args)))
+    (if (or display
+            (eq destination 0)
+            (not (majutsu--process-file-supported-p infile destination)))
+        (apply #'process-file program infile destination display args)
+      (apply #'majutsu--process-file-responsive
+             program infile destination args))))
 
 (defun majutsu-start-jj (args &optional success-msg finish-callback)
   "Run jj ARGS asynchronously for side-effects and log output.
@@ -599,13 +697,19 @@ process terminates."
 This is used for commands that are synchronous from Majutsu's point of
 view, but may need another Emacs subprocess to run concurrently.  In
 particular, GnuPG setups using an Emacs-based pinentry need Emacs to keep
-servicing the server/pinentry process while jj is waiting for GPG."
-  (while (eq (process-status process) 'run)
-    ;; Wait for any process, not just PROCESS.  Pinentry-emacs talks to
-    ;; Emacs through another process; waiting only for jj would reproduce
-    ;; the same apparent freeze/deadlock as `process-file'.
-    (accept-process-output nil 0.1))
-  (process-exit-status process))
+servicing the server/pinentry process while jj is waiting for GPG.
+
+If the user interrupts the wait with `C-g', return 255 so callers can
+finalize the process section as a failed command."
+  (condition-case nil
+      (progn
+        (while (eq (process-status process) 'run)
+          ;; Wait for any process, not just PROCESS.  Pinentry-emacs talks to
+          ;; Emacs through another process; waiting only for jj would reproduce
+          ;; the same apparent freeze/deadlock as `process-file'.
+          (accept-process-output nil 0.1))
+        (process-exit-status process))
+    (quit 255)))
 
 (defun majutsu--call-process-responsive (program process-buf section root &rest args)
   "Run PROGRAM with ARGS synchronously without blocking Emacs subprocesses.
@@ -634,7 +738,7 @@ Output is appended to PROCESS-BUF at SECTION, using the same filter as
     (majutsu--process-display-buffer process)
     (unwind-protect
         (setq exit (majutsu--process-wait process))
-      (when (and (not exit) (process-live-p process))
+      (when (process-live-p process)
         (delete-process process)))
     exit))
 
