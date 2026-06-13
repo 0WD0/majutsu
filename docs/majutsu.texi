@@ -2234,6 +2234,14 @@ Normal hook run after refreshing.
 Major mode used for editing JJ description buffers (default: @code{text-mode}).
 @end defopt
 
+@defopt majutsu-jjdescription-summary-max-length
+Column beyond which summary line characters are highlighted (default: 68@comma{} same as Magit).
+@end defopt
+
+@defopt majutsu-jjdescription-fill-column
+Local @code{fill-column} used in JJ description buffers (default mirrors @code{git-commit-fill-column}@comma{} or 72).
+@end defopt
+
 @defopt majutsu-jjdescription-comment-prefix
 Comment prefix used in JJ description buffers (default: @samp{"JJ:"}).
 @end defopt
