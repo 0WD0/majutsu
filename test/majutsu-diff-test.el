@@ -184,6 +184,10 @@
     (should (equal (majutsu-transient-revset-completion-args)
                    '("diff" "--from"))))
   (majutsu-diff-test--with-transient-context
+      'majutsu-ediff 'majutsu-ediff:--from
+    (should (equal (majutsu-transient-revset-completion-args)
+                   '("diff" "--from"))))
+  (majutsu-diff-test--with-transient-context
       'majutsu-rebase 'majutsu-rebase:--after
     (should (equal (majutsu-transient-revset-completion-args)
                    '("rebase" "--insert-after"))))
@@ -194,20 +198,20 @@
 
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
   "Transient single-revision readers should pass native jj completion context."
-  (let (current-prefix-arg seen-default seen-completion-args)
+  (let (current-prefix-arg seen-default seen-completion-args seen-initial-input)
     (majutsu-diff-test--with-transient-context
         'majutsu-restore 'majutsu-restore:--changes-in
-      (cl-letf (((symbol-function 'majutsu-transient-default-revset)
-                 (lambda () "@"))
-                ((symbol-function 'majutsu-read-single-revset)
-                 (lambda (_prompt default completion-args &optional _history)
+      (cl-letf (((symbol-function 'majutsu-read-optional-single-revset)
+                 (lambda (_prompt default initial-input _history completion-args)
                    (setq seen-default default
-                         seen-completion-args completion-args)
+                         seen-completion-args completion-args
+                         seen-initial-input initial-input)
                    "main")))
-        (should (equal (majutsu-transient-read-revset "Changes in: " nil nil)
+        (should (equal (majutsu-transient-read-revset "Changes in: " "old" nil)
                        "main"))
-        (should (equal seen-default "@"))
-        (should (equal seen-completion-args '("restore" "--changes-in")))))))
+        (should (null seen-default))
+        (should (equal seen-completion-args '("restore" "--changes-in")))
+        (should (equal seen-initial-input "old"))))))
 
 (ert-deftest majutsu-diff-transient-read-revset/uses-expression-reader-for-revsets ()
   "Revset expression infixes should keep using the expression reader."
@@ -222,18 +226,26 @@
                 (current-prefix-arg nil)
                 (seen nil))
       (majutsu-diff-test--with-transient-context prefix suffix
-        (cl-letf (((symbol-function 'majutsu-transient-default-revset)
-                   (lambda () "@"))
-                  ((symbol-function 'majutsu-read-revset)
-                   (lambda (_prompt default completion-args)
-                     (setq seen (list default completion-args))
+        (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+                   (lambda (_prompt default initial-input _history completion-args)
+                     (setq seen (list default initial-input completion-args))
                      "main | dev"))
                   ((symbol-function 'majutsu-read-single-revset)
                    (lambda (&rest _args)
                      (ert-fail "Should not use single reader for revset expressions"))))
-          (should (equal (majutsu-transient-read-revset "Revset: " nil nil)
+          (should (equal (majutsu-transient-read-revset "Revset: " "old" nil)
                          "main | dev"))
-          (should (equal seen (list "@" expected-completion-args))))))))
+          (should (equal seen (list nil "old" expected-completion-args))))))))
+
+(ert-deftest majutsu-diff-transient-read-revset/empty-input-clears ()
+  "Empty transient revset input should not fall back to context revision."
+  (let (current-prefix-arg)
+    (majutsu-diff-test--with-transient-context
+        'majutsu-diff 'majutsu-diff:-r
+      (cl-letf (((symbol-function 'majutsu-read-optional-revset) #'ignore)
+                ((symbol-function 'majutsu-transient-default-revset)
+                 (lambda () (ert-fail "Should not read context default"))))
+        (should-not (majutsu-transient-read-revset "Revset: " nil nil))))))
 
 (ert-deftest majutsu-diff-repo-default-action/is-available ()
   "The diff transient should expose generic repository-local defaults."
@@ -244,11 +256,40 @@
 
 (ert-deftest majutsu-diff--r-argument/uses-native-revset-reader ()
   "The `-r' diff infix should use the native revset reader."
+  (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))
+    (dolist (prefix '(majutsu-diff majutsu-ediff))
+      (let ((obj (seq-find (lambda (suffix)
+                             (equal (oref suffix key) "-r"))
+                           (transient-suffixes prefix))))
+        (should obj)
+        (should (eq (oref obj reader) #'majutsu-transient-read-revset))))))
+
+(ert-deftest majutsu-diff-prefix-init/does-not-double-revisions-prefix ()
+  "Initializing diff from buffer range should keep one --revisions= prefix."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args '("--git" "--stat"))
+    (setq-local majutsu-buffer-diff-range '("--revisions=abc123"))
+    (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))
+      (let* ((transient--prefix (transient--init-prefix 'majutsu-diff))
+             (transient--suffixes (transient--flatten-suffixes
+                                   (transient--init-suffixes 'majutsu-diff))))
+        (let ((value (transient-get-value)))
+          (should (member "--revisions=abc123" value))
+          (should-not (member "--revisions=--revisions=abc123" value)))))))
+
+(ert-deftest majutsu-diff-repeat-revset-reader/splits-comma-values ()
+  "Custom repeat revset readers should preserve CRM comma splitting."
   (let ((obj (seq-find (lambda (suffix)
                          (equal (oref suffix key) "-r"))
                        (transient-suffixes 'majutsu-diff))))
-    (should obj)
-    (should (eq (oref obj reader) #'majutsu-transient-read-revset))))
+    (should (equal (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+                              (lambda (&rest _args) "a, b"))
+                             ((symbol-function 'transient--show) #'ignore))
+                     (majutsu-diff-test--with-transient-context
+                         'majutsu-diff 'majutsu-diff:-r
+                       (transient-infix-read obj)))
+                   '("a" "b")))))
 
 (ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
   "`majutsu-diff-revset' should use default formatting args when ARGS is nil."

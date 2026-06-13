@@ -345,14 +345,13 @@ from `transient-files' groups, without the -- separator."
   (member (majutsu-transient-jj-option-arg)
           '("-r" "--revisions" "--revision" "--source" "--branch")))
 
-(defun majutsu-transient-read-revset (prompt initial-input _history)
+(defun majutsu-transient-read-revset (prompt initial-input history)
   "Read a revset value for transient infix options."
   (unless current-prefix-arg
-    (let ((default (or initial-input (majutsu-transient-default-revset)))
-          (completion-args (majutsu-transient-revset-completion-args)))
+    (let ((completion-args (majutsu-transient-revset-completion-args)))
       (if (majutsu-transient-expression-revset-p)
-          (majutsu-read-revset prompt default completion-args)
-        (majutsu-read-single-revset prompt default completion-args)))))
+          (majutsu-read-optional-revset prompt nil initial-input history completion-args)
+        (majutsu-read-optional-single-revset prompt nil initial-input history completion-args)))))
 
 (transient-define-argument majutsu-transient-arg-ignore-immutable ()
   :description "Ignore immutable"

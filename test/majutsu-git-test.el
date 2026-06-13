@@ -131,6 +131,19 @@
                     "git@example.invalid:repo.git")
                    "git@example.invalid:repo.git"))))
 
+(ert-deftest majutsu-git-push-read-revset/splits-comma-values ()
+  "Git push repeat revset reader should preserve CRM comma splitting."
+  (should (equal (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+                            (lambda (&rest _args) "a, b")))
+                   (majutsu-git-push--read-revset "Revisions: " nil nil))
+                 '("a" "b"))))
+
+(ert-deftest majutsu-git-push-read-revset/empty-input-clears ()
+  "Git push repeat revset reader should keep empty input unset."
+  (should-not (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+                         #'ignore))
+                (majutsu-git-push--read-revset "Revisions: " nil nil))))
+
 (ert-deftest majutsu-git-push-repo-args/keeps-stable-sync-policy ()
   "Push repo defaults should omit target-specific arguments."
   (should (equal (majutsu-git-push--repo-args
