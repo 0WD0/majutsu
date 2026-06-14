@@ -1432,6 +1432,7 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-b)]
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
+    ("RET" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
     ("g" "Refresh" majutsu-refresh :transient t)
     ("q" "Quit" transient-quit-one)]]

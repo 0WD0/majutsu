@@ -183,6 +183,7 @@ ARGS are passed from the transient."
     ("-kd" "Keep divergent" "--keep-divergent")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
+    ("r" "Execute rebase" majutsu-rebase-execute)
     ("RET" "Execute rebase" majutsu-rebase-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)

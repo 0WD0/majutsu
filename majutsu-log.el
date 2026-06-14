@@ -2067,6 +2067,7 @@ offer to create one using `jj git init`."
     (majutsu-log:--)]
    ["Actions"
     ("g" "buffer" majutsu-log-transient)
+    ("RET" "buffer" majutsu-log-transient)
     ("s" "buffer and set defaults" transient-set-and-exit)
     ("w" "buffer and save defaults" transient-save-and-exit)
     ("0" "Reset options" majutsu-log-transient-reset :transient t)
