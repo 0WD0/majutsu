@@ -9,6 +9,9 @@
   The =-r/--revision= shortcut was removed.  Use =-f/--from= instead.
   Diff =--revisions= selections are carried into squash as =--from= sources.
 
+- Bookmark and tag templates must use =primary()= for primary refs ::
+  =RefListItem= no longer forwards primary-ref fields directly.
+
 ** Added
 
 - Bug references in logs and description buffers ::

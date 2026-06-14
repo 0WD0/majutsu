@@ -527,10 +527,12 @@ refs (`<workspace>@'), bookmarks, and tags."
                      "workspace" "list" "-T" "name ++ \"\\n\""))
         (add (concat name "@")))
       (dolist (name (majutsu-jj--safe-lines
-                     "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
+                     "bookmark" "list" "--quiet" "-T"
+                     "self.primary().name() ++ \"\\n\""))
         (add name))
       (dolist (name (majutsu-jj--safe-lines
-                     "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
+                     "tag" "list" "--quiet" "-T"
+                     "self.primary().name() ++ \"\\n\""))
         (add name)))
     (list :category 'majutsu-revision
           :candidates (nreverse candidates)

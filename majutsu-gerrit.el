@@ -480,7 +480,7 @@ Label completion is borrowed from egerrit only."
 ;;; Native Majutsu readers
 
 (defconst majutsu-gerrit--remote-branch-template
-  "if(remote, name ++ \"\t\" ++ remote ++ \"\n\", \"\")"
+  "concat(if(self.primary().remote(), self.primary().name() ++ \"\t\" ++ self.primary().remote() ++ \"\n\", \"\"), self.tracked_refs().map(|ref| if(ref.remote(), ref.name() ++ \"\t\" ++ ref.remote() ++ \"\n\", \"\")).join(\"\"))"
   "Template used to enumerate Gerrit remote branch candidates.")
 
 (defun majutsu-gerrit--remote-branch-entry (name remotes)

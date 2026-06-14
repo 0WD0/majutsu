@@ -294,6 +294,26 @@ bookmark(s) at point."
                  "(deleted)"]]]
   "Template used for bookmark-list headings.")
 
+(majutsu-bookmark-define-template group-heading
+  [:if [:primary :remote]
+      [:if [:primary :tracked]
+          ["  " [:separate " "
+                           [:primary :majutsu-bookmark-list-name]
+                           [:if [:primary :tracking_present]
+                               [:primary :majutsu-bookmark-list-tracking]]
+                           [:if [:primary :present]
+                               [:primary :majutsu-bookmark-list-target-summary]
+                             "(not created yet)"]]]
+        [:separate " "
+                   [:primary :majutsu-bookmark-list-name]
+                   [:primary :majutsu-bookmark-list-target-summary]]]
+    [:separate " "
+               [:primary :majutsu-bookmark-list-name]
+               [:if [:primary :present]
+                   [:primary :majutsu-bookmark-list-target-summary]
+                 "(deleted)"]]]
+  "Template used for bookmark-list group headings.")
+
 (majutsu-template-defkeyword majutsu-bookmark-list-commit-summary Commit
   (:returns Template :doc "User-customizable commit summary for bookmark list entries.")
   majutsu-bookmark-list-template-commit-summary)
@@ -357,42 +377,83 @@ bookmark(s) at point."
     :role bookmark
     :section-class jj-bookmark
     :section-value #'majutsu-bookmark--row-ref-section-value
-    :adopt-previous [:and [:remote] [:tracked]]
     :columns
-    ((heading majutsu-bookmark-list-template-heading)
-     (name [:name])
-     (remote [:remote])
-     (tracked [:if [:tracked] "t" ""])
+    ((heading majutsu-bookmark-list-template-group-heading)
+     (name [:primary :name])
+     (remote [:primary :remote])
+     (tracked [:if [:primary :tracked] "t"])
      (commit-id ""))
     :children
-    (:when [:conflict]
-      :nodes
-      ((:each [:removed_targets]
-        :as target
-        :role bookmark-target
-        :entry-id #'majutsu-bookmark--row-target-entry-id
-        :section-class jj-commit
-        :section-value commit-id
-        :columns
-        ((target-marker "  -")
-         (target-summary [:majutsu-bookmark-list-commit-summary])
-         (name [:method [:self 1] :name])
-         (remote [:method [:self 1] :remote])
-         (tracked "")
-         (commit-id [:commit_id])))
-       (:each [:added_targets]
-        :as target
-        :role bookmark-target
-        :entry-id #'majutsu-bookmark--row-target-entry-id
-        :section-class jj-commit
-        :section-value commit-id
-        :columns
-        ((target-marker "  +")
-         (target-summary [:majutsu-bookmark-list-commit-summary])
-         (name [:method [:self 1] :name])
-         (remote [:method [:self 1] :remote])
-         (tracked "")
-         (commit-id [:commit_id]))))))
+    (:nodes
+     ((:each [:primary :removed_targets]
+       :as target
+       :when [:primary :conflict]
+       :role bookmark-target
+       :entry-id #'majutsu-bookmark--row-target-entry-id
+       :section-class jj-commit
+       :section-value commit-id
+       :columns
+       ((target-marker "  -")
+        (target-summary [:majutsu-bookmark-list-commit-summary])
+        (name [:method [:self 1] :primary :name])
+        (remote [:method [:self 1] :primary :remote])
+        (tracked "")
+        (commit-id [:commit_id])))
+      (:each [:primary :added_targets]
+       :as target
+       :when [:primary :conflict]
+       :role bookmark-target
+       :entry-id #'majutsu-bookmark--row-target-entry-id
+       :section-class jj-commit
+       :section-value commit-id
+       :columns
+       ((target-marker "  +")
+        (target-summary [:majutsu-bookmark-list-commit-summary])
+        (name [:method [:self 1] :primary :name])
+        (remote [:method [:self 1] :primary :remote])
+        (tracked "")
+        (commit-id [:commit_id])))
+      (:each [:tracked_refs]
+       :as ref
+       :role bookmark
+       :section-class jj-bookmark
+       :section-value #'majutsu-bookmark--row-ref-section-value
+       :columns
+       ((heading majutsu-bookmark-list-template-heading)
+        (name [:name])
+        (remote [:remote])
+        (tracked [:if [:tracked] "t"])
+        (commit-id ""))
+       :children
+       (:nodes
+        ((:each [:removed_targets]
+          :as target
+          :when [:conflict]
+          :role bookmark-target
+          :entry-id #'majutsu-bookmark--row-target-entry-id
+          :section-class jj-commit
+          :section-value commit-id
+          :columns
+          ((target-marker "  -")
+           (target-summary [:majutsu-bookmark-list-commit-summary])
+           (name [:method 'ref :name])
+           (remote [:method 'ref :remote])
+           (tracked "")
+           (commit-id [:commit_id])))
+         (:each [:added_targets]
+          :as target
+          :when [:conflict]
+          :role bookmark-target
+          :entry-id #'majutsu-bookmark--row-target-entry-id
+          :section-class jj-commit
+          :section-value commit-id
+          :columns
+          ((target-marker "  +")
+           (target-summary [:majutsu-bookmark-list-commit-summary])
+           (name [:method 'ref :name])
+           (remote [:method 'ref :remote])
+           (tracked "")
+           (commit-id [:commit_id])))))))))
   "Declarative row tree emitted by `jj bookmark list'.
 The layout-level :schema supplies shared column defaults; each node's
 :columns declares the row values for that node with the same column syntax."
@@ -424,7 +485,7 @@ The layout-level :schema supplies shared column defaults; each node's
   "Return row profile for `majutsu-bookmark-list'."
   (majutsu-row-make-profile
    :name 'bookmark-list
-   :self-type 'CommitRef
+   :self-type 'RefListItem
    :layout-var 'majutsu-bookmark-list-layout
    :section-hide t
    :show-child-count nil))
