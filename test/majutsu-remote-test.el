@@ -44,19 +44,20 @@
 
 (ert-deftest majutsu-read-remote-name/uses-history-and-category ()
   (let (seen-history seen-category)
-    (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
-               (lambda (&optional _directory)
-                 (list :candidates '("origin" "upstream")
-                       :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt collection _predicate _require-match _initial history _default)
-                 (setq seen-history history
-                       seen-category (plist-get completion-extra-properties :category))
-                 (should (equal collection '("origin" "upstream")))
-                 "origin")))
-      (should (equal (majutsu-read-remote-name "Remote") "origin"))
-      (should (eq seen-history 'majutsu-remote-name-history))
-      (should (eq seen-category 'majutsu-remote)))))
+    (majutsu-remote-test--with-root
+      (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
+                 (lambda (&optional _directory)
+                   (list :candidates '("origin" "upstream")
+                         :entries (make-hash-table :test #'equal))))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt collection _predicate _require-match _initial history _default)
+                   (setq seen-history history
+                         seen-category (plist-get completion-extra-properties :category))
+                   (should (equal collection '("origin" "upstream")))
+                   "origin")))
+        (should (equal (majutsu-read-remote-name "Remote") "origin"))
+        (should (eq seen-history 'majutsu-remote-name-history))
+        (should (eq seen-category 'majutsu-remote))))))
 
 (ert-deftest majutsu-read-remote-name/defaults-to-remote-at-point ()
   "Existing-remote readers should default to the remote section at point."

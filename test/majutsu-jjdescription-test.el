@@ -46,6 +46,11 @@
    "\n")
   "Sample JJ description text.")
 
+(defun majutsu-test--jjdescription-setup ()
+  "Set up a JJ description buffer with an explicit test repository root."
+  (setq-local majutsu--default-directory "/tmp/test-repo/")
+  (majutsu-jjdescription-setup))
+
 (defun majutsu-test--faces-at (pos)
   "Return a list of font-lock faces at POS."
   (let ((font-lock-face (get-text-property pos 'font-lock-face))
@@ -68,7 +73,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (font-lock-ensure)
     (goto-char (point-min))
     (should (memq 'git-commit-summary (majutsu-test--faces-at (point))))))
@@ -79,7 +84,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert "Initial summary\n\nJJ: note\n")
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (font-lock-ensure)
     (goto-char (point-min))
     (should (memq 'git-commit-summary (majutsu-test--faces-at (point))))
@@ -97,7 +102,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (font-lock-ensure)
     (goto-char (point-min))
     (search-forward "JJ: Change ID:")
@@ -124,7 +129,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (font-lock-ensure)
     (goto-char (point-min))
     (search-forward "AFTER SHOULD BE COMMENT")
@@ -137,7 +142,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert "JJ: ignore-rest\nAfter should be comment\n")
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (font-lock-ensure)
     (goto-char (point-min))
     (search-forward "After should be comment")
@@ -152,7 +157,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (font-lock-ensure)
     (goto-char (point-min))
     (search-forward "JJ: ignore-rest")
@@ -167,14 +172,14 @@
   (let ((majutsu-jjdescription-major-mode #'fundamental-mode))
     (with-temp-buffer
       (setq buffer-file-name "/tmp/editor-123.jjdescription")
-      (majutsu-jjdescription-setup)
+      (majutsu-test--jjdescription-setup)
       (should (eq major-mode 'fundamental-mode)))))
 
 (ert-deftest majutsu-jjdescription-comment-vars ()
   "JJ description setup configures comment variables."
   (with-temp-buffer
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (should (equal comment-start majutsu-jjdescription-comment-prefix))
     (should (equal comment-start-skip
                    (format "^%s[ \t]*"
@@ -197,7 +202,7 @@
     (text-mode)
     (setq buffer-file-name "/tmp/editor-123.jjdescription")
     (insert majutsu-test--jjdescription-sample)
-    (majutsu-jjdescription-setup)
+    (majutsu-test--jjdescription-setup)
     (should
      (equal (majutsu-jjdescription-buffer-message)
             (concat
@@ -218,7 +223,7 @@
       (text-mode)
       (setq buffer-file-name "/tmp/editor-123.jjdescription")
       (insert majutsu-test--jjdescription-sample)
-      (majutsu-jjdescription-setup)
+      (majutsu-test--jjdescription-setup)
       (setq log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size)
             log-edit-comment-ring-index nil)
       (majutsu-jjdescription-save-message)
@@ -234,7 +239,7 @@
       (text-mode)
       (setq buffer-file-name "/tmp/editor-123.jjdescription")
       (insert "current summary\n\nJJ: Change ID: abcdefgh\nJJ: note\n")
-      (majutsu-jjdescription-setup)
+      (majutsu-test--jjdescription-setup)
       (setq log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size)
             log-edit-comment-ring-index nil)
       (ring-insert log-edit-comment-ring "older summary\n")
@@ -254,7 +259,7 @@
       (text-mode)
       (setq buffer-file-name "/tmp/editor-123.jjdescription")
       (insert "current summary\n\nJJ: Change ID: abcdefgh\nJJ: note\n")
-      (majutsu-jjdescription-setup)
+      (majutsu-test--jjdescription-setup)
       (setq log-edit-comment-ring (make-ring log-edit-maximum-comment-ring-size)
             log-edit-comment-ring-index nil)
       (ring-insert log-edit-comment-ring "feature work\n")

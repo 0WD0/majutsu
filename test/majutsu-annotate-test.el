@@ -21,7 +21,9 @@
 (ert-deftest majutsu-annotate-file-exists-p/uses-exact-path-match ()
   "Return non-nil only when jj output exactly matches FILE."
   (let (captured-path)
-    (cl-letf (((symbol-function 'majutsu-jj-lines)
+    (cl-letf (((symbol-function 'majutsu-toplevel)
+               (lambda (&optional _directory) "/repo/"))
+              ((symbol-function 'majutsu-jj-lines)
                (lambda (&rest args)
                  (setq captured-path (nth 4 args))
                  '("src/file.el"))))
@@ -30,10 +32,14 @@
 
 (ert-deftest majutsu-annotate-file-exists-p/rejects-prefix-or-warning-output ()
   "Return nil when jj output does not contain an exact path match."
-  (cl-letf (((symbol-function 'majutsu-jj-lines)
+  (cl-letf (((symbol-function 'majutsu-toplevel)
+             (lambda (&optional _directory) "/repo/"))
+            ((symbol-function 'majutsu-jj-lines)
              (lambda (&rest _args) '("src/file.el.bak"))))
     (should-not (majutsu-annotate--file-exists-p "rev" "src/file.el")))
-  (cl-letf (((symbol-function 'majutsu-jj-lines)
+  (cl-letf (((symbol-function 'majutsu-toplevel)
+             (lambda (&optional _directory) "/repo/"))
+            ((symbol-function 'majutsu-jj-lines)
              (lambda (&rest _args) '("Warning: No matching entries"))))
     (should-not (majutsu-annotate--file-exists-p "rev" "src/file.el"))))
 

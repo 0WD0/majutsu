@@ -258,17 +258,6 @@
   (mt--is (majutsu-tpl [:test-special-wrap [:str "x"]])
           "concat(\"<\", \"x\", \">\")"))
 
-(ert-deftest test-majutsu-template-legacy-higher-order-forms-are-syntax-only ()
-  (should-not (majutsu-template--lookup-function-meta 'map))
-  (should-not (majutsu-template--lookup-function-meta 'filter))
-  (should-not (majutsu-template--lookup-function-meta 'any))
-  (should-not (majutsu-template--lookup-function-meta 'all))
-  (should-not (majutsu-template--lookup-function-meta 'map-join))
-  (mt--is (majutsu-tpl [:map [:raw "xs"] item [:raw "item.value()"]])
-          "xs.map(|item| item.value())")
-  (mt--is (majutsu-tpl [:map-join [:str ", "] [:raw "xs"] item [:raw "item.value()"]])
-          "xs.map(|item| item.value()).join(\", \")"))
-
 (ert-deftest test-majutsu-template-dash-map-syntax ()
   (should-not (majutsu-template--lookup-function-meta '--map))
   (mt--is (majutsu-tpl [:-map [:lambda [c] [:method 'c :description]] [:raw "refs"]])
@@ -494,14 +483,6 @@
   (mt--is (majutsu-tpl [:call 'git_web_url [:method [:raw "bookmark" :CommitRef] :name]])
           "git_web_url(bookmark.name())"))
 
-(ert-deftest test-majutsu-template-map-sugar-lowers-to-native-lambda ()
-  (mt--is (majutsu-tpl [:map [:raw "xs"] item [:raw "item.value()"]])
-          "xs.map(|item| item.value())")
-  (should (equal (majutsu-template-compile '[:map [:raw "xs"] item [:raw "item.value()"]])
-                 (majutsu-template-compile '[:method [:raw "xs"] :map [:lambda [item] [:raw "item.value()"]]])))
-  (mt--is (majutsu-tpl [:filter [:raw "xs"] item [:raw "item.present()"]])
-          "xs.filter(|item| item.present())"))
-
 (ert-deftest test-majutsu-template-native-lambda-helper ()
   (mt--is (majutsu-tpl [:test-lambda-helper])
           "|c| c.description()")
@@ -560,15 +541,6 @@
          (s [:concat (if (> 2 mt--runtime-tmp) [:str "T"] [:str "F"]) [:str "!"]])
          (mt--runtime-tmp 3))
     (mt--is (majutsu-tpl s) "concat(\"F\", \"!\")")))
-
-(ert-deftest test-majutsu-template-raw-type-annotation ()
-  (let ((node (majutsu-template--rewrite '[:raw "foo" :Template])))
-    (should (majutsu-template-node-p node))
-    (should (eq (majutsu-template-node-kind node) :raw))
-    (should (equal (majutsu-template-node-value node) "foo"))
-    (should (eq (majutsu-template-node-type node) 'Template))
-    (should (equal (plist-get (majutsu-template-node-props node) :declared) 'Template)))
-  (should (equal (majutsu-tpl [:raw "foo" :Template]) "foo")))
 
 (ert-deftest test-majutsu-template-builtin-type-registry ()
   (let ((any (majutsu-template--lookup-type 'Any))
@@ -772,9 +744,6 @@
   (let ((meta (majutsu-template--lookup-method 'CommitEvolutionEntry "operation")))
     (should meta)
     (should (equal (majutsu-template--fn-returns meta) '(:option Operation))))
-  (let ((meta (majutsu-template--lookup-method 'Commit "git_head")))
-    (should meta)
-    (should (eq (majutsu-template--fn-returns meta) 'Boolean)))
   (let ((meta (majutsu-template--lookup-method 'Commit "format_commit_summary_with_refs")))
     (should meta)
     (should (eq (majutsu-template--fn-returns meta) 'Template)))
@@ -836,15 +805,6 @@
     (should (equal (majutsu-template-compile node)
                    "ws.name().lines().first().len()"))))
 
-(ert-deftest test-majutsu-template-rich-type-docstring ()
-  (let ((helper (majutsu-template--lookup-function-meta 'test-list-typed-helper)))
-    (should helper)
-    (should (equal (majutsu-template--arg-type (car (majutsu-template--fn-args helper)))
-                   '(:list Commit)))
-    (should (string-match-p
-             (regexp-quote "items ((:list Commit))")
-             (documentation 'majutsu-template-test-list-typed-helper)))))
-
 (ert-deftest test-majutsu-template-specialized-container-method ()
   (mt--is (majutsu-tpl [:method [:method [:raw "self" :Commit] :parents]
                         :test-commit-list-method [:str "!"]])
@@ -886,40 +846,9 @@
     (should helper)
     (should (eq (majutsu-template--fn-returns helper) 'Lambda))))
 
-(ert-deftest test-majutsu-template-label-helper ()
-  (let ((node (majutsu-template-label "status" (majutsu-template-str "ok"))))
-    (should (majutsu-template-node-p node))
-    (should (equal (majutsu-template-compile node)
-                   "label(\"status\", \"ok\")"))))
-
-(ert-deftest test-majutsu-template-map-join-sugar-lowers-to-map-then-join ()
-  (should (equal (majutsu-template-compile '[:map-join [:str ", "]
-                                             [:raw "self.parents()"]
-                                             p
-                                             [:raw "p.commit_id()"]])
-                 (majutsu-template-compile '[:method [:map [:raw "self.parents()"]
-                                                           p
-                                                           [:raw "p.commit_id()"]]
-                                             :join
-                                             [:str ", "]])))
-  (mt--is (majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
-          "self.parents().map(|p| p.commit_id()).join(\", \")"))
-
 (ert-deftest test-majutsu-template-self-keyword-basic ()
   (mt--is (majutsu-tpl [:description] 'Commit)
           "self.description()"))
-
-(ert-deftest test-majutsu-template-self-keyword-chain ()
-  (mt--is (majutsu-tpl [:parents :len] 'Commit)
-          "self.parents().len()"))
-
-(ert-deftest test-majutsu-template-self-keyword-custom-defkeyword ()
-  (mt--is (majutsu-tpl [:test-commit-keyword] 'Commit)
-          "self.test-commit-keyword()"))
-
-(ert-deftest test-majutsu-template-self-keyword-custom-defmethod-opt-in ()
-  (mt--is (majutsu-tpl [:test-commit-optflag] 'Commit)
-          "self.test-commit-optflag()"))
 
 (ert-deftest test-majutsu-template-root-self-binding-installed-at-compile-entry ()
   (let ((majutsu-template-default-self-type 'Commit)

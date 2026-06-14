@@ -155,7 +155,8 @@
   (with-temp-buffer
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-filesets '("a" "b"))
-    (cl-letf (((symbol-function 'majutsu-diff-refresh-buffer) #'ignore))
+    (cl-letf (((symbol-function 'majutsu-diff-refresh-buffer) #'ignore)
+              ((symbol-function 'majutsu-repository-config-id) #'ignore))
       (majutsu-diff--set-buffer-args '("--summary")))
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
@@ -320,16 +321,17 @@
 
 (ert-deftest majutsu-diff-repeat-revset-reader/splits-comma-values ()
   "Custom repeat revset readers should preserve CRM comma splitting."
-  (let ((obj (seq-find (lambda (suffix)
-                         (equal (oref suffix key) "-r"))
-                       (transient-suffixes 'majutsu-diff))))
-    (should (equal (cl-letf (((symbol-function 'majutsu-read-optional-revset)
-                              (lambda (&rest _args) "a, b"))
-                             ((symbol-function 'transient--show) #'ignore))
-                     (majutsu-diff-test--with-transient-context
-                         'majutsu-diff 'majutsu-diff:-r
-                       (transient-infix-read obj)))
-                   '("a" "b")))))
+  (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))
+    (let ((obj (seq-find (lambda (suffix)
+                           (equal (oref suffix key) "-r"))
+                         (transient-suffixes 'majutsu-diff))))
+      (should (equal (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+                                (lambda (&rest _args) "a, b"))
+                               ((symbol-function 'transient--show) #'ignore))
+                       (majutsu-diff-test--with-transient-context
+                           'majutsu-diff 'majutsu-diff:-r
+                         (transient-infix-read obj)))
+                     '("a" "b"))))))
 
 (ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
   "`majutsu-diff-revset' should use default formatting args when ARGS is nil."

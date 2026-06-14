@@ -382,78 +382,39 @@ This mirrors real output where source text can contain debug-like snippets."
 
 ;;; Face Classification Tests
 
-(ert-deftest majutsu-color-words-face-type-removed ()
-  "Red-dominant underline face should classify as (removed . t)."
-  ;; True-color red (jj catppuccin)
-  (should (equal (majutsu-color-words--face-type
-                  '(ansi-color-underline (:foreground "#E78284")))
-                 '(removed . t)))
-  ;; Standard ANSI red
-  (should (equal (majutsu-color-words--face-type
-                  '(ansi-color-underline (:foreground "red3")))
-                 '(removed . t))))
-
-(ert-deftest majutsu-color-words-face-type-added ()
-  "Green-dominant underline face should classify as (added . t)."
-  ;; True-color green (jj catppuccin)
-  (should (equal (majutsu-color-words--face-type
-                  '(ansi-color-underline (:foreground "#A6D189")))
-                 '(added . t)))
-  ;; Standard ANSI green
-  (should (equal (majutsu-color-words--face-type
-                  '(ansi-color-underline (:foreground "green3")))
-                 '(added . t))))
-
-(ert-deftest majutsu-color-words-face-type-non-underlined ()
-  "Non-underlined colored plist faces should return (TYPE . nil)."
-  ;; Non-underlined red (whole removed line)
-  (should (equal (majutsu-color-words--face-type '(:foreground "#E78284"))
-                 '(removed . nil)))
-  ;; Non-underlined green (whole added line)
-  (should (equal (majutsu-color-words--face-type '(:foreground "#A6D189"))
-                 '(added . nil)))
-  ;; Standard ANSI names
-  (should (equal (majutsu-color-words--face-type '(:foreground "red3"))
-                 '(removed . nil)))
-  (should (equal (majutsu-color-words--face-type '(:foreground "green3"))
-                 '(added . nil))))
-
-(ert-deftest majutsu-color-words-face-type-nil-for-plain ()
-  "Non-color faces should classify as nil."
-  (should-not (majutsu-color-words--face-type nil))
-  (should-not (majutsu-color-words--face-type 'magit-diff-context))
-  ;; Nested list without :foreground is not a plist
-  (should-not (majutsu-color-words--face-type '((:foreground "red3")))))
+(ert-deftest majutsu-color-words-face-type/classifies-colors ()
+  "Classify colored faces by side and underline status."
+  (dolist (case '(((ansi-color-underline (:foreground "#E78284")) . (removed . t))
+                  ((ansi-color-underline (:foreground "red3")) . (removed . t))
+                  ((ansi-color-underline (:foreground "#A6D189")) . (added . t))
+                  ((ansi-color-underline (:foreground "green3")) . (added . t))
+                  ((:foreground "#E78284") . (removed . nil))
+                  ((:foreground "red3") . (removed . nil))
+                  ((:foreground "#A6D189") . (added . nil))
+                  ((:foreground "green3") . (added . nil))
+                  (nil . nil)
+                  (magit-diff-context . nil)
+                  (((:foreground "red3")) . nil)))
+    (should (equal (majutsu-color-words--face-type (car case))
+                   (cdr case)))))
 
 ;;; Change Span Collection Tests
 
 (ert-deftest majutsu-color-words-collect-change-spans ()
-  "Collect removed/added spans from font-lock-face properties."
+  "Collect underlined and line-level removed/added spans."
   (with-temp-buffer
-    (insert "hello oldnew world")
-    ;; Mark "old" (pos 7-10) as removed (underlined)
+    (insert "hello oldnew old new world")
     (put-text-property 7 10 'font-lock-face
                        '(ansi-color-underline (:foreground "red3")))
-    ;; Mark "new" (pos 10-13) as added (underlined)
     (put-text-property 10 13 'font-lock-face
                        '(ansi-color-underline (:foreground "green3")))
-    (let ((spans (majutsu-color-words--collect-change-spans 1 (point-max))))
-      (should (= (length spans) 2))
-      (should (equal (car spans) '(removed t 7 10)))
-      (should (equal (cadr spans) '(added t 10 13))))))
-
-(ert-deftest majutsu-color-words-collect-non-underlined-spans ()
-  "Non-underlined colored text should also be collected as spans."
-  (with-temp-buffer
-    (insert "hello old new world")
-    ;; Mark "old" as removed (non-underlined — whole line removal)
-    (put-text-property 7 10 'font-lock-face '(:foreground "red3"))
-    ;; Mark "new" as added (non-underlined — whole line addition)
-    (put-text-property 11 14 'font-lock-face '(:foreground "green3"))
-    (let ((spans (majutsu-color-words--collect-change-spans 1 (point-max))))
-      (should (= (length spans) 2))
-      (should (equal (car spans) '(removed nil 7 10)))
-      (should (equal (cadr spans) '(added nil 11 14))))))
+    (put-text-property 14 17 'font-lock-face '(:foreground "red3"))
+    (put-text-property 18 21 'font-lock-face '(:foreground "green3"))
+    (should (equal (majutsu-color-words--collect-change-spans 1 (point-max))
+                   '((removed t 7 10)
+                     (added t 10 13)
+                     (removed nil 14 17)
+                     (added nil 18 21))))))
 
 (ert-deftest majutsu-color-words-group-change-pairs ()
   "Adjacent removed+added spans should be grouped into pairs."
@@ -607,99 +568,53 @@ This mirrors real output where source text can contain debug-like snippets."
                      (lambda (ov) (overlay-get ov 'smerge--refine-region))
                      (overlays-in (oref hunk start) (oref hunk end))))))))
 
-(ert-deftest majutsu-color-words-refine-pure-removal ()
-  "Pure removal span (no paired added) should get diff-refine-removed face."
-  (with-temp-buffer
-    (magit-section-mode)
-    (let* ((inhibit-read-only t)
-           (magit-section-inhibit-markers t)
-           (majutsu-diff-backend 'color-words)
-           (majutsu-diff-refine-hunk 'all)
-           (output (string-join
-                    '("Modified regular file foo:"
-                      "   1    1: hello removed world")
-                    "\n")))
-      (magit-insert-section (diffbuf)
-        (magit-insert-section (diff-root)
-          (insert output)
-          (save-restriction
-            (narrow-to-region (point-min) (point-max))
-            (majutsu-color-words-wash-diffs '("--color-words")))))
-      ;; Mark "removed" as removed (underlined, no added counterpart).
-      (goto-char (point-min))
-      (should (re-search-forward "removed" nil t))
-      (let ((rbeg (match-beginning 0))
-            (rend (match-end 0)))
-        (put-text-property rbeg rend 'font-lock-face
-                           '(ansi-color-underline (:foreground "red3")))
-        (let* ((diff-root (car (oref magit-root-section children)))
-               (file-sec (seq-find (lambda (s) (eq (oref s type) 'jj-file))
-                                   (oref diff-root children)))
-               (hunk (car (seq-filter (lambda (s) (eq (oref s type) 'jj-hunk))
-                                      (oref file-sec children)))))
-          (majutsu-diff--update-hunk-refinement hunk)
-          ;; Should have a diff-refine-removed overlay (fine, non-region).
-          (let ((fine-ovs (seq-filter
-                           (lambda (ov)
-                             (and (eq (overlay-get ov 'diff-mode) 'fine)
-                                  (not (overlay-get ov 'smerge--refine-region))
-                                  (eq (overlay-get ov 'face)
-                                      'diff-refine-removed)))
-                           (overlays-in rbeg rend))))
-            (should (= (length fine-ovs) 1)))
-          ;; Should also have a smerge--refine-region overlay.
-          (let ((region-ovs (seq-filter
-                             (lambda (ov)
-                               (overlay-get ov 'smerge--refine-region))
-                             (overlays-in rbeg rend))))
-            (should (= (length region-ovs) 1))))))))
-
-(ert-deftest majutsu-color-words-refine-pure-addition ()
-  "Pure addition span (no paired removed) should get diff-refine-added face."
-  (with-temp-buffer
-    (magit-section-mode)
-    (let* ((inhibit-read-only t)
-           (magit-section-inhibit-markers t)
-           (majutsu-diff-backend 'color-words)
-           (majutsu-diff-refine-hunk 'all)
-           (output (string-join
-                    '("Modified regular file foo:"
-                      "   1    1: hello added world")
-                    "\n")))
-      (magit-insert-section (diffbuf)
-        (magit-insert-section (diff-root)
-          (insert output)
-          (save-restriction
-            (narrow-to-region (point-min) (point-max))
-            (majutsu-color-words-wash-diffs '("--color-words")))))
-      ;; Mark "added" as added (underlined, no removed counterpart).
-      (goto-char (point-min))
-      (should (re-search-forward "added" nil t))
-      (let ((abeg (match-beginning 0))
-            (aend (match-end 0)))
-        (put-text-property abeg aend 'font-lock-face
-                           '(ansi-color-underline (:foreground "green3")))
-        (let* ((diff-root (car (oref magit-root-section children)))
-               (file-sec (seq-find (lambda (s) (eq (oref s type) 'jj-file))
-                                   (oref diff-root children)))
-               (hunk (car (seq-filter (lambda (s) (eq (oref s type) 'jj-hunk))
-                                      (oref file-sec children)))))
-          (majutsu-diff--update-hunk-refinement hunk)
-          ;; Should have a diff-refine-added overlay (fine, non-region).
-          (let ((fine-ovs (seq-filter
-                           (lambda (ov)
-                             (and (eq (overlay-get ov 'diff-mode) 'fine)
-                                  (not (overlay-get ov 'smerge--refine-region))
-                                  (eq (overlay-get ov 'face)
-                                      'diff-refine-added)))
-                           (overlays-in abeg aend))))
-            (should (= (length fine-ovs) 1)))
-          ;; Should also have a smerge--refine-region overlay.
-          (let ((region-ovs (seq-filter
-                             (lambda (ov)
-                               (overlay-get ov 'smerge--refine-region))
-                             (overlays-in abeg aend))))
-            (should (= (length region-ovs) 1))))))))
+(ert-deftest majutsu-color-words-refine-pure-change ()
+  "Pure removed/added spans should get side-specific refine faces."
+  (dolist (case '(("removed" "red3" diff-refine-removed)
+                  ("added" "green3" diff-refine-added)))
+    (pcase-let ((`(,word ,color ,face) case))
+      (with-temp-buffer
+        (magit-section-mode)
+        (let* ((inhibit-read-only t)
+               (magit-section-inhibit-markers t)
+               (majutsu-diff-backend 'color-words)
+               (majutsu-diff-refine-hunk 'all)
+               (output (string-join
+                        (list "Modified regular file foo:"
+                              (format "   1    1: hello %s world" word))
+                        "\n")))
+          (magit-insert-section (diffbuf)
+            (magit-insert-section (diff-root)
+              (insert output)
+              (save-restriction
+                (narrow-to-region (point-min) (point-max))
+                (majutsu-color-words-wash-diffs '("--color-words")))))
+          (goto-char (point-min))
+          (should (re-search-forward word nil t))
+          (let ((beg (match-beginning 0))
+                (end (match-end 0)))
+            (put-text-property beg end 'font-lock-face
+                               `(ansi-color-underline (:foreground ,color)))
+            (let* ((diff-root (car (oref magit-root-section children)))
+                   (file-sec (seq-find (lambda (sec)
+                                         (eq (oref sec type) 'jj-file))
+                                       (oref diff-root children)))
+                   (hunk (car (seq-filter (lambda (sec)
+                                            (eq (oref sec type) 'jj-hunk))
+                                          (oref file-sec children)))))
+              (majutsu-diff--update-hunk-refinement hunk)
+              (should (= (length (seq-filter
+                                   (lambda (ov)
+                                     (and (eq (overlay-get ov 'diff-mode) 'fine)
+                                          (not (overlay-get ov 'smerge--refine-region))
+                                          (eq (overlay-get ov 'face) face)))
+                                   (overlays-in beg end)))
+                         1))
+              (should (= (length (seq-filter
+                                   (lambda (ov)
+                                     (overlay-get ov 'smerge--refine-region))
+                                   (overlays-in beg end)))
+                         1)))))))))
 
 (ert-deftest majutsu-color-words-refine-region-non-token-data ()
   "Region overlays should store non-token spans for shadow cursor mapping.
