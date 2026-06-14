@@ -663,10 +663,11 @@ When REVERSE is non-nil, the script will apply the patch in reverse."
 If REVERSE is non-nil, apply the patch in reverse using git apply -R."
   (let* ((patch-file (majutsu-interactive--write-patch patch))
          (tool-config (majutsu-interactive--build-tool-config patch-file reverse))
-         (full-args (append (list command)
-                            args
-                            (list "-i" "--tool" "majutsu-applypatch")
-                            tool-config)))
+         (full-args (majutsu-jj-filesets-last
+                     (append (list command)
+                             args
+                             (list "-i" "--tool" "majutsu-applypatch")
+                             tool-config))))
     (majutsu-run-jj-with-editor full-args)))
 
 ;;; _

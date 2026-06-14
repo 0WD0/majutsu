@@ -626,6 +626,29 @@ newline, return an empty string.  This function aligns with
   "Return S as a jj fileset string literal."
   (format "file:\"%s\"" (majutsu-jj--escape-fileset-string s)))
 
+(defun majutsu-jj-filesets-last (args)
+  "Return ARGS with the `--' fileset group moved to the end.
+jj parses every token after `--' as a fileset expression, so options
+such as `--to=' or `--from=' must come before the separator on the
+command line.  Transients collect the fileset group as a sublist whose
+car is \"--\" (as produced by `transient-files'), and may place it ahead
+of those options; this normalizes the order.  The group may also appear
+as a literal \"--\" element followed by paths.  ARGS is a single-level
+list and is returned unchanged when it contains no fileset group."
+  (let (filesets rest)
+    (while args
+      (let ((arg (pop args)))
+        (cond
+         ((and (consp arg) (equal (car arg) "--"))
+          (setq filesets (append filesets (cdr arg))))
+         ((equal arg "--")
+          (setq filesets (append filesets args)
+                args nil))
+         (t (push arg rest)))))
+    (if filesets
+        (append (nreverse rest) (list (cons "--" filesets)))
+      (nreverse rest))))
+
 (defun majutsu-jj-wash (washer keep-error &rest args)
   "Run jj with ARGS, insert output at point, then call WASHER.
 KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,

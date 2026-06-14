@@ -81,7 +81,8 @@ In diff buffer on a file section, restore only that file."
           (majutsu-interactive-run-with-patch "restore" args patch)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (let ((exit (apply #'majutsu-run-jj "restore" args)))
+      (let ((exit (apply #'majutsu-run-jj "restore"
+                         (majutsu-jj-filesets-last args))))
         (when (zerop exit)
           (message "Restored successfully"))))))
 

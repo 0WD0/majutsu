@@ -58,7 +58,8 @@ jj-commit section, add --from from that section."
 (defun majutsu-absorb-execute (args)
   "Execute jj absorb with ARGS from the transient."
   (interactive (list (majutsu-absorb-arguments)))
-  (let ((exit (apply #'majutsu-run-jj "absorb" args)))
+  (let ((exit (apply #'majutsu-run-jj "absorb"
+                     (majutsu-jj-filesets-last args))))
     (when (zerop exit)
       (message "Absorb completed"))))
 
