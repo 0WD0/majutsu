@@ -111,7 +111,14 @@
 - Completion: Standardize history-aware readers and completion categories for
   revsets, bookmark/tag names and patterns, remote names/patterns,
   workspace names, and repo-relative file paths using structured completion
-  payloads.
+  payloads. Native revset prompts now use
+  minibuffer completion at point, so expression arguments such as =main | = and
+  =trunk()..ma= keep jj's native semantics while still allowing users to move
+  the candidate list into a minibuffer for annotation-based filtering. Native
+  jj revset completion now includes other workspace working-copy refs in
+  =<workspace>@= form, and structured completion payloads are exposed through
+  standard completion metadata for richer bookmark, tag, remote, workspace,
+  revision, and file details.
 - Completion: Expose standard completion metadata directly, use
   Majutsu-owned completion faces and separator settings for structured
   suffixes, and no longer fabricate generic fallback suffixes for candidates

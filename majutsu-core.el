@@ -324,34 +324,22 @@ completion context for revset readers.")
         ((listp command) command)
         (t (list command))))
 
-(defun majutsu-transient-jj-command-args ()
-  "Return jj subcommand args for the active revset transient."
-  (when-let* ((prefix (transient-prefix-object))
-              ((cl-typep prefix 'majutsu-jj-transient-prefix)))
-    (majutsu-transient--jj-command-args (oref prefix jj-command))))
-
-(defun majutsu-transient-jj-option-arg ()
-  "Return jj option arg for the active revset infix command."
-  (string-remove-suffix "=" (oref (transient-suffix-object) argument)))
-
 (defun majutsu-transient-revset-completion-args ()
   "Return jj native completion context for the active revset reader."
-  (when-let* ((command (majutsu-transient-jj-command-args))
-              (option (majutsu-transient-jj-option-arg)))
-    (append command (list option))))
-
-(defun majutsu-transient-expression-revset-p ()
-  "Return non-nil if the active transient argument accepts a revset expression."
-  (member (majutsu-transient-jj-option-arg)
-          '("-r" "--revisions" "--revision" "--source" "--branch")))
+  (when-let* ((prefix (transient-prefix-object))
+              ((cl-typep prefix 'majutsu-jj-transient-prefix))
+              (command (majutsu-transient--jj-command-args
+                        (oref prefix jj-command)))
+              (suffix (transient-suffix-object))
+              (argument (oref suffix argument)))
+    (append command (list (string-remove-suffix "=" argument)))))
 
 (defun majutsu-transient-read-revset (prompt initial-input history)
-  "Read a revset value for transient infix options."
+  "Read an optional revset expression for transient infix options."
   (unless current-prefix-arg
-    (let ((completion-args (majutsu-transient-revset-completion-args)))
-      (if (majutsu-transient-expression-revset-p)
-          (majutsu-read-optional-revset prompt nil initial-input history completion-args)
-        (majutsu-read-optional-single-revset prompt nil initial-input history completion-args)))))
+    (majutsu-read-optional-revset
+     prompt nil initial-input history
+     (majutsu-transient-revset-completion-args))))
 
 (transient-define-argument majutsu-transient-arg-ignore-immutable ()
   :description "Ignore immutable"
