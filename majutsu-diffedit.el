@@ -18,6 +18,7 @@
 (require 'majutsu-jj)
 (require 'majutsu-core)
 (require 'majutsu-process)
+(require 'seq)
 (require 'server)
 (require 'with-editor)
 
@@ -28,12 +29,6 @@
   "When non-nil, finish diffedit session on save."
   :group 'majutsu
   :type 'boolean)
-
-(defun majutsu-diffedit--root (file)
-  "Return diffedit root directory for FILE, or nil if none.
-Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
-  (when file
-    (locate-dominating-file (file-name-directory file) "JJ-INSTRUCTIONS")))
 
 (defun majutsu-diffedit--finish-on-save ()
   "Finish a with-editor session after saving a diffedit file."
@@ -54,8 +49,9 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
 
 (defun majutsu-diffedit--maybe-enable-mode ()
   "Enable `majutsu-diffedit-mode' in jj diffedit temp buffers."
-  (when (majutsu-diffedit--root buffer-file-name)
-    (majutsu-diffedit-mode 1)))
+  (when-let* ((file buffer-file-name))
+    (when (locate-dominating-file (file-name-directory file) "JJ-INSTRUCTIONS")
+      (majutsu-diffedit-mode 1))))
 
 (add-hook 'find-file-hook #'majutsu-diffedit--maybe-enable-mode)
 
@@ -68,31 +64,39 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
         (cons (concat rev "-") rev))
       (cons "@-" "@")))
 
-(defun majutsu-diffedit--build-args (from to)
-  "Build `jj diffedit' option arguments for FROM and TO."
-  (cond
-   ((and from to)
-    (list "--from" from "--to" to))
-   (to
-    (list "-r" to))
-   (from
-    (list "-r" from))
-   (t
-    (list "-r" "@"))))
+(defun majutsu-diffedit--revision-arg (args)
+  "Return the revision selector in ARGS, if ARGS uses revision syntax."
+  (seq-some (lambda (arg)
+              (or (transient-arg-value "--revisions=" (list arg))
+                  (transient-arg-value "--revision=" (list arg))
+                  (and (string-prefix-p "-r" arg)
+                       (> (length arg) 2)
+                       (substring arg 2))))
+            args))
 
-(defun majutsu-diffedit--editor-target (file)
-  "Return right-side target path expression for FILE in diffedit temp tree."
-  (concat "$right/" file))
-
-(defun majutsu-diffedit--file-at-point ()
-  "Return file at point, including blob buffers."
-  (or (and (bound-and-true-p majutsu-blob-mode)
-           majutsu-buffer-blob-path)
-      (majutsu-file-at-point)))
+(defun majutsu-diffedit--command-args (args)
+  "Return `jj diffedit' option arguments from ARGS or buffer context."
+  (let ((source-args (or args
+                         (and (derived-mode-p 'majutsu-diff-mode)
+                              majutsu-buffer-diff-range))))
+    (if-let* ((rev (majutsu-diffedit--revision-arg source-args)))
+        (list "-r" rev)
+      (pcase-let ((`(,from . ,to) (majutsu-diffedit--range args)))
+        (cond
+         ((and from to)
+          (list "--from" from "--to" to))
+         (to
+          (list "-r" to))
+         (from
+          (list "-r" from))
+         (t
+          (list "-r" "@")))))))
 
 (defun majutsu-diffedit--read-file (from to)
   "Return diffedit target file from context or prompt."
-  (or (majutsu-diffedit--file-at-point)
+  (or (and (bound-and-true-p majutsu-blob-mode)
+           majutsu-buffer-blob-path)
+      (majutsu-file-at-point)
       (majutsu-jj-read-diff-file from to)))
 
 (defun majutsu-diffedit--normalize-file (file root)
@@ -105,21 +109,31 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
           (user-error "Diffedit target outside repository: %s" file)))
     file))
 
-(defun majutsu-diffedit-run-with-editor (args file)
-  "Run jj diffedit with option ARGS and FILE through with-editor."
+(defun majutsu-diffedit-run (args file diff-editor)
+  "Run jj diffedit with option ARGS, FILE and DIFF-EDITOR config.
+
+DIFF-EDITOR may be a config string, or a function called with the normalized
+repository-relative file path."
   (unless file
     (user-error "Diffedit requires a file target"))
   (let* ((root (majutsu--toplevel-safe default-directory))
          (default-directory root)
          (file (majutsu-diffedit--normalize-file file root))
+         (diff-editor-cmd (if (functionp diff-editor)
+                              (funcall diff-editor file)
+                            diff-editor))
          (fileset (majutsu-jj-fileset-quote file))
          (jj-args (majutsu-jj-append-filesets args (list fileset))))
-    (majutsu-with-editor
-      (let ((diff-editor-cmd
-             (majutsu-jj--editor-command-config
-              "ui.diff-editor"
-              (majutsu-diffedit--editor-target file))))
-        (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))))
+    (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args)))
+
+(defun majutsu-diffedit-run-with-editor (args file)
+  "Run jj diffedit with option ARGS and FILE through with-editor."
+  (majutsu-with-editor
+    (majutsu-diffedit-run
+     args file
+     (lambda (file)
+       (majutsu-jj--editor-command-config "ui.diff-editor"
+                                          (concat "$right/" file))))))
 
 ;;; _
 (provide 'majutsu-diffedit)
