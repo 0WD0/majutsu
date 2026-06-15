@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu-jj)
+(require 'majutsu-core)
 (require 'majutsu-file)
 (require 'majutsu-process)
 
@@ -96,34 +97,21 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
         (cons (concat rev "-") rev))
       (cons "@-" "@")))
 
-(defun majutsu-edit--build-diffedit-args (from to file)
-  "Build `jj diffedit' arguments for FROM, TO and FILE."
-  (append (cond
-           ((and from to)
-            (list "--from" from "--to" to))
-           (to
-            (list "-r" to))
-           (from
-            (list "-r" from))
-           (t
-            (list "-r" "@")))
-          (when file
-            (list "--" file))))
+(defun majutsu-edit--build-diffedit-args (from to)
+  "Build `jj diffedit' option arguments for FROM and TO."
+  (cond
+   ((and from to)
+    (list "--from" from "--to" to))
+   (to
+    (list "-r" to))
+   (from
+    (list "-r" from))
+   (t
+    (list "-r" "@"))))
 
 (defun majutsu-edit--diffedit-editor-target (file)
   "Return right-side target path expression for FILE in diffedit temp tree."
   (concat "$right/" file))
-
-(defun majutsu-edit--replace-diffedit-file-arg (jj-args file)
-  "Return JJ-ARGS with FILE as the exact diffedit fileset after `--'."
-  (let ((args (copy-sequence jj-args))
-        (fileset (majutsu-jj-fileset-quote file)))
-    (if-let* ((sep (member "--" args)))
-        (if (cdr sep)
-            (setcar (cdr sep) fileset)
-          (setcdr sep (list fileset)))
-      (setq args (append args (list "--" fileset))))
-    args))
 
 (defun majutsu-edit--file-at-point ()
   "Return file at point, including blob buffers."
@@ -136,21 +124,25 @@ Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
   (or (majutsu-edit--file-at-point)
       (majutsu-jj-read-diff-file from to)))
 
-(defun majutsu-edit--run-diffedit (jj-args &optional file)
-  "Run jj diffedit with JJ-ARGS editing FILE through with-editor."
-  (setq file (or file (cadr (member "--" jj-args))))
+(defun majutsu-edit--normalize-diffedit-file (file root)
+  "Return FILE normalized to repository-relative path under ROOT."
+  (if (file-name-absolute-p file)
+      (let* ((abs-root (file-name-as-directory (expand-file-name root)))
+             (abs-file (expand-file-name file)))
+        (if (string-prefix-p abs-root abs-file)
+            (file-relative-name abs-file abs-root)
+          (user-error "Diffedit target outside repository: %s" file)))
+    file))
+
+(defun majutsu-edit--run-diffedit (args file)
+  "Run jj diffedit with option ARGS and FILE through with-editor."
   (unless file
     (user-error "Diffedit requires a file target"))
   (let* ((root (majutsu--toplevel-safe default-directory))
          (default-directory root)
-         (file (if (file-name-absolute-p file)
-                   (let* ((abs-root (file-name-as-directory (expand-file-name root)))
-                          (abs-file (expand-file-name file)))
-                     (if (string-prefix-p abs-root abs-file)
-                         (file-relative-name abs-file abs-root)
-                       (user-error "Diffedit target outside repository: %s" file)))
-                 file))
-         (jj-args (majutsu-edit--replace-diffedit-file-arg jj-args file)))
+         (file (majutsu-edit--normalize-diffedit-file file root))
+         (fileset (majutsu-jj-fileset-quote file))
+         (jj-args (majutsu-jj-append-filesets args (list fileset))))
     (majutsu-with-editor
       (let ((diff-editor-cmd
              (majutsu-jj--editor-command-config

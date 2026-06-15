@@ -73,10 +73,10 @@
       (should (equal (car range) "@-"))
       (should (equal (cdr range) "@")))))
 
-(ert-deftest majutsu-ediff-test-build-diffedit-args-with-file ()
-  "Diffedit args should include a fileset path when file is selected."
-  (should (equal (majutsu-edit--build-diffedit-args "foo" "bar" "src/x.el")
-                 '("--from" "foo" "--to" "bar" "--" "src/x.el"))))
+(ert-deftest majutsu-ediff-test-build-diffedit-args-keeps-files-separate ()
+  "Diffedit args should keep file filters separate."
+  (should (equal (majutsu-edit--build-diffedit-args "foo" "bar")
+                 '("--from" "foo" "--to" "bar"))))
 
 (ert-deftest majutsu-ediff-test-editor-command-config ()
   "Editor command config should use explicit command words."
@@ -386,8 +386,6 @@
   (let (seen-file)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _dir) "/tmp/repo/"))
-              ((symbol-function 'majutsu-edit--replace-diffedit-file-arg)
-               (lambda (args _file) args))
               ((symbol-function 'majutsu-ediff--diff-editor-config)
                (lambda (&optional file)
                  (setq seen-file file)
@@ -395,8 +393,8 @@
               ((symbol-function 'majutsu-run-jj-async)
                (lambda (&rest _args) nil)))
       (let ((default-directory "/tmp/repo/"))
-        (majutsu-ediff--run-diffedit '("--from" "@-" "--to" "@" "--" "src/main.el")
-                                     "src/main.el"))
+        (majutsu-ediff--run-diffedit '("--from" "@-" "--to" "@")
+                                    "src/main.el"))
       (should (equal seen-file "src/main.el")))))
 
 (ert-deftest majutsu-ediff-test-diffedit-file-installs-local-quit-hooks ()
@@ -814,7 +812,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
                  (setq captured (list args file)))))
       (majutsu-ediff-resolve)
       (should (equal captured
-                     '(("-r" "rev-at-point" "--" "conflicted.txt") "conflicted.txt"))))))
+                     '(("-r" "rev-at-point") "conflicted.txt"))))))
 
 (ert-deftest majutsu-ediff-test-edit-prompts-file-and-runs-single-file ()
   "Diffedit should prompt for file when none at point."
@@ -832,7 +830,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
                    (setq captured (list args file)))))
         (majutsu-ediff-edit nil)
         (should (equal captured
-                       '(("--from" "@-" "--to" "@" "--" "docs/majutsu.org")
+                       '(("--from" "@-" "--to" "@")
                          "docs/majutsu.org")))))))
 
 (ert-deftest majutsu-ediff-test-edit-uses-file-at-point ()
@@ -849,7 +847,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
                    (setq captured (list args file)))))
         (majutsu-ediff-edit '("--from=main" "--to=@"))
         (should (equal captured
-                       '(("--from" "main" "--to" "@" "--" "src/one.el")
+                       '(("--from" "main" "--to" "@")
                          "src/one.el")))))))
 
 (ert-deftest majutsu-ediff-test-transient-has-resolve-actions ()

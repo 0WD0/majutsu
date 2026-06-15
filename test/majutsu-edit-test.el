@@ -73,7 +73,8 @@
                  0)))
       (let ((default-directory "/tmp/repo/test/"))
         (majutsu-edit--run-diffedit
-         '("--from" "a-" "--to" "a" "--" "/tmp/repo/test/majutsu-file-test.el"))))
+         '("--from" "a-" "--to" "a")
+         "/tmp/repo/test/majutsu-file-test.el")))
     (should (equal seen-default "/tmp/repo/"))
     (should (equal seen-target "$right/test/majutsu-file-test.el"))
     (should (equal seen-args
@@ -91,21 +92,14 @@
     (let ((default-directory "/tmp/repo/"))
       (should-error
        (majutsu-edit--run-diffedit
-        '("--from" "a-" "--to" "a" "--" "/tmp/other/file.el"))
+        '("--from" "a-" "--to" "a")
+        "/tmp/other/file.el")
        :type 'user-error))))
 
-(ert-deftest majutsu-edit-test-replace-diffedit-file-arg ()
-  "Diffedit args should carry the normalized file as an exact fileset after `--'."
-  (should (equal (majutsu-edit--replace-diffedit-file-arg
-                  '("--from" "a-" "--to" "a" "--" "old/file.el")
-                  "docs/wiki/Configuration:-Layout.md")
-                 '("--from" "a-" "--to" "a" "--"
-                   "file:\"docs/wiki/Configuration:-Layout.md\"")))
-  (should (equal (majutsu-edit--replace-diffedit-file-arg
-                  '("--from" "a-" "--to" "a")
-                  "docs/wiki/Configuration:-Layout.md")
-                 '("--from" "a-" "--to" "a" "--"
-                   "file:\"docs/wiki/Configuration:-Layout.md\""))))
+(ert-deftest majutsu-edit-test-build-diffedit-args-keeps-files-separate ()
+  "Diffedit option args should not include file filters."
+  (should (equal (majutsu-edit--build-diffedit-args "a-" "a")
+                 '("--from" "a-" "--to" "a"))))
 
 (provide 'majutsu-edit-test)
 ;;; majutsu-edit-test.el ends here
