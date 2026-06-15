@@ -326,37 +326,27 @@ list of filesets (path filters)."
 
 (cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
   (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (args (car (transient-args (oref obj command)))))
-    (if-let* ((config-id (majutsu-repository-config-id)))
-        (majutsu-transient-put-repository-current-value
-         'majutsu-diff mode args config-id)
-      (put mode 'majutsu-diff-current-arguments args))
-    (transient--history-push obj)
-    (when (eq major-mode mode)
-      (majutsu-diff--set-buffer-args args))))
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,range ,filesets) (transient-args (oref obj command))))
+      (majutsu-diff--set-value mode args range filesets)
+      (transient--history-push obj))))
 
 (cl-defmethod transient-save-value ((obj majutsu-diff-prefix))
   (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (key (majutsu-transient-global-default-key 'majutsu-diff mode))
-         (args (car (transient-args (oref obj command)))))
-    (put mode 'majutsu-diff-current-arguments args)
-    (setf (alist-get key transient-values) args)
-    (transient-save-values)
-    (transient--history-push obj)
-    (when (eq major-mode mode)
-      (majutsu-diff--set-buffer-args args))))
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,range ,filesets) (transient-args (oref obj command))))
+      (majutsu-diff--set-value mode args range filesets t)
+      (transient--history-push obj))))
 
 (cl-defmethod majutsu-transient--save-repository-defaults ((obj majutsu-diff-prefix))
   (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (args (car (transient-args (oref obj command)))))
-    (majutsu-transient-save-repository-value 'majutsu-diff mode args)
-    (transient--history-push obj)
-    (when (eq major-mode mode)
-      (majutsu-diff--set-buffer-args args))
-    (message "Saved diff arguments as repository defaults")))
+         (mode (or (oref obj major-mode) major-mode)))
+    (pcase-let ((`(,args ,range ,filesets) (transient-args (oref obj command))))
+      (majutsu-transient-save-repository-value 'majutsu-diff mode args)
+      (when (eq major-mode mode)
+        (majutsu-diff--set-value mode args range filesets))
+      (transient--history-push obj)
+      (message "Saved diff arguments as repository defaults"))))
 
 ;;;; Argument Access
 
@@ -391,17 +381,34 @@ list of filesets (path filters)."
          (filesets (and use-current majutsu-buffer-diff-filesets)))
     (list args range filesets)))
 
-;; FIXME: 不应该存在
-(defun majutsu-diff--set-buffer-args (args &optional _filesets _refresh)
-  "Set current buffer's remembered diff formatting ARGS."
-  (setq-local majutsu-buffer-diff-args
-              (or (majutsu-diff--remembered-args args)
-                  (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
-  (majutsu-diff--sync-backend majutsu-buffer-diff-args)
+(defun majutsu-diff--set-value (mode args range filesets &optional save)
+  "Set current diff values for MODE.
+
+When SAVE is non-nil, also persist ARGS using `transient-values'."
+  (setq args (or (majutsu-diff--remembered-args args)
+                 (get mode 'majutsu-diff-default-arguments)))
   (if-let* ((config-id (majutsu-repository-config-id)))
       (majutsu-transient-put-repository-current-value
-       'majutsu-diff 'majutsu-diff-mode majutsu-buffer-diff-args config-id)
-    (put 'majutsu-diff-mode 'majutsu-diff-current-arguments majutsu-buffer-diff-args)))
+       'majutsu-diff mode args config-id)
+    (put mode 'majutsu-diff-current-arguments args))
+  (when save
+    (setf (alist-get (majutsu-transient-global-default-key 'majutsu-diff mode)
+                     transient-values)
+          args)
+    (transient-save-values))
+  (when (eq major-mode mode)
+    (setq-local majutsu-buffer-diff-args args)
+    (setq-local majutsu-buffer-diff-range range)
+    (setq-local majutsu-buffer-diff-filesets filesets)
+    (majutsu-diff--sync-backend majutsu-buffer-diff-args))
+  nil)
+
+(defun majutsu-diff--set-buffer-args (args)
+  "Set current buffer's remembered diff formatting ARGS."
+  (majutsu-diff--set-value 'majutsu-diff-mode
+                           args
+                           majutsu-buffer-diff-range
+                           majutsu-buffer-diff-filesets))
 
 (defun majutsu-diff-arguments (&optional mode)
   "Return the current diff arguments.
@@ -1642,20 +1649,18 @@ REVSET is passed to jj diff using `--revisions='."
 (defun majutsu-diff-refresh ()
   "Refresh diff buffer with current transient arguments."
   (interactive)
-  (pcase-let* ((`(,args ,range ,_filesets)
+  (pcase-let* ((`(,args ,range ,filesets)
                 (transient-args 'majutsu-diff)))
     (cond
      ((eq major-mode 'majutsu-diff-mode)
-      (majutsu-diff--set-buffer-args args)
-      (setq-local majutsu-buffer-diff-range range)
+      (majutsu-diff--set-value major-mode args range filesets)
       (majutsu-diff-refresh-buffer))
      ((and (memq majutsu-prefix-use-buffer-arguments '(always selected))
            (when-let* ((buf (majutsu--get-mode-buffer
                              'majutsu-diff-mode
                              (eq majutsu-prefix-use-buffer-arguments 'selected))))
              (with-current-buffer buf
-               (majutsu-diff--set-buffer-args args)
-               (setq-local majutsu-buffer-diff-range range)
+               (majutsu-diff--set-value major-mode args range filesets)
                (majutsu-diff-refresh-buffer))
              t)))
      (t
