@@ -36,7 +36,8 @@
   (unless current-prefix-arg
     (majutsu-read-revset prompt
                          (or initial-input
-                             (majutsu-metaedit--default-revision)))))
+                             (majutsu-metaedit--default-revision))
+                         (majutsu-transient-revset-completion-args))))
 
 (defun majutsu-metaedit-arguments ()
   "Return the current metaedit arguments.
@@ -127,6 +128,8 @@ With prefix ARG, pre-enable --ignore-immutable."
 (transient-define-prefix majutsu-metaedit-transient ()
   "Transient for jj metaedit operations."
   :man-page "jj-metaedit"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "metaedit"
   :incompatible '(("--update-author" "--author=")
                   ("--update-author-timestamp" "--author-timestamp="))
   :transient-non-suffix t

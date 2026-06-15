@@ -75,6 +75,9 @@
   Revsets, refs, remotes, workspaces, and repo-relative files now use shared
   history and completion metadata conventions.
 
+- Native jj completion is richer ::
+  Majutsu completes full revset expressions through native jj completion.
+
 - Structured completion annotations are quieter ::
   Candidate suffixes use Majutsu faces/separators and omit fabricated fallback
   suffixes.

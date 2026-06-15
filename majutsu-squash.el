@@ -183,14 +183,6 @@ return the same context defaults that execution would use."
       (majutsu-run-jj-with-editor
        (cons "squash" (majutsu-jj-append-filesets args filesets))))))
 
-;;;; Readers
-
-(defun majutsu-squash--read-source-revset (prompt initial-input history)
-  "Read a source revset expression for squash."
-  (unless current-prefix-arg
-    (majutsu-read-optional-revset
-     prompt nil initial-input history '("squash" "--from"))))
-
 ;;;; Infix Commands
 
 (transient-define-argument majutsu-squash:--from ()
@@ -203,7 +195,7 @@ return the same context defaults that execution would use."
   :shortarg "-f"
   :argument "--from="
   :multi-value 'repeat
-  :reader #'majutsu-squash--read-source-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:--into ()
   :description "Into"
