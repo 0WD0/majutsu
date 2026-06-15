@@ -69,13 +69,13 @@
 (ert-deftest majutsu-ediff-test-edit-range-default-fallback ()
   "When no args/context are available, diffedit range defaults to @-..@."
   (with-temp-buffer
-    (let ((range (majutsu-edit--edit-range nil)))
+    (let ((range (majutsu-diffedit--range nil)))
       (should (equal (car range) "@-"))
       (should (equal (cdr range) "@")))))
 
 (ert-deftest majutsu-ediff-test-build-diffedit-args-keeps-files-separate ()
   "Diffedit args should keep file filters separate."
-  (should (equal (majutsu-edit--build-diffedit-args "foo" "bar")
+  (should (equal (majutsu-diffedit--build-args "foo" "bar")
                  '("--from" "foo" "--to" "bar"))))
 
 (ert-deftest majutsu-ediff-test-editor-command-config ()
@@ -102,7 +102,7 @@
 
 (ert-deftest majutsu-ediff-test-diffedit-editor-target ()
   "Diffedit target should point into right side temp tree."
-  (should (equal (majutsu-edit--diffedit-editor-target "src/one.el")
+  (should (equal (majutsu-diffedit--editor-target "src/one.el")
                  "$right/src/one.el")))
 
 (ert-deftest majutsu-ediff-test-merge-editor-config ()
@@ -807,7 +807,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
                (lambda (&optional _file) "conflicted.txt"))
               ((symbol-function 'majutsu-ediff--conflict-side-count)
                (lambda (_rev _file) 4))
-              ((symbol-function 'majutsu-edit--run-diffedit)
+              ((symbol-function 'majutsu-diffedit-run-with-editor)
                (lambda (args file)
                  (setq captured (list args file)))))
       (majutsu-ediff-resolve)
@@ -818,7 +818,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
   "Diffedit should prompt for file when none at point."
   (let (captured)
     (with-temp-buffer
-      (cl-letf (((symbol-function 'majutsu-edit--file-at-point)
+      (cl-letf (((symbol-function 'majutsu-diffedit--file-at-point)
                  (lambda () nil))
                 ((symbol-function 'majutsu-jj-read-diff-file)
                  (lambda (from to)
@@ -837,7 +837,7 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
   "Diffedit should use file at point and skip file prompt."
   (let (captured)
     (with-temp-buffer
-      (cl-letf (((symbol-function 'majutsu-edit--file-at-point)
+      (cl-letf (((symbol-function 'majutsu-diffedit--file-at-point)
                  (lambda () "src/one.el"))
                 ((symbol-function 'majutsu-jj-read-diff-file)
                  (lambda (&rest _)
