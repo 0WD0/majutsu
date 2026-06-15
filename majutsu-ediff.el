@@ -27,6 +27,7 @@
 (require 'magit-section)
 (require 'majutsu-base)
 (require 'majutsu-jj)
+(require 'majutsu-core)
 (require 'majutsu-edit)
 (require 'majutsu-process)
 (require 'majutsu-file)
@@ -263,15 +264,15 @@ MERGE-EDITOR-CONFIG is a TOML config string or list of config strings."
   (let ((configs (if (listp merge-editor-config)
                      merge-editor-config
                    (list merge-editor-config))))
-    (append
-     (list "resolve")
-     (apply #'append
-            (mapcar (lambda (config)
-                      (list "--config" config))
-                    configs))
-     (list "-r" (or rev "@"))
-     (when file
-       (list "--" file)))))
+    (majutsu-jj-append-filesets
+     (append
+      (list "resolve")
+      (apply #'append
+             (mapcar (lambda (config)
+                       (list "--config" config))
+                     configs))
+      (list "-r" (or rev "@")))
+     (and file (list file)))))
 
 (defun majutsu-ediff--toml-string-config (key value)
   "Build KEY=VALUE TOML config where VALUE is a basic string."
@@ -449,21 +450,15 @@ Return non-nil when LINE is recognized as a Majutsu Ediff control packet."
       (run-at-time 0 nil #'majutsu-ediff--run-control-packet spec directory))
     t))
 
-(defun majutsu-ediff--run-diffedit (jj-args &optional file)
-  "Run jj diffedit with JJ-ARGS using `majutsu-ediff-diffedit-file'."
-  (setq file (or file (cadr (member "--" jj-args))))
+(defun majutsu-ediff--run-diffedit (args file)
+  "Run jj diffedit with option ARGS and FILE using Ediff."
   (unless file
     (user-error "Diffedit requires a file target"))
   (let* ((root (majutsu--toplevel-safe default-directory))
          (default-directory root)
-         (file (if (file-name-absolute-p file)
-                   (let* ((abs-root (file-name-as-directory (expand-file-name root)))
-                          (abs-file (expand-file-name file)))
-                     (if (string-prefix-p abs-root abs-file)
-                         (file-relative-name abs-file abs-root)
-                       (user-error "Diffedit target outside repository: %s" file)))
-                 file))
-         (jj-args (majutsu-edit--replace-diffedit-file-arg jj-args file)))
+         (file (majutsu-edit--normalize-diffedit-file file root))
+         (fileset (majutsu-jj-fileset-quote file))
+         (jj-args (majutsu-jj-append-filesets args (list fileset))))
     (let ((diff-editor-cmd (majutsu-ediff--diff-editor-config file)))
       ;; Use async to avoid blocking Emacs while jj waits for diff completion.
       (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args))))
@@ -631,7 +626,7 @@ ARGS are transient arguments."
          (from (car range))
          (to (cdr range))
          (file (majutsu-edit--read-diffedit-file from to))
-         (jj-args (majutsu-edit--build-diffedit-args from to file)))
+         (jj-args (majutsu-edit--build-diffedit-args from to)))
     (majutsu-ediff--run-diffedit jj-args file)))
 
 ;;;###autoload
@@ -647,7 +642,7 @@ section) or the working copy."
         (progn
           (message "%s has %d sides; using diffedit fallback" file sides)
           (majutsu-edit--run-diffedit
-           (majutsu-edit--build-diffedit-args nil rev file)
+           (majutsu-edit--build-diffedit-args nil rev)
            file))
       (majutsu-ediff--run-resolve rev file))))
 
