@@ -12,8 +12,8 @@
 (require 'cl-lib)
 (require 'majutsu-diffedit)
 
-(ert-deftest majutsu-diffedit-test-root-detects-instructions ()
-  "Diffedit root should be detected by JJ-INSTRUCTIONS file."
+(ert-deftest majutsu-diffedit-test-maybe-enable-mode-detects-instructions ()
+  "Diffedit mode should be enabled below a JJ-INSTRUCTIONS file."
   (let ((root (make-temp-file "majutsu-diffedit" t)))
     (unwind-protect
         (progn
@@ -22,9 +22,10 @@
                  (dir (file-name-directory nested)))
             (make-directory dir t)
             (write-region "" nil nested nil 'silent)
-            (should (equal (file-name-as-directory root)
-                           (file-name-as-directory
-                            (majutsu-diffedit--root nested))))))
+            (with-temp-buffer
+              (setq-local buffer-file-name nested)
+              (majutsu-diffedit--maybe-enable-mode)
+              (should majutsu-diffedit-mode))))
       (delete-directory root t))))
 
 (ert-deftest majutsu-diffedit-test-finish-on-save-calls-with-editor ()
@@ -65,6 +66,28 @@
                      "--from" "a-" "--to" "a"
                      "--" "file:\"test/majutsu-file-test.el\"")))))
 
+(ert-deftest majutsu-diffedit-test-run-passes-normalized-file-to-config-builder ()
+  "Generic diffedit runner should build config from normalized file path."
+  (let (seen-file seen-args)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/tmp/repo/"))
+              ((symbol-function 'majutsu-run-jj-async)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0)))
+      (let ((default-directory "/tmp/repo/test/"))
+        (majutsu-diffedit-run
+         '("--from" "a-" "--to" "a")
+         "/tmp/repo/test/majutsu-file-test.el"
+         (lambda (file)
+           (setq seen-file file)
+           "CFG"))))
+    (should (equal seen-file "test/majutsu-file-test.el"))
+    (should (equal seen-args
+                   '("diffedit" "--config" "CFG"
+                     "--from" "a-" "--to" "a"
+                     "--" "file:\"test/majutsu-file-test.el\"")))))
+
 (ert-deftest majutsu-diffedit-test-run-with-editor-rejects-outside-absolute-file ()
   "Diffedit should reject absolute file targets outside repository."
   (cl-letf (((symbol-function 'majutsu--toplevel-safe)
@@ -79,10 +102,6 @@
         "/tmp/other/file.el")
        :type 'user-error))))
 
-(ert-deftest majutsu-diffedit-test-build-args-keeps-files-separate ()
-  "Diffedit option args should not include file filters."
-  (should (equal (majutsu-diffedit--build-args "a-" "a")
-                 '("--from" "a-" "--to" "a"))))
 
 (provide 'majutsu-diffedit-test)
 ;;; majutsu-diffedit-test.el ends here
