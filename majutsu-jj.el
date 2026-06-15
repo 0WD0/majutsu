@@ -35,6 +35,8 @@
 
 (autoload 'majutsu-process-file "majutsu-process" nil nil)
 
+(defvar corfu-margin-formatters)
+
 ;;; Options
 
 (defcustom majutsu-jj-executable "jj"
@@ -170,6 +172,18 @@ remote prefix from DIRECTORY so the result remains remote."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
+(defvar majutsu-jj--revset-completion-args nil
+  "Dynamic jj command context for revset minibuffer completion.")
+
+(defvar majutsu-read-revset-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "TAB") #'majutsu-jj-revset-complete)
+    (define-key map (kbd "<tab>") #'majutsu-jj-revset-complete)
+    (define-key map [remap completion-at-point]
+                #'majutsu-jj-revset-complete)
+    (make-composed-keymap map minibuffer-local-map))
+  "Keymap used while reading revset expressions.")
+
 (defun majutsu-jj--safe-lines (&rest args)
   "Return `majutsu-jj-lines' for ARGS, or nil on command failure."
   (condition-case nil
@@ -280,8 +294,77 @@ ARGS are command-line arguments after the leading jj executable name."
     (list :category category
           :candidates (nreverse candidates)
           :annotations annotations
+          :entries entries
           :annotation-suffix-function
           (majutsu-jj--completion-suffix-function category entries annotations))))
+
+(defun majutsu-jj--revision-margin-label (entry)
+  "Return a fixed-width short kind label for revision completion ENTRY."
+  (pcase (plist-get entry :kind)
+    ('bookmark "Bm ")
+    ('remote-bookmark "Rb ")
+    ('tag "Tag")
+    ('workspace "Ws ")
+    ('change-id "Ch ")
+    ('revset-alias "Al ")
+    (_ "   ")))
+
+(defun majutsu-jj--revision-company-kind (entry)
+  "Return Company/Corfu kind symbol for revision completion ENTRY."
+  (pcase (plist-get entry :kind)
+    ((or 'bookmark 'remote-bookmark) 'reference)
+    ('tag 'constant)
+    ('workspace 'module)
+    ('change-id 'value)
+    ('revset-alias 'function)
+    (_ 'text)))
+
+(defun majutsu-jj--revision-margin-face (entry)
+  "Return face used for revision completion ENTRY in Corfu margin."
+  (pcase (plist-get entry :kind)
+    ((or 'bookmark 'remote-bookmark) 'font-lock-keyword-face)
+    ('tag 'font-lock-constant-face)
+    ('workspace 'font-lock-variable-name-face)
+    ('change-id 'font-lock-type-face)
+    ('revset-alias 'font-lock-function-name-face)
+    (_ 'shadow)))
+
+(defun majutsu-jj--corfu-revision-margin-formatter (metadata)
+  "Return Corfu margin formatter for revision completion METADATA."
+  (when (eq (completion-metadata-get metadata 'category) 'majutsu-revision)
+    (when-let* ((entries (plist-get completion-extra-properties
+                                    :majutsu-revision-entries))
+                ((hash-table-p entries)))
+      (lambda (candidate)
+        (let* ((entry (gethash candidate entries))
+               (label (majutsu-jj--revision-margin-label entry)))
+          (propertize label 'face (majutsu-jj--revision-margin-face entry)))))))
+
+(defun majutsu-jj--revision-doc-buffer-function (entries)
+  "Return popupinfo doc buffer function backed by revision ENTRIES."
+  (lambda (candidate)
+    (when-let* ((entry (and (hash-table-p entries)
+                            (gethash candidate entries))))
+      (with-current-buffer (get-buffer-create " *majutsu revision doc*")
+        (erase-buffer)
+        (insert candidate)
+        (when-let* ((kind (plist-get entry :kind)))
+          (insert "\nkind: " (symbol-name kind)))
+        (when-let* ((sources (plist-get entry :sources)))
+          (insert "\nsources: "
+                  (mapconcat (lambda (source)
+                               (format "%s" source))
+                             sources ", ")))
+        (when-let* ((tag (plist-get entry :tag)))
+          (insert "\ntag: " tag))
+        (when-let* ((id (plist-get entry :id)))
+          (insert "\nid: " id))
+        (when-let* ((help (plist-get entry :help)))
+          (insert "\n\n" help))
+        (current-buffer)))))
+
+(with-eval-after-load 'corfu
+  (add-hook 'corfu-margin-formatters #'majutsu-jj--corfu-revision-margin-formatter t))
 
 (defun majutsu-jj--completion-table (args &optional category)
   "Return a dynamic Emacs completion table using jj native completion.
@@ -355,7 +438,8 @@ refs (`<workspace>@'), bookmarks, and tags."
                      "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
         (add name)))
     (list :category 'majutsu-revision
-          :candidates (nreverse candidates))))
+          :candidates (nreverse candidates)
+          :entries (make-hash-table :test #'equal))))
 
 (defun majutsu-jj-revset-candidates ()
   "Return completion candidates for revset prompts.
@@ -363,11 +447,47 @@ Candidates are repository references: other workspaces' working-copy
 refs (`<workspace>@'), bookmarks, and tags."
   (plist-get (majutsu-jj-revset-candidate-data) :candidates))
 
-(defun majutsu-jj--revset-completion-table ()
-  "Return a completion table for revset input."
-  (majutsu-completion-payload-table
-   (majutsu-jj-revset-candidate-data)
-   'majutsu-revision))
+(defun majutsu-jj--revset-minibuffer-input ()
+  "Return revset minibuffer contents before point."
+  (buffer-substring-no-properties (minibuffer-prompt-end) (point)))
+
+(defun majutsu-jj--revset-completion-payload (input)
+  "Return completion payload for revset INPUT."
+  (if majutsu-jj--revset-completion-args
+      (majutsu-jj--completion-payload
+       (append majutsu-jj--revset-completion-args (list input))
+       'majutsu-revision)
+    (majutsu-jj-revset-candidate-data)))
+
+(defun majutsu-jj-revset-completion-at-point ()
+  "Return completion data for the revset expression at point."
+  (let* ((input (majutsu-jj--revset-minibuffer-input))
+         (payload (majutsu-jj--revset-completion-payload input))
+         (entries (plist-get payload :entries))
+         (annotations (plist-get payload :annotations))
+         (table (majutsu-completion-payload-table payload 'majutsu-revision)))
+    (list (minibuffer-prompt-end) (point) table
+          :category 'majutsu-revision
+          :annotation-function (lambda (candidate)
+                                 (and (hash-table-p annotations)
+                                      (gethash candidate annotations)))
+          :company-kind (lambda (candidate)
+                          (majutsu-jj--revision-company-kind
+                           (and (hash-table-p entries)
+                                (gethash candidate entries))))
+          :company-doc-buffer (majutsu-jj--revision-doc-buffer-function entries)
+          :majutsu-revision-entries entries)))
+
+(defun majutsu-jj-revset-complete ()
+  "Complete the revset expression at point using jj's native completer."
+  (interactive)
+  (unless (completion-at-point)
+    (minibuffer-message "No jj revset completions")))
+
+(defun majutsu-jj--revset-minibuffer-setup ()
+  "Install revset completion-at-point for the current minibuffer."
+  (setq-local completion-at-point-functions
+              '(majutsu-jj-revset-completion-at-point)))
 
 (defun majutsu-read-single-revset (prompt &optional default completion-args history initial-input)
   "Prompt user with PROMPT to read a single revision selector.
@@ -429,18 +549,19 @@ revset value being read."
                       (majutsu-thing-at-point 'jj-revision t)
                       (majutsu-revision-at-point)
                       "@"))
-         (table (if completion-args
-                    (majutsu-jj--completion-table completion-args
-                                                  'majutsu-revision)
-                  (majutsu-jj--revset-completion-table)))
-         (value (completing-read (format-prompt prompt default)
-                                 table nil nil nil
-                                 'majutsu-read-revset-history
-                                 default)))
-    (cond
-     ((not (string-empty-p value)) value)
-     ((and default (not (string-empty-p default))) default)
-     (t (user-error "Need non-empty input")))))
+         (majutsu-jj--revset-completion-args completion-args))
+    (let ((value (minibuffer-with-setup-hook
+                     #'majutsu-jj--revset-minibuffer-setup
+                   (read-from-minibuffer (format-prompt prompt default)
+                                         nil
+                                         majutsu-read-revset-map
+                                         nil
+                                         'majutsu-read-revset-history
+                                         default))))
+      (cond
+       ((not (string-empty-p value)) value)
+       ((and default (not (string-empty-p default))) default)
+       (t (user-error "Need non-empty input"))))))
 
 (defun majutsu-read-optional-revset (prompt &optional default initial-input history completion-args)
   "Prompt user with PROMPT to read an optional revset string.
@@ -451,16 +572,17 @@ input returns nil instead of signaling an error.  DEFAULT is shown in
 minibuffer when non-nil.  HISTORY defaults to
 `majutsu-read-revset-history'.  When COMPLETION-ARGS is non-nil, use
 jj's native completer in that command context."
-  (let* ((table (if completion-args
-                    (majutsu-jj--completion-table completion-args
-                                                  'majutsu-revision)
-                  (majutsu-jj--revset-completion-table)))
-         (value (completing-read (format-prompt prompt default)
-                                 table nil nil initial-input
-                                 (or history 'majutsu-read-revset-history)
-                                 default)))
-    (unless (string-empty-p value)
-      value)))
+  (let ((majutsu-jj--revset-completion-args completion-args))
+    (let ((value (minibuffer-with-setup-hook
+                     #'majutsu-jj--revset-minibuffer-setup
+                   (read-from-minibuffer (format-prompt prompt default)
+                                         initial-input
+                                         majutsu-read-revset-map
+                                         nil
+                                         (or history 'majutsu-read-revset-history)
+                                         default))))
+      (unless (string-empty-p value)
+        value))))
 
 (defun majutsu-jj--parse-diff-range (range)
   "Parse RANGE into (from . to) cons.

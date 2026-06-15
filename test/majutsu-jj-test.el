@@ -390,50 +390,188 @@ This mirrors Magit's behavior."
                      '("ws-a@" "main" "v1.0")))
       (should-not (plist-get data :sources))
       (should-not (plist-get data :annotations))
-      (should-not (plist-get data :entries))
+      (let ((entries (plist-get data :entries)))
+        (should (hash-table-p entries))
+        (should (zerop (hash-table-count entries))))
       (should-not (plist-get data :annotation-suffix-function)))))
 
-(ert-deftest majutsu-read-revset/uses-completion-and-allows-free-form ()
-  "Revset reader should use completion metadata and allow free-form input."
-  (let (seen-require-match seen-default seen-category seen-history)
+(ert-deftest majutsu-jj-revset-completion-at-point/uses-current-expression ()
+  "Revset CAPF should ask jj about the current full expression."
+  (let (calls)
+    (with-temp-buffer
+      (insert "main | ")
+      (goto-char (point-max))
+      (let ((majutsu-jj--revset-completion-args '("diff" "-r")))
+        (cl-letf (((symbol-function 'minibuffer-prompt-end)
+                   (lambda () 1))
+                  ((symbol-function 'majutsu-jj--completion-payload)
+                   (lambda (args category)
+                     (push args calls)
+                     (should (eq category 'majutsu-revision))
+                     (let ((annotations (make-hash-table :test #'equal))
+                           (entries (make-hash-table :test #'equal)))
+                       (puthash "main | dev" "Union with dev" annotations)
+                       (puthash "main | dev" '(:kind bookmark :help "Union with dev") entries)
+                       (list :category 'majutsu-revision
+                             :candidates '("main | dev")
+                             :annotations annotations
+                             :entries entries)))))
+          (pcase-let ((`(,beg ,end ,table . ,props)
+                       (majutsu-jj-revset-completion-at-point)))
+            (should (= beg 1))
+            (should (= end (point-max)))
+            (should-not (plist-member props :exclusive))
+            (should (eq (plist-get props :category) 'majutsu-revision))
+            (should (functionp (plist-get props :annotation-function)))
+            (should (functionp (plist-get props :company-kind)))
+            (should (functionp (plist-get props :company-doc-buffer)))
+            (should (hash-table-p (plist-get props :majutsu-revision-entries)))
+            (should (equal (all-completions "main | " table)
+                           '("main | dev")))
+            (should (member '("diff" "-r" "main | ") calls))))))))
+
+(ert-deftest majutsu-jj-revset-completion-at-point/returns-empty-table ()
+  "Revset CAPF should stay active even when jj returns no candidates."
+  (with-temp-buffer
+    (insert "zz")
+    (goto-char (point-max))
+    (let ((majutsu-jj--revset-completion-args '("log" "-r")))
+      (cl-letf (((symbol-function 'minibuffer-prompt-end)
+                 (lambda () 1))
+                ((symbol-function 'majutsu-jj--completion-payload)
+                 (lambda (_args _category)
+                   (list :category 'majutsu-revision
+                         :candidates nil
+                         :entries (make-hash-table :test #'equal)))))
+        (pcase-let ((`(,beg ,end ,table . ,props)
+                     (majutsu-jj-revset-completion-at-point)))
+          (should (= beg 1))
+          (should (= end (point-max)))
+          (should-not (plist-member props :exclusive))
+          (should (eq (plist-get props :category) 'majutsu-revision))
+          (should-not (all-completions "zz" table)))))))
+
+(ert-deftest majutsu-jj--revset-minibuffer-setup/replaces-general-capfs ()
+  "Revset minibuffer setup should isolate jj completion from general CAPFs."
+  (with-temp-buffer
+    (setq-local completion-at-point-functions
+                '(dabbrev-capf majutsu-jj-revset-completion-at-point))
+    (majutsu-jj--revset-minibuffer-setup)
+    (should (equal completion-at-point-functions
+                   '(majutsu-jj-revset-completion-at-point)))))
+
+(ert-deftest majutsu-jj--corfu-revision-margin-formatter/uses-entry-kind ()
+  "Corfu margin formatter should expose a fixed-width revision kind label."
+  (let ((completion-extra-properties nil))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "main" '(:kind bookmark) entries)
+      (let* ((completion-extra-properties (list :majutsu-revision-entries entries))
+             (formatter (majutsu-jj--corfu-revision-margin-formatter
+                         '(metadata (category . majutsu-revision))))
+             (label (funcall formatter "main")))
+        (should (functionp formatter))
+        (should (equal (substring-no-properties label) "Bm "))
+        (should (= (string-width label) 3))
+        (should (eq (majutsu-jj--revision-company-kind (gethash "main" entries))
+                    'reference))))))
+
+(ert-deftest majutsu-jj--corfu-revision-margin-formatter/skips-without-entries ()
+  "Corfu margin formatter must not run when entries metadata is missing."
+  (let ((completion-extra-properties nil))
+    (should-not (majutsu-jj--corfu-revision-margin-formatter
+                 '(metadata (category . majutsu-revision)))))
+  (let ((completion-extra-properties (list :majutsu-revision-entries nil)))
+    (should-not (majutsu-jj--corfu-revision-margin-formatter
+                 '(metadata (category . majutsu-revision))))))
+
+(ert-deftest majutsu-read-single-revset/uses-completing-read ()
+  "Single-revision reader should use ordinary `completing-read'."
+  (let (seen-history seen-default)
+    (let ((annotations (make-hash-table :test #'equal)))
+      (puthash "main" " Main bookmark" annotations)
+      (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+                 (lambda (_args _category)
+                   (list :category 'majutsu-revision
+                         :candidates '("main")
+                         :annotations annotations)))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt table _predicate _require-match _initial hist def)
+                   (let* ((metadata (funcall table "" nil 'metadata))
+                          (properties (cdr metadata))
+                          (annotation-function
+                           (cdr (assq 'annotation-function properties))))
+                     (should (eq (cdr (assq 'category properties))
+                                 'majutsu-revision))
+                     (should (equal (all-completions "" table) '("main")))
+                     (should (equal (funcall annotation-function "main")
+                                    " Main bookmark")))
+                   (setq seen-history hist
+                         seen-default def)
+                   "main")))
+        (should (equal (majutsu-read-single-revset "Rev" "@" '("diff" "--from"))
+                       "main"))
+        (should (eq seen-history 'majutsu-read-revset-history))
+        (should (equal seen-default "@"))))))
+
+(ert-deftest majutsu-read-single-revset/completion-args-do-not-prefetch-payload ()
+  "Selection-style rev readers should defer jj completion until completion runs."
+  (let (payload-called)
+    (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+               (lambda (&rest _args)
+                 (setq payload-called t)
+                 (ert-fail "Should not prefetch completion payload")))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args) "main")))
+      (should (equal (majutsu-read-single-revset "Rev" "@" '("diff" "--from"))
+                     "main"))
+      (should-not payload-called))))
+
+(ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
+  "Revset reader should use plain minibuffer input and allow free-form text."
+  (let (seen-keymap seen-history seen-default)
     (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
                (lambda ()
                  (list :category 'majutsu-revision
-                       :candidates '("main"))))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate require-match _initial hist def)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-require-match require-match
-                         seen-history hist
-                         seen-default def
-                         seen-category (cdr (assq 'category (cdr metadata)))))
+                       :candidates '("@" "main"))))
+              ((symbol-function 'read-from-minibuffer)
+               (lambda (_prompt _initial keymap _read hist default &optional _inherit)
+                 (setq seen-keymap keymap
+                       seen-history hist
+                       seen-default default)
                  "main")))
       (should (equal (majutsu-read-revset "Rev" "@") "main"))
-      (should (null seen-require-match))
+      (should (eq seen-keymap majutsu-read-revset-map))
       (should (eq seen-history 'majutsu-read-revset-history))
-      (should (equal seen-default "@"))
-      (should (eq seen-category 'majutsu-revision)))))
+      (should (equal seen-default "@")))))
 
-(ert-deftest majutsu-read-optional-revset/uses-completion-and-allows-empty ()
-  "Optional revset reader should use revset metadata and accept empty input."
-  (let (seen-category seen-history seen-default seen-initial)
+(ert-deftest majutsu-read-revset/empty-input-accepts-default ()
+  "Required revset reader should accept DEFAULT on empty input."
+  (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
+             (lambda ()
+               (list :category 'majutsu-revision :candidates '("@"))))
+            ((symbol-function 'read-from-minibuffer)
+             (lambda (&rest _args) "")))
+    (should (equal (majutsu-read-revset "Rev" "@") "@"))))
+
+(ert-deftest majutsu-read-optional-revset/uses-read-from-minibuffer-and-allows-empty ()
+  "Optional revset reader should use minibuffer input and accept empty input."
+  (let (seen-initial seen-history seen-default seen-keymap)
     (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
                (lambda ()
                  (list :category 'majutsu-revision
-                       :candidates '("main"))))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate _require-match initial hist def)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-initial initial
-                         seen-history hist
-                         seen-default def
-                         seen-category (cdr (assq 'category (cdr metadata)))))
+                       :candidates '("@" "main"))))
+              ((symbol-function 'read-from-minibuffer)
+               (lambda (_prompt initial keymap _read hist default &optional _inherit)
+                 (setq seen-initial initial
+                       seen-keymap keymap
+                       seen-history hist
+                       seen-default default)
                  "")))
       (should-not (majutsu-read-optional-revset "Rev" nil "current"))
       (should (equal seen-initial "current"))
+      (should (eq seen-keymap majutsu-read-revset-map))
       (should (eq seen-history 'majutsu-read-revset-history))
-      (should (null seen-default))
-      (should (eq seen-category 'majutsu-revision)))))
+      (should (null seen-default)))))
 
 (ert-deftest majutsu-thingatpt-jj-revision/accepts-remote-ref-without-face ()
   (with-temp-buffer

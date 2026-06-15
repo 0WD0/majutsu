@@ -209,12 +209,23 @@
       (should (equal (majutsu-transient-revset-completion-args)
                      '("custom" "command" "--from"))))))
 
+(ert-deftest majutsu-diff-transient-revset-completion-args/uses-suffix-argument ()
+  "Transient revset readers should read the jj option from the infix object."
+  (majutsu-diff-test--with-transient-context
+      'majutsu-restore 'majutsu-restore:--changes-in
+    (should (equal (majutsu-transient-revset-completion-args)
+                   '("restore" "--changes-in"))))
+  (majutsu-diff-test--with-transient-context
+      'majutsu-split 'majutsu-split:--insert-before
+    (should (equal (majutsu-transient-revset-completion-args)
+                   '("split" "--insert-before")))))
+
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
-  "Transient single-revision readers should pass native jj completion context."
+  "Transient revset readers should pass native jj completion context."
   (let (current-prefix-arg seen-default seen-completion-args seen-initial-input)
     (majutsu-diff-test--with-transient-context
         'majutsu-restore 'majutsu-restore:--changes-in
-      (cl-letf (((symbol-function 'majutsu-read-optional-single-revset)
+      (cl-letf (((symbol-function 'majutsu-read-optional-revset)
                  (lambda (_prompt default initial-input _history completion-args)
                    (setq seen-default default
                          seen-completion-args completion-args
@@ -243,9 +254,9 @@
                    (lambda (_prompt default initial-input _history completion-args)
                      (setq seen (list default initial-input completion-args))
                      "main | dev"))
-                  ((symbol-function 'majutsu-read-single-revset)
+                  ((symbol-function 'majutsu-read-optional-single-revset)
                    (lambda (&rest _args)
-                     (ert-fail "Should not use single reader for revset expressions"))))
+                     (ert-fail "Should not use single-revision reader for transient revsets"))))
           (should (equal (majutsu-transient-read-revset "Revset: " "old" nil)
                          "main | dev"))
           (should (equal seen (list nil "old" expected-completion-args))))))))
