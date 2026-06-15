@@ -100,6 +100,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-tag)
   (require 'majutsu-duplicate)
   (require 'majutsu-edit)
+  (require 'majutsu-diffedit)
   (require 'majutsu-git)
   (require 'majutsu-command)
   (require 'majutsu-interactive)

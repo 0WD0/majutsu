@@ -28,7 +28,7 @@
 (require 'majutsu-base)
 (require 'majutsu-jj)
 (require 'majutsu-core)
-(require 'majutsu-edit)
+(require 'majutsu-diffedit)
 (require 'majutsu-process)
 (require 'majutsu-file)
 (require 'majutsu-conflict)
@@ -456,7 +456,7 @@ Return non-nil when LINE is recognized as a Majutsu Ediff control packet."
     (user-error "Diffedit requires a file target"))
   (let* ((root (majutsu--toplevel-safe default-directory))
          (default-directory root)
-         (file (majutsu-edit--normalize-diffedit-file file root))
+         (file (majutsu-diffedit--normalize-file file root))
          (fileset (majutsu-jj-fileset-quote file))
          (jj-args (majutsu-jj-append-filesets args (list fileset))))
     (let ((diff-editor-cmd (majutsu-ediff--diff-editor-config file)))
@@ -622,11 +622,11 @@ ARGS are transient arguments."
   (interactive
    (list (when (eq transient-current-command 'majutsu-ediff)
            (transient-args 'majutsu-ediff))))
-  (let* ((range (majutsu-edit--edit-range args))
+  (let* ((range (majutsu-diffedit--range args))
          (from (car range))
          (to (cdr range))
-         (file (majutsu-edit--read-diffedit-file from to))
-         (jj-args (majutsu-edit--build-diffedit-args from to)))
+         (file (majutsu-diffedit--read-file from to))
+         (jj-args (majutsu-diffedit--build-args from to)))
     (majutsu-ediff--run-diffedit jj-args file)))
 
 ;;;###autoload
@@ -641,8 +641,8 @@ section) or the working copy."
     (if (> sides 2)
         (progn
           (message "%s has %d sides; using diffedit fallback" file sides)
-          (majutsu-edit--run-diffedit
-           (majutsu-edit--build-diffedit-args nil rev)
+          (majutsu-diffedit-run-with-editor
+           (majutsu-diffedit--build-args nil rev)
            file))
       (majutsu-ediff--run-resolve rev file))))
 
