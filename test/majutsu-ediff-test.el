@@ -73,10 +73,6 @@
       (should (equal (car range) "@-"))
       (should (equal (cdr range) "@")))))
 
-(ert-deftest majutsu-ediff-test-build-diffedit-args-keeps-files-separate ()
-  "Diffedit args should keep file filters separate."
-  (should (equal (majutsu-diffedit--build-args "foo" "bar")
-                 '("--from" "foo" "--to" "bar"))))
 
 (ert-deftest majutsu-ediff-test-editor-command-config ()
   "Editor command config should use explicit command words."
@@ -99,11 +95,6 @@
                 process-environment)))
     (should (equal (majutsu-jj--editor-command-from-env)
                    '("emacsclient" "--socket-name=/tmp/editor.sock")))))
-
-(ert-deftest majutsu-ediff-test-diffedit-editor-target ()
-  "Diffedit target should point into right side temp tree."
-  (should (equal (majutsu-diffedit--editor-target "src/one.el")
-                 "$right/src/one.el")))
 
 (ert-deftest majutsu-ediff-test-merge-editor-config ()
   "Merge editor config should use Majutsu control wrapper."
@@ -381,8 +372,8 @@
       (should (equal called-right "/ssh:demo:/tmp/right/foo.txt"))
       (should entered-recursive))))
 
-(ert-deftest majutsu-ediff-test-run-diffedit/passes-file-hint-to-config ()
-  "Run-diffedit should pass resolved FILE to diff-editor config builder."
+(ert-deftest majutsu-ediff-test-diffedit-config-uses-file-hint ()
+  "Ediff diffedit config should receive the normalized file hint."
   (let (seen-file)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _dir) "/tmp/repo/"))
@@ -393,8 +384,9 @@
               ((symbol-function 'majutsu-run-jj-async)
                (lambda (&rest _args) nil)))
       (let ((default-directory "/tmp/repo/"))
-        (majutsu-ediff--run-diffedit '("--from" "@-" "--to" "@")
-                                    "src/main.el"))
+        (majutsu-diffedit-run '("--from" "@-" "--to" "@")
+                              "src/main.el"
+                              #'majutsu-ediff--diff-editor-config))
       (should (equal seen-file "src/main.el")))))
 
 (ert-deftest majutsu-ediff-test-diffedit-file-installs-local-quit-hooks ()
@@ -818,37 +810,38 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
   "Diffedit should prompt for file when none at point."
   (let (captured)
     (with-temp-buffer
-      (cl-letf (((symbol-function 'majutsu-diffedit--file-at-point)
+      (cl-letf (((symbol-function 'majutsu-file-at-point)
                  (lambda () nil))
                 ((symbol-function 'majutsu-jj-read-diff-file)
                  (lambda (from to)
                    (should (equal from "@-"))
                    (should (equal to "@"))
                    "docs/majutsu.org"))
-                ((symbol-function 'majutsu-ediff--run-diffedit)
-                 (lambda (args file)
-                   (setq captured (list args file)))))
+                ((symbol-function 'majutsu-diffedit-run)
+                 (lambda (args file diff-editor)
+                   (setq captured (list args file diff-editor)))))
         (majutsu-ediff-edit nil)
         (should (equal captured
-                       '(("--from" "@-" "--to" "@")
-                         "docs/majutsu.org")))))))
+                       (list nil "docs/majutsu.org"
+                             #'majutsu-ediff--diff-editor-config)))))))
 
 (ert-deftest majutsu-ediff-test-edit-uses-file-at-point ()
   "Diffedit should use file at point and skip file prompt."
   (let (captured)
     (with-temp-buffer
-      (cl-letf (((symbol-function 'majutsu-diffedit--file-at-point)
+      (cl-letf (((symbol-function 'majutsu-file-at-point)
                  (lambda () "src/one.el"))
                 ((symbol-function 'majutsu-jj-read-diff-file)
                  (lambda (&rest _)
                    (ert-fail "should not prompt when file at point exists")))
-                ((symbol-function 'majutsu-ediff--run-diffedit)
-                 (lambda (args file)
-                   (setq captured (list args file)))))
+                ((symbol-function 'majutsu-diffedit-run)
+                 (lambda (args file diff-editor)
+                   (setq captured (list args file diff-editor)))))
         (majutsu-ediff-edit '("--from=main" "--to=@"))
         (should (equal captured
-                       '(("--from" "main" "--to" "@")
-                         "src/one.el")))))))
+                       (list '("--from=main" "--to=@")
+                             "src/one.el"
+                             #'majutsu-ediff--diff-editor-config)))))))
 
 (ert-deftest majutsu-ediff-test-transient-has-resolve-actions ()
   "Ediff transient should expose both resolve actions."

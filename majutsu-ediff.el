@@ -450,19 +450,6 @@ Return non-nil when LINE is recognized as a Majutsu Ediff control packet."
       (run-at-time 0 nil #'majutsu-ediff--run-control-packet spec directory))
     t))
 
-(defun majutsu-ediff--run-diffedit (args file)
-  "Run jj diffedit with option ARGS and FILE using Ediff."
-  (unless file
-    (user-error "Diffedit requires a file target"))
-  (let* ((root (majutsu--toplevel-safe default-directory))
-         (default-directory root)
-         (file (majutsu-diffedit--normalize-file file root))
-         (fileset (majutsu-jj-fileset-quote file))
-         (jj-args (majutsu-jj-append-filesets args (list fileset))))
-    (let ((diff-editor-cmd (majutsu-ediff--diff-editor-config file)))
-      ;; Use async to avoid blocking Emacs while jj waits for diff completion.
-      (apply #'majutsu-run-jj-async "diffedit" "--config" diff-editor-cmd jj-args))))
-
 (defun majutsu-ediff--cleanup-diffedit-variant-buffers
     (left-file right-file left-existing right-existing)
   "Persist and close diffedit variant buffers created for this session."
@@ -623,11 +610,8 @@ ARGS are transient arguments."
    (list (when (eq transient-current-command 'majutsu-ediff)
            (transient-args 'majutsu-ediff))))
   (let* ((range (majutsu-diffedit--range args))
-         (from (car range))
-         (to (cdr range))
-         (file (majutsu-diffedit--read-file from to))
-         (jj-args (majutsu-diffedit--build-args from to)))
-    (majutsu-ediff--run-diffedit jj-args file)))
+         (file (majutsu-diffedit--read-file (car range) (cdr range))))
+    (majutsu-diffedit-run args file #'majutsu-ediff--diff-editor-config)))
 
 ;;;###autoload
 (defun majutsu-ediff-resolve (&optional file)
@@ -641,9 +625,7 @@ section) or the working copy."
     (if (> sides 2)
         (progn
           (message "%s has %d sides; using diffedit fallback" file sides)
-          (majutsu-diffedit-run-with-editor
-           (majutsu-diffedit--build-args nil rev)
-           file))
+          (majutsu-diffedit-run-with-editor (list "-r" rev) file))
       (majutsu-ediff--run-resolve rev file))))
 
 ;;;###autoload
