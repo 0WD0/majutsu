@@ -49,7 +49,8 @@
 (defun majutsu-test--jjdescription-setup ()
   "Set up a JJ description buffer with an explicit test repository root."
   (setq-local majutsu--default-directory "/tmp/test-repo/")
-  (majutsu-jjdescription-setup))
+  (let ((with-editor-show-usage nil))
+    (majutsu-jjdescription-setup)))
 
 (defun majutsu-test--faces-at (pos)
   "Return a list of font-lock faces at POS."
@@ -279,7 +280,8 @@
             (setq buffer-file-name "/tmp/editor-123.jjdescription")
             (process-put client 'server-client-directory "/tmp/test-repo")
             (setq-local server-buffer-clients (list client))
-            (majutsu-jjdescription-setup)
+            (let ((with-editor-show-usage nil))
+              (majutsu-jjdescription-setup))
             (should (equal default-directory "/tmp/test-repo/"))
             (should (equal majutsu--default-directory "/tmp/test-repo/")))
         (delete-process client)))))
@@ -295,7 +297,8 @@
                  (and (equal file buffer-file-name) "/tmp/test-repo/")))
               ((symbol-function #'majutsu-process-forget-with-editor-file-root)
                (lambda (&rest _) nil)))
-      (majutsu-jjdescription-setup)
+      (let ((with-editor-show-usage nil))
+        (majutsu-jjdescription-setup))
       (let (seen seen-default-directory)
         (cl-letf (((symbol-function #'majutsu-diff-revset)
                    (lambda (revset &rest _)

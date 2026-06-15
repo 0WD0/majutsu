@@ -38,7 +38,8 @@
 (ert-deftest majutsu-sparse-jjsparse-comment-vars ()
   "jjsparse mode configures JJ comment variables."
   (with-temp-buffer
-    (majutsu-jjsparse-mode)
+    (let ((with-editor-show-usage nil))
+      (majutsu-jjsparse-mode))
     (should (equal comment-start "JJ:"))
     (should (equal comment-start-skip "^JJ:[ \t]*"))
     (should (equal comment-end ""))
@@ -47,7 +48,8 @@
 (ert-deftest majutsu-sparse-jjsparse-font-lock-comments ()
   "Only JJ: lines are highlighted as comments."
   (with-temp-buffer
-    (majutsu-jjsparse-mode)
+    (let ((with-editor-show-usage nil))
+      (majutsu-jjsparse-mode))
     (insert "JJ: keep this as a comment\n")
     (insert "# not a comment\n")
     (insert "src/\n")

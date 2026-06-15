@@ -24,7 +24,8 @@
             (write-region "" nil nested nil 'silent)
             (with-temp-buffer
               (setq-local buffer-file-name nested)
-              (majutsu-diffedit--maybe-enable-mode)
+              (let ((with-editor-show-usage nil))
+                (majutsu-diffedit--maybe-enable-mode))
               (should majutsu-diffedit-mode))))
       (delete-directory root t))))
 
@@ -33,7 +34,8 @@
   (let ((called nil))
     (with-temp-buffer
       (setq-local server-buffer-clients '(dummy))
-      (with-editor-mode 1)
+      (let ((with-editor-show-usage nil))
+        (with-editor-mode 1))
       (let ((majutsu-diffedit-finish-on-save t))
         (cl-letf (((symbol-function 'with-editor-finish)
                    (lambda (&optional _force)
