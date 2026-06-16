@@ -50,6 +50,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("e" "Edit change"       majutsu-edit-changeset)
     ("E" "Ediff"             majutsu-ediff)]
    [("G" "Git"               majutsu-git-transient)
+    ("h" "Arrange history"   majutsu-arrange)
     ("!" "Run"               majutsu-command)
     ("l" "Log options"       majutsu-log-transient)
     ("o" "New"               majutsu-new)
@@ -111,6 +112,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-revert)
   (require 'majutsu-restore)
   (require 'majutsu-absorb)
+  (require 'majutsu-arrange)
   (require 'majutsu-split)
   (require 'majutsu-squash)
   (require 'majutsu-sparse)
@@ -120,7 +122,8 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-op)
   (require 'majutsu-evolog)
   (require 'majutsu-workspace)
-  (require 'majutsu-conflict))
+  (require 'majutsu-conflict)
+  (require 'majutsu-gerrit))
 
 (with-eval-after-load 'evil
   (require 'majutsu-evil nil t))

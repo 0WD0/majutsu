@@ -518,6 +518,18 @@ Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 - Key: -o :: Specify the destination (=--onto=).
 Runs: =jj rebase -s SRC -o DEST=
 
+** Arranging History
+- Key: h in the dispatcher (majutsu-arrange) :: Open an Emacs-native arrange buffer for editing a =jj arrange=-style graph rewrite plan. With a prefix argument, prompt with Majutsu's standard revset expression reader; type a union expression such as =A | B= to arrange multiple sets.
+- Key: j / k :: Move the selected target revision.
+- Key: m / M :: Toggle or clear explicit subject marks.
+- Key: S :: Cycle the move subject scope (=subdag=, =stack=, =single=, =marked=, =branch=).
+- Key: A / B / o :: Move the current subject after, before, or onto an anchor while preserving internal DAG edges. Mark a subject, move to an anchor, then press one of these keys; otherwise Majutsu prompts for an anchor.
+- Key: J / K :: Compatibility swap with the selected revision's unique target parent or child.
+- Key: a / p :: Mark the selected revision to abandon or keep.
+- Key: c / C-c C-c :: Apply the plan using the CLI replay backend.
+- Key: q / C-c C-k :: Cancel and discard the plan.
+Majutsu loads target revisions plus external parent/child context. DAG-preserving moves compile to =jj rebase -r= so dependencies inside the moved subject are preserved; keep/abandon uses =jj abandon=.
+
 ** Duplicating
 - Key: ? y (majutsu-duplicate) :: Open the Duplicate transient. Allows selecting source revisions and destination.
 - Key: ? Y (majutsu-duplicate-dwim) :: Duplicate the revision at point onto its current parent.
@@ -755,6 +767,48 @@ Runs: =jj git push=
 - Key: -A :: Fetch from all remotes.
 - Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not branch-specific =--branch= selections.
 Runs: =jj git fetch=
+
+** Gerrit Upload
+- Key: u (majutsu-gerrit-upload-transient) :: Open the Gerrit upload transient.
+- Key: -r :: Upload specific revision(s).
+- Key: r :: Toggle the revision at point into or out of the upload selection. If no revision is selected, Majutsu leaves revision selection to =jj gerrit upload=, which uses its own @/@- default.
+- Key: -b :: Target remote branch (=--remote-branch=).
+- Key: -R :: Gerrit remote (=--remote=).
+- Key: -n :: Preview without pushing (=--dry-run=).
+- Review options include reviewers, CCs, labels, topic, hashtags, and a patch set message.
+- State/notification options include change edit, WIP/ready, private/remove-private, publishing comments, notification policy, and attention-set handling.
+- Advanced options expose submit, skip validation, merged uploads, deadlines, custom keyed values, and trace values.
+- Key: W :: Save stable upload options as defaults for this jj repository. Majutsu remembers =--remote=, =--remote-branch=, =--notify=, and =--ignore-attention-set=, but not revisions, dry-run, metadata, state, or submit-related flags.
+Runs: =jj gerrit upload=
+
+Reviewer/CC/topic/label prompts opportunistically borrow completion helpers from
+installed =gerrit.el= and/or =egerrit= when available. These integrations are
+optional: Majutsu does not depend on either package, and the prompts fall back
+to ordinary free-form minibuffer input when no provider is available.
+
+If you already use one of those packages, configure it normally and Majutsu
+will reuse that configuration. For =gerrit.el=, the important settings are
+=gerrit-host= (plus =gerrit-use-ssl= / =gerrit-rest-endpoint-prefix= if
+needed) and authentication via Emacs =auth-source=. See
+[[https://github.com/twmr/gerrit.el#authentication][gerrit.el's authentication documentation]].
+For =egerrit=, set =egerrit-request-url= and configure credentials through
+=auth-source= as described in its README.
+
+Borrowed REST-backed completion is enabled only when Majutsu can determine a
+reliable Gerrit web/API origin. Explicit =gerrit.el= / =egerrit= configuration
+works, and HTTP(S) remotes work directly. For SSH remotes such as
+=ssh://user@host:29418/project=, configure Gerrit's web URL explicitly, for
+example:
+
+#+begin_src sh
+jj config set --repo gerrit.review-url http://host:8080
+#+end_src
+
+Majutsu intentionally does not guess a web/API URL from SSH port =29418=.
+This setting is not required for =jj gerrit upload= itself; upstream jj uses
+=gerrit.review-url= only to generate =Link:= trailers instead of =Change-Id:=
+trailers. Majutsu also uses it as a reliable web/API base for borrowed Gerrit
+completion when no explicit provider configuration is present.
 
 ** Remotes
 - Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.
