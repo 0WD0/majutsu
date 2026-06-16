@@ -219,9 +219,9 @@ is `any', require non-empty input without requiring a candidate match."
 (defun majutsu-completing-read-payload
     (prompt payload &optional predicate require-match initial-input hist def category context directory)
   "Read one value from structured completion PAYLOAD.
-PAYLOAD may provide :category for completion styling.  CONTEXT and
-DIRECTORY are accepted for API compatibility and ignored.  REQUIRE-MATCH
-follows `majutsu-completing-read'."
+PAYLOAD may provide :category and richer completion metadata.  CONTEXT and
+DIRECTORY are accepted for API compatibility within Majutsu and are ignored.
+REQUIRE-MATCH follows `majutsu-completing-read'."
   (ignore context directory)
   (let ((table (majutsu-completion-payload-table payload category def)))
     (let ((value (completing-read (format-prompt prompt def)
@@ -257,9 +257,9 @@ requiring a candidate match."
 (defun majutsu-completing-read-multiple-payload
     (prompt payload &optional predicate require-match initial-input hist def category context directory)
   "Read multiple values from structured completion PAYLOAD.
-PAYLOAD may provide :category for completion styling.  CONTEXT and
-DIRECTORY are accepted for API compatibility and ignored.  REQUIRE-MATCH
-follows `majutsu-completing-read-multiple'."
+PAYLOAD may provide :category and richer completion metadata.  CONTEXT and
+DIRECTORY are accepted for API compatibility within Majutsu and are ignored.
+REQUIRE-MATCH follows `majutsu-completing-read-multiple'."
   (ignore context directory)
   (let ((table (majutsu-completion-payload-table payload category def)))
     (let ((values (completing-read-multiple (format-prompt prompt def)
