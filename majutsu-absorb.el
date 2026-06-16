@@ -71,7 +71,7 @@ jj-commit section, add --from from that section."
   :selection-face '(:background "dark orange" :foreground "black")
   :key "-f"
   :argument "--from="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-absorb:--into ()
   :description "Into"
@@ -81,7 +81,7 @@ jj-commit section, add --from from that section."
   :key "-t"
   :argument "--into="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-absorb:from ()
   :description "From (toggle at point)"

@@ -25,6 +25,7 @@
 (require 'majutsu-base)
 (require 'majutsu-mode)
 (require 'majutsu-jj)
+(require 'majutsu-section)
 (require 'ansi-color)
 (require 'seq)
 (require 'subr-x)
@@ -331,7 +332,7 @@ it."
            (not (seq-some (lambda (window)
                             (eq (window-buffer window) buffer))
                           (window-list))))
-      (magit-section-hide section)))))
+      (majutsu-section-hide section)))))
 
 (defun majutsu--process--error-usage (process-buf)
   (and majutsu-show-process-buffer-hint
@@ -399,6 +400,23 @@ ARG may be a process object or an exit code.  Return the exit code."
                               (pop-to-buffer b))))
                         process))))))
 
+(defun majutsu--process-setup (process section root sentinel)
+  "Attach Majutsu bookkeeping to PROCESS for SECTION under ROOT.
+SENTINEL becomes the process sentinel.  SECTION may be a placeholder that
+is not a `magit-section', in which case the section slots are left unset."
+  (set-process-query-on-exit-flag process nil)
+  (process-put process 'section section)
+  (process-put process 'command-buf (current-buffer))
+  (process-put process 'default-dir root)
+  (when (magit-section-p section)
+    (oset section process process)
+    (oset section value process))
+  (with-current-buffer (process-buffer process)
+    (set-marker (process-mark process) (point)))
+  (majutsu--process-install-filter process)
+  (set-process-sentinel process sentinel)
+  process)
+
 (defun majutsu-start-process (program &optional input &rest args)
   "Start PROGRAM asynchronously, preparing for refresh, and return the process.
 
@@ -419,18 +437,7 @@ repository's log buffer (see `majutsu-refresh')."
                         (default-process-coding-system '(utf-8-unix . utf-8-unix)))
                     (apply #'start-file-process (file-name-nondirectory program)
                            process-buf program args))))
-    (set-process-query-on-exit-flag process nil)
-    (process-put process 'section section)
-    (process-put process 'command-buf (current-buffer))
-    (process-put process 'default-dir root)
-    (oset section process process)
-    (oset section value process)
-    (with-current-buffer process-buf
-      (set-marker (process-mark process) (point)))
-    (if (fboundp 'with-editor-set-process-filter)
-        (with-editor-set-process-filter process #'majutsu--process-filter)
-      (set-process-filter process #'majutsu--process-filter))
-    (set-process-sentinel process #'majutsu--process-sentinel)
+    (majutsu--process-setup process section root #'majutsu--process-sentinel)
     (when input
       (with-current-buffer input
         (process-send-region process (point-min) (point-max))
@@ -525,6 +532,12 @@ Return non-nil when LINE is consumed as a control packet."
                                           proc string))
       (set-marker (process-mark proc) (point)))))
 
+(defun majutsu--process-install-filter (process)
+  "Install Majutsu's process filter on PROCESS."
+  (if (fboundp 'with-editor-set-process-filter)
+      (with-editor-set-process-filter process #'majutsu--process-filter)
+    (set-process-filter process #'majutsu--process-filter)))
+
 (defun majutsu--process-sentinel (process _event)
   "Default sentinel used by `majutsu-start-process'."
   (when (memq (process-status process) '(exit signal))
@@ -563,13 +576,111 @@ place similarly to Magit's `magit-process-environment'."
                           env))
       env)))
 
+(defun majutsu--process-destination-buffer (destination)
+  "Return the output buffer represented by process DESTINATION."
+  (cond
+   ((eq destination t) (current-buffer))
+   ((bufferp destination) destination)
+   ((stringp destination) (get-buffer-create destination))
+   ((null destination) nil)))
+
+(defun majutsu--process-file-supported-p (infile destination)
+  "Return non-nil when the responsive runner supports INFILE and DESTINATION.
+
+The runner only handles the call shapes Majutsu actually uses: no input
+file, a single stdout destination, or a (STDOUT STDERR) pair whose stderr
+is discarded (nil), mixed with stdout (t), or written to a file (string)."
+  (and (null infile)
+       (let ((stdout (if (consp destination) (car destination) destination))
+             (stderr (and (consp destination) (cadr destination))))
+         (and (or (null stdout) (eq stdout t)
+                  (bufferp stdout) (stringp stdout))
+              (or (null stderr) (eq stderr t) (stringp stderr))))))
+
+(defun majutsu--process-file-insert-filter (marker)
+  "Return a process filter that inserts output at MARKER."
+  (lambda (_process string)
+    (when-let* ((buffer (marker-buffer marker)))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (goto-char marker)
+          (insert string)
+          (set-marker marker (point)))))))
+
+(defun majutsu--process-file-responsive (program _infile destination &rest args)
+  "Run PROGRAM with ARGS synchronously while servicing Emacs subprocesses.
+
+DESTINATION follows the `process-file' stdout/stderr contract supported by
+`majutsu--process-file-supported-p'.  When stderr is requested as a file,
+the standard error process spawned by `make-process' has its sentinel
+silenced so the captured stderr is verbatim, and is drained explicitly
+before the file is written so its output cannot lag behind."
+  (let* ((stdout-dest (if (consp destination) (car destination) destination))
+         (stderr-dest (and (consp destination) (cadr destination)))
+         (stdout-buffer (majutsu--process-destination-buffer stdout-dest))
+         (stdout-marker (and stdout-buffer
+                             (copy-marker (with-current-buffer stdout-buffer
+                                            (point))
+                                          t)))
+         (stderr-buffer (and (stringp stderr-dest)
+                             (generate-new-buffer " *majutsu-stderr*")))
+         (process (make-process
+                   :name (file-name-nondirectory program)
+                   :buffer stdout-buffer
+                   :command (cons program args)
+                   :connection-type 'pipe
+                   :coding default-process-coding-system
+                   :noquery t
+                   :filter (and stdout-marker
+                                (majutsu--process-file-insert-filter stdout-marker))
+                   :sentinel #'ignore
+                   :stderr stderr-buffer
+                   :file-handler t))
+         (stderr-process (and stderr-buffer (get-buffer-process stderr-buffer)))
+         exit)
+    ;; Emacs' default sentinel on the standard error process appends a
+    ;; "Process ... finished" line to the stderr buffer; silence it so the
+    ;; captured stderr is verbatim.
+    (when stderr-process
+      (set-process-sentinel stderr-process #'ignore))
+    (unwind-protect
+        (progn
+          ;; The main process may have already exited (e.g. it does not
+          ;; read stdin); guard `process-send-eof' so we never signal
+          ;; "Process ... not running" from the dispatch path.
+          (when (process-live-p process)
+            (condition-case nil
+                (process-send-eof process)
+              (error nil)))
+          (setq exit (majutsu--process-wait process stderr-process))
+          (when stderr-buffer
+            (with-current-buffer stderr-buffer
+              (write-region (point-min) (point-max) stderr-dest nil 'silent)))
+          exit)
+      (when (process-live-p process)
+        (delete-process process))
+      (when (process-live-p stderr-process)
+        (delete-process stderr-process))
+      (when stdout-marker
+        (set-marker stdout-marker nil))
+      (when (buffer-live-p stderr-buffer)
+        (kill-buffer stderr-buffer)))))
+
 (defun majutsu-process-file (program &optional infile destination display &rest args)
   "Run PROGRAM synchronously like `process-file' with Majutsu process defaults.
 
-This centralizes subprocess environment and coding behavior for jj invocations."
+This centralizes subprocess environment and coding behavior for jj invocations.
+Unlike `process-file', this implementation waits via
+`accept-process-output', so Emacs can service subprocesses such as an
+Emacs-based GPG pinentry while jj is running."
   (let ((process-environment (majutsu-process-environment args))
         (default-process-coding-system '(utf-8-unix . utf-8-unix)))
-    (apply #'process-file program infile destination display args)))
+    (if (or display
+            (eq destination 0)
+            (not (majutsu--process-file-supported-p infile destination)))
+        (apply #'process-file program infile destination display args)
+      (apply #'majutsu--process-file-responsive
+             program infile destination args))))
 
 (defun majutsu-start-jj (args &optional success-msg finish-callback)
   "Run jj ARGS asynchronously for side-effects and log output.
@@ -589,6 +700,53 @@ process terminates."
       (process-put process 'finish-callback finish-callback))
     process))
 
+(defun majutsu--process-wait (process &optional stderr-process)
+  "Wait for PROCESS to finish while continuing to service Emacs subprocesses.
+
+This is used for commands that are synchronous from Majutsu's point of
+view, but may need another Emacs subprocess to run concurrently.  In
+particular, GnuPG setups using an Emacs-based pinentry need Emacs to keep
+servicing the server/pinentry process while jj is waiting for GPG.
+
+`accept-process-output' keeps servicing every Emacs subprocess while it
+waits, so pinentry stays responsive even though we block on PROCESS.  When
+STDERR-PROCESS is non-nil, also drain it; per the Emacs manual, output from
+a separate standard error process is not delivered by waiting on the main
+process alone.
+
+If the user interrupts the wait with `C-g', return 255 so callers can
+finalize the process section as a failed command.  In that case the
+surrounding `unwind-protect' is responsible for cleaning up PROCESS and
+STDERR-PROCESS; any partially captured stderr is discarded."
+  (condition-case nil
+      (progn
+        (while (accept-process-output process))
+        (when stderr-process
+          (while (accept-process-output stderr-process)))
+        (process-exit-status process))
+    (quit 255)))
+
+(defun majutsu--call-process-responsive (program process-buf section root &rest args)
+  "Run PROGRAM with ARGS synchronously without blocking Emacs subprocesses.
+
+Output is appended to PROCESS-BUF at SECTION, using the same filter as
+`majutsu-start-process'.  Return the process exit status."
+  (let* ((process-environment (majutsu-process-environment args))
+         (default-process-coding-system '(utf-8-unix . utf-8-unix))
+         (process (apply #'start-file-process (file-name-nondirectory program)
+                         process-buf program args))
+         exit)
+    ;; `majutsu-call-jj' finalizes the section explicitly after this helper
+    ;; returns, so suppress Emacs' default sentinel, which would otherwise
+    ;; append "Process ... finished" status text to the Majutsu process buffer.
+    (majutsu--process-setup process section root #'ignore)
+    (majutsu--process-display-buffer process)
+    (unwind-protect
+        (setq exit (majutsu--process-wait process))
+      (when (process-live-p process)
+        (delete-process process)))
+    exit))
+
 (defun majutsu-call-jj (&rest args)
   "Call jj synchronously in a separate process, for side-effects.
 
@@ -596,7 +754,11 @@ Process output goes into a new section in the buffer returned by
 `majutsu-process-buffer'.  Return the exit code.
 
 Unlike `majutsu-start-jj', this does not implicitly refresh any Majutsu
-buffers.  Call `majutsu-refresh' explicitly when desired."
+buffers.  Call `majutsu-refresh' explicitly when desired.
+
+This function waits using `accept-process-output' rather than
+`process-file', so Emacs can continue to service subprocesses such as an
+Emacs-based GPG pinentry while jj is running."
   (let* ((default-directory (majutsu--toplevel-safe default-directory))
          (jj (majutsu-jj--executable))
          (args (majutsu-process-jj-arguments args))
@@ -609,7 +771,8 @@ buffers.  Call `majutsu-refresh' explicitly when desired."
                     (prog1 (majutsu--process-insert-section pwd jj args nil nil)
                       (backward-char 1))))
                  (inhibit-read-only t)
-                 (exit (apply #'majutsu-process-file jj nil process-buf nil args)))
+                 (exit (apply #'majutsu--call-process-responsive
+                              jj process-buf section process-root args)))
       (setq exit (majutsu-process-finish exit process-buf (current-buffer) process-root section))
       exit)))
 

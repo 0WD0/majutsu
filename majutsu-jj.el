@@ -21,6 +21,7 @@
 ;;; Code:
 
 (require 'ansi-color)
+(require 'compat)
 (require 'cl-lib)
 (require 'magit-section)
 (require 'seq)
@@ -169,38 +170,25 @@ remote prefix from DIRECTORY so the result remains remote."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
-(defconst majutsu-jj--revset-source-order
-  '(pseudo workspace bookmark tag)
-  "Source display order for revset completion metadata.")
-
 (defun majutsu-jj--safe-lines (&rest args)
   "Return `majutsu-jj-lines' for ARGS, or nil on command failure."
   (condition-case nil
       (apply #'majutsu-jj-lines args)
     (error nil)))
 
-(defun majutsu-jj--add-revset-source (table candidate source)
-  "Record SOURCE for CANDIDATE in hash TABLE."
-  (when (and (stringp candidate) (not (string-empty-p candidate)))
-    (let* ((current (gethash candidate table))
-           (next (if (memq source current)
-                     current
-                   (append current (list source)))))
-      (puthash candidate next table))))
-
-(defun majutsu-jj--revset-source-label (source)
-  "Return display label for completion SOURCE."
-  (pcase source
-    ('pseudo "pseudo")
-    ('workspace "workspace")
-    ('bookmark "bookmark")
-    ('tag "tag")
-    (_ (symbol-name source))))
+(defun majutsu-jj--parse-completion-line (line)
+  "Parse one fish completion LINE into a completion item."
+  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
+    (let ((candidate (match-string 1 line))
+          (annotation (match-string 2 line)))
+      (if (and annotation (not (string-empty-p annotation)))
+          (cons candidate annotation)
+        candidate))))
 
 (defun majutsu-jj-completion-items (args)
   "Return jj native completion items for ARGS.
 ARGS are command-line arguments after the leading jj executable name.
-Each returned item is (CANDIDATE . HELP)."
+Each returned item is a string or (CANDIDATE . HELP)."
   (condition-case nil
       (with-temp-buffer
         (let* ((process-environment (cons "COMPLETE=fish" process-environment))
@@ -210,81 +198,201 @@ Each returned item is (CANDIDATE . HELP)."
                             (append '("--" "jj") args))))
           (when (zerop exit)
             (delq nil
-                  (mapcar #'majutsu-completion-parse-annotated-line
+                  (mapcar #'majutsu-jj--parse-completion-line
                           (split-string (buffer-string) "\n" t))))))
     (error nil)))
 
-(defun majutsu-jj--completion-table (args &optional category default)
-  "Return an Emacs completion table using jj native completion.
+(defun majutsu-jj--completion-revision-kind-label (kind)
+  "Return display label for revision completion KIND."
+  (pcase kind
+    ('bookmark "bookmark")
+    ('remote-bookmark "remote bookmark")
+    ('tag "tag")
+    ('workspace "workspace")
+    ('change-id "change")
+    ('revset-alias "alias")
+    ((pred stringp) kind)
+    (_ nil)))
+
+(defun majutsu-jj--completion-revision-sources-label (entry)
+  "Return source label string for revision completion ENTRY."
+  (when-let* ((sources (plist-get entry :sources)))
+    (let* ((labels (delq nil (mapcar #'majutsu-jj--completion-revision-kind-label
+                                     sources)))
+           (kind (majutsu-jj--completion-revision-kind-label
+                  (plist-get entry :kind))))
+      (unless (or (null labels)
+                  (and (= (length labels) 1)
+                       (equal (car labels) kind)))
+        (string-join labels ",")))))
+
+(defun majutsu-jj--completion-revision-suffix (entry)
+  "Return aligned revision suffix for completion ENTRY."
+  (majutsu-completion-annotation
+   (majutsu-completion-column
+    (or (majutsu-jj--completion-revision-kind-label (plist-get entry :kind))
+        "revset")
+    15 'majutsu-completion-key)
+   (majutsu-completion-column
+    (majutsu-jj--completion-revision-sources-label entry)
+    16 'majutsu-completion-type)
+   (majutsu-completion-column
+    (plist-get entry :tag)
+    24 'majutsu-completion-documentation)
+   (majutsu-completion-column
+    (plist-get entry :id)
+    14 'majutsu-completion-number)
+   (majutsu-completion-field
+    (plist-get entry :help)
+    'majutsu-completion-documentation)))
+
+(defun majutsu-jj--completion-suffix (category entries annotations candidate)
+  "Return completion suffix for CANDIDATE in CATEGORY."
+  (or (and (eq category 'majutsu-revision)
+           (when-let* ((entry (gethash candidate entries)))
+             (majutsu-jj--completion-revision-suffix entry)))
+      (majutsu-completion-string-suffix (gethash candidate annotations))))
+
+(defun majutsu-jj--completion-suffix-function (category entries annotations)
+  "Return candidate suffix function for completion CATEGORY.
+ENTRIES and ANNOTATIONS are candidate-indexed hash tables."
+  (when (or (and (eq category 'majutsu-revision)
+                 (> (hash-table-count entries) 0))
+            (majutsu-completion-annotation-suffix-function annotations))
+    (lambda (candidate)
+      (majutsu-jj--completion-suffix category entries annotations candidate))))
+
+(defun majutsu-jj--completion-payload (args &optional category)
+  "Return jj native completion payload for ARGS.
+ARGS are command-line arguments after the leading jj executable name."
+  (let* ((category (or category 'majutsu-revision))
+         (items (majutsu-jj-completion-items args))
+         (annotations (make-hash-table :test #'equal))
+         (entries (make-hash-table :test #'equal))
+         candidates)
+    (dolist (item items)
+      (let ((candidate (if (consp item) (car item) item))
+            (annotation (and (consp item) (cdr item))))
+        (when (and (stringp candidate) (not (string-empty-p candidate)))
+          (push candidate candidates)
+          (when (and (stringp annotation) (not (string-empty-p annotation)))
+            (puthash candidate annotation annotations)))))
+    (list :category category
+          :candidates (nreverse candidates)
+          :annotations annotations
+          :annotation-suffix-function
+          (majutsu-jj--completion-suffix-function category entries annotations))))
+
+(defun majutsu-jj--completion-table (args &optional category)
+  "Return a dynamic Emacs completion table using jj native completion.
 ARGS are command-line arguments before the value being completed.  The
-completed value is requested from jj by appending an empty argument.
-CATEGORY, when non-nil, is exposed in completion metadata.  DEFAULT,
-when non-empty and missing from jj's candidates, is added first."
-  (majutsu-completion-table
-   (majutsu-jj-completion-items (append args '("")))
-   category default))
+current input string is passed to jj as the value argument, which lets
+expression arguments such as revsets continue completing after operators
+like `|' or `..'.  CATEGORY, when non-nil, is exposed in completion
+metadata."
+  (let* ((payload-cache (make-hash-table :test #'equal))
+         (annotations (make-hash-table :test #'equal))
+         (entries (make-hash-table :test #'equal))
+         (metadata-category (or category 'majutsu-revision))
+         (metadata
+          (majutsu-completion-payload-metadata
+           (list :category metadata-category
+                 :annotation-function
+                 (lambda (candidate)
+                   (when-let* ((annotation (gethash candidate annotations)))
+                     (if (string-prefix-p " " annotation)
+                         annotation
+                       (concat " " annotation))))
+                 :annotation-suffix-function
+                 (apply-partially #'majutsu-jj--completion-suffix
+                                  metadata-category entries annotations))
+           metadata-category)))
+    (cl-labels
+        ((payload-for
+           (string)
+           (or (gethash string payload-cache)
+               (let ((payload (majutsu-jj--completion-payload
+                               (append args (list string))
+                               metadata-category)))
+                 (puthash string payload payload-cache)
+                 (when-let* ((payload-annotations (plist-get payload :annotations)))
+                   (maphash (lambda (candidate annotation)
+                              (puthash candidate annotation annotations))
+                            payload-annotations))
+                 (when-let* ((payload-entries (plist-get payload :entries)))
+                   (maphash (lambda (candidate entry)
+                              (puthash candidate entry entries))
+                            payload-entries))
+                 payload))))
+      (completion-table-with-metadata
+       (lambda (string predicate action)
+         (complete-with-action
+          action
+          (plist-get (payload-for string) :candidates)
+          string predicate))
+       metadata))))
 
-(defun majutsu-jj--revset-annotation-function (sources)
-  "Return annotation function from candidate SOURCES table."
-  (lambda (candidate)
-    (when-let* ((kinds (gethash candidate sources)))
-      (let* ((ordered (seq-filter (lambda (k) (memq k kinds)) majutsu-jj--revset-source-order))
-             (extra (seq-remove (lambda (k) (memq k majutsu-jj--revset-source-order)) kinds))
-             (labels (mapcar #'majutsu-jj--revset-source-label (append ordered extra))))
-        (format "  [%s]" (string-join labels ","))))))
-
-(defun majutsu-jj--revset-annotations (sources candidates)
-  "Return annotation hash for revset CANDIDATES from SOURCES."
-  (let ((annotations (make-hash-table :test #'equal))
-        (annotation (majutsu-jj--revset-annotation-function sources)))
-    (dolist (candidate candidates)
-      (when-let* ((value (funcall annotation candidate)))
-        (puthash candidate value annotations)))
-    annotations))
-
-(defun majutsu-jj-revset-candidate-data (&optional default)
+(defun majutsu-jj-revset-candidate-data ()
   "Return revset completion payload.
-The return value is a plist with keys :category, :candidates,
-:annotations, and :sources."
-  (let* ((sources (make-hash-table :test #'equal))
-         (ordered nil)
-         (workspaces (majutsu-jj--safe-lines "workspace" "list" "-T" "name ++ \"\\n\""))
-         (bookmarks (majutsu-jj--safe-lines "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
-         (tags (majutsu-jj--safe-lines "tag" "list" "--quiet" "-T" "name ++ \"\\n\"")))
-    (cl-labels ((add (candidate source)
-                  (when (and (stringp candidate) (not (string-empty-p candidate)))
-                    (unless (gethash candidate sources)
-                      (setq ordered (append ordered (list candidate))))
-                    (majutsu-jj--add-revset-source sources candidate source))))
-      (dolist (pseudo '("@" "@-" "@+"))
-        (add pseudo 'pseudo))
-      (dolist (name workspaces)
-        (add (concat name "@") 'workspace))
-      (dolist (name bookmarks)
-        (add name 'bookmark))
-      (dolist (name tags)
-        (add name 'tag)))
-    (let ((candidates (if (and default (not (string-empty-p default)))
-                          (cons default (delete default ordered))
-                        ordered)))
-      (list :category 'majutsu-revision
-            :candidates candidates
-            :annotations (majutsu-jj--revset-annotations sources candidates)
-            :sources sources))))
+The return value is a plist with keys :category and :candidates.
+Candidates are repository references: other workspaces' working-copy
+refs (`<workspace>@'), bookmarks, and tags."
+  (let ((seen (make-hash-table :test #'equal))
+        (candidates nil))
+    (cl-labels ((add (candidate)
+                  (when (and (stringp candidate)
+                             (not (string-empty-p candidate))
+                             (not (gethash candidate seen)))
+                    (puthash candidate t seen)
+                    (push candidate candidates))))
+      (dolist (name (majutsu-jj--safe-lines
+                     "workspace" "list" "-T" "name ++ \"\\n\""))
+        (add (concat name "@")))
+      (dolist (name (majutsu-jj--safe-lines
+                     "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
+        (add name))
+      (dolist (name (majutsu-jj--safe-lines
+                     "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
+        (add name)))
+    (list :category 'majutsu-revision
+          :candidates (nreverse candidates))))
 
-(defun majutsu-jj-revset-candidates (&optional default)
+(defun majutsu-jj-revset-candidates ()
   "Return completion candidates for revset prompts.
-Candidates include pseudo revisions and repository references such as
-workspace working-copy refs (`<workspace>@`), bookmarks, and tags.
-DEFAULT, when non-nil, is inserted first so users can accept it quickly."
-  (plist-get (majutsu-jj-revset-candidate-data default) :candidates))
+Candidates are repository references: other workspaces' working-copy
+refs (`<workspace>@'), bookmarks, and tags."
+  (plist-get (majutsu-jj-revset-candidate-data) :candidates))
 
-(defun majutsu-jj--revset-completion-table (&optional default)
-  "Return a completion table for revset input.
-DEFAULT is inserted first in the candidate list when non-nil."
+(defun majutsu-jj--revset-completion-table ()
+  "Return a completion table for revset input."
   (majutsu-completion-payload-table
-   (majutsu-jj-revset-candidate-data default)
-   'majutsu-revision default))
+   (majutsu-jj-revset-candidate-data)
+   'majutsu-revision))
+
+(defun majutsu-read-single-revset (prompt &optional default completion-args history)
+  "Prompt user with PROMPT to read a single revision selector.
+
+Unlike `majutsu-read-revset', this reader is intended for arguments such as
+`--from' and `--to' which accept one revision selector rather than a full
+revset expression.  When COMPLETION-ARGS is non-nil, use jj's native completer
+in that command context.  HISTORY defaults to `majutsu-read-revset-history'."
+  (let* ((default (or default
+                      (majutsu-thing-at-point 'jj-revision t)
+                      (majutsu-revision-at-point)
+                      "@"))
+         (table (if completion-args
+                    (majutsu-jj--completion-table completion-args
+                                                  'majutsu-revision)
+                  (majutsu-completion-payload-table
+                   (majutsu-jj-revset-candidate-data)
+                   'majutsu-revision))))
+    (let ((value (completing-read (format-prompt prompt default)
+                                  table nil nil nil
+                                  (or history 'majutsu-read-revset-history)
+                                  default)))
+      (if (string-empty-p value)
+          (user-error "Need non-empty input")
+        value))))
 
 (defun majutsu-read-revset (prompt &optional default completion-args)
   "Prompt user with PROMPT to read a revision set string.
@@ -300,16 +408,16 @@ revset value being read."
                       "@"))
          (table (if completion-args
                     (majutsu-jj--completion-table completion-args
-                                                  'majutsu-revision
-                                                  default)
-                  (majutsu-jj--revset-completion-table default)))
+                                                  'majutsu-revision)
+                  (majutsu-jj--revset-completion-table)))
          (value (completing-read (format-prompt prompt default)
                                  table nil nil nil
                                  'majutsu-read-revset-history
                                  default)))
-    (if (string-empty-p value)
-        (user-error "Need non-empty input")
-      value)))
+    (cond
+     ((not (string-empty-p value)) value)
+     ((and default (not (string-empty-p default))) default)
+     (t (user-error "Need non-empty input")))))
 
 (defun majutsu-read-optional-revset (prompt &optional default initial-input history completion-args)
   "Prompt user with PROMPT to read an optional revset string.
@@ -322,9 +430,8 @@ minibuffer when non-nil.  HISTORY defaults to
 jj's native completer in that command context."
   (let* ((table (if completion-args
                     (majutsu-jj--completion-table completion-args
-                                                  'majutsu-revision
-                                                  default)
-                  (majutsu-jj--revset-completion-table default)))
+                                                  'majutsu-revision)
+                  (majutsu-jj--revset-completion-table)))
          (value (completing-read (format-prompt prompt default)
                                  table nil nil initial-input
                                  (or history 'majutsu-read-revset-history)
@@ -683,6 +790,13 @@ return nil or partial output depending on what was produced."
     (with-temp-buffer
       (apply #'majutsu-jj-insert args)
       (split-string (buffer-string) "\n" t))))
+
+(defun majutsu-jj-buffer-string (&rest args)
+  "Run jj with ARGS and return the full plain-text output string."
+  (majutsu--with-no-color
+    (with-temp-buffer
+      (apply #'majutsu-jj-insert args)
+      (buffer-string))))
 
 (defun majutsu-jj-items (&rest args)
   "Run jj with ARGS and return output split by null bytes.

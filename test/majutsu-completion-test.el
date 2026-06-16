@@ -13,36 +13,36 @@
 (require 'ert)
 (require 'majutsu-completion)
 
-(ert-deftest majutsu-completion-parse-annotated-line/basic ()
-  "Parse candidate/help lines emitted by jj's fish completion."
-  (should (equal (majutsu-completion-parse-annotated-line "log\tShow revision history")
-                 '("log" . "Show revision history")))
-  (should (equal (majutsu-completion-parse-annotated-line "log")
-                 '("log" . nil)))
-  (should-not (majutsu-completion-parse-annotated-line "")))
-
-(ert-deftest majutsu-completion-table/exposes-category-annotations-and-default ()
+(ert-deftest majutsu-completion-table/exposes-category-and-annotations ()
   "Completion table should expose shared metadata consistently."
   (let* ((table (majutsu-completion-table
-                 '(("main" . "Main bookmark") "dev")
-                 'majutsu-revision
-                 "@"))
+                 '("@" ("main" . "Main bookmark") "dev")
+                 'majutsu-revision))
          (metadata (funcall table "" nil 'metadata))
          (annotation (cdr (assq 'annotation-function (cdr metadata)))))
     (should (equal (all-completions "" table) '("@" "main" "dev")))
+    (should (eq (cdr (assq 'display-sort-function (cdr metadata))) #'identity))
+    (should (eq (cdr (assq 'cycle-sort-function (cdr metadata))) #'identity))
     (should (eq (cdr (assq 'category (cdr metadata))) 'majutsu-revision))
     (should (equal (funcall annotation "main") " Main bookmark"))
     (should-not (funcall annotation "dev"))
     (should-not (funcall annotation "@"))))
 
-(ert-deftest majutsu-completion-payload-items/uses-annotation-hash ()
-  "Structured payloads should become annotated completion items."
-  (let ((annotations (make-hash-table :test #'equal)))
-    (puthash "main" "Main bookmark" annotations)
-    (should (equal (majutsu-completion-payload-items
-                    (list :candidates '("main" "dev")
-                          :annotations annotations))
-                   '(("main" . "Main bookmark") "dev")))))
+(ert-deftest majutsu-completion-table/omits-empty-annotation-metadata ()
+  "Plain completion tables should not shadow category annotators."
+  (let* ((table (majutsu-completion-table '("main" "dev") 'majutsu-revision))
+         (metadata (funcall table "" nil 'metadata))
+         (properties (cdr metadata)))
+    (should-not (assq 'annotation-function properties))
+    (should-not (assq 'affixation-function properties))))
+
+(ert-deftest majutsu-completion-payload-metadata/returns-alist ()
+  "Completion metadata should match `completion-table-with-metadata'."
+  (should (equal (majutsu-completion-payload-metadata
+                  (list :category 'majutsu-revision))
+                 '((display-sort-function . identity)
+                   (cycle-sort-function . identity)
+                   (category . majutsu-revision)))))
 
 (ert-deftest majutsu-completion-payload-table/exposes-affixation-function ()
   "Structured payload tables should expose explicit suffix functions."

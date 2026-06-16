@@ -60,7 +60,7 @@ With prefix ARG, open the duplicate transient."
   :key "-r"
   :argument "-r"
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:--onto ()
   :description "Onto"
@@ -70,7 +70,7 @@ With prefix ARG, open the duplicate transient."
   :key "-o"
   :argument "--onto="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:--after ()
   :description "After"
@@ -80,7 +80,7 @@ With prefix ARG, open the duplicate transient."
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:--before ()
   :description "Before"
@@ -90,7 +90,7 @@ With prefix ARG, open the duplicate transient."
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-duplicate:source ()
   :description "Source (toggle at point)"
@@ -125,8 +125,8 @@ With prefix ARG, open the duplicate transient."
   "Internal transient for jj duplicate."
   :man-page "jj-duplicate"
   :transient-non-suffix t
-  [:description "JJ Duplicate"
-   :class transient-columns
+  [:description
+   "JJ Duplicate"
    ["Sources"
     (majutsu-duplicate:-r)
     (majutsu-duplicate:source)

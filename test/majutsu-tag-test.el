@@ -50,7 +50,8 @@
       (should-not (member "--all-remotes" seen-args))
       (should (member "-T" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "!remote") template))))))
+        (should (string-match-p (regexp-quote "(!self.remote())") template))
+        (should (string-match-p (regexp-quote "self.present()") template))))))
 
 (ert-deftest majutsu-tag-get-tag-names/remote-args ()
   (let (seen-args)
@@ -61,7 +62,8 @@
       (should (equal (majutsu--get-tag-names 'remote) '("v1.0@git")))
       (should (member "--all-remotes" seen-args))
       (let ((template (cadr (member "-T" seen-args))))
-        (should (string-match-p (regexp-quote "remote && present") template))
+        (should (string-match-p (regexp-quote "self.remote()") template))
+        (should (string-match-p (regexp-quote "self.present()") template))
         (should (string-match-p (regexp-quote "\"@\"") template))))))
 
 (ert-deftest majutsu-tag-candidate-data/builds-structured-entries ()
@@ -83,7 +85,7 @@
         (should (plist-get v2 :conflict))
         (should (equal (plist-get v2 :untracked-remotes) '("fork")))))))
 
-(ert-deftest majutsu-tag-read-exact-names/uses-name-history-and-category ()
+(ert-deftest majutsu-tag-read-exact-names/uses-name-history ()
   (let* ((payload (list :candidates '("v1.0" "v1.1")
                         :entries (make-hash-table :test #'equal)))
          seen-history
@@ -93,9 +95,9 @@
               ((symbol-function 'completing-read-multiple)
                (lambda (_prompt collection _predicate _require-match
                                 _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall collection "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("v1.0" "v1.1")))
                  '("v1.0"))))
       (should (equal (majutsu-tag--read-exact-names "Set tag(s)") '("v1.0")))
       (should (eq seen-history 'majutsu-tag-name-history))

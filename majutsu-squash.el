@@ -18,6 +18,9 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-transient-default-revset "majutsu-core" ())
+(defvar majutsu-buffer-diff-range)
+
 (defclass majutsu-squash-option (majutsu-selection-option)
   ())
 
@@ -75,7 +78,7 @@ a jj-commit section, add --revision from that section."
   :selection-face '(:background "goldenrod" :foreground "black")
   :key "-r"
   :argument "--revision="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:--from ()
   :description "From"
@@ -85,7 +88,7 @@ a jj-commit section, add --revision from that section."
   :key "-f"
   :argument "--from="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:--into ()
   :description "Into"
@@ -94,7 +97,7 @@ a jj-commit section, add --revision from that section."
   :selection-face '(:background "dark cyan" :foreground "white")
   :key "-t"
   :argument "--into="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:--onto ()
   :description "Onto"
@@ -104,7 +107,7 @@ a jj-commit section, add --revision from that section."
   :key "-o"
   :argument "--onto="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:--insert-after ()
   :description "Insert after"
@@ -114,7 +117,7 @@ a jj-commit section, add --revision from that section."
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:--insert-before ()
   :description "Insert before"
@@ -124,7 +127,7 @@ a jj-commit section, add --revision from that section."
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-squash:revision ()
   :description "Revision (toggle at point)"

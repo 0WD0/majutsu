@@ -5,6 +5,12 @@
 
 ** Added
 
+- Operations: Add ~majutsu-op-transient~ on ~X~, dedicated ~op log~ / ~op diff~
+  transients, a color-preserving structured multiline ~jj op log~ view, expanded
+  sectionized ~majutsu-op-show~ / ~majutsu-op-diff~ buffers, graph-preserving
+  ~majutsu-evolog~ view, and ~op restore~ / ~op revert~ actions.
+  Read-only operation/evolution views use =--at-op=@ --ignore-working-copy= to
+  avoid snapshotting while browsing.
 - Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
   description buffers, including JJ Git remote based auto-setup.
 - Arrange: Add initial ~majutsu-arrange-mode~ for editing =jj arrange=-style
@@ -52,6 +58,42 @@
 
 ** Changed
 
+- Rows/Bookmarks: Extend ~majutsu-row~ to parse push/pop tree streams and render
+  nested Magit sections, add first-class layout node ~:role~ metadata for
+  Magit section class/value/entry-id decisions, use simple field/function
+  references for role entry specs, align row↔section lookup with Magit's
+  section identity model, and migrate bookmark lists to that shared row
+  protocol.
+- Bookmarks: The bookmark list buffer now uses typed =jj bookmark list -T=
+  machine records with customizable Majutsu template display fragments for
+  bookmark headings, commit summaries, and structured conflicted-target heading
+  columns, while assigning precise section values such as =name@remote= for tracked remote
+  rows. The emitted bookmark tree is declared through
+  ~majutsu-bookmark-list-layout~, using layout-level ~:schema~ defaults plus
+  uniform node-local ~:columns~ for regular refs and conflicted target rows.
+- Transients: Add a generic repository-local defaults layer keyed by jj's
+  secure repo =config-id=. Log, diff, and Git sync transients can save current
+  arguments as defaults for only the current repository, while global defaults
+  continue to use Transient's normal storage.
+- Remotes: Add shared remote readers and completion payloads for exact remote
+  names, new remote names, and remote name patterns. Git and bookmark commands
+  now use the same remote history, completion category, remote-list parsing,
+  and remote-at-point defaulting.
+- Git: Remote management now follows the upstream =remote add [OPTIONS]
+  REMOTE URL= shape more closely: adding a remote prompts for a new remote name
+  and URL/path positional, rejects existing names, and exposes =--fetch-tags=
+  and =--push-url=. =remote remove=, =rename=, and =set-url= now read existing
+  remotes more carefully and default to the remote at point in remote-list
+  buffers. =remote set-url= supports explicit =--fetch= and =--push= URL
+  updates.
+- Git: Expose simple upstream options that were missing from the transients:
+  repeated fetch remotes/branches, repeated clone branches, and repeated
+  =git push --option= values. Clone sources now use the same URL/path handling
+  as remote URLs.
+- Log: The log transient's =-r/--revision= filter is now a normal transient
+  argument stored with the rest of the log arguments. It uses Majutsu's standard
+  revset expression reader like diff =-r=, prefills the current filter for
+  editing, and clears the filter when submitted empty.
 - Completion: Standardize history-aware readers and completion categories for
   revsets, bookmark/tag names and patterns, remote names/patterns,
   workspace names, and repo-relative file paths using structured completion
@@ -99,10 +141,12 @@
 - Diff: Remove the dedicated ~v~ binding from diff file sections, following
   Magit's split between explicit file commands and diff-specific visits.
 - Log: Remove ~majutsu-log-field-faces~; configure field faces directly in
-  ~majutsu-log-commit-columns~ using each field's ~:face~ property.
+  ~majutsu-log-commit-layout~ using each field's ~:face~ property.
 
 ** Fixed
 
+- Process: Synchronous jj commands now wait responsively so Emacs-based
+  GPG/pinentry prompts can be serviced instead of appearing to freeze Emacs.
 - Transients: Use a consistent ~RET~ execute binding in ~majutsu-squash~ and
   ~majutsu-split~ while keeping ~s~.
 - Ediff: Quitting ~majutsu-ediff-resolve~ without edits no longer writes a

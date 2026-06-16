@@ -84,7 +84,7 @@ With prefix ARG, open the new transient for interactive selection."
   :key "-r"
   :argument "-r"
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-new:--after ()
   :description "After"
@@ -94,7 +94,7 @@ With prefix ARG, open the new transient for interactive selection."
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-new:--before ()
   :description "Before"
@@ -104,7 +104,7 @@ With prefix ARG, open the new transient for interactive selection."
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-new:parent ()
   :description "Parent (toggle at point)"
@@ -202,8 +202,8 @@ a jj-commit section, add -r from that section."
   "Internal transient for jj new operations."
   :man-page "jj-new"
   :transient-non-suffix t
-  [:description majutsu-new--description
-   :class transient-columns
+  [:description
+   majutsu-new--description
    ["Selections"
     (majutsu-new:-r)
     (majutsu-new:--after)

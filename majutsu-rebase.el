@@ -56,7 +56,7 @@ ARGS are passed from the transient."
   :key "-s"
   :argument "--source="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-rebase:--branch ()
   :description "Branch"
@@ -66,7 +66,7 @@ ARGS are passed from the transient."
   :key "-b"
   :argument "--branch="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-rebase:--revisions ()
   :description "Revisions"
@@ -76,7 +76,7 @@ ARGS are passed from the transient."
   :key "-r"
   :argument "--revisions="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-rebase:--onto ()
   :description "Onto"
@@ -86,7 +86,7 @@ ARGS are passed from the transient."
   :key "-o"
   :argument "--onto="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-rebase:--after ()
   :description "After"
@@ -96,7 +96,7 @@ ARGS are passed from the transient."
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-rebase:--before ()
   :description "Before"
@@ -106,7 +106,7 @@ ARGS are passed from the transient."
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-rebase:source ()
   :description "Source (toggle at point)"
@@ -160,8 +160,8 @@ ARGS are passed from the transient."
                   ("--onto=" "--insert-after=")
                   ("--onto=" "--insert-before="))
   :transient-non-suffix t
-  [:description "JJ Rebase"
-   :class transient-columns
+  [:description
+   "JJ Rebase"
    ["Source"
     (majutsu-rebase:--source)
     (majutsu-rebase:--branch)

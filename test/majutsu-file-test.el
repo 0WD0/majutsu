@@ -135,6 +135,7 @@
       (let* ((payload (majutsu-file-candidate-data "@" "/tmp/repo/"
                                                    '("src/a.el" "src/new.el")))
              (entries (plist-get payload :entries))
+             (suffix-function (plist-get payload :annotation-suffix-function))
              (a (gethash "src/a.el" entries))
              (new (gethash "src/new.el" entries)))
         (should (eq (plist-get payload :category) 'majutsu-file))
@@ -143,7 +144,11 @@
         (should (plist-get a :executable))
         (should (equal (plist-get a :status) "modified"))
         (should (equal (plist-get new :file-type) "symlink"))
-        (should (equal (plist-get new :status) "added"))))))
+        (should (equal (plist-get new :status) "added"))
+        (should (functionp suffix-function))
+        (should (string-match-p "modified" (funcall suffix-function "src/a.el")))
+        (should (string-match-p "executable" (funcall suffix-function "src/a.el")))
+        (should (string-match-p "symlink" (funcall suffix-function "src/new.el")))))))
 
 (ert-deftest majutsu-file-read-path/uses-history-and-category ()
   "File path reader should expose dedicated history and file category."
@@ -160,10 +165,10 @@
                (lambda (_root)
                  "src/a.el"))
               ((symbol-function 'completing-read)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("src/a.el" "src/b.el")))
                  "src/b.el")))
       (should (equal (majutsu-file--read-path "@" "/tmp/repo") "src/b.el"))
       (should (eq seen-history 'majutsu-file-path-history))
@@ -184,10 +189,10 @@
                (lambda (_root)
                  "src/a.el"))
               ((symbol-function 'completing-read-multiple)
-               (lambda (_prompt table _predicate _require-match _initial history _default)
-                 (setq seen-history history)
-                 (let ((metadata (funcall table "" nil 'metadata)))
-                   (setq seen-category (cdr (assq 'category (cdr metadata)))))
+               (lambda (_prompt collection _predicate _require-match _initial history _default)
+                 (setq seen-history history
+                       seen-category (plist-get completion-extra-properties :category))
+                 (should (equal collection '("src/a.el" "src/b.el")))
                  '("src/b.el"))))
       (should (equal (majutsu-read-files "Files" nil nil
                                          (lambda () '("src/a.el" "src/b.el")))

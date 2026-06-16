@@ -21,6 +21,7 @@
 
 ;;; Code:
 
+(require 'compat)
 (require 'subr-x)
 
 (defgroup majutsu-completion nil
@@ -57,48 +58,29 @@
   "Face used for file-name completion metadata."
   :group 'majutsu-completion)
 
+(defun majutsu-completion-properties (&optional category annotation-function affixation-function)
+  "Return `completion-extra-properties' plist for CATEGORY."
+  `(,@(and category `(:category ,category))
+    :display-sort-function identity
+    :cycle-sort-function identity
+    ,@(and annotation-function `(:annotation-function ,annotation-function))
+    ,@(and affixation-function `(:affixation-function ,affixation-function))))
 
-(defun majutsu-completion-parse-annotated-line (line)
-  "Parse LINE as CANDIDATE<TAB>ANNOTATION.
-Return (CANDIDATE . ANNOTATION).  Return nil for empty lines."
-  (when (string-match "\\`\\([^\t\n]+\\)\\(?:\t\\(.*\\)\\)?\\'" line)
-    (cons (match-string 1 line)
-          (match-string 2 line))))
-
-(defun majutsu-completion--item-candidate (item)
-  "Return completion candidate from ITEM.
-ITEM may be a string or a cons cell (CANDIDATE . ANNOTATION)."
-  (if (consp item) (car item) item))
-
-(defun majutsu-completion--item-annotation (item)
-  "Return completion annotation from ITEM, if any."
-  (and (consp item) (cdr item)))
-
-(defun majutsu-completion--add-default (items default)
-  "Return ITEMS with DEFAULT prepended when appropriate."
-  (if (and default
-           (stringp default)
-           (not (string-empty-p default))
-           (not (member default (mapcar #'majutsu-completion--item-candidate items))))
-      (cons default items)
-    items))
-
-(defun majutsu-completion--metadata (&optional category annotation-function affixation-function)
-  "Return completion metadata for CATEGORY.
-ANNOTATION-FUNCTION and AFFIXATION-FUNCTION are attached when non-nil."
-  `(metadata
-    (display-sort-function . identity)
-    ,@(and category `((category . ,category)))
-    ,@(and annotation-function `((annotation-function . ,annotation-function)))
-    ,@(and affixation-function `((affixation-function . ,affixation-function)))))
+(defun majutsu-completion--annotation-table (items)
+  "Return candidate annotation table for ITEMS, or nil."
+  (let (annotations)
+    (dolist (item items)
+      (when (consp item)
+        (unless annotations
+          (setq annotations (make-hash-table :test #'equal)))
+        (puthash (car item) (cdr item) annotations)))
+    annotations))
 
 (defun majutsu-completion--annotation-function (annotations)
   "Return annotation function backed by ANNOTATIONS hash table."
-  (when (hash-table-p annotations)
+  (when (and annotations (> (hash-table-count annotations) 0))
     (lambda (candidate)
-      (when-let* ((annotation (gethash candidate annotations))
-                  ((stringp annotation))
-                  ((not (string-empty-p annotation))))
+      (when-let* ((annotation (gethash candidate annotations)))
         (if (string-prefix-p " " annotation)
             annotation
           (concat " " annotation))))))
@@ -128,11 +110,6 @@ WIDTH is the target display width and FACE is applied to the whole column."
     (concat majutsu-completion-separator
             (mapconcat #'identity fields majutsu-completion-separator))))
 
-(defun majutsu-completion-label (label &optional face)
-  "Return LABEL as a simple annotation string."
-  (majutsu-completion-annotation
-   (majutsu-completion-field label (or face 'majutsu-completion-type))))
-
 (defun majutsu-completion-string-suffix (annotation &optional face)
   "Return aligned suffix for ANNOTATION.
 FACE defaults to `majutsu-completion-documentation'."
@@ -146,7 +123,7 @@ FACE defaults to `majutsu-completion-documentation'."
 (defun majutsu-completion-annotation-suffix-function (annotations &optional face)
   "Return suffix function backed by ANNOTATIONS hash table.
 FACE is forwarded to `majutsu-completion-string-suffix'."
-  (when (hash-table-p annotations)
+  (when (and annotations (> (hash-table-count annotations) 0))
     (lambda (candidate)
       (majutsu-completion-string-suffix (gethash candidate annotations) face))))
 
@@ -154,17 +131,10 @@ FACE is forwarded to `majutsu-completion-string-suffix'."
   "Return candidate suffix function backed by ENTRIES.
 ENTRY-SUFFIX-FUNCTION is called with one entry from ENTRIES.  Candidates
 without entries simply get no suffix."
-  (when (hash-table-p entries)
+  (when (and entries (> (hash-table-count entries) 0))
     (lambda (candidate)
       (when-let* ((entry (gethash candidate entries)))
         (funcall entry-suffix-function entry)))))
-
-(defun majutsu-completion--pad-suffix (candidate width suffix)
-  "Return plain affixation text for CANDIDATE with WIDTH using SUFFIX."
-  (if (not (and suffix (> (length suffix) 0)))
-      ""
-    (concat (make-string (max 0 (- width (string-width candidate))) ?\s)
-            suffix)))
 
 (defun majutsu-completion-affixation-function (suffix-function)
   "Return aligned affixation function backed by SUFFIX-FUNCTION.
@@ -176,55 +146,35 @@ suffix string to display, or nil for no suffix."
                        (apply #'max 0 (mapcar #'string-width candidates))
                      0)))
         (mapcar (lambda (candidate)
-                  (list candidate ""
-                        (majutsu-completion--pad-suffix
-                         candidate width
-                         (funcall suffix-function candidate))))
+                  (let ((suffix (funcall suffix-function candidate)))
+                    (list candidate ""
+                          (if (and suffix (> (length suffix) 0))
+                              (concat (make-string (max 0 (- width (string-width candidate))) ?\s)
+                                      suffix)
+                            ""))))
                 candidates)))))
 
-(defun majutsu-completion-table (items &optional category default)
+(defun majutsu-completion-items-properties (items &optional category)
+  "Return completion properties for static ITEMS."
+  (let* ((annotations (majutsu-completion--annotation-table items))
+         (annotation-function (majutsu-completion--annotation-function annotations))
+         (suffix-function (majutsu-completion-annotation-suffix-function annotations))
+         (affixation-function (majutsu-completion-affixation-function suffix-function)))
+    (majutsu-completion-properties category annotation-function affixation-function)))
+
+(defun majutsu-completion-table (items &optional category)
   "Return a completion table for ITEMS.
 ITEMS may contain strings or (CANDIDATE . ANNOTATION) pairs.  CATEGORY,
-when non-nil, is exposed in completion metadata.  DEFAULT, when non-empty
-and absent from ITEMS, is prepended without annotation."
-  (let* ((items (majutsu-completion--add-default items default))
-         (candidates (mapcar #'majutsu-completion--item-candidate items))
-         (annotations (make-hash-table :test #'equal)))
-    (dolist (item items)
-      (when-let* ((annotation (majutsu-completion--item-annotation item)))
-        (puthash (majutsu-completion--item-candidate item)
-                 annotation
-                 annotations)))
-    (let ((annotation-function (majutsu-completion--annotation-function annotations)))
-      (lambda (string predicate action)
-        (if (eq action 'metadata)
-            (majutsu-completion--metadata category annotation-function)
-          (complete-with-action action candidates string predicate))))))
+when non-nil, is exposed in completion metadata."
+  (completion-table-with-metadata
+   items
+   (majutsu-completion-payload-metadata
+    (list :category category
+          :annotations (majutsu-completion--annotation-table items)))))
 
-(defun majutsu-completion-payload-category (payload &optional category)
-  "Return completion CATEGORY or PAYLOAD's :category."
-  (or category (plist-get payload :category)))
-
-(defun majutsu-completion-payload-items (payload)
-  "Return completion items from structured PAYLOAD.
-PAYLOAD should contain :candidates and may contain :annotations, a hash
-mapping candidates to annotation strings."
-  (let ((annotations (plist-get payload :annotations)))
-    (mapcar (lambda (candidate)
-              (if (and (hash-table-p annotations)
-                       (gethash candidate annotations))
-                  (cons candidate (gethash candidate annotations))
-                candidate))
-            (plist-get payload :candidates))))
-
-(defun majutsu-completion-payload-metadata (payload &optional category)
-  "Return completion metadata for structured PAYLOAD.
-CATEGORY overrides PAYLOAD's :category when non-nil.
-
-Besides standard completion metadata keys, PAYLOAD may provide the internal
-key =:annotation-suffix-function=, a function from candidate string to suffix
-string used to build an aligned `affixation-function'."
-  (let* ((category (majutsu-completion-payload-category payload category))
+(defun majutsu-completion--payload-functions (payload &optional category)
+  "Return (CATEGORY ANNOTATION-FUNCTION AFFIXATION-FUNCTION) for PAYLOAD."
+  (let* ((category (or category (plist-get payload :category)))
          (annotation-function (or (plist-get payload :annotation-function)
                                   (majutsu-completion--annotation-function
                                    (plist-get payload :annotations))))
@@ -234,22 +184,36 @@ string used to build an aligned `affixation-function'."
          (affixation-function (or (plist-get payload :affixation-function)
                                   (majutsu-completion-affixation-function
                                    suffix-function))))
-    (majutsu-completion--metadata category annotation-function affixation-function)))
+    (list category annotation-function affixation-function)))
 
-(defun majutsu-completion-payload-table (payload &optional category default)
+(defun majutsu-completion-payload-properties (payload &optional category)
+  "Return `completion-extra-properties' plist for structured PAYLOAD."
+  (apply #'majutsu-completion-properties
+         (majutsu-completion--payload-functions payload category)))
+
+(defun majutsu-completion-payload-metadata (payload &optional category)
+  "Return completion metadata alist for structured PAYLOAD.
+CATEGORY overrides PAYLOAD's :category when non-nil.
+
+Besides standard completion metadata keys, PAYLOAD may provide the internal
+key =:annotation-suffix-function=, a function from candidate string to suffix
+string used to build an aligned `affixation-function'."
+  (pcase-let ((`(,category ,annotation-function ,affixation-function)
+               (majutsu-completion--payload-functions payload category)))
+    `((display-sort-function . identity)
+      (cycle-sort-function . identity)
+      ,@(and category `((category . ,category)))
+      ,@(and annotation-function `((annotation-function . ,annotation-function)))
+      ,@(and affixation-function `((affixation-function . ,affixation-function))))))
+
+(defun majutsu-completion-payload-table (payload &optional category)
   "Return a completion table for structured PAYLOAD.
-CATEGORY overrides PAYLOAD's :category when non-nil.  DEFAULT is prepended
-when non-empty and missing from PAYLOAD's candidate list.  PAYLOAD may carry
+CATEGORY overrides PAYLOAD's :category when non-nil.  PAYLOAD may carry
 standard completion metadata plus Majutsu's internal
 =:annotation-suffix-function= helper key."
-  (let* ((category (majutsu-completion-payload-category payload category))
-         (candidates (majutsu-completion--add-default
-                      (plist-get payload :candidates) default))
-         (metadata (majutsu-completion-payload-metadata payload category)))
-    (lambda (string predicate action)
-      (if (eq action 'metadata)
-          metadata
-        (complete-with-action action candidates string predicate)))))
+  (completion-table-with-metadata
+   (plist-get payload :candidates)
+   (majutsu-completion-payload-metadata payload category)))
 
 (provide 'majutsu-completion)
 ;;; majutsu-completion.el ends here

@@ -732,8 +732,8 @@ Called by `jj resolve` merge editor command via emacsclient."
   :incompatible '(("--revisions=" "--from=")
                   ("--revisions=" "--to="))
   :transient-non-suffix t
-  [:description "Ediff"
-   :class transient-columns
+  [:description
+   "Ediff"
    ["Selection"
     (majutsu-ediff:-r)
     (majutsu-ediff:--from)

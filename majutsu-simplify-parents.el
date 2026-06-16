@@ -57,7 +57,7 @@
   :key "-s"
   :argument "--source="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-simplify-parents:--revision ()
   :description "Revision"
@@ -67,7 +67,7 @@
   :key "-r"
   :argument "--revision="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-simplify-parents:source ()
   :description "Source (toggle at point)"
@@ -95,8 +95,8 @@
   "Transient for jj simplify-parents operations."
   :man-page "jj-simplify-parents"
   :transient-non-suffix t
-  [:description "JJ Simplify Parents"
-   :class transient-columns
+  [:description
+   "JJ Simplify Parents"
    ["Selection"
     (majutsu-simplify-parents:--source)
     (majutsu-simplify-parents:--revision)

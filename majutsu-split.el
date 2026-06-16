@@ -64,7 +64,7 @@
   :selection-face '(:background "goldenrod" :foreground "black")
   :key "-r"
   :argument "--revision="
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-split:--onto ()
   :description "Onto"
@@ -74,7 +74,7 @@
   :key "-o"
   :argument "--onto="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-split:--insert-after ()
   :description "Insert after"
@@ -84,7 +84,7 @@
   :key "-A"
   :argument "--insert-after="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-split:--insert-before ()
   :description "Insert before"
@@ -94,7 +94,7 @@
   :key "-B"
   :argument "--insert-before="
   :multi-value 'repeat
-  :reader #'majutsu-diff--transient-read-revset)
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-split:--message ()
   :description "Message"

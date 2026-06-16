@@ -128,8 +128,8 @@ With prefix ARG, pre-enable --ignore-immutable."
   :incompatible '(("--update-author" "--author=")
                   ("--update-author-timestamp" "--author-timestamp="))
   :transient-non-suffix t
-  [:description "JJ Metaedit"
-   :class transient-columns
+  [:description
+   "JJ Metaedit"
    ["Selection"
     (majutsu-metaedit:-r)]
    ["Metadata"
