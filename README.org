@@ -30,6 +30,22 @@ efficient way to interact with JJ repositories from within Emacs.
 4. In blob buffers, press ~e~ to enter editable mode; save applies via =jj diffedit= (~i~ in Evil also enters editable mode)
 5. In blob buffers, press ~b~ to annotate; ~C-c m~ opens the blob in Magit
 
+** Optional Forge Integration
+
+If [[https://github.com/magit/forge][Forge]] is installed, enable Majutsu integration with:
+
+#+begin_src emacs-lisp
+(require 'majutsu-forge)
+(majutsu-forge-mode 1)
+#+end_src
+
+This adds Forge issue, pull-request, and discussion sections to Majutsu log
+buffers and binds ~N~ / ~'~ in Majutsu buffers to ~forge-dispatch~.  The initial
+integration is intended for colocated jj/Git repositories, where Forge can still
+see a Git repository and remotes.  Forge sections also depend on a configured,
+tracked repository and populated Forge database.  Pull-request commit lists shown
+by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffers.
+
 ** Essential Keybindings
 
 | Key (Vanilla / Evil) | Action                    |
