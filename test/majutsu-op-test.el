@@ -107,26 +107,31 @@
                               majutsu-op--commit-summary-template))
   (should-not (string-match-p "separate(" majutsu-op--commit-summary-template)))
 
-(ert-deftest majutsu-op-parse-log-entries/strips-machine-id-and-keeps-display-face ()
-  "Parser should strip machine ids and keep display field faces."
+(ert-deftest majutsu-op-log-parse-row/uses-row-columns-and-keeps-display-face ()
+  "Operation log rows should keep canonical data in row columns."
   (let* ((raw (majutsu-op-test--log-raw-entry
                :op-id (propertize "full-operation-id" 'font-lock-face 'error)
                :op-id-short (propertize "short-id" 'font-lock-face 'success)))
-         (entry (car (majutsu-parse-op-log-entries nil raw)))
-         (short (plist-get entry :op-id-short)))
-    (should (equal (plist-get entry :op-id) "full-operation-id"))
+         (entry (car (with-temp-buffer
+                       (insert raw)
+                       (majutsu-row-parse-buffer
+                        (majutsu-op-log--ensure-template)))))
+         (short (majutsu-row-column entry 'op-id-short)))
+    (should (equal (majutsu-row-column entry 'op-id) "full-operation-id"))
     (should (equal short "short-id"))
     (should (get-text-property 0 'font-lock-face short))
-    (should-not (plist-member entry :current))
-    (should (equal (plist-get entry :time) "2026-05-02 04:50:00"))
-    (should (equal (plist-get entry :duration) "3 milliseconds"))
-    (should (equal (plist-get entry :kind) "op"))
-    (should (equal (plist-get entry :desc) "description"))
-    (should (equal (plist-get entry :attributes) "args: jj op"))))
+    (should (equal (majutsu-row-column entry 'time) "2026-05-02 04:50:00"))
+    (should (equal (majutsu-row-column entry 'duration) "3 milliseconds"))
+    (should (equal (majutsu-row-column entry 'kind) "op"))
+    (should (equal (majutsu-row-column entry 'description) "description"))
+    (should (equal (majutsu-row-column entry 'attributes) "args: jj op"))))
 
-(ert-deftest majutsu-op-parse-log-entries/rejects-malformed-records ()
+(ert-deftest majutsu-op-log-parse-row/rejects-malformed-records ()
   "Malformed records should be ignored instead of creating bad sections."
-  (should-not (majutsu-parse-op-log-entries nil "only-one-field\n")))
+  (should-not (with-temp-buffer
+                (insert "only-one-field\n")
+                (majutsu-row-parse-buffer
+                 (majutsu-op-log--ensure-template)))))
 
 (ert-deftest majutsu-op-log-command-args/uses-read-only-top-level-args ()
   "Operation log command args should avoid snapshotting the working copy."
@@ -138,61 +143,55 @@
     (should (member "--limit=2" args))
     (should (member "--reversed" args))))
 
-(ert-deftest majutsu-op-parse-log-entries/uses-buffer-args-for-jj-call ()
-  "Operation log parser should pass remembered buffer args to jj."
+(ert-deftest majutsu-op-log-wash-output/uses-buffer-args-for-jj-call ()
+  "Operation log washer should pass remembered buffer args to jj."
   (let (captured)
-    (cl-letf (((symbol-function 'majutsu-jj-buffer-string)
-               (lambda (&rest args)
+    (cl-letf (((symbol-function 'majutsu-jj-wash)
+               (lambda (washer _keep-error &rest args)
                  (setq captured args)
-                 (majutsu-op-test--log-raw-entry
-                  :op-id "full"
-                  :op-id-short "short"
-                  :time "time"
-                  :time-ago "ago"
-                  :duration "duration"
-                  :desc "desc"))))
+                 (insert (majutsu-op-test--log-raw-entry
+                          :op-id "full"
+                          :op-id-short "short"
+                          :time "time"
+                          :time-ago "ago"
+                          :duration "duration"
+                          :desc "desc"))
+                 (funcall washer nil)
+                 0)))
       (with-temp-buffer
         (majutsu-op-log-mode)
         (setq majutsu-op-log--args '("--limit=2" "--reversed"))
-        (should (majutsu-parse-op-log-entries))
+        (let ((inhibit-read-only t))
+          (majutsu-op-log-insert-entries))
+        (should (= (length majutsu-row-cached-entries) 1))
         (should (equal captured
                        (majutsu-op--log-command-args
                         '("--limit=2" "--reversed"))))))))
 
 (ert-deftest majutsu-op-log-insert-entries/renders-multiline-expanded-entries ()
   "Operation log entries should render useful multiline details by default."
-  (let ((entry (list :op-id "full-id"
-                     :op-id-short "short-id"
-                     :kind "snapshot"
-                     :user "user"
-                     :workspace "workspace"
-                     :time "2026-05-02 04:50:00"
-                     :time-ago "2 minutes ago"
-                     :duration "3 milliseconds"
-                     :desc "description"
-                     :attributes "args: jj op")))
-    (cl-letf (((symbol-function 'majutsu-jj-wash)
-               (lambda (washer _keep-error &rest _args)
-                 (insert (majutsu-op-test--log-raw-entry
-                          :op-id "full-id"
-                          :op-id-short "short-id"
-                          :kind "snapshot"))
-                 (funcall washer nil)
-                 0)))
-      (with-temp-buffer
-        (majutsu-op-log-mode)
-        (let ((inhibit-read-only t))
-          (majutsu-op-log-insert-entries))
-        (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-          (should (string-match-p "short-id" content))
-          (should (string-match-p "description" content))
-          (should (string-match-p "Id: full-id" content))
-          (should (string-match-p "Time: 2026-05-02 04:50:00" content))
-          (should (string-match-p "args: jj op" content))
-          (should-not (string-match-p "\n\n\n" content)))
-        (goto-char (point-min))
-        (search-forward "short-id")
-        (should-not (oref (magit-current-section) hidden))))))
+  (cl-letf (((symbol-function 'majutsu-jj-wash)
+             (lambda (washer _keep-error &rest _args)
+               (insert (majutsu-op-test--log-raw-entry
+                        :op-id "full-id"
+                        :op-id-short "short-id"
+                        :kind "snapshot"))
+               (funcall washer nil)
+               0)))
+    (with-temp-buffer
+      (majutsu-op-log-mode)
+      (let ((inhibit-read-only t))
+        (majutsu-op-log-insert-entries))
+      (let ((content (buffer-substring-no-properties (point-min) (point-max))))
+        (should (string-match-p "short-id" content))
+        (should (string-match-p "description" content))
+        (should (string-match-p "Id: full-id" content))
+        (should (string-match-p "Time: 2026-05-02 04:50:00" content))
+        (should (string-match-p "args: jj op" content))
+        (should-not (string-match-p "\n\n\n" content)))
+      (goto-char (point-min))
+      (search-forward "short-id")
+      (should-not (oref (magit-current-section) hidden)))))
 
 (ert-deftest majutsu-op-parse-metadata-line/parses-metadata-record ()
   "Operation metadata parser should keep full operation ids."
