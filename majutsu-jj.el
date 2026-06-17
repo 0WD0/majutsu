@@ -170,33 +170,11 @@ remote prefix from DIRECTORY so the result remains remote."
 (defvar majutsu-read-revset-history nil
   "Minibuffer history for `majutsu-read-revset'.")
 
-(defconst majutsu-jj--revset-source-order
-  '(pseudo workspace bookmark tag)
-  "Source display order for revset completion metadata.")
-
 (defun majutsu-jj--safe-lines (&rest args)
   "Return `majutsu-jj-lines' for ARGS, or nil on command failure."
   (condition-case nil
       (apply #'majutsu-jj-lines args)
     (error nil)))
-
-(defun majutsu-jj--add-revset-source (table candidate source)
-  "Record SOURCE for CANDIDATE in hash TABLE."
-  (when (and (stringp candidate) (not (string-empty-p candidate)))
-    (let* ((current (gethash candidate table))
-           (next (if (memq source current)
-                     current
-                   (append current (list source)))))
-      (puthash candidate next table))))
-
-(defun majutsu-jj--revset-source-label (source)
-  "Return display label for completion SOURCE."
-  (pcase source
-    ('pseudo "pseudo")
-    ('workspace "workspace")
-    ('bookmark "bookmark")
-    ('tag "tag")
-    (_ (symbol-name source))))
 
 (defun majutsu-jj--parse-completion-line (line)
   "Parse one fish completion LINE into a completion item."
@@ -231,7 +209,6 @@ Each returned item is a string or (CANDIDATE . HELP)."
     ('remote-bookmark "remote bookmark")
     ('tag "tag")
     ('workspace "workspace")
-    ('pseudo "pseudo")
     ('change-id "change")
     ('revset-alias "alias")
     ((pred stringp) kind)
@@ -355,82 +332,35 @@ metadata."
           string predicate))
        metadata))))
 
-(defun majutsu-jj--revset-annotation-function (sources)
-  "Return annotation function from candidate SOURCES table."
-  (lambda (candidate)
-    (when-let* ((kinds (gethash candidate sources)))
-      (let* ((ordered (seq-filter (lambda (k) (memq k kinds)) majutsu-jj--revset-source-order))
-             (extra (seq-remove (lambda (k) (memq k majutsu-jj--revset-source-order)) kinds))
-             (labels (mapcar #'majutsu-jj--revset-source-label (append ordered extra))))
-        (format "  [%s]" (string-join labels ","))))))
-
-(defun majutsu-jj--revset-annotations (sources candidates)
-  "Return annotation hash for revset CANDIDATES from SOURCES."
-  (let ((annotations (make-hash-table :test #'equal))
-        (annotation (majutsu-jj--revset-annotation-function sources)))
-    (dolist (candidate candidates)
-      (when-let* ((value (funcall annotation candidate)))
-        (puthash candidate value annotations)))
-    annotations))
-
-(defun majutsu-jj--revset-primary-source (sources)
-  "Return the primary revision source symbol from SOURCES."
-  (or (seq-find (lambda (source)
-                  (memq source sources))
-                majutsu-jj--revset-source-order)
-      (car sources)))
-
-(defun majutsu-jj--revset-entries (sources candidates)
-  "Return entry table for revset CANDIDATES backed by SOURCES."
-  (let ((entries (make-hash-table :test #'equal)))
-    (dolist (candidate candidates)
-      (let ((candidate-sources (gethash candidate sources)))
-        (puthash candidate
-                 (list :value candidate
-                       :kind (majutsu-jj--revset-primary-source candidate-sources)
-                       :sources candidate-sources)
-                 entries)))
-    entries))
-
 (defun majutsu-jj-revset-candidate-data ()
   "Return revset completion payload.
-The return value is a plist with keys :category, :candidates,
-:annotations, and :sources."
-  (let* ((sources (make-hash-table :test #'equal))
-         (ordered nil)
-         (workspaces (majutsu-jj--safe-lines "workspace" "list" "-T" "name ++ \"\\n\""))
-         (bookmarks (majutsu-jj--safe-lines "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
-         (tags (majutsu-jj--safe-lines "tag" "list" "--quiet" "-T" "name ++ \"\\n\"")))
-    (cl-labels ((add (candidate source)
-                  (when (and (stringp candidate) (not (string-empty-p candidate)))
-                    (unless (gethash candidate sources)
-                      (push candidate ordered))
-                    (majutsu-jj--add-revset-source sources candidate source))))
-      (dolist (pseudo '("@" "@-" "@+"))
-        (add pseudo 'pseudo))
-      (dolist (name workspaces)
-        (add (concat name "@") 'workspace))
-      (dolist (name bookmarks)
-        (add name 'bookmark))
-      (dolist (name tags)
-        (add name 'tag)))
-    (setq ordered (nreverse ordered))
-    (let* ((candidates ordered)
-           (annotations (majutsu-jj--revset-annotations sources candidates))
-           (entries (majutsu-jj--revset-entries sources candidates)))
-      (list :category 'majutsu-revision
-            :candidates candidates
-            :annotations annotations
-            :entries entries
-            :sources sources
-            :annotation-suffix-function
-            (majutsu-jj--completion-suffix-function
-             'majutsu-revision entries annotations)))))
+The return value is a plist with keys :category and :candidates.
+Candidates are repository references: other workspaces' working-copy
+refs (`<workspace>@'), bookmarks, and tags."
+  (let ((seen (make-hash-table :test #'equal))
+        (candidates nil))
+    (cl-labels ((add (candidate)
+                  (when (and (stringp candidate)
+                             (not (string-empty-p candidate))
+                             (not (gethash candidate seen)))
+                    (puthash candidate t seen)
+                    (push candidate candidates))))
+      (dolist (name (majutsu-jj--safe-lines
+                     "workspace" "list" "-T" "name ++ \"\\n\""))
+        (add (concat name "@")))
+      (dolist (name (majutsu-jj--safe-lines
+                     "bookmark" "list" "--quiet" "-T" "name ++ \"\\n\""))
+        (add name))
+      (dolist (name (majutsu-jj--safe-lines
+                     "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
+        (add name)))
+    (list :category 'majutsu-revision
+          :candidates (nreverse candidates))))
 
 (defun majutsu-jj-revset-candidates ()
   "Return completion candidates for revset prompts.
-Candidates include pseudo revisions and repository references such as
-workspace working-copy refs (`<workspace>@`), bookmarks, and tags."
+Candidates are repository references: other workspaces' working-copy
+refs (`<workspace>@'), bookmarks, and tags."
   (plist-get (majutsu-jj-revset-candidate-data) :candidates))
 
 (defun majutsu-jj--revset-completion-table ()
