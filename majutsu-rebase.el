@@ -160,8 +160,8 @@ ARGS are passed from the transient."
                   ("--onto=" "--insert-after=")
                   ("--onto=" "--insert-before="))
   :transient-non-suffix t
-  [:description "JJ Rebase"
-   :class transient-columns
+  [:description
+   "JJ Rebase"
    ["Source"
     (majutsu-rebase:--source)
     (majutsu-rebase:--branch)

@@ -1412,8 +1412,8 @@ REVSET is passed to jj diff using `--revisions='."
                   ("--stat" "--summary")
                   ("--git" "--color-words"))
   :transient-non-suffix t
-  [:description "JJ Diff"
-   :class transient-columns
+  [:description
+   "JJ Diff"
    ["Selection"
     (majutsu-diff:-r)
     (majutsu-diff:--from)

@@ -1962,8 +1962,8 @@ minibuffer for editing.  Empty input clears the filter."
   :man-page "jj-log"
   :class 'majutsu-log-prefix
   :transient-non-suffix t
-  [:description majutsu-log--transient-description
-   :class transient-columns
+  [:description
+   majutsu-log--transient-description
    ["Revisions"
     (majutsu-log:-r)
     (majutsu-log:--limit)

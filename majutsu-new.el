@@ -202,8 +202,8 @@ a jj-commit section, add -r from that section."
   "Internal transient for jj new operations."
   :man-page "jj-new"
   :transient-non-suffix t
-  [:description majutsu-new--description
-   :class transient-columns
+  [:description
+   majutsu-new--description
    ["Selections"
     (majutsu-new:-r)
     (majutsu-new:--after)

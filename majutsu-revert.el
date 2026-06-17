@@ -146,8 +146,8 @@ destination, fill with --revisions and --insert-after defaults."
                   ("--onto=" "--insert-before=")
                   ("--insert-after=" "--insert-before="))
   :transient-non-suffix t
-  [:description "JJ Revert"
-   :class transient-columns
+  [:description
+   "JJ Revert"
    ["Selection"
     (majutsu-revert:--revisions)
     (majutsu-revert:revisions)

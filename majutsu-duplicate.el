@@ -125,8 +125,8 @@ With prefix ARG, open the duplicate transient."
   "Internal transient for jj duplicate."
   :man-page "jj-duplicate"
   :transient-non-suffix t
-  [:description "JJ Duplicate"
-   :class transient-columns
+  [:description
+   "JJ Duplicate"
    ["Sources"
     (majutsu-duplicate:-r)
     (majutsu-duplicate:source)

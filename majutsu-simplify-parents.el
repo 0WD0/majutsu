@@ -95,8 +95,8 @@
   "Transient for jj simplify-parents operations."
   :man-page "jj-simplify-parents"
   :transient-non-suffix t
-  [:description "JJ Simplify Parents"
-   :class transient-columns
+  [:description
+   "JJ Simplify Parents"
    ["Selection"
     (majutsu-simplify-parents:--source)
     (majutsu-simplify-parents:--revision)
