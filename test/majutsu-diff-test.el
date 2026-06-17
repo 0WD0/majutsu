@@ -196,6 +196,19 @@
     (should (equal (majutsu-transient-revset-completion-args)
                    '("new" "-r")))))
 
+(ert-deftest majutsu-diff-transient-revset-completion-args/uses-prefix-jj-command ()
+  "Transient revset completion should use the prefix jj command slot."
+  (let ((prefix (make-instance 'majutsu-jj-transient-prefix
+                               :command 'test-prefix
+                               :jj-command '("custom" "command"))))
+    (cl-letf (((symbol-function 'transient-prefix-object)
+               (lambda () prefix))
+              ((symbol-function 'transient-suffix-object)
+               (lambda (&optional _command)
+                 (get 'majutsu-diff:--from 'transient--suffix))))
+      (should (equal (majutsu-transient-revset-completion-args)
+                     '("custom" "command" "--from"))))))
+
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
   "Transient single-revision readers should pass native jj completion context."
   (let (current-prefix-arg seen-default seen-completion-args seen-initial-input)

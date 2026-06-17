@@ -34,7 +34,6 @@
 (require 'smerge-mode)
 
 (declare-function majutsu-read-revset "majutsu-jj" (prompt &optional default completion-args))
-(declare-function majutsu-read-single-revset "majutsu-jj" (prompt &optional default completion-args history initial-input))
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-find-file-noselect "majutsu-file" (rev file &optional revert))
 (declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
@@ -296,7 +295,7 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 ;;; Arguments
 ;;;; Prefix Classes
 
-(defclass majutsu-diff-prefix (transient-prefix)
+(defclass majutsu-diff-prefix (majutsu-jj-transient-prefix)
   ((history-key :initform 'majutsu-diff)
    (major-mode :initform 'majutsu-diff-mode)))
 
@@ -1498,6 +1497,7 @@ REVSET is passed to jj diff using `--revisions='."
   "Internal transient for jj diff."
   :man-page "jj-diff"
   :class 'majutsu-diff-prefix
+  :jj-command "diff"
   :incompatible '(("--revisions=" "--from=")
                   ("--revisions=" "--to=")
                   ("--stat" "--summary")

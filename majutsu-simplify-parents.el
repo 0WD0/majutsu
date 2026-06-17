@@ -76,6 +76,8 @@
 (transient-define-prefix majutsu-simplify-parents-transient ()
   "Transient for jj simplify-parents operations."
   :man-page "jj-simplify-parents"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "simplify-parents"
   :transient-non-suffix t
   :description "JJ Simplify Parents"
   [["Selection"

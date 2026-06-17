@@ -136,6 +136,9 @@ In diff buffer on a file section, restore only that file."
 (transient-define-prefix majutsu-restore ()
   "Transient for jj restore operations."
   :man-page "jj-restore"
+  :description "JJ Restore"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "restore"
   :incompatible '(("--from=" "--changes-in=")
                   ("--to=" "--changes-in="))
   :transient-non-suffix t

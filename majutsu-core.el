@@ -280,7 +280,7 @@ from `transient-files' groups, without the -- separator."
       (append args (cons "--" filesets))
     args))
 
-(defclass majutsu-repository-transient-prefix (transient-prefix)
+(defclass majutsu-repository-transient-prefix (majutsu-jj-transient-prefix)
   ((repo-namespace :initarg :repo-namespace :initform nil)
    (repo-key :initarg :repo-key :initform nil)
    (repo-filter :initarg :repo-filter :initform nil))
@@ -357,60 +357,6 @@ from `transient-files' groups, without the -- separator."
   (if (and transient--prefix (eieio-object-p transient--prefix))
       (majutsu-transient--save-repository-defaults transient--prefix)
     (user-error "Not in a transient")))
-
-;;; Shared Transients
-
-(defun majutsu-transient-default-revset ()
-  "Return the default revset for transient revset readers."
-  (or (magit-section-value-if 'jj-commit) "@"))
-
-(defun majutsu-transient-prefix-command ()
-  "Return the current transient prefix command."
-  (oref (transient-prefix-object) command))
-
-(defun majutsu-transient-jj-command-args ()
-  "Return jj subcommand args for the active revset transient."
-  (pcase (majutsu-transient-prefix-command)
-    ('majutsu-absorb '("absorb"))
-    ('majutsu-diff '("diff"))
-    ('majutsu-ediff '("diff"))
-    ('majutsu-duplicate '("duplicate"))
-    ('majutsu-new '("new"))
-    ('majutsu-rebase '("rebase"))
-    ('majutsu-restore '("restore"))
-    ('majutsu-revert '("revert"))
-    ('majutsu-simplify-parents-transient '("simplify-parents"))
-    ('majutsu-split '("split"))
-    ('majutsu-squash '("squash"))))
-
-(defun majutsu-transient-jj-option-arg ()
-  "Return jj option arg for the active revset infix command."
-  (string-remove-suffix "=" (oref (transient-suffix-object) argument)))
-
-(defun majutsu-transient-revset-completion-args ()
-  "Return jj native completion context for the active revset reader."
-  (when-let* ((command (majutsu-transient-jj-command-args))
-              (option (majutsu-transient-jj-option-arg)))
-    (append command (list option))))
-
-(defun majutsu-transient-expression-revset-p ()
-  "Return non-nil if the active transient argument accepts a revset expression."
-  (member (majutsu-transient-jj-option-arg)
-          '("-r" "--revisions" "--revision" "--source" "--branch")))
-
-(defun majutsu-transient-read-revset (prompt initial-input history)
-  "Read a revset value for transient infix options."
-  (unless current-prefix-arg
-    (let ((completion-args (majutsu-transient-revset-completion-args)))
-      (if (majutsu-transient-expression-revset-p)
-          (majutsu-read-optional-revset prompt nil initial-input history completion-args)
-        (majutsu-read-optional-single-revset prompt nil initial-input history completion-args)))))
-
-(transient-define-argument majutsu-transient-arg-ignore-immutable ()
-  :description "Ignore immutable"
-  :class 'transient-switch
-  :shortarg "-I"
-  :argument "--ignore-immutable")
 
 (defgroup majutsu-modes nil
   "Modes used or provided by Majutsu."

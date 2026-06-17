@@ -726,6 +726,8 @@ Called by `jj resolve` merge editor command via emacsclient."
 ;;;###autoload(autoload 'majutsu-ediff "majutsu-ediff" nil t)
 (transient-define-prefix majutsu-ediff ()
   "Show differences using Ediff."
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "diff"
   :incompatible '(("--revisions=" "--from=")
                   ("--revisions=" "--to="))
   :transient-non-suffix t

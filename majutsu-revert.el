@@ -109,6 +109,8 @@ destination, fill with --revision and --insert-after defaults."
 (transient-define-prefix majutsu-revert ()
   "Transient for jj revert operations."
   :man-page "jj-revert"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "revert"
   :incompatible '(("--onto=" "--insert-after=")
                   ("--onto=" "--insert-before=")
                   ("--insert-after=" "--insert-before="))

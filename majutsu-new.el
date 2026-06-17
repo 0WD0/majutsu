@@ -180,6 +180,8 @@ a jj-commit section, add -r from that section."
 (transient-define-prefix majutsu-new ()
   "Internal transient for jj new operations."
   :man-page "jj-new"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "new"
   :transient-non-suffix t
   [:description
    majutsu-new--description

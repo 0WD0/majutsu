@@ -16,8 +16,61 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'majutsu-jj)
 (require 'subr-x)
 (require 'transient)
+
+(defclass majutsu-jj-transient-prefix (transient-prefix)
+  ((jj-command :initarg :jj-command :initform nil))
+  "Transient prefix backed by a jj command.
+
+The `jj-command' slot is a string or list of strings used as native jj
+completion context for revset readers.")
+
+(defun majutsu-transient-default-revset ()
+  "Return the default revset for transient revset readers."
+  (or (magit-section-value-if 'jj-commit) "@"))
+
+(defun majutsu-transient--jj-command-args (command)
+  "Return COMMAND as a list of jj command arguments."
+  (cond ((null command) nil)
+        ((listp command) command)
+        (t (list command))))
+
+(defun majutsu-transient-jj-command-args ()
+  "Return jj subcommand args for the active revset transient."
+  (when-let* ((prefix (transient-prefix-object))
+              ((cl-typep prefix 'majutsu-jj-transient-prefix)))
+    (majutsu-transient--jj-command-args (oref prefix jj-command))))
+
+(defun majutsu-transient-jj-option-arg ()
+  "Return jj option arg for the active revset infix command."
+  (string-remove-suffix "=" (oref (transient-suffix-object) argument)))
+
+(defun majutsu-transient-revset-completion-args ()
+  "Return jj native completion context for the active revset reader."
+  (when-let* ((command (majutsu-transient-jj-command-args))
+              (option (majutsu-transient-jj-option-arg)))
+    (append command (list option))))
+
+(defun majutsu-transient-expression-revset-p ()
+  "Return non-nil if the active transient argument accepts a revset expression."
+  (member (majutsu-transient-jj-option-arg)
+          '("-r" "--revisions" "--revision" "--source" "--branch")))
+
+(defun majutsu-transient-read-revset (prompt initial-input history)
+  "Read a revset value for transient infix options."
+  (unless current-prefix-arg
+    (let ((completion-args (majutsu-transient-revset-completion-args)))
+      (if (majutsu-transient-expression-revset-p)
+          (majutsu-read-optional-revset prompt nil initial-input history completion-args)
+        (majutsu-read-optional-single-revset prompt nil initial-input history completion-args)))))
+
+(transient-define-argument majutsu-transient-arg-ignore-immutable ()
+  :description "Ignore immutable"
+  :class 'transient-switch
+  :shortarg "-I"
+  :argument "--ignore-immutable")
 
 (defclass majutsu-transient-key-alias-suffix ()
   ((key-aliases :initarg :key-aliases :initform nil))

@@ -99,6 +99,8 @@ With prefix ARG, open the duplicate transient."
 (transient-define-prefix majutsu-duplicate ()
   "Internal transient for jj duplicate."
   :man-page "jj-duplicate"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "duplicate"
   :transient-non-suffix t
   :description "JJ Duplicate"
   [["Sources"
