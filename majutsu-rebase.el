@@ -152,6 +152,8 @@ ARGS are passed from the transient."
 (transient-define-prefix majutsu-rebase ()
   "Internal transient for jj rebase operations."
   :man-page "jj-rebase"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "rebase"
   :incompatible '(("--source=" "--branch=")
                   ("--source=" "--revision=")
                   ("--branch=" "--revision=")

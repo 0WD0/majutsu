@@ -221,7 +221,14 @@ from `transient-files' groups, without the -- separator."
       (append args (cons "--" filesets))
     args))
 
-(defclass majutsu-repository-transient-prefix (transient-prefix)
+(defclass majutsu-jj-transient-prefix (transient-prefix)
+  ((jj-command :initarg :jj-command :initform nil))
+  "Transient prefix backed by a jj command.
+
+The `jj-command' slot is a string or list of strings used as native jj
+completion context for revset readers.")
+
+(defclass majutsu-repository-transient-prefix (majutsu-jj-transient-prefix)
   ((repo-namespace :initarg :repo-namespace :initform nil)
    (repo-key :initarg :repo-key :initform nil)
    (repo-filter :initarg :repo-filter :initform nil))
@@ -311,24 +318,17 @@ from `transient-files' groups, without the -- separator."
                            (current-buffer))
     (or (magit-section-value-if 'jj-commit) "@")))
 
-(defun majutsu-transient-prefix-command ()
-  "Return the current transient prefix command."
-  (oref (transient-prefix-object) command))
+(defun majutsu-transient--jj-command-args (command)
+  "Return COMMAND as a list of jj command arguments."
+  (cond ((null command) nil)
+        ((listp command) command)
+        (t (list command))))
 
 (defun majutsu-transient-jj-command-args ()
   "Return jj subcommand args for the active revset transient."
-  (pcase (majutsu-transient-prefix-command)
-    ('majutsu-absorb '("absorb"))
-    ('majutsu-diff '("diff"))
-    ('majutsu-ediff '("diff"))
-    ('majutsu-duplicate '("duplicate"))
-    ('majutsu-new '("new"))
-    ('majutsu-rebase '("rebase"))
-    ('majutsu-restore '("restore"))
-    ('majutsu-revert '("revert"))
-    ('majutsu-simplify-parents-transient '("simplify-parents"))
-    ('majutsu-split '("split"))
-    ('majutsu-squash '("squash"))))
+  (when-let* ((prefix (transient-prefix-object))
+              ((cl-typep prefix 'majutsu-jj-transient-prefix)))
+    (majutsu-transient--jj-command-args (oref prefix jj-command))))
 
 (defun majutsu-transient-jj-option-arg ()
   "Return jj option arg for the active revset infix command."
