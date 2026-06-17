@@ -307,13 +307,53 @@ ARGS are command-line arguments after the leading jj executable name."
           (majutsu-jj--completion-suffix-function category entries annotations))))
 
 (defun majutsu-jj--completion-table (args &optional category)
-  "Return an Emacs completion table using jj native completion.
+  "Return a dynamic Emacs completion table using jj native completion.
 ARGS are command-line arguments before the value being completed.  The
-completed value is requested from jj by appending an empty argument.
-CATEGORY, when non-nil, is exposed in completion metadata."
-  (majutsu-completion-payload-table
-   (majutsu-jj--completion-payload (append args '("")) category)
-   category))
+current input string is passed to jj as the value argument, which lets
+expression arguments such as revsets continue completing after operators
+like `|' or `..'.  CATEGORY, when non-nil, is exposed in completion
+metadata."
+  (let* ((payload-cache (make-hash-table :test #'equal))
+         (annotations (make-hash-table :test #'equal))
+         (entries (make-hash-table :test #'equal))
+         (metadata-category (or category 'majutsu-revision))
+         (metadata
+          (majutsu-completion-payload-metadata
+           (list :category metadata-category
+                 :annotation-function
+                 (lambda (candidate)
+                   (when-let* ((annotation (gethash candidate annotations)))
+                     (if (string-prefix-p " " annotation)
+                         annotation
+                       (concat " " annotation))))
+                 :annotation-suffix-function
+                 (apply-partially #'majutsu-jj--completion-suffix
+                                  metadata-category entries annotations))
+           metadata-category)))
+    (cl-labels
+        ((payload-for
+           (string)
+           (or (gethash string payload-cache)
+               (let ((payload (majutsu-jj--completion-payload
+                               (append args (list string))
+                               metadata-category)))
+                 (puthash string payload payload-cache)
+                 (when-let* ((payload-annotations (plist-get payload :annotations)))
+                   (maphash (lambda (candidate annotation)
+                              (puthash candidate annotation annotations))
+                            payload-annotations))
+                 (when-let* ((payload-entries (plist-get payload :entries)))
+                   (maphash (lambda (candidate entry)
+                              (puthash candidate entry entries))
+                            payload-entries))
+                 payload))))
+      (completion-table-with-metadata
+       (lambda (string predicate action)
+         (complete-with-action
+          action
+          (plist-get (payload-for string) :candidates)
+          string predicate))
+       metadata))))
 
 (defun majutsu-jj--revset-annotation-function (sources)
   "Return annotation function from candidate SOURCES table."

@@ -314,6 +314,53 @@ This mirrors Magit's behavior."
                               (nth 2 (car (funcall affixation '("main"))))))
       (should-not (funcall annotation "dev")))))
 
+(ert-deftest majutsu-jj-completion-table/metadata-does-not-query-jj ()
+  "Native completion metadata should be stable and side-effect free."
+  (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+             (lambda (&rest _args)
+               (ert-fail "Metadata must not query jj completions"))))
+    (let* ((table (majutsu-jj--completion-table '("log" "-r")
+                                                'majutsu-revision))
+           (metadata (funcall table "" nil 'metadata))
+           (properties (cdr metadata)))
+      (should (eq (cdr (assq 'category properties)) 'majutsu-revision))
+      (should (functionp (cdr (assq 'annotation-function properties))))
+      (should (functionp (cdr (assq 'affixation-function properties)))))))
+
+(ert-deftest majutsu-jj-completion-table/completes-revset-expressions-dynamically ()
+  "Native completion tables should send the current revset expression to jj."
+  (let (calls)
+    (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
+               (lambda (args category)
+                 (push args calls)
+                 (should (eq category 'majutsu-revision))
+                 (let* ((input (car (last args)))
+                        (candidate (pcase input
+                                     ("main | " "main | dev")
+                                     ("trunk()..ma" "trunk()..main")
+                                     (_ nil)))
+                        (annotations (make-hash-table :test #'equal)))
+                   (when candidate
+                     (puthash candidate (concat "Help for " candidate) annotations))
+                   (list :category 'majutsu-revision
+                         :candidates (and candidate (list candidate))
+                         :annotations annotations)))))
+      (let* ((table (majutsu-jj--completion-table '("diff" "-r")
+                                                  'majutsu-revision))
+             (metadata (funcall table "" nil 'metadata))
+             (annotation (cdr (assq 'annotation-function (cdr metadata))))
+             (affixation (cdr (assq 'affixation-function (cdr metadata)))))
+        (should (equal (all-completions "main | " table)
+                       '("main | dev")))
+        (should (equal (all-completions "trunk()..ma" table)
+                       '("trunk()..main")))
+        (should (member '("diff" "-r" "main | ") calls))
+        (should (member '("diff" "-r" "trunk()..ma") calls))
+        (should (equal (funcall annotation "main | dev")
+                       " Help for main | dev"))
+        (should (string-match-p "Help for main | dev"
+                                (nth 2 (car (funcall affixation '("main | dev"))))))))))
+
 (ert-deftest majutsu-jj-revset-candidate-data/provides-source-annotations ()
   "Candidate data should preserve source kinds for metadata annotations."
   (cl-letf (((symbol-function 'majutsu-jj--safe-lines)
