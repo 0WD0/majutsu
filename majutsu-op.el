@@ -438,10 +438,10 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
     ((op-id-short :module heading :face t)
      (kind :module heading :face t)
      (description :module heading :face t)
-     (id-line :module body :face t)
-     (user-line :module body :face t)
-     (workspace-line :module body :face t)
-     (time-line :module body :face t)
+     (op-id :module body :face t)
+     (user :module body :face t)
+     (workspace :module body :face t)
+     (time :module body :face t)
      (attributes :module body :face t)
      (op-id :module metadata :face nil)
      (user :module metadata :face nil)
@@ -456,25 +456,29 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
              "op"])
      (description [:label "description first_line"
                           [:method [:description] :first_line]])
-     (id-line [:concat "Id: " [:id]])
-     (user-line [:concat "User: " [:label "user" [:user]]])
-     (workspace-line [:concat "Workspace: "
-                              [:label "workspace_name" [:workspace_name]]])
-     (time-line [:concat "Time: "
-                         [:label "time end"
-                                 [:method [:time :end]
-                                  :format "%Y-%m-%d %H:%M:%S"]]
-                         " ("
-                         [:label "time end ago" [:method [:time :end] :ago]]
-                         "), lasted "
-                         [:label "time duration" [:method [:time] :duration]]])
+     (op-id :module body :template [:concat "Id: " [:id]])
+     (user :module body :template [:concat "User: " [:label "user" [:user]]])
+     (workspace :module body
+                :template [:concat "Workspace: "
+                           [:label "workspace_name" [:workspace_name]]])
+     (time :module body
+           :template [:concat "Time: "
+                      [:label "time end"
+                              [:method [:time :end]
+                               :format "%Y-%m-%d %H:%M:%S"]]
+                      " ("
+                      [:label "time end ago" [:method [:time :end] :ago]]
+                      "), lasted "
+                      [:label "time duration" [:method [:time] :duration]]])
      (attributes [:label "attributes first_line"
                          [:method [:attributes] :first_line]])
-     (op-id [:id])
-     (user [:label "user" [:user]])
-     (workspace [:label "workspace_name" [:workspace_name]])
-     (time [:label "time end"
-                   [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]])
+     (op-id :module metadata :template [:id])
+     (user :module metadata :template [:label "user" [:user]])
+     (workspace :module metadata
+                :template [:label "workspace_name" [:workspace_name]])
+     (time :module metadata
+           :template [:label "time end"
+                      [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]])
      (time-ago [:label "time end ago" [:method [:time :end] :ago]])
      (duration [:label "time duration" [:method [:time] :duration]])))
   "Declarative row layout controlling operation log rendering."
@@ -495,39 +499,13 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   (add-variable-watcher 'majutsu-op-log-layout
                         #'majutsu-op-log--invalidate-template-cache))
 
-(defun majutsu-op-log--record-field (entry field value)
-  "Record canonical operation log FIELD VALUE onto ENTRY."
-  (pcase field
-    ('op-id-short
-     (setq entry (plist-put entry :op-id-short value)))
-    ('kind
-     (setq entry (plist-put entry :kind
-                            (majutsu-op--machine-field value))))
-    ('description
-     (setq entry (plist-put entry :desc value)))
-    ('op-id
-     (setq entry (plist-put entry :op-id
-                            (majutsu-op--machine-field value))))
-    ('user
-     (setq entry (plist-put entry :user value)))
-    ('workspace
-     (setq entry (plist-put entry :workspace value)))
-    ('time
-     (setq entry (plist-put entry :time value)))
-    ('time-ago
-     (setq entry (plist-put entry :time-ago value)))
-    ('duration
-     (setq entry (plist-put entry :duration value)))
-    ('attributes
-     (setq entry (plist-put entry :attributes value))))
-  (majutsu-row-record-canonical-field entry field value))
-
 (defun majutsu-op-log--entry-id (entry)
   "Return stable section id string from operation log ENTRY."
-  (or (let ((op-id (plist-get entry :op-id)))
-        (and (stringp op-id)
-             (not (string-empty-p (string-trim op-id)))
-             (substring-no-properties op-id)))
+  (or (when-let* ((op-id (majutsu-row-column entry 'op-id))
+                  ((stringp op-id))
+                  (value (string-trim (substring-no-properties op-id)))
+                  ((not (string-empty-p value))))
+        value)
       "unknown"))
 
 (defun majutsu-op-log--row-profile ()
@@ -536,7 +514,6 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
    :name 'op-log
    :self-type 'Operation
    :layout-var 'majutsu-op-log-layout
-   :record-field-function 'majutsu-op-log--record-field
    :entry-id-function 'majutsu-op-log--entry-id
    :section-class 'jj-op
    :section-value-function 'majutsu-op-log--entry-id))
@@ -565,28 +542,6 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
           (list "-T" (plist-get (majutsu-op-log--ensure-template)
                                 :template))))
 
-(defun majutsu-parse-op-log-entries (&optional buf log-output)
-  "Parse jj operation log output.
-
-When LOG-OUTPUT is nil, run jj in BUF or the current buffer and cache the
-result."
-  (with-current-buffer (or buf (current-buffer))
-    (if (and majutsu-row-cached-entries (not log-output))
-        majutsu-row-cached-entries
-      (let* ((cmd-args (unless log-output (majutsu-op--log-command-args)))
-             (entries
-              (with-temp-buffer
-                (insert (or log-output
-                            (apply #'majutsu-jj-buffer-string cmd-args)))
-                (goto-char (point-min))
-                (majutsu-row-parse-buffer
-                 (majutsu-op-log--ensure-template)))))
-        (unless log-output
-          (majutsu-row-set-buffer-data
-           (majutsu-op-log--ensure-template)
-           entries))
-        entries))))
-
 (defun majutsu-op--wash-log-output (_args)
   "Wash raw `jj op log` output in the current narrowed region."
   (majutsu-row-wash-buffer (majutsu-op-log--ensure-template)))
@@ -603,8 +558,7 @@ result."
 
 (defun majutsu-op-log-render ()
   "Render the op log buffer."
-  (magit-insert-section (oplog)
-    (majutsu-op-log-insert-entries))
+  (majutsu-op-log-insert-entries)
   (majutsu-selection-render))
 
 (defun majutsu-op-log-refresh-buffer ()
@@ -709,9 +663,8 @@ result."
   :man-page "jj-operation-log"
   :transient-non-suffix t
   :class 'majutsu-op-log-prefix
-  [:description
-   "JJ Operation Log"
-   ["Options"
+  :description "JJ Operation Log"
+  [["Options"
     (majutsu-op-log:--limit)
     (majutsu-op-log:--reversed)]
    ["Actions"
@@ -1165,9 +1118,8 @@ result."
   :transient-non-suffix t
   :incompatible '(("--operation=" "--from=")
                   ("--operation=" "--to="))
-  [:description
-   "JJ Operation Diff"
-   ["Selection"
+  :description "JJ Operation Diff"
+  [["Selection"
     (majutsu-op-arg:--operation)
     (majutsu-op-arg:operation)
     (majutsu-op-arg:--from)
