@@ -110,6 +110,9 @@ jj-commit section, add --from from that section."
 (transient-define-prefix majutsu-absorb ()
   "Transient for jj absorb operations."
   :man-page "jj-absorb"
+  :description "JJ Absorb"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "absorb"
   :transient-non-suffix t
   [
    :description "JJ Absorb"

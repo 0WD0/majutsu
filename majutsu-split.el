@@ -147,6 +147,9 @@
 (transient-define-prefix majutsu-split ()
   "Transient for jj split operations."
   :man-page "jj-split"
+  :description "JJ Split"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "split"
   :transient-non-suffix t
   [
    :description "JJ Split"

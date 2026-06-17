@@ -296,6 +296,9 @@ return the same context defaults that execution would use."
 (transient-define-prefix majutsu-squash ()
   "Internal transient for jj squash operations."
   :man-page "jj-squash"
+  :description "JJ Squash"
+  :class 'majutsu-jj-transient-prefix
+  :jj-command "squash"
   :transient-non-suffix t
   :incompatible '(("--into=" "--onto=")
                   ("--into=" "--insert-after=")
