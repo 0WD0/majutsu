@@ -272,27 +272,35 @@ The process section should use root as command directory."
         (should-not (string-match-p "Process .*\\(?:finished\\|exited\\)"
                                     (buffer-string)))))))
 
-(ert-deftest majutsu-process-test-process-wait-accepts-output-for-any-process ()
-  "`majutsu--process-wait' should not wait only on the jj process."
-  (let ((statuses '(run run exit))
+(ert-deftest majutsu-process-test-process-wait-drains-output ()
+  "`majutsu--process-wait' should loop on `accept-process-output' until drained."
+  (let ((results '(t t nil))
         calls)
-    (cl-letf (((symbol-function 'process-status)
-               (lambda (_process) (pop statuses)))
-              ((symbol-function 'accept-process-output)
+    (cl-letf (((symbol-function 'accept-process-output)
                (lambda (&rest args)
                  (push args calls)
-                 nil))
+                 (pop results)))
               ((symbol-function 'process-exit-status)
                (lambda (_process) 0)))
       (should (= 0 (majutsu--process-wait 'fake-process))))
     (should (equal (nreverse calls)
-                   '((nil 0.1) (nil 0.1))))))
+                   '((fake-process) (fake-process) (fake-process))))))
+
+(ert-deftest majutsu-process-test-process-wait-drains-stderr-process ()
+  "`majutsu--process-wait' should also drain a standard error process."
+  (let ((seen nil))
+    (cl-letf (((symbol-function 'accept-process-output)
+               (lambda (process &rest _args)
+                 (push process seen)
+                 nil))
+              ((symbol-function 'process-exit-status)
+               (lambda (_process) 0)))
+      (should (= 0 (majutsu--process-wait 'main 'stderr))))
+    (should (equal (nreverse seen) '(main stderr)))))
 
 (ert-deftest majutsu-process-test-process-wait-returns-255-on-quit ()
   "`majutsu--process-wait' should return 255 when interrupted."
-  (cl-letf (((symbol-function 'process-status)
-             (lambda (_process) 'run))
-            ((symbol-function 'accept-process-output)
+  (cl-letf (((symbol-function 'accept-process-output)
              (lambda (&rest _args) (signal 'quit nil)))
             ((symbol-function 'process-exit-status)
              (lambda (_process) (ert-fail "Should not be reached"))))
@@ -349,5 +357,86 @@ The process section should use root as command directory."
           (should (= 255 (majutsu-call-jj "status"))))))
     (should (= seen-exit 255))
     (should (eq seen-section 'dummy-section))))
+
+(defmacro majutsu-process-test--with-sh (&rest body)
+  "Run BODY only when a POSIX `sh' is available.
+When `sh' is missing, mark the test as skipped via `skip-unless' so it
+is not silently reported as passed."
+  (declare (indent 0))
+  `(progn
+     (skip-unless (executable-find "sh"))
+     (let ((default-process-coding-system '(utf-8-unix . utf-8-unix)))
+       ,@body)))
+
+(ert-deftest majutsu-process-test-file-responsive-captures-stdout ()
+  "Responsive runner should insert stdout at point in the destination buffer."
+  (majutsu-process-test--with-sh
+    (with-temp-buffer
+      (insert "prefix:")
+      (let ((exit (majutsu--process-file-responsive
+                   "sh" nil t "-c" "printf 'hello\\nworld\\n'")))
+        (should (= 0 exit))
+        (should (equal (buffer-string) "prefix:hello\nworld\n"))))))
+
+(ert-deftest majutsu-process-test-file-responsive-returns-exit-code ()
+  "Responsive runner should return the subprocess exit status."
+  (majutsu-process-test--with-sh
+    (with-temp-buffer
+      (should (= 3 (majutsu--process-file-responsive
+                    "sh" nil t "-c" "exit 3"))))))
+
+(ert-deftest majutsu-process-test-file-responsive-stderr-file-has-no-sentinel-noise ()
+  "Responsive runner must not write Emacs sentinel status lines to a stderr file.
+
+With `:stderr' set to a buffer, `make-process' spawns a separate
+standard error process whose default sentinel appends a line such as
+`Process sh stderr finished' to the buffer once it exits.  Without an
+explicit sentinel override that line ends up in the stderr file, leaking
+Emacs internals into Majutsu error messages.  This is a regression test
+for that leak; see the Emacs Lisp manual, node `Accepting Output', for
+the separate standard error process."
+  (majutsu-process-test--with-sh
+    (let ((errfile (make-temp-file "majutsu-proc-err")))
+      (unwind-protect
+          (with-temp-buffer
+            (let ((exit (majutsu--process-file-responsive
+                         "sh" nil (list t errfile)
+                         "-c" (concat "printf 'OUT\\n'; "
+                                      "for i in $(seq 1 2000); do "
+                                      "printf 'ERR-%d\\n' \"$i\" 1>&2; done; "
+                                      "exit 1"))))
+              (should (= 1 exit))
+              (should (equal (buffer-string) "OUT\n"))
+              (with-temp-buffer
+                (insert-file-contents errfile)
+                (should (= 2000 (count-matches "^ERR-[0-9]+$"
+                                               (point-min) (point-max))))
+                (should (string-match-p "\\`ERR-1\n" (buffer-string)))
+                (should (string-match-p "ERR-2000\n\\'" (buffer-string)))
+                (should-not (string-match-p "Process .* \\(?:finished\\|exited\\)"
+                                            (buffer-string))))))
+        (ignore-errors (delete-file errfile))))))
+
+(ert-deftest majutsu-process-test-file-responsive-mixes-stderr-into-stdout ()
+  "With stdout-only destination, stderr is mixed into stdout."
+  (majutsu-process-test--with-sh
+    (with-temp-buffer
+      (let ((exit (majutsu--process-file-responsive
+                   "sh" nil t "-c" "printf 'O\\n'; printf 'E\\n' 1>&2")))
+        (should (= 0 exit))
+        (should (string-match-p "O\n" (buffer-string)))
+        (should (string-match-p "E\n" (buffer-string)))))))
+
+(ert-deftest majutsu-process-test-file-supported-p-narrow-contract ()
+  "Only the call shapes Majutsu uses are routed through the runner."
+  ;; Supported: no infile; stdout as t/buffer/string/nil; stderr nil/t/string.
+  (should (majutsu--process-file-supported-p nil t))
+  (should (majutsu--process-file-supported-p nil (list t "/tmp/err")))
+  (should (majutsu--process-file-supported-p nil (list t t)))
+  (should (majutsu--process-file-supported-p nil nil))
+  ;; Unsupported: input files and stderr-to-buffer require `process-file'.
+  (should-not (majutsu--process-file-supported-p "/tmp/in" t))
+  (should-not (majutsu--process-file-supported-p
+               nil (list t (get-buffer-create "*majutsu-test-err*")))))
 
 ;;; majutsu-process-test.el ends here
