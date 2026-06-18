@@ -61,7 +61,10 @@ When called from a blob buffer, also visit the workspace file."
   "Return diffedit root directory for FILE, or nil if none.
 Detects jj diffedit temp directories by locating JJ-INSTRUCTIONS."
   (when file
-    (locate-dominating-file (file-name-directory file) "JJ-INSTRUCTIONS")))
+    (locate-dominating-file
+     (file-name-directory file)
+     (lambda (dir)
+       (file-regular-p (expand-file-name "JJ-INSTRUCTIONS" dir))))))
 
 (defun majutsu-edit--finish-on-save ()
   "Finish a with-editor session after saving a diffedit file."

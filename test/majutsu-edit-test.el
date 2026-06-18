@@ -27,6 +27,19 @@
                             (majutsu-edit--diffedit-root nested))))))
       (delete-directory root t))))
 
+(ert-deftest majutsu-edit-test-diffedit-root-ignores-directory-instructions ()
+  "Diffedit root should not be detected if JJ-INSTRUCTIONS is a directory."
+  (let ((root (make-temp-file "majutsu-diffedit" t)))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name "JJ-INSTRUCTIONS" root) t)
+          (let* ((nested (expand-file-name "right/file.txt" root))
+                 (dir (file-name-directory nested)))
+            (make-directory dir t)
+            (write-region "" nil nested nil 'silent)
+            (should-not (majutsu-edit--diffedit-root nested))))
+      (delete-directory root t))))
+
 (ert-deftest majutsu-edit-test-finish-on-save-calls-with-editor ()
   "Finish-on-save should call with-editor-finish when active."
   (let ((called nil))
