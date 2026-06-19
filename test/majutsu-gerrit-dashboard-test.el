@@ -90,6 +90,25 @@
         (should (eq (magit-section-value-if 'majutsu-gerrit-change)
                     change))))))
 
+(ert-deftest majutsu-gerrit-dashboard-render/marks-truncated-query ()
+  "Dashboard headings should indicate Gerrit _more_changes."
+  (let ((change (majutsu-gerrit-change-from-alist
+                 (majutsu-gerrit-dashboard-test--raw-change
+                  '((_more_changes . t))))))
+    (with-temp-buffer
+      (majutsu-gerrit-dashboard-mode)
+      (setq majutsu-gerrit-dashboard--remote "gerrit"
+            majutsu-gerrit-dashboard--queries '(("Mine" . "is:open owner:self"))
+            majutsu--default-directory "/repo")
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+                 (lambda (&rest _args)
+                   (list (cons '("Mine" . "is:open owner:self")
+                               (list change))))))
+        (let ((inhibit-read-only t))
+          (majutsu-gerrit-dashboard-refresh-buffer))
+        (should (string-match-p (regexp-quote "Mine (1+)")
+                                (buffer-string)))))))
+
 (ert-deftest majutsu-gerrit-dashboard-change-web-url/uses-web-path ()
   "Change web URLs should point to Polygerrit, not the REST /a prefix."
   (let ((change (majutsu-gerrit-change-from-alist
@@ -99,6 +118,16 @@
                              :scheme "https"
                              :path "/gerrit"
                              :prefix "/a"))
+                   "https://review.example.com/gerrit/c/team%2Fproject/+/72"))))
+
+(ert-deftest majutsu-gerrit-dashboard-change-web-url/uses-shared-spec-path ()
+  "Shared specs should keep their Gerrit web context path."
+  (let ((change (majutsu-gerrit-change-from-alist
+                 (majutsu-gerrit-dashboard-test--raw-change))))
+    (should (equal (majutsu-gerrit-dashboard--change-web-url
+                    change '(:gerrit-host "review.example.com"
+                             :gerrit-prefix "/gerrit/a"
+                             :ssl t))
                    "https://review.example.com/gerrit/c/team%2Fproject/+/72"))))
 
 (provide 'majutsu-gerrit-dashboard-test)

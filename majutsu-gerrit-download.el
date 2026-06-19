@@ -48,8 +48,8 @@
 
 (defun majutsu-gerrit-download--change-resource (change)
   "Return the best REST resource id for CHANGE."
-  (or (majutsu-gerrit-change-id change)
-      (majutsu-gerrit-change-number change)
+  (or (majutsu-gerrit-change-number change)
+      (majutsu-gerrit-change-id change)
       (majutsu-gerrit-change-change-id change)))
 
 (defun majutsu-gerrit-download--current-revision (change)

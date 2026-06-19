@@ -146,7 +146,8 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
   (let* ((spec (majutsu-gerrit-rest-normalize-spec spec))
          (scheme (plist-get spec :scheme))
          (host (plist-get spec :host))
-         (path (replace-regexp-in-string "/+\\'" "" (or (plist-get spec :path) "")))
+         (path (replace-regexp-in-string
+                "/+\\'" "" (or (plist-get spec :path) "")))
          (project (majutsu-gerrit-change-project change))
          (number (majutsu-gerrit-change-number change)))
     (when (and scheme host project number)
@@ -175,11 +176,17 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
                           'face 'warning))
       (insert "\n"))))
 
+(defun majutsu-gerrit-dashboard--more-changes-p (changes)
+  "Return non-nil if CHANGES were truncated by Gerrit."
+  (and changes
+       (majutsu-gerrit-change-more-changes-p (car (last changes)))))
+
 (defun majutsu-gerrit-dashboard--insert-query (query-spec changes)
   "Insert one QUERY-SPEC section containing CHANGES."
   (magit-insert-section (majutsu-gerrit-query query-spec)
     (magit-insert-heading
-      (format "%s (%d)\n" (car query-spec) (length changes)))
+      (format "%s (%d%s)\n" (car query-spec) (length changes)
+              (if (majutsu-gerrit-dashboard--more-changes-p changes) "+" "")))
     (if changes
         (dolist (change changes)
           (majutsu-gerrit-dashboard--insert-change change))

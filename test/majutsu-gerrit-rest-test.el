@@ -57,6 +57,29 @@ When SEEN-FN is non-nil, call it with the received argument list."
       (should (member "http://example.com:8080/a/changes/?q=is%3Aopen&q=owner%3Aself&n=25&o=LABELS&pp=0"
                       seen-args)))))
 
+(ert-deftest majutsu-gerrit-rest-json/preserves-false-and-null ()
+  "Raw REST alists should distinguish JSON false, null and absence."
+  (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _args) nil))
+            ((symbol-function 'majutsu-process-file)
+             (majutsu-gerrit-rest-test--mock-curl
+              ")]}'\n[{\"unresolved\":false,\"nullable\":null}]" 200)))
+    (should (equal (majutsu-gerrit-rest-change-query
+                    "is:open" nil nil nil majutsu-gerrit-rest-test--spec)
+                   '(((unresolved . :json-false) (nullable . :json-null)))))))
+
+(ert-deftest majutsu-gerrit-rest-change-get/encodes-decoded-resource-id-once ()
+  "Decoded ChangeInfo.id values should become one URL path segment."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _args) nil))
+              ((symbol-function 'majutsu-process-file)
+               (majutsu-gerrit-rest-test--mock-curl
+                ")]}'\n{\"id\":\"team%2Fproject~72\"}" 200
+                (lambda (args) (setq seen-args args)))))
+      (majutsu-gerrit-rest-change-get
+       "team/project~72" nil majutsu-gerrit-rest-test--spec)
+      (should (member "http://example.com:8080/a/changes/team%2Fproject~72?pp=0"
+                      seen-args)))))
+
 (ert-deftest majutsu-gerrit-rest-request/uses-auth-source-when-present ()
   "Requests should pass auth-source credentials to curl without prompting."
   (let (seen-args)
@@ -101,10 +124,11 @@ When SEEN-FN is non-nil, call it with the received argument list."
                       seen-args)))))
 
 (ert-deftest majutsu-gerrit-rest-normalize-spec/from-shared-spec ()
-  "Shared majutsu-gerrit specs should normalize into REST specs."
+  "Shared majutsu-gerrit specs should split web path from the /a prefix."
   (should (equal (majutsu-gerrit-rest-normalize-spec
                   '(:gerrit-host "example.com" :gerrit-prefix "/review/a" :ssl t))
-                 '(:host "example.com" :scheme "https" :path "" :prefix "/review/a" :user nil))))
+                 '(:host "example.com" :scheme "https" :path "/review"
+                   :prefix "/a" :user nil))))
 
 (provide 'majutsu-gerrit-rest-test)
 

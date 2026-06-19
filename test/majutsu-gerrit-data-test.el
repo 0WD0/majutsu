@@ -42,6 +42,17 @@
       (should (majutsu-gerrit-revision-current-p (cdar revisions)))
       (should-not (majutsu-gerrit-revision-current-p (cdadr revisions))))))
 
+(ert-deftest majutsu-gerrit-change-from-alist/decodes-promoted-resource-ids ()
+  "Raw IDs stay untouched while promoted IDs are decoded path segments."
+  (let* ((raw '((id . "team%2Fproject~72")
+                (triplet_id . "team%2Fproject~main~Iabc")
+                (_number . 72)))
+         (change (majutsu-gerrit-change-from-alist raw)))
+    (should (eq (majutsu-gerrit-change-raw change) raw))
+    (should (equal (majutsu-gerrit-change-id change) "team/project~72"))
+    (should (equal (majutsu-gerrit-change-triplet-id change)
+                   "team/project~main~Iabc"))))
+
 (ert-deftest majutsu-gerrit-comment-from-alist/defaults-side-and-draft-author ()
   "Missing side means revision side; drafts may not have authors."
   (let* ((comment (majutsu-gerrit-comment-from-alist
@@ -71,6 +82,16 @@
                   "src/foo.el")))
     (should (eq (majutsu-gerrit-comment-side comment) 'parent))
     (should (equal (majutsu-gerrit-comment-parent comment) 2))))
+
+(ert-deftest majutsu-gerrit-comment-from-alist/normalizes-json-sentinels ()
+  "Promoted slots should be nil while raw alists preserve JSON sentinels."
+  (let* ((raw '((id . "c1")
+                (unresolved . :json-false)
+                (range . :json-null)))
+         (comment (majutsu-gerrit-comment-from-alist raw "src/foo.el")))
+    (should (eq (majutsu-gerrit-comment-raw comment) raw))
+    (should-not (majutsu-gerrit-comment-unresolved comment))
+    (should-not (majutsu-gerrit-comment-range comment))))
 
 (ert-deftest majutsu-gerrit-conversations-from-comments/groups-thread-replies ()
   "Conversation grouping should follow in_reply_to links recursively."

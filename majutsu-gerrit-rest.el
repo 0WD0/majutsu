@@ -89,14 +89,19 @@ returned by `majutsu-gerrit--shared-spec'."
                       majutsu-gerrit-rest-endpoint-prefix)
           :user (plist-get spec :user)))
    ((plist-get spec :gerrit-host)
-    ;; `majutsu-gerrit--shared-spec' already folds any reverse-proxy path
-    ;; into :gerrit-prefix, so keep :path empty here to avoid duplicating it.
-    (list :host (plist-get spec :gerrit-host)
-          :scheme (majutsu-gerrit-rest--bool-scheme (plist-get spec :ssl))
-          :path ""
-          :prefix (or (plist-get spec :gerrit-prefix)
-                      majutsu-gerrit-rest-endpoint-prefix)
-          :user (plist-get spec :user)))
+    ;; `majutsu-gerrit--shared-spec' folds the web path into :gerrit-prefix
+    ;; as PATH/a.  Split it back into :path (web context) and the /a REST
+    ;; prefix so both REST URLs and browser URLs are correct.
+    (let* ((prefix (or (plist-get spec :gerrit-prefix)
+                       majutsu-gerrit-rest-endpoint-prefix))
+           (path (if (string-suffix-p "/a" prefix)
+                     (string-remove-suffix "/a" prefix)
+                   "")))
+      (list :host (plist-get spec :gerrit-host)
+            :scheme (majutsu-gerrit-rest--bool-scheme (plist-get spec :ssl))
+            :path path
+            :prefix "/a"
+            :user (plist-get spec :user))))
    (t
     (error "majutsu-gerrit-rest: cannot normalize spec %S" spec))))
 
@@ -314,8 +319,8 @@ HEADERS is a list of strings or (NAME . VALUE) cons cells."
       (json-parse-string body
                          :object-type 'alist
                          :array-type 'list
-                         :null-object nil
-                         :false-object nil))))
+                         :null-object :json-null
+                         :false-object :json-false))))
 
 (defun majutsu-gerrit-rest-text (method endpoint &optional data spec params headers)
   "Perform METHOD request to ENDPOINT and return the raw text body."

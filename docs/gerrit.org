@@ -55,16 +55,18 @@ not only on the two Emacs packages.
 
 Gerrit has multiple identifiers and they are not interchangeable:
 
-- =ChangeInfo.id= is the canonical REST resource id.  In Gerrit 3.14 it
-  is =url(project)~number=; this is set in
+- =ChangeInfo.id= is a REST resource id in encoded form.  In Gerrit 3.14
+  it is =url(project)~number=; this is set in
   =java/com/google/gerrit/server/change/ChangeJson.java=.
 - =ChangeInfo.triplet_id= is =url(project)~url(branch)~url(Change-Id)=.
+- =ChangeInfo._number= is the global numeric change number.
 - =ChangeInfo.change_id= is the Change-Id footer value, e.g.
   =I8473...=.
 
-For REST endpoints under =/changes/{change-id}=, prefer
-=ChangeInfo.id= whenever we already have a =ChangeInfo= object.  Gerrit
-also accepts other identifiers, but
+For REST endpoints under =/changes/{change-id}=, prefer =_number= when
+we already have a =ChangeInfo= object.  It avoids re-encoding
+=ChangeInfo.id=, whose project component is already URL encoded by the
+server.  Gerrit also accepts other identifiers, but
 =Documentation/rest-api-changes.txt= explicitly says they require extra
 lookups and may produce false positives/negatives.
 
@@ -400,12 +402,13 @@ Notes:
   =java/com/google/gerrit/extensions/client/Comment.java=.
 - Draft comments do not have =author=.  The constructor takes =DRAFT-P=
   so we can distinguish drafts from published comments reliably.
-- =ChangeInfo.id= is stored as =id= and should be used for REST paths;
-  =change-id= stores the Change-Id footer value and should not be used as
-  a REST resource id when =id= is available.
+- =ChangeInfo.id= stays encoded in =raw=; the promoted =id= slot is
+  decoded for display.  Prefer =number= for follow-up REST paths.
 - Nested maps such as =files=, =labels= and =fetch= remain raw alists in
   M2.  Promote them to dedicated structs only when a UI consumer needs
   typed access.
+- The REST layer keeps JSON =false= / =null= as =:json-false= /
+  =:json-null= in =raw=; promoted slots normalize both to nil.
 
 * Review rendering (M7)
 

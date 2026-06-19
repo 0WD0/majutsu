@@ -83,7 +83,7 @@ When WITH-REVISION is non-nil, include the current revision ref."
                    (revisions . ((deadbeef . ((_number . 3)
                                               (ref . "refs/changes/72/72/3")))))))))
       (let ((revision (majutsu-gerrit-download--ensure-current-revision change)))
-        (should (equal seen-id "team%2Fproject~72"))
+        (should (equal seen-id 72))
         (should (equal seen-options '("CURRENT_REVISION")))
         (should (equal (majutsu-gerrit-revision-number revision) 3))))))
 

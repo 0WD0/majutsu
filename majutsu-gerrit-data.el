@@ -23,6 +23,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
+(require 'url-util)
 
 (cl-defstruct (majutsu-gerrit-account
                (:constructor majutsu-gerrit-account-create))
@@ -70,15 +71,24 @@ and hand-written payloads often use strings."
         (and string-key (assoc string-key alist))
         (and string-key (assoc-string string-key alist t)))))
 
+(defun majutsu-gerrit-data--normalize-value (value)
+  "Return VALUE normalized for promoted struct slots."
+  (if (memq value '(:json-false :json-null)) nil value))
+
 (defun majutsu-gerrit-data--get (alist key)
   "Return KEY from ALIST, accepting symbol and string keys."
-  (cdr (majutsu-gerrit-data--assoc alist key)))
+  (majutsu-gerrit-data--normalize-value
+   (cdr (majutsu-gerrit-data--assoc alist key))))
 
 (defun majutsu-gerrit-data--key-name (key)
   "Return KEY as a string."
   (cond ((symbolp key) (symbol-name key))
         ((stringp key) key)
         (t (format "%s" key))))
+
+(defun majutsu-gerrit-data--decode-id (id)
+  "Return Gerrit encoded ID decoded for promoted struct slots."
+  (if (stringp id) (url-unhex-string id) id))
 
 (defun majutsu-gerrit-data--alist-map (alist fn)
   "Map FN over ALIST preserving stringified keys.
@@ -187,8 +197,10 @@ CURRENT-ID marks which revision is current."
     (let ((current-id (majutsu-gerrit-data--get alist 'current_revision)))
       (majutsu-gerrit-change-create
        :raw alist
-       :id (majutsu-gerrit-data--get alist 'id)
-       :triplet-id (majutsu-gerrit-data--get alist 'triplet_id)
+       :id (majutsu-gerrit-data--decode-id
+            (majutsu-gerrit-data--get alist 'id))
+       :triplet-id (majutsu-gerrit-data--decode-id
+                    (majutsu-gerrit-data--get alist 'triplet_id))
        :number (majutsu-gerrit-data--get alist '_number)
        :project (majutsu-gerrit-data--get alist 'project)
        :branch (majutsu-gerrit-data--get alist 'branch)
