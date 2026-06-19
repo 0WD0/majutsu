@@ -60,6 +60,9 @@
   The Git dispatcher now exposes a =jj gerrit upload= transient with revision
   selection, review metadata, state flags, and repository-local defaults.
 
+- Gerrit review dashboard ::
+  The Git dispatcher now exposes the native review dashboard as ~G R~.
+
 ** Changed
 
 - Bookmark lists use typed row layouts ::

@@ -17,10 +17,14 @@ upstream code at runtime.
 The current =majutsu-gerrit.el= already wraps =jj gerrit upload= and
 related sub-commands through a transient.  The new modules add the
 missing pieces: REST, dashboard, change/topic info views, inline diff
-review, draft comments and a local read-state database.  At the same
-time, the existing =--with-gerrit-context= and
-=--with-egerrit-context= bridges in =majutsu-gerrit.el= are removed,
-since the new in-tree implementation makes them obsolete.
+review, draft comments and a local read-state database.  The purpose is
+not to clone Polygerrit, whose keyboard review UI is already strong, but
+to make Gerrit review state part of the local jj/Emacs environment: local
+working-copy jumps, jj upload/download loops, xref/LSP navigation,
+searchable text, Org links and agent-readable state.  At the same time,
+the existing =--with-gerrit-context= and =--with-egerrit-context= bridges
+in =majutsu-gerrit.el= are removed, since the new in-tree implementation
+makes them obsolete.
 
 The new modules are designed to be extractable as a standalone package
 in the future, so they only depend on Majutsu's =majutsu-process=,
@@ -164,9 +168,9 @@ helpers, rather than a single function that always JSON-decodes.
 | =majutsu-gerrit.el=           | jj sub-commands + transient + entry points  | Existing     |
 | =majutsu-gerrit-rest.el=      | curl-based REST client                      | New (M1)     |
 | =majutsu-gerrit-data.el=      | =cl-defstruct= for common Gerrit entities   | New (M2)     |
-| =majutsu-gerrit-dashboard.el= | Section-based dashboard                     | New (M3)     |
+| =majutsu-gerrit-dashboard.el= | Section-based dashboard                     | New (M3 done) |
 | =majutsu-gerrit-section.el=   | Change/topic info section views             | New (M4)     |
-| =majutsu-gerrit-download.el=  | Download via =jj git fetch= + =jj new=      | New (M6)     |
+| =majutsu-gerrit-download.el=  | Download via Git fetch + =jj git import/new= | New (M6 minimal) |
 | =majutsu-gerrit-review.el=    | Inline diff review + conversations + drafts | New (M7)     |
 | =majutsu-gerrit-db.el=        | Local read-state database                   | New (M8)     |
 
@@ -183,7 +187,11 @@ The new modules require, beyond Majutsu's own modules:
 - =json= (built in)
 - =magit-section= (already a Majutsu dependency)
 
-External binary: =curl= must be on =PATH=.
+External binaries: =curl= and =git= must be on =PATH=.  Gerrit patch-set
+refs live under =refs/changes=, while =jj git fetch= only expands branch/tag
+patterns.  Download therefore uses =git --git-dir $(jj git root) fetch= to
+copy the exact patch-set ref into =refs/remotes/<remote>/majutsu/gerrit/...=,
+then runs =jj git import= so jj sees it as a remote bookmark.
 
 No new entries are added to =Eask=; =auth-source= / =json= are built in,
 and =magit-section= is already required.

@@ -44,7 +44,7 @@
 
 (cl-defstruct (majutsu-gerrit-change
                (:constructor majutsu-gerrit-change-create))
-  raw id triplet-id project branch full-branch topic hashtags change-id subject
+  raw id triplet-id number project branch full-branch topic hashtags change-id subject
   status created updated submitted owner submitter current-revision
   current-revision-number revisions labels reviewers pending-reviewers
   attention-set total-comment-count unresolved-comment-count work-in-progress
@@ -67,7 +67,8 @@ and hand-written payloads often use strings."
          (string-key (cond ((stringp key) key)
                            ((symbolp key) (symbol-name key)))))
     (or (and symbol-key (assq symbol-key alist))
-        (and string-key (assoc string-key alist)))))
+        (and string-key (assoc string-key alist))
+        (and string-key (assoc-string string-key alist t)))))
 
 (defun majutsu-gerrit-data--get (alist key)
   "Return KEY from ALIST, accepting symbol and string keys."
@@ -188,6 +189,7 @@ CURRENT-ID marks which revision is current."
        :raw alist
        :id (majutsu-gerrit-data--get alist 'id)
        :triplet-id (majutsu-gerrit-data--get alist 'triplet_id)
+       :number (majutsu-gerrit-data--get alist '_number)
        :project (majutsu-gerrit-data--get alist 'project)
        :branch (majutsu-gerrit-data--get alist 'branch)
        :full-branch (majutsu-gerrit-data--get alist 'full_branch)

@@ -397,6 +397,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("p" "Push" majutsu-git-push-transient)
     ("f" "Fetch" majutsu-git-fetch-transient)
     ("u" "Gerrit upload" majutsu-gerrit-upload-transient)
+    ("R" "Gerrit reviews" majutsu-gerrit-dashboard)
     ("e" "Export" majutsu-git-export)
     ("m" "Import" majutsu-git-import)]
    ["Remotes"

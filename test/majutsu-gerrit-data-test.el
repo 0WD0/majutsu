@@ -16,6 +16,7 @@
 (ert-deftest majutsu-gerrit-change-from-alist/preserves-id-distinction-and-raw ()
   "ChangeInfo.id and change_id should remain distinct."
   (let* ((raw '((id . "majutsu~72")
+                (_number . 72)
                 (triplet_id . "majutsu~main~Iabc")
                 (project . "majutsu")
                 (branch . "main")
@@ -31,6 +32,7 @@
          (change (majutsu-gerrit-change-from-alist raw)))
     (should (eq (majutsu-gerrit-change-raw change) raw))
     (should (equal (majutsu-gerrit-change-id change) "majutsu~72"))
+    (should (equal (majutsu-gerrit-change-number change) 72))
     (should (equal (majutsu-gerrit-change-change-id change) "Iabc"))
     (should (equal (majutsu-gerrit-account-name
                     (majutsu-gerrit-change-owner change))
