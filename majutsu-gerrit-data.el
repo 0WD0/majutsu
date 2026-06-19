@@ -93,22 +93,12 @@ and hand-written payloads often use strings."
 (defconst majutsu-gerrit-data--jj-suffix "6a6a6964"
   "Hex of \"jjid\", appended by `jj gerrit upload' to pad change ids.")
 
-(defconst majutsu-gerrit-data--forward-hex "0123456789abcdef")
-(defconst majutsu-gerrit-data--reverse-hex "zyxwvutsrqponmlk")
-
 (defun majutsu-gerrit-data--forward-to-reverse-hex (hex)
-  "Convert forward HEX to jj reverse-hex, or nil if HEX is not hex."
-  (let ((out (make-string (length hex) ?z))
-        (ok t)
-        (i 0))
-    (while (and ok (< i (length hex)))
-      (let ((v (string-search (string (downcase (aref hex i)))
-                              majutsu-gerrit-data--forward-hex)))
-        (if v
-            (aset out i (aref majutsu-gerrit-data--reverse-hex v))
-          (setq ok nil)))
-      (setq i (1+ i)))
-    (and ok out)))
+  "Convert forward HEX digits to jj's reverse-hex, or nil if not all hex."
+  (when (string-match-p "\\`[0-9a-fA-F]*\\'" hex)
+    ;; jj maps nibble N (0..15) to "zyxwvutsrqponmlk"[N], i.e. ?z minus N.
+    (mapconcat (lambda (c) (string (- ?z (string-to-number (string c) 16))))
+               (downcase hex) "")))
 
 (defun majutsu-gerrit-data-gerrit-id-to-jj-change-id (change-id)
   "Return the jj change id encoded in Gerrit CHANGE-ID, or nil.
