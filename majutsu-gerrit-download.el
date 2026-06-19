@@ -15,9 +15,9 @@
 ;;
 ;; A Gerrit change created with `jj gerrit upload' carries the originating
 ;; jj change id in its Change-Id footer (=I<jj-change-id>6a6a6964=).  When
-;; that change still exists locally, downloading just means returning to it,
-;; not fetching the rewritten Gerrit commit (whose commit id differs and
-;; whose jj `change-id' header is usually dropped by the server).
+;; that change still exists locally, downloading shows its diff directly
+;; instead of fetching the rewritten Gerrit commit (whose commit id differs
+;; and whose jj `change-id' header is usually dropped by the server).
 ;;
 ;; Otherwise (someone else's change, or a non-jj Change-Id) we fetch the
 ;; patch-set ref into a jj-visible remote bookmark and create a child on it.
@@ -26,6 +26,7 @@
 
 (require 'majutsu-gerrit-data)
 (require 'majutsu-gerrit-rest)
+(require 'majutsu-diff)
 (require 'majutsu-jj)
 (require 'majutsu-process)
 
@@ -121,18 +122,16 @@ the namespace jj imports as a remote bookmark."
 (defun majutsu-gerrit-download-change (&optional change directory)
   "Download Gerrit CHANGE into the local jj repository.
 
-If CHANGE was uploaded from this repo, edit the local change it came
-from.  Otherwise fetch its current patch set and create a child on it.
-Interactively, use the Gerrit change section at point."
+If CHANGE was uploaded from this repo, show the local change it came
+from in a diff buffer.  Otherwise fetch its current patch set and create
+a child on it.  Interactively, use the Gerrit change section at point."
   (interactive (list (magit-section-value-if 'majutsu-gerrit-change)))
   (unless change
     (user-error "No Gerrit change at point"))
   (let* ((directory (or directory majutsu--default-directory default-directory))
          (default-directory directory))
     (if-let* ((local-id (majutsu-gerrit-download--local-change-id change)))
-        (when (zerop (majutsu-run-jj "edit" local-id))
-          (majutsu-refresh)
-          (message "Editing local change %s" local-id))
+        (majutsu-diff-revset local-id)
       (let* ((remote (majutsu-gerrit-download--remote nil directory))
              (spec (majutsu-gerrit-rest-current-spec remote directory))
              (revision (majutsu-gerrit-download--ensure-current-revision change spec))

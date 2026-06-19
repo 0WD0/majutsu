@@ -26,23 +26,22 @@
      (revisions . ((deadbeef . ((_number . 3)
                                 (ref . "refs/changes/72/72/3"))))))))
 
-(ert-deftest majutsu-gerrit-download/edits-local-change-when-uploaded-here ()
-  "A change uploaded from this repo should resolve to its local jj change."
+(ert-deftest majutsu-gerrit-download/shows-local-diff-when-uploaded-here ()
+  "A change uploaded from this repo should diff its local jj change."
   (let* ((jj-id "onwqukrrrnmxskuptxpyzyxzonksuoql")
          (gerrit-id "Ibc395f888cd27f5a62a10120bcf75b9e6a6a6964")
          (change (majutsu-gerrit-download-test--change gerrit-id))
-         run)
+         diffed)
     (cl-letf (((symbol-function 'majutsu-jj-string)
                (lambda (&rest args)
                  (should (member jj-id args))
                  jj-id))
-              ((symbol-function 'majutsu-run-jj)
-               (lambda (&rest args) (setq run args) 0))
-              ((symbol-function 'majutsu-refresh) #'ignore)
+              ((symbol-function 'majutsu-diff-revset)
+               (lambda (revset &rest _) (setq diffed revset)))
               ((symbol-function 'majutsu-gerrit-rest-current-spec)
                (lambda (&rest _) (ert-fail "should not hit REST"))))
       (majutsu-gerrit-download-change change "/repo")
-      (should (equal run (list "edit" jj-id))))))
+      (should (equal diffed jj-id)))))
 
 (ert-deftest majutsu-gerrit-download/fetches-foreign-change ()
   "A change not uploaded from this repo should be fetched and checked out."
