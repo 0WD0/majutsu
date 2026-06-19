@@ -648,9 +648,7 @@ Assumes point is at the start of the diff output."
                                                  (line-end-position)))
          (ranges nil)
          (about nil)
-         (combined nil)
          (from-range nil)
-         (from-ranges nil)
          (to-range nil))
     (when (string-match "^@\\{2,\\} \\(.+?\\) @\\{2,\\}\\(?: \\(.*\\)\\)?$" header)
       (setq about (match-string 2 header))
@@ -661,18 +659,15 @@ Assumes point is at the start of the diff output."
                                    (append nums (list 1))
                                  nums)))
                            (split-string (match-string 1 header))))
-      (setq combined (= (length ranges) 3))
-      (setq from-ranges (and combined (butlast ranges)))
-      (setq from-range (if combined (car from-ranges) (car ranges)))
-      (setq to-range (car (last ranges))))
+      (when (= (length ranges) 2)
+        (setq from-range (car ranges))
+        (setq to-range (cadr ranges))))
     ;; Remove original header and insert a propertized one.
     (majutsu-diff--delete-line)
     ;; Use (file . from-range) as unique hunk identity to avoid collisions.
     (magit-insert-section
         (jj-hunk (cons file from-range) nil
-                 :combined combined
                  :from-range from-range
-                 :from-ranges from-ranges
                  :to-range to-range
                  :about about)
       (magit-insert-heading
@@ -717,7 +712,6 @@ When SECTION is nil, walk all hunk sections."
   (if section
       (when (and (not (oref section hidden))
                  (not (oref section fontified))
-                 (not (oref section combined))
                  (fboundp 'diff-syntax-fontify-props)
                  (fboundp 'diff-hunk-text)
                  (not (eq majutsu-diff-backend 'color-words)))
@@ -747,8 +741,7 @@ When SECTION is nil, walk all hunk sections."
               (forward-line 1)))))
     (cl-labels ((walk (node)
                   (if (magit-section-match 'jj-hunk node)
-                      (unless (oref node combined)
-                        (majutsu-diff--update-hunk-syntax node))
+                      (majutsu-diff--update-hunk-syntax node)
                     (dolist (child (oref node children))
                       (walk child)))))
       (walk magit-root-section))))
@@ -794,20 +787,18 @@ When SECTION is nil, walk all hunk sections."
                (majutsu-diff--color-words-refine-hunk section)
              (save-excursion
                (goto-char (oref section start))
-               ;; `diff-refine-hunk' cannot handle combined hunks.
-               (unless (looking-at "@@@")
-                 (let ((len (- (oref section end) (oref section start))))
-                   (if (and majutsu-diff-refine-max-chars
-                            (> len majutsu-diff-refine-max-chars))
-                       (progn
-                         (oset section refined nil)
-                         (remove-overlays (oref section start)
-                                          (oref section end)
-                                          'diff-mode 'fine))
-                     (let ((smerge-refine-ignore-whitespace
-                            majutsu-diff-refine-ignore-whitespace)
-                           (write-region-inhibit-fsync t))
-                       (diff-refine-hunk))))))))
+               (let ((len (- (oref section end) (oref section start))))
+                 (if (and majutsu-diff-refine-max-chars
+                          (> len majutsu-diff-refine-max-chars))
+                     (progn
+                       (oset section refined nil)
+                       (remove-overlays (oref section start)
+                                        (oref section end)
+                                        'diff-mode 'fine))
+                   (let ((smerge-refine-ignore-whitespace
+                          majutsu-diff-refine-ignore-whitespace)
+                         (write-region-inhibit-fsync t))
+                     (diff-refine-hunk)))))))
           ((and (guard allow-remove)
                 (or `(nil t ,_) '(t t nil)))
            (oset section refined nil)
@@ -1050,11 +1041,10 @@ side, non-underlined colored = shared context within a change."
   ;; For both backends, delegate to the unified refinement handler.
   ;; Color-words uses `majutsu-diff--color-words-refine-hunk' internally;
   ;; the git backend uses `diff-refine-hunk'.
-  (unless (oref section combined)
-    (when (eq majutsu-diff-fontify-hunk t)
-      (majutsu-diff--update-hunk-syntax section))
-    (when (eq majutsu-diff-refine-hunk t)
-      (majutsu-diff--update-hunk-refinement section))))
+  (when (eq majutsu-diff-fontify-hunk t)
+    (majutsu-diff--update-hunk-syntax section))
+  (when (eq majutsu-diff-refine-hunk t)
+    (majutsu-diff--update-hunk-refinement section)))
 
 (defun majutsu-diff--color-words-paint (section highlight)
   "Apply or remove a focus background overlay for a color-words SECTION.

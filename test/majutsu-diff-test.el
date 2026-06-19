@@ -55,7 +55,7 @@
         (should (oref hunk-section content))))))
 
 (ert-deftest majutsu-diff-wash-diffs-parses-diffstat-and-diff ()
-  "Diff washer should parse combined `--stat' and `--git' output."
+  "Diff washer should parse output containing both `--stat' and `--git'."
   (with-temp-buffer
     (magit-section-mode)
     (let* ((inhibit-read-only t)
