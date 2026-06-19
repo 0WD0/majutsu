@@ -173,6 +173,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("r" "Restore" majutsu-restore-execute)
+    ("RET" "Restore" majutsu-restore-execute)
     ("q" "Quit" transient-quit-one)]]
   (interactive)
   (let* ((file (majutsu-file-at-point))

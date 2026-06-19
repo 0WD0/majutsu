@@ -744,6 +744,7 @@ Called by `jj resolve` merge editor command via emacsclient."
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
     ("e" "Ediff (blob)" majutsu-ediff-dwim)
+    ("RET" "Ediff (blob)" majutsu-ediff-dwim)
     ("E" "Ediff (diffedit)" majutsu-ediff-edit)]
    ["Resolve"
     ("m" "Resolve (ediff)" majutsu-ediff-resolve)

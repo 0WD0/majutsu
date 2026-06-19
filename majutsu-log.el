@@ -1973,6 +1973,7 @@ minibuffer for editing.  Empty input clears the filter."
     (majutsu-log:--)]
    ["Actions"
     ("g" "buffer" majutsu-log-transient)
+    ("RET" "buffer" majutsu-log-transient)
     ("s" "buffer and set defaults" transient-set-and-exit)
     ("w" "buffer and save defaults" transient-save-and-exit)
     ("W" "buffer and save repo defaults" majutsu-transient-save-repository-defaults
