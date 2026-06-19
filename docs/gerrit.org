@@ -1,0 +1,556 @@
+#+title: Majutsu Gerrit Client
+#+filetags: design gerrit
+
+* Goal
+
+Provide a complete, self-contained Gerrit client inside the Majutsu
+repository, replacing the user's external dependency on
+[[https://github.com/thisch/gerrit.el][gerrit.el]] and the
+[[https://git.sr.ht/~niklaseklund/egerrit][egerrit]] package.
+
+The client lives under the =majutsu-gerrit-= prefix and is built on
+Majutsu's existing infrastructure modules.  Where features overlap, the
+client picks the better-engineered design from either upstream and
+re-implements it on top of Majutsu primitives instead of borrowing the
+upstream code at runtime.
+
+The current =majutsu-gerrit.el= already wraps =jj gerrit upload= and
+related sub-commands through a transient.  The new modules add the
+missing pieces: REST, dashboard, change/topic info views, inline diff
+review, draft comments and a local read-state database.  At the same
+time, the existing =--with-gerrit-context= and
+=--with-egerrit-context= bridges in =majutsu-gerrit.el= are removed,
+since the new in-tree implementation makes them obsolete.
+
+The new modules are designed to be extractable as a standalone package
+in the future, so they only depend on Majutsu's =majutsu-process=,
+=majutsu-base=, =majutsu-mode=, =majutsu-section=,
+=majutsu-completion=, =majutsu-selection=, =majutsu-config= and
+=majutsu-remote= modules, and not on jj-specific logic such as
+=majutsu-jj.el= except in the existing =majutsu-gerrit.el= entry file.
+
+* Gerrit server facts used by the design
+
+This section is based on the Gerrit source tree in =~/Projects/gerrit=,
+not only on the two Emacs packages.
+
+** REST authentication and JSON shape
+
+- Authenticated REST calls are made by prefixing the endpoint with =/a/=
+  (Gerrit documentation: =Documentation/rest-api.txt=,
+  Authentication).  This uses HTTP Basic credentials from the user's
+  account settings and does not require XSRF tokens.
+- JSON responses are XSSI-protected by a leading magic line:
+  =)]}'=.  The client must strip the whole line before JSON parsing.
+- Tools should request compact JSON by either passing =pp=0= or sending
+  =Accept: application/json=.  Majutsu does both for JSON endpoints.
+- Error responses are usually plain text, not JSON.  The low-level REST
+  function therefore must not assume that every response body is JSON.
+
+** Change identity
+
+Gerrit has multiple identifiers and they are not interchangeable:
+
+- =ChangeInfo.id= is the canonical REST resource id.  In Gerrit 3.14 it
+  is =url(project)~number=; this is set in
+  =java/com/google/gerrit/server/change/ChangeJson.java=.
+- =ChangeInfo.triplet_id= is =url(project)~url(branch)~url(Change-Id)=.
+- =ChangeInfo.change_id= is the Change-Id footer value, e.g.
+  =I8473...=.
+
+For REST endpoints under =/changes/{change-id}=, prefer
+=ChangeInfo.id= whenever we already have a =ChangeInfo= object.  Gerrit
+also accepts other identifiers, but
+=Documentation/rest-api-changes.txt= explicitly says they require extra
+lookups and may produce false positives/negatives.
+
+For search queries (=GET /changes/?q=...=), use the user's query string
+or a Change-Id / change number as a query term.  Do not pass
+=ChangeInfo.id= to a search query and expect it to work as a resource id;
+modern Gerrit treats query parsing and REST resource parsing separately.
+This distinction is the root cause of an egerrit bug we already fixed.
+
+All IDs that appear in URL path segments must be URL encoded.  This
+includes project names, branch names, file paths, labels and comment IDs.
+File paths must be encoded as a single path segment, so slashes become
+=%2F=; magic paths such as =/COMMIT_MSG= and =/PATCHSET_LEVEL= must also
+be encoded before being inserted into =/files/{file-id}= or comment
+payloads.
+
+** Change query behavior
+
+=java/com/google/gerrit/server/restapi/change/QueryChanges.java= shows
+that =GET /changes/= accepts repeated =q= parameters.  With one query,
+Gerrit returns a list of =ChangeInfo= objects.  With more than one query,
+Gerrit returns a list of lists in the same order as the repeated =q=
+parameters.  The REST layer preserves the raw shape; higher-level
+helpers may normalize it.
+
+The =o= query parameter is repeatable and maps to
+=ListChangesOption=.  Expensive options should be requested only at the
+call site that needs them.  Defaults:
+
+- dashboard :: =LABELS=, =DETAILED_ACCOUNTS=, maybe =SUBMIT_REQUIREMENTS=
+- review opening :: =ALL_REVISIONS=, =ALL_COMMITS=, =ALL_FILES=,
+  =DETAILED_LABELS=, =DETAILED_ACCOUNTS=, =MESSAGES=,
+  =REVIEWER_UPDATES=, =DOWNLOAD_COMMANDS=, =CHANGE_ACTIONS=
+- selected change details :: prefer =GET /changes/{id}/detail= with
+  additional =o= options for revisions/files, instead of re-querying by
+  =q=
+
+Avoid deprecated query operators such as =assignee:self=.  Modern Gerrit
+still contains compatibility pieces, but we should not build new UI on
+those operators.
+
+** Comments and drafts
+
+=ListChangeComments= and =ListChangeDrafts= return a map from file path
+to a list of =CommentInfo=.  Published comments have =author= filled;
+drafts intentionally do not.  Drafts require an identified user.
+
+=CommentInfo= extends =extensions.client.Comment= and important fields
+include:
+
+- =patch_set= :: integer patch set number
+- =id= :: URL-encoded comment UUID
+- =path= :: file path
+- =side= :: absent means revision side; =PARENT= means parent side
+- =parent= :: parent number for merge commits, only when side is parent
+- =line= :: nil or 0 means file-level comment; normal lines are 1-based
+- =range= :: start/end line are 1-based; characters are 0-based; end is
+  exclusive
+- =in_reply_to= :: parent comment UUID
+- =updated= :: Gerrit UTC timestamp string
+- =commit_id=, =tag=, =change_message_id=, =unresolved=,
+  =fix_suggestions=, =context_lines= may also be present
+
+The data layer must preserve raw comment alists, not only the fields we
+initially render.
+
+** Review / draft publishing
+
+=POST /changes/{change-id}/revisions/{revision-id}/review= accepts a
+=ReviewInput=.  Field names on the wire are lower-underscore JSON names
+(e.g. =work_in_progress=, =omit_duplicate_comments=, =drafts=).  We use
+string keys in Emacs JSON alists to avoid symbol/name conversion bugs.
+
+=ReviewInput.drafts= defaults to =KEEP= server-side.  To publish drafts,
+post ={"drafts":"PUBLISH_ALL_REVISIONS"}= or ={"drafts":"PUBLISH"}=
+to the review endpoint.  This matches egerrit's successful publishing
+workflow and avoids inventing a non-standard endpoint.
+
+When posting comments, empty/whitespace-only messages are ignored by
+Gerrit (=PostReview.cleanUpComments=).  The UI should prevent empty
+comments before sending.
+
+** Binary and text endpoints
+
+Not every endpoint returns JSON:
+
+- =GET /config/server/version= returns a JSON string with the XSSI line.
+- =GET /changes/{id}/revisions/{rev}/patch= defaults to base64 text.
+  Gerrit 3.14 supports =?raw=, which returns a plain text patch and is
+  preferable for Majutsu review buffers.
+- =GET /changes/{id}/revisions/{rev}/files/{file-id}/content= returns a
+  =BinaryResult= and may be base64-encoded.
+
+Therefore the REST layer has a raw request primitive plus JSON/text
+helpers, rather than a single function that always JSON-decodes.
+
+* Module layout
+
+| File                          | Role                                        | Existing/New |
+|-------------------------------+---------------------------------------------+--------------|
+| =majutsu-gerrit.el=           | jj sub-commands + transient + entry points  | Existing     |
+| =majutsu-gerrit-rest.el=      | curl-based REST client                      | New (M1)     |
+| =majutsu-gerrit-data.el=      | =cl-defstruct= for common Gerrit entities   | New (M2)     |
+| =majutsu-gerrit-dashboard.el= | Section-based dashboard                     | New (M3)     |
+| =majutsu-gerrit-section.el=   | Change/topic info section views             | New (M4)     |
+| =majutsu-gerrit-download.el=  | Download via =jj git fetch= + =jj new=      | New (M6)     |
+| =majutsu-gerrit-review.el=    | Inline diff review + conversations + drafts | New (M7)     |
+| =majutsu-gerrit-db.el=        | Local read-state database                   | New (M8)     |
+
+The existing =majutsu-gerrit.el= is reduced (M5) by deleting the runtime
+bridges to =gerrit.el= / =egerrit=.  Its public surface (transient and
+=majutsu-gerrit-upload= entry points) is preserved.
+
+* Dependencies
+
+The new modules require, beyond Majutsu's own modules:
+
+- =cl-lib=, =subr-x=, =seq= (built in)
+- =auth-source=, =url-parse=, =url-util= (built in)
+- =json= (built in)
+- =magit-section= (already a Majutsu dependency)
+
+External binary: =curl= must be on =PATH=.
+
+No new entries are added to =Eask=; =auth-source= / =json= are built in,
+and =magit-section= is already required.
+
+* Configuration model
+
+The client follows the same "discover from working copy" rule that
+=majutsu-gerrit--shared-spec= already uses:
+
+1. =jj config get gerrit.review-url= takes priority.  If set, parse it
+   and derive the host, scheme, path prefix and SSL flag.
+2. Fall back to the selected jj remote URL (=jj git remote list=) for
+   HTTP/HTTPS remotes.
+3. SSH remotes are intentionally ignored for REST, because the SSH port
+   is the upload port, not the REST port.
+
+Authentication uses =auth-source=, indexed by the resolved
+=host[:port]=.  No password ever lives in =defcustom=.
+
+The public REST spec is normalized as:
+
+#+begin_src emacs-lisp
+(:host "192.168.110.139:8080"
+ :scheme "http"
+ :path ""              ; optional reverse-proxy path before /a
+ :prefix "/a"
+ :user "admin")
+#+end_src
+
+The existing =majutsu-gerrit--shared-spec= returns legacy/shared keys
+such as =:egerrit-url=, =:gerrit-prefix= and =:ssl=.  M1 adds a small
+normalizer that converts that shared spec into the REST spec above.
+
+Configuration entry points (defcustoms):
+
+- =majutsu-gerrit-rest-endpoint-prefix= :: usually =/a= for authenticated
+  Gerrit.  Default =/a=.
+- =majutsu-gerrit-rest-curl-extra-args= :: list of extra curl flags
+  prepended to every request, e.g. =--insecure= for self-signed dev
+  servers.
+
+There is no =majutsu-gerrit-host= variable.  All callers either use the
+discovered spec from the current Majutsu working copy, or pass an
+explicit spec object to lower-level functions.
+
+* REST layer (M1)
+
+** Entry points
+
+The low-level request primitive returns status + raw body and never
+assumes JSON:
+
+#+begin_src emacs-lisp
+(majutsu-gerrit-rest-request METHOD ENDPOINT &optional DATA SPEC PARAMS HEADERS)
+;; => (:status 200 :body "raw response body" :url "...")
+#+end_src
+
+JSON and text helpers sit on top:
+
+#+begin_src emacs-lisp
+(majutsu-gerrit-rest-json METHOD ENDPOINT &optional DATA SPEC PARAMS)
+;; => decoded JSON value, or nil for 204/empty body
+
+(majutsu-gerrit-rest-text METHOD ENDPOINT &optional DATA SPEC PARAMS)
+;; => raw text body
+#+end_src
+
+- =METHOD= :: =GET= / =POST= / =PUT= / =DELETE=
+- =ENDPOINT= :: path component starting with =/=, without query string
+- =DATA= :: alist/string that will be JSON-encoded as request body, or nil
+- =SPEC= :: optional normalized plist =(:host :scheme :path :prefix :user)=
+- =PARAMS= :: alist of query parameters; repeated keys are allowed
+- =HEADERS= :: additional request headers
+
+Every endpoint convenience function is a thin wrapper around one of
+these helpers.  Async variants are not in M1; they are added when a UI
+consumer needs them.
+
+** Curl implementation
+
+Requests are run through =majutsu-process-file=:
+
+#+begin_src emacs-lisp
+(majutsu-process-file "curl" nil t nil
+                      "--silent" "--show-error" "--location"
+                      "--compressed"
+                      "--write-out" "\nMAJUTSU_GERRIT_STATUS:%{http_code}\n"
+                      ...)
+#+end_src
+
+Important details:
+
+- Do not use =--fail= or =--fail-with-body=.  We want curl to return the
+  body even for 400/401/409 responses so the client can surface Gerrit's
+  plaintext error message.
+- JSON endpoints send =Accept: application/json= and =pp=0=.
+- JSON request bodies send =Content-Type: application/json; charset=UTF-8=.
+- HTTP status is parsed from the explicit marker appended by
+  =--write-out=.  For M1 we only support text/JSON responses; ZIP/binary
+  download endpoints are out of scope.
+- =--location= is allowed; curl does not forward credentials to a
+  different host unless explicitly asked to do so.
+
+Reusing =majutsu-process-file= gives us:
+
+- consistent =process-environment= via =majutsu-process-environment=
+- TRAMP-aware execution
+- consistent UTF-8 coding system handling
+
+** URL and query encoding
+
+Provide helpers:
+
+#+begin_src emacs-lisp
+(majutsu-gerrit-rest-encode-id ID)
+(majutsu-gerrit-rest-params PARAMS)
+(majutsu-gerrit-rest-change-id CHANGE)
+#+end_src
+
+Rules:
+
+- Encode every path segment with =url-hexify-string= before inserting it
+  into an endpoint.
+- Boolean query flags may be represented as =(KEY . t)= and encoded as a
+  bare =KEY=, so endpoints like =/patch?raw= can be expressed exactly.
+- Repeated options are represented as repeated alist cells, e.g.
+  =(("q" . "is:open") ("q" . "owner:self") ("o" . "LABELS"))=.
+
+** Endpoint coverage
+
+Initial coverage is the union of what =gerrit.el= and =egerrit= use,
+trimmed according to Gerrit source constraints:
+
+- config :: =/config/server/version=, =/config/server/info=
+- accounts :: =/accounts/?q=...=, =/accounts/?suggest&q=...=,
+  =/accounts/self=
+- changes :: query, get, detail, comments, drafts, messages, topic,
+  hashtags, reviewers, WIP/ready
+- revisions :: files, patch (=raw= preferred), related, review,
+  description, drafts
+- labels/votes :: set/delete Code-Review and Verified votes through
+  the review endpoint or reviewer vote endpoint as appropriate
+
+Suggested function names:
+
+- =majutsu-gerrit-rest-config-version=
+- =majutsu-gerrit-rest-config-info=
+- =majutsu-gerrit-rest-account-query=
+- =majutsu-gerrit-rest-account-suggest=
+- =majutsu-gerrit-rest-change-query=
+- =majutsu-gerrit-rest-change-get=
+- =majutsu-gerrit-rest-change-detail=
+- =majutsu-gerrit-rest-change-comments=
+- =majutsu-gerrit-rest-change-drafts=
+- =majutsu-gerrit-rest-revision-patch=
+- =majutsu-gerrit-rest-revision-files=
+- =majutsu-gerrit-rest-review-post=
+
+* Data layer (M2)
+
+=majutsu-gerrit-data.el= defines structs for the Gerrit objects that
+Majutsu renders or edits.  Every struct has a =raw= slot holding the
+original alist, because Gerrit's REST docs explicitly allow new fields to
+appear over time and because later UI work may need fields that M2 does
+not yet promote.
+
+Structs:
+
+- =majutsu-gerrit-account= :: raw, account-id, name, email, username,
+  display-name
+- =majutsu-gerrit-range= :: raw, start-line, start-character, end-line,
+  end-character
+- =majutsu-gerrit-comment= :: raw, id, patch-set, path, side, parent,
+  line, range, in-reply-to, message, updated, author, tag,
+  change-message-id, unresolved, commit-id, context-lines,
+  source-content-type, fix-suggestions, draft-p
+- =majutsu-gerrit-revision= :: raw, id, number, ref, commit, files,
+  uploader, real-uploader, fetch, description, current-p
+- =majutsu-gerrit-change= :: raw, id, triplet-id, project, branch,
+  full-branch, topic, hashtags, change-id, subject, status, created,
+  updated, submitted, owner, submitter, current-revision,
+  current-revision-number, revisions, labels, reviewers,
+  pending-reviewers, attention-set, total-comment-count,
+  unresolved-comment-count, work-in-progress, has-review-started,
+  mergeable, submittable, more-changes-p
+- =majutsu-gerrit-conversation= :: raw, id, path, side, parent,
+  patch-set, line, range, comments, unresolved, draft-p
+
+Constructors:
+
+#+begin_src emacs-lisp
+(majutsu-gerrit-account-from-alist ALIST)
+(majutsu-gerrit-range-from-alist ALIST)
+(majutsu-gerrit-comment-from-alist ALIST &optional PATH DRAFT-P)
+(majutsu-gerrit-revision-from-alist ID ALIST &optional CURRENT-ID)
+(majutsu-gerrit-change-from-alist ALIST)
+(majutsu-gerrit-conversations-from-comments COMMENT-MAP &optional DRAFT-P)
+#+end_src
+
+Notes:
+
+- For =CommentInfo.side=, absence means revision side.  The constructor
+  normalizes this to the symbol =revision=; ="PARENT"= becomes =parent=.
+- =range= lines are 1-based, characters are 0-based, and the end
+  position is exclusive, matching
+  =java/com/google/gerrit/extensions/client/Comment.java=.
+- Draft comments do not have =author=.  The constructor takes =DRAFT-P=
+  so we can distinguish drafts from published comments reliably.
+- =ChangeInfo.id= is stored as =id= and should be used for REST paths;
+  =change-id= stores the Change-Id footer value and should not be used as
+  a REST resource id when =id= is available.
+- Nested maps such as =files=, =labels= and =fetch= remain raw alists in
+  M2.  Promote them to dedicated structs only when a UI consumer needs
+  typed access.
+
+* Review rendering (M7)
+
+The review UI should use Gerrit's structured =DiffInfo= endpoint as its
+source of truth, not =/patch= text.  This is the main difference from
+egerrit and is what lets us match the web UI's review granularity.
+
+Relevant endpoints:
+
+- =GET /changes/{id}/revisions/{rev}/files/{file-id}/diff= returns a
+  =DiffInfo= with =content= entries containing =ab=, =a=, =b=,
+  =edit_a=, =edit_b=, =skip=, =common= and =due_to_rebase=.
+- =GET /changes/{id}/revisions/{rev}/comments= and =/drafts= return
+  comments whose =line= / =range= fields use the same side + line
+  coordinate system.
+- =GET /changes/{id}/revisions/{rev}/ported_comments= and
+  =/ported_drafts= ask the server to map older patch set comments onto
+  the currently displayed revision.  This should replace egerrit's local
+  hunk-guessing for cross-patch-set comment placement.
+
+** Granularity
+
+We can match the web UI for Gerrit's native review model:
+
+| Review target        | Gerrit field(s)                     | Majutsu support |
+|----------------------+-------------------------------------+-----------------|
+| patch-set level      | path =/PATCHSET_LEVEL=                | yes             |
+| file level           | no =line= and no =range=                | yes             |
+| side + line          | =side= + =line=                         | yes             |
+| multi-line range     | =side= + =range=                        | yes             |
+| intra-line selection | =range.start_character/end_character= | yes             |
+| parent side          | =side=PARENT= + optional =parent=       | yes             |
+| merge parent choice  | =parent= query param / comment field  | later UI polish |
+| copied-file porting  | ported comments may duplicate UUIDs | yes, if modeled |
+
+The only caveat is character offsets.  Gerrit and Polygerrit treat
+comment character positions as string offsets in the rendered source
+line.  Majutsu must compute offsets from the underlying line string, not
+from display columns, so tabs, wide characters and line wrapping do not
+corrupt ranges.  If we want exact parity for non-BMP Unicode codepoints,
+we may need a UTF-16-code-unit conversion helper because the web UI runs
+in JavaScript.  For ordinary source code this is usually not visible, but
+it should be isolated in one helper rather than spread through the UI.
+
+** Display model
+
+M7 should build a structured review buffer instead of a raw patch buffer.
+Every rendered source line gets text properties describing its Gerrit
+coordinate:
+
+#+begin_src emacs-lisp
+(:path "src/foo.el"
+ :side revision              ; or parent
+ :parent nil                 ; merge parent number, when applicable
+ :line 42                    ; Gerrit line number on that side
+ :rangeable t
+ :diff-row ROW-ID)
+#+end_src
+
+This enables reliable commands:
+
+- point on a line -> create a line comment at that exact Gerrit line
+- active region on one side -> create a =CommentRange=
+- point on file header -> create a file-level comment
+- point on patch-set section -> create a patch-set-level comment
+- point on existing thread -> reply to that thread
+
+Display should start unified, not side-by-side:
+
+- It fits Emacs windows better and is easier to make keyboard-native.
+- It still preserves side-specific coordinates because each rendered line
+  carries =:side= and =:line= properties.
+- A side-by-side renderer can be added later using the same intermediate
+  row model.
+
+Suggested visual shape:
+
+#+begin_example
+,* majutsu-bookmark.el
+  [file comment button / existing file-level threads]
+@@ change chunk 1 @@
+  18 | unchanged context
+- 19 | parent-only line
++ 19 | revision-only line      [thread count / unresolved marker]
++ 20 | selected text range highlighted
+      └─ thread 85c71774_32968cc4  unresolved
+         alice: comment text...
+         bob: reply...
+#+end_example
+
+Implementation outline:
+
+1. Fetch =DiffInfo= per file, with =intraline= and the selected context.
+2. Convert =DiffInfo.content= into an intermediate row list.  Each row
+   has optional parent cell, optional revision cell, text, intraline edit
+   ranges and Gerrit coordinates.
+3. Merge published comments, drafts, ported comments and ported drafts
+   into thread objects keyed by stable root comment id + path + side +
+   patch set.  Allow duplicate UUIDs from ported copied-file comments.
+4. Render rows into a =majutsu-gerrit-review-mode= buffer with text
+   properties and overlays.  Do not inherit =diff-mode-map= wholesale.
+5. Create comments from text properties rather than by searching hunks in
+   a patch buffer.
+
+This removes the class of egerrit bugs around =diff-beginning-of-hunk=:
+conversation placement no longer depends on Emacs =diff-mode= navigation
+state.  =diff-mode= may still be used for faces, but not for coordinate
+reconstruction.
+
+* Open questions deferred to later milestones
+
+- Dashboard layout is section-based, using =majutsu-mode= and
+  =majutsu-section= rather than =tabulated-list-mode=.
+- Whether =majutsu-gerrit-review-mode= derives from =majutsu-mode= only,
+  or uses =diff-mode= only for faces, is decided in M7.  It must not
+  inherit =diff-mode-map= wholesale because keys such as =k= and =v= are
+  wrong for remote review buffers.
+- Local read-state database format is decided in M8.
+- Binary ZIP downloads are out of scope for the first REST layer.
+
+* Test plan
+
+** M1
+
+=test/majutsu-gerrit-rest-test.el= mocks =majutsu-process-file= and
+asserts:
+
+- URL construction, including =/a= prefix and reverse-proxy path
+- path-segment encoding for change IDs, labels and file paths
+- repeated query params and bare boolean flags
+- =Accept: application/json= and =pp=0= on JSON helpers
+- XSSI prefix stripping only in JSON helpers
+- HTTP 4xx/5xx bodies are preserved as error text
+- non-JSON text endpoints such as raw patch are not JSON-parsed
+
+An interactive smoke test (run by hand against the user's local Gerrit
+at =192.168.110.139:8080=) is documented but not automated.
+
+** M2
+
+=test/majutsu-gerrit-data-test.el= uses small fixtures modeled after
+Gerrit's =ChangeInfo=, =RevisionInfo= and =CommentInfo= classes and
+checks:
+
+- =raw= preservation
+- =ChangeInfo.id= vs =change_id= distinction
+- comment side defaulting (=nil= -> =revision=)
+- draft comments without authors
+- conversation grouping by root comment ID + path + patch set
+
+* Out of scope
+
+- A standalone =gerrit-emacs= package.  This is a future =git
+  filter-repo= extraction, not part of the milestone plan.
+- Replacing =jj gerrit upload=.  The existing
+  =majutsu-gerrit-upload-transient= remains the upload UI.
