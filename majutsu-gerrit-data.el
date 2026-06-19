@@ -90,6 +90,40 @@ and hand-written payloads often use strings."
   "Return Gerrit encoded ID decoded for promoted struct slots."
   (if (stringp id) (url-unhex-string id) id))
 
+(defconst majutsu-gerrit-data--jj-suffix "6a6a6964"
+  "Hex of \"jjid\", appended by `jj gerrit upload' to pad change ids.")
+
+(defconst majutsu-gerrit-data--forward-hex "0123456789abcdef")
+(defconst majutsu-gerrit-data--reverse-hex "zyxwvutsrqponmlk")
+
+(defun majutsu-gerrit-data--forward-to-reverse-hex (hex)
+  "Convert forward HEX to jj reverse-hex, or nil if HEX is not hex."
+  (let ((out (make-string (length hex) ?z))
+        (ok t)
+        (i 0))
+    (while (and ok (< i (length hex)))
+      (let ((v (string-search (string (downcase (aref hex i)))
+                              majutsu-gerrit-data--forward-hex)))
+        (if v
+            (aset out i (aref majutsu-gerrit-data--reverse-hex v))
+          (setq ok nil)))
+      (setq i (1+ i)))
+    (and ok out)))
+
+(defun majutsu-gerrit-data-gerrit-id-to-jj-change-id (change-id)
+  "Return the jj change id encoded in Gerrit CHANGE-ID, or nil.
+
+`jj gerrit upload' derives the Gerrit Change-Id from the jj change id as
+=I + forward-hex(jj-change-id) + \"6a6a6964\"= (see jj's
+`cli/src/commands/gerrit/upload.rs').  Recover the original jj change id
+when CHANGE-ID has that exact shape; otherwise return nil because no
+stable mapping exists."
+  (when (and (stringp change-id)
+             (= (length change-id) 41)
+             (eq (aref change-id 0) ?I)
+             (string-suffix-p majutsu-gerrit-data--jj-suffix change-id))
+    (majutsu-gerrit-data--forward-to-reverse-hex (substring change-id 1 33))))
+
 (defun majutsu-gerrit-data--alist-map (alist fn)
   "Map FN over ALIST preserving stringified keys.
 FN is called with (KEY VALUE)."

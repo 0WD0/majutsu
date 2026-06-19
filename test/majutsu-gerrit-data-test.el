@@ -53,6 +53,17 @@
     (should (equal (majutsu-gerrit-change-triplet-id change)
                    "team/project~main~Iabc"))))
 
+(ert-deftest majutsu-gerrit-data-gerrit-id-to-jj-change-id/recovers-jj-id ()
+  "Recover the jj change id from a jj-generated Gerrit Change-Id."
+  (should (equal (majutsu-gerrit-data-gerrit-id-to-jj-change-id
+                  "Ibc395f888cd27f5a62a10120bcf75b9e6a6a6964")
+                 "onwqukrrrnmxskuptxpyzyxzonksuoql"))
+  ;; Footers without the jjid suffix have no stable jj mapping.
+  (should-not (majutsu-gerrit-data-gerrit-id-to-jj-change-id
+               "Ibc395f888cd27f5a62a10120bcf75b9edeadbeef"))
+  (should-not (majutsu-gerrit-data-gerrit-id-to-jj-change-id "Iabc"))
+  (should-not (majutsu-gerrit-data-gerrit-id-to-jj-change-id nil)))
+
 (ert-deftest majutsu-gerrit-comment-from-alist/defaults-side-and-draft-author ()
   "Missing side means revision side; drafts may not have authors."
   (let* ((comment (majutsu-gerrit-comment-from-alist

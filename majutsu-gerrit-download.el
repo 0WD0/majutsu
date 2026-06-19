@@ -11,8 +11,16 @@
 
 ;;; Commentary:
 
-;; Fetch Gerrit patch-set refs into the colocated Git store and create a jj
-;; working-copy child on top of the fetched patch set.
+;; Download a Gerrit change into the local jj repository.
+;;
+;; A Gerrit change created with `jj gerrit upload' carries the originating
+;; jj change id in its Change-Id footer (=I<jj-change-id>6a6a6964=).  When
+;; that change still exists locally, downloading just means returning to it,
+;; not fetching the rewritten Gerrit commit (whose commit id differs and
+;; whose jj `change-id' header is usually dropped by the server).
+;;
+;; Otherwise (someone else's change, or a non-jj Change-Id) we fetch the
+;; patch-set ref into a jj-visible remote bookmark and create a child on it.
 
 ;;; Code:
 
@@ -21,7 +29,6 @@
 (require 'majutsu-jj)
 (require 'majutsu-process)
 
-(require 'cl-lib)
 (require 'magit-section)
 (require 'seq)
 (require 'subr-x)
@@ -34,9 +41,21 @@
   :type 'string
   :group 'majutsu-gerrit)
 
-(defun majutsu-gerrit-download--change-at-point ()
-  "Return the Gerrit change at point, or nil."
-  (magit-section-value-if 'majutsu-gerrit-change))
+;;;; Local alignment
+
+(defun majutsu-gerrit-download--local-change-id (change)
+  "Return the local jj change id for CHANGE if it exists locally.
+
+Recover the jj change id from CHANGE's Gerrit Change-Id and confirm jj
+knows it.  Return nil when CHANGE was not uploaded from this repo."
+  (when-let* ((gerrit-id (majutsu-gerrit-change-change-id change))
+              (jj-id (majutsu-gerrit-data-gerrit-id-to-jj-change-id gerrit-id))
+              (resolved (ignore-errors
+                          (majutsu-jj-string "log" "--no-graph" "-r" jj-id
+                                             "-T" "change_id"))))
+    jj-id))
+
+;;;; Remote fetch fallback
 
 (defun majutsu-gerrit-download--remote (&optional remote directory)
   "Return the Gerrit REMOTE name for DIRECTORY."
@@ -46,123 +65,85 @@
       (and (fboundp 'majutsu-gerrit--selected-remote)
            (majutsu-gerrit--selected-remote nil directory))))
 
-(defun majutsu-gerrit-download--change-resource (change)
-  "Return the best REST resource id for CHANGE."
-  (or (majutsu-gerrit-change-number change)
-      (majutsu-gerrit-change-id change)
-      (majutsu-gerrit-change-change-id change)))
-
 (defun majutsu-gerrit-download--current-revision (change)
   "Return CHANGE's current `majutsu-gerrit-revision', if present."
   (let ((current (majutsu-gerrit-change-current-revision change))
         (revisions (majutsu-gerrit-change-revisions change)))
     (or (and current (cdr (assoc current revisions)))
-        (seq-find #'majutsu-gerrit-revision-current-p (mapcar #'cdr revisions))
-        (car (sort (mapcar #'cdr revisions)
-                   (lambda (a b)
-                     (> (or (majutsu-gerrit-revision-number a) 0)
-                        (or (majutsu-gerrit-revision-number b) 0))))))))
+        (seq-find #'majutsu-gerrit-revision-current-p (mapcar #'cdr revisions)))))
 
-(defun majutsu-gerrit-download--ensure-current-revision (change &optional spec)
+(defun majutsu-gerrit-download--ensure-current-revision (change spec)
   "Return CHANGE's current revision, fetching detail through SPEC if needed."
   (or (majutsu-gerrit-download--current-revision change)
-      (let* ((resource (majutsu-gerrit-download--change-resource change))
-             (detailed (and resource
-                            (majutsu-gerrit-change-from-alist
+      (when-let* ((number (majutsu-gerrit-change-number change))
+                  (detailed (majutsu-gerrit-change-from-alist
                              (majutsu-gerrit-rest-change-get
-                              resource '("CURRENT_REVISION") spec)))))
-        (and detailed (majutsu-gerrit-download--current-revision detailed)))
+                              number '("CURRENT_REVISION") spec))))
+        (majutsu-gerrit-download--current-revision detailed))
       (user-error "Gerrit change has no current patch-set ref")))
 
-(defun majutsu-gerrit-download--bookmark-name (change revision)
-  "Return local remote-bookmark name for CHANGE and REVISION."
+(defun majutsu-gerrit-download--bookmark (change revision)
+  "Return the jj remote-bookmark name for CHANGE REVISION."
   (format "%s/%s/%s"
           (string-remove-suffix "/" majutsu-gerrit-download-ref-prefix)
-          (or (majutsu-gerrit-change-number change)
-              (majutsu-gerrit-change-change-id change)
-              (majutsu-gerrit-change-id change))
-          (or (majutsu-gerrit-revision-number revision)
-              (majutsu-gerrit-revision-id revision))))
+          (majutsu-gerrit-change-number change)
+          (majutsu-gerrit-revision-number revision)))
 
 (defun majutsu-gerrit-download--git-dir ()
   "Return the underlying Git directory for the current jj repository."
   (or (majutsu-jj-string "git" "root")
       (user-error "Current jj repository is not backed by Git")))
 
-(defun majutsu-gerrit-download--remote-ref (remote bookmark)
-  "Return the Git remote-tracking ref for REMOTE BOOKMARK."
-  ;; `jj git import' only imports Git refs that `parse_git_ref' recognizes:
-  ;; local branches, remote branches, and tags.  Gerrit patch sets are under
-  ;; refs/changes, so fetch them into refs/remotes/<remote>/... first.
-  (format "refs/remotes/%s/%s" remote bookmark))
-
-(defun majutsu-gerrit-download--revset (remote bookmark)
-  "Return jj revset selecting REMOTE BOOKMARK."
-  (format "%s@%s" bookmark remote))
-
 (defun majutsu-gerrit-download--fetch-refspec (source-ref remote bookmark)
-  "Return forced Git fetch refspec from SOURCE-REF to REMOTE BOOKMARK."
-  (format "+%s:%s" source-ref
-          (majutsu-gerrit-download--remote-ref remote bookmark)))
+  "Return a forced Git refspec mapping SOURCE-REF to REMOTE BOOKMARK.
 
-(defun majutsu-gerrit-download--start-git-fetch (remote source-ref bookmark callback)
-  "Fetch SOURCE-REF from REMOTE into BOOKMARK, then call CALLBACK."
-  (let* ((refspec (majutsu-gerrit-download--fetch-refspec source-ref remote bookmark))
-         (git-dir (majutsu-gerrit-download--git-dir))
-         (process (majutsu-start-process "git" nil "--git-dir" git-dir
-                                         "fetch" remote refspec)))
-    (process-put process 'success-msg "Fetched Gerrit patch set")
-    (process-put process 'error-prefix "git error")
-    (process-put process 'finish-callback
-                 (lambda (_process exit)
-                   (when (zerop exit)
-                     (funcall callback))))
-    process))
+Gerrit patch sets live under refs/changes, which neither `jj git fetch'
+nor `jj git import' will scan.  Fetch them into refs/remotes/<remote>/...,
+the namespace jj imports as a remote bookmark."
+  (format "+%s:refs/remotes/%s/%s" source-ref remote bookmark))
 
-(defun majutsu-gerrit-download--start-import (callback)
-  "Import newly fetched Git refs into jj, then call CALLBACK."
-  (let ((process (majutsu-start-jj
-                  '("--config=git.abandon-unreachable-commits=false" "git" "import")
-                  "Imported Gerrit patch set")))
-    (process-put process 'finish-callback
-                 (lambda (_process exit)
-                   (when (zerop exit)
-                     (funcall callback))))
-    process))
+(defun majutsu-gerrit-download--fetch-and-checkout (remote source-ref bookmark)
+  "Fetch SOURCE-REF into REMOTE BOOKMARK, import it, and check it out."
+  (let ((git-dir (majutsu-gerrit-download--git-dir))
+        (refspec (majutsu-gerrit-download--fetch-refspec source-ref remote bookmark)))
+    (unless (zerop (majutsu-run-jj
+                    "git" "--git-dir" git-dir "fetch" remote refspec))
+      (user-error "Failed to fetch %s from %s" source-ref remote)))
+  (unless (zerop (majutsu-run-jj "git" "import"))
+    (user-error "Failed to import fetched Gerrit patch set"))
+  (when (zerop (majutsu-run-jj "new" (format "%s@%s" bookmark remote)))
+    (majutsu-refresh)
+    (message "Downloaded Gerrit change as %s@%s" bookmark remote)))
 
-(defun majutsu-gerrit-download--start-new (remote bookmark)
-  "Create a jj working-copy child on top of REMOTE BOOKMARK."
-  (majutsu-start-jj (list "new" (majutsu-gerrit-download--revset remote bookmark))
-                    "Created working-copy child for Gerrit patch set"))
+;;;; Entry point
 
 ;;;###autoload
-(defun majutsu-gerrit-download-change (&optional change remote directory)
-  "Download Gerrit CHANGE and create a jj working-copy child.
+(defun majutsu-gerrit-download-change (&optional change directory)
+  "Download Gerrit CHANGE into the local jj repository.
+
+If CHANGE was uploaded from this repo, edit the local change it came
+from.  Otherwise fetch its current patch set and create a child on it.
 Interactively, use the Gerrit change section at point."
-  (interactive (list (majutsu-gerrit-download--change-at-point)))
+  (interactive (list (magit-section-value-if 'majutsu-gerrit-change)))
   (unless change
     (user-error "No Gerrit change at point"))
   (let* ((directory (or directory majutsu--default-directory default-directory))
-         (default-directory directory)
-         (remote (majutsu-gerrit-download--remote remote directory))
-         (spec (majutsu-gerrit-rest-current-spec remote directory))
-         (revision (majutsu-gerrit-download--ensure-current-revision change spec))
-         (source-ref (majutsu-gerrit-revision-ref revision))
-         (bookmark (majutsu-gerrit-download--bookmark-name change revision)))
-    (unless (and remote (not (string-empty-p remote)))
-      (user-error "No Gerrit remote selected"))
-    (unless (and source-ref (not (string-empty-p source-ref)))
-      (user-error "Gerrit change has no current patch-set ref"))
-    ;; `jj git fetch' intentionally only supports branch/tag patterns.  Gerrit
-    ;; patch sets live under refs/changes, which `jj git import' will not scan
-    ;; directly.  Fetch the exact patch-set ref into refs/remotes/<remote>/...,
-    ;; i.e. a namespace that jj imports as a remote bookmark.
-    (majutsu-gerrit-download--start-git-fetch
-     remote source-ref bookmark
-     (lambda ()
-       (majutsu-gerrit-download--start-import
-        (lambda ()
-          (majutsu-gerrit-download--start-new remote bookmark)))))))
+         (default-directory directory))
+    (if-let* ((local-id (majutsu-gerrit-download--local-change-id change)))
+        (when (zerop (majutsu-run-jj "edit" local-id))
+          (majutsu-refresh)
+          (message "Editing local change %s" local-id))
+      (let* ((remote (majutsu-gerrit-download--remote nil directory))
+             (spec (majutsu-gerrit-rest-current-spec remote directory))
+             (revision (majutsu-gerrit-download--ensure-current-revision change spec))
+             (source-ref (majutsu-gerrit-revision-ref revision)))
+        (unless (and remote (not (string-empty-p remote)))
+          (user-error "No Gerrit remote selected"))
+        (unless (and source-ref (not (string-empty-p source-ref)))
+          (user-error "Gerrit change has no current patch-set ref"))
+        (majutsu-gerrit-download--fetch-and-checkout
+         remote source-ref
+         (majutsu-gerrit-download--bookmark change revision))))))
 
 (provide 'majutsu-gerrit-download)
 

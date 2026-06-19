@@ -189,11 +189,23 @@ The new modules require, beyond Majutsu's own modules:
 - =json= (built in)
 - =magit-section= (already a Majutsu dependency)
 
-External binaries: =curl= and =git= must be on =PATH=.  Gerrit patch-set
-refs live under =refs/changes=, while =jj git fetch= only expands branch/tag
-patterns.  Download therefore uses =git --git-dir $(jj git root) fetch= to
-copy the exact patch-set ref into =refs/remotes/<remote>/majutsu/gerrit/...=,
-then runs =jj git import= so jj sees it as a remote bookmark.
+External binaries: =curl= and =git= must be on =PATH=.
+
+Download resolves a Gerrit change to a local jj change first.  A change
+uploaded from this repo carries the originating jj change id in its
+Gerrit Change-Id (=I<jj-change-id>6a6a6964=, see
+=cli/src/commands/gerrit/upload.rs=), so download recovers that jj change
+id and edits the local change directly.  Note that =jj git fetch= /
+=jj git import= cannot do this: jj only reads the private =change-id= git
+commit header (=lib/src/git_backend.rs=), never the Gerrit Change-Id
+footer, and the Gerrit commit's header is usually stripped.
+
+For a change that does not map to a local jj change (someone else's
+change, or a non-jj footer), download falls back to fetching the patch
+set.  Gerrit patch-set refs live under =refs/changes=, which =jj git
+fetch= cannot reach, so download runs =git --git-dir $(jj git root) fetch=
+to copy the ref into =refs/remotes/<remote>/majutsu/gerrit/...=, then
+=jj git import= so jj sees it as a remote bookmark, then =jj new=.
 
 No new entries are added to =Eask=; =auth-source= / =json= are built in,
 and =magit-section= is already required.
