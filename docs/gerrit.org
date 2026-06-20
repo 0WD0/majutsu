@@ -58,10 +58,20 @@ Gerrit has multiple identifiers and they are not interchangeable:
 - =ChangeInfo.id= is a REST resource id in encoded form.  In Gerrit 3.14
   it is =url(project)~number=; this is set in
   =java/com/google/gerrit/server/change/ChangeJson.java=.
-- =ChangeInfo.triplet_id= is =url(project)~url(branch)~url(Change-Id)=.
+- =ChangeInfo.triplet_id= is =url(project)~url(branch)~url(change key)=.
 - =ChangeInfo._number= is the global numeric change number.
-- =ChangeInfo.change_id= is the Change-Id footer value, e.g.
-  =I8473...=.
+- =ChangeInfo.change_id= is Gerrit's stable change key.  For traditional
+  Git clients this is the =I...= value from the commit-message
+  =Change-Id= footer.  For Jujutsu-aware Gerrit, this may instead be the
+  raw 32-character jj change id read from the Git commit-object
+  =change-id= header, e.g. =mqywrmzsrppzuprkpuutrxsmplmkkkzt=.
+
+Majutsu treats raw jj-style change keys as first-class Gerrit change IDs,
+not as an implementation detail.  A jj-style key matches
+=^[k-z]\{32\}$= and should be used directly for local jj revset lookup,
+cleanup decisions and dashboard display.  The older converted key form
+=I<forward-hex-jj-id>6a6a6964= is legacy compatibility only; new
+header-based uploads should not create it.
 
 For REST endpoints under =/changes/{change-id}=, prefer =_number= when
 we already have a =ChangeInfo= object.  It avoids re-encoding
@@ -70,11 +80,12 @@ server.  Gerrit also accepts other identifiers, but
 =Documentation/rest-api-changes.txt= explicitly says they require extra
 lookups and may produce false positives/negatives.
 
-For search queries (=GET /changes/?q=...=), use the user's query string
-or a Change-Id / change number as a query term.  Do not pass
-=ChangeInfo.id= to a search query and expect it to work as a resource id;
-modern Gerrit treats query parsing and REST resource parsing separately.
-This distinction is the root cause of an egerrit bug we already fixed.
+For search queries (=GET /changes/?q=...=), use the user's query string,
+a numeric change number, or a change key (=I...= or jj-style raw id) as a
+query term.  Do not pass =ChangeInfo.id= to a search query and expect it
+to work as a resource id; modern Gerrit treats query parsing and REST
+resource parsing separately.  This distinction is the root cause of an
+egerrit bug we already fixed.
 
 All IDs that appear in URL path segments must be URL encoded.  This
 includes project names, branch names, file paths, labels and comment IDs.
@@ -172,7 +183,8 @@ helpers, rather than a single function that always JSON-decodes.
 | =majutsu-gerrit-data.el=      | =cl-defstruct= for common Gerrit entities   | New (M2)     |
 | =majutsu-gerrit-dashboard.el= | Section-based dashboard                     | New (M3 done) |
 | =majutsu-gerrit-section.el=   | Change/topic info section views             | New (M4)     |
-| =majutsu-gerrit-download.el=  | Download via Git fetch + =jj git import/new= | New (M6 minimal) |
+| =majutsu-gerrit-download.el=  | Download/sync via refs/changes + jj import  | New (M6 minimal) |
+| =majutsu-gerrit-cleanup.el=   | Obsolete uploaded-change discovery/abandon  | New (M6/M9)   |
 | =majutsu-gerrit-review.el=    | Inline diff review + conversations + drafts | New (M7)     |
 | =majutsu-gerrit-db.el=        | Local read-state database                   | New (M8)     |
 
@@ -191,24 +203,90 @@ The new modules require, beyond Majutsu's own modules:
 
 External binaries: =curl= and =git= must be on =PATH=.
 
-Download resolves a Gerrit change to a local jj change first.  A change
-uploaded from this repo carries the originating jj change id in its
-Gerrit Change-Id (=I<jj-change-id>6a6a6964=, see
-=cli/src/commands/gerrit/upload.rs=), so download recovers that jj change
-id and edits the local change directly.  Note that =jj git fetch= /
-=jj git import= cannot do this: jj only reads the private =change-id= git
-commit header (=lib/src/git_backend.rs=), never the Gerrit Change-Id
-footer, and the Gerrit commit's header is usually stripped.
+Download resolves a Gerrit change to a local jj change first.  In the
+Jujutsu-aware Gerrit model, a change uploaded from this repo normally has
+=ChangeInfo.change_id= equal to the raw jj change id from the Git
+commit-object =change-id= header.  Download can therefore use that raw
+32-character id directly as a jj revset and show the local change in a
+diff buffer without fetching anything.
+
+Legacy changes created by older =jj gerrit upload= may instead use a
+converted Gerrit key of the form =I<forward-hex-jj-id>6a6a6964=.  Majutsu
+keeps a compatibility helper to recover the jj id from that shape, but
+this is not the primary model for new changes.
 
 For a change that does not map to a local jj change (someone else's
-change, or a non-jj footer), download falls back to fetching the patch
-set.  Gerrit patch-set refs live under =refs/changes=, which =jj git
-fetch= cannot reach, so download runs =git --git-dir $(jj git root) fetch=
-to copy the ref into =refs/remotes/<remote>/majutsu/gerrit/...=, then
-=jj git import= so jj sees it as a remote bookmark, then =jj new=.
+change, a traditional Git =I...= footer, or a legacy key whose local
+change no longer exists), download falls back to fetching the patch set.
+Gerrit patch-set refs live under =refs/changes=, which =jj git fetch=
+cannot reach, so download runs =git --git-dir $(jj git root) fetch= to
+copy the ref into =refs/remotes/<remote>/majutsu/gerrit/...=, then =jj
+git import= so jj sees it as a remote bookmark, then =jj new=.
 
 No new entries are added to =Eask=; =auth-source= / =json= are built in,
 and =magit-section= is already required.
+
+* Sync/download and cleanup model
+
+Majutsu should expose the same first-class Gerrit lifecycle that we want
+from the jj CLI, but with editor-native affordances:
+
+- upload :: call =jj gerrit upload= through the existing transient.
+- sync/download :: fetch Gerrit patch sets into jj-visible remote
+  bookmarks and optionally create a local child for inspection.
+- cleanup :: find Gerrit open changes whose raw jj change id no longer
+  appears in the selected local revset, show a dry-run section, and only
+  abandon after explicit confirmation.
+- review :: use REST DiffInfo/comments/drafts for inline review buffers.
+
+** Download vs sync
+
+=majutsu-gerrit-download-change= is the point-at-change command: it
+tries to jump to the local jj change first, and otherwise fetches the
+current patch set and creates a child.  This is the interactive analogue
+of a future =jj gerrit sync --change <N>=.
+
+A future dashboard-level sync command should not necessarily check out a
+child.  It should update remote bookmarks only, for example:
+
+#+begin_example
+change/166@gerrit      ; current patch set
+change/166/1@gerrit    ; optional exact patch set bookmark
+#+end_example
+
+The existing =majutsu-gerrit-download-ref-prefix= (=majutsu/gerrit=)
+can remain the internal namespace for fetched refs, but user-facing
+sections should render them as Gerrit changes rather than as ordinary
+bookmarks.
+
+** Cleanup UI
+
+Majutsu cleanup should be a section buffer, not a silent command.  The
+buffer should show:
+
+- the Gerrit query used (=project=, =branch=, =status:open=,
+  =owner:self= by default)
+- the local revset used as the live set
+- every obsolete candidate with number, raw jj id, subject and reason
+- actions: abandon selected, abandon all, copy query, open in browser
+
+Default behavior is dry-run.  Abandoning should call either REST
+=POST /changes/{id}/abandon= or SSH =gerrit review --abandon=, with a
+message that says the jj change id is no longer present in the selected
+local revset.
+
+** Relationship to the jj CLI design
+
+The standalone jj design document
+=jj-gerrit-sync-cleanup-design.org= specifies the CLI-level algorithm.
+Majutsu should share the same identity model and safety rules, but it can
+use its existing REST/data/dashboard modules for discovery and display.
+In particular:
+
+- Majutsu REST query is better for dashboards and rich detail views.
+- Git fetch remains necessary to get commit objects from =refs/changes=.
+- Cleanup should reuse dashboard data where available, but must refresh
+  before destructive abandon operations.
 
 * Configuration model
 
