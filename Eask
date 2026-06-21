@@ -16,6 +16,7 @@
 (depends-on "emacs" "29.1")
 (depends-on "compat" "31.0.0.1")
 (depends-on "magit" "3.3.0")
+(depends-on "consult" "1.0")
 (depends-on "transient" "0.5.0")
 
 (source 'melpa)

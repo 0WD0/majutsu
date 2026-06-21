@@ -7,7 +7,7 @@
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
 ;; Version: 0.6.0
-;; Package-Requires: ((emacs "29.1") (compat "31.0.0.1") (transient "0.5.0") (magit "3.3.0"))
+;; Package-Requires: ((emacs "29.1") (compat "31.0.0.1") (transient "0.5.0") (magit "3.3.0") (consult "1.0"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
