@@ -24,6 +24,7 @@
 (require 'majutsu-selection)
 
 (require 'cl-lib)
+(require 'rx)
 (require 'seq)
 (require 'subr-x)
 (require 'url-parse)
@@ -293,9 +294,24 @@ SEED filters the candidates when non-nil."
           (majutsu-gerrit--make-account-payload accounts seed))
       (error nil))))
 
+(defun majutsu-gerrit--completion-regexp-seed ()
+  "Return a plain literal seed from `completion-regexp-list', if any.
+Completion styles such as `orderless' may call the table with an empty
+prefix while binding `completion-regexp-list' to the user's input.  If
+the first regexp is a simple literal, use it as the Gerrit query seed."
+  (when completion-regexp-list
+    (let ((re (car completion-regexp-list)))
+      (when (stringp re)
+        (setq re (replace-regexp-in-string (rx bos "\\" (any "`^")) "" re))
+        (setq re (replace-regexp-in-string (rx "\\" (any "'$") eos) "" re))
+        (and (not (string-empty-p re))
+             (equal (regexp-quote re) re)
+             re)))))
+
 (defun majutsu-gerrit-account-completion-table (&optional remote)
   "Return a dynamic completion table for Gerrit accounts."
-  (let ((cache (make-hash-table :test #'equal))
+  (let ((default-directory default-directory)
+        (cache (make-hash-table :test #'equal))
         (annotations (make-hash-table :test #'equal))
         suffix-function)
     (cl-labels
@@ -306,11 +322,14 @@ SEED filters the candidates when non-nil."
                  (concat " " annotation))))
          (candidates (string)
            (let* ((seed (string-trim string))
-                  (payload (or (gethash seed cache)
-                               (puthash seed
-                                        (majutsu-gerrit-account-candidate-data
-                                         remote seed)
-                                        cache))))
+                  (query (or (and (not (string-empty-p seed)) seed)
+                             (majutsu-gerrit--completion-regexp-seed)))
+                  (payload (when query
+                             (or (gethash query cache)
+                                 (puthash query
+                                          (majutsu-gerrit-account-candidate-data
+                                           remote query)
+                                          cache)))))
              (setq annotations (or (plist-get payload :annotations)
                                    (make-hash-table :test #'equal)))
              (setq suffix-function (plist-get payload :annotation-suffix-function))

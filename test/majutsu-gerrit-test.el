@@ -352,6 +352,30 @@
                        '("alice@example.com")))
         (should (equal seen '("gerrit" "Alice")))))))
 
+(ert-deftest majutsu-gerrit-account-completion-table/falls-back-to-completion-regexp-list ()
+  "When a style calls the table with an empty prefix, use the regexp list as seed."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-gerrit-account-candidate-data)
+               (lambda (&rest args)
+                 (setq seen args)
+                 (when-let* ((seed (cadr args))
+                             ((not (string-empty-p seed))))
+                   '(:category majutsu-gerrit-account
+                     :candidates ("alice@example.com"))))))
+      (let ((table (majutsu-gerrit-account-completion-table "gerrit")))
+        ;; Without a seed and without a usable regexp list, the table is empty.
+        (should (null (all-completions "" table)))
+        ;; `completion-regexp-list' supplies the seed when the style passes "".
+        (should (equal (let ((completion-regexp-list '("ali")))
+                         (all-completions "" table))
+                       '("alice@example.com")))
+        (should (equal seen '("gerrit" "ali")))
+        ;; Complex regexps should be ignored rather than sent to Gerrit.
+        (setq seen nil)
+        (should (null (let ((completion-regexp-list '("[^z-a]*?")))
+                        (all-completions "" table))))
+        (should-not seen)))))
+
 (ert-deftest majutsu-gerrit-topic-candidate-data/uses-rest-change-query ()
   (let (seen)
     (cl-letf (((symbol-function 'majutsu-gerrit--remote-url)
