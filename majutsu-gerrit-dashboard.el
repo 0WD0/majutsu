@@ -105,12 +105,6 @@
 (defvar majutsu-gerrit-query--remote nil
   "Dynamic Gerrit remote used while completing a query.")
 
-(defvar majutsu-gerrit-query--directory nil
-  "Dynamic directory used while completing a query.")
-
-(defvar majutsu-gerrit-query--account-cache (make-hash-table :test #'equal)
-  "Cache for Gerrit account query completions.")
-
 (defconst majutsu-gerrit-query--operators
   '("age:" "attention:" "branch:" "cc:" "change:" "comment:"
     "file:" "has:" "is:" "label:" "limit:" "message:" "owner:"
@@ -145,39 +139,34 @@
         (or self '("self"))
       (append
        self
-       (let* ((key (list majutsu-gerrit-query--remote
-                         majutsu-gerrit-query--directory prefix))
-              (cached (gethash key majutsu-gerrit-query--account-cache 'unset)))
-         (if (not (eq cached 'unset))
-             cached
-           (let ((candidates
-                  (condition-case nil
-                      (let* ((default-directory (or majutsu-gerrit-query--directory
-                                                    default-directory))
-                             (spec (majutsu-gerrit-rest-current-spec
-                                    majutsu-gerrit-query--remote
-                                    default-directory))
-                             (accounts (majutsu-gerrit-rest-account-query
-                                        prefix 20 nil '("DETAILS") spec)))
-                        (delq nil
-                              (mapcar (lambda (account)
-                                        (or (alist-get 'email account)
-                                            (alist-get 'username account)
-                                            (when-let* ((id (alist-get '_account_id account)))
-                                              (format "%s" id))))
-                                      accounts)))
-                    (error nil))))
-             (puthash key candidates majutsu-gerrit-query--account-cache)
-             candidates)))))))
+       (condition-case nil
+           (let* ((spec (majutsu-gerrit-rest-current-spec
+                         majutsu-gerrit-query--remote))
+                  (accounts
+                   (pcase majutsu-gerrit-account-completion-strategy
+                     ('query
+                      (majutsu-gerrit-rest-account-query
+                       prefix majutsu-gerrit-account-suggestion-limit
+                       nil '(DETAILS) spec))
+                     (_
+                      (majutsu-gerrit-rest-account-suggest
+                       prefix majutsu-gerrit-account-suggestion-limit spec)))))
+             (delq nil
+                   (mapcar (lambda (account)
+                             (or (alist-get 'email account)
+                                 (alist-get 'username account)
+                                 (when-let* ((id (alist-get '_account_id account)))
+                                   (format "%s" id))))
+                           accounts)))
+         (error nil))))))
 
 (defun majutsu-gerrit-query--project-candidates ()
   "Return project candidates for Gerrit query completion."
   (condition-case nil
-      (let* ((default-directory (or majutsu-gerrit-query--directory default-directory))
-             (remote (or majutsu-gerrit-query--remote
-                         (majutsu-gerrit--selected-remote nil default-directory)))
+      (let* ((remote (or majutsu-gerrit-query--remote
+                         (majutsu-gerrit--selected-remote)))
              (project (majutsu-gerrit--project-from-remote-url
-                       (majutsu-gerrit--remote-url remote default-directory))))
+                       (majutsu-gerrit--remote-url remote))))
         (and project (list project)))
     (error nil)))
 
@@ -250,22 +239,22 @@
   (setq-local completion-at-point-functions
               '(majutsu-gerrit-query-completion-at-point)))
 
-(defun majutsu-gerrit-read-query (prompt &optional initial-input history default remote directory)
+(defun majutsu-gerrit-read-query (prompt &optional initial-input history default remote)
   "Read a Gerrit query string with completion."
-  (let ((majutsu-gerrit-query--remote remote)
-        (majutsu-gerrit-query--directory directory))
-    (let ((value (minibuffer-with-setup-hook
-                     #'majutsu-gerrit-query--minibuffer-setup
-                   (read-from-minibuffer
-                    (format-prompt prompt default)
-                    initial-input
-                    majutsu-gerrit-query-read-map
-                    nil
-                    (or history 'majutsu-gerrit-query-history)
-                    default))))
-      (if (string-empty-p value)
-          (or default (user-error "Need non-empty Gerrit query"))
-        value))))
+  (majutsu-with-toplevel
+    (let ((majutsu-gerrit-query--remote remote))
+      (let ((value (minibuffer-with-setup-hook
+                       #'majutsu-gerrit-query--minibuffer-setup
+                     (read-from-minibuffer
+                      (format-prompt prompt default)
+                      initial-input
+                      majutsu-gerrit-query-read-map
+                      nil
+                      (or history 'majutsu-gerrit-query-history)
+                      default))))
+        (if (string-empty-p value)
+            (or default (user-error "Need non-empty Gerrit query"))
+          value)))))
 
 (defconst majutsu-gerrit-dashboard--default-preset
   '(("Has draft comments" . "has:draft")
@@ -384,8 +373,10 @@
   (seq-filter (lambda (arg)
                 (or (transient-arg-value "--remote=" (list arg))
                     (transient-arg-value "--preset=" (list arg))
+                    (transient-arg-value "--custom-query=" (list arg))
                     (transient-arg-value "--foreach=" (list arg))
                     (transient-arg-value "--limit=" (list arg))
+                    (transient-arg-value "--start=" (list arg))
                     (transient-arg-value "--option=" (list arg))
                     (transient-arg-value "--title=" (list arg))
                     (member arg '("--hide-empty"))))
@@ -607,8 +598,8 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
 With prefix argument, prompt for a single ad-hoc QUERY."
   (interactive
    (list (when current-prefix-arg
-           (read-string "Gerrit query: " nil
-                        'majutsu-gerrit-dashboard-query-history))))
+           (majutsu-gerrit-read-query
+            "Gerrit query" nil 'majutsu-gerrit-dashboard-query-history))))
   (if query
       (majutsu-gerrit-dashboard--open-with-sections
        (list (cons "Query" query)))
@@ -699,8 +690,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
                      (majutsu-gerrit-dashboard-query-query query)
                      'majutsu-gerrit-dashboard-query-history
                      (majutsu-gerrit-dashboard-query-query query)
-                     (majutsu-gerrit-dashboard-state-remote state)
-                     majutsu--default-directory)))
+                     (majutsu-gerrit-dashboard-state-remote state))))
     (setf (majutsu-gerrit-dashboard-query-query query) new-query)
     (majutsu-gerrit-dashboard--mark-dirty state)
     (majutsu-refresh-buffer)))
@@ -769,11 +759,8 @@ With prefix argument, prompt for a single ad-hoc QUERY."
                    nil t initial-input history "default"))
 
 (defun majutsu-gerrit-dashboard--transient-remote ()
-  "Return remote selected by the active dashboard transient."
-  (let ((args (ignore-errors (transient-get-value))))
-    (or (and args (transient-arg-value "--remote=" args))
-        (ignore-errors
-          (majutsu-gerrit--selected-remote args default-directory)))))
+  "Return explicit remote selected by the active dashboard transient."
+  (transient-arg-value "--remote=" (transient-get-value)))
 
 (defun majutsu-gerrit-dashboard--read-query (prompt initial-input history)
   "Read a Gerrit query for dashboard prompts."
@@ -781,8 +768,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
    prompt initial-input
    (or history 'majutsu-gerrit-dashboard-query-history)
    nil
-   (majutsu-gerrit-dashboard--transient-remote)
-   default-directory))
+   (majutsu-gerrit-dashboard--transient-remote)))
 
 (defun majutsu-gerrit-dashboard-read-section (&optional section)
   "Read a dashboard section, defaulting from SECTION."
@@ -799,8 +785,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
                  (and (boundp 'majutsu-gerrit-dashboard--state)
                       majutsu-gerrit-dashboard--state
                       (majutsu-gerrit-dashboard-state-remote
-                       majutsu-gerrit-dashboard--state))
-                 majutsu--default-directory)))
+                       majutsu-gerrit-dashboard--state)))))
     (majutsu-gerrit-dashboard-query-create :title title :query query)))
 
 (transient-define-argument majutsu-gerrit-dashboard:--preset ()
@@ -829,8 +814,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
              prompt initial-input
              (or history 'majutsu-gerrit-dashboard-foreach-history)
              nil
-             (majutsu-gerrit-dashboard--transient-remote)
-             default-directory)))
+             (majutsu-gerrit-dashboard--transient-remote))))
 
 (transient-define-argument majutsu-gerrit-dashboard:--remote ()
   :description "Remote"
@@ -938,11 +922,12 @@ With prefix argument, prompt for a single ad-hoc QUERY."
                  majutsu-gerrit-dashboard--state)))
       (y-or-n-p "Kill buffer and discard dashboard changes? ")))
 
-(defun majutsu-gerrit-dashboard--restore-modified ()
-  "Restore modified flag from dashboard dirty state after refresh."
+(defun majutsu-gerrit-dashboard--sync-modified ()
+  "Sync buffer modified flag from dashboard dirty state."
   (when (and majutsu-gerrit-dashboard--state
              (majutsu-gerrit-dashboard-state-dirty-p
-              majutsu-gerrit-dashboard--state))
+              majutsu-gerrit-dashboard--state)
+             (not (buffer-modified-p)))
     (set-buffer-modified-p t)))
 
 (define-derived-mode majutsu-gerrit-dashboard-mode majutsu-mode "Majutsu Gerrit"
@@ -952,8 +937,8 @@ With prefix argument, prompt for a single ad-hoc QUERY."
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (add-hook 'kill-buffer-query-functions
             #'majutsu-gerrit-dashboard--kill-buffer-query nil t)
-  (add-hook 'majutsu-refresh-buffer-hook
-            #'majutsu-gerrit-dashboard--restore-modified nil t))
+  (add-hook 'post-command-hook
+            #'majutsu-gerrit-dashboard--sync-modified nil t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-gerrit-dashboard-mode))
   "Return the dashboard query identity for the current buffer."
@@ -978,7 +963,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
     (magit-insert-section (majutsu-gerrit-dashboard state)
       (magit-insert-heading
         (format "%s\n" (or (majutsu-gerrit-dashboard-state-title state)
-                            "Gerrit Dashboard")))
+                           "Gerrit Dashboard")))
       (let ((inserted 0))
         (dolist (group groups)
           (unless (and (majutsu-gerrit-dashboard-state-hide-empty state)

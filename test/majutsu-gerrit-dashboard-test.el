@@ -110,6 +110,54 @@
                    '(1 2)))
     (should (= (majutsu-gerrit-dashboard-state-next-id state) 3))))
 
+(ert-deftest majutsu-gerrit-dashboard-repo-args/keeps-open-state-args ()
+  "Repository defaults should keep args needed to recreate a dashboard."
+  (should (equal (majutsu-gerrit-dashboard--repo-args
+                  '("--remote=gerrit" "--custom-query=is:open" "--foreach=project:x"
+                    "--start=25" "--limit=10" "--option=LABELS" "--title=Mine"
+                    "--hide-empty" "--ignored=bad"))
+                 '("--remote=gerrit" "--custom-query=is:open" "--foreach=project:x"
+                   "--start=25" "--limit=10" "--option=LABELS" "--title=Mine"
+                   "--hide-empty"))))
+
+(ert-deftest majutsu-gerrit-query-completion/completes-operators ()
+  "Gerrit query completion should complete operators at token start."
+  (with-temp-buffer
+    (insert "ow")
+    (pcase-let ((`(,start ,end ,table . ,_) (majutsu-gerrit-query-completion-at-point)))
+      (should (= start (point-min)))
+      (should (= end (point)))
+      (should (member "owner:" table)))))
+
+(ert-deftest majutsu-gerrit-query-completion/completes-static-values ()
+  "Gerrit query completion should complete operator values."
+  (with-temp-buffer
+    (insert "is:o")
+    (pcase-let ((`(,start ,end ,table . ,_) (majutsu-gerrit-query-completion-at-point)))
+      (should (= start (+ (point-min) 3)))
+      (should (= end (point)))
+      (should (member "open" table)))))
+
+(ert-deftest majutsu-gerrit-query-completion/uses-gerrit-account-settings ()
+  "Account completion should reuse Gerrit account completion settings."
+  (let ((majutsu-gerrit-query--remote "gerrit")
+        (majutsu-gerrit-account-completion-strategy 'suggest)
+        (majutsu-gerrit-account-suggestion-limit 7)
+        seen)
+    (cl-letf (((symbol-function 'majutsu-gerrit-rest-current-spec)
+               (lambda (&rest args)
+                 (setq seen (plist-put seen :spec-args args))
+                 '(:host "review.example.com" :scheme "https")))
+              ((symbol-function 'majutsu-gerrit-rest-account-suggest)
+               (lambda (&rest args)
+                 (setq seen (plist-put seen :suggest-args args))
+                 '(((email . "user@example.com"))))))
+      (should (equal (majutsu-gerrit-query--account-candidates "us")
+                     '("user@example.com")))
+      (should (equal (plist-get seen :spec-args) '("gerrit")))
+      (should (equal (plist-get seen :suggest-args)
+                     '("us" 7 (:host "review.example.com" :scheme "https")))))))
+
 (ert-deftest majutsu-gerrit-dashboard-render/inserts-change-sections ()
   "Dashboard refresh should render Gerrit changes as visitable sections."
   (let ((change (majutsu-gerrit-change-from-alist
