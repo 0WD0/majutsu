@@ -162,6 +162,7 @@ for a class of actions that would normally ask for confirmation."
 (setf (alist-get 'jj-git-remote magit--section-type-alist) 'majutsu-git-remote-section)
 
 (setf (alist-get 'gerrit-dashboard magit--section-type-alist) 'majutsu-gerrit-dashboard-section)
+(setf (alist-get 'gerrit-group     magit--section-type-alist) 'majutsu-gerrit-group-section)
 (setf (alist-get 'gerrit-query     magit--section-type-alist) 'majutsu-gerrit-query-section)
 (setf (alist-get 'gerrit-change    magit--section-type-alist) 'majutsu-gerrit-change-section)
 

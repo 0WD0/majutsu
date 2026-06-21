@@ -911,7 +911,10 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 
 (defvar-keymap majutsu-gerrit-dashboard-mode-map
   :doc "Keymap for `majutsu-gerrit-dashboard-mode'."
-  :parent majutsu-mode-map
+  :parent magit-section-mode-map
+  "RET" #'majutsu-gerrit-dashboard-browse-change
+  "g" #'majutsu-refresh
+  "q" #'majutsu-mode-bury-buffer
   "a" #'majutsu-gerrit-dashboard-add-section
   "e" #'majutsu-gerrit-dashboard-edit-section-query
   "E" #'majutsu-gerrit-dashboard-edit-section-title
