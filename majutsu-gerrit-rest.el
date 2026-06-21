@@ -350,6 +350,10 @@ LIMIT, START and OPTIONS map to Gerrit's n, S and repeated o params."
            (and start `(("S" . ,start)))
            (majutsu-gerrit-rest--repeat-params "o" options))))
 
+(defun majutsu-gerrit-rest-account-query-with-details (query &optional limit spec)
+  "Query accounts matching QUERY, asking for detailed account info."
+  (majutsu-gerrit-rest-account-query query limit nil '(DETAILS) spec))
+
 (defun majutsu-gerrit-rest-account-suggest (seed &optional limit spec)
   "Return account suggestions for SEED."
   (majutsu-gerrit-rest-json

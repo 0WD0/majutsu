@@ -289,8 +289,9 @@ SEED filters the candidates when non-nil."
               ((not (string-empty-p seed))))
     (condition-case nil
         (when-let* ((spec (majutsu-gerrit-rest-current-spec remote))
-                    (accounts (majutsu-gerrit-rest-account-suggest
-                               seed majutsu-gerrit-account-suggestion-limit spec)))
+                    (accounts (majutsu-gerrit-rest-account-query-with-details
+                               seed majutsu-gerrit-account-suggestion-limit
+                               spec)))
           (majutsu-gerrit--make-account-payload accounts seed))
       (error nil))))
 
