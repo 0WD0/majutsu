@@ -58,7 +58,7 @@
   "Face used for file-name completion metadata."
   :group 'majutsu-completion)
 
-(defun majutsu-completion-passthrough-try-completion (string table pred point)
+(defun majutsu-completion-passthrough-try-completion (string _table _pred point)
   "Passthrough `try-completion' style for tables that already filter.
 Return STRING unchanged so Emacs does not perform additional local filtering."
   (cons string point))

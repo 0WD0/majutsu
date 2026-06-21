@@ -24,6 +24,8 @@
 (require 'majutsu-selection)
 
 (require 'cl-lib)
+(require 'consult)
+(require 'json)
 (require 'rx)
 (require 'seq)
 (require 'subr-x)
@@ -224,20 +226,7 @@ ports, not Gerrit web/API ports."
             :gerrit-prefix (concat (if (string-empty-p path) "" path) "/a")
             :ssl (equal scheme "https")))))
 
-;;; Completion providers
-
-(defun majutsu-gerrit--account-matches-seed-p (account seed)
-  "Return non-nil when ACCOUNT matches SEED.
-ACCOUNT is an alist or plist-like entry from Gerrit REST."
-  (or (null seed)
-      (string-empty-p seed)
-      (let ((seed (downcase seed))
-            (name (downcase (or (majutsu-gerrit--account-get account 'name) "")))
-            (username (downcase (or (majutsu-gerrit--account-get account 'username) "")))
-            (email (downcase (or (majutsu-gerrit--account-get account 'email) ""))))
-        (or (string-match-p (regexp-quote seed) name)
-            (string-match-p (regexp-quote seed) username)
-            (string-match-p (regexp-quote seed) email)))))
+;;; Account helpers
 
 (defun majutsu-gerrit--account-get (account key)
   "Return ACCOUNT field KEY, accepting symbol and string alist keys."
@@ -267,126 +256,95 @@ ACCOUNT is an alist or plist-like entry from Gerrit REST."
                  (format "#%s" id))))
    " "))
 
-(defun majutsu-gerrit--make-account-payload (accounts &optional seed)
-  "Build a structured completion payload from Gerrit ACCOUNTS.
-SEED filters the candidates when non-nil."
-  (let ((entries (make-hash-table :test #'equal))
-        (annotations (make-hash-table :test #'equal))
-        candidates)
-    (dolist (account accounts)
-      (let* ((account (if (and (consp account)
-                               (not (consp (car account)))
-                               (listp (cdr account)))
-                          (cdr account)
-                        account))
-             (candidate (majutsu-gerrit--account-candidate account)))
-        (when (and candidate
-                   (majutsu-gerrit--account-matches-seed-p account seed))
-          (push candidate candidates)
-          (puthash candidate account entries)
-          (puthash candidate
-                   (majutsu-gerrit--account-annotation account candidate)
-                   annotations))))
-    (setq candidates (sort (delete-dups candidates) #'string<))
-    (and candidates
-         (list :category 'majutsu-gerrit-account
-               :candidates candidates
-               :entries entries
-               :annotations annotations))))
+(defun majutsu-gerrit--account-annotate-candidate (candidate)
+  "Return annotation for CANDIDATE using its account text property."
+  (when-let* ((account (get-text-property 0 'majutsu-gerrit-account candidate)))
+    (majutsu-gerrit--account-annotation account candidate)))
 
-(defun majutsu-gerrit-account-candidate-data (&optional remote seed)
-  "Return reviewer/account completion payload for REMOTE matching SEED."
-  (when-let* ((seed (and seed (string-trim seed)))
-              ((not (string-empty-p seed))))
-    (condition-case nil
-        (when-let* ((spec (majutsu-gerrit-rest-current-spec remote))
-                    (accounts
-                     (pcase majutsu-gerrit-account-completion-strategy
-                       ('query
-                        (majutsu-gerrit-rest-account-query-with-details
-                         seed majutsu-gerrit-account-suggestion-limit spec))
-                       (_
-                        (majutsu-gerrit-rest-account-suggest
-                         seed majutsu-gerrit-account-suggestion-limit spec)))))
-          (majutsu-gerrit--make-account-payload accounts seed))
-      (error nil))))
+(defun majutsu-gerrit--account-transform (outputs)
+  "Parse Gerrit JSON OUTPUTS into account candidate strings.
+OUTPUTS is a list of raw strings emitted by the curl process."
+  (mapcan
+   (lambda (output)
+     (when (and (stringp output) (not (string-empty-p output))
+                (or (string-prefix-p "[" output)
+                    (string-prefix-p ")]}'" output)))
+       (let* ((body (string-trim (majutsu-gerrit-rest--strip-xssi output)))
+              (accounts (condition-case nil
+                            (json-parse-string body
+                                               :object-type 'alist
+                                               :array-type 'list
+                                               :null-object nil
+                                               :false-object nil)
+                          (error nil))))
+         (delq nil
+               (mapcar (lambda (account)
+                         (when-let* ((candidate (majutsu-gerrit--account-candidate account)))
+                           (put-text-property 0 (length candidate)
+                                              'majutsu-gerrit-account account candidate)
+                           candidate))
+                       accounts)))))
+   outputs))
 
-(defun majutsu-gerrit--completion-regexp-seed ()
-  "Return a plain literal seed from `completion-regexp-list', if any.
-Completion styles such as `orderless' may call the table with an empty
-prefix while binding `completion-regexp-list' to the user's input.  If
-the first regexp is a simple literal, use it as the Gerrit query seed."
-  (when completion-regexp-list
-    (let ((re (car completion-regexp-list)))
-      (when (stringp re)
-        (setq re (replace-regexp-in-string (rx bos "\\" (any "`^")) "" re))
-        (setq re (replace-regexp-in-string (rx "\\" (any "'$") eos) "" re))
-        (and (not (string-empty-p re))
-             (equal (regexp-quote re) re)
-             re)))))
-
-(defun majutsu-gerrit-account-completion-table (&optional remote)
-  "Return a dynamic completion table for Gerrit accounts."
-  (let ((default-directory default-directory)
-        (cache (make-hash-table :test #'equal))
-        (annotations (make-hash-table :test #'equal))
-        suffix-function)
-    (cl-labels
-        ((suffix (candidate)
-           (or (and suffix-function (funcall suffix-function candidate))
-               (when-let* ((annotation (gethash candidate annotations))
-                           ((not (string-empty-p annotation))))
-                 (concat " " annotation))))
-         (candidates (string)
-           (let* ((seed (string-trim string))
-                  (query (or (and (not (string-empty-p seed)) seed)
-                             (majutsu-gerrit--completion-regexp-seed)))
-                  (payload (when query
-                             (or (gethash query cache)
-                                 (puthash query
-                                          (majutsu-gerrit-account-candidate-data
-                                           remote query)
-                                          cache)))))
-             (setq annotations (or (plist-get payload :annotations)
-                                   (make-hash-table :test #'equal)))
-             (setq suffix-function (plist-get payload :annotation-suffix-function))
-             (or (plist-get payload :candidates) '())))
-         (metadata ()
-           `((category . majutsu-gerrit-account)
-             (display-sort-function . identity)
-             (cycle-sort-function . identity)
-             (annotation-function . ,#'suffix)
-             (affixation-function . ,(majutsu-completion-affixation-function
-                                      #'suffix)))))
-      (majutsu-completion-register-passthrough-style)
-      (lambda (string pred action)
-        (cond
-         ((eq action 'metadata)
-          `(metadata . ,(metadata)))
-         ((eq (car-safe action) 'boundaries)
-          nil)
-         ((eq action t)
-          (let ((candidates (candidates string)))
-            (if pred (seq-filter pred candidates) candidates)))
-         ((null action)
-          (pcase (candidates string)
-            ('nil nil)
-            (`(,candidate) candidate)
-            (_ string)))
-         (t
-          (member string (candidates string))))))))
+(defun majutsu-gerrit--account-builder (remote)
+  "Return a consult async builder for account completion under REMOTE."
+  (let ((default-directory default-directory))
+    (lambda (input)
+      (when-let* ((input (string-trim input))
+                  ((not (string-empty-p input)))
+                  (spec (condition-case nil
+                            (majutsu-gerrit-rest-current-spec remote)
+                          (error nil))))
+        (let* ((params (pcase majutsu-gerrit-account-completion-strategy
+                         ('query
+                          `(("q" . ,input)
+                            ("n" . ,majutsu-gerrit-account-suggestion-limit)
+                            ("o" . "DETAILS")
+                            ("pp" . "0")))
+                         (_
+                          `(("suggest" . t)
+                            ("q" . ,input)
+                            ("n" . ,majutsu-gerrit-account-suggestion-limit)
+                            ("pp" . "0")))))
+               (url (majutsu-gerrit-rest--build-url spec "/accounts/" params))
+               (args (cons "curl" (majutsu-gerrit-rest--curl-args
+                                   spec "GET" url nil '("Accept: application/json")))))
+          args)))))
 
 (defun majutsu-gerrit-read-account (prompt initial-input history &optional remote)
-  "Read one Gerrit account using dynamic REST-backed completion."
-  (majutsu-completing-read
-   prompt (majutsu-gerrit-account-completion-table remote)
-   nil nil initial-input history nil 'majutsu-gerrit-account))
+  "Read one Gerrit account using asynchronous REST-backed completion."
+  (let ((consult-async-split-style 'none))
+    (consult--read
+     (consult--process-collection
+      (majutsu-gerrit--account-builder remote)
+      :min-input 1
+      :debounce 0.2
+      :throttle 0.4
+      :transform (consult--async-transform #'majutsu-gerrit--account-transform))
+     :prompt prompt
+     :initial initial-input
+     :history history
+     :require-match nil
+     :category 'majutsu-gerrit-account
+     :annotate #'majutsu-gerrit--account-annotate-candidate
+     :sort nil)))
 
 (defun majutsu-gerrit-read-accounts (prompt initial-input history &optional remote)
-  "Read Gerrit accounts using dynamic REST-backed completion."
-  (majutsu-completing-read-multiple
-   prompt (majutsu-gerrit-account-completion-table remote)
-   nil nil initial-input history nil 'majutsu-gerrit-account))
+  "Read Gerrit accounts using asynchronous REST-backed completion.
+The user can select multiple accounts in a loop; an empty input finishes."
+  (let ((selected nil))
+    (cl-block done
+      (while t
+        (let ((input (majutsu-gerrit-read-account
+                      (if selected
+                          (format "%s (%s selected, RET to finish): "
+                                  prompt (string-join selected ", "))
+                        prompt)
+                      (and (null selected) initial-input)
+                      history remote)))
+          (if (or (null input) (string-empty-p input))
+              (cl-return-from done (nreverse selected))
+            (push input selected)))))))
 
 (defun majutsu-gerrit--make-counted-string-payload (items category label)
   "Build payload from ITEMS with count annotations.
