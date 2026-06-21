@@ -34,6 +34,7 @@
 (declare-function majutsu-jj-lines "majutsu-jj")
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
 (autoload 'majutsu-gerrit-dashboard "majutsu-gerrit-dashboard" nil t)
+(autoload 'majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" nil t)
 
 (declare-function gerrit-get-accounts-alist "gerrit")
 (declare-function gerrit-rest-open-reviews-for-project "gerrit-rest")

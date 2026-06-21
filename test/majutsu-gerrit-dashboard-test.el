@@ -68,23 +68,54 @@
       (should (= (length groups) 1))
       (should (= (length (cdar groups)) 1)))))
 
+(ert-deftest majutsu-gerrit-dashboard-fetch/passes-fetch-parameters ()
+  "Dashboard fetch should pass limit/start/options to the REST layer."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-gerrit-rest-current-spec)
+               (lambda (&rest _args) '(:host "review" :scheme "https")))
+              ((symbol-function 'majutsu-gerrit-rest-change-query)
+               (lambda (&rest args)
+                 (setq seen args)
+                 (list (majutsu-gerrit-dashboard-test--raw-change)))))
+      (majutsu-gerrit-dashboard--fetch
+       '(("Mine" . "is:open owner:self")) nil nil 10 20
+       '("LABELS" "SUBMIT_REQUIREMENTS"))
+      (should (equal (nth 1 seen) 10))
+      (should (equal (nth 2 seen) 20))
+      (should (equal (nth 3 seen) '("LABELS" "SUBMIT_REQUIREMENTS"))))))
+
+(ert-deftest majutsu-gerrit-dashboard-queries-from-args/builds-preset-filter ()
+  "Transient args should select presets and append shared filters."
+  (should (equal (majutsu-gerrit-dashboard--queries-from-args
+                  '("--preset=outgoing" "--project=team/project"
+                    "--branch=main" "--wip=exclude"))
+                 '(("Outgoing reviews"
+                    . "is:open owner:self -is:wip project:team/project branch:main -is:wip")))))
+
+(ert-deftest majutsu-gerrit-dashboard-queries-from-args/custom-section-wins ()
+  "Custom sections should define the dashboard sections."
+  (should (equal (majutsu-gerrit-dashboard--queries-from-args
+                  '("--section=Mine:is:open owner:self"
+                    "--foreach=project:team/project"))
+                 '(("Mine" . "is:open owner:self project:team/project")))))
+
 (ert-deftest majutsu-gerrit-dashboard-render/inserts-change-sections ()
   "Dashboard refresh should render Gerrit changes as visitable sections."
   (let ((change (majutsu-gerrit-change-from-alist
                  (majutsu-gerrit-dashboard-test--raw-change))))
     (with-temp-buffer
       (majutsu-gerrit-dashboard-mode)
-      (setq majutsu-gerrit-dashboard--remote "gerrit"
-            majutsu-gerrit-dashboard--queries '(("Mine" . "is:open owner:self"))
-            majutsu--default-directory "/repo")
-      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+      (setq majutsu--default-directory "/repo")
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard-arguments)
+                 (lambda () '("--custom-query=is:open owner:self")))
+                ((symbol-function 'majutsu-gerrit-dashboard--fetch)
                  (lambda (&rest _args)
-                   (list (cons '("Mine" . "is:open owner:self")
+                   (list (cons '("Query" . "is:open owner:self")
                                (list change))))))
         (let ((inhibit-read-only t))
           (majutsu-gerrit-dashboard-refresh-buffer))
         (should (string-match-p "Gerrit Dashboard" (buffer-string)))
-        (should (string-match-p "Mine (1)" (buffer-string)))
+        (should (string-match-p "Query (1)" (buffer-string)))
         (goto-char (point-min))
         (search-forward "Prefer section-aware command defaults.")
         (should (eq (magit-section-value-if 'majutsu-gerrit-change)
@@ -97,16 +128,16 @@
                   '((_more_changes . t))))))
     (with-temp-buffer
       (majutsu-gerrit-dashboard-mode)
-      (setq majutsu-gerrit-dashboard--remote "gerrit"
-            majutsu-gerrit-dashboard--queries '(("Mine" . "is:open owner:self"))
-            majutsu--default-directory "/repo")
-      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+      (setq majutsu--default-directory "/repo")
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard-arguments)
+                 (lambda () '("--custom-query=is:open owner:self")))
+                ((symbol-function 'majutsu-gerrit-dashboard--fetch)
                  (lambda (&rest _args)
-                   (list (cons '("Mine" . "is:open owner:self")
+                   (list (cons '("Query" . "is:open owner:self")
                                (list change))))))
         (let ((inhibit-read-only t))
           (majutsu-gerrit-dashboard-refresh-buffer))
-        (should (string-match-p (regexp-quote "Mine (1+)")
+        (should (string-match-p (regexp-quote "Query (1+)")
                                 (buffer-string)))))))
 
 (ert-deftest majutsu-gerrit-dashboard-change-web-url/uses-web-path ()
