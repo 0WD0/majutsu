@@ -203,6 +203,32 @@
         (should (string-match-p (regexp-quote "Query (1+)")
                                 (buffer-string)))))))
 
+(ert-deftest majutsu-gerrit-dashboard-section/remove-from-change-section ()
+  "Removing a section from a change row should remove its parent query."
+  (let ((change (majutsu-gerrit-change-from-alist
+                 (majutsu-gerrit-dashboard-test--raw-change))))
+    (with-temp-buffer
+      (majutsu-gerrit-dashboard-mode)
+      (setq majutsu--default-directory "/repo"
+            majutsu-gerrit-dashboard--state
+            (majutsu-gerrit-dashboard--state-create
+             "/repo" "gerrit" nil
+             '(("Query" . "is:open owner:self"))
+             50 nil '("LABELS") nil))
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+                 (lambda (sections &rest _args)
+                   (list (cons (car sections) (list change))))))
+        (let ((inhibit-read-only t))
+          (majutsu-gerrit-dashboard-refresh-buffer)))
+      (goto-char (point-min))
+      (search-forward "Prefer section-aware command defaults.")
+      (cl-letf (((symbol-function 'majutsu-refresh-buffer) #'ignore))
+        (majutsu-gerrit-dashboard-remove-section))
+      (should-not (majutsu-gerrit-dashboard-state-sections
+                   majutsu-gerrit-dashboard--state))
+      (should (majutsu-gerrit-dashboard-state-dirty-p
+               majutsu-gerrit-dashboard--state)))))
+
 (ert-deftest majutsu-gerrit-dashboard-change-web-url/uses-web-path ()
   "Change web URLs should point to Polygerrit, not the REST /a prefix."
   (let ((change (majutsu-gerrit-change-from-alist

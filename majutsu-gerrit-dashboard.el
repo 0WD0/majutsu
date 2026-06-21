@@ -658,8 +658,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 
 (defun majutsu-gerrit-dashboard--mark-dirty (state)
   "Mark dashboard STATE as modified."
-  (setf (majutsu-gerrit-dashboard-state-dirty-p state) t)
-  (set-buffer-modified-p t))
+  (setf (majutsu-gerrit-dashboard-state-dirty-p state) t))
 
 (defun majutsu-gerrit-dashboard--append-query (state query)
   "Append QUERY to dashboard STATE."
@@ -922,23 +921,13 @@ With prefix argument, prompt for a single ad-hoc QUERY."
                  majutsu-gerrit-dashboard--state)))
       (y-or-n-p "Kill buffer and discard dashboard changes? ")))
 
-(defun majutsu-gerrit-dashboard--sync-modified ()
-  "Sync buffer modified flag from dashboard dirty state."
-  (when (and majutsu-gerrit-dashboard--state
-             (majutsu-gerrit-dashboard-state-dirty-p
-              majutsu-gerrit-dashboard--state)
-             (not (buffer-modified-p)))
-    (set-buffer-modified-p t)))
-
 (define-derived-mode majutsu-gerrit-dashboard-mode majutsu-mode "Majutsu Gerrit"
   "Major mode for Gerrit dashboards."
   :group 'majutsu-gerrit-dashboard
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (add-hook 'kill-buffer-query-functions
-            #'majutsu-gerrit-dashboard--kill-buffer-query nil t)
-  (add-hook 'post-command-hook
-            #'majutsu-gerrit-dashboard--sync-modified nil t))
+            #'majutsu-gerrit-dashboard--kill-buffer-query nil t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-gerrit-dashboard-mode))
   "Return the dashboard query identity for the current buffer."
