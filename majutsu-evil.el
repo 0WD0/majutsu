@@ -19,6 +19,12 @@
 (require 'majutsu)
 (require 'transient)
 
+(declare-function majutsu-gerrit-dashboard-add-section "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-browse-change "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-edit-section-query "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-edit-section-title "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-download-change "majutsu-gerrit-download" ())
 (declare-function majutsu-op-log-restore-at-point "majutsu-op" ())
 (declare-function majutsu-op-log-revert-at-point "majutsu-op" ())
 (declare-function majutsu-op-diff-default-action "majutsu-op" ())
@@ -150,7 +156,8 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
                     majutsu-op-show-mode
                     majutsu-op-diff-mode
                     majutsu-evolog-mode
-                    majutsu-diff-mode))
+                    majutsu-diff-mode
+                    majutsu-gerrit-dashboard-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
 (defun majutsu-evil--adjust-section-bindings ()
@@ -251,6 +258,15 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-diff-mode-map
     [remap majutsu-visit-thing] #'majutsu-op-diff-default-action
     (kbd "v") #'majutsu-op-diff-evolog-at-point)
+
+  (majutsu-evil--define-keys 'normal 'majutsu-gerrit-dashboard-mode-map
+    (kbd "RET") #'majutsu-gerrit-dashboard-browse-change
+    (kbd "a") #'majutsu-gerrit-dashboard-add-section
+    (kbd "e") #'majutsu-gerrit-dashboard-edit-section-query
+    (kbd "E") #'majutsu-gerrit-dashboard-edit-section-title
+    (kbd "b") #'majutsu-gerrit-dashboard-browse-change
+    (kbd "d") #'majutsu-gerrit-download-change
+    (kbd "R") #'majutsu-gerrit-dashboard-transient)
 
   ;; majutsu-conflict-mode is a minor mode
   (add-hook 'majutsu-conflict-mode-hook #'evil-normalize-keymaps)

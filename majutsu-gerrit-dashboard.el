@@ -58,20 +58,6 @@
   :type '(repeat string)
   :group 'majutsu-gerrit-dashboard)
 
-(defclass majutsu-gerrit-dashboard-section (magit-section) ())
-
-(defclass majutsu-gerrit-query-section (magit-section) ())
-
-(defclass majutsu-gerrit-change-section (magit-section)
-  ((keymap :initform 'majutsu-gerrit-change-section-map)))
-
-(setf (alist-get 'majutsu-gerrit-dashboard magit--section-type-alist)
-      'majutsu-gerrit-dashboard-section)
-(setf (alist-get 'majutsu-gerrit-query magit--section-type-alist)
-      'majutsu-gerrit-query-section)
-(setf (alist-get 'majutsu-gerrit-change magit--section-type-alist)
-      'majutsu-gerrit-change-section)
-
 (defvar majutsu-gerrit-dashboard-query-history nil
   "Minibuffer history for ad-hoc Gerrit dashboard queries.")
 
@@ -488,7 +474,7 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
 
 (defun majutsu-gerrit-dashboard--insert-change (change)
   "Insert one dashboard row for CHANGE."
-  (magit-insert-section (majutsu-gerrit-change change)
+  (magit-insert-section (gerrit-change change)
     (let ((number (or (majutsu-gerrit-change-number change) "?"))
           (status (or (majutsu-gerrit-change-status change) "?"))
           (owner (majutsu-gerrit-dashboard--account-display
@@ -517,13 +503,17 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
 
 (defun majutsu-gerrit-dashboard--insert-query (query changes)
   "Insert one QUERY section containing CHANGES."
-  (magit-insert-section (majutsu-gerrit-query
+  (magit-insert-section (gerrit-query
                          (majutsu-gerrit-dashboard-query-id query))
     (magit-insert-heading
-      (format "%s (%d%s)\n"
-              (majutsu-gerrit-dashboard--query-title query)
-              (length changes)
-              (if (majutsu-gerrit-dashboard--more-changes-p changes) "+" "")))
+      (insert (format "%s (%d%s)"
+                      (majutsu-gerrit-dashboard--query-title query)
+                      (length changes)
+                      (if (majutsu-gerrit-dashboard--more-changes-p changes) "+" "")))
+      (insert (majutsu-gerrit-dashboard--face
+               (format "  %s" (majutsu-gerrit-dashboard--query-string query))
+               'shadow))
+      (insert "\n"))
     (if changes
         (dolist (change changes)
           (majutsu-gerrit-dashboard--insert-change change))
@@ -633,7 +623,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 (defun majutsu-gerrit-dashboard-browse-change ()
   "Open the Gerrit change at point in a browser."
   (interactive)
-  (let* ((change (magit-section-value-if 'majutsu-gerrit-change))
+  (let* ((change (magit-section-value-if 'gerrit-change))
          (state (majutsu-gerrit-dashboard--state))
          (spec (majutsu-gerrit-rest-current-spec
                 (majutsu-gerrit-dashboard-state-remote state)
@@ -647,7 +637,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
   "Return query section id at point, or nil."
   (let ((section (magit-current-section)))
     (while (and section
-                (not (magit-section-match 'majutsu-gerrit-query section)))
+                (not (magit-section-match 'gerrit-query section)))
       (setq section (oref section parent)))
     (and section (oref section value))))
 
@@ -962,7 +952,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
                        (majutsu-gerrit-dashboard-state-limit state)
                        (majutsu-gerrit-dashboard-state-start state)
                        (majutsu-gerrit-dashboard-state-options state)))))
-    (magit-insert-section (majutsu-gerrit-dashboard state)
+    (magit-insert-section (gerrit-dashboard state)
       (magit-insert-heading
         (format "%s\n" (or (majutsu-gerrit-dashboard-state-title state)
                            "Gerrit Dashboard")))

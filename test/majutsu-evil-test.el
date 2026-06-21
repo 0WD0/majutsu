@@ -13,6 +13,7 @@
 (require 'seq)
 (require 'majutsu-conflict)
 (require 'majutsu-evil)
+(require 'majutsu-gerrit-dashboard)
 (require 'majutsu-evolog)
 (require 'majutsu-op)
 
@@ -48,7 +49,8 @@
         (majutsu-evil--set-initial-state)))
     (should (member '(majutsu-op-log-mode normal) calls))
     (should (member '(majutsu-op-diff-mode normal) calls))
-    (should (member '(majutsu-evolog-mode normal) calls))))
+    (should (member '(majutsu-evolog-mode normal) calls))
+    (should (member '(majutsu-gerrit-dashboard-mode normal) calls))))
 
 (ert-deftest majutsu-evil-test-duplicate-stays-dispatch-only ()
   "Evil setup should not install direct duplicate bindings."

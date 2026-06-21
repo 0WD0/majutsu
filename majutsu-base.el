@@ -144,6 +144,15 @@ for a class of actions that would normally ask for confirmation."
 (defclass majutsu-git-remote-section (magit-section)
   ((keymap :initform 'majutsu-git-remote-section-map)))
 
+(defclass majutsu-gerrit-dashboard-section (magit-section) ())
+
+(defclass majutsu-gerrit-group-section (magit-section) ())
+
+(defclass majutsu-gerrit-query-section (magit-section) ())
+
+(defclass majutsu-gerrit-change-section (magit-section)
+  ((keymap :initform 'majutsu-gerrit-change-section-map)))
+
 (setf (alist-get 'jj-commit   magit--section-type-alist) 'majutsu-commit-section)
 (setf (alist-get 'jj-bookmark magit--section-type-alist) 'majutsu-bookmark-section)
 (setf (alist-get 'jj-tag      magit--section-type-alist) 'majutsu-tag-section)
@@ -151,6 +160,10 @@ for a class of actions that would normally ask for confirmation."
 (setf (alist-get 'jj-hunk     magit--section-type-alist) 'majutsu-hunk-section)
 
 (setf (alist-get 'jj-git-remote magit--section-type-alist) 'majutsu-git-remote-section)
+
+(setf (alist-get 'gerrit-dashboard magit--section-type-alist) 'majutsu-gerrit-dashboard-section)
+(setf (alist-get 'gerrit-query     magit--section-type-alist) 'majutsu-gerrit-query-section)
+(setf (alist-get 'gerrit-change    magit--section-type-alist) 'majutsu-gerrit-change-section)
 
 ;; Workspace sections (`jj workspace list`)
 
