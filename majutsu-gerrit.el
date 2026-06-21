@@ -70,6 +70,17 @@
   :type 'integer
   :group 'majutsu-gerrit)
 
+(defcustom majutsu-gerrit-account-completion-strategy 'suggest
+  "Strategy for Gerrit account completion.
+The value `suggest' uses the optimized `/accounts/?suggest' endpoint,
+which is intended for UI autocompletion and may be faster.  The value
+`query' uses the regular `/accounts/?q=' endpoint with `DETAILS',
+which supports account search operators and returns candidates even
+for very short seeds."
+  :type '(choice (const :tag "Use suggest endpoint" suggest)
+                 (const :tag "Use query endpoint" query))
+  :group 'majutsu-gerrit)
+
 ;;; Core command
 
 (defun majutsu-gerrit--start (args &optional success-msg finish-callback)
@@ -289,9 +300,14 @@ SEED filters the candidates when non-nil."
               ((not (string-empty-p seed))))
     (condition-case nil
         (when-let* ((spec (majutsu-gerrit-rest-current-spec remote))
-                    (accounts (majutsu-gerrit-rest-account-query-with-details
-                               seed majutsu-gerrit-account-suggestion-limit
-                               spec)))
+                    (accounts
+                     (pcase majutsu-gerrit-account-completion-strategy
+                       ('query
+                        (majutsu-gerrit-rest-account-query-with-details
+                         seed majutsu-gerrit-account-suggestion-limit spec))
+                       (_
+                        (majutsu-gerrit-rest-account-suggest
+                         seed majutsu-gerrit-account-suggestion-limit spec)))))
           (majutsu-gerrit--make-account-payload accounts seed))
       (error nil))))
 
