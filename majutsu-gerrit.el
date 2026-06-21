@@ -13,16 +13,13 @@
 
 ;; This library wraps jj's Gerrit commands and exposes them through
 ;; Majutsu transients.
-;;
-;; When optional external Gerrit clients such as gerrit.el or egerrit are
-;; already available, Majutsu borrows their completion helpers at runtime.
-;; Those packages are not required dependencies.
 
 ;;; Code:
 
 (require 'majutsu)
 (require 'majutsu-completion)
 (require 'majutsu-config)
+(require 'majutsu-gerrit-rest)
 (require 'majutsu-remote)
 (require 'majutsu-selection)
 
@@ -35,25 +32,6 @@
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
 (autoload 'majutsu-gerrit-dashboard "majutsu-gerrit-dashboard" nil t)
 (autoload 'majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" nil t)
-
-(declare-function gerrit-get-accounts-alist "gerrit")
-(declare-function gerrit-rest-open-reviews-for-project "gerrit-rest")
-(declare-function gerrit-upload:--read-topic "gerrit")
-
-(declare-function egerrit-users "egerrit")
-(declare-function egerrit--read-changes "egerrit-core")
-(declare-function egerrit--create-change "egerrit-core")
-(declare-function egerrit-get-detailed-change "egerrit")
-(declare-function egerrit--review-label-candidates "egerrit-review")
-
-(defvar gerrit-host)
-(defvar gerrit-use-ssl)
-(defvar gerrit-rest-endpoint-prefix)
-(defvar gerrit--accounts-alist)
-
-(defvar egerrit-request-url)
-(defvar egerrit-authenticate)
-(defvar egerrit-user-name)
 
 ;;; Customization
 
@@ -80,6 +58,16 @@
 
 (defvar majutsu-gerrit-label-history nil
   "Minibuffer history for Gerrit labels.")
+
+(defcustom majutsu-gerrit-account-suggestion-limit 15
+  "Maximum number of Gerrit account suggestions requested for completion."
+  :type 'integer
+  :group 'majutsu-gerrit)
+
+(defcustom majutsu-gerrit-topic-suggestion-limit 100
+  "Maximum number of open changes scanned for Gerrit topic completion."
+  :type 'integer
+  :group 'majutsu-gerrit)
 
 ;;; Core command
 
@@ -222,90 +210,61 @@ ports, not Gerrit web/API ports."
                   (or (url-filename parsed) ""))))
       (list :gerrit-host host-with-port
             :gerrit-prefix (concat (if (string-empty-p path) "" path) "/a")
-            :egerrit-url (concat host-with-port path)
             :ssl (equal scheme "https")))))
 
-(defun majutsu-gerrit--gerrit-explicit-spec ()
-  "Return explicit gerrit.el connection settings when configured by the user."
-  (when-let* ((host (and (boundp 'gerrit-host) gerrit-host))
-              (host (string-trim host))
-              ((not (string-empty-p host))))
-    (list :gerrit-host host
-          :gerrit-prefix (if (and (boundp 'gerrit-rest-endpoint-prefix)
-                                  (stringp gerrit-rest-endpoint-prefix)
-                                  (not (string-empty-p gerrit-rest-endpoint-prefix)))
-                             gerrit-rest-endpoint-prefix
-                           "/a")
-          :ssl (if (boundp 'gerrit-use-ssl) gerrit-use-ssl t))))
+(defun majutsu-gerrit--reader-buffer ()
+  "Return the buffer that started the active transient reader."
+  (or (majutsu-transient-original-buffer) (current-buffer)))
 
-(defun majutsu-gerrit--egerrit-explicit-spec ()
-  "Return explicit egerrit connection settings when configured by the user."
-  (when-let* ((url (and (boundp 'egerrit-request-url) egerrit-request-url))
-              (url (string-trim url))
-              ((not (string-empty-p url)))
-              ((not (equal url "www.gerrit.com"))))
-    (list :egerrit-url url
-          :ssl (if (boundp 'egerrit-authenticate) egerrit-authenticate t))))
+(defun majutsu-gerrit--reader-root ()
+  "Return the repository root for the active transient reader."
+  (with-current-buffer (majutsu-gerrit--reader-buffer)
+    (or (majutsu--buffer-root)
+        (ignore-errors (majutsu--toplevel-safe))
+        default-directory)))
 
-(defun majutsu-gerrit--optional-require (feature)
-  "Try to require optional FEATURE."
-  (condition-case nil
-      (require feature nil t)
-    (error nil)))
-
-(defun majutsu-gerrit--gerrit-available-p ()
-  "Return non-nil when gerrit.el is available for borrowing."
-  (majutsu-gerrit--optional-require 'gerrit))
-
-(defun majutsu-gerrit--egerrit-available-p ()
-  "Return non-nil when egerrit is available for borrowing."
-  (majutsu-gerrit--optional-require 'egerrit))
-
-(defun majutsu-gerrit--with-gerrit-context (fn &optional remote directory)
-  "Call FN with borrowed gerrit.el context, or nil if unavailable."
-  (when-let* ((_ (majutsu-gerrit--gerrit-available-p))
-              (spec (or (majutsu-gerrit--gerrit-explicit-spec)
-                        (majutsu-gerrit--shared-spec remote directory))))
-    (condition-case nil
-        (let ((gerrit-host (plist-get spec :gerrit-host))
-              (gerrit-use-ssl (plist-get spec :ssl))
-              (gerrit-rest-endpoint-prefix (plist-get spec :gerrit-prefix))
-              (gerrit--accounts-alist nil))
-          (funcall fn spec))
-      (error nil))))
-
-(defun majutsu-gerrit--with-egerrit-context (fn &optional remote directory)
-  "Call FN with borrowed egerrit context, or nil if unavailable."
-  (when-let* ((_ (majutsu-gerrit--egerrit-available-p))
-              (spec (or (majutsu-gerrit--egerrit-explicit-spec)
-                        (majutsu-gerrit--shared-spec remote directory))))
-    (condition-case nil
-        (let ((egerrit-request-url (plist-get spec :egerrit-url))
-              (egerrit-authenticate (plist-get spec :ssl))
-              (egerrit-user-name (majutsu-gerrit--remote-user remote directory))
-              (orig-auth-source-search (symbol-function 'auth-source-search)))
-          ;; egerrit uses :create t, which would prompt during completion.
-          (cl-letf (((symbol-function 'auth-source-search)
-                     (lambda (&rest args)
-                       (apply orig-auth-source-search
-                              (plist-put (copy-sequence args) :create nil)))))
-            (funcall fn spec)))
-      (error nil))))
-
-;;; Borrowed completion providers
+;;; Completion providers
 
 (defun majutsu-gerrit--account-matches-seed-p (account seed)
   "Return non-nil when ACCOUNT matches SEED.
-ACCOUNT is an alist or plist-like entry from an external Gerrit client."
+ACCOUNT is an alist or plist-like entry from Gerrit REST."
   (or (null seed)
       (string-empty-p seed)
       (let ((seed (downcase seed))
-            (name (downcase (or (alist-get 'name account) "")))
-            (username (downcase (or (alist-get 'username account) "")))
-            (email (downcase (or (alist-get 'email account) ""))))
+            (name (downcase (or (majutsu-gerrit--account-get account 'name) "")))
+            (username (downcase (or (majutsu-gerrit--account-get account 'username) "")))
+            (email (downcase (or (majutsu-gerrit--account-get account 'email) ""))))
         (or (string-match-p (regexp-quote seed) name)
             (string-match-p (regexp-quote seed) username)
             (string-match-p (regexp-quote seed) email)))))
+
+(defun majutsu-gerrit--account-get (account key)
+  "Return ACCOUNT field KEY, accepting symbol and string alist keys."
+  (or (alist-get key account)
+      (and (symbolp key) (alist-get (symbol-name key) account nil nil #'equal))))
+
+(defun majutsu-gerrit--account-candidate (account)
+  "Return the completion candidate string for ACCOUNT."
+  (or (majutsu-gerrit--account-get account 'email)
+      (majutsu-gerrit--account-get account 'username)
+      (when-let* ((id (majutsu-gerrit--account-get account '_account_id)))
+        (format "%s" id))))
+
+(defun majutsu-gerrit--account-annotation (account candidate)
+  "Return completion annotation for ACCOUNT candidate CANDIDATE."
+  (string-join
+   (delq nil
+         (list (majutsu-gerrit--account-get account 'name)
+               (majutsu-gerrit--account-get account 'display_name)
+               (when-let* ((username (majutsu-gerrit--account-get account 'username))
+                           ((not (equal username candidate))))
+                 (format "@%s" username))
+               (when-let* ((email (majutsu-gerrit--account-get account 'email))
+                           ((not (equal email candidate))))
+                 (format "<%s>" email))
+               (when-let* ((id (majutsu-gerrit--account-get account '_account_id)))
+                 (format "#%s" id))))
+   " "))
 
 (defun majutsu-gerrit--make-account-payload (accounts &optional seed)
   "Build a structured completion payload from Gerrit ACCOUNTS.
@@ -319,23 +278,14 @@ SEED filters the candidates when non-nil."
                                (listp (cdr account)))
                           (cdr account)
                         account))
-             (name (alist-get 'name account))
-             (username (alist-get 'username account))
-             (email (alist-get 'email account))
-             (candidate (or email username))
-             (parts (delq nil
-                          (list name
-                                (and username
-                                     (not (equal username candidate))
-                                     (format "@%s" username))
-                                (and email
-                                     (not (equal email candidate))
-                                     (format "<%s>" email))))))
+             (candidate (majutsu-gerrit--account-candidate account)))
         (when (and candidate
                    (majutsu-gerrit--account-matches-seed-p account seed))
           (push candidate candidates)
           (puthash candidate account entries)
-          (puthash candidate (string-join parts " ") annotations))))
+          (puthash candidate
+                   (majutsu-gerrit--account-annotation account candidate)
+                   annotations))))
     (setq candidates (sort (delete-dups candidates) #'string<))
     (and candidates
          (list :category 'majutsu-gerrit-account
@@ -343,41 +293,80 @@ SEED filters the candidates when non-nil."
                :entries entries
                :annotations annotations))))
 
-(defun majutsu-gerrit--gerrit-account-candidate-data (&optional remote directory seed)
-  "Borrow reviewer/account candidates from gerrit.el."
-  (majutsu-gerrit--with-gerrit-context
-   (lambda (_spec)
-     (majutsu-gerrit--make-account-payload (gerrit-get-accounts-alist) seed))
-   remote directory))
-
-(defun majutsu-gerrit--egerrit-account-candidate-data (&optional remote directory seed)
-  "Borrow reviewer/account candidates from egerrit."
-  (majutsu-gerrit--with-egerrit-context
-   (lambda (_spec)
-     (when-let* ((users (egerrit-users seed)))
-       (let ((entries (make-hash-table :test #'equal))
-             (annotations (make-hash-table :test #'equal))
-             candidates)
-         (dolist (user users)
-           (let ((display (car user))
-                 (candidate (cdr user)))
-             (when (and (stringp candidate) (not (string-empty-p candidate)))
-               (push candidate candidates)
-               (puthash candidate user entries)
-               (puthash candidate (string-trim display) annotations))))
-         (setq candidates (sort (delete-dups candidates) #'string<))
-         (and candidates
-              (list :category 'majutsu-gerrit-account
-                    :candidates candidates
-                    :entries entries
-                    :annotations annotations)))))
-   remote directory))
+(defun majutsu-gerrit--rest-account-candidate-data (&optional remote directory seed)
+  "Return Gerrit account suggestions from Majutsu's REST client."
+  (when-let* ((seed (and seed (string-trim seed)))
+              ((not (string-empty-p seed))))
+    (condition-case nil
+        (when-let* ((spec (majutsu-gerrit-rest-current-spec remote directory))
+                    (accounts (majutsu-gerrit-rest-account-suggest
+                               seed majutsu-gerrit-account-suggestion-limit spec)))
+          (majutsu-gerrit--make-account-payload accounts seed))
+      (error nil))))
 
 (defun majutsu-gerrit-account-candidate-data (&optional remote directory seed)
-  "Return borrowed reviewer/account completion payload.
-Prefer gerrit.el and fall back to egerrit."
-  (or (majutsu-gerrit--gerrit-account-candidate-data remote directory seed)
-      (majutsu-gerrit--egerrit-account-candidate-data remote directory seed)))
+  "Return reviewer/account completion payload for REMOTE in DIRECTORY."
+  (majutsu-gerrit--rest-account-candidate-data remote directory seed))
+
+(defun majutsu-gerrit-account-completion-table (&optional remote directory)
+  "Return a dynamic completion table for Gerrit accounts."
+  (let ((cache (make-hash-table :test #'equal))
+        (annotations (make-hash-table :test #'equal))
+        suffix-function)
+    (cl-labels
+        ((suffix (candidate)
+           (or (and suffix-function (funcall suffix-function candidate))
+               (when-let* ((annotation (gethash candidate annotations))
+                           ((not (string-empty-p annotation))))
+                 (concat " " annotation))))
+         (candidates (string)
+           (let* ((seed (string-trim string))
+                  (payload (or (gethash seed cache)
+                               (puthash seed
+                                        (majutsu-gerrit-account-candidate-data
+                                         remote directory seed)
+                                        cache))))
+             (setq annotations (or (plist-get payload :annotations)
+                                   (make-hash-table :test #'equal)))
+             (setq suffix-function (plist-get payload :annotation-suffix-function))
+             (or (plist-get payload :candidates) '())))
+         (metadata ()
+           `((category . majutsu-gerrit-account)
+             (display-sort-function . identity)
+             (cycle-sort-function . identity)
+             (annotation-function . ,#'suffix)
+             (affixation-function . ,(majutsu-completion-affixation-function
+                                      #'suffix)))))
+      (lambda (string pred action)
+        (cond
+         ((eq action 'metadata)
+          `(metadata . ,(metadata)))
+         ((eq (car-safe action) 'boundaries)
+          nil)
+         ((eq action t)
+          (let ((candidates (candidates string)))
+            (if pred (seq-filter pred candidates) candidates)))
+         ((null action)
+          (pcase (candidates string)
+            ('nil nil)
+            (`(,candidate) candidate)
+            (_ string)))
+         (t
+          (member string (candidates string))))))))
+
+(defun majutsu-gerrit-read-account (prompt initial-input history
+                                           &optional remote directory)
+  "Read one Gerrit account using dynamic REST-backed completion."
+  (majutsu-completing-read
+   prompt (majutsu-gerrit-account-completion-table remote directory)
+   nil nil initial-input history nil 'majutsu-gerrit-account))
+
+(defun majutsu-gerrit-read-accounts (prompt initial-input history
+                                            &optional remote directory)
+  "Read Gerrit accounts using dynamic REST-backed completion."
+  (majutsu-completing-read-multiple
+   prompt (majutsu-gerrit-account-completion-table remote directory)
+   nil nil initial-input history nil 'majutsu-gerrit-account))
 
 (defun majutsu-gerrit--make-counted-string-payload (items category label)
   "Build payload from ITEMS with count annotations.
@@ -544,13 +533,6 @@ When REMOTE is non-nil, only branches from that remote are returned."
 If REMOTE is nil, return branches from all remotes."
   (plist-get (majutsu-gerrit--remote-branch-candidate-data remote) :candidates))
 
-(defun majutsu-gerrit--account-query-seed (initial-input)
-  "Return INITIAL-INPUT when it is suitable as an account query seed."
-  (when-let* ((seed (and initial-input (string-trim initial-input))))
-    (unless (or (string-empty-p seed)
-                (string-match-p "[,[:space:]]" seed))
-      seed)))
-
 (defun majutsu-gerrit-upload--read-revset (prompt initial-input _history)
   "Read revset for `jj gerrit upload --revision='."
   (majutsu-read-revset prompt initial-input '("gerrit" "upload" "-r")))
@@ -564,37 +546,24 @@ If REMOTE is nil, return branches from all remotes."
      nil nil initial-input 'majutsu-gerrit-remote-branch-history
      nil 'majutsu-gerrit-remote-branch)))
 
+(defun majutsu-gerrit-upload--transient-remote ()
+  "Return the Gerrit upload transient's selected remote, if any."
+  (when-let* ((args (ignore-errors (transient-get-value))))
+    (transient-arg-value "--remote=" args)))
+
 (defun majutsu-gerrit-upload--read-reviewer (prompt initial-input history)
-  "Read one or more Gerrit reviewers.
-Prefer optional external Gerrit integrations when available."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (payload (majutsu-gerrit-account-candidate-data
-                   nil root (majutsu-gerrit--account-query-seed initial-input))))
-    (if payload
-        (majutsu-completing-read-multiple-payload
-         prompt payload nil nil initial-input
-         (or history 'majutsu-gerrit-reviewer-history)
-         nil 'majutsu-gerrit-account nil root)
-      (majutsu-completing-read-multiple
-       prompt '() nil nil initial-input
-       (or history 'majutsu-gerrit-reviewer-history)
-       nil 'majutsu-gerrit-account))))
+  "Read one or more Gerrit reviewers."
+  (let ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory)))
+    (majutsu-gerrit-read-accounts
+     prompt initial-input (or history 'majutsu-gerrit-reviewer-history)
+     (majutsu-gerrit-upload--transient-remote) root)))
 
 (defun majutsu-gerrit-upload--read-cc (prompt initial-input history)
-  "Read one or more Gerrit CC values.
-Prefer optional external Gerrit integrations when available."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (payload (majutsu-gerrit-account-candidate-data
-                   nil root (majutsu-gerrit--account-query-seed initial-input))))
-    (if payload
-        (majutsu-completing-read-multiple-payload
-         prompt payload nil nil initial-input
-         (or history 'majutsu-gerrit-cc-history)
-         nil 'majutsu-gerrit-account nil root)
-      (majutsu-completing-read-multiple
-       prompt '() nil nil initial-input
-       (or history 'majutsu-gerrit-cc-history)
-       nil 'majutsu-gerrit-account))))
+  "Read one or more Gerrit CC values."
+  (let ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory)))
+    (majutsu-gerrit-read-accounts
+     prompt initial-input (or history 'majutsu-gerrit-cc-history)
+     (majutsu-gerrit-upload--transient-remote) root)))
 
 (defun majutsu-gerrit-upload--read-topic (prompt initial-input history)
   "Read a Gerrit topic.

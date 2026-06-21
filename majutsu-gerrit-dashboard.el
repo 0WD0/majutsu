@@ -34,7 +34,7 @@
 (declare-function majutsu-gerrit--project-from-remote-url "majutsu-gerrit")
 (declare-function majutsu-gerrit--remote-url "majutsu-gerrit")
 (declare-function majutsu-gerrit--selected-remote "majutsu-gerrit")
-(declare-function majutsu-gerrit-account-candidate-data "majutsu-gerrit")
+(declare-function majutsu-gerrit-read-account "majutsu-gerrit")
 (declare-function majutsu-gerrit-topic-candidate-data "majutsu-gerrit")
 (declare-function majutsu-gerrit--remote-branch-candidate-data "majutsu-gerrit")
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
@@ -521,12 +521,9 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 (defun majutsu-gerrit-dashboard--read-account (prompt initial-input history)
   "Read a Gerrit account filter."
   (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (payload (and (fboundp 'majutsu-gerrit-account-candidate-data)
-                       (majutsu-gerrit-account-candidate-data nil root initial-input))))
-    (if payload
-        (majutsu-completing-read-payload
-         prompt payload nil nil initial-input history nil 'majutsu-gerrit-account)
-      (majutsu-read-string prompt initial-input history))))
+         (args (ignore-errors (transient-get-value)))
+         (remote (and args (transient-arg-value "--remote=" args))))
+    (majutsu-gerrit-read-account prompt initial-input history remote root)))
 
 (defun majutsu-gerrit-dashboard--read-owner (prompt initial-input history)
   "Read a Gerrit owner filter."
