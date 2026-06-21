@@ -889,8 +889,13 @@ With prefix argument, prompt for a single ad-hoc QUERY."
     ("s" "Dashboard and set defaults" transient-set-and-exit)
     ("w" "Dashboard and save defaults" transient-save-and-exit)
     ("W" "Dashboard and save repo defaults" majutsu-transient-save-repository-defaults
-     :transient t)
-    ("q" "Quit" transient-quit-one)]]
+     :transient t)]
+   ["Sections"
+    :if-derived majutsu-gerrit-dashboard-mode
+    ("a" "Add query section" majutsu-gerrit-dashboard-add-section)
+    ("e" "Edit query" majutsu-gerrit-dashboard-edit-section-query)
+    ("E" "Edit title" majutsu-gerrit-dashboard-edit-section-title)
+    ("k" "Remove section" majutsu-gerrit-dashboard-remove-section)]]
   (interactive)
   (if (not (eq transient-current-command 'majutsu-gerrit-dashboard-transient))
       (transient-setup 'majutsu-gerrit-dashboard-transient)
