@@ -710,7 +710,10 @@ With prefix argument, prompt for a single ad-hoc QUERY."
   "Remove the section at point from the current dashboard."
   (interactive)
   (let* ((state (majutsu-gerrit-dashboard--state))
-         (query (majutsu-gerrit-dashboard--current-query)))
+         (query (majutsu-gerrit-dashboard--current-query))
+         (title (majutsu-gerrit-dashboard-query-title query)))
+    (unless (y-or-n-p (format "Remove query section %S? " title))
+      (user-error "Remove canceled"))
     (setf (majutsu-gerrit-dashboard-state-sections state)
           (delq query (majutsu-gerrit-dashboard-state-sections state)))
     (majutsu-gerrit-dashboard--mark-dirty state)
