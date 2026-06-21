@@ -84,20 +84,31 @@
       (should (equal (nth 2 seen) 20))
       (should (equal (nth 3 seen) '("LABELS" "SUBMIT_REQUIREMENTS"))))))
 
-(ert-deftest majutsu-gerrit-dashboard-queries-from-args/builds-preset-filter ()
-  "Transient args should select presets and append shared filters."
+(ert-deftest majutsu-gerrit-dashboard-queries-from-args/builds-preset-foreach ()
+  "Transient args should select presets and append foreach filters."
   (should (equal (majutsu-gerrit-dashboard--queries-from-args
-                  '("--preset=outgoing" "--project=team/project"
-                    "--branch=main" "--wip=exclude"))
+                  '("--preset=outgoing" "--foreach=project:team/project"))
                  '(("Outgoing reviews"
-                    . "is:open owner:self -is:wip project:team/project branch:main -is:wip")))))
+                    . "is:open owner:self -is:wip project:team/project")))))
 
-(ert-deftest majutsu-gerrit-dashboard-queries-from-args/custom-section-wins ()
-  "Custom sections should define the dashboard sections."
+(ert-deftest majutsu-gerrit-dashboard-queries-from-args/custom-query-wins ()
+  "Custom query should define a single dashboard section."
   (should (equal (majutsu-gerrit-dashboard--queries-from-args
-                  '("--section=Mine:is:open owner:self"
+                  '("--custom-query=is:open owner:self"
                     "--foreach=project:team/project"))
-                 '(("Mine" . "is:open owner:self project:team/project")))))
+                 '(("Query" . "is:open owner:self project:team/project")))))
+
+(ert-deftest majutsu-gerrit-dashboard-state/assigns-section-ids ()
+  "Dashboard state should assign stable query section ids."
+  (let* ((state (majutsu-gerrit-dashboard--state-create
+                 "/repo" "gerrit" nil
+                 '(("Mine" . "is:open owner:self")
+                   ("Incoming" . "is:open reviewer:self"))
+                 50 nil '("LABELS") nil))
+         (sections (majutsu-gerrit-dashboard-state-sections state)))
+    (should (equal (mapcar #'majutsu-gerrit-dashboard-query-id sections)
+                   '(1 2)))
+    (should (= (majutsu-gerrit-dashboard-state-next-id state) 3))))
 
 (ert-deftest majutsu-gerrit-dashboard-render/inserts-change-sections ()
   "Dashboard refresh should render Gerrit changes as visitable sections."
@@ -105,13 +116,15 @@
                  (majutsu-gerrit-dashboard-test--raw-change))))
     (with-temp-buffer
       (majutsu-gerrit-dashboard-mode)
-      (setq majutsu--default-directory "/repo")
-      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard-arguments)
-                 (lambda () '("--custom-query=is:open owner:self")))
-                ((symbol-function 'majutsu-gerrit-dashboard--fetch)
-                 (lambda (&rest _args)
-                   (list (cons '("Query" . "is:open owner:self")
-                               (list change))))))
+      (setq majutsu--default-directory "/repo"
+            majutsu-gerrit-dashboard--state
+            (majutsu-gerrit-dashboard--state-create
+             "/repo" "gerrit" nil
+             '(("Query" . "is:open owner:self"))
+             50 nil '("LABELS") nil))
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+                 (lambda (sections &rest _args)
+                   (list (cons (car sections) (list change))))))
         (let ((inhibit-read-only t))
           (majutsu-gerrit-dashboard-refresh-buffer))
         (should (string-match-p "Gerrit Dashboard" (buffer-string)))
@@ -128,13 +141,15 @@
                   '((_more_changes . t))))))
     (with-temp-buffer
       (majutsu-gerrit-dashboard-mode)
-      (setq majutsu--default-directory "/repo")
-      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard-arguments)
-                 (lambda () '("--custom-query=is:open owner:self")))
-                ((symbol-function 'majutsu-gerrit-dashboard--fetch)
-                 (lambda (&rest _args)
-                   (list (cons '("Query" . "is:open owner:self")
-                               (list change))))))
+      (setq majutsu--default-directory "/repo"
+            majutsu-gerrit-dashboard--state
+            (majutsu-gerrit-dashboard--state-create
+             "/repo" "gerrit" nil
+             '(("Query" . "is:open owner:self"))
+             50 nil '("LABELS") nil))
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+                 (lambda (sections &rest _args)
+                   (list (cons (car sections) (list change))))))
         (let ((inhibit-read-only t))
           (majutsu-gerrit-dashboard-refresh-buffer))
         (should (string-match-p (regexp-quote "Query (1+)")
