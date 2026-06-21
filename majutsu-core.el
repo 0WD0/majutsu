@@ -360,17 +360,9 @@ from `transient-files' groups, without the -- separator."
 
 ;;; Shared Transients
 
-(defun majutsu-transient-original-buffer ()
-  "Return the transient's original buffer when it is live."
-  (and (boundp 'transient--original-buffer)
-       (buffer-live-p transient--original-buffer)
-       transient--original-buffer))
-
 (defun majutsu-transient-default-revset ()
   "Return the default revset for transient revset readers."
-  (with-current-buffer (or (majutsu-transient-original-buffer)
-                           (current-buffer))
-    (or (magit-section-value-if 'jj-commit) "@")))
+  (or (magit-section-value-if 'jj-commit) "@"))
 
 (defun majutsu-transient-prefix-command ()
   "Return the current transient prefix command."

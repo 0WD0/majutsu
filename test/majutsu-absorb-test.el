@@ -17,18 +17,16 @@
   (with-temp-buffer
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-range '("--revisions=abc123"))
-    (let ((transient--original-buffer (current-buffer)))
-      (should (equal (majutsu-absorb--default-args)
-                     '("--from=abc123"))))))
+    (should (equal (majutsu-absorb--default-args)
+                   '("--from=abc123")))))
 
 (ert-deftest majutsu-absorb-default-args-from-diff-from ()
   "Keep --from from diff range when available."
   (with-temp-buffer
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-range '("--from=main" "--to=@"))
-    (let ((transient--original-buffer (current-buffer)))
-      (should (equal (majutsu-absorb--default-args)
-                     '("--from=main"))))))
+    (should (equal (majutsu-absorb--default-args)
+                   '("--from=main")))))
 
 (ert-deftest majutsu-absorb-arguments-use-transient-args ()
   "Use current transient args when absorb transient is active."

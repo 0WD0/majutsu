@@ -88,17 +88,15 @@
   (with-temp-buffer
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-range '("--revisions=B::D"))
-    (let ((transient--original-buffer (current-buffer)))
-      (should (equal (majutsu-squash--default-args)
-                     '("--from=B::D"))))))
+    (should (equal (majutsu-squash--default-args)
+                   '("--from=B::D")))))
 
 (ert-deftest majutsu-squash-default-args/does-not-inherit-diff-from-to ()
   "Do not inherit arbitrary diff --from/--to range for squash."
   (with-temp-buffer
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-range '("--from=A" "--to=D"))
-    (let ((transient--original-buffer (current-buffer)))
-      (should-not (majutsu-squash--default-args)))))
+    (should-not (majutsu-squash--default-args))))
 
 (ert-deftest majutsu-squash-default-args/from-log-region ()
   "Use selected log commits as default sources."

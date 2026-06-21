@@ -23,15 +23,14 @@
 
 (defun majutsu-absorb--default-args ()
   "Return default args from diff buffer context."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
-    (when (derived-mode-p 'majutsu-diff-mode)
-      (when-let* ((source (or (when-let* ((rev (transient-arg-value
-                                                "--revisions=" majutsu-buffer-diff-range)))
-                                (concat "--from=" rev))
-                              (when-let* ((from (transient-arg-value
-                                                 "--from=" majutsu-buffer-diff-range)))
-                                (concat "--from=" from)))))
-        (list source)))))
+  (when (derived-mode-p 'majutsu-diff-mode)
+    (when-let* ((source (or (when-let* ((rev (transient-arg-value
+                                              "--revisions=" majutsu-buffer-diff-range)))
+                              (concat "--from=" rev))
+                            (when-let* ((from (transient-arg-value
+                                               "--from=" majutsu-buffer-diff-range)))
+                              (concat "--from=" from)))))
+      (list source))))
 
 (defun majutsu-absorb-arguments ()
   "Return the current absorb arguments.

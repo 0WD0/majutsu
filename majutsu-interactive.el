@@ -44,17 +44,9 @@
 
 ;;; Selection Model
 
-(defun majutsu-interactive--selection-buffer ()
-  "Return buffer to operate on for interactive selections."
-  (let ((buf (and (boundp 'transient--original-buffer)
-                  (buffer-live-p transient--original-buffer)
-                  transient--original-buffer)))
-    (or buf (current-buffer))))
-
 (defun majutsu-interactive-selection-available-p ()
   "Return non-nil when interactive selection is available."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
-    (derived-mode-p 'majutsu-diff-mode)))
+  (derived-mode-p 'majutsu-diff-mode))
 
 (defvar-local majutsu-interactive--selections nil
   "Hash table mapping hunk-id to selection spec.
@@ -229,11 +221,6 @@ The range is clamped to LIMIT-START and LIMIT-END."
 
 ;;; Transient Selection Infixes
 
-(defun majutsu-interactive--call-in-selection-buffer (fn)
-  "Call FN in the selection buffer."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
-    (funcall fn)))
-
 (transient-define-suffix majutsu-interactive:select-hunk ()
   "Select hunk."
   :key "H"
@@ -241,7 +228,7 @@ The range is clamped to LIMIT-START and LIMIT-END."
   :if 'majutsu-interactive-selection-available-p
   :transient t
   (interactive)
-  (majutsu-interactive--call-in-selection-buffer #'majutsu-interactive-toggle-hunk))
+  (majutsu-interactive-toggle-hunk))
 
 (transient-define-suffix majutsu-interactive:select-file ()
   "Select file."
@@ -250,7 +237,7 @@ The range is clamped to LIMIT-START and LIMIT-END."
   :if 'majutsu-interactive-selection-available-p
   :transient t
   (interactive)
-  (majutsu-interactive--call-in-selection-buffer #'majutsu-interactive-toggle-file))
+  (majutsu-interactive-toggle-file))
 
 (transient-define-suffix majutsu-interactive:select-region ()
   "Select region."
@@ -259,7 +246,7 @@ The range is clamped to LIMIT-START and LIMIT-END."
   :if 'majutsu-interactive-selection-available-p
   :transient t
   (interactive)
-  (majutsu-interactive--call-in-selection-buffer #'majutsu-interactive-toggle-region))
+  (majutsu-interactive-toggle-region))
 
 ;;; Overlay Rendering
 
