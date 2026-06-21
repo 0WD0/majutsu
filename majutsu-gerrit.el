@@ -241,25 +241,28 @@ ports, not Gerrit web/API ports."
         (format "%s" id))))
 
 (defun majutsu-gerrit--account-annotation (account candidate)
-  "Return completion annotation for ACCOUNT candidate CANDIDATE."
-  (string-join
-   (delq nil
-         (list (majutsu-gerrit--account-get account 'name)
-               (majutsu-gerrit--account-get account 'display_name)
-               (when-let* ((username (majutsu-gerrit--account-get account 'username))
-                           ((not (equal username candidate))))
-                 (format "@%s" username))
-               (when-let* ((email (majutsu-gerrit--account-get account 'email))
-                           ((not (equal email candidate))))
-                 (format "<%s>" email))
-               (when-let* ((id (majutsu-gerrit--account-get account '_account_id)))
-                 (format "#%s" id))))
-   " "))
+  "Return completion annotation body for ACCOUNT candidate CANDIDATE."
+  (let ((body (string-join
+               (delq nil
+                     (list (majutsu-gerrit--account-get account 'name)
+                           (majutsu-gerrit--account-get account 'display_name)
+                           (when-let* ((username (majutsu-gerrit--account-get account 'username))
+                                       ((not (equal username candidate))))
+                             (format "@%s" username))
+                           (when-let* ((email (majutsu-gerrit--account-get account 'email))
+                                       ((not (equal email candidate))))
+                             (format "<%s>" email))
+                           (when-let* ((id (majutsu-gerrit--account-get account '_account_id)))
+                             (format "#%s" id))))
+               " ")))
+    (unless (string-empty-p body)
+      (propertize body 'face 'majutsu-completion-documentation))))
 
 (defun majutsu-gerrit--account-annotate-candidate (candidate)
-  "Return annotation for CANDIDATE using its account text property."
-  (when-let* ((account (get-text-property 0 'majutsu-gerrit-account candidate)))
-    (majutsu-gerrit--account-annotation account candidate)))
+  "Return aligned annotation for CANDIDATE using its account text property."
+  (when-let* ((account (get-text-property 0 'majutsu-gerrit-account candidate))
+              (annotation (majutsu-gerrit--account-annotation account candidate)))
+    (consult--annotate-align candidate annotation)))
 
 (defun majutsu-gerrit--account-transform (outputs)
   "Parse Gerrit JSON OUTPUTS into account candidate strings.
@@ -316,18 +319,18 @@ OUTPUTS is a list of raw strings emitted by the curl process."
   (let ((consult-async-split-style 'none))
     (consult--read
      (consult--process-collection
-      (majutsu-gerrit--account-builder remote)
-      :min-input 1
-      :debounce 0.2
-      :throttle 0.4
-      :transform (consult--async-transform #'majutsu-gerrit--account-transform))
+         (majutsu-gerrit--account-builder remote)
+       :min-input 1
+       :debounce 0.2
+       :throttle 0.1
+       :transform (consult--async-transform #'majutsu-gerrit--account-transform))
      :prompt prompt
      :initial initial-input
      :history history
      :require-match nil
      :category 'majutsu-gerrit-account
-     :annotate #'majutsu-gerrit--account-annotate-candidate
-     :sort nil)))
+     :sort nil
+     :annotate #'majutsu-gerrit--account-annotate-candidate)))
 
 (defun majutsu-gerrit-read-accounts (prompt initial-input history &optional remote)
   "Read Gerrit accounts using asynchronous REST-backed completion.
