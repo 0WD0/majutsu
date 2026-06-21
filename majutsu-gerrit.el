@@ -212,17 +212,6 @@ ports, not Gerrit web/API ports."
             :gerrit-prefix (concat (if (string-empty-p path) "" path) "/a")
             :ssl (equal scheme "https")))))
 
-(defun majutsu-gerrit--reader-buffer ()
-  "Return the buffer that started the active transient reader."
-  (or (majutsu-transient-original-buffer) (current-buffer)))
-
-(defun majutsu-gerrit--reader-root ()
-  "Return the repository root for the active transient reader."
-  (with-current-buffer (majutsu-gerrit--reader-buffer)
-    (or (majutsu--buffer-root)
-        (ignore-errors (majutsu--toplevel-safe))
-        default-directory)))
-
 ;;; Completion providers
 
 (defun majutsu-gerrit--account-matches-seed-p (account seed)
@@ -293,22 +282,18 @@ SEED filters the candidates when non-nil."
                :entries entries
                :annotations annotations))))
 
-(defun majutsu-gerrit--rest-account-candidate-data (&optional remote directory seed)
-  "Return Gerrit account suggestions from Majutsu's REST client."
+(defun majutsu-gerrit-account-candidate-data (&optional remote seed)
+  "Return reviewer/account completion payload for REMOTE matching SEED."
   (when-let* ((seed (and seed (string-trim seed)))
               ((not (string-empty-p seed))))
     (condition-case nil
-        (when-let* ((spec (majutsu-gerrit-rest-current-spec remote directory))
+        (when-let* ((spec (majutsu-gerrit-rest-current-spec remote))
                     (accounts (majutsu-gerrit-rest-account-suggest
                                seed majutsu-gerrit-account-suggestion-limit spec)))
           (majutsu-gerrit--make-account-payload accounts seed))
       (error nil))))
 
-(defun majutsu-gerrit-account-candidate-data (&optional remote directory seed)
-  "Return reviewer/account completion payload for REMOTE in DIRECTORY."
-  (majutsu-gerrit--rest-account-candidate-data remote directory seed))
-
-(defun majutsu-gerrit-account-completion-table (&optional remote directory)
+(defun majutsu-gerrit-account-completion-table (&optional remote)
   "Return a dynamic completion table for Gerrit accounts."
   (let ((cache (make-hash-table :test #'equal))
         (annotations (make-hash-table :test #'equal))
@@ -324,7 +309,7 @@ SEED filters the candidates when non-nil."
                   (payload (or (gethash seed cache)
                                (puthash seed
                                         (majutsu-gerrit-account-candidate-data
-                                         remote directory seed)
+                                         remote seed)
                                         cache))))
              (setq annotations (or (plist-get payload :annotations)
                                    (make-hash-table :test #'equal)))
@@ -354,18 +339,16 @@ SEED filters the candidates when non-nil."
          (t
           (member string (candidates string))))))))
 
-(defun majutsu-gerrit-read-account (prompt initial-input history
-                                           &optional remote directory)
+(defun majutsu-gerrit-read-account (prompt initial-input history &optional remote)
   "Read one Gerrit account using dynamic REST-backed completion."
   (majutsu-completing-read
-   prompt (majutsu-gerrit-account-completion-table remote directory)
+   prompt (majutsu-gerrit-account-completion-table remote)
    nil nil initial-input history nil 'majutsu-gerrit-account))
 
-(defun majutsu-gerrit-read-accounts (prompt initial-input history
-                                            &optional remote directory)
+(defun majutsu-gerrit-read-accounts (prompt initial-input history &optional remote)
   "Read Gerrit accounts using dynamic REST-backed completion."
   (majutsu-completing-read-multiple
-   prompt (majutsu-gerrit-account-completion-table remote directory)
+   prompt (majutsu-gerrit-account-completion-table remote)
    nil nil initial-input history nil 'majutsu-gerrit-account))
 
 (defun majutsu-gerrit--make-counted-string-payload (items category label)
@@ -393,80 +376,23 @@ CATEGORY names the completion category and LABEL is shown in annotations."
                :entries entries
                :annotations annotations))))
 
-(defun majutsu-gerrit--gerrit-topic-candidate-data (&optional remote directory)
-  "Borrow topic candidates from gerrit.el."
-  (let ((project (majutsu-gerrit--project-from-remote-url
-                  (majutsu-gerrit--remote-url remote directory))))
-    (when project
-      (majutsu-gerrit--with-gerrit-context
-       (lambda (_spec)
-         (majutsu-gerrit--make-counted-string-payload
-          (mapcar (lambda (change) (alist-get 'topic change))
-                  (or (gerrit-rest-open-reviews-for-project project) '()))
-          'majutsu-gerrit-topic
-          "topic"))
-       remote directory))))
-
-(defun majutsu-gerrit--egerrit-topic-candidate-data (&optional remote directory)
-  "Borrow topic candidates from egerrit."
-  (let ((project (majutsu-gerrit--project-from-remote-url
-                  (majutsu-gerrit--remote-url remote directory))))
-    (when project
-      (majutsu-gerrit--with-egerrit-context
-       (lambda (_spec)
-         (majutsu-gerrit--make-counted-string-payload
-          (mapcar (lambda (change) (alist-get 'topic change))
-                  (or (egerrit--read-changes
-                       (format "status:open project:%s" project))
-                      '()))
-          'majutsu-gerrit-topic
-          "topic"))
-       remote directory))))
-
-(defun majutsu-gerrit-topic-candidate-data (&optional remote directory)
-  "Return borrowed topic completion payload.
-Prefer gerrit.el and fall back to egerrit."
-  (or (majutsu-gerrit--gerrit-topic-candidate-data remote directory)
-      (majutsu-gerrit--egerrit-topic-candidate-data remote directory)))
-
-(defun majutsu-gerrit--egerrit-label-candidate-data (&optional remote directory)
-  "Borrow label candidates from egerrit's review label logic."
-  (let* ((remote-url (majutsu-gerrit--remote-url remote directory))
-         (project (majutsu-gerrit--project-from-remote-url remote-url)))
-    (when project
-      (majutsu-gerrit--with-egerrit-context
-       (lambda (_spec)
-         (when-let* ((json-changes (egerrit--read-changes
-                                    (format "status:open project:%s" project)
-                                    1))
-                     (change (egerrit--create-change (car json-changes)))
-                     (detailed-change (egerrit-get-detailed-change change))
-                     (candidates (egerrit--review-label-candidates detailed-change)))
-           (let ((entries (make-hash-table :test #'equal))
-                 (annotations (make-hash-table :test #'equal))
-                 values)
-             (dolist (candidate candidates)
-               (let* ((display (car candidate))
-                      (label (car (cdr candidate)))
-                      (vote (cdr (cdr candidate)))
-                      (value (if (equal vote "+1")
-                                 label
-                               (concat label vote))))
-                 (push value values)
-                 (puthash value candidate entries)
-                 (puthash value (string-trim display) annotations)))
-             (setq values (sort (delete-dups values) #'string<))
-             (and values
-                  (list :category 'majutsu-gerrit-label
-                        :candidates values
-                        :entries entries
-                        :annotations annotations)))))
-       remote directory))))
-
-(defun majutsu-gerrit-label-candidate-data (&optional remote directory)
-  "Return borrowed label completion payload.
-Label completion is borrowed from egerrit only."
-  (majutsu-gerrit--egerrit-label-candidate-data remote directory))
+(defun majutsu-gerrit-topic-candidate-data (&optional remote)
+  "Return Gerrit topic completion payload for open changes."
+  (let* ((project (majutsu-gerrit--project-from-remote-url
+                   (majutsu-gerrit--remote-url remote)))
+         (query (string-join (delq nil (list "is:open"
+                                             (and project
+                                                  (concat "project:" project))))
+                             " ")))
+    (condition-case nil
+        (when-let* ((spec (majutsu-gerrit-rest-current-spec remote))
+                    (changes (majutsu-gerrit-rest-change-query
+                              query majutsu-gerrit-topic-suggestion-limit nil
+                              nil spec)))
+          (majutsu-gerrit--make-counted-string-payload
+           (mapcar (lambda (change) (alist-get 'topic change)) changes)
+           'majutsu-gerrit-topic "topic"))
+      (error nil))))
 
 ;;; Native Majutsu readers
 
@@ -489,11 +415,10 @@ Label completion is borrowed from egerrit only."
 (defun majutsu-gerrit--remote-branch-candidate-data (&optional remote)
   "Return completion payload for Gerrit remote branch names.
 When REMOTE is non-nil, only branches from that remote are returned."
-  (let ((default-directory (ignore-errors (majutsu--toplevel-safe)))
-        (sources (make-hash-table :test #'equal))
-        (entries (make-hash-table :test #'equal))
-        (annotations (make-hash-table :test #'equal)))
-    (when default-directory
+  (majutsu-with-toplevel
+    (let ((sources (make-hash-table :test #'equal))
+          (entries (make-hash-table :test #'equal))
+          (annotations (make-hash-table :test #'equal)))
       (condition-case _
           (dolist (line (apply #'majutsu-jj-lines
                                (append (list "bookmark" "list" "--quiet")
@@ -509,29 +434,30 @@ When REMOTE is non-nil, only branches from that remote are returned."
                 (puthash name
                          (majutsu--append-unique (gethash name sources) source)
                          sources))))
-        (error nil)))
-    (let ((candidates (sort (hash-table-keys sources) #'string<)))
-      (dolist (candidate candidates)
-        (let ((entry (majutsu-gerrit--remote-branch-entry
-                      candidate (gethash candidate sources))))
-          (puthash candidate entry entries)
-          (puthash candidate
-                   (format "remote%s: %s"
-                           (if (cdr (plist-get entry :remotes)) "s" "")
-                           (string-join (plist-get entry :remotes) ","))
-                   annotations)))
-      (list :category 'majutsu-gerrit-remote-branch
-            :candidates candidates
-            :entries entries
-            :annotations annotations
-            :annotation-suffix-function
-            (majutsu-completion-entry-suffix-function
-             entries #'majutsu-gerrit--remote-branch-suffix)))))
+        (error nil))
+      (let ((candidates (sort (hash-table-keys sources) #'string<)))
+        (dolist (candidate candidates)
+          (let ((entry (majutsu-gerrit--remote-branch-entry
+                        candidate (gethash candidate sources))))
+            (puthash candidate entry entries)
+            (puthash candidate
+                     (format "remote%s: %s"
+                             (if (cdr (plist-get entry :remotes)) "s" "")
+                             (string-join (plist-get entry :remotes) ","))
+                     annotations)))
+        (list :category 'majutsu-gerrit-remote-branch
+              :candidates candidates
+              :entries entries
+              :annotations annotations
+              :annotation-suffix-function
+              (majutsu-completion-entry-suffix-function
+               entries #'majutsu-gerrit--remote-branch-suffix))))))
 
 (defun majutsu-gerrit--remote-branch-names (&optional remote)
   "Return a list of remote branch names for REMOTE.
 If REMOTE is nil, return branches from all remotes."
-  (plist-get (majutsu-gerrit--remote-branch-candidate-data remote) :candidates))
+  (plist-get (majutsu-gerrit--remote-branch-candidate-data remote)
+             :candidates))
 
 (defun majutsu-gerrit-upload--read-revset (prompt initial-input _history)
   "Read revset for `jj gerrit upload --revision='."
@@ -539,12 +465,12 @@ If REMOTE is nil, return branches from all remotes."
 
 (defun majutsu-gerrit-upload--read-remote-branch (prompt initial-input _history)
   "Read target remote branch for `jj gerrit upload' with completion."
-  (let* ((args (transient-get-value))
-         (remote (transient-arg-value "--remote=" args)))
-    (majutsu-completing-read-payload
-     prompt (majutsu-gerrit--remote-branch-candidate-data remote)
-     nil nil initial-input 'majutsu-gerrit-remote-branch-history
-     nil 'majutsu-gerrit-remote-branch)))
+  (majutsu-with-toplevel
+    (let ((remote (majutsu-gerrit-upload--transient-remote)))
+      (majutsu-completing-read-payload
+       prompt (majutsu-gerrit--remote-branch-candidate-data remote)
+       nil nil initial-input 'majutsu-gerrit-remote-branch-history
+       nil 'majutsu-gerrit-remote-branch))))
 
 (defun majutsu-gerrit-upload--transient-remote ()
   "Return the Gerrit upload transient's selected remote, if any."
@@ -553,63 +479,44 @@ If REMOTE is nil, return branches from all remotes."
 
 (defun majutsu-gerrit-upload--read-reviewer (prompt initial-input history)
   "Read one or more Gerrit reviewers."
-  (let ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory)))
+  (majutsu-with-toplevel
     (majutsu-gerrit-read-accounts
      prompt initial-input (or history 'majutsu-gerrit-reviewer-history)
-     (majutsu-gerrit-upload--transient-remote) root)))
+     (majutsu-gerrit-upload--transient-remote))))
 
 (defun majutsu-gerrit-upload--read-cc (prompt initial-input history)
   "Read one or more Gerrit CC values."
-  (let ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory)))
+  (majutsu-with-toplevel
     (majutsu-gerrit-read-accounts
      prompt initial-input (or history 'majutsu-gerrit-cc-history)
-     (majutsu-gerrit-upload--transient-remote) root)))
+     (majutsu-gerrit-upload--transient-remote))))
 
 (defun majutsu-gerrit-upload--read-topic (prompt initial-input history)
-  "Read a Gerrit topic.
-Prefer optional external Gerrit integrations when available."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (payload (majutsu-gerrit-topic-candidate-data nil root)))
-    (cond
-     (payload
-      (majutsu-completing-read-payload
-       prompt payload nil nil initial-input
-       (or history 'majutsu-gerrit-topic-history)
-       nil 'majutsu-gerrit-topic nil root))
-     ((and (majutsu-gerrit--gerrit-available-p)
-           (fboundp 'gerrit-upload:--read-topic))
-      (majutsu-gerrit--with-gerrit-context
-       (lambda (_spec)
-         (gerrit-upload:--read-topic prompt initial-input
-                                     (or history 'majutsu-gerrit-topic-history)))
-       nil root))
-     (t
-      (majutsu-read-string prompt initial-input
-                           (or history 'majutsu-gerrit-topic-history))))))
+  "Read a Gerrit topic."
+  (majutsu-with-toplevel
+    (let* ((remote (majutsu-gerrit-upload--transient-remote))
+           (payload (majutsu-gerrit-topic-candidate-data remote)))
+      (if payload
+          (majutsu-completing-read-payload
+           prompt payload nil nil initial-input
+           (or history 'majutsu-gerrit-topic-history)
+           nil 'majutsu-gerrit-topic nil default-directory)
+        (majutsu-read-string prompt initial-input
+                             (or history 'majutsu-gerrit-topic-history))))))
 
 (defun majutsu-gerrit-upload--read-hashtag (prompt initial-input history)
-  "Read one or more Gerrit hashtags.
-This remains free-form because the optional providers do not expose a
-stable hashtag completion helper."
+  "Read one or more Gerrit hashtags."
   (majutsu-completing-read-multiple
    prompt '() nil nil initial-input
    (or history 'majutsu-gerrit-hashtag-history)
    nil 'majutsu-gerrit-hashtag))
 
 (defun majutsu-gerrit-upload--read-label (prompt initial-input history)
-  "Read one or more Gerrit labels.
-Prefer egerrit's label candidate logic when available."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (payload (majutsu-gerrit-label-candidate-data nil root)))
-    (if payload
-        (majutsu-completing-read-multiple-payload
-         prompt payload nil nil initial-input
-         (or history 'majutsu-gerrit-label-history)
-         nil 'majutsu-gerrit-label nil root)
-      (majutsu-completing-read-multiple
-       prompt '() nil nil initial-input
-       (or history 'majutsu-gerrit-label-history)
-       nil 'majutsu-gerrit-label))))
+  "Read one or more Gerrit labels."
+  (majutsu-completing-read-multiple
+   prompt '() nil nil initial-input
+   (or history 'majutsu-gerrit-label-history)
+   nil 'majutsu-gerrit-label))
 
 (defun majutsu-gerrit-upload-arguments ()
   "Return current Gerrit upload arguments.

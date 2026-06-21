@@ -394,9 +394,11 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
 
 (defun majutsu-gerrit-dashboard--open (&optional directory)
   "Open a Gerrit dashboard in DIRECTORY using current transient value."
-  (majutsu-setup-buffer #'majutsu-gerrit-dashboard-mode nil
-    :buffer "*Majutsu Gerrit*"
-    :directory (majutsu--toplevel-safe directory)))
+  (let ((default-directory (or directory default-directory)))
+    (majutsu-with-toplevel
+      (majutsu-setup-buffer #'majutsu-gerrit-dashboard-mode nil
+        :buffer "*Majutsu Gerrit*"
+        :directory default-directory))))
 
 (defun majutsu-gerrit-dashboard--open-with-args (args &optional directory)
   "Open a Gerrit dashboard configured by transient ARGS."
@@ -492,38 +494,38 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 
 (defun majutsu-gerrit-dashboard--read-project (prompt initial-input history)
   "Read a Gerrit project filter."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (args (ignore-errors (transient-get-value)))
-         (remote (or (and args (transient-arg-value "--remote=" args))
-                     (when (fboundp 'majutsu-gerrit--selected-remote)
-                       (majutsu-gerrit--selected-remote args root))))
-         (project (and (fboundp 'majutsu-gerrit--project-from-remote-url)
-                       (majutsu-gerrit--project-from-remote-url
-                        (majutsu-gerrit--remote-url remote root)))))
-    (majutsu-read-string prompt initial-input
-                         (or history 'majutsu-gerrit-dashboard-project-history)
-                         project)))
+  (majutsu-with-toplevel
+    (let* ((args (ignore-errors (transient-get-value)))
+           (remote (or (and args (transient-arg-value "--remote=" args))
+                       (majutsu-gerrit--selected-remote
+                        args default-directory)))
+           (project (majutsu-gerrit--project-from-remote-url
+                     (majutsu-gerrit--remote-url remote default-directory))))
+      (majutsu-read-string prompt initial-input
+                           (or history 'majutsu-gerrit-dashboard-project-history)
+                           project))))
 
 (defun majutsu-gerrit-dashboard--read-branch (prompt initial-input history)
   "Read a Gerrit branch filter."
-  (let* ((args (ignore-errors (transient-get-value)))
-         (remote (and args (transient-arg-value "--remote=" args)))
-         (payload (and (fboundp 'majutsu-gerrit--remote-branch-candidate-data)
-                       (majutsu-gerrit--remote-branch-candidate-data remote))))
-    (if payload
-        (majutsu-completing-read-payload
-         prompt payload nil nil initial-input
-         (or history 'majutsu-gerrit-dashboard-branch-history)
-         nil 'majutsu-gerrit-remote-branch)
-      (majutsu-read-string prompt initial-input
-                           (or history 'majutsu-gerrit-dashboard-branch-history)))))
+  (majutsu-with-toplevel
+    (let* ((args (ignore-errors (transient-get-value)))
+           (remote (and args (transient-arg-value "--remote=" args)))
+           (payload (majutsu-gerrit--remote-branch-candidate-data remote)))
+      (if payload
+          (majutsu-completing-read-payload
+           prompt payload nil nil initial-input
+           (or history 'majutsu-gerrit-dashboard-branch-history)
+           nil 'majutsu-gerrit-remote-branch)
+        (majutsu-read-string
+         prompt initial-input
+         (or history 'majutsu-gerrit-dashboard-branch-history))))))
 
 (defun majutsu-gerrit-dashboard--read-account (prompt initial-input history)
   "Read a Gerrit account filter."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (args (ignore-errors (transient-get-value)))
-         (remote (and args (transient-arg-value "--remote=" args))))
-    (majutsu-gerrit-read-account prompt initial-input history remote root)))
+  (majutsu-with-toplevel
+    (let* ((args (ignore-errors (transient-get-value)))
+           (remote (and args (transient-arg-value "--remote=" args))))
+      (majutsu-gerrit-read-account prompt initial-input history remote))))
 
 (defun majutsu-gerrit-dashboard--read-owner (prompt initial-input history)
   "Read a Gerrit owner filter."
@@ -542,16 +544,16 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 
 (defun majutsu-gerrit-dashboard--read-topic (prompt initial-input history)
   "Read a Gerrit topic filter."
-  (let* ((root (or (ignore-errors (majutsu--toplevel-safe)) default-directory))
-         (payload (and (fboundp 'majutsu-gerrit-topic-candidate-data)
-                       (majutsu-gerrit-topic-candidate-data nil root))))
-    (if payload
-        (majutsu-completing-read-payload
-         prompt payload nil nil initial-input
-         (or history 'majutsu-gerrit-dashboard-topic-history)
-         nil 'majutsu-gerrit-topic)
-      (majutsu-read-string prompt initial-input
-                           (or history 'majutsu-gerrit-dashboard-topic-history)))))
+  (majutsu-with-toplevel
+    (let ((payload (majutsu-gerrit-topic-candidate-data)))
+      (if payload
+          (majutsu-completing-read-payload
+           prompt payload nil nil initial-input
+           (or history 'majutsu-gerrit-dashboard-topic-history)
+           nil 'majutsu-gerrit-topic)
+        (majutsu-read-string
+         prompt initial-input
+         (or history 'majutsu-gerrit-dashboard-topic-history))))))
 
 (transient-define-argument majutsu-gerrit-dashboard:--preset ()
   :description "Preset"
