@@ -443,6 +443,10 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
     ("ABANDONED" 'error)
     (_ 'shadow)))
 
+(defun majutsu-gerrit-dashboard--face (text face)
+  "Return TEXT propertized with FACE for Magit section overlays."
+  (propertize text 'face face 'font-lock-face face))
+
 (defun majutsu-gerrit-dashboard--account-display (account)
   "Return a short display string for ACCOUNT."
   (or (and account (majutsu-gerrit-account-name account))
@@ -489,17 +493,21 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
           (status (or (majutsu-gerrit-change-status change) "?"))
           (owner (majutsu-gerrit-dashboard--account-display
                   (majutsu-gerrit-change-owner change))))
-      (insert (propertize (format "%-6s" number) 'face 'magit-hash))
+      (insert (majutsu-gerrit-dashboard--face
+               (format "%-6s" number) 'magit-hash))
       (insert " ")
-      (insert (propertize (format "%-9s" status)
-                          'face (majutsu-gerrit-dashboard--status-face status)))
+      (insert (majutsu-gerrit-dashboard--face
+               (format "%-9s" status)
+               (majutsu-gerrit-dashboard--status-face status)))
       (insert " ")
       (insert (or (majutsu-gerrit-change-subject change) ""))
-      (insert (propertize (format " [%s]" owner) 'face 'shadow))
-      (insert (propertize (majutsu-gerrit-dashboard--topic-summary change)
-                          'face 'font-lock-keyword-face))
-      (insert (propertize (majutsu-gerrit-dashboard--comment-summary change)
-                          'face 'warning))
+      (insert (majutsu-gerrit-dashboard--face (format " [%s]" owner) 'shadow))
+      (insert (majutsu-gerrit-dashboard--face
+               (majutsu-gerrit-dashboard--topic-summary change)
+               'font-lock-keyword-face))
+      (insert (majutsu-gerrit-dashboard--face
+               (majutsu-gerrit-dashboard--comment-summary change)
+               'warning))
       (insert "\n"))))
 
 (defun majutsu-gerrit-dashboard--more-changes-p (changes)
@@ -519,7 +527,7 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
     (if changes
         (dolist (change changes)
           (majutsu-gerrit-dashboard--insert-change change))
-      (insert (propertize "No changes.\n" 'face 'shadow)))
+      (insert (majutsu-gerrit-dashboard--face "No changes.\n" 'shadow)))
     (insert "\n")))
 
 (defun majutsu-gerrit-dashboard--state-create
@@ -965,7 +973,8 @@ With prefix argument, prompt for a single ad-hoc QUERY."
             (cl-incf inserted)
             (majutsu-gerrit-dashboard--insert-query (car group) (cdr group))))
         (when (zerop inserted)
-          (insert (propertize "No matching dashboard sections.\n" 'face 'shadow)))))))
+          (insert (majutsu-gerrit-dashboard--face
+                   "No matching dashboard sections.\n" 'shadow)))))))
 
 (provide 'majutsu-gerrit-dashboard)
 
