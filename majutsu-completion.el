@@ -58,6 +58,28 @@
   "Face used for file-name completion metadata."
   :group 'majutsu-completion)
 
+(defun majutsu-completion-passthrough-try-completion (string table pred point)
+  "Passthrough `try-completion' style for tables that already filter.
+Return STRING unchanged so Emacs does not perform additional local filtering."
+  (cons string point))
+
+(defun majutsu-completion-passthrough-all-completions (string table pred _point)
+  "Passthrough `all-completions' style for tables that already filter."
+  (all-completions string table pred))
+
+(defvar majutsu-completion-passthrough-style-registered nil
+  "Non-nil when the `majutsu-passthrough' style has been registered.")
+
+(defun majutsu-completion-register-passthrough-style ()
+  "Register the `majutsu-passthrough' completion style if needed."
+  (unless majutsu-completion-passthrough-style-registered
+    (add-to-list 'completion-styles-alist
+                 '(majutsu-passthrough
+                   majutsu-completion-passthrough-try-completion
+                   majutsu-completion-passthrough-all-completions
+                   "Trust the completion table's own filtering."))
+    (setq majutsu-completion-passthrough-style-registered t)))
+
 (defun majutsu-completion-properties (&optional category annotation-function affixation-function)
   "Return `completion-extra-properties' plist for CATEGORY."
   `(,@(and category `(:category ,category))

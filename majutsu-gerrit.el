@@ -358,6 +358,7 @@ the first regexp is a simple literal, use it as the Gerrit query seed."
              (annotation-function . ,#'suffix)
              (affixation-function . ,(majutsu-completion-affixation-function
                                       #'suffix)))))
+      (majutsu-completion-register-passthrough-style)
       (lambda (string pred action)
         (cond
          ((eq action 'metadata)
