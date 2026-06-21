@@ -98,17 +98,64 @@
                     "--foreach=project:team/project"))
                  '(("Query" . "is:open owner:self project:team/project")))))
 
-(ert-deftest majutsu-gerrit-dashboard-state/assigns-section-ids ()
-  "Dashboard state should assign stable query section ids."
-  (let* ((state (majutsu-gerrit-dashboard--state-create
+(ert-deftest majutsu-gerrit-dashboard-state/assigns-item-ids ()
+  "Dashboard state should assign stable ids to queries and groups."
+  (let* ((group (majutsu-gerrit-dashboard-group-create
+                 :title "Group"
+                 :kind 'user
+                 :value "self"
+                 :items '(("Incoming" . "is:open reviewer:self"))))
+         (state (majutsu-gerrit-dashboard--state-create
                  "/repo" "gerrit" nil
-                 '(("Mine" . "is:open owner:self")
-                   ("Incoming" . "is:open reviewer:self"))
+                 (list '("Mine" . "is:open owner:self") group)
                  50 nil '("LABELS") nil))
-         (sections (majutsu-gerrit-dashboard-state-sections state)))
-    (should (equal (mapcar #'majutsu-gerrit-dashboard-query-id sections)
-                   '(1 2)))
-    (should (= (majutsu-gerrit-dashboard-state-next-id state) 3))))
+         (items (majutsu-gerrit-dashboard-state-items state))
+         (query (car items))
+         (group (cadr items))
+         (child (car (majutsu-gerrit-dashboard-group-items group))))
+    (should (equal (list (majutsu-gerrit-dashboard-query-id query)
+                         (majutsu-gerrit-dashboard-group-id group)
+                         (majutsu-gerrit-dashboard-query-id child))
+                   '(1 2 3)))
+    (should (= (majutsu-gerrit-dashboard-state-next-id state) 4))))
+
+(ert-deftest majutsu-gerrit-dashboard-user-dashboard/builds-self-template ()
+  "Self dashboard should include self-only Polygerrit sections."
+  (let ((queries (majutsu-gerrit-dashboard--user-dashboard-queries "self")))
+    (should (equal (mapcar #'majutsu-gerrit-dashboard-query-title queries)
+                   '("Has draft comments" "Your turn" "Work in progress"
+                     "Outgoing reviews" "Incoming reviews" "CCed on"
+                     "Recently closed")))
+    (should (equal (majutsu-gerrit-dashboard-query-query (cadr queries))
+                   "attention:self limit:25"))))
+
+(ert-deftest majutsu-gerrit-dashboard-user-dashboard/omits-self-only-for-other-user ()
+  "Other-user dashboard should omit self-only Polygerrit sections."
+  (let ((queries (majutsu-gerrit-dashboard--user-dashboard-queries "1021057")))
+    (should (equal (mapcar #'majutsu-gerrit-dashboard-query-title queries)
+                   '("Your turn" "Outgoing reviews" "Incoming reviews"
+                     "CCed on" "Recently closed")))
+    (should (equal (majutsu-gerrit-dashboard-query-query (car queries))
+                   "attention:1021057 limit:25"))))
+
+(ert-deftest majutsu-gerrit-dashboard-state/removes-item-by-ref ()
+  "State removal should use item references, not section tree structure."
+  (let* ((group (majutsu-gerrit-dashboard-group-create
+                 :title "Group"
+                 :kind 'user
+                 :value "self"
+                 :items '(("Incoming" . "is:open reviewer:self"))))
+         (state (majutsu-gerrit-dashboard--state-create
+                 "/repo" "gerrit" nil
+                 (list '("Mine" . "is:open owner:self") group)
+                 50 nil '("LABELS") nil))
+         (group (cadr (majutsu-gerrit-dashboard-state-items state)))
+         (child (car (majutsu-gerrit-dashboard-group-items group))))
+    (majutsu-gerrit-dashboard--state-remove-item
+     state (cons 'query (majutsu-gerrit-dashboard-query-id child)))
+    (should-not (majutsu-gerrit-dashboard-group-items group))
+    (should (= (length (majutsu-gerrit-dashboard-state-items state)) 2))
+    (should (majutsu-gerrit-dashboard-state-dirty-p state))))
 
 (ert-deftest majutsu-gerrit-dashboard-repo-args/keeps-open-state-args ()
   "Repository defaults should keep args needed to recreate a dashboard."
@@ -186,6 +233,39 @@
         (should (eq (magit-section-value-if 'gerrit-change)
                     change))))))
 
+(ert-deftest majutsu-gerrit-dashboard-render/fetches-leaf-queries-in-groups ()
+  "Dashboard refresh should flatten query leaves and render groups."
+  (let ((change (majutsu-gerrit-change-from-alist
+                 (majutsu-gerrit-dashboard-test--raw-change)))
+        seen)
+    (with-temp-buffer
+      (majutsu-gerrit-dashboard-mode)
+      (setq majutsu--default-directory "/repo"
+            majutsu-gerrit-dashboard--state
+            (majutsu-gerrit-dashboard--state-create
+             "/repo" "gerrit" nil
+             (list (majutsu-gerrit-dashboard--user-dashboard-group "1021057"))
+             50 nil '("LABELS") nil))
+      (cl-letf (((symbol-function 'majutsu-gerrit-dashboard--fetch)
+                 (lambda (queries &rest _args)
+                   (setq seen queries)
+                   (mapcar (lambda (query)
+                             (cons query
+                                   (and (string-prefix-p
+                                         "attention:"
+                                         (majutsu-gerrit-dashboard-query-query query))
+                                        (list change))))
+                           queries))))
+        (let ((inhibit-read-only t))
+          (majutsu-gerrit-dashboard-refresh-buffer))
+        (should (= (length seen) 5))
+        (should (string-match-p "User Dashboard: 1021057" (buffer-string)))
+        (should (string-match-p "Your turn (1)  attention:1021057 limit:25"
+                                (buffer-string)))
+        (goto-char (point-min))
+        (search-forward "User Dashboard: 1021057")
+        (should (magit-section-value-if 'gerrit-group))))))
+
 (ert-deftest majutsu-gerrit-dashboard-render/marks-truncated-query ()
   "Dashboard headings should indicate Gerrit _more_changes."
   (let ((change (majutsu-gerrit-change-from-alist
@@ -226,9 +306,10 @@
           (majutsu-gerrit-dashboard-refresh-buffer)))
       (goto-char (point-min))
       (search-forward "Prefer section-aware command defaults.")
-      (cl-letf (((symbol-function 'majutsu-refresh-buffer) #'ignore))
+      (cl-letf (((symbol-function 'majutsu-refresh-buffer) #'ignore)
+                ((symbol-function 'y-or-n-p) (lambda (&rest _args) t)))
         (majutsu-gerrit-dashboard-remove-section))
-      (should-not (majutsu-gerrit-dashboard-state-sections
+      (should-not (majutsu-gerrit-dashboard-state-items
                    majutsu-gerrit-dashboard--state))
       (should (majutsu-gerrit-dashboard-state-dirty-p
                majutsu-gerrit-dashboard--state)))))

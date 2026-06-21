@@ -20,11 +20,14 @@
 (require 'transient)
 
 (declare-function majutsu-gerrit-dashboard-add-section "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-add-user-dashboard "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-gerrit-dashboard-browse-change "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-download-change "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-gerrit-dashboard-edit-section-query "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-gerrit-dashboard-edit-section-title "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" ())
-(declare-function majutsu-gerrit-download-change "majutsu-gerrit-download" ())
+(declare-function majutsu-gerrit-dashboard-visit "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dashboard-remove-section "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-op-log-restore-at-point "majutsu-op" ())
 (declare-function majutsu-op-log-revert-at-point "majutsu-op" ())
 (declare-function majutsu-op-diff-default-action "majutsu-op" ())
@@ -260,13 +263,17 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "v") #'majutsu-op-diff-evolog-at-point)
 
   (majutsu-evil--define-keys 'normal 'majutsu-gerrit-dashboard-mode-map
-    (kbd "RET") #'majutsu-gerrit-dashboard-browse-change
+    [remap majutsu-visit-thing] #'majutsu-gerrit-dashboard-visit
     (kbd "a") #'majutsu-gerrit-dashboard-add-section
+    (kbd "U") #'majutsu-gerrit-dashboard-add-user-dashboard
     (kbd "e") #'majutsu-gerrit-dashboard-edit-section-query
     (kbd "E") #'majutsu-gerrit-dashboard-edit-section-title
     (kbd "b") #'majutsu-gerrit-dashboard-browse-change
-    (kbd "d") #'majutsu-gerrit-download-change
-    (kbd "R") #'majutsu-gerrit-dashboard-transient)
+    (kbd "d") #'majutsu-gerrit-dashboard-download-change
+    (kbd "x") #'majutsu-gerrit-dashboard-remove-section
+    (kbd "g r") #'majutsu-refresh
+    (kbd "R") #'majutsu-gerrit-dashboard-transient
+    (kbd "q") #'majutsu-mode-bury-buffer)
 
   ;; majutsu-conflict-mode is a minor mode
   (add-hook 'majutsu-conflict-mode-hook #'evil-normalize-keymaps)

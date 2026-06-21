@@ -70,6 +70,9 @@
 (defvar majutsu-gerrit-dashboard-title-history nil
   "Minibuffer history for Gerrit dashboard titles.")
 
+(defvar majutsu-gerrit-dashboard-user-history nil
+  "Minibuffer history for Gerrit user dashboard targets.")
+
 (defvar majutsu-gerrit-query-history nil
   "Minibuffer history for Gerrit query strings.")
 
@@ -79,11 +82,15 @@
 
 (cl-defstruct (majutsu-gerrit-dashboard-state
                (:constructor majutsu-gerrit-dashboard-state-create))
-  root remote title sections limit start options hide-empty dirty-p next-id)
+  root remote title items limit start options hide-empty dirty-p next-id)
 
 (cl-defstruct (majutsu-gerrit-dashboard-query
                (:constructor majutsu-gerrit-dashboard-query-create))
-  id title query)
+  id title query hide-empty)
+
+(cl-defstruct (majutsu-gerrit-dashboard-group
+               (:constructor majutsu-gerrit-dashboard-group-create))
+  id title kind value items)
 
 (defvar-local majutsu-gerrit-dashboard--state nil
   "State object for the current Gerrit dashboard buffer.")
@@ -242,6 +249,34 @@
             (or default (user-error "Need non-empty Gerrit query"))
           value)))))
 
+(defconst majutsu-gerrit-dashboard--user-dashboard-template
+  '((:title "Has draft comments"
+     :query "has:draft"
+     :self-only t
+     :hide-empty t
+     :suffix "limit:10")
+    (:title "Your turn"
+     :query "attention:${user}"
+     :suffix "limit:25")
+    (:title "Work in progress"
+     :query "is:open owner:${user} is:wip"
+     :self-only t
+     :hide-empty t
+     :suffix "limit:25")
+    (:title "Outgoing reviews"
+     :query "is:open owner:${user} -is:wip"
+     :suffix "limit:25")
+    (:title "Incoming reviews"
+     :query "is:open -owner:${user} -is:wip reviewer:${user}"
+     :suffix "limit:25")
+    (:title "CCed on"
+     :query "is:open -is:wip cc:${user}"
+     :suffix "limit:10")
+    (:title "Recently closed"
+     :query "is:closed (-is:wip OR owner:self) (owner:${user} OR reviewer:${user} OR cc:${user})"
+     :suffix "-age:4w limit:10"))
+  "Polygerrit-style user dashboard query template.")
+
 (defconst majutsu-gerrit-dashboard--default-preset
   '(("Has draft comments" . "has:draft")
     ("Your turn" . "attention:self")
@@ -291,17 +326,64 @@
                :query query))
              (t
               (error "Invalid Gerrit dashboard query: %S" query))))
-          (or queries majutsu-gerrit-dashboard-queries)))
+          queries))
 
-(defun majutsu-gerrit-dashboard--assign-query-ids (queries &optional next-id)
-  "Return (QUERIES . NEXT-ID) with stable ids assigned to QUERIES."
+(defun majutsu-gerrit-dashboard--item-specs (items)
+  "Normalize dashboard ITEMS to query or group objects."
+  (mapcar (lambda (item)
+            (cond
+             ((or (majutsu-gerrit-dashboard-query-p item)
+                  (majutsu-gerrit-dashboard-group-p item))
+              item)
+             (t
+              (car (majutsu-gerrit-dashboard--query-specs (list item))))))
+          items))
+
+(defun majutsu-gerrit-dashboard--item-type (item)
+  "Return dashboard ITEM's model type."
+  (cond ((majutsu-gerrit-dashboard-query-p item) 'query)
+        ((majutsu-gerrit-dashboard-group-p item) 'group)))
+
+(defun majutsu-gerrit-dashboard--item-id (item)
+  "Return dashboard ITEM id."
+  (cond ((majutsu-gerrit-dashboard-query-p item)
+         (majutsu-gerrit-dashboard-query-id item))
+        ((majutsu-gerrit-dashboard-group-p item)
+         (majutsu-gerrit-dashboard-group-id item))))
+
+(defun majutsu-gerrit-dashboard--item-title (item)
+  "Return dashboard ITEM title."
+  (cond ((majutsu-gerrit-dashboard-query-p item)
+         (majutsu-gerrit-dashboard-query-title item))
+        ((majutsu-gerrit-dashboard-group-p item)
+         (majutsu-gerrit-dashboard-group-title item))))
+
+(defun majutsu-gerrit-dashboard--item-match-p (item type id)
+  "Return non-nil if ITEM has TYPE and ID."
+  (and (eq (majutsu-gerrit-dashboard--item-type item) type)
+       (equal (majutsu-gerrit-dashboard--item-id item) id)))
+
+(defun majutsu-gerrit-dashboard--assign-item-ids (items &optional next-id)
+  "Return (ITEMS . NEXT-ID) with stable ids assigned recursively."
   (let ((next-id (or next-id 1))
         result)
-    (dolist (query (majutsu-gerrit-dashboard--query-specs queries))
-      (unless (majutsu-gerrit-dashboard-query-id query)
-        (setf (majutsu-gerrit-dashboard-query-id query) next-id)
-        (cl-incf next-id))
-      (push query result))
+    (dolist (item (majutsu-gerrit-dashboard--item-specs items))
+      (cond
+       ((majutsu-gerrit-dashboard-query-p item)
+        (unless (majutsu-gerrit-dashboard-query-id item)
+          (setf (majutsu-gerrit-dashboard-query-id item) next-id)
+          (cl-incf next-id)))
+       ((majutsu-gerrit-dashboard-group-p item)
+        (unless (majutsu-gerrit-dashboard-group-id item)
+          (setf (majutsu-gerrit-dashboard-group-id item) next-id)
+          (cl-incf next-id))
+        (pcase-let ((`(,children . ,child-next-id)
+                     (majutsu-gerrit-dashboard--assign-item-ids
+                      (majutsu-gerrit-dashboard-group-items item)
+                      next-id)))
+          (setf (majutsu-gerrit-dashboard-group-items item) children
+                next-id child-next-id))))
+      (push item result))
     (cons (nreverse result) next-id)))
 
 (defun majutsu-gerrit-dashboard--arg-values (prefix args)
@@ -354,6 +436,34 @@
                      (cdr query-spec) filter)))
             queries)))
 
+(defun majutsu-gerrit-dashboard--replace-user (query user)
+  "Replace Gerrit user placeholders in QUERY with USER."
+  (replace-regexp-in-string
+   (regexp-quote "${user}") user query t t))
+
+(defun majutsu-gerrit-dashboard--user-dashboard-queries (user)
+  "Return Polygerrit-style dashboard queries for USER."
+  (let ((self-p (equal user "self")))
+    (seq-keep
+     (lambda (section)
+       (unless (and (not self-p) (plist-get section :self-only))
+         (majutsu-gerrit-dashboard-query-create
+          :title (plist-get section :title)
+          :query (majutsu-gerrit-dashboard--join-query
+                  (majutsu-gerrit-dashboard--replace-user
+                   (plist-get section :query) user)
+                  (plist-get section :suffix))
+          :hide-empty (plist-get section :hide-empty))))
+     majutsu-gerrit-dashboard--user-dashboard-template)))
+
+(defun majutsu-gerrit-dashboard--user-dashboard-group (user)
+  "Return a user dashboard group for USER."
+  (majutsu-gerrit-dashboard-group-create
+   :title (format "User Dashboard: %s" user)
+   :kind 'user
+   :value user
+   :items (majutsu-gerrit-dashboard--user-dashboard-queries user)))
+
 (defun majutsu-gerrit-dashboard--repo-args (args)
   "Keep stable dashboard ARGS for repository-local defaults."
   (seq-filter (lambda (arg)
@@ -398,6 +508,23 @@ When SAVE is non-nil, also persist them globally."
   (if (= (length queries) 1)
       (list response)
     response))
+
+(defun majutsu-gerrit-dashboard--leaf-queries (items)
+  "Return leaf query objects from dashboard ITEMS."
+  (mapcan (lambda (item)
+            (cond
+             ((majutsu-gerrit-dashboard-query-p item)
+              (list item))
+             ((majutsu-gerrit-dashboard-group-p item)
+              (majutsu-gerrit-dashboard--leaf-queries
+               (majutsu-gerrit-dashboard-group-items item)))))
+          items))
+
+(defun majutsu-gerrit-dashboard--query-hidden-p (query changes hide-empty)
+  "Return non-nil if QUERY should be hidden for CHANGES."
+  (and (or hide-empty
+           (majutsu-gerrit-dashboard-query-hide-empty query))
+       (null changes)))
 
 (defun majutsu-gerrit-dashboard--fetch
     (queries &optional remote directory limit start options)
@@ -520,16 +647,49 @@ Return a list of (QUERY-SPEC . CHANGES), where CHANGES are
       (insert (majutsu-gerrit-dashboard--face "No changes.\n" 'shadow)))
     (insert "\n")))
 
+(defun majutsu-gerrit-dashboard--query-result (query results)
+  "Return QUERY changes from RESULTS."
+  (cdr (assq query results)))
+
+(defun majutsu-gerrit-dashboard--item-visible-p (item results hide-empty)
+  "Return non-nil if ITEM has visible dashboard content."
+  (cond
+   ((majutsu-gerrit-dashboard-query-p item)
+    (not (majutsu-gerrit-dashboard--query-hidden-p
+          item (majutsu-gerrit-dashboard--query-result item results) hide-empty)))
+   ((majutsu-gerrit-dashboard-group-p item)
+    (seq-some (lambda (child)
+                (majutsu-gerrit-dashboard--item-visible-p child results hide-empty))
+              (majutsu-gerrit-dashboard-group-items item)))))
+
+(defun majutsu-gerrit-dashboard--insert-item (item results hide-empty)
+  "Insert dashboard ITEM using query RESULTS.
+Return non-nil if anything was inserted."
+  (when (majutsu-gerrit-dashboard--item-visible-p item results hide-empty)
+    (cond
+     ((majutsu-gerrit-dashboard-query-p item)
+      (majutsu-gerrit-dashboard--insert-query
+       item (majutsu-gerrit-dashboard--query-result item results)))
+     ((majutsu-gerrit-dashboard-group-p item)
+      (magit-insert-section (gerrit-group
+                             (majutsu-gerrit-dashboard-group-id item))
+        (magit-insert-heading
+          (format "%s\n" (majutsu-gerrit-dashboard-group-title item)))
+        (dolist (child (majutsu-gerrit-dashboard-group-items item))
+          (majutsu-gerrit-dashboard--insert-item child results hide-empty)))))
+    t))
+
 (defun majutsu-gerrit-dashboard--state-create
-    (root remote title sections limit start options hide-empty)
-  "Create a dashboard state from ROOT, REMOTE, TITLE and SECTIONS."
-  (pcase-let ((`(,queries . ,next-id)
-               (majutsu-gerrit-dashboard--assign-query-ids sections)))
+    (root remote title items limit start options hide-empty)
+  "Create a dashboard state from ROOT, REMOTE, TITLE and ITEMS."
+  (pcase-let ((`(,items . ,next-id)
+               (majutsu-gerrit-dashboard--assign-item-ids
+                (or items majutsu-gerrit-dashboard-queries))))
     (majutsu-gerrit-dashboard-state-create
      :root root
      :remote remote
      :title title
-     :sections queries
+     :items items
      :limit limit
      :start start
      :options options
@@ -633,90 +793,214 @@ With prefix argument, prompt for a single ad-hoc QUERY."
       (user-error "No Gerrit change at point"))
     (browse-url url)))
 
-(defun majutsu-gerrit-dashboard--query-id-at-point ()
-  "Return query section id at point, or nil."
+(defun majutsu-gerrit-dashboard-download-change ()
+  "Download the Gerrit change at point."
+  (interactive)
+  (majutsu-gerrit-download-change
+   (or (magit-section-value-if 'gerrit-change)
+       (user-error "No Gerrit change at point"))
+   majutsu--default-directory))
+
+(defun majutsu-gerrit-dashboard-visit ()
+  "Visit change at point or toggle the current dashboard section."
+  (interactive)
+  (if (magit-section-value-if 'gerrit-change)
+      (majutsu-gerrit-dashboard-browse-change)
+    (magit-section-toggle (magit-current-section))))
+
+(defun majutsu-gerrit-dashboard--section-item-ref-at-point ()
+  "Return dashboard item reference at point as (TYPE . ID)."
   (let ((section (magit-current-section)))
-    (while (and section
-                (not (magit-section-match 'gerrit-query section)))
-      (setq section (oref section parent)))
-    (and section (oref section value))))
+    (catch 'ref
+      (while section
+        (cond
+         ((magit-section-match 'gerrit-query section)
+          (throw 'ref (cons 'query (oref section value))))
+         ((magit-section-match 'gerrit-group section)
+          (throw 'ref (cons 'group (oref section value)))))
+        (setq section (oref section parent))))))
 
-(defun majutsu-gerrit-dashboard--query-by-id (state id)
-  "Return dashboard query with ID in STATE."
-  (seq-find (lambda (query)
-              (equal (majutsu-gerrit-dashboard-query-id query) id))
-            (majutsu-gerrit-dashboard-state-sections state)))
+(defun majutsu-gerrit-dashboard--selected-item-ref ()
+  "Return the selected dashboard item reference or signal an error."
+  (or (majutsu-gerrit-dashboard--section-item-ref-at-point)
+      (user-error "No dashboard item at point")))
 
-(defun majutsu-gerrit-dashboard--current-query ()
-  "Return dashboard query at point, or signal an error."
-  (let* ((state (majutsu-gerrit-dashboard--state))
-         (id (majutsu-gerrit-dashboard--query-id-at-point))
-         (query (and id (majutsu-gerrit-dashboard--query-by-id state id))))
-    (or query (user-error "No dashboard query section at point"))))
+(defun majutsu-gerrit-dashboard--find-item (items type id)
+  "Return dashboard item of TYPE and ID in ITEMS."
+  (seq-some (lambda (item)
+              (cond
+               ((majutsu-gerrit-dashboard--item-match-p item type id)
+                item)
+               ((majutsu-gerrit-dashboard-group-p item)
+                (majutsu-gerrit-dashboard--find-item
+                 (majutsu-gerrit-dashboard-group-items item) type id))))
+            items))
+
+(defun majutsu-gerrit-dashboard--state-item (state ref)
+  "Return dashboard item REF in STATE or signal an error."
+  (or (majutsu-gerrit-dashboard--find-item
+       (majutsu-gerrit-dashboard-state-items state) (car ref) (cdr ref))
+      (user-error "Dashboard item is unavailable")))
 
 (defun majutsu-gerrit-dashboard--mark-dirty (state)
   "Mark dashboard STATE as modified."
   (setf (majutsu-gerrit-dashboard-state-dirty-p state) t))
 
-(defun majutsu-gerrit-dashboard--append-query (state query)
-  "Append QUERY to dashboard STATE."
-  (unless (majutsu-gerrit-dashboard-query-id query)
-    (setf (majutsu-gerrit-dashboard-query-id query)
-          (majutsu-gerrit-dashboard-state-next-id state))
-    (cl-incf (majutsu-gerrit-dashboard-state-next-id state)))
-  (setf (majutsu-gerrit-dashboard-state-sections state)
-        (append (majutsu-gerrit-dashboard-state-sections state)
-                (list query)))
+(defun majutsu-gerrit-dashboard--state-assign-item-id (state item)
+  "Assign fresh ids from STATE to ITEM recursively."
+  (cond
+   ((majutsu-gerrit-dashboard-query-p item)
+    (unless (majutsu-gerrit-dashboard-query-id item)
+      (setf (majutsu-gerrit-dashboard-query-id item)
+            (majutsu-gerrit-dashboard-state-next-id state))
+      (cl-incf (majutsu-gerrit-dashboard-state-next-id state))))
+   ((majutsu-gerrit-dashboard-group-p item)
+    (unless (majutsu-gerrit-dashboard-group-id item)
+      (setf (majutsu-gerrit-dashboard-group-id item)
+            (majutsu-gerrit-dashboard-state-next-id state))
+      (cl-incf (majutsu-gerrit-dashboard-state-next-id state)))
+    (dolist (child (majutsu-gerrit-dashboard-group-items item))
+      (majutsu-gerrit-dashboard--state-assign-item-id state child)))))
+
+(defun majutsu-gerrit-dashboard--state-append-item (state item)
+  "Append ITEM to dashboard STATE."
+  (majutsu-gerrit-dashboard--state-assign-item-id state item)
+  (setf (majutsu-gerrit-dashboard-state-items state)
+        (append (majutsu-gerrit-dashboard-state-items state)
+                (list item)))
   (majutsu-gerrit-dashboard--mark-dirty state))
+
+(defun majutsu-gerrit-dashboard--state-remove-item (state ref)
+  "Remove dashboard item REF from STATE and return it."
+  (let (removed)
+    (cl-labels ((remove-ref
+                  (items)
+                  (delq nil
+                        (mapcar (lambda (item)
+                                  (cond
+                                   ((majutsu-gerrit-dashboard--item-match-p
+                                     item (car ref) (cdr ref))
+                                    (setq removed item)
+                                    nil)
+                                   ((majutsu-gerrit-dashboard-group-p item)
+                                    (setf (majutsu-gerrit-dashboard-group-items item)
+                                          (remove-ref
+                                           (majutsu-gerrit-dashboard-group-items item)))
+                                    item)
+                                   (t item)))
+                                items))))
+      (setf (majutsu-gerrit-dashboard-state-items state)
+            (remove-ref (majutsu-gerrit-dashboard-state-items state))))
+    (unless removed
+      (user-error "Dashboard item is unavailable"))
+    (majutsu-gerrit-dashboard--mark-dirty state)
+    removed))
+
+(defun majutsu-gerrit-dashboard--state-set-title (state ref title)
+  "Set dashboard item REF title in STATE to TITLE."
+  (let ((item (majutsu-gerrit-dashboard--state-item state ref)))
+    (if (majutsu-gerrit-dashboard-query-p item)
+        (setf (majutsu-gerrit-dashboard-query-title item) title)
+      (setf (majutsu-gerrit-dashboard-group-title item) title))
+    (majutsu-gerrit-dashboard--mark-dirty state)))
+
+(defun majutsu-gerrit-dashboard--state-set-query (state ref query)
+  "Set dashboard query REF in STATE to Gerrit QUERY."
+  (let ((item (majutsu-gerrit-dashboard--state-item state ref)))
+    (unless (majutsu-gerrit-dashboard-query-p item)
+      (user-error "No dashboard query section at point"))
+    (setf (majutsu-gerrit-dashboard-query-query item) query)
+    (majutsu-gerrit-dashboard--mark-dirty state)))
+
+(defun majutsu-gerrit-dashboard--state-set-user-dashboard (state ref user)
+  "Replace user dashboard group REF in STATE with USER."
+  (let ((item (majutsu-gerrit-dashboard--state-item state ref)))
+    (unless (and (majutsu-gerrit-dashboard-group-p item)
+                 (eq (majutsu-gerrit-dashboard-group-kind item) 'user))
+      (user-error "No user dashboard group at point"))
+    (setf (majutsu-gerrit-dashboard-group-value item) user
+          (majutsu-gerrit-dashboard-group-title item)
+          (format "User Dashboard: %s" user)
+          (majutsu-gerrit-dashboard-group-items item)
+          (majutsu-gerrit-dashboard--user-dashboard-queries user))
+    (dolist (child (majutsu-gerrit-dashboard-group-items item))
+      (majutsu-gerrit-dashboard--state-assign-item-id state child))
+    (majutsu-gerrit-dashboard--mark-dirty state)))
 
 (defun majutsu-gerrit-dashboard-add-section ()
   "Add a query section to the current dashboard."
   (interactive)
   (let ((state (majutsu-gerrit-dashboard--state)))
-    (majutsu-gerrit-dashboard--append-query
+    (majutsu-gerrit-dashboard--state-append-item
      state (majutsu-gerrit-dashboard-read-section))
     (majutsu-refresh-buffer)))
 
+(defun majutsu-gerrit-dashboard-read-user (&optional default)
+  "Read a Gerrit user dashboard target."
+  (majutsu-read-string "Gerrit dashboard user"
+                       nil 'majutsu-gerrit-dashboard-user-history
+                       (or default "self")))
+
+(defun majutsu-gerrit-dashboard-add-user-dashboard (user)
+  "Add a Gerrit user dashboard group for USER."
+  (interactive (list (majutsu-gerrit-dashboard-read-user)))
+  (let ((state (majutsu-gerrit-dashboard--state)))
+    (majutsu-gerrit-dashboard--state-append-item
+     state (majutsu-gerrit-dashboard--user-dashboard-group user))
+    (majutsu-refresh-buffer)))
+
 (defun majutsu-gerrit-dashboard-edit-section-query ()
-  "Edit the Gerrit query for the section at point."
+  "Edit the query or group target for the dashboard item at point."
   (interactive)
   (let* ((state (majutsu-gerrit-dashboard--state))
-         (query (majutsu-gerrit-dashboard--current-query))
-         (new-query (majutsu-gerrit-read-query
-                     "Gerrit query"
-                     (majutsu-gerrit-dashboard-query-query query)
-                     'majutsu-gerrit-dashboard-query-history
-                     (majutsu-gerrit-dashboard-query-query query)
-                     (majutsu-gerrit-dashboard-state-remote state))))
-    (setf (majutsu-gerrit-dashboard-query-query query) new-query)
-    (majutsu-gerrit-dashboard--mark-dirty state)
+         (ref (majutsu-gerrit-dashboard--selected-item-ref))
+         (item (majutsu-gerrit-dashboard--state-item state ref)))
+    (cond
+     ((majutsu-gerrit-dashboard-query-p item)
+      (majutsu-gerrit-dashboard--state-set-query
+       state ref
+       (majutsu-gerrit-read-query
+        "Gerrit query"
+        (majutsu-gerrit-dashboard-query-query item)
+        'majutsu-gerrit-dashboard-query-history
+        (majutsu-gerrit-dashboard-query-query item)
+        (majutsu-gerrit-dashboard-state-remote state))))
+     ((eq (majutsu-gerrit-dashboard-group-kind item) 'user)
+      (majutsu-gerrit-dashboard--state-set-user-dashboard
+       state ref
+       (majutsu-gerrit-dashboard-read-user
+        (majutsu-gerrit-dashboard-group-value item))))
+     (t
+      (user-error "Cannot edit dashboard item at point")))
     (majutsu-refresh-buffer)))
 
 (defun majutsu-gerrit-dashboard-edit-section-title ()
-  "Edit the title for the section at point."
+  "Edit the title for the dashboard item at point."
   (interactive)
   (let* ((state (majutsu-gerrit-dashboard--state))
-         (query (majutsu-gerrit-dashboard--current-query))
-         (title (majutsu-read-string
-                 "Section title"
-                 (majutsu-gerrit-dashboard-query-title query)
-                 'majutsu-gerrit-dashboard-section-history
-                 (majutsu-gerrit-dashboard-query-title query))))
-    (setf (majutsu-gerrit-dashboard-query-title query) title)
-    (majutsu-gerrit-dashboard--mark-dirty state)
+         (ref (majutsu-gerrit-dashboard--selected-item-ref))
+         (item (majutsu-gerrit-dashboard--state-item state ref)))
+    (majutsu-gerrit-dashboard--state-set-title
+     state ref
+     (majutsu-read-string
+      "Section title"
+      (majutsu-gerrit-dashboard--item-title item)
+      'majutsu-gerrit-dashboard-section-history
+      (majutsu-gerrit-dashboard--item-title item)))
     (majutsu-refresh-buffer)))
 
 (defun majutsu-gerrit-dashboard-remove-section ()
   "Remove the section at point from the current dashboard."
   (interactive)
   (let* ((state (majutsu-gerrit-dashboard--state))
-         (query (majutsu-gerrit-dashboard--current-query))
-         (title (majutsu-gerrit-dashboard-query-title query)))
-    (unless (y-or-n-p (format "Remove query section %S? " title))
+         (ref (majutsu-gerrit-dashboard--selected-item-ref))
+         (item (majutsu-gerrit-dashboard--state-item state ref))
+         (kind (if (eq (car ref) 'group) "group" "query section")))
+    (unless (y-or-n-p (format "Remove %s %S? "
+                              kind
+                              (majutsu-gerrit-dashboard--item-title item)))
       (user-error "Remove canceled"))
-    (setf (majutsu-gerrit-dashboard-state-sections state)
-          (delq query (majutsu-gerrit-dashboard-state-sections state)))
-    (majutsu-gerrit-dashboard--mark-dirty state)
+    (majutsu-gerrit-dashboard--state-remove-item state ref)
     (majutsu-refresh-buffer)))
 
 ;;; Transient
@@ -894,7 +1178,8 @@ With prefix argument, prompt for a single ad-hoc QUERY."
    ["Sections"
     :if-derived majutsu-gerrit-dashboard-mode
     ("a" "Add query section" majutsu-gerrit-dashboard-add-section)
-    ("e" "Edit query" majutsu-gerrit-dashboard-edit-section-query)
+    ("U" "Add user dashboard" majutsu-gerrit-dashboard-add-user-dashboard)
+    ("e" "Edit query/user" majutsu-gerrit-dashboard-edit-section-query)
     ("E" "Edit title" majutsu-gerrit-dashboard-edit-section-title)
     ("k" "Remove section" majutsu-gerrit-dashboard-remove-section)]]
   (interactive)
@@ -906,21 +1191,22 @@ With prefix argument, prompt for a single ad-hoc QUERY."
 (defvar-keymap majutsu-gerrit-change-section-map
   :doc "Keymap for Gerrit change sections."
   "b"   #'majutsu-gerrit-dashboard-browse-change
-  "d"   #'majutsu-gerrit-download-change
+  "d"   #'majutsu-gerrit-dashboard-download-change
   "<remap> <majutsu-visit-thing>" #'majutsu-gerrit-dashboard-browse-change)
 
 (defvar-keymap majutsu-gerrit-dashboard-mode-map
   :doc "Keymap for `majutsu-gerrit-dashboard-mode'."
   :parent magit-section-mode-map
-  "RET" #'majutsu-gerrit-dashboard-browse-change
+  "RET" #'majutsu-gerrit-dashboard-visit
   "g" #'majutsu-refresh
   "q" #'majutsu-mode-bury-buffer
   "a" #'majutsu-gerrit-dashboard-add-section
+  "U" #'majutsu-gerrit-dashboard-add-user-dashboard
   "e" #'majutsu-gerrit-dashboard-edit-section-query
   "E" #'majutsu-gerrit-dashboard-edit-section-title
   "<remap> <majutsu-delete-thing>" #'majutsu-gerrit-dashboard-remove-section
   "b" #'majutsu-gerrit-dashboard-browse-change
-  "d" #'majutsu-gerrit-download-change
+  "d" #'majutsu-gerrit-dashboard-download-change
   "R" #'majutsu-gerrit-dashboard-transient)
 
 (defun majutsu-gerrit-dashboard--kill-buffer-query ()
@@ -939,35 +1225,36 @@ With prefix argument, prompt for a single ad-hoc QUERY."
             #'majutsu-gerrit-dashboard--kill-buffer-query nil t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-gerrit-dashboard-mode))
-  "Return the dashboard query identity for the current buffer."
+  "Return the top-level dashboard item identity for the current buffer."
   (when majutsu-gerrit-dashboard--state
-    (mapcar #'majutsu-gerrit-dashboard-query-id
-            (majutsu-gerrit-dashboard-state-sections
+    (mapcar #'majutsu-gerrit-dashboard--item-id
+            (majutsu-gerrit-dashboard-state-items
              majutsu-gerrit-dashboard--state))))
 
 (defun majutsu-gerrit-dashboard-refresh-buffer ()
   "Refresh the Gerrit dashboard buffer."
   (majutsu--assert-mode 'majutsu-gerrit-dashboard-mode)
   (let* ((state (majutsu-gerrit-dashboard--state))
-         (sections (majutsu-gerrit-dashboard-state-sections state))
-         (groups (and sections
-                      (majutsu-gerrit-dashboard--fetch
-                       sections
-                       (majutsu-gerrit-dashboard-state-remote state)
-                       majutsu--default-directory
-                       (majutsu-gerrit-dashboard-state-limit state)
-                       (majutsu-gerrit-dashboard-state-start state)
-                       (majutsu-gerrit-dashboard-state-options state)))))
+         (items (majutsu-gerrit-dashboard-state-items state))
+         (queries (majutsu-gerrit-dashboard--leaf-queries items))
+         (results (and queries
+                       (majutsu-gerrit-dashboard--fetch
+                        queries
+                        (majutsu-gerrit-dashboard-state-remote state)
+                        majutsu--default-directory
+                        (majutsu-gerrit-dashboard-state-limit state)
+                        (majutsu-gerrit-dashboard-state-start state)
+                        (majutsu-gerrit-dashboard-state-options state)))))
     (magit-insert-section (gerrit-dashboard state)
       (magit-insert-heading
         (format "%s\n" (or (majutsu-gerrit-dashboard-state-title state)
                            "Gerrit Dashboard")))
       (let ((inserted 0))
-        (dolist (group groups)
-          (unless (and (majutsu-gerrit-dashboard-state-hide-empty state)
-                       (null (cdr group)))
-            (cl-incf inserted)
-            (majutsu-gerrit-dashboard--insert-query (car group) (cdr group))))
+        (dolist (item items)
+          (when (majutsu-gerrit-dashboard--insert-item
+                 item results
+                 (majutsu-gerrit-dashboard-state-hide-empty state))
+            (cl-incf inserted)))
         (when (zerop inserted)
           (insert (majutsu-gerrit-dashboard--face
                    "No matching dashboard sections.\n" 'shadow)))))))

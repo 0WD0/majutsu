@@ -125,7 +125,7 @@ the namespace jj imports as a remote bookmark."
 If CHANGE was uploaded from this repo, show the local change it came
 from in a diff buffer.  Otherwise fetch its current patch set and create
 a child on it.  Interactively, use the Gerrit change section at point."
-  (interactive (list (magit-section-value-if 'majutsu-gerrit-change)))
+  (interactive (list (magit-section-value-if 'gerrit-change)))
   (unless change
     (user-error "No Gerrit change at point"))
   (let* ((directory (or directory majutsu--default-directory default-directory))
