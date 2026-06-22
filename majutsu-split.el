@@ -172,8 +172,7 @@
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute split" majutsu-split-execute)
-    ("RET" "Execute split" majutsu-split-execute)
-    ("q" "Quit" transient-quit-one)]]
+    ("RET" "Execute split" majutsu-split-execute)]]
   (interactive)
   (transient-setup
    'majutsu-split nil nil

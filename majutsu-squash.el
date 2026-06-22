@@ -218,8 +218,7 @@ a jj-commit section, add --revision from that section."
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute squash" majutsu-squash-execute)
-    ("RET" "Execute squash" majutsu-squash-execute)
-    ("q" "Quit" transient-quit-one)]]
+    ("RET" "Execute squash" majutsu-squash-execute)]]
   (interactive)
   (transient-setup
    'majutsu-squash nil nil

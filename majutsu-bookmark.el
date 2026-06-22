@@ -409,13 +409,11 @@ REMOTES are remote name patterns passed via repeated `--remote`."
   "Internal transient for jj bookmark operations."
   :transient-non-suffix t
   ["Bookmark Operations"
-   [
-    ("l" "List bookmarks" majutsu-bookmark-list
+   [("l" "List bookmarks" majutsu-bookmark-list
      :description "Show bookmark list")
     ("c" "Create bookmark" majutsu-bookmark-create
      :description "Create new bookmark")]
-   [
-    ("a" "Advance bookmark(s)" majutsu-bookmark-advance
+   [("a" "Advance bookmark(s)" majutsu-bookmark-advance
      :description "Advance default selection")
     ("A" "Advance bookmark(s) to revset" majutsu-bookmark-advance-to
      :description "Advance default selection to revset")
@@ -429,17 +427,14 @@ REMOTES are remote name patterns passed via repeated `--remote`."
      :description "Move allowing backwards")
     ("r" "Rename bookmark" majutsu-bookmark-rename
      :description "Rename bookmark")]
-   [
-    ("t" "Track remote" majutsu-bookmark-track
+   [("t" "Track remote" majutsu-bookmark-track
      :description "Track remote bookmark")
     ("u" "Untrack remote" majutsu-bookmark-untrack
      :description "Stop tracking remote")]
-   [
-    ("d" "Delete bookmark" majutsu-bookmark-delete
+   [("d" "Delete bookmark" majutsu-bookmark-delete
      :description "Delete (propagate)")
     ("f" "Forget bookmark" majutsu-bookmark-forget
-     :description "Forget (local)")]
-   [("q" "Quit" transient-quit-one)]])
+     :description "Forget (local)")]])
 
 ;;; _
 (provide 'majutsu-bookmark)

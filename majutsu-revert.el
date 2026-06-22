@@ -165,8 +165,7 @@ destination, fill with --revisions and --insert-after defaults."
    ["Actions"
     ("_" "Revert" majutsu-revert-execute)
     ("V" "Revert" majutsu-revert-execute)
-    ("RET" "Revert" majutsu-revert-execute)
-    ("q" "Quit" transient-quit-one)]]
+    ("RET" "Revert" majutsu-revert-execute)]]
   (interactive)
   (transient-setup
    'majutsu-revert nil nil

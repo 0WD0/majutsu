@@ -193,18 +193,14 @@ This is a convenience wrapper around `jj tag set --allow-move'."
   "Internal transient for jj tag operations."
   :transient-non-suffix t
   ["Tag Operations"
-   [
-    ("l" "List tags" majutsu-tag-list
+   [("l" "List tags" majutsu-tag-list
      :description "Show tag list")]
-   [
-    ("s" "Set tag(s)" majutsu-tag-set
+   [("s" "Set tag(s)" majutsu-tag-set
      :description "Create/update tag(s)")
     ("m" "Move tag(s)" majutsu-tag-move
      :description "Move existing tags")]
-   [
-    ("d" "Delete tag(s)" majutsu-tag-delete
-     :description "Delete tag(s)")]
-   [("q" "Quit" transient-quit-one)]])
+   [("d" "Delete tag(s)" majutsu-tag-delete
+     :description "Delete tag(s)")]])
 
 ;;; _
 (provide 'majutsu-tag)

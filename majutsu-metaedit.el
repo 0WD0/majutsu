@@ -144,8 +144,7 @@ With prefix ARG, pre-enable --ignore-immutable."
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("m" "Metaedit" majutsu-metaedit-execute)
-    ("RET" "Metaedit" majutsu-metaedit-execute)
-    ("q" "Quit" transient-quit-one)]])
+    ("RET" "Metaedit" majutsu-metaedit-execute)]])
 
 ;;; _
 (provide 'majutsu-metaedit)

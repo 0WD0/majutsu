@@ -126,8 +126,7 @@ jj-commit section, add --from from that section."
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("a" "Absorb" majutsu-absorb-execute)
-    ("RET" "Absorb" majutsu-absorb-execute)
-    ("q" "Quit" transient-quit-one)]]
+    ("RET" "Absorb" majutsu-absorb-execute)]]
   (interactive)
   (let* ((file (majutsu-file-at-point))
          (files (cond

@@ -1529,8 +1529,7 @@ REVSET is passed to jj diff using `--revisions='."
     ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments :transient t)
     ("W" "Save as repo default" majutsu-transient-save-repository-defaults :transient t)
-    ("g" "Refresh" majutsu-refresh :transient t)
-    ("q" "Quit" transient-quit-one)]]
+    ("g" "Refresh" majutsu-refresh :transient t)]]
   (interactive)
   (transient-setup
    'majutsu-diff nil nil

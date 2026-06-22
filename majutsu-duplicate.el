@@ -141,8 +141,7 @@ With prefix ARG, open the duplicate transient."
     (majutsu-duplicate:before)]
    ["Actions"
     ("y" "Duplicate changes" majutsu-duplicate-dwim)
-    ("RET" "Duplicate changes" majutsu-duplicate-dwim)
-    ("q" "Quit" transient-quit-one)]]
+    ("RET" "Duplicate changes" majutsu-duplicate-dwim)]]
   (interactive)
   (transient-setup
    'majutsu-duplicate nil nil

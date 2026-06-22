@@ -393,8 +393,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("o" "Git root" majutsu-git-root)]
    ["Repository"
     ("c" "Clone" majutsu-git-clone-transient)
-    ("i" "Init" majutsu-git-init-transient)]
-   [("q" "Quit" transient-quit-one)]])
+    ("i" "Init" majutsu-git-init-transient)]])
 
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
@@ -420,8 +419,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-y" "Dry run" "--dry-run")]
    [("p" "Push" majutsu-git-push)
     ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
-     :transient t)
-    ("q" "Quit" transient-quit-one)]])
+     :transient t)]])
 
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
@@ -439,8 +437,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)
     ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
-     :transient t)
-    ("q" "Quit" transient-quit-one)]])
+     :transient t)]])
 
 (transient-define-prefix majutsu-git-remote-add-transient ()
   "Transient for adding a Git remote."
@@ -451,8 +448,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-T" "Fetch tags" "--fetch-tags="
      :choices ("all" "included" "none"))
     (majutsu-git-remote-add:--push-url)]
-   [("a" "Add" majutsu-git-remote-add)
-    ("q" "Quit" transient-quit-one)]])
+   [("a" "Add" majutsu-git-remote-add)]])
 
 (transient-define-prefix majutsu-git-remote-set-url-transient ()
   "Transient for setting Git remote URLs."
@@ -463,8 +459,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     (majutsu-git-remote-set-url:--remote)
     (majutsu-git-remote-set-url:--fetch)
     (majutsu-git-remote-set-url:--push)]
-   [("u" "Set URL" majutsu-git-remote-set-url)
-    ("q" "Quit" transient-quit-one)]])
+   [("u" "Set URL" majutsu-git-remote-set-url)]])
 
 (transient-define-prefix majutsu-git-remote-transient ()
   "Transient for managing Git remotes."
@@ -476,8 +471,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("a" "Add" majutsu-git-remote-add-transient)
     ("d" "Remove" majutsu-git-remote-remove)
     ("r" "Rename" majutsu-git-remote-rename)
-    ("u" "Set URL" majutsu-git-remote-set-url-transient)
-    ("q" "Quit" transient-quit-one)]])
+    ("u" "Set URL" majutsu-git-remote-set-url-transient)]])
 
 (transient-define-prefix majutsu-git-clone-transient ()
   "Transient for jj git clone."
@@ -491,8 +485,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-d" "Depth" "--depth=" :reader #'transient-read-number-N+)
     ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))
     (majutsu-git:--branch)]
-   [("c" "Clone" majutsu-git-clone)
-    ("q" "Quit" transient-quit-one)]])
+   [("c" "Clone" majutsu-git-clone)]])
 
 (transient-define-prefix majutsu-git-init-transient ()
   "Transient for jj git init."
@@ -503,8 +496,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
     ("-g" "Use existing git repo" "--git-repo=")]
-   [("i" "Init" majutsu-git-init)
-    ("q" "Quit" transient-quit-one)]])
+   [("i" "Init" majutsu-git-init)]])
 
 ;;; _
 (provide 'majutsu-git)

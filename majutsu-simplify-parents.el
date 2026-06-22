@@ -108,8 +108,7 @@
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("P" "Simplify" majutsu-simplify-parents-execute)
-    ("RET" "Simplify" majutsu-simplify-parents-execute)
-    ("q" "Quit" transient-quit-one)]])
+    ("RET" "Simplify" majutsu-simplify-parents-execute)]])
 
 ;;; _
 (provide 'majutsu-simplify-parents)

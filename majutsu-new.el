@@ -221,8 +221,7 @@ a jj-commit section, add -r from that section."
     ("o" "Create new change" majutsu-new-execute
      :description "Create new change")
     ("RET" "Create new change" majutsu-new-execute
-     :description "Create new change")
-    ("q" "Quit" transient-quit-one)]]
+     :description "Create new change")]]
   (interactive)
   (transient-setup
    'majutsu-new nil nil
