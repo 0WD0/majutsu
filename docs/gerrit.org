@@ -33,6 +33,113 @@ in the future, so they only depend on Majutsu's =majutsu-process=,
 =majutsu-remote= modules, and not on jj-specific logic such as
 =majutsu-jj.el= except in the existing =majutsu-gerrit.el= entry file.
 
+* User Interface
+
+This section documents the parts of the Gerrit client that are already
+implemented.  Later sections describe the design for remaining modules.
+
+** Gerrit Dispatch
+
+~M-x majutsu-gerrit-dispatch~ opens the top-level Gerrit dispatcher from
+any Gerrit buffer.  It is bound to ~?~ in Gerrit dashboard buffers and,
+with Evil active, in normal state as well.
+
+The dispatch is the intended entry point for all Gerrit-related
+commands, including future change-detail and review buffers.  The
+initial keys are:
+
+| Key | Command                              | Description                            |
+|-----+--------------------------------------+----------------------------------------|
+| ~u~ | ~majutsu-gerrit-upload-transient~    | Open the =jj gerrit upload= transient. |
+| ~R~ | ~majutsu-gerrit-dashboard-transient~ | Open the dashboard options transient.  |
+| ~d~ | ~majutsu-gerrit-dashboard-download-change~ | Download the change at point.    |
+| ~g~ | ~majutsu-gerrit-dashboard-refresh-buffer~  | Refresh the current Gerrit buffer. |
+| ~q~ | ~transient-quit-one~                 | Close the dispatch.                    |
+
+** Dashboard
+
+~M-x majutsu-gerrit-dashboard~ opens a section-based Gerrit dashboard
+for the current jj repository.  The dashboard is backed by a single
+buffer-local state object (~majutsu-gerrit-dashboard--state~) that
+contains a tree of /items/.  Each item is either a query or a group of
+queries.  The state is the source of truth; =magit-section= is used only
+for rendering and as a cursor into the state.
+
+Top-level dashboard items are rendered as sections.  Query sections show
+their title, change count, and the underlying Gerrit query string.  A
+query section can be empty; it is hidden only when =--hide-empty= is
+active or the query itself is marked hidden-empty.  Group sections
+contain nested query sections and are shown only when at least one child
+query has visible results.
+
+*** Built-in dashboard items
+
+The default dashboard uses the same Polygerrit-style queries as Gerrit's
+own user dashboard:
+
+- Has draft comments
+- Your turn
+- Work in progress
+- Outgoing reviews
+- Incoming reviews
+- CCed on
+- Recently closed
+
+You can add arbitrary query sections with ~a~ and user dashboard groups
+with ~U~.  A user dashboard group targets a specific Gerrit user
+(default ~self~) and expands into the Polygerrit template with ~${user}~
+replaced.  Self-only sections (such as "Has draft comments" and "Work in
+progress") are omitted when the target is not ~self~.
+
+*** Editing and removing sections
+
+- ~e~ :: Edit the query string of the current query section, or change
+the target user of the current user dashboard group.
+- ~E~ :: Rename the title of the current query or group section.
+- ~k~ :: Remove the current section.  Removing requires confirmation.
+
+*** Key bindings
+
+The dashboard inherits =magit-section-mode-map= for navigation and
+toggles, so standard section movement and ~TAB~ work.  Dashboard-specific
+keys are:
+
+| Key | Command                                     | Description                                                |
+|-----+---------------------------------------------+------------------------------------------------------------|
+| ~RET~ | ~majutsu-gerrit-dashboard-visit~              | Browse the change at point, or toggle the current section. |
+| ~g~   | ~majutsu-refresh~                             | Refresh the dashboard.                                     |
+| ~q~   | ~majutsu-mode-bury-buffer~                    | Bury the buffer.                                           |
+| ~?~   | ~majutsu-gerrit-dispatch~                     | Open the Gerrit dispatch.                                  |
+| ~a~   | ~majutsu-gerrit-dashboard-add-section~        | Add a custom query section.                                |
+| ~U~   | ~majutsu-gerrit-dashboard-add-user-dashboard~ | Add a user dashboard group.                                |
+| ~e~   | ~majutsu-gerrit-dashboard-edit-section-query~ | Edit query / user dashboard target.                        |
+| ~E~   | ~majutsu-gerrit-dashboard-edit-section-title~ | Rename section title.                                      |
+| ~k~   | ~majutsu-gerrit-dashboard-remove-section~     | Remove current section (confirm).                          |
+| ~b~   | ~majutsu-gerrit-dashboard-browse-change~      | Open current change in browser.                            |
+| ~d~   | ~majutsu-gerrit-dashboard-download-change~    | Download current change.                                   |
+| ~R~   | ~majutsu-gerrit-dashboard-transient~          | Open dashboard options transient.                          |
+
+With Evil active, the dashboard uses normal-state bindings that follow
+evil-collection's Magit/Forge conventions:
+
+| Key | Command                                     |
+|-----+---------------------------------------------|
+| ~RET~ | ~majutsu-gerrit-dashboard-visit~              |
+| ~a~   | ~majutsu-gerrit-dashboard-add-section~        |
+| ~U~   | ~majutsu-gerrit-dashboard-add-user-dashboard~ |
+| ~e~   | ~majutsu-gerrit-dashboard-edit-section-query~ |
+| ~E~   | ~majutsu-gerrit-dashboard-edit-section-title~ |
+| ~b~   | ~majutsu-gerrit-dashboard-browse-change~      |
+| ~d~   | ~majutsu-gerrit-dashboard-download-change~    |
+| ~x~   | ~majutsu-gerrit-dashboard-remove-section~     |
+| ~g r~ | ~majutsu-refresh~                             |
+| ~R~   | ~majutsu-gerrit-dashboard-transient~          |
+| ~q~   | ~majutsu-mode-bury-buffer~                    |
+| ~?~   | ~majutsu-gerrit-dispatch~                     |
+
+Note that ~k~ is *not* bound in Evil normal state; it keeps its
+ Evil "previous line" meaning.  Destructive removal uses ~x~ instead.
+
 * Gerrit server facts used by the design
 
 This section is based on the Gerrit source tree in =~/Projects/gerrit=,

@@ -28,6 +28,7 @@
 (declare-function majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-gerrit-dashboard-visit "majutsu-gerrit-dashboard" ())
 (declare-function majutsu-gerrit-dashboard-remove-section "majutsu-gerrit-dashboard" ())
+(declare-function majutsu-gerrit-dispatch "majutsu-gerrit" ())
 (declare-function majutsu-op-log-restore-at-point "majutsu-op" ())
 (declare-function majutsu-op-log-revert-at-point "majutsu-op" ())
 (declare-function majutsu-op-diff-default-action "majutsu-op" ())
@@ -273,7 +274,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "x") #'majutsu-gerrit-dashboard-remove-section
     (kbd "g r") #'majutsu-refresh
     (kbd "R") #'majutsu-gerrit-dashboard-transient
-    (kbd "q") #'majutsu-mode-bury-buffer)
+    (kbd "q") #'majutsu-mode-bury-buffer
+    (kbd "?") #'majutsu-gerrit-dispatch)
 
   ;; majutsu-conflict-mode is a minor mode
   (add-hook 'majutsu-conflict-mode-hook #'evil-normalize-keymaps)

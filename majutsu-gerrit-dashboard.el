@@ -35,6 +35,7 @@
 (declare-function majutsu-gerrit-topic-candidate-data "majutsu-gerrit")
 (declare-function majutsu-gerrit--remote-branch-candidate-data "majutsu-gerrit")
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
+(declare-function majutsu-gerrit-dispatch "majutsu-gerrit" ())
 
 (defgroup majutsu-gerrit-dashboard nil
   "Gerrit dashboard for Majutsu."
@@ -1200,6 +1201,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
   "RET" #'majutsu-gerrit-dashboard-visit
   "g" #'majutsu-refresh
   "q" #'majutsu-mode-bury-buffer
+  "?" #'majutsu-gerrit-dispatch
   "a" #'majutsu-gerrit-dashboard-add-section
   "U" #'majutsu-gerrit-dashboard-add-user-dashboard
   "e" #'majutsu-gerrit-dashboard-edit-section-query

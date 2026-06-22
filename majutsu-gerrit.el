@@ -35,6 +35,8 @@
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
 (autoload 'majutsu-gerrit-dashboard "majutsu-gerrit-dashboard" nil t)
 (autoload 'majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" nil t)
+(autoload 'majutsu-gerrit-dashboard-download-change "majutsu-gerrit-dashboard" nil t)
+(autoload 'majutsu-gerrit-dashboard-refresh-buffer "majutsu-gerrit-dashboard" nil t)
 
 ;;; Customization
 
@@ -663,6 +665,20 @@ its own @/@- default."
   :key "-X"
   :argument "--trace="
   :prompt "Trace: ")
+
+;;;###autoload(autoload 'majutsu-gerrit-dispatch "majutsu-gerrit" nil t)
+(transient-define-prefix majutsu-gerrit-dispatch ()
+  "Top-level dispatcher for Gerrit commands.
+Available from any Gerrit buffer, including the dashboard and future
+change/topic buffers."
+  :transient-non-suffix t
+  ["Gerrit"
+   [("u" "Upload" majutsu-gerrit-upload-transient)
+    ("R" "Dashboard" majutsu-gerrit-dashboard-transient)
+    ("d" "Download change" majutsu-gerrit-dashboard-download-change)
+    ("g" "Refresh" majutsu-gerrit-dashboard-refresh-buffer)]]
+  (interactive)
+  (transient-setup 'majutsu-gerrit-dispatch))
 
 ;;;###autoload(autoload 'majutsu-gerrit-upload-transient "majutsu-gerrit" nil t)
 (transient-define-prefix majutsu-gerrit-upload-transient ()
