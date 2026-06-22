@@ -34,8 +34,10 @@
                   arg))
               majutsu-buffer-diff-range))))
 
-(defun majutsu-split-execute (args)
+(transient-define-suffix majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."
+  :description "Execute split"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-split)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
                (selection-buf (majutsu-interactive--selection-buffer))
@@ -148,9 +150,7 @@
   "Transient for jj split operations."
   :man-page "jj-split"
   :transient-non-suffix t
-  [
-   :description "JJ Split"
-   ["Selection"
+  [["Selection"
     (majutsu-split:--revision)
     (majutsu-split:--onto)
     (majutsu-split:--insert-after)
@@ -174,8 +174,8 @@
     ("-t" "Tool" "--tool=")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("s" "Execute split" majutsu-split-execute)
-    ("RET" "Execute split" majutsu-split-execute)]]
+    (majutsu-split-execute :key "s")
+    (majutsu-split-execute)]]
   (interactive)
   (transient-setup
    'majutsu-split nil nil

@@ -168,8 +168,10 @@ return the same context defaults that execution would use."
 
 ;;; Execution
 
-(defun majutsu-squash-execute (args)
+(transient-define-suffix majutsu-squash-execute (args)
   "Execute squash with selections recorded in the transient."
+  :description "Execute squash"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-squash-arguments)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
                (selection-buf (majutsu-interactive--selection-buffer))
@@ -325,9 +327,7 @@ return the same context defaults that execution would use."
                   ("--into=" "--insert-before=")
                   ("--onto=" "--insert-after=")
                   ("--onto=" "--insert-before="))
-  [
-   :description "JJ Squash"
-   ["Selection"
+  [["Selection"
     (majutsu-squash:--from)
     (majutsu-squash:--into)
     (majutsu-squash:--onto)
@@ -350,8 +350,8 @@ return the same context defaults that execution would use."
     ("-k" "Keep emptied commit" ("-k" "--keep-emptied"))
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("s" "Execute squash" majutsu-squash-execute)
-    ("RET" "Execute squash" majutsu-squash-execute)]]
+    (majutsu-squash-execute :key "s")
+    (majutsu-squash-execute)]]
   (interactive)
   (transient-setup
    'majutsu-squash nil nil

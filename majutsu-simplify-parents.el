@@ -33,8 +33,10 @@
                 (list rev))
               '("@"))))
 
-(defun majutsu-simplify-parents-execute (args)
+(transient-define-suffix majutsu-simplify-parents-execute (args)
   "Execute jj simplify-parents with ARGS from transient."
+  :description "Simplify"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-simplify-parents-transient)))
   (let* ((args (if (or (transient-arg-value "--source=" args)
                        (transient-arg-value "--revision=" args))
@@ -90,9 +92,8 @@
   "Transient for jj simplify-parents operations."
   :man-page "jj-simplify-parents"
   :transient-non-suffix t
-  [:description
-   "JJ Simplify Parents"
-   ["Selection"
+  :description "JJ Simplify Parents"
+  [["Selection"
     (majutsu-simplify-parents:--source)
     (majutsu-simplify-parents:--revision)
     (majutsu-simplify-parents:source)
@@ -102,8 +103,8 @@
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("P" "Simplify" majutsu-simplify-parents-execute)
-    ("RET" "Simplify" majutsu-simplify-parents-execute)]])
+    (majutsu-simplify-parents-execute :key "P")
+    (majutsu-simplify-parents-execute)]])
 
 ;;; _
 (provide 'majutsu-simplify-parents)

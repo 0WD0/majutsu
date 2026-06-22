@@ -44,9 +44,11 @@ destination, fill with --revision and --insert-after defaults."
           (setq args (append args (list (concat "--insert-after=" rev)))))))
     args))
 
-;;;###autoload
-(defun majutsu-revert-execute (args)
+;;;###autoload(autoload 'majutsu-revert-execute "majutsu-revert" nil t)
+(transient-define-suffix majutsu-revert-execute (args)
   "Execute jj revert with ARGS from the transient."
+  :description "Revert"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-revert-arguments)))
   (let ((has-revision (transient-arg-value "--revision=" args))
         (has-destination (or (transient-arg-value "--onto=" args)
@@ -138,9 +140,8 @@ destination, fill with --revision and --insert-after defaults."
                   ("--onto=" "--insert-before=")
                   ("--insert-after=" "--insert-before="))
   :transient-non-suffix t
-  [:description
-   "JJ Revert"
-   ["Selection"
+  :description "JJ Revert"
+  [["Selection"
     (majutsu-revert:--revision)
     (majutsu-revert:revision)
     ("c" "Clear selections" majutsu-selection-clear
@@ -155,9 +156,9 @@ destination, fill with --revision and --insert-after defaults."
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("_" "Revert" majutsu-revert-execute)
-    ("V" "Revert" majutsu-revert-execute)
-    ("RET" "Revert" majutsu-revert-execute)]]
+    (majutsu-revert-execute :key "_")
+    (majutsu-revert-execute :key "V")
+    (majutsu-revert-execute)]]
   (interactive)
   (transient-setup
    'majutsu-revert nil nil

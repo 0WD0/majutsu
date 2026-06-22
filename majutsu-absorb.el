@@ -50,9 +50,11 @@ jj-commit section, add --from from that section."
         (push (concat "--from=" rev) args)))
     args))
 
-;;;###autoload
-(defun majutsu-absorb-execute (args)
+;;;###autoload(autoload 'majutsu-absorb-execute "majutsu-absorb" nil t)
+(transient-define-suffix majutsu-absorb-execute (args)
   "Execute jj absorb with ARGS from the transient."
+  :description "Absorb"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-absorb-arguments)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
                (exit (apply #'majutsu-run-jj
@@ -111,9 +113,7 @@ jj-commit section, add --from from that section."
   "Transient for jj absorb operations."
   :man-page "jj-absorb"
   :transient-non-suffix t
-  [
-   :description "JJ Absorb"
-   ["Selection"
+  [["Selection"
     (majutsu-absorb:--from)
     (majutsu-absorb:--into)
     (majutsu-absorb:from)
@@ -124,8 +124,8 @@ jj-commit section, add --from from that section."
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("a" "Absorb" majutsu-absorb-execute)
-    ("RET" "Absorb" majutsu-absorb-execute)]]
+    (majutsu-absorb-execute :key "a")
+    (majutsu-absorb-execute)]]
   (interactive)
   (let* ((file (majutsu-file-at-point))
          (files (cond

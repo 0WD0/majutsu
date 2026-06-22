@@ -56,9 +56,11 @@ revision argument is present. Outside the transient, return defaults."
       (user-error "Metaedit only supports a single revision"))
      (t args))))
 
-;;;###autoload
-(defun majutsu-metaedit-execute (args)
+;;;###autoload(autoload 'majutsu-metaedit-execute "majutsu-metaedit" nil t)
+(transient-define-suffix majutsu-metaedit-execute (args)
   "Execute jj metaedit with ARGS from the transient."
+  :description "Metaedit"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-metaedit-arguments)))
   (let ((exit (apply #'majutsu-run-jj "metaedit" args)))
     (when (zerop exit)
@@ -128,9 +130,8 @@ With prefix ARG, pre-enable --ignore-immutable."
   :incompatible '(("--update-author" "--author=")
                   ("--update-author-timestamp" "--author-timestamp="))
   :transient-non-suffix t
-  [:description
-   "JJ Metaedit"
-   ["Selection"
+  :description "JJ Metaedit"
+  [["Selection"
     (majutsu-metaedit:-r)]
    ["Metadata"
     (majutsu-metaedit:--message)
@@ -143,8 +144,8 @@ With prefix ARG, pre-enable --ignore-immutable."
     (majutsu-metaedit:--force-rewrite)
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("m" "Metaedit" majutsu-metaedit-execute)
-    ("RET" "Metaedit" majutsu-metaedit-execute)]])
+    (majutsu-metaedit-execute :key "m")
+    (majutsu-metaedit-execute)]])
 
 ;;; _
 (provide 'majutsu-metaedit)

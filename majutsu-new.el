@@ -163,9 +163,11 @@ a jj-commit section, add -r from that section."
         (push (concat "-r=" rev) args)))
     args))
 
-;;;###autoload
-(defun majutsu-new-execute (args)
+;;;###autoload(autoload 'majutsu-new-execute "majutsu-new" nil t)
+(transient-define-suffix majutsu-new-execute (args)
   "Execute jj new using the current transient selections."
+  :description "Create new change"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-new-arguments)))
   (majutsu-new--run-command (cons "new" args)))
 
@@ -216,10 +218,8 @@ a jj-commit section, add -r from that section."
     (majutsu-new-infix-no-edit)
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("o" "Create new change" majutsu-new-execute
-     :description "Create new change")
-    ("RET" "Create new change" majutsu-new-execute
-     :description "Create new change")]]
+    (majutsu-new-execute :key "o")
+    (majutsu-new-execute)]]
   (interactive)
   (transient-setup
    'majutsu-new nil nil

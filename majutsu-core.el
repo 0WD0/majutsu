@@ -19,6 +19,7 @@
 (require 'majutsu-jj)
 (require 'majutsu-base)
 (require 'majutsu-process)
+(require 'cl-lib)
 (require 'transient)
 
 ;;; Transient UX integration
@@ -47,6 +48,39 @@ are also commonly invoked directly."
           (const :tag "Selected" selected)
           (const :tag "Current" current)
           (const :tag "Never" never)))
+
+(defun majutsu--transient-default-action-set (symbol value)
+  "Set SYMBOL to VALUE after validating it as a key description."
+  (unless (and (stringp value)
+               (> (length value) 0)
+               (condition-case nil
+                   (let ((keys (kbd value)))
+                     (or (stringp keys) (vectorp keys)))
+                 (error nil)))
+    (user-error "Invalid transient key: %S" value))
+  (set-default symbol value))
+
+(defcustom majutsu-transient-default-action "RET"
+  "Key used for default action suffixes in Majutsu transients.
+
+This controls Majutsu transient suffixes that perform the primary action
+for their prefix, such as executing a rebase, squash, split, or upload.
+Set this to another key description, such as \".\", to move all default
+action suffixes to that key."
+  :group 'majutsu
+  :type 'string
+  :set #'majutsu--transient-default-action-set)
+
+(defclass majutsu-transient-default-action-suffix (transient-suffix)
+  ()
+  "Transient suffix whose key follows `majutsu-transient-default-action'.")
+
+;; Do not set `key' as a class initform: suffix prototypes are created at
+;; load time, but this option should be read when each transient is shown.
+(cl-defmethod transient--init-suffix-key ((obj majutsu-transient-default-action-suffix))
+  (if (slot-boundp obj 'key)
+      (cl-call-next-method)
+    (oset obj key majutsu-transient-default-action)))
 
 (defun majutsu--transient--majutsu-prefix-p ()
   "Return non-nil when the active transient prefix is a Majutsu command."

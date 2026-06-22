@@ -382,9 +382,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   "Top-level transient for jj git operations."
   :man-page "jj-git"
   :transient-non-suffix t
-  [:description
-   "JJ Git"
-   ["Sync"
+  :description "JJ Git"
+  [["Sync"
     ("p" "Push" majutsu-git-push-transient)
     ("f" "Fetch" majutsu-git-fetch-transient)
     ("e" "Export" majutsu-git-export)
@@ -403,9 +402,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :repo-namespace 'majutsu-git
   :repo-key 'majutsu-git-push
   :repo-filter #'majutsu-git-push--repo-args
-  [:description
-   "JJ Git Push"
-   ["Arguments"
+  :description "JJ Git Push"
+  [["Arguments"
     (majutsu-git-push:--remote)
     (majutsu-git:--bookmark)
     ("-a" "All bookmarks" "--all")
@@ -429,9 +427,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :repo-namespace 'majutsu-git
   :repo-key 'majutsu-git-fetch
   :repo-filter #'majutsu-git-fetch--repo-args
-  [:description
-   "JJ Git Fetch"
-   ["Arguments"
+  :description "JJ Git Fetch"
+  [["Arguments"
     (majutsu-git-fetch:--remote)
     (majutsu-git:--branch)
     ("-t" "Tracked only" "--tracked")
@@ -443,9 +440,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-remote-add-transient ()
   "Transient for adding a Git remote."
   :man-page "jj-git-remote-add"
-  [:description
-   "JJ Git Remote Add"
-   ["Arguments"
+  :description "JJ Git Remote Add"
+  [["Arguments"
     ("-T" "Fetch tags" "--fetch-tags="
      :choices ("all" "included" "none"))
     (majutsu-git-remote-add:--push-url)]
@@ -454,9 +450,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-remote-set-url-transient ()
   "Transient for setting Git remote URLs."
   :man-page "jj-git-remote-set-url"
-  [:description
-   "JJ Git Remote Set URL"
-   ["Arguments"
+  :description "JJ Git Remote Set URL"
+  [["Arguments"
     (majutsu-git-remote-set-url:--remote)
     (majutsu-git-remote-set-url:--fetch)
     (majutsu-git-remote-set-url:--push)]
@@ -465,9 +460,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-remote-transient ()
   "Transient for managing Git remotes."
   :man-page "jj-git-remote"
-  [:description
-   "JJ Git Remote"
-   ["Actions"
+  :description "JJ Git Remote"
+  [["Actions"
     ("l" "List" majutsu-git-remote-list)
     ("a" "Add" majutsu-git-remote-add-transient)
     ("d" "Remove" majutsu-git-remote-remove)
@@ -477,9 +471,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-clone-transient ()
   "Transient for jj git clone."
   :man-page "jj-git-clone"
-  [:description
-   "JJ Git Clone"
-   ["Arguments"
+  :description "JJ Git Clone"
+  [["Arguments"
     (majutsu-git-clone:--remote)
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
@@ -491,9 +484,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-init-transient ()
   "Transient for jj git init."
   :man-page "jj-git-init"
-  [:description
-   "JJ Git Init"
-   ["Arguments"
+  :description "JJ Git Init"
+  [["Arguments"
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
     ("-g" "Use existing git repo" "--git-repo=")]

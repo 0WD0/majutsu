@@ -66,8 +66,11 @@ In diff buffer on a file section, restore only that file."
       (when (yes-or-no-p "Discard all working copy changes? ")
         (majutsu-run-jj "restore")))))
 
-(defun majutsu-restore-execute (args)
+;;;###autoload(autoload 'majutsu-restore-execute "majutsu-restore" nil t)
+(transient-define-suffix majutsu-restore-execute (args)
   "Execute jj restore with ARGS from the transient."
+  :description "Execute restore"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-restore)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
                (selection-buf (majutsu-interactive--selection-buffer))
@@ -154,9 +157,7 @@ In diff buffer on a file section, restore only that file."
   :incompatible '(("--from=" "--changes-in=")
                   ("--to=" "--changes-in="))
   :transient-non-suffix t
-  [
-   :description "JJ Restore"
-   ["Selection"
+  [["Selection"
     (majutsu-restore:--from)
     (majutsu-restore:--to)
     (majutsu-restore:--changes-in)
@@ -176,7 +177,8 @@ In diff buffer on a file section, restore only that file."
     ("-d" "Restore descendants" "--restore-descendants")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("r" "Restore" majutsu-restore-execute)]]
+    (majutsu-restore-execute :key "r")
+    (majutsu-restore-execute)]]
   (interactive)
   (let* ((file (majutsu-file-at-point))
          (files (cond

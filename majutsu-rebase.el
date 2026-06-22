@@ -27,10 +27,12 @@
 
 ;;; majutsu-rebase
 
-;;;###autoload
-(defun majutsu-rebase-execute (args)
+;;;###autoload(autoload 'majutsu-rebase-execute "majutsu-rebase" nil t)
+(transient-define-suffix majutsu-rebase-execute (args)
   "Execute rebase with selected source and destinations.
 ARGS are passed from the transient."
+  :description "Execute rebase"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-rebase)))
   (let ((has-dest (or (transient-arg-value "--onto=" args)
                       (transient-arg-value "--insert-after=" args)
@@ -158,9 +160,8 @@ ARGS are passed from the transient."
                   ("--onto=" "--insert-after=")
                   ("--onto=" "--insert-before="))
   :transient-non-suffix t
-  [:description
-   "JJ Rebase"
-   ["Source"
+  :description "JJ Rebase"
+  [["Source"
     (majutsu-rebase:--source)
     (majutsu-rebase:--branch)
     (majutsu-rebase:--revision)
@@ -181,7 +182,7 @@ ARGS are passed from the transient."
     ("-kd" "Keep divergent" "--keep-divergent")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    ("RET" "Execute rebase" majutsu-rebase-execute)]]
+    (majutsu-rebase-execute)]]
   (interactive)
   (transient-setup
    'majutsu-rebase nil nil

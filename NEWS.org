@@ -120,6 +120,9 @@
 - Synchronous jj commands remain responsive to prompts ::
   Emacs-based GPG/pinentry prompts can be serviced while the command waits.
 
+- Squash and split execute consistently with ~RET~ ::
+  Their transients keep ~s~ while also using the shared default action key.
+
 - Quitting Ediff resolve without edits keeps conflicts unresolved ::
   ~majutsu-ediff-resolve~ no longer writes a resolved result in that case.
 
