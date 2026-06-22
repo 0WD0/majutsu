@@ -48,13 +48,13 @@ The dispatch is the intended entry point for all Gerrit-related
 commands, including future change-detail and review buffers.  The
 initial keys are:
 
-| Key | Command                              | Description                            |
-|-----+--------------------------------------+----------------------------------------|
-| ~u~ | ~majutsu-gerrit-upload-transient~    | Open the =jj gerrit upload= transient. |
-| ~R~ | ~majutsu-gerrit-dashboard-transient~ | Open the dashboard options transient.  |
-| ~d~ | ~majutsu-gerrit-dashboard-download-change~ | Download the change at point.    |
-| ~g~ | ~majutsu-gerrit-dashboard-refresh-buffer~  | Refresh the current Gerrit buffer. |
-| ~q~ | ~transient-quit-one~                 | Close the dispatch.                    |
+| Key | Command                            | Description                           |
+|-----+------------------------------------+---------------------------------------|
+| ~u~   | ~majutsu-gerrit-upload-transient~    | Open the =jj gerrit upload= transient.  |
+| ~R~   | ~majutsu-gerrit-dashboard-transient~ | Open the dashboard options transient. |
+| ~d~   | ~majutsu-gerrit-download-change~     | Download the change at point.         |
+| ~g~   | ~majutsu-refresh~                    | Refresh the current Gerrit buffer.    |
+| ~q~   | ~transient-quit-one~                 | Close the dispatch.                   |
 
 ** Dashboard
 
@@ -285,7 +285,8 @@ helpers, rather than a single function that always JSON-decodes.
 
 | File                          | Role                                        | Existing/New |
 |-------------------------------+---------------------------------------------+--------------|
-| =majutsu-gerrit.el=           | jj sub-commands + transient + entry points  | Existing     |
+| =majutsu-gerrit.el=           | Shared helpers + top-level dispatch         | Existing     |
+| =majutsu-gerrit-upload.el=    | =jj gerrit upload= transient and command    | Split from existing |
 | =majutsu-gerrit-rest.el=      | curl-based REST client                      | New (M1)     |
 | =majutsu-gerrit-data.el=      | =cl-defstruct= for common Gerrit entities   | New (M2)     |
 | =majutsu-gerrit-dashboard.el= | Section-based dashboard                     | New (M3 done) |

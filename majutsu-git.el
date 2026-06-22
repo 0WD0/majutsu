@@ -20,6 +20,9 @@
 (require 'majutsu-gerrit)
 (require 'majutsu-remote)
 
+(autoload 'majutsu-gerrit-upload-transient "majutsu-gerrit-upload" nil t)
+(autoload 'majutsu-gerrit-dashboard-transient "majutsu-gerrit-dashboard" nil t)
+
 (require 'crm)
 (require 'seq)
 (require 'subr-x)

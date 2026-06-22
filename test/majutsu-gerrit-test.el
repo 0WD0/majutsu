@@ -13,6 +13,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu-gerrit)
+(require 'majutsu-gerrit-upload)
 (require 'majutsu-git)
 
 (defun majutsu-gerrit-test--suffix-prototype (suffix)
@@ -173,7 +174,7 @@
                '("main\tgerrit" "dev\tgerrit" "main\torigin")))
             ((symbol-function 'majutsu--toplevel-safe)
              (lambda () "/repo")))
-    (let* ((payload (majutsu-gerrit--remote-branch-candidate-data))
+    (let* ((payload (majutsu-gerrit-remote-branch-candidate-data))
            (annotations (plist-get payload :annotations))
            (suffix-function (plist-get payload :annotation-suffix-function)))
       (should (eq (plist-get payload :category) 'majutsu-gerrit-remote-branch))
@@ -200,7 +201,7 @@
                (lambda () "/repo"))
               ((symbol-function 'transient-get-value)
                (lambda () '("--remote=gerrit" "--dry-run")))
-              ((symbol-function 'majutsu-gerrit--remote-branch-candidate-data)
+              ((symbol-function 'majutsu-gerrit-remote-branch-candidate-data)
                (lambda (remote)
                  (setq seen remote)
                  '(:category majutsu-gerrit-remote-branch
@@ -224,7 +225,7 @@
                  (lambda () "/repo"))
                 ((symbol-function 'transient-get-value)
                  (lambda () nil))
-                ((symbol-function 'majutsu-gerrit--remote-branch-candidate-data)
+                ((symbol-function 'majutsu-gerrit-remote-branch-candidate-data)
                  (lambda (_remote)
                    (list :category 'majutsu-gerrit-remote-branch
                          :candidates '("main" "dev")
@@ -253,7 +254,7 @@
              (lambda () "/repo"))
             ((symbol-function 'transient-get-value)
              (lambda () nil))
-            ((symbol-function 'majutsu-gerrit--remote-branch-candidate-data)
+            ((symbol-function 'majutsu-gerrit-remote-branch-candidate-data)
              (lambda (_remote)
                '(:category majutsu-gerrit-remote-branch
                  :candidates ("main" "dev"))))
