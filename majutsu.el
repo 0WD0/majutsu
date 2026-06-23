@@ -62,6 +62,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("a" "Absorb"            majutsu-absorb)
     ("y" "Duplicate"         majutsu-duplicate)
     ("Y" "Duplicate (dwim)"  majutsu-duplicate-dwim)
+    (">" "Sparse"            majutsu-sparse)
     ("Z" "Workspaces"        majutsu-workspace)
     ("C-/" "Undo"            majutsu-undo)
     ("C-?" "Redo"            majutsu-redo)]]
