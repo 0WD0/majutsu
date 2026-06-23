@@ -221,11 +221,6 @@ Return the resulting backend symbol."
     (require 'majutsu-color-words))
   majutsu-diff-backend)
 
-(defun majutsu-diff--backend-uses-ansi-p (backend)
-  "Return non-nil when BACKEND should be ANSI-processed by process layer.
-Color-words keeps raw debug output for marker parsing and applies ANSI later."
-  (not (eq backend 'color-words)))
-
 (defun majutsu-diff--set-left-margin (width)
   "Set left margin WIDTH for the current buffer's windows."
   (setq-local left-margin-width width)
