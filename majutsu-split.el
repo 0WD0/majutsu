@@ -37,20 +37,24 @@
   "Execute split with selections recorded in the transient."
   (interactive (list (transient-args 'majutsu-split)))
   (let* ((selection-buf (majutsu-interactive--selection-buffer))
-         ;; Generate patch for SELECTED content (invert=nil)
-         ;; This is what goes into the first commit
-         (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
-         (args (if patch
+         ;; Generate the SELECTED content (invert=nil).  Text hunks become a
+         ;; patch, while whole-file selections cover binary/mode-only changes.
+         ;; This is what goes into the first commit.
+         (operation (majutsu-interactive-build-operation-if-selected
+                     selection-buf nil nil))
+         (patch (plist-get operation :patch))
+         (file-ops (plist-get operation :file-ops))
+         (args (if operation
                    (seq-remove (lambda (arg)
                                  (or (string= arg "--interactive")
                                      (string-prefix-p "--tool=" arg)))
                                args)
                  args)))
-    (if patch
+    (if operation
         (progn
-          ;; reverse=t means reset $right to $left, then apply patch forward
-          ;; Result: $right = selected content = first commit
-          (majutsu-interactive-run-with-patch "split" args patch t)
+          ;; reverse=t means reset $right to $left, then apply selected changes
+          ;; forward.  Result: $right = selected content = first commit.
+          (majutsu-interactive-run-with-patch "split" args patch t file-ops)
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
       (majutsu-run-jj-with-editor (cons "split" args)))))
