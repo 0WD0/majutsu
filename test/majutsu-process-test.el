@@ -427,6 +427,16 @@ the separate standard error process."
         (should (string-match-p "O\n" (buffer-string)))
         (should (string-match-p "E\n" (buffer-string)))))))
 
+(ert-deftest majutsu-process-test-file-responsive-discards-stderr-when-requested ()
+  "With an explicit nil stderr destination, stderr is not mixed into stdout."
+  (majutsu-process-test--with-sh
+    (with-temp-buffer
+      (let ((exit (majutsu--process-file-responsive
+                   "sh" nil (list t nil)
+                   "-c" "printf 'O\\n'; printf 'E\\n' 1>&2")))
+        (should (= 0 exit))
+        (should (equal (buffer-string) "O\n"))))))
+
 (ert-deftest majutsu-process-test-file-supported-p-narrow-contract ()
   "Only the call shapes Majutsu uses are routed through the runner."
   ;; Supported: no infile; stdout as t/buffer/string/nil; stderr nil/t/string.
