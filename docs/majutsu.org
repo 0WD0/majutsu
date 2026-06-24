@@ -746,7 +746,8 @@ Jujutsu supports multiple workspaces sharing the same repository storage. This i
 - Key: l (majutsu-workspace-list) :: List all workspaces.
 - Key: v (majutsu-workspace-visit) :: Visit a workspace by changing =default-directory= and refreshing Majutsu buffers.
 - Key: a (majutsu-workspace-add) :: Add a new workspace.
-- Key: f (majutsu-workspace-forget) :: Forget a workspace.
+- Key: -t :: Toggle trashing workspace directories after forgetting them.
+- Key: f (majutsu-workspace-forget) :: Forget a workspace. With =-t= enabled from the workspace transient, also move its directory to the system trash after =jj workspace forget= succeeds. Majutsu refuses to trash a workspace root that owns the shared =.jj/repo= store.
 - Key: u (majutsu-workspace-update-stale) :: Update a stale workspace.
 - Key: n (majutsu-workspace-rename) :: Rename a workspace.
 - Key: r (majutsu-workspace-root) :: Show and copy the current workspace root.
@@ -800,7 +801,7 @@ Evil bindings are available in normal state:
 
 ** Confirmation Settings
 - User Option: majutsu-confirm-critical-actions :: If non-nil, prompt for confirmation before critical operations like abandon, undo, redo, rebase.
-- User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=, =abandon=, =rebase=, =workspace-forget=.
+- User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=, =abandon=, =rebase=, =workspace-forget=, =workspace-trash=.
 - User Option: majutsu-slow-confirm :: A list of actions that should use =yes-or-no-p= instead of =y-or-n-p=.
 
 ** Process Options
