@@ -849,7 +849,12 @@ error text.  Output is optionally colorized based on
   (declare (indent 2))
   (setq args (majutsu-process-jj-arguments args))
   (let* ((beg (point))
-         (exit (apply #'majutsu-process-file (majutsu-jj--executable) nil t nil args)))
+         (err-file (make-nearby-temp-file "majutsu-jj-err"))
+         (exit (unwind-protect
+                   (apply #'majutsu-process-file (majutsu-jj--executable) nil
+                          (list t err-file) nil args)
+                 (unless (file-exists-p err-file)
+                   (write-region "" nil err-file nil 'silent)))))
     (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
                (> (point) beg))
       ;; Use text-properties instead of overlays so that subsequent
@@ -864,6 +869,8 @@ error text.  Output is optionally colorized based on
         (insert (propertize (format "jj %s failed (exit %s)\n"
                                     (string-join args " ") exit)
                             'font-lock-face 'error))
+        (when keep-error
+          (insert-file-contents err-file))
         (unless (bolp)
           (insert "\n"))))
      ;; Failure path (unless we explicitly wash anyway).
@@ -873,6 +880,8 @@ error text.  Output is optionally colorized based on
       (insert (propertize (format "jj %s failed (exit %s)\n"
                                   (string-join args " ") exit)
                           'font-lock-face 'error))
+      (when keep-error
+        (insert-file-contents err-file))
       (unless (bolp)
         (insert "\n")))
      ;; Success (or wash anyway).
@@ -888,7 +897,8 @@ error text.  Output is optionally colorized based on
         (when (or (= (point) beg)
                   (= (point) (1+ beg)))
           (magit-cancel-section)))))
-    exit))
+    (prog1 exit
+      (ignore-errors (delete-file err-file)))))
 
 ;;; _
 (provide 'majutsu-jj)

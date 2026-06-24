@@ -147,6 +147,33 @@
                          0))
           (should (equal seen-columns "80")))))))
 
+(ert-deftest majutsu-jj-wash/discards-stderr-on-success ()
+  "`majutsu-jj-wash' should not insert jj warning stderr into washed output."
+  (cl-letf (((symbol-function 'majutsu-process-file)
+             (lambda (_program _infile destination _display &rest _args)
+               (insert "diff output\n")
+               (write-region "Warning: refused to snapshot\n" nil
+                             (cadr destination) nil 'silent)
+               0)))
+    (with-temp-buffer
+      (should (equal (majutsu-jj-wash (lambda (&rest _) (goto-char (point-max)))
+                         nil
+                       "diff")
+                     0))
+      (should (equal (buffer-string) "diff output\n")))))
+
+(ert-deftest majutsu-jj-wash/keeps-stderr-on-failure-when-requested ()
+  "`majutsu-jj-wash' should preserve error stderr when KEEP-ERROR is non-nil."
+  (cl-letf (((symbol-function 'majutsu-process-file)
+             (lambda (_program _infile destination _display &rest _args)
+               (write-region "Error: invalid revset\n" nil
+                             (cadr destination) nil 'silent)
+               1)))
+    (with-temp-buffer
+      (should (equal (majutsu-jj-wash #'ignore t "log" "-r" "bad") 1))
+      (should (string-match-p "jj .* failed (exit 1)" (buffer-string)))
+      (should (string-match-p "Error: invalid revset" (buffer-string))))))
+
 (ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
   "majutsu--jj-insert should return error message when return-error is t and command fails."
   (let ((err-file (make-temp-file "majutsu-jj-err")))
