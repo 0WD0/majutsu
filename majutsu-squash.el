@@ -64,10 +64,12 @@ a jj-commit section, add --revision from that section."
         (progn
           ;; reverse=t means reset $right to $left, then apply patch forward
           ;; Result: $right = selected content = what gets squashed
-          (majutsu-interactive-run-with-patch "squash" args patch t)
+          (with-current-buffer selection-buf
+            (majutsu-interactive-run-with-patch "squash" args patch t))
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (majutsu-run-jj-with-editor (cons "squash" args)))))
+      (with-current-buffer selection-buf
+        (majutsu-run-jj-with-editor (cons "squash" args))))))
 
 ;;;; Infix Commands
 

@@ -298,6 +298,19 @@ The process section should use root as command directory."
       (should (= 0 (majutsu--process-wait 'main 'stderr))))
     (should (equal (nreverse seen) '(main stderr)))))
 
+(ert-deftest majutsu-process-test-process-wait-enables-local-quit ()
+  "`majutsu--process-wait' should not block with quitting inhibited."
+  (let ((seen-inhibit-quit t))
+    (cl-letf (((symbol-function 'accept-process-output)
+               (lambda (&rest _args)
+                 (setq seen-inhibit-quit inhibit-quit)
+                 nil))
+              ((symbol-function 'process-exit-status)
+               (lambda (_process) 0)))
+      (let ((inhibit-quit t))
+        (should (= 0 (majutsu--process-wait 'fake-process)))))
+    (should-not seen-inhibit-quit)))
+
 (ert-deftest majutsu-process-test-process-wait-returns-255-on-quit ()
   "`majutsu--process-wait' should return 255 when interrupted."
   (cl-letf (((symbol-function 'accept-process-output)
