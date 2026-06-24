@@ -1955,10 +1955,13 @@ Visit a workspace by changing @samp{default-directory} and refreshing Majutsu bu
 @kindex a
 @findex majutsu-workspace-add
 Add a new workspace.
+@item @kbd{-t}
+@kindex -t
+Toggle trashing workspace directories after forgetting them.
 @item @kbd{f} (@code{majutsu-workspace-forget})
 @kindex f
 @findex majutsu-workspace-forget
-Forget a workspace.
+Forget a workspace. With @samp{-t} enabled from the workspace transient@comma{} also move its directory to the system trash after @samp{jj workspace forget} succeeds. Majutsu refuses to trash a workspace root that owns the shared @samp{.jj/repo} store.
 @item @kbd{u} (@code{majutsu-workspace-update-stale})
 @kindex u
 @findex majutsu-workspace-update-stale
@@ -2128,7 +2131,7 @@ If non-nil@comma{} prompt for confirmation before critical operations like aband
 @end defopt
 
 @defopt majutsu-no-confirm
-A list of symbols for actions Majutsu should not confirm@comma{} or @samp{t} to never confirm. Valid symbols: @samp{undo}@comma{} @samp{redo}@comma{} @samp{abandon}@comma{} @samp{rebase}@comma{} @samp{workspace-forget}.
+A list of symbols for actions Majutsu should not confirm@comma{} or @samp{t} to never confirm. Valid symbols: @samp{undo}@comma{} @samp{redo}@comma{} @samp{abandon}@comma{} @samp{rebase}@comma{} @samp{workspace-forget}@comma{} @samp{workspace-trash}.
 @end defopt
 
 @defopt majutsu-slow-confirm

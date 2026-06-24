@@ -22,7 +22,8 @@
 ;; `jj workspace list -T ...' template and prefers the parsed workspace root
 ;; from that output when available. It falls back to `jj workspace root --name'
 ;; (available since jj v0.38.0) when a root still needs to be resolved.
-;; No `.jj/' internals are inspected.
+;; The trash flow checks for `.jj/repo' to avoid trashing the root that owns
+;; the shared repository store.
 
 ;;; Code:
 
@@ -309,6 +310,74 @@ directory of ROOT whose name matches NAME. Falls back to prompting the user."
 
 ;;; Workspace root discovery
 
+(defun majutsu-workspace--entry-root (name entries)
+  "Return NAME's structured root from ENTRIES, or nil."
+  (when-let* ((entry (cl-find name entries
+                              :key (lambda (entry)
+                                     (plist-get entry :name))
+                              :test #'equal)))
+    (plist-get entry :root)))
+
+(defun majutsu-workspace--roots-for-names (names &optional root)
+  "Return an alist mapping workspace NAMES to known root directories.
+ROOT is the workspace root used to query sibling workspaces.  Missing
+structured roots are resolved only with non-interactive helpers.  If a
+root remains unavailable, the matching alist value is nil."
+  (let* ((root (file-name-as-directory (or root default-directory)))
+         (entries (condition-case nil
+                      (majutsu-workspace-list-entries root)
+                    (error nil))))
+    (mapcar (lambda (name)
+              (cons name
+                    (or (majutsu-workspace--entry-root name entries)
+                        (let ((default-directory root))
+                          (or (condition-case nil
+                                  (majutsu-workspace--root-for-name name)
+                                (error nil))
+                              (majutsu-workspace--sibling-root name root))))))
+            names)))
+
+(defun majutsu-workspace--repo-store-p (root)
+  "Return non-nil if ROOT owns the shared jj repo store."
+  (and root
+       (file-directory-p (expand-file-name ".jj/repo" root))))
+
+(defun majutsu-workspace--validate-trash-roots (root-alist)
+  "Signal if any workspace root in ROOT-ALIST must not be trashed.
+ROOT-ALIST maps workspace names to directory paths.  Nil roots and
+already-deleted paths are allowed because `jj workspace forget' can also
+be used after deleting a workspace directory manually."
+  (dolist (entry root-alist)
+    (pcase-let ((`(,name . ,root) entry))
+      (when (and root
+                 (not (string-empty-p root))
+                 (file-exists-p root)
+                 (majutsu-workspace--repo-store-p root))
+        (user-error "Refusing to trash workspace %s; %s owns the shared .jj/repo store"
+                    name root)))))
+
+(defun majutsu-workspace--trash-roots (root-alist)
+  "Move known workspace roots in ROOT-ALIST to the system trash.
+ROOT-ALIST maps workspace names to directory paths.  Nil roots and
+already-deleted paths are ignored.  Call
+`majutsu-workspace--validate-trash-roots' before forgetting workspaces to
+reject roots that own shared repo storage without mutating repository
+state."
+  (dolist (entry root-alist)
+    (pcase-let ((`(,_name . ,root) entry))
+      (when (and root
+                 (not (string-empty-p root))
+                 (file-exists-p root))
+        (let ((delete-by-moving-to-trash t))
+          (delete-directory root t t))))))
+
+(defun majutsu-workspace--transient-trash-p ()
+  "Return non-nil when the active workspace transient has `--trash' enabled."
+  (and (eq transient-current-command 'majutsu-workspace)
+       (condition-case nil
+           (member "--trash" (transient-args 'majutsu-workspace))
+         (error nil))))
+
 (defun majutsu-workspace--root-for-name (name)
   "Return the workspace root directory for NAME, or nil.
 
@@ -483,25 +552,38 @@ directory."
         (message "Workspace rename failed")))))
 
 ;;;###autoload
-(defun majutsu-workspace-forget (names)
+(defun majutsu-workspace-forget (names &optional trash)
   "Forget workspaces NAMES.
 
-This stops tracking the workspaces' working-copy commits in the repo. The
-workspace directories are not touched on disk."
+This stops tracking the workspaces' working-copy commits in the repo.
+With TRASH, also move the corresponding workspace directories to the
+system trash after `jj workspace forget' succeeds."
   (interactive
    (let* ((names (majutsu-workspace--names)))
      (list (majutsu-completing-read-multiple
             "Forget workspace(s)" names nil t nil
-            'majutsu-workspace-name-history nil 'majutsu-workspace))))
+            'majutsu-workspace-name-history nil 'majutsu-workspace)
+           (majutsu-workspace--transient-trash-p))))
   (when names
-    (unless (majutsu-confirm 'workspace-forget
-                             (format "Forget workspace(s) %s? "
-                                     (string-join names ", ")))
-      (user-error "Forget canceled"))
-    (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
-        (progn
-          (message "Workspace(s) forgotten"))
-      (message "Workspace forget failed"))))
+    (let ((action (if trash 'workspace-trash 'workspace-forget)))
+      (unless (majutsu-confirm action
+                               (format "%s workspace(s) %s? "
+                                       (if trash "Forget and trash" "Forget")
+                                       (string-join names ", ")))
+        (user-error "Forget canceled"))
+      (let ((root-alist (when trash
+                          (majutsu-workspace--roots-for-names
+                           names (majutsu--toplevel-safe)))))
+        (when trash
+          (majutsu-workspace--validate-trash-roots root-alist))
+        (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
+            (progn
+              (when trash
+                (majutsu-workspace--trash-roots root-alist))
+              (message (if trash
+                           "Workspace(s) forgotten; available directories trashed"
+                         "Workspace(s) forgotten")))
+          (message "Workspace forget failed"))))))
 
 ;;;###autoload
 (defun majutsu-workspace-add (destination &optional name revision sparse-patterns)
@@ -552,6 +634,8 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
   :transient-suffix 'transient--do-exit
   :transient-non-suffix t
   ["Workspace"
+   ["Options"
+    ("-t" "Trash workspace directory after forget" "--trash")]
    ["View"
     ("l" "List" majutsu-workspace-list)
     ("v" "Visit" majutsu-workspace-visit)

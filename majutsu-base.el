@@ -83,7 +83,8 @@ which in turn uses the function specified here."
     (const redo)
     (const abandon)
     (const rebase)
-    (const workspace-forget))
+    (const workspace-forget)
+    (const workspace-trash))
   "Actions that may require confirmation.")
 
 (defcustom majutsu-no-confirm nil
