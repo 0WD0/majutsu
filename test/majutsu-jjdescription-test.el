@@ -91,6 +91,33 @@
     (forward-line 1)
     (should-not (memq 'git-commit-summary (majutsu-test--faces-at (point))))))
 
+(ert-deftest majutsu-jjdescription-overlong-summary ()
+  "Summary characters beyond configured length should be highlighted."
+  (let ((majutsu-jjdescription-summary-max-length 5))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "1234567\n\nJJ: note\n")
+      (majutsu-jjdescription-setup)
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (should-not (memq 'git-commit-overlong-summary
+                        (majutsu-test--faces-at (point))))
+      (goto-char (point-min))
+      (forward-char 5)
+      (should (memq 'git-commit-overlong-summary
+                    (majutsu-test--faces-at (point)))))))
+
+(ert-deftest majutsu-jjdescription-fill-column ()
+  "JJ description buffers should use configured fill column."
+  (let ((majutsu-jjdescription-fill-column 77))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "summary\n")
+      (majutsu-jjdescription-setup)
+      (should (= fill-column 77)))))
+
 (ert-deftest majutsu-jjdescription-font-lock-comments ()
   "JJ comment lines should be highlighted with comment faces."
   (with-temp-buffer
