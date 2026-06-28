@@ -773,6 +773,11 @@ This keeps ordinary Emacs copying predictable while still offering precise log-a
 @node Diffing
 @section Diffing
 
+Diff buffers for a single target revision include revision headers and the
+revision description as collapsible sections before the diff@comma{} similar to Magit
+revision buffers.  The diff section remains unchanged and keeps its normal
+hunk/file navigation and editing commands.
+
 @menu
 * Diff Transient::
 * Diff Buffer: Diff Buffer (1). 
