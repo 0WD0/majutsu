@@ -50,10 +50,12 @@
         (progn
           ;; reverse=t means reset $right to $left, then apply patch forward
           ;; Result: $right = selected content = first commit
-          (majutsu-interactive-run-with-patch "split" args patch t)
+          (with-current-buffer selection-buf
+            (majutsu-interactive-run-with-patch "split" args patch t))
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (majutsu-run-jj-with-editor (cons "split" args)))))
+      (with-current-buffer selection-buf
+        (majutsu-run-jj-with-editor (cons "split" args))))))
 
 ;;;; Infix Commands
 

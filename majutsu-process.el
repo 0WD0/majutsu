@@ -713,16 +713,24 @@ STDERR-PROCESS is non-nil, also drain it; per the Emacs manual, output from
 a separate standard error process is not delivered by waiting on the main
 process alone.
 
+Process sentinels run with quitting inhibited, but this helper can be
+re-entered from a sentinel-triggered refresh.  Locally re-enable quitting
+around the blocking wait so Emacs does not warn about an uninterruptible
+`accept-process-output' call.
+
 If the user interrupts the wait with `C-g', return 255 so callers can
 finalize the process section as a failed command.  In that case the
 surrounding `unwind-protect' is responsible for cleaning up PROCESS and
 STDERR-PROCESS; any partially captured stderr is discarded."
   (condition-case nil
-      (progn
-        (while (accept-process-output process))
-        (when stderr-process
-          (while (accept-process-output stderr-process)))
-        (process-exit-status process))
+      (if (with-local-quit
+            (while (accept-process-output process))
+            (when stderr-process
+              (while (accept-process-output stderr-process)))
+            t)
+          (process-exit-status process)
+        (setq quit-flag nil)
+        255)
     (quit 255)))
 
 (defun majutsu--call-process-responsive (program process-buf section root &rest args)

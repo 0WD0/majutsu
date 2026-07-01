@@ -78,10 +78,12 @@ In diff buffer on a file section, restore only that file."
                  args)))
     (if patch
         (progn
-          (majutsu-interactive-run-with-patch "restore" args patch)
+          (with-current-buffer selection-buf
+            (majutsu-interactive-run-with-patch "restore" args patch))
           (with-current-buffer selection-buf
             (majutsu-interactive-clear)))
-      (let ((exit (apply #'majutsu-run-jj "restore" args)))
+      (let ((exit (with-current-buffer selection-buf
+                    (apply #'majutsu-run-jj "restore" args))))
         (when (zerop exit)
           (message "Restored successfully"))))))
 
