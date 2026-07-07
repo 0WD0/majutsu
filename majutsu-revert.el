@@ -22,9 +22,6 @@
 (defclass majutsu-revert-option (majutsu-selection-option)
   ())
 
-(defclass majutsu-revert--toggle-option (majutsu-selection-toggle-option)
-  ())
-
 (defun majutsu-revert-arguments ()
   "Return the current revert arguments.
 If inside the transient, return transient args unchanged.
@@ -69,6 +66,7 @@ destination, fill with --revision and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revision="
   :multi-value 'repeat
@@ -79,6 +77,7 @@ destination, fill with --revision and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
+  :selection-toggle-key "o"
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -89,6 +88,7 @@ destination, fill with --revision and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
+  :selection-toggle-key "a"
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -99,38 +99,11 @@ destination, fill with --revision and --insert-after defaults."
   :class 'majutsu-revert-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-toggle-key "b"
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-revert:revision ()
-  :description "Revisions (toggle at point)"
-  :class 'majutsu-revert--toggle-option
-  :key "r"
-  :argument "--revision="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-revert:onto ()
-  :description "Onto (toggle at point)"
-  :class 'majutsu-revert--toggle-option
-  :key "o"
-  :argument "--onto="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-revert:insert-after ()
-  :description "Insert after (toggle at point)"
-  :class 'majutsu-revert--toggle-option
-  :key "a"
-  :argument "--insert-after="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-revert:insert-before ()
-  :description "Insert before (toggle at point)"
-  :class 'majutsu-revert--toggle-option
-  :key "b"
-  :argument "--insert-before="
-  :multi-value 'repeat)
 
 ;;;###autoload(autoload 'majutsu-revert "majutsu-revert" nil t)
 (transient-define-prefix majutsu-revert ()
@@ -143,22 +116,16 @@ destination, fill with --revision and --insert-after defaults."
   :description "JJ Revert"
   [["Selection"
     (majutsu-revert:--revision)
-    (majutsu-revert:revision)
     ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Destination"
     (majutsu-revert:--onto)
     (majutsu-revert:--insert-after)
-    (majutsu-revert:--insert-before)
-    (majutsu-revert:onto)
-    (majutsu-revert:insert-after)
-    (majutsu-revert:insert-before)]
+    (majutsu-revert:--insert-before)]
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    (majutsu-revert-execute :key "_")
-    (majutsu-revert-execute :key "V")
-    (majutsu-revert-execute)]]
+    ("V" "Revert" majutsu-revert-execute :key-aliases "_")]]
   (interactive)
   (transient-setup
    'majutsu-revert nil nil

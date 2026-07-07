@@ -1452,8 +1452,6 @@ With prefix STYLE, cycle between `all' and `t'."
 ;;;###autoload(autoload 'majutsu-diff-dwim "majutsu-diff" nil t)
 (transient-define-suffix majutsu-diff-dwim (&optional args range filesets)
   "Show changes for the thing at point."
-  :key "d"
-  :description "Execute"
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive (majutsu-diff-arguments))
   (let* ((rev (pcase (majutsu-diff--dwim)
@@ -1510,9 +1508,6 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-r)
     (majutsu-diff:--from)
     (majutsu-diff:--to)
-    (majutsu-diff:revisions)
-    (majutsu-diff:from)
-    (majutsu-diff:to)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Paths"
     (majutsu-diff:--)]
@@ -1525,10 +1520,10 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-w)
     (majutsu-diff:-b)]
    ["Actions"
-    (majutsu-diff-dwim)
-    (majutsu-diff-save-arguments)
-    (majutsu-transient-save-repository-defaults)
-    (majutsu-diff-refresh)]]
+    ("d" "Execute" majutsu-diff-dwim)
+    ("s" "Save as default" majutsu-diff-save-arguments)
+    ("W" "Save as repo default" majutsu-transient-save-repository-defaults)
+    ("g" "Refresh" majutsu-diff-refresh)]]
   (interactive)
   (transient-setup
    'majutsu-diff nil nil
@@ -1582,18 +1577,12 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revisions="
   :multi-value 'repeat
   :prompt "Revisions"
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-diff:revisions ()
-  :description "Revisions (toggle at point)"
-  :class 'majutsu-selection-toggle-option
-  :key "r"
-  :argument "--revisions="
-  :multi-value 'repeat)
 
 (transient-define-argument majutsu-diff:--from ()
   :description "From"
@@ -1601,6 +1590,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :selection-toggle-key "f"
   :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-transient-read-revset)
@@ -1611,22 +1601,10 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :selection-toggle-key "t"
   :shortarg "-t"
   :argument "--to="
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-diff:from ()
-  :description "From (toggle at point)"
-  :class 'majutsu-selection-toggle-option
-  :key "f"
-  :argument "--from=")
-
-(transient-define-argument majutsu-diff:to ()
-  :description "To (toggle at point)"
-  :class 'majutsu-selection-toggle-option
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :key "t"
-  :argument "--to=")
 
 (transient-define-argument majutsu-diff:-b ()
   :description "Ignore changes in amount of whitespace"
@@ -1642,8 +1620,6 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-suffix majutsu-diff-save-arguments ()
   "Save current transient arguments as global defaults."
-  :key "s"
-  :description "Save as default"
   :transient t
   (interactive)
   (unless (and transient--prefix
@@ -1654,8 +1630,6 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-suffix majutsu-diff-refresh ()
   "Refresh diff buffer with current transient arguments."
-  :key "g"
-  :description "Refresh"
   :transient t
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive)

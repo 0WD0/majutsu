@@ -25,9 +25,6 @@
 (defclass majutsu-squash-option (majutsu-selection-option)
   ())
 
-(defclass majutsu-squash--toggle-option (majutsu-selection-toggle-option)
-  ((if-not :initform #'majutsu-squash-interactive-selection-available-p)))
-
 ;;; Arguments
 
 (defun majutsu-squash--source-values (args)
@@ -54,9 +51,8 @@
   (mapconcat (lambda (source) (format "(%s)" source)) sources " | "))
 
 (defun majutsu-squash--point-revision ()
-  "Return the jj commit revision at point in the selection buffer."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
-    (magit-section-value-if 'jj-commit)))
+  "Return the jj commit revision at point."
+  (magit-section-value-if 'jj-commit))
 
 (defun majutsu-squash--none-source-p (sources)
   "Return non-nil when SOURCES is the literal empty source none()."
@@ -121,10 +117,9 @@ for resolving revsets and reporting ambiguous or invalid command arguments."
 
 (defun majutsu-squash--default-args ()
   "Return source defaults from the current diff/log context."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
-    (if (derived-mode-p 'majutsu-diff-mode)
-        (majutsu-squash--diff-default-args)
-      (majutsu-squash--log-default-args))))
+  (if (derived-mode-p 'majutsu-diff-mode)
+      (majutsu-squash--diff-default-args)
+    (majutsu-squash--log-default-args)))
 
 (defun majutsu-squash-arguments ()
   "Return the current squash arguments.
@@ -138,7 +133,7 @@ return the same context defaults that execution would use."
 
 (defun majutsu-squash--patch-source-revset (&optional buffer)
   "Return a source revset when BUFFER is a safe squash patch-selection buffer."
-  (with-current-buffer (or buffer (majutsu-interactive--selection-buffer))
+  (with-current-buffer (or buffer (current-buffer))
     (when (derived-mode-p 'majutsu-diff-mode)
       (let* ((range majutsu-buffer-diff-range)
              (from (transient-arg-value "--from=" range))
@@ -226,6 +221,8 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
+  :selection-toggle-key "f"
+  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
   :shortarg "-f"
   :argument "--from="
   :multi-value 'repeat
@@ -236,6 +233,8 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[INTO]"
   :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-toggle-key "t"
+  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
   :shortarg "-t"
   :argument "--into="
   :reader #'majutsu-transient-read-revset)
@@ -245,6 +244,8 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
+  :selection-toggle-key "o"
+  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -255,6 +256,8 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
+  :selection-toggle-key "a"
+  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -265,44 +268,12 @@ return the same context defaults that execution would use."
   :class 'majutsu-squash-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-toggle-key "b"
+  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-squash:from ()
-  :description "Source at point (toggle)"
-  :class 'majutsu-squash--toggle-option
-  :key "f"
-  :argument "--from="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-squash:into ()
-  :description "Into at point"
-  :class 'majutsu-squash--toggle-option
-  :key "t"
-  :argument "--into=")
-
-(transient-define-argument majutsu-squash:onto ()
-  :description "Onto at point"
-  :class 'majutsu-squash--toggle-option
-  :key "o"
-  :argument "--onto="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-squash:insert-after ()
-  :description "Insert after point"
-  :class 'majutsu-squash--toggle-option
-  :key "a"
-  :argument "--insert-after="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-squash:insert-before ()
-  :description "Insert before point"
-  :class 'majutsu-squash--toggle-option
-  :key "b"
-  :argument "--insert-before="
-  :multi-value 'repeat)
 
 (transient-define-argument majutsu-squash:-- ()
   :description "Limit to files"
@@ -331,11 +302,6 @@ return the same context defaults that execution would use."
     (majutsu-squash:--onto)
     (majutsu-squash:--insert-after)
     (majutsu-squash:--insert-before)
-    (majutsu-squash:from)
-    (majutsu-squash:into)
-    (majutsu-squash:onto)
-    (majutsu-squash:insert-after)
-    (majutsu-squash:insert-before)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Patch Selection" :if majutsu-squash-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
@@ -348,8 +314,7 @@ return the same context defaults that execution would use."
     ("-k" "Keep emptied commit" ("-k" "--keep-emptied"))
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    (majutsu-squash-execute :key "s")
-    (majutsu-squash-execute)]]
+    ("s" "Execute squash" majutsu-squash-execute)]]
   (interactive)
   (transient-setup
    'majutsu-squash nil nil

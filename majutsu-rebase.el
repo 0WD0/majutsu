@@ -22,9 +22,6 @@
 (defclass majutsu-rebase-option (majutsu-selection-option)
   ())
 
-(defclass majutsu-rebase--toggle-option (majutsu-selection-toggle-option)
-  ())
-
 ;;; majutsu-rebase
 
 ;;;###autoload(autoload 'majutsu-rebase-execute "majutsu-rebase" nil t)
@@ -53,6 +50,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-toggle-key "s"
   :shortarg "-s"
   :argument "--source="
   :multi-value 'repeat
@@ -63,6 +61,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[BRANCH]"
   :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-toggle-key "b"
   :shortarg "-b"
   :argument "--branch="
   :multi-value 'repeat
@@ -73,6 +72,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[REVS]"
   :selection-face '(:background "dark orange" :foreground "black")
+  :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revision="
   :multi-value 'repeat
@@ -83,6 +83,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
+  :selection-toggle-key "o"
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -93,6 +94,7 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
+  :selection-toggle-key "a"
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -103,52 +105,11 @@ ARGS are passed from the transient."
   :class 'majutsu-rebase-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-toggle-key "B"
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-rebase:source ()
-  :description "Source (toggle at point)"
-  :class 'majutsu-rebase--toggle-option
-  :key "s"
-  :argument "--source="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-rebase:branch ()
-  :description "Branch (toggle at point)"
-  :class 'majutsu-rebase--toggle-option
-  :key "b"
-  :argument "--branch="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-rebase:revision ()
-  :description "Revisions (toggle at point)"
-  :class 'majutsu-rebase--toggle-option
-  :key "r"
-  :argument "--revision="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-rebase:onto ()
-  :description "Onto (toggle at point)"
-  :class 'majutsu-rebase--toggle-option
-  :key "o"
-  :argument "--onto="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-rebase:after ()
-  :description "After (toggle at point)"
-  :class 'majutsu-rebase--toggle-option
-  :key "a"
-  :argument "--insert-after="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-rebase:before ()
-  :description "Before (toggle at point)"
-  :class 'majutsu-rebase--toggle-option
-  :key "B"
-  :argument "--insert-before="
-  :multi-value 'repeat)
 
 ;;;###autoload(autoload 'majutsu-rebase "majutsu-rebase" nil t)
 (transient-define-prefix majutsu-rebase ()
@@ -164,17 +125,11 @@ ARGS are passed from the transient."
   [["Source"
     (majutsu-rebase:--source)
     (majutsu-rebase:--branch)
-    (majutsu-rebase:--revision)
-    (majutsu-rebase:source)
-    (majutsu-rebase:branch)
-    (majutsu-rebase:revision)]
+    (majutsu-rebase:--revision)]
    ["Destination"
     (majutsu-rebase:--onto)
     (majutsu-rebase:--after)
     (majutsu-rebase:--before)
-    (majutsu-rebase:onto)
-    (majutsu-rebase:after)
-    (majutsu-rebase:before)
     ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Options"

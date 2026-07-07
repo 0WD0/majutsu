@@ -590,8 +590,6 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
 ;;;###autoload(autoload 'majutsu-ediff-dwim "majutsu-ediff" nil t)
 (transient-define-suffix majutsu-ediff-dwim ()
   "Context-aware Ediff based on current section."
-  :key "e"
-  :description "Ediff (blob)"
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (cl-labels ((dwim ()
@@ -624,8 +622,6 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
 (transient-define-suffix majutsu-ediff-edit (args)
   "Edit one changed file with two-sided Ediff via jj diffedit.
 ARGS are transient arguments."
-  :key "E"
-  :description "Ediff (diffedit)"
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive
    (list (when (eq transient-current-command 'majutsu-ediff)
@@ -642,8 +638,6 @@ ARGS are transient arguments."
   "Resolve FILE conflicts using `jj resolve' with Emacs as merge editor.
 If FILE is nil, DWIM selects from conflicted files at point revision (commit
 section) or the working copy."
-  :key "m"
-  :description "Resolve (ediff)"
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (let* ((rev (or (majutsu-revision-at-point) "@"))
@@ -662,8 +656,6 @@ section) or the working copy."
   "Resolve conflicts using `majutsu-conflict-mode'.
 When resolving a non-working-copy revision, open the matching blob buffer
 at that revision before enabling conflict mode."
-  :key "M"
-  :description "Resolve (conflict)"
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (let* ((rev (or (majutsu-revision-at-point) "@"))
@@ -742,16 +734,13 @@ Called by `jj resolve` merge editor command via emacsclient."
     (majutsu-ediff:-r)
     (majutsu-ediff:--from)
     (majutsu-ediff:--to)
-    (majutsu-ediff:revisions)
-    (majutsu-ediff:from)
-    (majutsu-ediff:to)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
-    (majutsu-ediff-dwim)
-    (majutsu-ediff-edit)]
+    ("e" "Ediff (blob)" majutsu-ediff-dwim)
+    ("E" "Ediff (diffedit)" majutsu-ediff-edit)]
    ["Resolve"
-    (majutsu-ediff-resolve)
-    (majutsu-ediff-resolve-with-conflict)]]
+    ("m" "Resolve (ediff)" majutsu-ediff-resolve)
+    ("M" "Resolve (conflict)" majutsu-ediff-resolve-with-conflict)]]
   (interactive)
   (transient-setup
    'majutsu-ediff nil nil
@@ -766,18 +755,12 @@ Called by `jj resolve` merge editor command via emacsclient."
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revisions="
   :multi-value 'repeat
   :prompt "Revisions"
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-ediff:revisions ()
-  :description "Revisions (toggle at point)"
-  :class 'majutsu-selection-toggle-option
-  :key "r"
-  :argument "--revisions="
-  :multi-value 'repeat)
 
 (transient-define-argument majutsu-ediff:--from ()
   :description "From"
@@ -785,6 +768,7 @@ Called by `jj resolve` merge editor command via emacsclient."
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :selection-toggle-key "f"
   :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-transient-read-revset)
@@ -795,21 +779,10 @@ Called by `jj resolve` merge editor command via emacsclient."
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :selection-toggle-key "t"
   :shortarg "-t"
   :argument "--to="
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-ediff:from ()
-  :description "From (toggle at point)"
-  :class 'majutsu-selection-toggle-option
-  :key "f"
-  :argument "--from=")
-
-(transient-define-argument majutsu-ediff:to ()
-  :description "To (toggle at point)"
-  :class 'majutsu-selection-toggle-option
-  :key "t"
-  :argument "--to=")
 
 ;;; _
 (provide 'majutsu-ediff)

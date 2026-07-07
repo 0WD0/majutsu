@@ -20,6 +20,7 @@
 (require 'majutsu-base)
 (require 'majutsu-process)
 (require 'majutsu-selection)
+(require 'majutsu-transient)
 (require 'cl-lib)
 (require 'transient)
 
@@ -66,15 +67,21 @@ are also commonly invoked directly."
 
 This controls Majutsu transient suffixes that perform the primary action
 for their prefix, such as executing a rebase, squash, split, or upload.
-Set this to another key description, such as \".\", to move all default
-action suffixes to that key."
+When such a suffix also has a command-specific key, this key is bound as
+an alias on the same menu row.  Set this to another key description, such
+as \".\", to move the default action key."
   :group 'majutsu
   :type 'string
   :set #'majutsu--transient-default-action-set)
 
-(defclass majutsu-transient-default-action-suffix (transient-suffix)
+(defclass majutsu-transient-default-action-suffix
+  (majutsu-transient-key-alias-suffix transient-suffix)
   ((advice* :initform #'majutsu--transient-with-selection-buffer))
-  "Transient suffix whose key follows `majutsu-transient-default-action'.")
+  "Transient suffix with `majutsu-transient-default-action' as default key.")
+
+(cl-defmethod majutsu-transient-key-aliases
+  ((_obj majutsu-transient-default-action-suffix))
+  (append (cl-call-next-method) (list majutsu-transient-default-action)))
 
 (defun majutsu--transient-with-selection-buffer (fn &rest args)
   "Call FN with ARGS in the active selection session buffer.
@@ -344,8 +351,6 @@ from `transient-files' groups, without the -- separator."
 
 (transient-define-suffix majutsu-transient-save-repository-defaults ()
   "Save current transient arguments as defaults for this jj repository."
-  :key "W"
-  :description "Save repo defaults"
   :transient t
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive)

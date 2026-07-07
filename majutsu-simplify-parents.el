@@ -21,9 +21,6 @@
 (defclass majutsu-simplify-parents-option (majutsu-selection-option)
   ())
 
-(defclass majutsu-simplify-parents--toggle-option (majutsu-selection-toggle-option)
-  ())
-
 (defun majutsu-simplify-parents--dwim-args ()
   "Return DWIM target args for simplify-parents execution."
   (mapcar (lambda (rev) (concat "--revision=" rev))
@@ -51,6 +48,7 @@
   :class 'majutsu-simplify-parents-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-toggle-key "s"
   :shortarg "-s"
   :argument "--source="
   :multi-value 'repeat
@@ -61,24 +59,11 @@
   :class 'majutsu-simplify-parents-option
   :selection-label "[REV]"
   :selection-face '(:background "dark orange" :foreground "black")
+  :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revision="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-simplify-parents:source ()
-  :description "Source (toggle at point)"
-  :class 'majutsu-simplify-parents--toggle-option
-  :key "s"
-  :argument "--source="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-simplify-parents:revision ()
-  :description "Revision (toggle at point)"
-  :class 'majutsu-simplify-parents--toggle-option
-  :key "r"
-  :argument "--revision="
-  :multi-value 'repeat)
 
 ;;;###autoload
 (defun majutsu-simplify-parents ()
@@ -96,15 +81,12 @@
   [["Selection"
     (majutsu-simplify-parents:--source)
     (majutsu-simplify-parents:--revision)
-    (majutsu-simplify-parents:source)
-    (majutsu-simplify-parents:revision)
     ("c" "Clear selections" majutsu-selection-clear
      :transient t)]
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    (majutsu-simplify-parents-execute :key "P")
-    (majutsu-simplify-parents-execute)]])
+    ("P" "Simplify" majutsu-simplify-parents-execute)]])
 
 ;;; _
 (provide 'majutsu-simplify-parents)

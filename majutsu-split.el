@@ -21,18 +21,14 @@
 (defclass majutsu-split-option (majutsu-selection-option)
   ())
 
-(defclass majutsu-split--toggle-option (majutsu-selection-toggle-option)
-  ((if-not :initform #'majutsu-interactive-selection-available-p)))
-
 (defun majutsu-split--default-args ()
   "Return default args from diff buffer context."
-  (with-current-buffer (majutsu-interactive--selection-buffer)
-    (when (derived-mode-p 'majutsu-diff-mode)
-      (mapcar (lambda (arg)
-                (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
-                    (concat "--revision=" rev)
-                  arg))
-              majutsu-buffer-diff-range))))
+  (when (derived-mode-p 'majutsu-diff-mode)
+    (mapcar (lambda (arg)
+              (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
+                  (concat "--revision=" rev)
+                arg))
+            majutsu-buffer-diff-range)))
 
 (transient-define-suffix majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."
@@ -65,6 +61,8 @@
   :class 'majutsu-split-option
   :selection-label "[REV]"
   :selection-face '(:background "goldenrod" :foreground "black")
+  :selection-toggle-key "r"
+  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
   :shortarg "-r"
   :argument "--revision="
   :reader #'majutsu-transient-read-revset)
@@ -74,6 +72,8 @@
   :class 'majutsu-split-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
+  :selection-toggle-key "o"
+  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -84,6 +84,8 @@
   :class 'majutsu-split-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
+  :selection-toggle-key "a"
+  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -94,6 +96,8 @@
   :class 'majutsu-split-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
+  :selection-toggle-key "b"
+  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
@@ -104,33 +108,6 @@
   :shortarg "-m"
   :argument "--message="
   :reader #'read-string)
-
-(transient-define-argument majutsu-split:revision ()
-  :description "Revision (toggle at point)"
-  :class 'majutsu-split--toggle-option
-  :key "r"
-  :argument "--revision=")
-
-(transient-define-argument majutsu-split:onto ()
-  :description "Onto (toggle at point)"
-  :class 'majutsu-split--toggle-option
-  :key "o"
-  :argument "--onto="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-split:insert-after ()
-  :description "Insert after (toggle at point)"
-  :class 'majutsu-split--toggle-option
-  :key "a"
-  :argument "--insert-after="
-  :multi-value 'repeat)
-
-(transient-define-argument majutsu-split:insert-before ()
-  :description "Insert before (toggle at point)"
-  :class 'majutsu-split--toggle-option
-  :key "b"
-  :argument "--insert-before="
-  :multi-value 'repeat)
 
 (transient-define-argument majutsu-split:-- ()
   :description "Limit to files"
@@ -153,10 +130,6 @@
     (majutsu-split:--onto)
     (majutsu-split:--insert-after)
     (majutsu-split:--insert-before)
-    (majutsu-split:revision)
-    (majutsu-split:onto)
-    (majutsu-split:insert-after)
-    (majutsu-split:insert-before)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Patch Selection" :if majutsu-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
@@ -172,8 +145,7 @@
     ("-t" "Tool" "--tool=")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    (majutsu-split-execute :key "s")
-    (majutsu-split-execute)]]
+    ("s" "Execute split" majutsu-split-execute)]]
   (interactive)
   (transient-setup
    'majutsu-split nil nil

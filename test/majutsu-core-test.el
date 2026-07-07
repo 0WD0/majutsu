@@ -22,6 +22,31 @@
     (transient--init-suffix-key obj)
     (should (equal (oref obj key) majutsu-transient-default-action))))
 
+(ert-deftest majutsu-transient-default-action-suffix/binds-default-key-as-alias ()
+  "Default action suffixes with explicit keys should also bind the default key."
+  (let* ((majutsu-transient-default-action "RET")
+         (obj (make-instance 'majutsu-transient-default-action-suffix
+                             :command 'ignore
+                             :key "x"
+                             :description "Ignore"))
+         (transient--suffixes (list obj))
+         (map (make-sparse-keymap)))
+    (define-key map (kbd "x") #'ignore)
+    (majutsu-transient--add-key-aliases map)
+    (should (eq (lookup-key map (kbd "RET")) #'ignore))))
+
+(ert-deftest majutsu-transient-default-action-suffix/formats-key-alias ()
+  "Default action aliases should appear on the same menu row."
+  (let* ((majutsu-transient-default-action "RET")
+         (transient-semantic-coloring nil)
+         (transient--pending-group (make-instance 'transient-column))
+         (obj (make-instance 'majutsu-transient-default-action-suffix
+                             :command 'ignore
+                             :key "x"
+                             :description "Ignore")))
+    (should (equal (substring-no-properties (transient-format-key obj))
+                   "x/RET"))))
+
 (ert-deftest majutsu-transient-with-selection-buffer/uses-session-buffer ()
   "Selection sessions should make action suffixes run in their source buffer."
   (let* ((selection-dir (file-name-as-directory

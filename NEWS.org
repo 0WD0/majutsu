@@ -102,6 +102,11 @@
 - Absorb accepts multiple destination revsets ::
   The =--into= option is repeatable.
 
+- Transient menus show related keys on one row ::
+  Selection entries display manual-read and point-toggle keys together, such as
+  =-r/r=.  Primary actions with command-specific keys also bind
+  ~majutsu-transient-default-action~ without adding duplicate rows.
+
 ** Removed
 
 - ~majutsu-find-file-at-point~ was removed ::

@@ -21,9 +21,6 @@
 (defclass majutsu-absorb-option (majutsu-selection-option)
   ())
 
-(defclass majutsu-absorb--toggle-option (majutsu-selection-toggle-option)
-  ((if-not :initform #'majutsu-interactive-selection-available-p)))
-
 (defun majutsu-absorb--default-args ()
   "Return default args from diff buffer context."
   (with-current-buffer (majutsu-interactive--selection-buffer)
@@ -70,6 +67,8 @@ jj-commit section, add --from from that section."
   :class 'majutsu-absorb-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
+  :selection-toggle-key "f"
+  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
   :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-transient-read-revset)
@@ -79,23 +78,12 @@ jj-commit section, add --from from that section."
   :class 'majutsu-absorb-option
   :selection-label "[INTO]"
   :selection-face '(:background "dark cyan" :foreground "white")
+  :selection-toggle-key "t"
+  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
   :shortarg "-t"
   :argument "--into="
   :multi-value 'repeat
   :reader #'majutsu-transient-read-revset)
-
-(transient-define-argument majutsu-absorb:from ()
-  :description "From (toggle at point)"
-  :class 'majutsu-absorb--toggle-option
-  :key "f"
-  :argument "--from=")
-
-(transient-define-argument majutsu-absorb:into ()
-  :description "Into (toggle at point)"
-  :class 'majutsu-absorb--toggle-option
-  :key "t"
-  :argument "--into="
-  :multi-value 'repeat)
 
 (transient-define-argument majutsu-absorb:-- ()
   :description "Limit to files"
@@ -116,16 +104,13 @@ jj-commit section, add --from from that section."
   [["Selection"
     (majutsu-absorb:--from)
     (majutsu-absorb:--into)
-    (majutsu-absorb:from)
-    (majutsu-absorb:into)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Paths"
     (majutsu-absorb:--)]
    ["Options"
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
-    (majutsu-absorb-execute :key "a")
-    (majutsu-absorb-execute)]]
+    ("a" "Absorb" majutsu-absorb-execute)]]
   (interactive)
   (let* ((file (majutsu-file-at-point))
          (files (cond
