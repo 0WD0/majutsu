@@ -73,8 +73,7 @@ In diff buffer on a file section, restore only that file."
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-restore)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               (selection-buf (majutsu-interactive--selection-buffer))
-               (patch (majutsu-interactive-build-patch-if-selected selection-buf t t))
+               (patch (majutsu-interactive-build-patch-if-selected nil t t))
                (args (if patch
                          (seq-remove (lambda (arg)
                                        (or (string= arg "--interactive")
@@ -84,8 +83,7 @@ In diff buffer on a file section, restore only that file."
     (if patch
         (progn
           (majutsu-interactive-run-with-patch "restore" args filesets patch)
-          (with-current-buffer selection-buf
-            (majutsu-interactive-clear)))
+          (majutsu-interactive-clear))
       (let ((exit (apply #'majutsu-run-jj
                          "restore"
                          (majutsu-jj-append-filesets args filesets))))

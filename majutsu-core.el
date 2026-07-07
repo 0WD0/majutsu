@@ -19,6 +19,7 @@
 (require 'majutsu-jj)
 (require 'majutsu-base)
 (require 'majutsu-process)
+(require 'majutsu-selection)
 (require 'cl-lib)
 (require 'transient)
 
@@ -72,8 +73,25 @@ action suffixes to that key."
   :set #'majutsu--transient-default-action-set)
 
 (defclass majutsu-transient-default-action-suffix (transient-suffix)
-  ()
+  ((advice* :initform #'majutsu--transient-with-selection-buffer))
   "Transient suffix whose key follows `majutsu-transient-default-action'.")
+
+(defun majutsu--transient-with-selection-buffer (fn &rest args)
+  "Call FN with ARGS in the active selection session buffer.
+
+Majutsu transients store their originating buffer in `transient-scope'.
+Running default action suffixes in that buffer keeps repository context,
+`default-directory', and buffer-local selection state consistent even if the
+transient UI or another callback changes the current buffer.  If no Majutsu
+  selection session is active, call FN in the current buffer."
+  (let ((scope (transient-scope)))
+    (if (majutsu-selection-session-p scope)
+        (let ((buffer (majutsu-selection-session-buffer scope)))
+          (unless (buffer-live-p buffer)
+            (user-error "Selection buffer is no longer live"))
+          (with-current-buffer buffer
+            (apply fn args)))
+      (apply fn args))))
 
 ;; Do not set `key' as a class initform: suffix prototypes are created at
 ;; load time, but this option should be read when each transient is shown.
@@ -324,8 +342,12 @@ from `transient-files' groups, without the -- separator."
     (transient--history-push obj)
     (message "Saved %s arguments as repository defaults" key)))
 
-(defun majutsu-transient-save-repository-defaults ()
+(transient-define-suffix majutsu-transient-save-repository-defaults ()
   "Save current transient arguments as defaults for this jj repository."
+  :key "W"
+  :description "Save repo defaults"
+  :transient t
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (if (and transient--prefix (eieio-object-p transient--prefix))
       (majutsu-transient--save-repository-defaults transient--prefix)

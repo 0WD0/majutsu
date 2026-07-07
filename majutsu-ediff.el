@@ -587,38 +587,46 @@ This hook runs in the Ediff control buffer and is intended for `jj resolve'."
                                'majutsu-file-path-history
                                nil 'majutsu-file)))))
 
-;;;###autoload
-(defun majutsu-ediff-dwim ()
+;;;###autoload(autoload 'majutsu-ediff-dwim "majutsu-ediff" nil t)
+(transient-define-suffix majutsu-ediff-dwim ()
   "Context-aware Ediff based on current section."
+  :key "e"
+  :description "Ediff (blob)"
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
-  (magit-section-case
-    (jj-hunk
-     (save-excursion
-       (goto-char (oref (oref it parent) start))
-       (majutsu-ediff-dwim)))
-    (jj-file
-     (let* ((file (oref it value))
-            (range (majutsu-ediff--current-range)))
-       (majutsu-ediff-compare (car range) (cdr range) file)))
-    (jj-commit
-     (majutsu-ediff-show-revision (oref it value)))
-    (t
-     (let* ((range (majutsu-ediff--current-range))
-            (file (majutsu-file-at-point)))
-       (cond
-        ((and (car range) (cdr range))
-         (if file
-             (majutsu-ediff-compare (car range) (cdr range) file)
-           (majutsu-ediff-compare (car range) (cdr range))))
-        ((car range)
-         (majutsu-ediff-show-revision (car range)))
-        (t
-         (majutsu-ediff-show-revision "@")))))))
+  (cl-labels ((dwim ()
+                (magit-section-case
+                  (jj-hunk
+                   (save-excursion
+                     (goto-char (oref (oref it parent) start))
+                     (dwim)))
+                  (jj-file
+                   (let* ((file (oref it value))
+                          (range (majutsu-ediff--current-range)))
+                     (majutsu-ediff-compare (car range) (cdr range) file)))
+                  (jj-commit
+                   (majutsu-ediff-show-revision (oref it value)))
+                  (t
+                   (let* ((range (majutsu-ediff--current-range))
+                          (file (majutsu-file-at-point)))
+                     (cond
+                      ((and (car range) (cdr range))
+                       (if file
+                           (majutsu-ediff-compare (car range) (cdr range) file)
+                         (majutsu-ediff-compare (car range) (cdr range))))
+                      ((car range)
+                       (majutsu-ediff-show-revision (car range)))
+                      (t
+                       (majutsu-ediff-show-revision "@"))))))))
+    (dwim)))
 
-;;;###autoload
-(defun majutsu-ediff-edit (args)
+;;;###autoload(autoload 'majutsu-ediff-edit "majutsu-ediff" nil t)
+(transient-define-suffix majutsu-ediff-edit (args)
   "Edit one changed file with two-sided Ediff via jj diffedit.
 ARGS are transient arguments."
+  :key "E"
+  :description "Ediff (diffedit)"
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive
    (list (when (eq transient-current-command 'majutsu-ediff)
            (transient-args 'majutsu-ediff))))
@@ -629,11 +637,14 @@ ARGS are transient arguments."
          (jj-args (majutsu-edit--build-diffedit-args from to)))
     (majutsu-ediff--run-diffedit jj-args file)))
 
-;;;###autoload
-(defun majutsu-ediff-resolve (&optional file)
+;;;###autoload(autoload 'majutsu-ediff-resolve "majutsu-ediff" nil t)
+(transient-define-suffix majutsu-ediff-resolve (&optional file)
   "Resolve FILE conflicts using `jj resolve' with Emacs as merge editor.
 If FILE is nil, DWIM selects from conflicted files at point revision (commit
 section) or the working copy."
+  :key "m"
+  :description "Resolve (ediff)"
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (let* ((rev (or (majutsu-revision-at-point) "@"))
          (file (majutsu-ediff--resolve-file-dwim file))
@@ -646,11 +657,14 @@ section) or the working copy."
            file))
       (majutsu-ediff--run-resolve rev file))))
 
-;;;###autoload
-(defun majutsu-ediff-resolve-with-conflict ()
+;;;###autoload(autoload 'majutsu-ediff-resolve-with-conflict "majutsu-ediff" nil t)
+(transient-define-suffix majutsu-ediff-resolve-with-conflict ()
   "Resolve conflicts using `majutsu-conflict-mode'.
 When resolving a non-working-copy revision, open the matching blob buffer
 at that revision before enabling conflict mode."
+  :key "M"
+  :description "Resolve (conflict)"
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (let* ((rev (or (majutsu-revision-at-point) "@"))
          (file (majutsu-ediff--resolve-file-dwim))
@@ -733,11 +747,11 @@ Called by `jj resolve` merge editor command via emacsclient."
     (majutsu-ediff:to)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
-    ("e" "Ediff (blob)" majutsu-ediff-dwim)
-    ("E" "Ediff (diffedit)" majutsu-ediff-edit)]
+    (majutsu-ediff-dwim)
+    (majutsu-ediff-edit)]
    ["Resolve"
-    ("m" "Resolve (ediff)" majutsu-ediff-resolve)
-    ("M" "Resolve (conflict)" majutsu-ediff-resolve-with-conflict)]]
+    (majutsu-ediff-resolve)
+    (majutsu-ediff-resolve-with-conflict)]]
   (interactive)
   (transient-setup
    'majutsu-ediff nil nil

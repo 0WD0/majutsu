@@ -417,8 +417,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     (majutsu-git-push:--option)
     ("-y" "Dry run" "--dry-run")]
    [("p" "Push" majutsu-git-push)
-    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
-     :transient t)]])
+    (majutsu-transient-save-repository-defaults)]])
 
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
@@ -434,8 +433,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)
-    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults
-     :transient t)]])
+    (majutsu-transient-save-repository-defaults)]])
 
 (transient-define-prefix majutsu-git-remote-add-transient ()
   "Transient for adding a Git remote."

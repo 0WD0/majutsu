@@ -138,6 +138,10 @@
   Split, Squash, Restore, and Absorb no longer build commands like
   ~jj squash -- FILE --from=REV~.
 
+- Transient actions run in their source buffer ::
+  Infix readers, point toggles, and point-sensitive Diff, Ediff, and Gerrit
+  actions use the buffer that opened the transient.
+
 * [0.6.0] - 2026-02-09
 
 ** Added

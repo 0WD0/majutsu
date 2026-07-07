@@ -56,8 +56,9 @@
   "Run BODY in SESSION's buffer."
   (declare (indent 1) (debug (form &rest form)))
   (let ((buf (make-symbol "buf")))
-    `(when-let* ((,buf (and ,session (majutsu-selection-session-buffer ,session)))
-                 ((buffer-live-p ,buf)))
+    `(let ((,buf (and ,session (majutsu-selection-session-buffer ,session))))
+       (unless (buffer-live-p ,buf)
+         (user-error "Selection buffer is no longer live"))
        (with-current-buffer ,buf
          ,@body))))
 
@@ -302,8 +303,10 @@ If ID is non-nil, clear only that selection category."
   "Toggle selected values in category ID.
 VALUES defaults to the target(s) at point."
   (interactive)
-  (let* ((session (or (transient-scope) (user-error "No active selection session")))
+  (let* ((session (transient-scope))
          (obj (majutsu-selection--find-option id)))
+    (unless (majutsu-selection-session-p session)
+      (user-error "No active selection session"))
     (unless obj
       (user-error "No selection option for id: %S" id))
     (unless values
@@ -362,7 +365,11 @@ ID must be a single selection category."
   (majutsu-selection-render))
 
 (cl-defmethod transient-infix-read :around ((obj majutsu-selection-option))
-  (let ((value (cl-call-next-method)))
+  (let* ((session (transient-scope))
+         (value (if (majutsu-selection-session-p session)
+                    (majutsu-selection--with-session-buffer session
+                      (cl-call-next-method))
+                  (cl-call-next-method))))
     (if (not (majutsu-selection--selection-multi-p obj))
         value
       (cond

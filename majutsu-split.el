@@ -40,10 +40,9 @@
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-split)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               (selection-buf (majutsu-interactive--selection-buffer))
                ;; Generate patch for SELECTED content (invert=nil)
                ;; This is what goes into the first commit
-               (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
+               (patch (majutsu-interactive-build-patch-if-selected nil nil nil))
                (args (if patch
                          (seq-remove (lambda (arg)
                                        (or (string= arg "--interactive")
@@ -55,8 +54,7 @@
           ;; reverse=t means reset $right to $left, then apply patch forward
           ;; Result: $right = selected content = first commit
           (majutsu-interactive-run-with-patch "split" args filesets patch t)
-          (with-current-buffer selection-buf
-            (majutsu-interactive-clear)))
+          (majutsu-interactive-clear))
       (majutsu-run-jj-with-editor
        (cons "split" (majutsu-jj-append-filesets args filesets))))))
 

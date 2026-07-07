@@ -254,6 +254,16 @@
     (should (eq (plist-get (cdr suffix) :command)
                 'majutsu-transient-save-repository-defaults))))
 
+(ert-deftest majutsu-diff-selection-actions/use-session-buffer-advice ()
+  "Point- or repository-sensitive diff actions should use the source buffer."
+  (dolist (key '("d" "W" "g"))
+    (let* ((suffix (transient-get-suffix 'majutsu-diff key))
+           (command (plist-get (cdr suffix) :command))
+           (prototype (get command 'transient--suffix)))
+      (should suffix)
+      (should (eq (oref prototype advice*)
+                  #'majutsu--transient-with-selection-buffer)))))
+
 (ert-deftest majutsu-diff--r-argument/uses-native-revset-reader ()
   "The `-r' diff infix should use the native revset reader."
   (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))

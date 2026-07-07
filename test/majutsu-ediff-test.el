@@ -855,5 +855,15 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
   (should (transient-get-suffix 'majutsu-ediff "m"))
   (should (transient-get-suffix 'majutsu-ediff "M")))
 
+(ert-deftest majutsu-ediff-selection-actions/use-session-buffer-advice ()
+  "Point-sensitive Ediff actions should run in the selection source buffer."
+  (dolist (key '("e" "E" "m" "M"))
+    (let* ((suffix (transient-get-suffix 'majutsu-ediff key))
+           (command (plist-get (cdr suffix) :command))
+           (prototype (get command 'transient--suffix)))
+      (should suffix)
+      (should (eq (oref prototype advice*)
+                  #'majutsu--transient-with-selection-buffer)))))
+
 (provide 'majutsu-ediff-test)
 ;;; majutsu-ediff-test.el ends here

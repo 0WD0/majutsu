@@ -174,11 +174,10 @@ return the same context defaults that execution would use."
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-squash-arguments)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               (selection-buf (majutsu-interactive--selection-buffer))
                ;; Generate patch for SELECTED content (invert=nil).
                ;; This is what gets squashed into the destination.
-               (patch (majutsu-interactive-build-patch-if-selected selection-buf nil nil))
-               (patch-source (and patch (majutsu-squash--patch-source-revset selection-buf))))
+               (patch (majutsu-interactive-build-patch-if-selected nil nil nil))
+               (patch-source (and patch (majutsu-squash--patch-source-revset))))
     (when patch
       (majutsu-squash--check-patch-source args patch-source)
       (setq args (majutsu-squash--remove-interactive-tool-args args)))
@@ -208,8 +207,7 @@ return the same context defaults that execution would use."
           ;; reverse=t means reset $right to $left, then apply patch forward.
           ;; Result: $right = selected content = what gets squashed.
           (majutsu-interactive-run-with-patch "squash" args filesets patch t)
-          (with-current-buffer selection-buf
-            (majutsu-interactive-clear)))
+          (majutsu-interactive-clear))
       (majutsu-run-jj-with-editor
        (cons "squash" (majutsu-jj-append-filesets args filesets))))))
 

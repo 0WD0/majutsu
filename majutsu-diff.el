@@ -1449,9 +1449,12 @@ With prefix STYLE, cycle between `all' and `t'."
       (when (eq majutsu-diff-refine-hunk 'all)
         (majutsu-diff--update-hunk-refinement)))))
 
-;;;###autoload
-(defun majutsu-diff-dwim (&optional args range filesets)
+;;;###autoload(autoload 'majutsu-diff-dwim "majutsu-diff" nil t)
+(transient-define-suffix majutsu-diff-dwim (&optional args range filesets)
   "Show changes for the thing at point."
+  :key "d"
+  :description "Execute"
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive (majutsu-diff-arguments))
   (let* ((rev (pcase (majutsu-diff--dwim)
                 (`(,_ . ,rev) rev)
@@ -1522,10 +1525,10 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-w)
     (majutsu-diff:-b)]
    ["Actions"
-    ("d" "Execute" majutsu-diff-dwim)
-    ("s" "Save as default" majutsu-diff-save-arguments :transient t)
-    ("W" "Save as repo default" majutsu-transient-save-repository-defaults :transient t)
-    ("g" "Refresh" majutsu-refresh :transient t)]]
+    (majutsu-diff-dwim)
+    (majutsu-diff-save-arguments)
+    (majutsu-transient-save-repository-defaults)
+    (majutsu-diff-refresh)]]
   (interactive)
   (transient-setup
    'majutsu-diff nil nil
@@ -1637,8 +1640,11 @@ REVSET is passed to jj diff using `--revisions='."
   :shortarg "-w"
   :argument "--ignore-all-space")
 
-(defun majutsu-diff-save-arguments ()
+(transient-define-suffix majutsu-diff-save-arguments ()
   "Save current transient arguments as global defaults."
+  :key "s"
+  :description "Save as default"
+  :transient t
   (interactive)
   (unless (and transient--prefix
                (object-of-class-p transient--prefix 'majutsu-diff-prefix))
@@ -1646,8 +1652,12 @@ REVSET is passed to jj diff using `--revisions='."
   (transient-save-value transient--prefix)
   (message "Saved diff arguments as global defaults"))
 
-(defun majutsu-diff-refresh ()
+(transient-define-suffix majutsu-diff-refresh ()
   "Refresh diff buffer with current transient arguments."
+  :key "g"
+  :description "Refresh"
+  :transient t
+  :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (pcase-let* ((`(,args ,range ,filesets)
                 (transient-args 'majutsu-diff)))
