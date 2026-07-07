@@ -119,6 +119,16 @@
     (should (eq (majutsu-gerrit-test--suffix-reader hashtag)
                 'majutsu-gerrit-upload--read-hashtag))))
 
+(ert-deftest majutsu-gerrit-upload-repo-default-action/uses-session-buffer-advice ()
+  "Saving upload repository defaults should use the transient source buffer."
+  (let* ((suffix (transient-get-suffix 'majutsu-gerrit-upload-transient "W"))
+         (prototype (majutsu-gerrit-test--suffix-prototype suffix)))
+    (should suffix)
+    (should (eq (plist-get (cdr suffix) :command)
+                'majutsu-transient-save-repository-defaults))
+    (should (eq (oref prototype advice*)
+                #'majutsu--transient-with-selection-buffer))))
+
 (ert-deftest majutsu-gerrit-upload-repo-args/keeps-stable-policy-only ()
   "Repository defaults should omit change-specific and dangerous options."
   (should (equal (majutsu-gerrit-upload--repo-args

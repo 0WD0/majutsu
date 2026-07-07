@@ -1174,8 +1174,7 @@ With prefix argument, prompt for a single ad-hoc QUERY."
     ("g" "Dashboard" majutsu-gerrit-dashboard-open)
     ("s" "Dashboard and set defaults" transient-set-and-exit)
     ("w" "Dashboard and save defaults" transient-save-and-exit)
-    ("W" "Dashboard and save repo defaults" majutsu-transient-save-repository-defaults
-     :transient t)]
+    ("W" "Dashboard and save repo defaults" majutsu-transient-save-repository-defaults)]
    ["Sections"
     :if-derived majutsu-gerrit-dashboard-mode
     ("a" "Add query section" majutsu-gerrit-dashboard-add-section)
