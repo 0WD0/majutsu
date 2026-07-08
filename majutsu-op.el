@@ -287,8 +287,6 @@
 
 (defclass majutsu-op-option (majutsu-selection-option) ())
 
-(defclass majutsu-op-toggle-option (majutsu-selection-toggle-option) ())
-
 (defclass majutsu-op-target-prefix (transient-prefix) ())
 
 (defun majutsu-op--section-in-lineage (types &optional section)
@@ -365,16 +363,11 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :selection-face '(:background "goldenrod" :foreground "black")
   :locate-fn #'majutsu-op--selection-locate
   :targets-fn #'majutsu-op--selection-targets
+  :selection-toggle-key "o"
   :key "-o"
   :argument "--operation="
   :prompt "Operation: "
   :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-arg:operation ()
-  :description "Operation (toggle at point)"
-  :class 'majutsu-op-toggle-option
-  :key "o"
-  :argument "--operation=")
 
 (transient-define-argument majutsu-op-arg:--from ()
   :description "From operation"
@@ -383,16 +376,11 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :selection-face '(:background "dark orange" :foreground "black")
   :locate-fn #'majutsu-op--selection-locate
   :targets-fn #'majutsu-op--selection-targets
+  :selection-toggle-key "f"
   :shortarg "-f"
   :argument "--from="
   :prompt "From operation: "
   :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-arg:from ()
-  :description "From operation (toggle at point)"
-  :class 'majutsu-op-toggle-option
-  :key "f"
-  :argument "--from=")
 
 (transient-define-argument majutsu-op-arg:--to ()
   :description "To operation"
@@ -401,16 +389,11 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :selection-face '(:background "dark cyan" :foreground "white")
   :locate-fn #'majutsu-op--selection-locate
   :targets-fn #'majutsu-op--selection-targets
+  :selection-toggle-key "t"
   :shortarg "-t"
   :argument "--to="
   :prompt "To operation: "
   :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-arg:to ()
-  :description "To operation (toggle at point)"
-  :class 'majutsu-op-toggle-option
-  :key "t"
-  :argument "--to=")
 
 ;;; op transient
 
@@ -716,13 +699,14 @@ result."
     (majutsu-op-log:--reversed)]
    ["Actions"
     ("l" "Open log" majutsu-op-log)
-    ("RET" "Open log" majutsu-op-log)
     ("s" "Save as default" transient-save-and-exit)
     ]])
 
-;;;###autoload
-(defun majutsu-op-log (&optional args)
+;;;###autoload(autoload 'majutsu-op-log "majutsu-op" nil t)
+(transient-define-suffix majutsu-op-log (&optional args)
   "Open the Majutsu operation log with ARGS."
+  :description "Open log"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (or (majutsu-op-log-arguments)
                          (get 'majutsu-op-log-mode
                               'majutsu-op-log-default-arguments))))
@@ -736,15 +720,6 @@ result."
       (majutsu-op-log--args args))))
 
 ;;; op restore/revert
-
-(defun majutsu-op--extract-target-operation (args)
-  "Return (OPERATION . ARGS) after stripping pseudo --operation= from ARGS."
-  (let (operation rest)
-    (dolist (arg args)
-      (if (string-prefix-p "--operation=" arg)
-          (setq operation (substring arg (length "--operation=")))
-        (push arg rest)))
-    (cons operation (nreverse rest))))
 
 (defun majutsu-op--run-confirmed (action prompt command)
   "Run COMMAND after confirming ACTION with PROMPT."
@@ -768,27 +743,37 @@ result."
    (format "Revert operation %s? " operation)
    (list "op" "revert" operation)))
 
-(defun majutsu-op-restore-execute (args)
+(transient-define-suffix majutsu-op-restore-execute (args)
   "Execute jj op restore with transient ARGS."
+  :description "Restore"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-op-restore-transient)))
-  (pcase-let* ((`(,operation . ,rest) (majutsu-op--extract-target-operation args)))
+  (let ((operation (transient-arg-value "--operation=" args))
+        (args (seq-remove (lambda (arg)
+                            (transient-arg-value "--operation=" (list arg)))
+                          args)))
     (unless operation
       (user-error "Please select an operation first"))
     (majutsu-op--run-confirmed
      'op-restore
      (format "Restore repository state to operation %s? " operation)
-     (append '("op" "restore") rest (list operation)))))
+     (append '("op" "restore") args (list operation)))))
 
-(defun majutsu-op-revert-execute (args)
+(transient-define-suffix majutsu-op-revert-execute (args)
   "Execute jj op revert with transient ARGS."
+  :description "Revert"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-op-revert-transient)))
-  (pcase-let* ((`(,operation . ,rest) (majutsu-op--extract-target-operation args)))
+  (let ((operation (transient-arg-value "--operation=" args))
+        (args (seq-remove (lambda (arg)
+                            (transient-arg-value "--operation=" (list arg)))
+                          args)))
     (unless operation
       (user-error "Please select an operation first"))
     (majutsu-op--run-confirmed
      'op-revert
      (format "Revert operation %s? " operation)
-     (append '("op" "revert") rest (list operation)))))
+     (append '("op" "revert") args (list operation)))))
 
 ;;;###autoload(autoload 'majutsu-op-restore-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-restore-transient ()
@@ -799,14 +784,12 @@ result."
   :description "JJ Operation Restore"
   [["Selection"
     (majutsu-op-arg:--operation)
-    (majutsu-op-arg:operation)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["What"
     ("-r" "Repo state" "--what=repo")
     ("-t" "Remote-tracking" "--what=remote-tracking")]
    ["Actions"
-    ("R" "Restore" majutsu-op-restore-execute)
-    ("RET" "Restore" majutsu-op-restore-execute)]]
+    ("R" "Restore" majutsu-op-restore-execute)]]
   (interactive)
   (transient-setup 'majutsu-op-restore-transient nil nil
                    :scope (majutsu-selection-session-begin)))
@@ -820,14 +803,12 @@ result."
   :description "JJ Operation Revert"
   [["Selection"
     (majutsu-op-arg:--operation)
-    (majutsu-op-arg:operation)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["What"
     ("-r" "Repo state" "--what=repo")
     ("-t" "Remote-tracking" "--what=remote-tracking")]
    ["Actions"
-    ("V" "Revert" majutsu-op-revert-execute)
-    ("RET" "Revert" majutsu-op-revert-execute)]]
+    ("V" "Revert" majutsu-op-revert-execute)]]
   (interactive)
   (transient-setup 'majutsu-op-revert-transient nil nil
                    :scope (majutsu-selection-session-begin)))
@@ -1061,25 +1042,16 @@ result."
 (defvar-local majutsu-op-diff--args nil
   "Arguments used for the current operation diff buffer.")
 
-(defun majutsu-op--diff-arg-value (prefix args)
-  "Return the value for PREFIX in ARGS."
-  (seq-some (lambda (arg)
-              (and (string-prefix-p prefix arg)
-                   (substring arg (length prefix))))
-            args))
-
 (defun majutsu-op--diff-buffer-heading (args)
   "Return a heading for operation diff ARGS."
-  (cond
-   ((majutsu-op--diff-arg-value "--operation=" args)
-    (format "Operation Diff %s"
-            (majutsu-op--diff-arg-value "--operation=" args)))
-   ((or (majutsu-op--diff-arg-value "--from=" args)
-        (majutsu-op--diff-arg-value "--to=" args))
-    (format "Operation Diff %s..%s"
-            (or (majutsu-op--diff-arg-value "--from=" args) "@-")
-            (or (majutsu-op--diff-arg-value "--to=" args) "@")))
-   (t "Operation Diff")))
+  (let ((operation (transient-arg-value "--operation=" args))
+        (from (transient-arg-value "--from=" args))
+        (to (transient-arg-value "--to=" args)))
+    (cond
+     (operation (format "Operation Diff %s" operation))
+     ((or from to)
+      (format "Operation Diff %s..%s" (or from "@-") (or to "@")))
+     (t "Operation Diff"))))
 
 (defun majutsu-op--insert-diff-endpoint (label operation)
   "Insert metadata for operation diff endpoint LABEL OPERATION."
@@ -1099,8 +1071,8 @@ result."
 
 (defun majutsu-op--insert-diff-endpoints (args)
   "Insert explicit from/to operation metadata for operation diff ARGS."
-  (let ((from (majutsu-op--diff-arg-value "--from=" args))
-        (to (majutsu-op--diff-arg-value "--to=" args)))
+  (let ((from (transient-arg-value "--from=" args))
+        (to (transient-arg-value "--to=" args)))
     (when (or from to)
       (magit-insert-section (jj-op-diff-endpoints)
         (magit-insert-heading "Operations")
@@ -1146,9 +1118,11 @@ result."
          (repo (file-name-nondirectory (directory-file-name root))))
     (format "*majutsu-op-diff: %s*" repo)))
 
-;;;###autoload
-(defun majutsu-op-diff (&optional args)
+;;;###autoload(autoload 'majutsu-op-diff "majutsu-op" nil t)
+(transient-define-suffix majutsu-op-diff (&optional args)
   "Open an operation diff buffer with ARGS."
+  :description "Open diff"
+  :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-op-diff-arguments)))
   (let ((root (majutsu--toplevel-safe)))
     (majutsu-setup-buffer #'majutsu-op-diff-mode nil
@@ -1168,16 +1142,11 @@ result."
    "JJ Operation Diff"
    ["Selection"
     (majutsu-op-arg:--operation)
-    (majutsu-op-arg:operation)
     (majutsu-op-arg:--from)
-    (majutsu-op-arg:from)
     (majutsu-op-arg:--to)
-    (majutsu-op-arg:to)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
-    ("d" "Open diff" majutsu-op-diff)
-    ("RET" "Open diff" majutsu-op-diff)
-    ]]
+    ("d" "Open diff" majutsu-op-diff)]]
   (interactive)
   (transient-setup 'majutsu-op-diff-transient nil nil
                    :scope (majutsu-selection-session-begin)))
