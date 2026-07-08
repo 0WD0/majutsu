@@ -82,6 +82,7 @@ which in turn uses the function specified here."
   '((const undo)
     (const redo)
     (const abandon)
+    (const git-remote-remove)
     (const rebase)
     (const workspace-forget))
   "Actions that may require confirmation.")
@@ -138,11 +139,16 @@ for a class of actions that would normally ask for confirmation."
    (heading-highlight-face :initform 'magit-diff-hunk-heading-highlight)
    (heading-selection-face :initform 'magit-diff-hunk-heading-selection)))
 
+(defclass majutsu-git-remote-section (magit-section)
+  ((keymap :initform 'majutsu-git-remote-section-map)))
+
 (setf (alist-get 'jj-commit   magit--section-type-alist) 'majutsu-commit-section)
 (setf (alist-get 'jj-bookmark magit--section-type-alist) 'majutsu-bookmark-section)
 (setf (alist-get 'jj-tag      magit--section-type-alist) 'majutsu-tag-section)
 (setf (alist-get 'jj-file     magit--section-type-alist) 'majutsu-file-section)
 (setf (alist-get 'jj-hunk     magit--section-type-alist) 'majutsu-hunk-section)
+
+(setf (alist-get 'jj-git-remote magit--section-type-alist) 'majutsu-git-remote-section)
 
 ;; Workspace sections (`jj workspace list`)
 
