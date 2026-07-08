@@ -38,6 +38,11 @@
   (majutsu-bookmark-test--record
    "target" name remote marker commit-id line))
 
+(ert-deftest majutsu-bookmark-keymap/remaps-delete-thing ()
+  (should (eq (lookup-key majutsu-bookmark-section-map
+                          [remap majutsu-delete-thing])
+              #'majutsu-bookmark-delete)))
+
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
                  '("main" . "origin"))))
@@ -444,6 +449,26 @@
       (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "delete"
                        "main" "glob:\"feat*\""))))))
+
+(ert-deftest majutsu-bookmark-delete/interactive-confirms-selection ()
+  (let (called confirmed)
+    (cl-letf (((symbol-function 'majutsu-read-bookmark-patterns)
+               (lambda (&rest _args) '("main")))
+              ((symbol-function 'majutsu-confirm)
+               (lambda (action prompt)
+                 (setq confirmed (list action prompt))
+                 t))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq called args)
+                 0))
+              ((symbol-function 'message) (lambda (&rest _args) nil)))
+      (call-interactively #'majutsu-bookmark-delete)
+      (should (equal confirmed
+                     '(bookmark-delete
+                       "Delete bookmark(s) main and propagate on next push? ")))
+      (should (equal (seq-remove #'null (flatten-tree called))
+                     '("bookmark" "delete" "main"))))))
 
 (ert-deftest majutsu-bookmark-forget/builds-pattern-args ()
   (let (called)
