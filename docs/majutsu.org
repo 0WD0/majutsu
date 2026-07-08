@@ -142,10 +142,14 @@ Majutsu organizes information into collapsible sections. You can use ~TAB~ to to
 ** Transient Menus
 Commands in Majutsu are grouped into "transient" menus. These popups allow you to select options and flags before executing a command. For example, pressing ~r~ opens the Rebase transient.
 
+Primary action entries, such as executing a rebase, squash, split, or upload, also use ~majutsu-transient-default-action~ (default ~RET~). When a primary action has its own command-specific key, the transient displays the command key and the default action key on the same row and either key invokes the action.
+
 Some transients support saved defaults. Global defaults follow Transient's normal storage; repository-local defaults use jj's secure repo =config-id= as the stable project key, so they survive moving the workspace. Where available, ~W~ saves the current transient arguments as defaults for the current jj repository only. This is intended for project-shaped UI policy such as log filters, diff format, and Git sync remotes, not for one-off destructive targets.
 
 ** Visual Selection System
 For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection system. You can mark "source" and "destination" revisions directly in the log buffer, and they will be highlighted with distinct colors until the operation is executed or cleared.
+
+Selection entries that support both manual input and point toggling show both keys on one row, for example =-r/r=: press the option key to read a revset manually, or the unprefixed key to toggle the revision at point. Majutsu runs these readers, point toggles, and primary actions in the buffer that opened the transient, so repository context, point defaults, and buffer-local selections stay consistent while the transient popup has focus.
 
 ** Completion and Confirmation
 Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Revset completion candidates are annotated with source labels (pseudo/workspace/bookmark/tag) to make ambiguous names easier to identify. Destructive operations like ~abandon~ or ~undo~ will prompt for confirmation.
@@ -794,6 +798,7 @@ Evil bindings are available in normal state:
 - User Option: majutsu-jj-executable :: Path to the =jj= binary (default: ="jj"=).
 - User Option: majutsu-jj-global-arguments :: Global arguments passed to all jj commands (default: =("--no-pager" "--color=always")=).
 - User Option: majutsu-jj-diffstat-columns :: Column width used only for =jj diff --stat= (default: =80=). Set to =nil= to inherit terminal width. Raise it if you want more full path visibility; keep it near 80 if you prefer compact stat bars.
+- User Option: majutsu-transient-default-action :: Key used for primary/default action suffixes in Majutsu transients (default: =RET=). Set it to another key description, such as =.=, to move the default action key.
 - User Option: majutsu-show-process-buffer-hint :: Whether to show the "Type $ for details" hint on errors.
 - User Option: majutsu-debug :: Enable debug logging for jj operations.
 - User Option: majutsu-show-command-output :: Show jj command output in messages.
