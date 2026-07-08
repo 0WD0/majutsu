@@ -103,6 +103,10 @@
          (token (car (split-string raw "[ \t]+" t))))
     token))
 
+(defvar-keymap majutsu-git-remote-section-map
+  :doc "Keymap for `jj-git-remote' sections."
+  "<remap> <majutsu-delete-thing>" #'majutsu-git-remote-remove)
+
 (defun majutsu-git--wash-remote-list (_args)
   "Wash `jj git remote list' output into remote sections."
   (let ((count 0))
@@ -156,11 +160,16 @@
     (when (zerop exit)
       (message "Added remote %s" remote))))
 
-(defun majutsu-git-remote-remove ()
+(defun majutsu-git-remote-remove (remote)
   "Remove a Git remote and forget its bookmarks."
-  (interactive)
-  (let* ((remote (majutsu-read-remote-name "Remove remote" t))
-         (cmd-args (list "remote" "remove" remote))
+  (interactive
+   (let ((remote (majutsu-read-remote-name "Remove remote" t)))
+     (unless (majutsu-confirm
+              'git-remote-remove
+              (format "Remove Git remote %s and forget its bookmarks? " remote))
+       (user-error "Remove canceled"))
+     (list remote)))
+  (let* ((cmd-args (list "remote" "remove" remote))
          (exit (majutsu-run-jj "git" cmd-args)))
     (when (zerop exit)
       (message "Removed remote %s" remote))))

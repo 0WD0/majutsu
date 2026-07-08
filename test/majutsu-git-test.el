@@ -14,6 +14,44 @@
 (require 'cl-lib)
 (require 'majutsu-git)
 
+(ert-deftest majutsu-git-remote-section/remaps-delete-thing ()
+  (should (eq (alist-get 'jj-git-remote magit--section-type-alist)
+              'majutsu-git-remote-section))
+  (should (eq (lookup-key majutsu-git-remote-section-map
+                          [remap majutsu-delete-thing])
+              #'majutsu-git-remote-remove)))
+
+(ert-deftest majutsu-git-remote-remove/builds-remove-args ()
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq called args)
+                 0))
+              ((symbol-function 'message) (lambda (&rest _args) nil)))
+      (majutsu-git-remote-remove "origin")
+      (should (equal (seq-remove #'null (flatten-tree called))
+                     '("git" "remote" "remove" "origin"))))))
+
+(ert-deftest majutsu-git-remote-remove/interactive-confirms-selection ()
+  (let (called confirmed)
+    (cl-letf (((symbol-function 'majutsu-read-remote-name)
+               (lambda (&rest _args) "origin"))
+              ((symbol-function 'majutsu-confirm)
+               (lambda (action prompt)
+                 (setq confirmed (list action prompt))
+                 t))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq called args)
+                 0))
+              ((symbol-function 'message) (lambda (&rest _args) nil)))
+      (call-interactively #'majutsu-git-remote-remove)
+      (should (equal confirmed
+                     '(git-remote-remove
+                       "Remove Git remote origin and forget its bookmarks? ")))
+      (should (equal (seq-remove #'null (flatten-tree called))
+                     '("git" "remote" "remove" "origin"))))))
+
 (ert-deftest majutsu-git--expand-option-arg/strips-tramp-prefix ()
   "--git-repo option paths should be converted to host-local paths."
   (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
