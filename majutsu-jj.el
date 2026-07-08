@@ -216,16 +216,65 @@ Each returned item is a string or (CANDIDATE . HELP)."
                           (split-string (buffer-string) "\n" t))))))
     (error nil)))
 
-(defun majutsu-jj--completion-suffix (annotations candidate)
-  "Return completion suffix for CANDIDATE in CATEGORY."
-  (majutsu-completion-string-suffix (gethash candidate annotations)))
+(defun majutsu-jj--completion-revision-kind-label (kind)
+  "Return display label for revision completion KIND."
+  (pcase kind
+    ('bookmark "bookmark")
+    ('remote-bookmark "remote bookmark")
+    ('tag "tag")
+    ('workspace "workspace")
+    ('change-id "change")
+    ('revset-alias "alias")
+    ((pred stringp) kind)
+    (_ nil)))
 
-(defun majutsu-jj--completion-suffix-function (annotations)
+(defun majutsu-jj--completion-revision-sources-label (entry)
+  "Return source label string for revision completion ENTRY."
+  (when-let* ((sources (plist-get entry :sources)))
+    (let* ((labels (delq nil (mapcar #'majutsu-jj--completion-revision-kind-label
+                                     sources)))
+           (kind (majutsu-jj--completion-revision-kind-label
+                  (plist-get entry :kind))))
+      (unless (or (null labels)
+                  (and (= (length labels) 1)
+                       (equal (car labels) kind)))
+        (string-join labels ",")))))
+
+(defun majutsu-jj--completion-revision-suffix (entry)
+  "Return aligned revision suffix for completion ENTRY."
+  (majutsu-completion-annotation
+   (majutsu-completion-column
+    (or (majutsu-jj--completion-revision-kind-label (plist-get entry :kind))
+        "revset")
+    15 'majutsu-completion-key)
+   (majutsu-completion-column
+    (majutsu-jj--completion-revision-sources-label entry)
+    16 'majutsu-completion-type)
+   (majutsu-completion-column
+    (plist-get entry :tag)
+    24 'majutsu-completion-documentation)
+   (majutsu-completion-column
+    (plist-get entry :id)
+    14 'majutsu-completion-number)
+   (majutsu-completion-field
+    (plist-get entry :help)
+    'majutsu-completion-documentation)))
+
+(defun majutsu-jj--completion-suffix (category entries annotations candidate)
+  "Return completion suffix for CANDIDATE in CATEGORY."
+  (or (and (eq category 'majutsu-revision)
+           (when-let* ((entry (gethash candidate entries)))
+             (majutsu-jj--completion-revision-suffix entry)))
+      (majutsu-completion-string-suffix (gethash candidate annotations))))
+
+(defun majutsu-jj--completion-suffix-function (category entries annotations)
   "Return candidate suffix function for completion CATEGORY.
 ENTRIES and ANNOTATIONS are candidate-indexed hash tables."
-  (when (majutsu-completion-annotation-suffix-function annotations)
+  (when (or (and (eq category 'majutsu-revision)
+                 (> (hash-table-count entries) 0))
+            (majutsu-completion-annotation-suffix-function annotations))
     (lambda (candidate)
-      (majutsu-jj--completion-suffix annotations candidate))))
+      (majutsu-jj--completion-suffix category entries annotations candidate))))
 
 (defun majutsu-jj--completion-payload (args &optional category)
   "Return jj native completion payload for ARGS.
@@ -233,6 +282,7 @@ ARGS are command-line arguments after the leading jj executable name."
   (let* ((category (or category 'majutsu-revision))
          (items (majutsu-jj-completion-items args))
          (annotations (make-hash-table :test #'equal))
+         (entries (make-hash-table :test #'equal))
          candidates)
     (dolist (item items)
       (let ((candidate (if (consp item) (car item) item))
@@ -244,8 +294,79 @@ ARGS are command-line arguments after the leading jj executable name."
     (list :category category
           :candidates (nreverse candidates)
           :annotations annotations
+          :entries entries
           :annotation-suffix-function
-          (majutsu-jj--completion-suffix-function annotations))))
+          (majutsu-jj--completion-suffix-function category entries annotations))))
+
+(defun majutsu-jj--revision-margin-label (entry)
+  "Return a fixed-width short kind label for revision completion ENTRY."
+  (pcase (plist-get entry :kind)
+    ('bookmark "Bm ")
+    ('remote-bookmark "Rb ")
+    ('tag "Tag")
+    ('workspace "Ws ")
+    ('change-id "Ch ")
+    ('revset-alias "Al ")
+    (_ "   ")))
+
+(defun majutsu-jj--revision-company-kind (entry)
+  "Return Company/Corfu kind symbol for revision completion ENTRY."
+  (when entry
+    (pcase (plist-get entry :kind)
+      ((or 'bookmark 'remote-bookmark) 'reference)
+      ('tag 'constant)
+      ('workspace 'module)
+      ('change-id 'value)
+      ('revset-alias 'function)
+      (_ 'text))))
+
+(defun majutsu-jj--revision-margin-face (entry)
+  "Return face used for revision completion ENTRY in Corfu margin."
+  (pcase (plist-get entry :kind)
+    ((or 'bookmark 'remote-bookmark) 'font-lock-keyword-face)
+    ('tag 'font-lock-constant-face)
+    ('workspace 'font-lock-variable-name-face)
+    ('change-id 'font-lock-type-face)
+    ('revset-alias 'font-lock-function-name-face)
+    (_ 'shadow)))
+
+(defun majutsu-jj--corfu-revision-margin-formatter (metadata)
+  "Return Corfu margin formatter for revision completion METADATA."
+  (when (eq (completion-metadata-get metadata 'category) 'majutsu-revision)
+    (when-let* ((entries (plist-get completion-extra-properties
+                                    :majutsu-revision-entries))
+                ((hash-table-p entries))
+                ((> (hash-table-count entries) 0)))
+      (lambda (candidate)
+        (when-let* ((entry (gethash candidate entries)))
+          (let ((label (majutsu-jj--revision-margin-label entry)))
+            (propertize label 'face (majutsu-jj--revision-margin-face entry))))))))
+
+(defun majutsu-jj--revision-doc-buffer-function (entries)
+  "Return popupinfo doc buffer function backed by revision ENTRIES."
+  (lambda (candidate)
+    (when-let* ((entry (and (hash-table-p entries)
+                            (gethash candidate entries))))
+      (with-current-buffer (get-buffer-create " *majutsu revision doc*")
+        (erase-buffer)
+        (insert candidate)
+        (when-let* ((kind (plist-get entry :kind)))
+          (insert "\nkind: " (symbol-name kind)))
+        (when-let* ((sources (plist-get entry :sources)))
+          (insert "\nsources: "
+                  (mapconcat (lambda (source)
+                               (format "%s" source))
+                             sources ", ")))
+        (when-let* ((tag (plist-get entry :tag)))
+          (insert "\ntag: " tag))
+        (when-let* ((id (plist-get entry :id)))
+          (insert "\nid: " id))
+        (when-let* ((help (plist-get entry :help)))
+          (insert "\n\n" help))
+        (current-buffer)))))
+
+(with-eval-after-load 'corfu
+  (add-hook 'corfu-margin-formatters #'majutsu-jj--corfu-revision-margin-formatter t))
 
 (defun majutsu-jj--completion-table (args &optional category)
   "Return a dynamic Emacs completion table using jj native completion.
@@ -256,6 +377,7 @@ like `|' or `..'.  CATEGORY, when non-nil, is exposed in completion
 metadata."
   (let* ((payload-cache (make-hash-table :test #'equal))
          (annotations (make-hash-table :test #'equal))
+         (entries (make-hash-table :test #'equal))
          (metadata-category (or category 'majutsu-revision))
          (metadata
           (majutsu-completion-payload-metadata
@@ -268,7 +390,7 @@ metadata."
                        (concat " " annotation))))
                  :annotation-suffix-function
                  (apply-partially #'majutsu-jj--completion-suffix
-                                  annotations))
+                                  metadata-category entries annotations))
            metadata-category)))
     (cl-labels
         ((payload-for
@@ -282,6 +404,10 @@ metadata."
                    (maphash (lambda (candidate annotation)
                               (puthash candidate annotation annotations))
                             payload-annotations))
+                 (when-let* ((payload-entries (plist-get payload :entries)))
+                   (maphash (lambda (candidate entry)
+                              (puthash candidate entry entries))
+                            payload-entries))
                  payload))))
       (completion-table-with-metadata
        (lambda (string predicate action)
@@ -314,7 +440,8 @@ refs (`<workspace>@'), bookmarks, and tags."
                      "tag" "list" "--quiet" "-T" "name ++ \"\\n\""))
         (add name)))
     (list :category 'majutsu-revision
-          :candidates (nreverse candidates))))
+          :candidates (nreverse candidates)
+          :entries (make-hash-table :test #'equal))))
 
 (defun majutsu-jj-revset-candidates ()
   "Return completion candidates for revset prompts.
@@ -338,13 +465,20 @@ refs (`<workspace>@'), bookmarks, and tags."
   "Return completion data for the revset expression at point."
   (let* ((input (majutsu-jj--revset-minibuffer-input))
          (payload (majutsu-jj--revset-completion-payload input))
+         (entries (plist-get payload :entries))
          (annotations (plist-get payload :annotations))
          (table (majutsu-completion-payload-table payload 'majutsu-revision)))
     (list (minibuffer-prompt-end) (point) table
           :category 'majutsu-revision
           :annotation-function (lambda (candidate)
                                  (and (hash-table-p annotations)
-                                      (gethash candidate annotations))))))
+                                      (gethash candidate annotations)))
+          :company-kind (lambda (candidate)
+                          (majutsu-jj--revision-company-kind
+                           (and (hash-table-p entries)
+                                (gethash candidate entries))))
+          :company-doc-buffer (majutsu-jj--revision-doc-buffer-function entries)
+          :majutsu-revision-entries entries)))
 
 (defun majutsu-jj-revset-complete ()
   "Complete the revset expression at point using jj's native completer."

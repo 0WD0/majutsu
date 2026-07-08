@@ -390,6 +390,9 @@ This mirrors Magit's behavior."
                      '("ws-a@" "main" "v1.0")))
       (should-not (plist-get data :sources))
       (should-not (plist-get data :annotations))
+      (let ((entries (plist-get data :entries)))
+        (should (hash-table-p entries))
+        (should (zerop (hash-table-count entries))))
       (should-not (plist-get data :annotation-suffix-function)))))
 
 (ert-deftest majutsu-jj-revset-completion-at-point/uses-current-expression ()
@@ -405,11 +408,14 @@ This mirrors Magit's behavior."
                    (lambda (args category)
                      (push args calls)
                      (should (eq category 'majutsu-revision))
-                     (let ((annotations (make-hash-table :test #'equal)))
+                     (let ((annotations (make-hash-table :test #'equal))
+                           (entries (make-hash-table :test #'equal)))
                        (puthash "main | dev" "Union with dev" annotations)
+                       (puthash "main | dev" '(:kind bookmark :help "Union with dev") entries)
                        (list :category 'majutsu-revision
                              :candidates '("main | dev")
-                             :annotations annotations)))))
+                             :annotations annotations
+                             :entries entries)))))
           (pcase-let ((`(,beg ,end ,table . ,props)
                        (majutsu-jj-revset-completion-at-point)))
             (should (= beg 1))
@@ -417,6 +423,9 @@ This mirrors Magit's behavior."
             (should-not (plist-member props :exclusive))
             (should (eq (plist-get props :category) 'majutsu-revision))
             (should (functionp (plist-get props :annotation-function)))
+            (should (functionp (plist-get props :company-kind)))
+            (should (functionp (plist-get props :company-doc-buffer)))
+            (should (hash-table-p (plist-get props :majutsu-revision-entries)))
             (should (equal (all-completions "main | " table)
                            '("main | dev")))
             (should (member '("diff" "-r" "main | ") calls))))))))
@@ -432,7 +441,8 @@ This mirrors Magit's behavior."
                 ((symbol-function 'majutsu-jj--completion-payload)
                  (lambda (_args _category)
                    (list :category 'majutsu-revision
-                         :candidates nil))))
+                         :candidates nil
+                         :entries (make-hash-table :test #'equal)))))
         (pcase-let ((`(,beg ,end ,table . ,props)
                      (majutsu-jj-revset-completion-at-point)))
           (should (= beg 1))
@@ -449,6 +459,34 @@ This mirrors Magit's behavior."
     (majutsu-jj--revset-minibuffer-setup)
     (should (equal completion-at-point-functions
                    '(majutsu-jj-revset-completion-at-point)))))
+
+(ert-deftest majutsu-jj--corfu-revision-margin-formatter/uses-entry-kind ()
+  "Corfu margin formatter should expose a fixed-width revision kind label."
+  (let ((completion-extra-properties nil))
+    (let ((entries (make-hash-table :test #'equal)))
+      (puthash "main" '(:kind bookmark) entries)
+      (let* ((completion-extra-properties (list :majutsu-revision-entries entries))
+             (formatter (majutsu-jj--corfu-revision-margin-formatter
+                         '(metadata (category . majutsu-revision))))
+             (label (funcall formatter "main")))
+        (should (functionp formatter))
+        (should (equal (substring-no-properties label) "Bm "))
+        (should (= (string-width label) 3))
+        (should (eq (majutsu-jj--revision-company-kind (gethash "main" entries))
+                    'reference))))))
+
+(ert-deftest majutsu-jj--corfu-revision-margin-formatter/skips-without-entries ()
+  "Corfu margin formatter must not run when entries metadata is missing."
+  (let ((completion-extra-properties nil))
+    (should-not (majutsu-jj--corfu-revision-margin-formatter
+                  '(metadata (category . majutsu-revision)))))
+  (let ((completion-extra-properties (list :majutsu-revision-entries nil)))
+    (should-not (majutsu-jj--corfu-revision-margin-formatter
+                  '(metadata (category . majutsu-revision)))))
+  (let ((completion-extra-properties
+         (list :majutsu-revision-entries (make-hash-table :test #'equal))))
+    (should-not (majutsu-jj--corfu-revision-margin-formatter
+                  '(metadata (category . majutsu-revision))))))
 
 (ert-deftest majutsu-read-single-revset/uses-completing-read ()
   "Single-revision reader should use ordinary `completing-read'."
