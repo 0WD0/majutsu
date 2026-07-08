@@ -28,7 +28,8 @@
 
 (defvar-keymap majutsu-tag-section-map
   :doc "Keymap for `jj-tag' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset
+  "<remap> <majutsu-delete-thing>" #'majutsu-tag-delete)
 
 (defvar-local majutsu-tag--list-all-remotes nil
   "Non-nil when the tag list includes remote tags.")
@@ -172,7 +173,13 @@ When ALLOW-MOVE is non-nil, pass `--allow-move'."
   "Delete tag NAMES.
 NAMES are passed as jj string patterns."
   (interactive
-   (list (majutsu-tag--read-patterns "Delete tag(s)/pattern(s)")))
+   (let ((names (majutsu-tag--read-patterns "Delete tag(s)/pattern(s)")))
+     (when names
+       (unless (majutsu-confirm
+                'tag-delete
+                (format "Delete tag(s) %s? " (string-join names ", ")))
+         (user-error "Delete canceled")))
+     (list names)))
   (when names
     (when (zerop (majutsu-run-jj "tag" "delete" names))
       (message "Deleted tag(s): %s" (string-join names ", ")))))
