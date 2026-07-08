@@ -30,7 +30,6 @@
 (require 'subr-x)
 (require 'with-editor)
 
-(require 'magit-git) ; for magit-with-editor
 (require 'magit-section)
 (require 'magit-process) ; for prompt functions
 
