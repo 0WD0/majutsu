@@ -5,134 +5,124 @@
 
 ** Added
 
-- Bug references: Integrate ~bug-reference-mode~ with Majutsu log and JJ
-  description buffers, including JJ Git remote based auto-setup.
-- Bookmarks: Add ~majutsu-bookmark-advance~ for =jj bookmark advance=,
-  plus ~majutsu-bookmark-advance-to~ for the explicit =--to= form and
-  ~majutsu-bookmark-advance-patterns~ for explicit bookmark
-  name/pattern selection with the configured default target.
-- Commands: Add ~majutsu-revert~ transient for =jj revert= with source
-  revision selection and destination placement options (=--onto= /
-  =--insert-after= / =--insert-before=).
-- Commands: Add ~majutsu-metaedit~ transient for =jj metaedit=. It targets
-  a single revision from the region, point, or =@= fallback and exposes
-  metadata edit/update flags.
-- Commands: Add ~majutsu-simplify-parents~ transient with both =--source=
-  and =--revision= options.
-- Commands: Add Magit-style ad-hoc runners: ~majutsu-command~,
-  ~majutsu-jj-command~, ~majutsu-jj-command-topdir~,
-  ~majutsu-shell-command~, and ~majutsu-shell-command-topdir~.
-  ~majutsu-mode-map~ now binds =!= to ~majutsu-command~, =Q= and =:= to
-  ~majutsu-jj-command~.  Native Evil integration binds ~|~ to
-  ~majutsu-jj-command~.
-- Transients: Revset arguments now use jj-native completion in command
-  context, so menus such as diff/rebase/restore/new complete the same
-  revision candidates as the jj CLI.
-- File inspection: Add ~majutsu-find-file-other-window~ and
-  ~majutsu-find-file-other-frame~ for opening blob buffers in another window
-  or frame.
-- Log: Add visible DAG relation navigation. ~[~ jumps to a parent revision and
-  ~]~ jumps to a child revision, prompting when multiple visible targets exist.
-- Log: Add semantic copy commands under the log dispatcher copy submenu for
-  section values, rendered fields, hidden entry fields, commit hashes, and
-  visible modules.
-- JJ descriptions: Add save/history/search/diff commands for description
-  buffers, including ~majutsu-jjdescription-save-message~,
-  ~majutsu-jjdescription-prev-message~,
-  ~majutsu-jjdescription-next-message~,
-  ~majutsu-jjdescription-search-message-backward~,
-  ~majutsu-jjdescription-search-message-forward~, and
-  ~majutsu-jjdescription-show-diff~.
-- Template DSL: Add first-class anonymous functions, concise
-  ~[:|arg| body]~ syntax, compile-time lambda application, and
-  ~majutsu-template-defspecial~.
+- Bug references in logs and description buffers ::
+  Majutsu enables ~bug-reference-mode~ there and can derive setup from JJ Git
+  remotes.
+
+- Bookmark advance commands ::
+  ~majutsu-bookmark-advance~ wraps =jj bookmark advance=, with helpers for
+  =--to= and explicit bookmark name/pattern selection.
+
+- Transients for more jj commands ::
+  Add =jj revert=, =jj metaedit=, and =jj simplify-parents= transients.
+
+- Magit-style ad-hoc command runners ::
+  Add ~majutsu-command~, ~majutsu-jj-command~,
+  ~majutsu-jj-command-topdir~, ~majutsu-shell-command~, and
+  ~majutsu-shell-command-topdir~.
+
+- Native jj revset completion in transients ::
+  Revset arguments complete the same command-context candidates as the jj CLI.
+
+- Blob buffers in other windows and frames ::
+  Add ~majutsu-find-file-other-window~ and
+  ~majutsu-find-file-other-frame~.
+
+- Visible DAG relation navigation ::
+  In log buffers, ~[~ jumps to a visible parent and ~]~ jumps to a visible
+  child.
+
+- Semantic copy commands for log buffers ::
+  The log copy submenu can copy section values, rendered fields, hidden entry
+  fields, hashes, and visible modules.
+
+- Description-buffer message helpers ::
+  JJ description buffers gain save, history, search, and diff commands.
+
+- More expressive template DSL forms ::
+  Add anonymous functions, ~[:|arg| body]~ syntax, compile-time lambda
+  application, and ~majutsu-template-defspecial~.
 
 ** Changed
 
-- Transients: Add a generic repository-local defaults layer keyed by jj's
-  secure repo =config-id=. Log, diff, and Git sync transients can save current
-  arguments as defaults for only the current repository, while global defaults
-  continue to use Transient's normal storage.
-- Remotes: Add shared remote readers and completion payloads for exact remote
-  names, new remote names, and remote name patterns. Git and bookmark commands
-  now use the same remote history, completion category, remote-list parsing,
-  and remote-at-point defaulting.
-- Git: Remote management now follows the upstream =remote add [OPTIONS]
-  REMOTE URL= shape more closely: adding a remote prompts for a new remote name
-  and URL/path positional, rejects existing names, and exposes =--fetch-tags=
-  and =--push-url=. =remote remove=, =rename=, and =set-url= now read existing
-  remotes more carefully and default to the remote at point in remote-list
-  buffers. =remote set-url= supports explicit =--fetch= and =--push= URL
-  updates.
-- Git: Expose simple upstream options that were missing from the transients:
-  repeated fetch remotes/branches, repeated clone branches, and repeated
-  =git push --option= values. Clone sources now use the same URL/path handling
-  as remote URLs.
-- Log: The log transient's =-r/--revision= filter is now a normal transient
-  argument stored with the rest of the log arguments. It uses Majutsu's standard
-  revset expression reader like diff =-r=, prefills the current filter for
-  editing, and clears the filter when submitted empty.
-- Completion: Standardize history-aware readers and completion categories for
-  revsets, bookmark/tag names and patterns, remote names/patterns,
-  workspace names, and repo-relative file paths using structured completion
-  payloads.
-- Completion: Expose standard completion metadata directly, use
-  Majutsu-owned completion faces and separator settings for structured
-  suffixes, and no longer fabricate generic fallback suffixes for candidates
-  without structured metadata.
-- Thing-at-point: Rework JJ at-point accessors in a more Magit-like style.
-  Revset readers and commands such as ~majutsu-edit-changeset~,
-  ~majutsu-new-dwim~, and ~majutsu-diff-dwim~ now prefer a literal
-  revision/ref under point where appropriate, while bookmark/tag readers
-  default to exact refs at point before falling back to revision-based
-  bookmark patterns.
-- Workspace: Workspace lists now show resolved roots when available and
-  treat unavailable roots as empty data instead of raw jj errors. Internally
-  this now uses one structured =jj workspace list -T= parse pipeline.
-- Log folding: Preserve display-only graph prefixes when folding and
-  unfolding log commits, including via Evil / evil-collection section
-  commands.
-- Log: Add the ~tail~ module for right-aligned auxiliary fields and use
-  display-only prefixes for graph/body indentation so ordinary copying and
-  cursor movement see semantic content.
-- Log: Store field/column/entry/decoration metadata on rendered spans and
-  always keep hidden ~id~, ~commit-id~, and ~parent-ids~ transport data
-  available for copy and relation-navigation commands.
-- Log: Repeated fields can now render differently in different modules.
-  Majutsu decodes transport values before running each column's ~:post~
-  handlers.
-- Template DSL: Rework implicit ~self~ around explicit/bindable receivers and
-  owner-bound extension definitions; local log helpers now use that lowering
-  model.
-- Template DSL: Lower higher-order forms through the core lambda/method
-  machinery and add semantic type propagation for helper arguments, method
-  chains, list elements, and deferred lambda specialization.
-- Template DSL: Align builtin helper, method, conversion, and operator
-  metadata with upstream =jj=, including option/list receivers, ~RefSymbol~,
-  literal-only parameters, ~if()~, and helper return types.
-- Absorb: =--into= should accept =<REVSETS>= (repeatable)
+- Some transients can save repository-local defaults ::
+  Log, diff, and Git sync transients can save defaults for the current jj
+  repository without changing global Transient defaults.
+
+- Remote readers are shared across commands ::
+  Git and bookmark commands now use common readers for exact remote names, new
+  remote names, and remote name patterns.
+
+- Git remote commands follow jj's current syntax more closely ::
+  Remote commands support options such as =--fetch-tags= and =--push-url= and
+  default more consistently from remote-list buffers.
+
+- Git transients expose more upstream options ::
+  Fetch remotes/branches, clone branches, and =git push --option= values can
+  be repeated.
+
+- Log filters are ordinary transient arguments ::
+  The log =-r/--revision= filter is stored with other log arguments, uses the
+  standard revset reader, and can be cleared with empty input.
+
+- Completion readers are more consistent ::
+  Revsets, refs, remotes, workspaces, and repo-relative files now use shared
+  history and completion metadata conventions.
+
+- Structured completion annotations are quieter ::
+  Candidate suffixes use Majutsu faces/separators and omit fabricated fallback
+  suffixes.
+
+- Commands prefer literal refs at point ::
+  Revset and ref readers now choose revisions/refs at point where appropriate
+  before falling back to broader context.
+
+- Workspace lists degrade more gracefully ::
+  Resolved roots are shown when available; unavailable roots no longer surface
+  raw jj errors as list contents.
+
+- Log folding preserves graph prefixes ::
+  Folding and unfolding log commits keeps the display-only graph decoration in
+  place.
+
+- Log row layouts carry more display metadata ::
+  Layouts now support right-aligned tail fields, display-only indentation,
+  repeated fields per module, and richer copy/navigation metadata.
+
+- Template DSL semantics track upstream jj more closely ::
+  Receiver handling, lambdas, type propagation, and builtin metadata were
+  aligned with current jj behavior.
+
+- Absorb accepts multiple destination revsets ::
+  The =--into= option is repeatable.
 
 ** Removed
 
-- File inspection: Remove ~majutsu-find-file-at-point~; use
-  ~majutsu-find-file~, which still defaults revset/path from context.
-- Diff: Remove the dedicated ~v~ binding from diff file sections, following
-  Magit's split between explicit file commands and diff-specific visits.
-- Log: Remove ~majutsu-log-field-faces~; configure field faces directly in
-  ~majutsu-log-commit-columns~ using each field's ~:face~ property.
+- ~majutsu-find-file-at-point~ was removed ::
+  Use ~majutsu-find-file~, which still defaults the revset and path from
+  context.
+
+- Diff file sections no longer bind ~v~ ::
+  Use the explicit file commands or the usual diff visit action instead.
+
+- ~majutsu-log-field-faces~ was removed ::
+  Configure field faces in ~majutsu-log-commit-columns~ with each field's
+  ~:face~ property.
 
 ** Fixed
 
-- Process: Synchronous jj commands now wait responsively so Emacs-based
-  GPG/pinentry prompts can be serviced instead of appearing to freeze Emacs.
-- Transients: Use a consistent ~RET~ execute binding in ~majutsu-squash~ and
-  ~majutsu-split~ while keeping ~s~.
-- Ediff: Quitting ~majutsu-ediff-resolve~ without edits no longer writes a
-  resolved result, so conflicts stay unresolved.
-- Ediff: Edited merge sessions now ask before saving, and partial
-  resolutions keep remaining conflicts as jj-parseable git-style markers.
-- Evil: Restore evil-collection-style diff-context bindings in
-  =majutsu-diff-mode=: ~+~ adds context, ~=~ removes context, and =~=
+- Synchronous jj commands remain responsive to prompts ::
+  Emacs-based GPG/pinentry prompts can be serviced while the command waits.
+
+- Quitting Ediff resolve without edits keeps conflicts unresolved ::
+  ~majutsu-ediff-resolve~ no longer writes a resolved result in that case.
+
+- Edited merge sessions preserve unresolved conflicts ::
+  Majutsu asks before saving edited merge sessions, and partial resolutions
+  keep remaining conflicts as jj-parseable markers.
+
+- Diff context keys match evil-collection again ::
+  In =majutsu-diff-mode=, ~+~ adds context, ~=~ removes context, and =~=
   resets to the default.
 
 * [0.6.0] - 2026-02-09
