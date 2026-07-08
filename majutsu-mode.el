@@ -86,7 +86,7 @@ afterward."
   "Z"   'majutsu-workspace
   "%"   'majutsu-workspace
   "a"   'majutsu-absorb
-  "k"   'majutsu-abandon
+  "k"   'majutsu-delete-thing
   ">"   'majutsu-sparse
   "C-/" 'majutsu-undo
   "C-?" 'majutsu-redo
@@ -247,6 +247,16 @@ keymaps remap this command to another command that visits the thing at
   (if-let* ((url (thing-at-point 'url t)))
       (browse-url url)
     (user-error "There is no thing at point that could be visited")))
+
+(defun majutsu-delete-thing ()
+  "Delete the thing at point.
+
+This is a placeholder command.  Where applicable, section-specific
+keymaps remap this command to another command that deletes the thing at
+point."
+  (declare (completion ignore))
+  (interactive)
+  (user-error "There is no thing at point that could be deleted"))
 
 ;;; Helpers
 

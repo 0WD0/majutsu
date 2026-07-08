@@ -24,7 +24,8 @@
 
 (defvar-keymap majutsu-commit-section-map
   :doc "Keymap for `jj-commit' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset
+  "<remap> <majutsu-delete-thing>" 'majutsu-abandon)
 
 ;;; Log State
 

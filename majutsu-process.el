@@ -143,8 +143,8 @@ the heading of each process section."
 (defvar-keymap majutsu-process-mode-map
   :doc "Keymap for `majutsu-process-mode'."
   :parent majutsu-mode-map
-  "g" #'undefined
-  "k" #'majutsu-process-kill)
+  "<remap> <majutsu-refresh>" #'undefined
+  "<remap> <majutsu-delete-thing>" #'majutsu-process-kill)
 
 (define-derived-mode majutsu-process-mode majutsu-mode "Majutsu Process"
   "Mode for looking at jj process output."
