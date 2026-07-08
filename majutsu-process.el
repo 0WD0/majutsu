@@ -138,10 +138,7 @@ the heading of each process section."
 
 ;;; Process buffer
 
-(defclass majutsu-process-section (magit-section)
-  ((process :initform nil)))
-
-(setf (alist-get 'process magit--section-type-alist) 'majutsu-process-section)
+(setf (alist-get 'process magit--section-type-alist) 'magit-process-section)
 
 (defvar-keymap majutsu-process-mode-map
   :doc "Keymap for `majutsu-process-mode'."
@@ -406,7 +403,7 @@ is not a `magit-section', in which case the section slots are left unset."
   (process-put process 'section section)
   (process-put process 'command-buf (current-buffer))
   (process-put process 'default-dir root)
-  (when (magit-section-p section)
+  (when (magit-process-section-p section)
     (oset section process process)
     (oset section value process))
   (with-current-buffer (process-buffer process)
