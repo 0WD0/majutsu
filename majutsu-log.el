@@ -137,6 +137,14 @@ decoded back to literal newlines after field splitting.")
     (timestamp . (majutsu-log-post-remove-ago-suffix)))
   "Field-specific default postprocessors appended after global defaults.")
 
+(defconst majutsu-log--canonical-commit-id-template
+  '[:commit_id]
+  "Machine template for the canonical full commit id.")
+
+(defconst majutsu-log--canonical-description-template
+  '[:description :first_line]
+  "Machine template for the canonical one-line description.")
+
 (defcustom majutsu-log-commit-columns
   '((:field change-id :module heading
      :template majutsu-log-template-change-id :face t)
@@ -163,13 +171,13 @@ decoded back to literal newlines after field splitting.")
     (:field id :module metadata
      :template majutsu-log-template-id :face nil)
     (:field commit-id :module metadata
-     :template majutsu-log-template-commit-id :face nil)
+     :template majutsu-log--canonical-commit-id-template :face nil)
     (:field parent-ids :module metadata
      :template majutsu-log-template-parent-ids :face nil)
     (:field flags :module metadata
      :template majutsu-log-template-flags :face nil)
     (:field description :module metadata
-     :template majutsu-log-template-description :face nil))
+     :template majutsu-log--canonical-description-template :face nil))
   "Flat row columns controlling log transport and rendering.
 Only metadata occurrences become semantic entry fields; visible occurrences
 remain available through point-local row copy commands."

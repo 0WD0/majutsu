@@ -188,6 +188,35 @@
     (should (eq (plist-get spec :face) t))
     (should (equal (plist-get spec :post) nil))))
 
+(ert-deftest majutsu-log-metadata-templates-ignore-visible-customization ()
+  "Presentation templates must not change canonical machine fields."
+  (let ((majutsu-log-template-commit-id
+         '["\n" [:commit_id :shortest 8]])
+        (majutsu-log-template-description
+         '["\n"
+           [:if [:description]
+               [:method [:description] :first_line]
+             [:label
+              [:if [:empty] "empty"]
+              [:label "description placeholder" "□"]]]]))
+    (let* ((compiled (majutsu-log--compile-columns))
+           (heading-description
+            (majutsu-log-test--column compiled 'description 'heading))
+           (tail-commit-id
+            (majutsu-log-test--column compiled 'commit-id 'tail))
+           (metadata-description
+            (majutsu-log-test--column compiled 'description 'metadata))
+           (metadata-commit-id
+            (majutsu-log-test--column compiled 'commit-id 'metadata)))
+      (should (equal (majutsu-row--column-template heading-description)
+                     majutsu-log-template-description))
+      (should (equal (majutsu-row--column-template tail-commit-id)
+                     majutsu-log-template-commit-id))
+      (should (equal (majutsu-row--column-template metadata-description)
+                     '[:description :first_line]))
+      (should (equal (majutsu-row--column-template metadata-commit-id)
+                     '[:commit_id])))))
+
 (ert-deftest majutsu-log-explicit-default-postprocessors-keep-field-defaults ()
   "Explicit `:post :default' should retain field-specific defaults."
   (let ((spec (majutsu-row-normalize-column-spec
