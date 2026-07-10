@@ -269,6 +269,8 @@ Jujutsu (jj) v0.39.0 or later installed and in your @samp{PATH}.
 @item
 @samp{magit} 3.3.0 or later (for section management).
 @item
+@samp{consult} 1.0 or later and @samp{plz} 0.9.1 or later (for native Gerrit completion).
+@item
 @samp{transient} 0.5.0 or later (popup menus).
 @item
 @samp{with-editor} (for descriptive message editing).
@@ -1984,6 +1986,26 @@ Advanced options expose submit@comma{} skip validation@comma{} merged uploads@co
 Save stable upload options as defaults for this jj repository. Majutsu remembers @samp{--remote}@comma{} @samp{--remote-branch}@comma{} @samp{--notify}@comma{} and @samp{--ignore-attention-set}@comma{} but not revisions@comma{} dry-run@comma{} metadata@comma{} state@comma{} or submit-related flags.
 @end table
 Runs: @samp{jj gerrit upload}
+
+Reviewer/CC prompts use Majutsu's native Gerrit REST client and Gerrit's
+@samp{/accounts/} suggestion endpoint. Topic completion uses the same REST client to
+query open changes and aggregate existing topics. Label and hashtag prompts are
+free-form minibuffer input.
+
+REST-backed completion is enabled only when Majutsu can determine a reliable
+Gerrit web/API origin. HTTP(S) remotes work directly. For SSH remotes such as
+@samp{ssh://user@@host:29418/project}@comma{} configure Gerrit's web URL explicitly@comma{} for
+example:
+
+@example
+jj config set --repo gerrit.review-url http://host:8080
+@end example
+
+Majutsu intentionally does not guess a web/API URL from SSH port @samp{29418}.
+This setting is not required for @samp{jj gerrit upload} itself; upstream jj uses
+@samp{gerrit.review-url} only to generate @samp{Link:} trailers instead of @samp{Change-Id:}
+trailers. Majutsu also uses it as a reliable web/API base for native Gerrit
+completion.
 
 @node Remotes
 @section Remotes

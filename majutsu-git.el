@@ -24,6 +24,8 @@
 (require 'seq)
 (require 'subr-x)
 
+(autoload 'majutsu-gerrit-upload-transient "majutsu-gerrit-upload" nil t)
+
 (declare-function majutsu-repository-transient-prefix "majutsu-core")
 (declare-function majutsu-transient-read-remote-patterns "majutsu-remote")
 

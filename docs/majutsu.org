@@ -29,6 +29,7 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 - Emacs 29.1 or later.
 - Jujutsu (jj) v0.39.0 or later installed and in your =PATH=.
 - =magit= 3.3.0 or later (for section management).
+- =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit completion).
 - =transient= 0.5.0 or later (popup menus).
 - =with-editor= (for descriptive message editing).
 
@@ -779,6 +780,26 @@ Runs: =jj git fetch=
 - Advanced options expose submit, skip validation, merged uploads, deadlines, custom keyed values, and trace values.
 - Key: W :: Save stable upload options as defaults for this jj repository. Majutsu remembers =--remote=, =--remote-branch=, =--notify=, and =--ignore-attention-set=, but not revisions, dry-run, metadata, state, or submit-related flags.
 Runs: =jj gerrit upload=
+
+Reviewer/CC prompts use Majutsu's native Gerrit REST client and Gerrit's
+=/accounts/= suggestion endpoint. Topic completion uses the same REST client to
+query open changes and aggregate existing topics. Label and hashtag prompts are
+free-form minibuffer input.
+
+REST-backed completion is enabled only when Majutsu can determine a reliable
+Gerrit web/API origin. HTTP(S) remotes work directly. For SSH remotes such as
+=ssh://user@host:29418/project=, configure Gerrit's web URL explicitly, for
+example:
+
+#+begin_src sh
+jj config set --repo gerrit.review-url http://host:8080
+#+end_src
+
+Majutsu intentionally does not guess a web/API URL from SSH port =29418=.
+This setting is not required for =jj gerrit upload= itself; upstream jj uses
+=gerrit.review-url= only to generate =Link:= trailers instead of =Change-Id:=
+trailers. Majutsu also uses it as a reliable web/API base for native Gerrit
+completion.
 
 ** Remotes
 - Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.

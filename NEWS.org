@@ -58,6 +58,7 @@
 - Gerrit upload transient ::
   The Git dispatcher now exposes a =jj gerrit upload= transient with revision
   selection, review metadata, state flags, and repository-local defaults.
+  Reviewer, CC, and topic prompts use Majutsu's native Gerrit REST client.
 
 ** Changed
 
