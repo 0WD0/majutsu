@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'transient)
 
 (declare-function majutsu-op-diff-default-action "majutsu-op" ())
 (declare-function majutsu-op-diff-evolog-at-point "majutsu-op" ())
@@ -57,6 +58,21 @@ When nil, Majutsu leaves Evil's state untouched."
           (const :tag "Replace" replace)
           (symbol :tag "Custom state"))
   :group 'majutsu-evil)
+
+(defconst majutsu-evil--dispatch-keys
+  '(("x" majutsu-abandon)
+    ("L" majutsu-log-transient)
+    ("_" majutsu-revert)
+    ("*" majutsu-workspace)
+    ("u" majutsu-undo)
+    ("C-r" majutsu-redo)
+    ("`" majutsu-process-buffer))
+  "Evil-facing keys shown and accepted by `majutsu-dispatch'.")
+
+(defun majutsu-evil--adjust-dispatch ()
+  "Make `majutsu-dispatch' use Majutsu's Evil-facing keys."
+  (pcase-dolist (`(,key ,command) majutsu-evil--dispatch-keys)
+    (transient-suffix-put 'majutsu-dispatch command :key key)))
 
 (defun majutsu-evil--bind-conflict-side-keys (map before)
   "Bind 1-9 in MAP to conflict side commands.
@@ -279,7 +295,8 @@ Safe to call multiple times.  Set
   (interactive)
   (when (and (featurep 'evil) majutsu-evil-enable-integration)
     (majutsu-evil--set-initial-state)
-    (majutsu-evil--define-mode-keys)))
+    (majutsu-evil--define-mode-keys)
+    (majutsu-evil--adjust-dispatch)))
 
 (with-eval-after-load 'evil
   (majutsu-evil-setup))

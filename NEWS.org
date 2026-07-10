@@ -57,6 +57,10 @@
 
 ** Changed
 
+- Evil dispatcher entries show Evil-facing keys ::
+  The top-level dispatcher now mirrors buffer bindings such as ~x~, ~L~, ~_~,
+  ~*~, ~u~, ~C-r~, and ~`~ when Evil integration is enabled.
+
 - Bookmark lists use typed row layouts ::
   Bookmark buffers now read typed =jj bookmark list -T= records and use a
   customizable layout for headings, summaries, and conflicted targets.

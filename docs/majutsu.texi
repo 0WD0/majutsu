@@ -2353,6 +2353,8 @@ Set to @samp{nil} to disable automatic Evil bindings.
 The Evil state to start in (default: @samp{normal}).
 @end defopt
 
+When Evil integration is enabled@comma{} the dispatcher displays and accepts the same Evil-facing top-level keys used in Majutsu buffers@comma{} including @samp{x}@comma{} @samp{L}@comma{} @samp{_}@comma{} @samp{*}@comma{} @samp{u}@comma{} @samp{C-r}@comma{} and @samp{`}. The global Evil @samp{v} binding remains Visual state; open evolog from the dispatcher with @samp{? v}.
+
 @node Template DSL
 @chapter Template DSL
 

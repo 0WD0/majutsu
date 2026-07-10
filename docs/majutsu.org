@@ -888,6 +888,8 @@ Evil bindings are available in normal state:
 - User Option: majutsu-evil-enable-integration :: Set to =nil= to disable automatic Evil bindings.
 - User Option: majutsu-evil-initial-state :: The Evil state to start in (default: =normal=).
 
+When Evil integration is enabled, the dispatcher displays and accepts the same Evil-facing top-level keys used in Majutsu buffers, including =x=, =L=, =_=, =*=, =u=, =C-r=, and =`=. The global Evil =v= binding remains Visual state; open evolog from the dispatcher with =? v=.
+
 * Template DSL
 ** Overview
 Majutsu includes a domain-specific language (DSL) for building Jujutsu templates in Emacs Lisp. The main entry point is =majutsu-tpl=, which compiles a vector-based DSL form into a jj template string.
