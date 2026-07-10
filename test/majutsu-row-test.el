@@ -419,11 +419,18 @@
                  (lambda (format-string &rest args)
                    (apply #'format format-string args)))
                 ((symbol-function 'completing-read)
-                 (lambda (_prompt candidates &rest _)
-                   (or (seq-find (lambda (candidate)
-                                   (string-match-p "id" candidate))
-                                 candidates)
-                       (car candidates)))))
+                 (lambda (_prompt collection &rest _)
+                   (let ((annotation-function
+                          (plist-get completion-extra-properties
+                                     :annotation-function)))
+                     (should (eq (plist-get completion-extra-properties
+                                            :category)
+                                 'majutsu-row-field))
+                     (should (equal (mapcar #'car collection)
+                                    '("title" "author" "id")))
+                     (should (equal (funcall annotation-function "id")
+                                    " id-1")))
+                   "id")))
         (majutsu-row-copy-entry-field))
       (should (equal copied "id-1")))))
 

@@ -338,11 +338,8 @@
                  (lambda (format-string &rest args)
                    (apply #'format format-string args)))
                 ((symbol-function 'completing-read)
-                 (lambda (_prompt candidates &rest _)
-                   (or (seq-find (lambda (candidate)
-                                   (string-match-p "operation-id" candidate))
-                                 candidates)
-                       (car candidates)))))
+                 (lambda (_prompt _collection &rest _)
+                   "operation-id")))
         (majutsu-row-copy-entry-field))
       (should (equal copied "op-full")))))
 

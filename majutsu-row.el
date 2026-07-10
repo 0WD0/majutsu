@@ -1357,19 +1357,20 @@ Drops tail text when both heading and tail are present in the copied region."
   "Read one canonical field from ENTRY using COMPILED."
   (let* ((default-field (majutsu-row-text-property-near-point
                          'majutsu-row-field))
-         (candidates (mapcar (lambda (field)
-                               (cons (format "%s\t%s"
-                                             field
-                                             (majutsu-row-entry-field-candidate-preview
-                                              entry field))
-                                     field))
-                             (majutsu-row-entry-copyable-fields
-                              entry compiled)))
-         (default (car (rassoc default-field candidates)))
-         (choice (completing-read (or prompt "Copy entry field: ")
-                                  (mapcar #'car candidates)
-                                  nil t nil nil default)))
-    (or (cdr (assoc choice candidates))
+         (field-alist (mapcar (lambda (field)
+                                (cons (symbol-name field) field))
+                              (majutsu-row-entry-copyable-fields
+                               entry compiled)))
+         (items (mapcar (lambda (cell)
+                          (cons (car cell)
+                                (majutsu-row-entry-field-candidate-preview
+                                 entry (cdr cell))))
+                        field-alist))
+         (default (car (rassoc default-field field-alist)))
+         (choice (majutsu-completing-read
+                  (or prompt "Copy entry field: ")
+                  items nil t nil nil default 'majutsu-row-field)))
+    (or (alist-get choice field-alist nil nil #'equal)
         (user-error "Unknown entry field %S" choice))))
 
 ;;; Copy string helper
