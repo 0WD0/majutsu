@@ -18,10 +18,10 @@
 
 (require 'majutsu)
 
-(declare-function majutsu-op-log-show-at-point "majutsu-op" ())
-(declare-function majutsu-op-show-default-action "majutsu-op" ())
-(declare-function majutsu-op-show-diff-at-point "majutsu-op" ())
-(declare-function majutsu-op-show-evolog-at-point "majutsu-op" ())
+(declare-function majutsu-op-diff-evolog-at-point "majutsu-op" ())
+(declare-function majutsu-op-diff-transient "majutsu-op" ())
+(declare-function majutsu-op-log-restore-at-point "majutsu-op" ())
+(declare-function majutsu-op-log-revert-at-point "majutsu-op" ())
 (declare-function majutsu-op-transient "majutsu-op" ())
 (declare-function turn-off-evil-snipe-mode "evil-snipe" ())
 (declare-function turn-off-evil-snipe-override-mode "evil-snipe" ())
@@ -113,7 +113,6 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
     (dolist (mode '(majutsu-mode
                     majutsu-log-mode
                     majutsu-op-log-mode
-                    majutsu-op-show-mode
                     majutsu-op-diff-mode
                     majutsu-evolog-mode
                     majutsu-evolog-diff-mode
@@ -233,16 +232,13 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "A") #'majutsu-new-with-after)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-log-mode-map
-    (kbd "RET") #'majutsu-op-log-show-at-point
-    (kbd "d") #'majutsu-op-log-show-at-point)
-
-  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-show-mode-map
-    (kbd "RET") #'majutsu-op-show-default-action
-    (kbd "v") #'majutsu-op-show-evolog-at-point)
+    (kbd "d") #'majutsu-op-diff-transient
+    (kbd "u") #'majutsu-op-log-restore-at-point
+    (kbd "r") #'majutsu-op-log-revert-at-point)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-diff-mode-map
-    (kbd "RET") #'majutsu-op-show-default-action
-    (kbd "v") #'majutsu-op-show-evolog-at-point)
+    (kbd "RET") #'majutsu-op-diff-evolog-at-point
+    (kbd "v") #'majutsu-op-diff-evolog-at-point)
 
   ;; majutsu-conflict-mode is a minor mode
   (add-hook 'majutsu-conflict-mode-hook #'evil-normalize-keymaps)

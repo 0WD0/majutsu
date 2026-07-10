@@ -1470,10 +1470,10 @@ bare keyword self dispatch."
     ((:list Trailer)
      (contains_key :args ((key Stringify)) :returns Boolean))
     (Operation
+     (attributes :returns String :keyword t)
      (current_operation :returns Boolean :keyword t)
      (description :returns String :keyword t)
      (id :returns OperationId :keyword t)
-     (tags :returns String :keyword t)
      (time :returns TimestampRange :keyword t)
      (user :returns String :keyword t)
      (snapshot :returns Boolean :keyword t)

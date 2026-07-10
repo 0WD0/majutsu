@@ -47,7 +47,6 @@
       (let ((majutsu-evil-initial-state 'normal))
         (majutsu-evil--set-initial-state)))
     (should (member '(majutsu-op-log-mode normal) calls))
-    (should (member '(majutsu-op-show-mode normal) calls))
     (should (member '(majutsu-op-diff-mode normal) calls))
     (should (member '(majutsu-evolog-mode normal) calls))
     (should (member '(majutsu-evolog-diff-mode normal) calls))))
@@ -119,24 +118,17 @@
                (and (eq (nth 0 call) 'normal)
                     (eq (nth 1 call) majutsu-op-log-mode-map)
                     (equal (nth 2 call)
-                           (list (kbd "RET") #'majutsu-op-log-show-at-point
-                                 (kbd "d") #'majutsu-op-log-show-at-point))))
-             calls))
-    (should (seq-some
-             (lambda (call)
-               (and (eq (nth 0 call) 'normal)
-                    (eq (nth 1 call) majutsu-op-show-mode-map)
-                    (equal (nth 2 call)
-                           (list (kbd "RET") #'majutsu-op-show-default-action
-                                 (kbd "v") #'majutsu-op-show-evolog-at-point))))
+                           (list (kbd "d") #'majutsu-op-diff-transient
+                                 (kbd "u") #'majutsu-op-log-restore-at-point
+                                 (kbd "r") #'majutsu-op-log-revert-at-point))))
              calls))
     (should (seq-some
              (lambda (call)
                (and (eq (nth 0 call) 'normal)
                     (eq (nth 1 call) majutsu-op-diff-mode-map)
                     (equal (nth 2 call)
-                           (list (kbd "RET") #'majutsu-op-show-default-action
-                                 (kbd "v") #'majutsu-op-show-evolog-at-point))))
+                           (list (kbd "RET") #'majutsu-op-diff-evolog-at-point
+                                 (kbd "v") #'majutsu-op-diff-evolog-at-point))))
              calls))))
 
 (provide 'majutsu-evil-test)

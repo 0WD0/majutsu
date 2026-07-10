@@ -23,8 +23,6 @@
 (require 'subr-x)
 (require 'transient)
 
-(declare-function majutsu-diff-revset "majutsu-diff" (revset &optional args range filesets))
-(declare-function majutsu-edit-changeset "majutsu-edit" (&optional arg))
 (declare-function majutsu-evolog "majutsu-evolog" (revset &optional args))
 (declare-function majutsu-jj-buffer-string "majutsu-jj" (&rest args))
 (declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
@@ -60,25 +58,22 @@
 (defconst majutsu-op--field-separator "\x1e"
   "Field separator used by Majutsu operation templates.")
 
-(defconst majutsu-op--show-template
+(defconst majutsu-op--metadata-template
   (majutsu-tpl
    [:concat
-    [:separate "\x1e"
-               [:id]
-               [:label "id short" [:id :short]]
-               [:label "user" [:user]]
-               [:label "workspace_name" [:workspace_name]]
-               [:label "time start" [:method [:time :start] :format "%Y-%m-%d %H:%M:%S"]]
-               [:label "time end" [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
-               [:label "time duration" [:method [:time] :duration]]
-               [:if [:snapshot]
-                   [:label "snapshot" "snapshot"]
-                 "op"]
-               [:label "description first_line"
-                       [:description :first_line]]]
+    [:join "\x1e"
+           [:id]
+           [:id :short]
+           [:user]
+           [:workspace_name]
+           [:method [:time :start] :format "%Y-%m-%d %H:%M:%S"]
+           [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]
+           [:method [:time] :duration]
+           [:if [:root] "root" [:if [:snapshot] "snapshot" "op"]]
+           [:description :first_line]]
     "\n"]
    'Operation)
-  "Template used for operation metadata in `majutsu-op-show'.")
+  "Template used for internal single-operation metadata queries.")
 
 (defconst majutsu-op--commit-summary-template
   (majutsu-tpl
@@ -107,10 +102,11 @@
 
 (defun majutsu-op--split-record (line expected)
   "Split LINE into EXPECTED fields, or return nil when malformed."
-  (let ((fields (majutsu--split-fields line majutsu-op--field-separator)))
+  (let ((fields (majutsu--split-fields
+                 line majutsu-op--field-separator expected)))
     (and (= (length fields) expected) fields)))
 
-(defun majutsu-op--parse-show-line (line)
+(defun majutsu-op--parse-metadata-line (line)
   "Parse one operation metadata LINE into a plist."
   (when-let* ((fields (majutsu-op--split-record line 9)))
     (pcase-let ((`(,op-id ,op-id-short ,user ,workspace
@@ -310,7 +306,7 @@
 
 (defun majutsu-op--operation-at-point ()
   "Return the enclosing operation id at point, or nil."
-  (majutsu-op--section-value-in-lineage '(jj-op jj-op-show)))
+  (majutsu-op--section-value-in-lineage 'jj-op))
 
 (defun majutsu-op--diff-line-at-point ()
   "Return the parsed operation diff line value at point, or nil."
@@ -318,13 +314,11 @@
 
 (defun majutsu-op--selection-locate (operation)
   "Locate OPERATION in the current operation buffer."
-  (or (majutsu-selection-find-section operation 'jj-op)
-      (majutsu-selection-find-section operation 'jj-op-show)))
+  (majutsu-selection-find-section operation 'jj-op))
 
 (defun majutsu-op--selection-targets ()
   "Return operation ids selected from point or region."
   (or (magit-region-values 'jj-op t)
-      (magit-region-values 'jj-op-show t)
       (when-let* ((operation (majutsu-op--operation-at-point)))
         (list operation))))
 
@@ -332,12 +326,6 @@
   (oset obj value
         (when-let* ((operation (majutsu-op--operation-at-point)))
           (list (concat "--operation=" operation)))))
-
-(defun majutsu-op--diff-line-commit-revset (line)
-  "Return a commit-id revset for parsed operation diff LINE."
-  (when-let* ((commit-id (and (not (plist-get line :absent))
-                              (plist-get line :commit-id))))
-    (format "commit_id(%s)" commit-id)))
 
 (defun majutsu-op--diff-line-evolog-revset (line)
   "Return an evolog revset for parsed operation diff LINE."
@@ -356,12 +344,6 @@
 (defconst majutsu-op--read-only-global-args
   '("--at-op=@" "--ignore-working-copy")
   "Top-level jj arguments for read-only operation queries.")
-
-(defun majutsu-op--shorten-id (id)
-  "Return a short display prefix for operation ID."
-  (if (> (length id) 12)
-      (substring id 0 12)
-    id))
 
 (defun majutsu-op--transient-read-operation (prompt initial-input history)
   "Read an operation for a transient option.
@@ -417,7 +399,6 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :transient-non-suffix t
   [["History"
     ("l" "Log..." majutsu-op-log-transient)
-    ("s" "Show" majutsu-op-show)
     ("d" "Diff..." majutsu-op-diff-transient)]
    ["State"
     ("u" "Undo" majutsu-undo)
@@ -433,46 +414,63 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defcustom majutsu-op-log-columns
   '((:field op-id-short :module heading
      :template [:label "id short" [:id :short]] :face t)
-    (:field kind :module heading
-     :template [:if [:snapshot] [:label "snapshot" "snapshot"] "op"]
-     :face t :post majutsu-op--row-machine-field)
-    (:field description :module heading
-     :template [:label "description first_line"
-                [:method [:description] :first_line]] :face t)
-    (:field id-line :module body
-     :template [:concat "Id: " [:id]] :face t)
-    (:field user-line :module body
-     :template [:concat "User: " [:label "user" [:user]]] :face t)
-    (:field workspace-line :module body
-     :template [:concat "Workspace: "
-                [:label "workspace_name" [:workspace_name]]] :face t)
-    (:field time-line :module body
-     :template [:concat
-                "Time: "
-                [:label "time end"
-                 [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
-                " (" [:label "time end ago" [:method [:time :end] :ago]]
-                "), lasted "
-                [:label "time duration" [:method [:time] :duration]]]
+    (:field root-marker :module heading
+     :template [:if [:root] [:label "root" "root()"] ""] :face t)
+    (:field user :module heading
+     :template [:if [:root] "" [:label "user" [:user]]] :face t)
+    (:field workspace :module heading
+     :template [:if [:root]
+                ""
+                [:label "workspace_name" [:workspace_name]]]
      :face t)
-    (:field tags :module body
-     :template [:label "tags first_line" [:method [:tags] :first_line]]
+    (:field time-range :module heading
+     :template [:if [:root]
+                ""
+                [:concat
+                 [:label "time end ago" [:method [:time :end] :ago]]
+                 [:label "time" ", lasted "]
+                 [:label "time duration" [:method [:time] :duration]]]]
+     :face t)
+    (:field description :module body
+     :template [:if [:root]
+                ""
+                [:label "description first_line"
+                 [:method [:description] :first_line]]]
+     :face t)
+    (:field attributes :module body
+     :template [:if [:root]
+                ""
+                [:label "attributes"
+                 [:method [:attributes] :replace "\n" "\x1f"]]]
      :face t)
     (:field op-id :module metadata :template [:id]
      :face nil :post majutsu-op--row-machine-field)
-    (:field user :module metadata
-     :template [:label "user" [:user]] :face nil)
-    (:field workspace :module metadata
-     :template [:label "workspace_name" [:workspace_name]] :face nil)
+    (:field op-id-short :module metadata :template [:id :short]
+     :face nil :post majutsu-op--row-machine-field)
+    (:field kind :module metadata
+     :template [:if [:root]
+                "root"
+                [:if [:snapshot] "snapshot" "op"]]
+     :face nil :post majutsu-op--row-machine-field)
+    (:field current :module metadata
+     :template [:if [:current_operation] "t" ""]
+     :face nil :post majutsu-op--row-machine-field)
+    (:field user :module metadata :template [:user] :face nil)
+    (:field workspace :module metadata :template [:workspace_name] :face nil)
     (:field time :module metadata
-     :template [:label "time end"
-                [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
+     :template [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]
      :face nil)
     (:field time-ago :module metadata
-     :template [:label "time end ago" [:method [:time :end] :ago]] :face nil)
+     :template [:method [:time :end] :ago] :face nil)
     (:field duration :module metadata
-     :template [:label "time duration" [:method [:time] :duration]] :face nil))
-  "Flat row columns controlling operation log rendering."
+     :template [:method [:time] :duration] :face nil)
+    (:field description :module metadata
+     :template [:method [:description] :first_line] :face nil)
+    (:field attributes :module metadata
+     :template [:method [:attributes] :replace "\n" "\x1f"] :face nil))
+  "Flat columns for a native compact operation row.
+The visible modules mirror jj's compact formatter.  Canonical metadata is
+transported separately, with complete encoded attributes as the last field."
   :type 'sexp
   :group 'majutsu
   :set (lambda (symbol value)
@@ -524,35 +522,52 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
       (transient-args 'majutsu-op-log-transient)
     '()))
 
+(defun majutsu-op-log--validate-args (args)
+  "Return normalized safe operation log ARGS or signal `user-error'.
+Majutsu owns the template and row framing.  Only one limit, reverse-order
+switch, and graph switch are allowed."
+  (unless (listp args)
+    (user-error "Operation log arguments must be a list, got %S" args))
+  (let ((rest args)
+        (seen (make-hash-table :test #'eq))
+        normalized)
+    (while rest
+      (let ((arg (pop rest)))
+        (unless (stringp arg)
+          (user-error "Unsupported operation log argument: %S" arg))
+        (pcase-let*
+            ((`(,kind ,value)
+              (cond
+               ((string-match "\\`--limit=\\([0-9]+\\)\\'" arg)
+                (list 'limit (format "--limit=%s" (match-string 1 arg))))
+               ((member arg '("-n" "--limit"))
+                (let ((limit (pop rest)))
+                  (unless (and (stringp limit)
+                               (string-match-p "\\`[0-9]+\\'" limit))
+                    (user-error "Invalid operation log limit: %S" limit))
+                  (list 'limit (format "--limit=%s" limit))))
+               ((equal arg "--reversed")
+                '(reversed "--reversed"))
+               ((member arg '("-G" "--no-graph"))
+                '(no-graph "--no-graph"))
+               (t
+                (user-error "Unsupported operation log argument: %s" arg)))))
+          (when (gethash kind seen)
+            (user-error "Duplicate operation log argument: %s" arg))
+          (puthash kind t seen)
+          (push value normalized))))
+    (nreverse normalized)))
+
 (defun majutsu-op--log-command-args (&optional args)
   "Return jj arguments for operation log ARGS."
-  (append majutsu-op--read-only-global-args
-          '("op" "log" "--no-graph")
-          (or args majutsu-op-log--args)
-          (list "-T" (plist-get (majutsu-op-log--ensure-template)
-                                :template))))
-
-(defun majutsu-parse-op-log-entries (&optional buf log-output)
-  "Parse jj operation log output.
-
-When LOG-OUTPUT is nil, run jj in BUF or the current buffer and cache the
-result."
-  (with-current-buffer (or buf (current-buffer))
-    (if (and majutsu-row-cached-entries (not log-output))
-        majutsu-row-cached-entries
-      (let* ((cmd-args (unless log-output (majutsu-op--log-command-args)))
-             (entries
-              (with-temp-buffer
-                (insert (or log-output
-                            (apply #'majutsu-jj-buffer-string cmd-args)))
-                (goto-char (point-min))
-                (majutsu-row-parse-buffer
-                 (majutsu-op-log--ensure-template)))))
-        (unless log-output
-          (majutsu-row-set-buffer-data
-           (majutsu-op-log--ensure-template)
-           entries))
-        entries))))
+  (let ((args (majutsu-op-log--validate-args
+               (or args majutsu-op-log--args))))
+    (append majutsu-op--read-only-global-args
+            majutsu-row-protocol-global-args
+            '("op" "log")
+            args
+            (list "-T" (plist-get (majutsu-op-log--ensure-template)
+                                  :template)))))
 
 (defun majutsu-op--wash-log-output (_args)
   "Wash raw `jj op log` output in the current narrowed region."
@@ -565,7 +580,7 @@ result."
     (majutsu-row-clear-buffer-data)
     (apply #'majutsu-jj-wash
            #'majutsu-op--wash-log-output
-           'wash-anyway
+           nil
            (majutsu-op--log-command-args))))
 
 (defun majutsu-op-log-render ()
@@ -581,11 +596,18 @@ result."
   (majutsu-row-clear-buffer-data)
   (majutsu-op-log-render))
 
-(defun majutsu-op-log-show-at-point ()
-  "Show the operation at point."
+(defun majutsu-op-log-restore-at-point ()
+  "Restore the repository to the operation at point."
   (interactive)
   (if-let* ((op-id (majutsu-op--operation-at-point)))
-      (majutsu-op-show op-id)
+      (majutsu-op-restore op-id)
+    (user-error "No operation at point")))
+
+(defun majutsu-op-log-revert-at-point ()
+  "Revert the operation at point."
+  (interactive)
+  (if-let* ((op-id (majutsu-op--operation-at-point)))
+      (majutsu-op-revert op-id)
     (user-error "No operation at point")))
 
 ;;;###autoload
@@ -603,8 +625,9 @@ result."
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
   :parent majutsu-mode-map
-  "RET" 'majutsu-op-log-show-at-point
-  "d" 'majutsu-op-log-show-at-point)
+  "d" 'majutsu-op-diff-transient
+  "u" 'majutsu-op-log-restore-at-point
+  "r" 'majutsu-op-log-revert-at-point)
 
 (define-derived-mode majutsu-op-log-mode majutsu-mode "Majutsu Op Log"
   "Major mode for viewing jj operation log."
@@ -657,13 +680,19 @@ result."
   :class 'transient-option
   :shortarg "-n"
   :argument "--limit="
-  :reader #'transient-read-number-N+)
+  :reader #'transient-read-number-N0)
 
 (transient-define-argument majutsu-op-log:--reversed ()
   :description "Reverse order"
   :class 'transient-switch
   :key "-r"
   :argument "--reversed")
+
+(transient-define-argument majutsu-op-log:--no-graph ()
+  :description "Hide graph"
+  :class 'transient-switch
+  :shortarg "-G"
+  :argument "--no-graph")
 
 ;;;###autoload(autoload 'majutsu-op-log-transient "majutsu-op" nil t)
 (transient-define-prefix majutsu-op-log-transient ()
@@ -675,7 +704,8 @@ result."
    "JJ Operation Log"
    ["Options"
     (majutsu-op-log:--limit)
-    (majutsu-op-log:--reversed)]
+    (majutsu-op-log:--reversed)
+    (majutsu-op-log:--no-graph)]
    ["Actions"
     ("l" "Open log" majutsu-op-log)
     ("RET" "Open log" majutsu-op-log)
@@ -688,8 +718,9 @@ result."
   (interactive (list (or (majutsu-op-log-arguments)
                          (get 'majutsu-op-log-mode
                               'majutsu-op-log-default-arguments))))
-  (let* ((args (or args (get 'majutsu-op-log-mode
-                             'majutsu-op-log-default-arguments)))
+  (let* ((args (majutsu-op-log--validate-args
+                (or args (get 'majutsu-op-log-mode
+                              'majutsu-op-log-default-arguments))))
          (root (majutsu--toplevel-safe))
          (repo (file-name-nondirectory (directory-file-name root))))
     (majutsu-setup-buffer #'majutsu-op-log-mode nil
@@ -792,27 +823,17 @@ result."
   (transient-setup 'majutsu-op-revert-transient nil nil
                    :scope (majutsu-selection-session-begin)))
 
-;;; op show
+;;; operation metadata and diff
 
-(defvar-local majutsu-op-show--operation nil
-  "Operation id shown in the current operation show buffer.")
-
-(defun majutsu-op--show-output (operation template)
-  "Return plain `jj op show' output for OPERATION rendered with TEMPLATE."
-  (apply #'majutsu-jj-buffer-string
-         (append majutsu-op--read-only-global-args
-                 (list "op" "show" operation "--no-op-diff" "-T" template))))
-
-(defun majutsu-op--show-metadata (operation)
-  "Return metadata plist for OPERATION."
-  (or (majutsu-op--parse-show-line
-       (car (split-string (majutsu-op--show-output operation majutsu-op--show-template)
-                          "\n" t)))
-      (user-error "Failed to parse operation metadata for %s" operation)))
-
-(defun majutsu-op--operation-body (operation template)
-  "Return colored body output for OPERATION rendered with TEMPLATE."
-  (majutsu-op--show-output operation template))
+(defun majutsu-op--metadata (operation)
+  "Return line-safe metadata for OPERATION using an internal query."
+  (let* ((args (append majutsu-op--read-only-global-args
+                       (list "op" "show" operation "--no-op-diff"
+                             "-T" majutsu-op--metadata-template)))
+         (lines (split-string
+                 (apply #'majutsu-jj-buffer-string args) "\n" t)))
+    (or (seq-some #'majutsu-op--parse-metadata-line lines)
+        (user-error "Failed to parse operation metadata for %s" operation))))
 
 (defun majutsu-op--diff-command-args (args)
   "Return jj arguments for operation diff ARGS."
@@ -820,18 +841,6 @@ result."
           (list "--config" (majutsu-op--commit-summary-config-arg)
                 "op" "diff" "--no-graph")
           args))
-
-(defun majutsu-op--insert-field (label value)
-  "Insert metadata LABEL and VALUE."
-  (insert (propertize label 'face 'font-lock-keyword-face) ": " value "\n"))
-
-(defun majutsu-op--insert-colored-block (string)
-  "Insert STRING as a body block, preserving text properties."
-  (let ((text (or string "")))
-    (unless (string-empty-p (string-trim (substring-no-properties text)))
-      (insert text)
-      (unless (string-suffix-p "\n" text)
-        (insert "\n")))))
 
 (defun majutsu-op--diff-line-marker (marker)
   "Return display text for diff line MARKER."
@@ -1011,61 +1020,10 @@ result."
   "Insert washed operation diff for ARGS."
   (apply #'majutsu-jj-wash
          #'majutsu-op--wash-diff-output
-         'wash-anyway
+         nil
          (majutsu-op--diff-command-args args)))
 
-(defun majutsu-op-show-refresh-buffer ()
-  "Refresh the current operation show buffer."
-  (interactive)
-  (majutsu--assert-mode 'majutsu-op-show-mode)
-  (let* ((operation (or majutsu-op-show--operation "@"))
-         (metadata (majutsu-op--show-metadata operation))
-         (op-id (plist-get metadata :op-id)))
-    (setq majutsu-op-show--operation op-id)
-    (magit-insert-section (jj-op-show op-id)
-      (magit-insert-heading
-        (format "Operation %s" (plist-get metadata :op-id-short)))
-      (magit-insert-section (jj-op-show-metadata op-id)
-        (magit-insert-heading "Metadata")
-        (majutsu-op--insert-field "User" (plist-get metadata :user))
-        (majutsu-op--insert-field "Workspace" (plist-get metadata :workspace))
-        (majutsu-op--insert-field "Started" (plist-get metadata :start-time))
-        (majutsu-op--insert-field "Ended" (plist-get metadata :end-time))
-        (majutsu-op--insert-field "Duration" (plist-get metadata :duration))
-        (majutsu-op--insert-field "Kind" (plist-get metadata :kind)))
-      (let ((description (majutsu-op--operation-body op-id "self.description()")))
-        (unless (string-empty-p (string-trim (substring-no-properties description)))
-          (magit-insert-section (jj-op-show-description op-id)
-            (magit-insert-heading "Description")
-            (majutsu-op--insert-colored-block description))))
-      (let ((tags (majutsu-op--operation-body op-id "self.tags()")))
-        (unless (string-empty-p (string-trim (substring-no-properties tags)))
-          (magit-insert-section (jj-op-show-tags op-id)
-            (magit-insert-heading "Tags")
-            (majutsu-op--insert-colored-block tags))))
-      (magit-insert-section (jj-op-diff op-id)
-        (magit-insert-heading "Repository Changes")
-        (majutsu-op--insert-operation-diff (list "--operation" op-id))))
-    (majutsu-selection-render)))
-
-(defun majutsu-op-show-diff-at-point ()
-  "Open the ordinary commit diff for the changed commit at point."
-  (interactive)
-  (if-let* ((commit-id (magit-section-value-if 'jj-commit)))
-      (majutsu-diff-revset (format "commit_id(%s)" commit-id))
-    (if-let* ((line (majutsu-op--diff-line-at-point))
-              (revset (majutsu-op--diff-line-commit-revset line)))
-        (majutsu-diff-revset revset)
-      (user-error "No changed commit at point"))))
-
-(defun majutsu-op-show-default-action ()
-  "Run the default action for the operation show section at point."
-  (interactive)
-  (if (magit-section-value-if 'jj-commit)
-      (majutsu-edit-changeset)
-    (majutsu-op-show-diff-at-point)))
-
-(defun majutsu-op-show-evolog-at-point ()
+(defun majutsu-op-diff-evolog-at-point ()
   "Open evolog for the operation diff line at point."
   (interactive)
   (if-let* ((line (majutsu-op--diff-line-at-point))
@@ -1074,35 +1032,6 @@ result."
           (funcall #'majutsu-evolog revset)
         (user-error "Evolog support is not implemented yet"))
     (user-error "No changed commit at point")))
-
-(defvar-keymap majutsu-op-show-mode-map
-  :doc "Keymap for `majutsu-op-show-mode'."
-  :parent majutsu-mode-map
-  "RET" 'majutsu-op-show-default-action
-  "v" 'majutsu-op-show-evolog-at-point)
-
-(define-derived-mode majutsu-op-show-mode majutsu-mode "Majutsu Op Show"
-  "Major mode for viewing one jj operation."
-  :group 'majutsu
-  (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
-  (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
-
-(defun majutsu-op-show--buffer-name (operation)
-  "Return buffer name for OPERATION."
-  (let* ((root (majutsu--toplevel-safe))
-         (repo (file-name-nondirectory (directory-file-name root))))
-    (format "*majutsu-op-show: %s:%s*" repo (majutsu-op--shorten-id operation))))
-
-;;;###autoload
-(defun majutsu-op-show (operation)
-  "Show repository changes in OPERATION."
-  (interactive (list (majutsu-op--read-operation "Show operation")))
-  (let ((root (majutsu--toplevel-safe)))
-    (majutsu-setup-buffer #'majutsu-op-show-mode nil
-      :buffer (majutsu-op-show--buffer-name operation)
-      :directory root
-      (majutsu-op-show--operation operation))))
 
 ;;; op diff
 
@@ -1148,7 +1077,9 @@ result."
 
 (defvar-keymap majutsu-op-diff-mode-map
   :doc "Keymap for `majutsu-op-diff-mode'."
-  :parent majutsu-op-show-mode-map)
+  :parent majutsu-mode-map
+  "RET" 'majutsu-op-diff-evolog-at-point
+  "v" 'majutsu-op-diff-evolog-at-point)
 
 (define-derived-mode majutsu-op-diff-mode majutsu-mode "Majutsu Op Diff"
   "Major mode for comparing jj operations."
