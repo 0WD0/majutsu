@@ -306,7 +306,10 @@
 
 (defun majutsu-op--operation-at-point ()
   "Return the enclosing operation id at point, or nil."
-  (majutsu-op--section-value-in-lineage 'jj-op))
+  (or (majutsu-op--section-value-in-lineage 'jj-op)
+      (when-let* ((endpoint (majutsu-op--section-value-in-lineage
+                             'jj-op-diff-endpoint)))
+        (plist-get endpoint :op-id))))
 
 (defun majutsu-op--diff-line-at-point ()
   "Return the parsed operation diff line value at point, or nil."
@@ -1023,6 +1026,13 @@ switch, and graph switch are allowed."
          nil
          (majutsu-op--diff-command-args args)))
 
+(defun majutsu-op-diff-default-action ()
+  "Open evolog for a changed line, or visit the ordinary thing at point."
+  (interactive)
+  (if (majutsu-op--diff-line-at-point)
+      (majutsu-op-diff-evolog-at-point)
+    (majutsu-visit-thing)))
+
 (defun majutsu-op-diff-evolog-at-point ()
   "Open evolog for the operation diff line at point."
   (interactive)
@@ -1058,6 +1068,42 @@ switch, and graph switch are allowed."
             (or (majutsu-op--diff-arg-value "--to=" args) "@")))
    (t "Operation Diff")))
 
+(defun majutsu-op--insert-metadata-field (label value)
+  "Insert operation metadata LABEL and VALUE."
+  (insert (propertize label 'face 'font-lock-keyword-face)
+          ": " (or value "") "\n"))
+
+(defun majutsu-op--insert-diff-endpoint (label operation)
+  "Insert metadata for operation diff endpoint LABEL and OPERATION."
+  (let* ((metadata (majutsu-op--metadata operation))
+         (op-id (plist-get metadata :op-id)))
+    (magit-insert-section
+        (jj-op-diff-endpoint (list :label label :op-id op-id))
+      (magit-insert-heading
+        (format "%s operation %s" label
+                (or (plist-get metadata :op-id-short) op-id)))
+      (majutsu-op--insert-metadata-field "Id" op-id)
+      (majutsu-op--insert-metadata-field "User"
+                                         (plist-get metadata :user))
+      (majutsu-op--insert-metadata-field "Workspace"
+                                         (plist-get metadata :workspace))
+      (majutsu-op--insert-metadata-field "Ended"
+                                         (plist-get metadata :end-time))
+      (majutsu-op--insert-metadata-field "Description"
+                                         (plist-get metadata :desc)))))
+
+(defun majutsu-op--insert-diff-endpoints (args)
+  "Insert metadata for explicit from/to operation diff ARGS."
+  (let ((from (majutsu-op--diff-arg-value "--from=" args))
+        (to (majutsu-op--diff-arg-value "--to=" args)))
+    (when (or from to)
+      (magit-insert-section (jj-op-diff-endpoints nil)
+        (magit-insert-heading "Operations")
+        (when from
+          (majutsu-op--insert-diff-endpoint "From" from))
+        (when to
+          (majutsu-op--insert-diff-endpoint "To" to))))))
+
 (defun majutsu-op-diff-arguments ()
   "Return operation diff arguments from the active transient, if any."
   (if (eq transient-current-command 'majutsu-op-diff-transient)
@@ -1072,13 +1118,14 @@ switch, and graph switch are allowed."
   (let ((args (or majutsu-op-diff--args '())))
     (magit-insert-section (jj-op-diff-buffer args)
       (magit-insert-heading (majutsu-op--diff-buffer-heading args))
+      (majutsu-op--insert-diff-endpoints args)
       (majutsu-op--insert-operation-diff args)))
   (majutsu-selection-render))
 
 (defvar-keymap majutsu-op-diff-mode-map
   :doc "Keymap for `majutsu-op-diff-mode'."
   :parent majutsu-mode-map
-  "RET" 'majutsu-op-diff-evolog-at-point
+  "<remap> <majutsu-visit-thing>" 'majutsu-op-diff-default-action
   "v" 'majutsu-op-diff-evolog-at-point)
 
 (define-derived-mode majutsu-op-diff-mode majutsu-mode "Majutsu Op Diff"

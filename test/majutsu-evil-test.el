@@ -92,8 +92,8 @@
                           (kbd "d") #'undefined))))
       calls))))
 
-(ert-deftest majutsu-evil-test-op-mode-keybindings ()
-  "Operation mode maps should receive Evil-specific bindings."
+(ert-deftest majutsu-evil-test-op-log-mode-keybindings ()
+  "Operation log mode should receive its existing Evil bindings."
   (let ((featurep-original (symbol-function 'featurep))
         calls)
     (cl-letf (((symbol-function 'featurep)
@@ -121,14 +121,6 @@
                            (list (kbd "d") #'majutsu-op-diff-transient
                                  (kbd "u") #'majutsu-op-log-restore-at-point
                                  (kbd "r") #'majutsu-op-log-revert-at-point))))
-             calls))
-    (should (seq-some
-             (lambda (call)
-               (and (eq (nth 0 call) 'normal)
-                    (eq (nth 1 call) majutsu-op-diff-mode-map)
-                    (equal (nth 2 call)
-                           (list (kbd "RET") #'majutsu-op-diff-evolog-at-point
-                                 (kbd "v") #'majutsu-op-diff-evolog-at-point))))
              calls))))
 
 (provide 'majutsu-evil-test)

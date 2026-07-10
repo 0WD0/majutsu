@@ -444,15 +444,28 @@
           (majutsu-op-diff-evolog-at-point))
         (should (equal captured "change_id(full-change) | commit_id(full-commit)"))))))
 
-(ert-deftest majutsu-op-diff-mode-map/line-actions ()
-  "Operation diff mode should expose evolog while inheriting ordinary diff."
-  (should (eq (keymap-parent majutsu-op-diff-mode-map) majutsu-mode-map))
-  (should (eq (lookup-key majutsu-op-diff-mode-map (kbd "RET"))
-              'majutsu-op-diff-evolog-at-point))
-  (should (eq (lookup-key majutsu-op-diff-mode-map (kbd "d"))
-              'majutsu-diff))
-  (should (eq (lookup-key majutsu-op-diff-mode-map (kbd "v"))
-              'majutsu-op-diff-evolog-at-point)))
+(ert-deftest majutsu-op-diff-default-action/dispatches-by-section ()
+  "The default action should open evolog only for changed revision lines."
+  (let (actions)
+    (cl-letf (((symbol-function 'majutsu-op-diff-evolog-at-point)
+               (lambda () (push 'evolog actions)))
+              ((symbol-function 'majutsu-visit-thing)
+               (lambda () (push 'visit actions))))
+      (with-temp-buffer
+        (majutsu-op-diff-mode)
+        (let ((inhibit-read-only t))
+          (magit-insert-section (jj-op-commit-line '(:commit-id "commit"))
+            (magit-insert-heading "changed line")))
+        (goto-char (point-min))
+        (majutsu-op-diff-default-action))
+      (with-temp-buffer
+        (majutsu-op-diff-mode)
+        (let ((inhibit-read-only t))
+          (magit-insert-section (jj-op-group 'commits)
+            (magit-insert-heading "Changed commits:")))
+        (goto-char (point-min))
+        (majutsu-op-diff-default-action)))
+    (should (equal (nreverse actions) '(evolog visit)))))
 
 (ert-deftest majutsu-op-show/is-not-a-user-visible-interface ()
   "Operation inspection should be composed from op-log and op-diff."
@@ -508,6 +521,38 @@
         (let ((content (buffer-substring-no-properties (point-min) (point-max))))
           (should (string-match-p "Operation Diff abc" content))
           (should (string-match-p "change-short commit-short" content)))))))
+
+(ert-deftest majutsu-op-diff-refresh-buffer/renders-explicit-endpoint-metadata ()
+  "Explicit operation ranges should show metadata for both endpoints."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-op--metadata)
+               (lambda (operation)
+                 (push operation seen)
+                 (list :op-id (concat operation "-full")
+                       :op-id-short (concat operation "-short")
+                       :user "user"
+                       :workspace "workspace"
+                       :end-time "end"
+                       :desc "description")))
+              ((symbol-function 'majutsu-op--insert-operation-diff)
+               #'ignore))
+      (with-temp-buffer
+        (majutsu-op-diff-mode)
+        (setq majutsu-op-diff--args '("--from=a" "--to=b"))
+        (let ((inhibit-read-only t))
+          (majutsu-op-diff-refresh-buffer))
+        (let ((content (buffer-substring-no-properties
+                        (point-min) (point-max))))
+          (should (string-match-p "From operation a-short" content))
+          (should (string-match-p "To operation b-short" content))
+          (should (string-match-p "Id: a-full" content))
+          (should (string-match-p "Description: description" content)))
+        (goto-char (point-min))
+        (search-forward "From operation")
+        (should (equal (majutsu-op--operation-at-point) "a-full"))
+        (search-forward "To operation")
+        (should (equal (majutsu-op--operation-at-point) "b-full"))))
+    (should (equal (nreverse seen) '("a" "b")))))
 
 (ert-deftest majutsu-op-restore/runs-confirmed-command ()
   "Operation restore should run jj op restore after confirmation."

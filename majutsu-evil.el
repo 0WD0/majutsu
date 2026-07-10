@@ -18,6 +18,7 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-op-diff-default-action "majutsu-op" ())
 (declare-function majutsu-op-diff-evolog-at-point "majutsu-op" ())
 (declare-function majutsu-op-diff-transient "majutsu-op" ())
 (declare-function majutsu-op-log-restore-at-point "majutsu-op" ())
@@ -237,7 +238,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "r") #'majutsu-op-log-revert-at-point)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-diff-mode-map
-    (kbd "RET") #'majutsu-op-diff-evolog-at-point
+    [remap majutsu-visit-thing] #'majutsu-op-diff-default-action
     (kbd "v") #'majutsu-op-diff-evolog-at-point)
 
   ;; majutsu-conflict-mode is a minor mode

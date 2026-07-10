@@ -50,8 +50,9 @@
   application, and ~majutsu-template-defspecial~.
 
 - Structured operation and evolution history views ::
-  Operation logs preserve jj's graph and compact formatting.  Use ~v~ (or
-  ~? v~) to open an evolution log; its entries can open jj's native Git-format
+  Operation logs preserve jj's graph and compact formatting, while explicit
+  operation diff ranges show metadata for both endpoints.  Use ~v~ (or ~? v~)
+  to open an evolution log; its entries can open jj's native Git-format
   inter-diff with ~RET~.
 
 ** Changed
