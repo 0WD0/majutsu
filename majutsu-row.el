@@ -1025,8 +1025,12 @@ When PLAIN is non-nil, omit faces and text properties."
       (let ((magit-section-show-child-count policy))
         (funcall thunk))))))
 
-(defun majutsu-row-insert-entry (entry compiled)
-  "Insert parsed ENTRY as a Magit section using COMPILED."
+(defun majutsu-row-insert-entry
+    (entry compiled &optional body-inserter omit-body)
+  "Insert parsed ENTRY as a Magit section using COMPILED.
+When BODY-INSERTER is non-nil, call it after the ordinary body inside the
+section body.  When OMIT-BODY is non-nil, only BODY-INSERTER supplies body
+content."
   (let* ((id (majutsu-row-entry-id entry compiled))
          (section-class (majutsu-row-entry-section-class entry compiled))
          (section-value (majutsu-row-section-value entry compiled))
@@ -1041,7 +1045,8 @@ When PLAIN is non-nil, omit faces and text properties."
          (tail (majutsu-row-render-tail entry compiled t))
          (suffix-lines (plist-get entry :suffix-lines))
          (body (majutsu-row-render-body entry compiled t))
-         (has-body (and (stringp body)
+         (has-body (and (not omit-body)
+                        (stringp body)
                         (not (string-empty-p (string-trim body))))))
     (cl-loop for idx below count
              do (let ((prefix (majutsu-row-propertize-decoration
@@ -1071,17 +1076,20 @@ When PLAIN is non-nil, omit faces and text properties."
                           content compiled id 'heading)))
              (majutsu-row-insert-prefixed-line
               decorated-content decorated-prefix)))
-         (when has-body
+         (when (or has-body body-inserter)
            (magit-insert-heading)
            (magit-insert-section-body
-             (let ((body-prefix (majutsu-row-propertize-decoration
-                                 (make-string indent ?\s)
-                                 compiled id 'body 'body-prefix))
-                   (start (point)))
-               (insert body)
-               (insert "\n")
-               (majutsu-row-apply-line-prefix-span
-                start (point) body-prefix)))))))))
+             (when has-body
+               (let ((body-prefix (majutsu-row-propertize-decoration
+                                   (make-string indent ?\s)
+                                   compiled id 'body 'body-prefix))
+                     (start (point)))
+                 (insert body)
+                 (insert "\n")
+                 (majutsu-row-apply-line-prefix-span
+                  start (point) body-prefix)))
+             (when body-inserter
+               (funcall body-inserter)))))))))
 
 (defun majutsu-row-insert-forest (entries compiled)
   "Insert row ENTRIES recursively as Magit sections using COMPILED."
