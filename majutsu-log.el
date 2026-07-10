@@ -415,8 +415,11 @@ transport logical newlines safely through single-line payload segments."
           (when (and (stringp parent-id)
                      (not (string-empty-p parent-id)))
             (puthash parent-id
-                     (append (gethash parent-id children-by-id) (list child-id))
+                     (cons child-id (gethash parent-id children-by-id))
                      children-by-id)))))
+    (maphash (lambda (parent-id child-ids)
+               (puthash parent-id (nreverse child-ids) children-by-id))
+             children-by-id)
     (setq majutsu-log--entry-by-id entry-by-id)
     (setq majutsu-log--children-by-id children-by-id)))
 
