@@ -145,6 +145,10 @@
 
 ** Fixed
 
+- Evolution inter-diffs respect diff window policies ::
+  Derived diff buffers no longer replace the evolog under the traditional
+  display strategy or consume its full column under the full-column strategy.
+
 - Structured row records no longer break under custom presentation settings ::
   Machine metadata is isolated from visible log templates, and row-producing
   log, evolog, and operation-log commands disable jj's automatic word wrapping.

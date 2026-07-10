@@ -11,6 +11,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu-base)
+(require 'majutsu-evolog)
 
 (ert-deftest majutsu-base-registers-bookmark-and-tag-section-types ()
   (should (eq (alist-get 'jj-bookmark magit--section-type-alist)
@@ -111,6 +112,46 @@
                      '("ws-a")))
       (should (eq seen-category 'majutsu-workspace))
       (should (eq seen-history 'majutsu-workspace-name-history)))))
+
+(ert-deftest majutsu-display-buffer-traditional/separates-derived-diff ()
+  "Traditional display should not replace an evolog with its inter-diff."
+  (let ((source (generate-new-buffer " *majutsu source*"))
+        (target (generate-new-buffer " *majutsu target*"))
+        action)
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (majutsu-evolog-mode))
+          (with-current-buffer target
+            (majutsu-evolog-diff-mode))
+          (with-current-buffer source
+            (cl-letf (((symbol-function 'display-buffer)
+                       (lambda (_buffer display-action)
+                         (setq action display-action))))
+              (majutsu-display-buffer-traditional target)))
+          (should-not action))
+      (kill-buffer source)
+      (kill-buffer target))))
+
+(ert-deftest majutsu-display-buffer-fullcolumn/separates-evolog-diff ()
+  "Full-column display should keep evolog and inter-diff in separate windows."
+  (let ((source (generate-new-buffer " *majutsu source*"))
+        (target (generate-new-buffer " *majutsu target*"))
+        action)
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (majutsu-evolog-mode))
+          (with-current-buffer target
+            (majutsu-evolog-diff-mode))
+          (with-current-buffer source
+            (cl-letf (((symbol-function 'display-buffer)
+                       (lambda (_buffer display-action)
+                         (setq action display-action))))
+              (majutsu-display-buffer-fullcolumn-most-v1 target)))
+          (should-not action))
+      (kill-buffer source)
+      (kill-buffer target))))
 
 (provide 'majutsu-base-test)
 ;;; majutsu-base-test.el ends here

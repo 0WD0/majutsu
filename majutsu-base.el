@@ -335,10 +335,10 @@ DEFAULT-VALUE if non-nil, otherwise signals an error."
   "Display BUFFER the way this has traditionally been done."
   (display-buffer
    buffer (if (and (derived-mode-p 'majutsu-mode)
-                   (not (memq (with-current-buffer buffer major-mode)
-                              '(majutsu-process-mode
-                                majutsu-diff-mode
-                                majutsu-log-mode))))
+                   (not (with-current-buffer buffer
+                          (derived-mode-p 'majutsu-process-mode
+                                          'majutsu-diff-mode
+                                          'majutsu-log-mode))))
               '(display-buffer-same-window)
             nil)))
 
@@ -425,12 +425,13 @@ window to the full height of the frame, deleting other windows in
 that column as necessary.  However, display BUFFER in another
 window if BUFFER's mode derives from `majutsu-process-mode', or if
 BUFFER derives from `majutsu-diff-mode' while the current buffer
-derives from `majutsu-log-mode'."
+is a log, operation-log, or evolution-log buffer."
   (display-buffer
    buffer
    (cond ((and (or (bound-and-true-p majutsu-jjdescription-mode)
                    (derived-mode-p 'majutsu-log-mode
-                                   'majutsu-op-log-mode))
+                                   'majutsu-op-log-mode
+                                   'majutsu-evolog-mode))
                (with-current-buffer buffer
                  (derived-mode-p 'majutsu-diff-mode)))
           nil)
