@@ -1078,6 +1078,8 @@ Run @samp{jj diffedit} with Emacs as @samp{ui.diff-editor}. If no file is at poi
 @kindex m
 @findex majutsu-ediff-resolve
 Resolve conflicted files. In a @samp{jj-commit} section@comma{} it lists conflicted files for that revision; otherwise it uses working copy @samp{@@}. Uses @samp{jj resolve} with 3-way Ediff (merge tool: @samp{$left}@comma{} @samp{$base}@comma{} @samp{$right}) for up-to-2-sided conflicts@comma{} and falls back to @samp{jj diffedit} for conflicts with more than 2 sides. In this flow@comma{} quitting Ediff without editing leaves jj's output unchanged@comma{} so the conflict stays unresolved. If you edited and quit@comma{} Majutsu asks whether to save the resolved result; choosing no discards edits and keeps conflicts. When only part of a conflict is resolved@comma{} remaining regions are written with git-style conflict markers so jj keeps unresolved regions unresolved.
+  Conflict-file completion preserves exact repository paths and annotates each
+  candidate with its conflict side count.
 @item @kbd{M} (@code{majutsu-ediff-resolve-with-conflict})
 @kindex M
 @findex majutsu-ediff-resolve-with-conflict
@@ -1813,6 +1815,10 @@ Track a remote bookmark to create a local one.
 Untrack a remote bookmark.
 @end table
 
+Bookmark lists nest tracked remote bookmarks under their local bookmark.
+When a bookmark target is conflicted@comma{} its removed and added targets appear as
+child revision sections identified by their full commit IDs.
+
 @node Tags
 @chapter Tags
 
@@ -2075,7 +2081,8 @@ workspace root@comma{} Majutsu treats it as unavailable instead of showing the r
 @node Detecting Conflicts
 @section Detecting Conflicts
 
-JJ marks conflicts in the log with a "conflict" label. Expanding the revision will show which files are conflicted.
+JJ marks conflicts in the log with a "conflict" label. Expanding the revision
+shows each exact conflicted path together with its conflict side count.
 
 @node Entering Conflict Mode
 @section Entering Conflict Mode

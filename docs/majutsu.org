@@ -450,6 +450,8 @@ point-toggle variants). In diff buffers, current range is used as default.
 - Key: e (majutsu-ediff-dwim) :: Compare based on context (hunk, file, commit, or whole buffer).
 - Key: E (majutsu-ediff-edit) :: Run =jj diffedit= with Emacs as =ui.diff-editor=. If no file is at point, Majutsu prompts for a changed file, then launches a two-sided Ediff session for that single file (left/right temp files). Edit the right-side temp file and quit Ediff to return control to =jj diffedit=. When =majutsu-diffedit-finish-on-save= is non-nil, saving a diffedit temp file can finish the with-editor session automatically.
 - Key: m (majutsu-ediff-resolve) :: Resolve conflicted files. In a =jj-commit= section, it lists conflicted files for that revision; otherwise it uses working copy =@=. Uses =jj resolve= with 3-way Ediff (merge tool: =$left=, =$base=, =$right=) for up-to-2-sided conflicts, and falls back to =jj diffedit= for conflicts with more than 2 sides. In this flow, quitting Ediff without editing leaves jj's output unchanged, so the conflict stays unresolved. If you edited and quit, Majutsu asks whether to save the resolved result; choosing no discards edits and keeps conflicts. When only part of a conflict is resolved, remaining regions are written with git-style conflict markers so jj keeps unresolved regions unresolved.
+  Conflict-file completion preserves exact repository paths and annotates each
+  candidate with its conflict side count.
 - Key: M (majutsu-ediff-resolve-with-conflict) :: Open the resolve target buffer (working-copy file or revision blob), enable =majutsu-conflict-mode=, and jump to the first conflict.
 
 Resolve entry points are available both from the Ediff transient and as direct commands:
@@ -717,6 +719,10 @@ In Jujutsu, bookmarks are similar to Git branches but are explicitly tracked. Th
 - Key: t (majutsu-bookmark-track) :: Track a remote bookmark to create a local one.
 - Key: u (majutsu-bookmark-untrack) :: Untrack a remote bookmark.
 
+Bookmark lists nest tracked remote bookmarks under their local bookmark.
+When a bookmark target is conflicted, its removed and added targets appear as
+child revision sections identified by their full commit IDs.
+
 * Tags
 ** Understanding Tags
 In Jujutsu, tags are lightweight refs that point to revisions, similar to Git tags.
@@ -803,7 +809,8 @@ workspace root, Majutsu treats it as unavailable instead of showing the raw
 
 * Conflict Resolution
 ** Detecting Conflicts
-JJ marks conflicts in the log with a "conflict" label. Expanding the revision will show which files are conflicted.
+JJ marks conflicts in the log with a "conflict" label. Expanding the revision
+shows each exact conflicted path together with its conflict side count.
 
 ** Entering Conflict Mode
 You can enter conflict handling from multiple places:

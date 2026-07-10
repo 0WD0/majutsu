@@ -64,6 +64,8 @@
 - Bookmark lists use typed row layouts ::
   Bookmark buffers now read typed =jj bookmark list -T= records and use a
   customizable layout for headings, summaries, and conflicted targets.
+  Tracked remote bookmarks are nested under their local bookmark, and
+  conflicted target revisions are exposed as child sections.
 
 - Some transients can save repository-local defaults ::
   Log, diff, and Git sync transients can save defaults for the current jj
@@ -148,6 +150,11 @@
   corresponding repository changes.
 
 ** Fixed
+
+- Conflict file discovery preserves exact paths ::
+  Log and Ediff views now query =jj file list -T= for structured conflict
+  data, so paths containing spaces remain valid section values and conflict
+  side counts are shown without parsing human-readable output.
 
 - Evolution inter-diffs respect diff window policies ::
   Derived diff buffers no longer replace the evolog under the traditional
