@@ -49,7 +49,16 @@
   Add anonymous functions, ~[:|arg| body]~ syntax, compile-time lambda
   application, and ~majutsu-template-defspecial~.
 
+- Structured operation and evolution history views ::
+  Operation logs preserve jj's graph and compact formatting.  Use ~v~ (or
+  ~? v~) to open an evolution log; its entries can open jj's native Git-format
+  inter-diff with ~RET~.
+
 ** Changed
+
+- Bookmark lists use typed row layouts ::
+  Bookmark buffers now read typed =jj bookmark list -T= records and use a
+  customizable layout for headings, summaries, and conflicted targets.
 
 - Some transients can save repository-local defaults ::
   Log, diff, and Git sync transients can save defaults for the current jj
@@ -80,7 +89,8 @@
 
 - Structured completion annotations are quieter ::
   Candidate suffixes use Majutsu faces/separators and omit fabricated fallback
-  suffixes.
+  suffixes.  Log relation readers and row-field copy keep canonical candidate
+  values while showing descriptions or previews as annotations.
 
 - Commands prefer literal refs at point ::
   Revset and ref readers now choose revisions/refs at point where appropriate
@@ -96,11 +106,16 @@
 
 - Log row layouts carry more display metadata ::
   Layouts now support right-aligned tail fields, display-only indentation,
-  repeated fields per module, and richer copy/navigation metadata.
+  the same field projected into different modules, and richer copy/navigation
+  metadata.
 
 - Template DSL semantics track upstream jj more closely ::
   Receiver handling, lambdas, type propagation, and builtin metadata were
   aligned with current jj behavior.
+
+- Operation rows follow jj's compact formatter ::
+  Root, snapshot, current-operation, timing, and complete operation attributes
+  now use jj-native semantics.  The operation-log transient can hide the graph.
 
 - Absorb accepts multiple destination revsets ::
   The =--into= option is repeatable.
@@ -120,10 +135,18 @@
   Use the explicit file commands or the usual diff visit action instead.
 
 - ~majutsu-log-field-faces~ was removed ::
-  Configure field faces in ~majutsu-log-commit-columns~ with each field's
+  Configure field faces in ~majutsu-log-commit-columns~ with each occurrence's
   ~:face~ property.
 
+- ~majutsu-op-show~ was removed ::
+  Use ~majutsu-op-log~ for operation metadata and ~majutsu-op-diff~ for the
+  corresponding repository changes.
+
 ** Fixed
+
+- Structured row records no longer break under custom presentation settings ::
+  Machine metadata is isolated from visible log templates, and row-producing
+  log, evolog, and operation-log commands disable jj's automatic word wrapping.
 
 - Synchronous jj commands remain responsive to prompts ::
   Emacs-based GPG/pinentry prompts can be serviced while the command waits.

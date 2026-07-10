@@ -152,7 +152,7 @@ For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection sys
 Selection entries that support both manual input and point toggling show both keys on one row, for example =-r/r=: press the option key to read a revset manually, or the unprefixed key to toggle the revision at point. Majutsu runs these readers, point toggles, and primary actions in the buffer that opened the transient, so repository context, point defaults, and buffer-local selections stay consistent while the transient popup has focus.
 
 ** Completion and Confirmation
-Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Revset completion candidates are annotated with source labels (pseudo/workspace/bookmark/tag) to make ambiguous names easier to identify. Destructive operations like ~abandon~ or ~undo~ will prompt for confirmation.
+Majutsu integrates with Emacs' completion system (like Vertico or Ivy) for selecting bookmarks, remotes, and revsets. Revset completion candidates are annotated with source labels (pseudo/workspace/bookmark/tag) to make ambiguous names easier to identify. Relation navigation keeps revision ids as the actual candidates and shows descriptions as annotations; structured-row field selection likewise keeps field names canonical while showing value previews as annotations. Destructive operations like ~abandon~ or ~undo~ will prompt for confirmation.
 
 ** Running JJ
 Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI responsive. Large log graphs or remote operations won't freeze your editor.
@@ -163,6 +163,8 @@ The log buffer is the heart of Majutsu. It displays the history graph using a cu
 
 *** Log Display
 Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
+
+Press =[= to jump to a visible parent and =]= to jump to a visible child. When more than one target is visible, completion returns the canonical revision id while displaying its description as an annotation.
 
 *** Log Options Transient
 - Key: l (majutsu-log-transient) ::
@@ -210,22 +212,31 @@ Parsing is strictly sequential and positional (not key/value based):
 3. Parse =T -> B -> M -> E= payload segments in order on the final heading line (no extra physical line breaks between these module markers).
 4. Keep lines between current entry =E= and next entry =S= attached to the current section heading area (graph continuation lines).
 
-*** ~majutsu-log-commit-columns~ Schema
-Each item in ~majutsu-log-commit-columns~ is a plist:
+*** ~majutsu-log-commit-columns~
+~majutsu-log-commit-columns~ is a flat list of column plists.  Each plist
+declares one field occurrence in one row module.
 
-- ~:field~ :: Field symbol mapped to a ~majutsu-log-template-<field>~ variable.
-- ~:module~ :: One of ~heading~, ~tail~, ~body~, ~metadata~.
-- ~:face~ :: Highlight policy for that field.
-- ~:post~ :: Optional postprocessor function (or function list).
+- ~:field~ :: Required field symbol.
+- ~:module~ :: Required; one of ~heading~, ~tail~, ~body~, or ~metadata~.
+- ~:template~ :: Required Majutsu template form, or a bound template variable.
+- ~:face~ :: Optional highlighting policy; defaults to ~t~.
+- ~:post~ :: Optional postprocessor function, function list, ~:default~, or ~nil~.
 
-Only these keys are used by the current parser/renderer.
-Majutsu ensures hidden metadata fields ~id~, ~commit-id~, and ~parent-ids~ are always available even if omitted from user configuration.
+A field may occur in different modules, but the same field/module pair may
+occur only once.  ~:instance~ is reserved for compiler-generated occurrence
+ids.
+
+Only ~metadata~ occurrences populate canonical entry fields.  The default
+columns therefore include metadata occurrences for ~id~, ~commit-id~,
+~parent-ids~, ~flags~, and ~description~.  Preserve the fields needed by
+stable section identity, relation navigation and annotations, and hash copying
+when replacing the entire column list.
 
 **** Module Semantics
 - ~heading~ :: Visible anchor-line content on the left (can span physical lines before the tail segment begins).
 - ~tail~ :: Single-line auxiliary content rendered on the anchor line with right alignment. It remains searchable as real text, but copying a mixed heading+tail region drops the tail text by default; copying the tail alone preserves it.
-- Rendered log spans are tagged with ~majutsu-log-module~, ~majutsu-log-field~, ~majutsu-log-column~, ~majutsu-log-entry-id~, and ~majutsu-log-decoration~ so explicit copy commands can distinguish content from graph/tail decorations.
-- Hidden transport fields always include ~id~, ~commit-id~, and ~parent-ids~, even if you omit them from visible layout. That keeps stable identity, relation navigation, and commit-hash copying available.
+- Rendered row spans are tagged with ~majutsu-row-module~, ~majutsu-row-field~, ~majutsu-row-column~, ~majutsu-row-entry-id~, and ~majutsu-row-decoration~ so explicit copy commands can distinguish content from graph/tail decorations.
+- Hidden transport fields exist only when declared as ~metadata~ columns. The default list includes canonical metadata for identity, navigation, annotations, and copying; replacing the whole list also replaces those guarantees.
 - ~body~ :: Foldable section body.
 - ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.
 
@@ -261,28 +272,40 @@ When you provide a function or function list in ~:post~, Majutsu appends it
 after the field's default postprocessors.
 
 *** Configuration Examples
-**** Minimal layout
+**** Minimal columns
 #+begin_src emacs-lisp
-(setq majutsu-log-commit-columns
-      '((:field change-id   :module heading  :face t)
-        (:field description :module heading  :face t)
-        (:field author      :module tail     :face magit-log-author)
-        (:field timestamp   :module tail     :face magit-log-date)
-        (:field long-desc   :module body     :face t)
-        (:field id          :module metadata :face nil)
-        (:field commit-id   :module metadata :face nil)
-        (:field flags       :module metadata :face nil)))
+(setopt majutsu-log-commit-columns
+        '((:field change-id :module heading
+           :template majutsu-log-template-change-id :face t)
+          (:field description :module heading
+           :template majutsu-log-template-description :face t)
+          (:field author :module tail
+           :template majutsu-log-template-author :face magit-log-author)
+          (:field timestamp :module tail
+           :template majutsu-log-template-timestamp :face magit-log-date)
+          (:field long-desc :module body
+           :template majutsu-log-template-long-desc :face t)
+          (:field id :module metadata
+           :template majutsu-log-template-id :face nil)
+          (:field commit-id :module metadata
+           :template [:commit_id] :face nil)
+          (:field parent-ids :module metadata
+           :template majutsu-log-template-parent-ids :face nil)
+          (:field flags :module metadata
+           :template majutsu-log-template-flags :face nil)
+          (:field description :module metadata
+           :template [:description :first_line] :face nil)))
 #+end_src
 
 **** Keep heading multiline + encoded body multiline
 #+begin_src emacs-lisp
 ;; heading field can emit real newlines directly
-(setq majutsu-log-template-description
-      [:concat [:change_id] "\n" [:description]])
+(setopt majutsu-log-template-description
+        [:concat [:change_id] "\n" [:description]])
 
 ;; non-heading field should encode line breaks as \x1f
-(setq majutsu-log-template-long-desc
-      [:description :lines :skip 1 :join "\x1f"])
+(setopt majutsu-log-template-long-desc
+        [:description :lines :skip 1 :join "\x1f"])
 #+end_src
 
 **** Custom postprocessor
@@ -290,26 +313,34 @@ after the field's default postprocessors.
 (defun my-log-trim (value &optional _ctx)
   (if (stringp value) (string-trim-right value) value))
 
-(setq majutsu-log-commit-columns
-      '((:field description :module heading :face t :post my-log-trim)
-        (:field id :module metadata :face nil)))
+(setopt majutsu-log-commit-columns
+        (mapcar
+         (lambda (column)
+           (if (and (eq (plist-get column :field) 'description)
+                    (eq (plist-get column :module) 'heading))
+               (plist-put (copy-sequence column) :post #'my-log-trim)
+             column))
+         majutsu-log-commit-columns))
 #+end_src
 
 *** Migration Notes
-Older column keys like ~:align~ and ~:visible~ are no longer part of the log column schema.
+The old ~majutsu-log-commit-layout~, its top-level ~:schema~ / ~:columns~
+tree, compact ~(FIELD TEMPLATE)~ entries, and keys such as ~:align~ and
+~:visible~ have been replaced by flat column plists in
+~majutsu-log-commit-columns~.
 The historical ~right-margin~ placement has been replaced by the ~tail~ module, which renders real text on the anchor line with right alignment.
-Move fields between visual areas by changing ~:module~, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
+Move fields between visual areas by changing ~:module~ on the corresponding column plist, and adjust display behavior with ~:face~ and ~:post~. In log buffers, copying a mixed heading+tail selection strips the tail text by default, while copying the tail itself preserves it. Graph prefixes and graph-related indentation are display-only, so ordinary copy operations only capture semantic content rather than the visible graph gutter.
 
-*** Copying From Log Buffers
-Majutsu now provides both default copy filtering and explicit semantic copy commands. These commands are available through the dispatcher copy submenu and via ~M-x~.
+*** Copying From Structured Row Buffers
+Majutsu now provides both default copy filtering and explicit semantic copy commands for structured row buffers such as ~majutsu-log-mode~ and ~majutsu-evolog-mode~. These commands are available through the dispatcher copy submenu and via ~M-x~.
 
-- Key: ? w s (majutsu-copy-section-value) :: Copy the current section's stable value (for ~jj-commit~, this is the revision id at point). If the region is active, it falls back to ordinary region copy.
-- Key: ? w f (majutsu-log-copy-field) :: Copy the rendered field value at point.
-- Key: ? w F (majutsu-log-copy-entry-field) :: Choose any canonical field stored on the current entry, including hidden metadata that is not visible in the current layout.
-- Key: ? w h (majutsu-log-copy-commit-id) :: Copy the current entry's commit hash from hidden metadata.
-- Key: ? w m (majutsu-log-copy-module) :: Copy the rendered visible module at point (~heading~, ~tail~, or ~body~), without graph-prefix or tail-spacer decoration.
+- Key: ? w s (majutsu-copy-section-value) :: Copy the current section's stable value (for ~jj-commit~, this is the revision id at point; for evolog entries, this is the commit id). If the region is active, it falls back to ordinary region copy.
+- Key: ? w f (majutsu-row-copy-field) :: Copy the rendered field value at point.
+- Key: ? w F (majutsu-row-copy-entry-field) :: Choose any canonical field stored on the current entry, including hidden metadata that is not visible in the current layout. Completion keeps the field name as the candidate and displays a one-line value preview as its annotation.
+- Key: ? w h (majutsu-row-copy-commit-id) :: Copy the current entry's commit hash from hidden metadata.
+- Key: ? w m (majutsu-row-copy-module) :: Copy the rendered visible module at point (~heading~, ~tail~, or ~body~), without graph-prefix or tail-spacer decoration.
 
-This keeps ordinary Emacs copying predictable while still offering precise log-aware copy operations when you want semantic rather than purely visual text.
+This keeps ordinary Emacs copying predictable while still offering precise row-aware copy operations when you want semantic rather than purely visual text.
 
 ** Diffing
 *** Diff Transient
@@ -430,14 +461,15 @@ Resolve entry points are available both from the Ediff transient and as direct c
   Show the output of the last =jj= command. This is essential for debugging failed operations or viewing long-running output such as remote fetches.
 
 ** Operations (Experimental)
-- Key: X (majutsu-op-transient) :: Open the operation dispatcher with log, show, diff, restore, revert, undo, and redo actions.
-- Command: majutsu-op-log-transient :: Open the operation-log menu. Supports =--limit= and =--reversed=.
-- Command: majutsu-op-log :: View Jujutsu's operation history using structured =jj op log --no-graph= output while preserving jj colors.
-  Each operation is rendered as an expanded multiline section with id, user, workspace, time/duration, description, and the first tag line such as =args:=. Read-only operation views pass =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing. Press =RET= or =d= on an operation to show details.
-- Command: majutsu-op-show :: Show metadata, description/tags, and sectionized repository changes for one operation.
-  Sections are expanded by default. Changed commit and ref target lines keep full commit/change IDs internally; press =RET= for the point-specific default action and =v= to open that change's evolution log. Commit lines behave like normal =jj-commit= sections, while =d= keeps the ordinary Majutsu diff command from the parent mode.
-- Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to=, reusing the same sectionized changed commit/ref view.
-- Command: majutsu-evolog :: View =jj evolog --no-graph= as structured sections for a revision/change. Press =RET= or =d= on an entry to open that entry's native =inter_diff()= patch in =majutsu-evolog-show-mode=.
+- Key: X (majutsu-op-transient) :: Open the operation dispatcher with log, diff, restore, revert, undo, and redo actions.
+- Key: v (majutsu-evolog) :: Open the evolution log for the revision at point. Evil users keep the ordinary global =v= visual binding; contextual =v= remains available in operation diff buffers.
+- Command: majutsu-op-log-transient :: Open the operation-log menu. Supports =--limit=, =--reversed=, and =--no-graph=.
+- Command: majutsu-op-log :: View Jujutsu's operation history with its graph preserved by default.
+  Rows mirror jj's compact operation format: normal and snapshot operations show short id, user, workspace, elapsed time, description, and all attributes; the root shows only its short id and =root()=. Full ids and canonical metadata remain available to actions and the shared ~? w~ copy submenu. Read-only operation views pass =--at-op=@ --ignore-working-copy= to avoid snapshotting while browsing. Press =d= to open an operation-diff transient prefilled from point, =u= to restore, or =r= to revert; =RET= keeps the ordinary Majutsu visit behavior.
+- Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository changes by operation, =--from=, or =--to= in a sectionized changed commit/ref view.
+  Changed lines keep full commit/change IDs internally. Press =RET= or =v= on a changed line to open its evolution log; =d= remains the ordinary Majutsu diff command. Operation metadata plus this diff view replace a separate operation-show buffer.
+- Command: majutsu-evolog :: View =jj evolog= with its graph preserved and each entry parsed through Majutsu's structured row protocol. It is also available as =? v= in the dispatcher.
+  Entries mirror jj's compact evolog format; full change, commit, and optional operation IDs are hidden metadata available through ~? w~. Press =RET= to open jj's native Git-format inter-diff for the entry (using =jj evolog --patch --git=); =d= remains the ordinary Majutsu diff command.
 - Commands: majutsu-op-restore / majutsu-op-revert :: Restore to an operation or revert an individual operation after confirmation.
 
 * Manipulating
@@ -824,8 +856,8 @@ Evil bindings are available in normal state:
 - User Option: majutsu-jj-environment :: Extra =KEY=VALUE= entries prepended to subprocess environments for all jj invocations (local and TRAMP), applied centrally by =majutsu-process=.
 
 ** Display Options
-- User Option: majutsu-log-commit-columns :: Ordered log field layout for log rendering. It also controls face policy per field using ~:face~. For protocol details, module semantics, and schema examples, see /Inspecting -> Log Buffer/.
-- Variable: majutsu-log-template-<field> :: Template forms consumed by log fields. For newline and control-character rules, see /Inspecting -> Log Buffer/.
+- User Option: majutsu-log-commit-columns :: Flat log row column declarations controlling templates, modules, face policy, and postprocessing. For protocol details, module semantics, and examples, see /Inspecting -> Log Buffer/.
+- User Option: majutsu-log-template-<field> :: Template forms consumed by log fields. For newline and control-character rules, see /Inspecting -> Log Buffer/.
 - User Option: majutsu-log-sections-hook :: Hook run to insert sections in the log buffer.
 - User Option: majutsu-display-buffer-function :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
 - User Option: majutsu-pre-display-buffer-hook :: Hook run before displaying a buffer.
@@ -1072,16 +1104,18 @@ List-oriented methods can be written in several equivalent styles:
               :join [:str ", "]])
 ; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 
-(majutsu-tpl [:map-join [:str ", "] [:raw "self.parents()"] p [:raw "p.commit_id()"]])
+(majutsu-tpl [:method [:raw "self.parents()"]
+                      :map [:lambda [p] [:raw "p.commit_id()"]]
+                      :join [:str ", "]])
 ; => "self.parents().map(|p| p.commit_id()).join(\", \")"
 #+end_src
 
-Prefer direct lambdas and =map + join= composition in new code. The historical
-binder forms such as =[:map collection var body]= and =:map-join= remain as
-compatibility sugar, but they now lower through the same core
-=:method= + =:lambda= path as direct method calls. Similarly, =:-map= remains a
-value-level explicit-lambda helper while the =:--map= family is syntax sugar
-layered on top of the same lambda support.
+Prefer direct lambdas and =:map= + =:join= composition in new code. The
+historical binder form =[:map collection var body]= remains as compatibility
+sugar, but it now lowers through the same core =:method= + =:lambda= path as
+direct method calls. Similarly, =:-map= remains a value-level explicit-lambda
+helper while the =:--map= family is syntax sugar layered on top of the same
+lambda support.
 
 This is a deliberate Majutsu DSL adaptation. Upstream jj centers the
 higher-order story around expressions such as =collection.map(|x| body)=;
