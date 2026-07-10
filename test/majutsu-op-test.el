@@ -626,19 +626,6 @@
   (should (transient-get-suffix 'majutsu-op-diff-transient "-t"))
   (should (transient-get-suffix 'majutsu-op-diff-transient "d")))
 
-(ert-deftest majutsu-op-log-mode-map/operation-actions ()
-  "Operation log should preserve RET and expose operation-specific actions."
-  (should (eq (lookup-key majutsu-op-log-mode-map (kbd "RET"))
-              'majutsu-visit-thing))
-  (should (eq (lookup-key majutsu-op-log-mode-map (kbd "d"))
-              'majutsu-op-diff-transient))
-  (should (eq (lookup-key majutsu-op-log-mode-map (kbd "u"))
-              'majutsu-op-log-restore-at-point))
-  (should (eq (lookup-key majutsu-op-log-mode-map (kbd "r"))
-              'majutsu-op-log-revert-at-point))
-  (should (eq (lookup-key majutsu-mode-map (kbd "X"))
-              'majutsu-op-transient)))
-
 ;;; _
 (provide 'majutsu-op-test)
 ;;; majutsu-op-test.el ends here

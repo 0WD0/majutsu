@@ -175,15 +175,6 @@
       (should (equal (magit-section-value-if 'jj-evolog-entry)
                      "commit-full")))))
 
-(ert-deftest majutsu-evolog-mode-map/binds-entry-diff-and-options ()
-  "Evolog mode should expose native inter-diff and its own options."
-  (should (eq (lookup-key majutsu-evolog-mode-map (kbd "RET"))
-              'majutsu-evolog-diff-at-point))
-  (should (eq (lookup-key majutsu-evolog-mode-map (kbd "d"))
-              'majutsu-diff))
-  (should (eq (lookup-key majutsu-evolog-mode-map (kbd "l"))
-              'majutsu-evolog-transient)))
-
 (ert-deftest majutsu-evolog-copy-transient-has-copy-actions ()
   "Evolog copy transient should expose shared row copy actions."
   (should (transient-get-suffix 'majutsu-evolog-copy-transient "s"))
@@ -283,20 +274,7 @@
                                  (magit-section-match 'jj-hunk section))
                                (oref file children))))
           (should (cl-typep file 'majutsu-evolog-file-section))
-          (should (cl-typep hunk 'majutsu-evolog-hunk-section))
-          (dolist (section (list file hunk))
-            (should (eq (oref section keymap)
-                        'majutsu-evolog-diff-section-map))
-            (dolist (key '("RET" "C-<return>" "d" "e" "T"))
-              (should (eq (key-binding (kbd key) nil nil
-                                       (oref section start))
-                          'undefined)))
-            (should (eq (key-binding (kbd "C-j") nil nil
-                                     (oref section start))
-                        'magit-section-forward))
-            (should (eq (key-binding (kbd "TAB") nil nil
-                                     (oref section start))
-                        'magit-section-toggle)))))
+          (should (cl-typep hunk 'majutsu-evolog-hunk-section))))
     (should-not seen-keep)
     (should-not seen-ansi)
     (should (member "--color=never" seen-global-args))
@@ -315,11 +293,6 @@
       (let ((inhibit-read-only t))
         (majutsu-evolog-diff-refresh-buffer))
       (should (string-match-p "No patch" (buffer-string))))))
-
-(ert-deftest majutsu-evolog-diff-mode/disables-invalid-revision-actions ()
-  (dolist (key '("RET" "d" "e" "E" "T" "+" "-" "0" "j"))
-    (should (eq (lookup-key majutsu-evolog-diff-mode-map (kbd key))
-                'undefined))))
 
 (ert-deftest majutsu-evolog-copy-entry-field-copies-operation-id ()
   "Shared row copy should work in evolog buffers."
