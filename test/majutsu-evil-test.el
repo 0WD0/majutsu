@@ -49,7 +49,49 @@
     (should (member '(majutsu-op-log-mode normal) calls))
     (should (member '(majutsu-op-show-mode normal) calls))
     (should (member '(majutsu-op-diff-mode normal) calls))
-    (should (member '(majutsu-evolog-mode normal) calls))))
+    (should (member '(majutsu-evolog-mode normal) calls))
+    (should (member '(majutsu-evolog-diff-mode normal) calls))))
+
+(ert-deftest majutsu-evil-test-evolog-diff-mode-keybindings ()
+  "The restricted inter-diff viewer should keep safe Evil navigation."
+  (let ((featurep-original (symbol-function 'featurep))
+        calls)
+    (cl-letf (((symbol-function 'featurep)
+               (lambda (feature &optional subfeature)
+                 (if (eq feature 'evil)
+                     t
+                   (funcall featurep-original feature subfeature))))
+              ((symbol-function 'evil-normalize-keymaps)
+               (lambda (&rest _)))
+              ((symbol-function 'evil-define-key*)
+               (lambda (state keymap &rest bindings)
+                 (push (list state keymap bindings) calls))))
+      (unwind-protect
+          (majutsu-evil--define-mode-keys)
+        (dolist (hook '(majutsu-blob-mode-hook
+                        majutsu-blob-edit-mode-hook
+                        majutsu-conflict-mode-hook
+                        majutsu-annotate-mode-hook))
+          (remove-hook hook #'evil-normalize-keymaps))))
+    (should
+     (seq-some
+      (lambda (call)
+        (and (eq (nth 0 call) 'normal)
+             (eq (nth 1 call) majutsu-evolog-diff-mode-map)
+             (equal (nth 2 call)
+                    (list (kbd "C-j") #'magit-section-forward
+                          (kbd "C-k") #'magit-section-backward
+                          (kbd "g j") #'magit-section-forward-sibling
+                          (kbd "g k") #'magit-section-backward-sibling
+                          (kbd "]") #'magit-section-forward-sibling
+                          (kbd "[") #'magit-section-backward-sibling
+                          (kbd "g r") #'majutsu-refresh
+                          (kbd "`") #'majutsu-process-buffer
+                          (kbd "q") #'majutsu-mode-bury-buffer
+                          (kbd "t") #'majutsu-diff-toggle-refine-hunk
+                          (kbd "RET") #'undefined
+                          (kbd "d") #'undefined))))
+      calls))))
 
 (ert-deftest majutsu-evil-test-op-mode-keybindings ()
   "Operation mode maps should receive Evil-specific bindings."

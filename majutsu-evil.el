@@ -116,6 +116,7 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
                     majutsu-op-show-mode
                     majutsu-op-diff-mode
                     majutsu-evolog-mode
+                    majutsu-evolog-diff-mode
                     majutsu-diff-mode))
       (evil-set-initial-state mode majutsu-evil-initial-state))))
 
@@ -180,6 +181,24 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "~") #'majutsu-diff-default-context
     (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
     (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-evolog-mode-map
+    [remap majutsu-visit-thing] #'majutsu-evolog-diff-at-point)
+
+  (majutsu-evil--define-keys '(normal visual motion)
+      'majutsu-evolog-diff-mode-map
+    (kbd "C-j") #'magit-section-forward
+    (kbd "C-k") #'magit-section-backward
+    (kbd "g j") #'magit-section-forward-sibling
+    (kbd "g k") #'magit-section-backward-sibling
+    (kbd "]") #'magit-section-forward-sibling
+    (kbd "[") #'magit-section-backward-sibling
+    (kbd "g r") #'majutsu-refresh
+    (kbd "`") #'majutsu-process-buffer
+    (kbd "q") #'majutsu-mode-bury-buffer
+    (kbd "t") #'majutsu-diff-toggle-refine-hunk
+    (kbd "RET") #'undefined
+    (kbd "d") #'undefined)
 
   ;; majutsu-blob-mode is a minor mode, need hook + define-keys
   (add-hook 'majutsu-blob-mode-hook #'evil-normalize-keymaps)
