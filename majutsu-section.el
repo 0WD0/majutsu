@@ -12,46 +12,32 @@
 ;;; Commentary:
 
 ;; This library adapts Magit's section visibility commands for Majutsu.
-;; Most sections keep Magit's default behavior, while Majutsu log commit
-;; sections use a slightly different hidden range so display-only prefixes
-;; remain stable after expand/collapse.
+;; The only behavioral change is a slightly shifted invisible range when a
+;; section body ends with a newline, which keeps Majutsu's row/graph layouts
+;; stable when collapsing sections.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'magit-section)
 (require 'seq)
-(require 'majutsu-base)
 
 (declare-function magit-section--opportunistic-paint "magit-section" (section))
 (declare-function magit-section--opportunistic-wash "magit-section" (section))
 (declare-function magit-section-maybe-cache-visibility "magit-section" (section))
 (declare-function magit-section-maybe-update-visibility-indicator "magit-section" (section))
 
-(cl-defgeneric majutsu-section--hidden-bounds (section)
+(defun majutsu-section--hidden-bounds (section)
   "Return invisible overlay bounds for SECTION as (BEG . END).
-Return nil when SECTION has no hideable body.  The returned END uses
-Emacs overlay conventions and is exclusive.")
-
-(cl-defmethod majutsu-section--hidden-bounds ((section magit-section))
+If the section body ends with a newline, keep that newline visible by
+shifting the invisible range one character earlier as well."
   (when-let* ((beg (oref section content))
               (end (oref section end))
               (_ (< beg end)))
-    (cons beg end)))
-
-(cl-defmethod majutsu-section--hidden-bounds ((section majutsu-commit-section))
-  (let* ((start (oref section start))
-         (content (oref section content))
-         (end (oref section end)))
-    (if (and content
-             (< content end)
-             (> content start)
+    (if (and (> beg (oref section start))
              (eq (char-before end) ?\n))
-        (let ((beg (1- content))
-              (overlay-end (1- end)))
-          (when (< beg overlay-end)
-            (cons beg overlay-end)))
-      (cl-call-next-method))))
+        (cons (1- beg) (1- end))
+      (cons beg end))))
 
 (defun majutsu-section-show (section)
   "Show the body of SECTION."
@@ -255,6 +241,21 @@ sections up to the absolute value of that, not just surrounding sections."
             (goto-char (oref section start))
             (majutsu-section-toggle section)))
       (majutsu-section-toggle section))))
+
+;;;###autoload
+(defun majutsu-copy-section-value ()
+  "Copy the current section's stable value.
+
+When the region is active, copy it literally using `copy-region-as-kill'."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'copy-region-as-kill)
+    (if-let* ((section (magit-current-section))
+              (value (oref section value)))
+        (progn
+          (kill-new (format "%s" value))
+          (message "%s" value))
+      (user-error "No section value at point"))))
 
 (provide 'majutsu-section)
 ;;; majutsu-section.el ends here

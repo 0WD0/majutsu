@@ -13,6 +13,44 @@
 (require 'seq)
 (require 'majutsu-bookmark)
 
+(defun majutsu-bookmark-test--sections (&optional section)
+  "Return SECTION and all descendants, defaulting to `magit-root-section'."
+  (let ((section (or section magit-root-section)))
+    (cons section
+          (apply #'append
+                 (mapcar #'majutsu-bookmark-test--sections
+                         (oref section children))))))
+
+(cl-defun majutsu-bookmark-test--row
+    (heading name remote tracked conflict-details removed-ids added-ids &optional
+             (newline t newline-supplied-p))
+  "Return one raw bookmark-list row record.
+When NEWLINE is non-nil or omitted, append a trailing newline."
+  (concat majutsu-row-start-token
+          heading
+          majutsu-row-tail-token
+          majutsu-row-body-token
+          (replace-regexp-in-string
+           "\n" majutsu-row-field-line-separator (or conflict-details "") t t)
+          majutsu-row-meta-token
+          (string-join (list name (or remote "")
+                             (if tracked "t" "")
+                             (string-join (or removed-ids nil)
+                                          majutsu-row-field-line-separator)
+                             (string-join (or added-ids nil)
+                                          majutsu-row-field-line-separator))
+                       majutsu-row-field-separator)
+          majutsu-row-end-token
+          (if (or (not newline-supplied-p) newline) "\n" "")))
+
+(cl-defun majutsu-bookmark-test--ref
+    (name remote tracked heading &optional conflict-details removed-ids added-ids
+          (newline t newline-supplied-p))
+  "Return one bookmark-list ref row record."
+  (majutsu-bookmark-test--row
+   heading name remote tracked conflict-details removed-ids added-ids
+   (if newline-supplied-p newline t)))
+
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
                  '("main" . "origin"))))
@@ -110,6 +148,123 @@
 
 (ert-deftest majutsu-bookmark-completion-template/emits-line-delimiters ()
   (should (string-match-p (regexp-quote "\\n") majutsu-bookmark--completion-template)))
+
+(ert-deftest majutsu-bookmark-list-template/uses-typed-commitref-fields ()
+  (let ((majutsu-bookmark--compiled-template-cache nil))
+    (let ((template (majutsu-bookmark--list-template)))
+    (should-not (string-match-p "format_commit_ref" template))
+    (should-not (string-match-p "format_commit_summary_with_refs" template))
+    (should-not (string-match-p ":map-join" template))
+    (should (string-match-p "self.removed_targets().map" template))
+    (should (string-match-p "self.added_targets().map" template))
+    (should-not (string-match-p "self.primary()" template))
+    (should-not (string-match-p "self.tracked_refs()" template))
+    (should (string-match-p (regexp-quote "change_id().shortest(8)") template))
+    (should (string-match-p (regexp-quote "commit_id().shortest(8)") template))
+    (should (string-match-p (regexp-quote "description().first_line()") template))
+    (should (string-match-p (regexp-quote "label(\"bookmark\"") template))
+    (should (string-match-p (regexp-quote "label(\"conflict\"") template))
+    (should (string-match-p (regexp-quote "\\x1E") template))
+    (should (string-match-p (regexp-quote "\\x1D") template)))))
+
+(ert-deftest majutsu-bookmark-list-template/uses-custom-heading-template ()
+  (let ((majutsu-bookmark--compiled-template-cache nil)
+        (majutsu-bookmark-list-template-heading
+         '[:separate " :: " [:majutsu-bookmark-list-name] "CUSTOM-HEADING"]))
+    (let ((template (majutsu-bookmark--list-template)))
+      (should (string-match-p (regexp-quote "CUSTOM-HEADING") template)))))
+
+(ert-deftest majutsu-bookmark-list-template/uses-flat-row-columns ()
+  (let* ((compiled (majutsu-bookmark--ensure-list-template))
+         (heading-fields
+          (mapcar (lambda (column) (plist-get column :field))
+                  (majutsu-row-module-columns compiled 'heading)))
+         (metadata-fields
+          (mapcar (lambda (column) (plist-get column :field))
+                  (majutsu-row-module-columns compiled 'metadata))))
+    (should (equal heading-fields '(heading)))
+    (should (equal metadata-fields
+                   '(name remote tracked removed-target-ids
+                          added-target-ids)))))
+
+(ert-deftest majutsu-bookmark-row-output/parses-flat-refs-and-remote-state ()
+  (let* ((compiled (majutsu-bookmark--ensure-list-template))
+         (output (concat
+                  (majutsu-bookmark-test--ref
+                   "dev" "" nil "dev: rymwrkkn b052a92d summary")
+                  (majutsu-bookmark-test--ref
+                   "dev" "origin" t
+                   "  @origin (+2/-10+): sxwtxlqt/1 4bb5dd3b (hidden) summary")))
+         parsed roots dev origin)
+    (with-temp-buffer
+      (insert output)
+      (setq parsed (majutsu-row-read-buffer compiled)))
+    (setq roots (plist-get parsed :roots)
+          dev (car roots)
+          origin (cadr roots))
+    (should (= (length roots) 2))
+    (should (equal (majutsu-row-column dev 'name) "dev"))
+    (should (equal (majutsu-row-column origin 'remote) "origin"))
+    (should (majutsu-row-column origin 'tracked))))
+
+(ert-deftest majutsu-bookmark-row-output/preserves-conflict-details-and-full-ids ()
+  (let* ((compiled (majutsu-bookmark--ensure-list-template))
+         (output (majutsu-bookmark-test--ref
+                  "dev" "origin" t "@origin (conflicted):"
+                  "  - old-target\n  + new-target"
+                  '("0123456789abcdef" "1111111111111111")
+                  '("fedcba9876543210")))
+         entry)
+    (with-temp-buffer
+      (insert output)
+      (setq entry (car (plist-get (majutsu-row-read-buffer compiled)
+                                  :entries))))
+    (should (equal (majutsu-row-render-body entry compiled)
+                   "  - old-target\n  + new-target"))
+    (should (equal (majutsu-row-column entry 'removed-target-ids)
+                   '("0123456789abcdef" "1111111111111111")))
+    (should (equal (majutsu-row-column entry 'added-target-ids)
+                   '("fedcba9876543210")))))
+
+(ert-deftest majutsu-bookmark-wash-list/keeps-tracked-remotes-flat ()
+  (let ((output (concat
+                 (majutsu-bookmark-test--ref
+                  "dev" "" nil "dev: rymwrkkn b052a92d summary")
+                 (majutsu-bookmark-test--ref
+                  "dev" "origin" t
+                  "  @origin (+2/-10+): sxwtxlqt/1 4bb5dd3b (hidden) summary"))))
+    (with-temp-buffer
+      (majutsu-bookmark-list-mode)
+      (let ((inhibit-read-only t))
+        (magit-insert-section (bookmark-list)
+          (insert output)
+          (majutsu-bookmark--wash-list nil))
+        (let* ((sections (majutsu-bookmark-test--sections))
+               (dev (seq-find (lambda (section)
+                                (and (eq (oref section type) 'jj-bookmark)
+                                     (equal (oref section value) "dev")))
+                              sections))
+               (origin (seq-find (lambda (section)
+                                   (and (eq (oref section type) 'jj-bookmark)
+                                        (equal (oref section value) "dev@origin")))
+                                 sections)))
+          (should dev)
+          (should origin)
+          (should (eq (oref origin parent) (oref dev parent)))
+          (should (string-match-p "^dev:" (buffer-string)))
+          (should (string-match-p "^  @origin" (buffer-string))))))))
+
+(ert-deftest majutsu-bookmark-list-refresh-buffer/uses-structured-template ()
+  (let (seen-args)
+    (with-temp-buffer
+      (majutsu-bookmark-list-mode)
+      (cl-letf (((symbol-function 'majutsu-jj-wash)
+                 (lambda (_washer _keep &rest args)
+                   (setq seen-args (flatten-list args)))))
+        (majutsu-bookmark-list-refresh-buffer))
+      (should (member "-T" seen-args))
+      (should (equal (cadr (member "-T" seen-args))
+                     (majutsu-bookmark--list-template))))))
 
 (ert-deftest majutsu-bookmark-candidate-data/aggregates-local-and-remote-state ()
   (let ((sep majutsu-bookmark--completion-field-separator))

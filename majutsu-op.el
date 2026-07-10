@@ -17,6 +17,7 @@
 
 (require 'cl-lib)
 (require 'majutsu)
+(require 'majutsu-row)
 (require 'majutsu-selection)
 (require 'seq)
 (require 'subr-x)
@@ -59,39 +60,6 @@
 (defconst majutsu-op--field-separator "\x1e"
   "Field separator used by Majutsu operation templates.")
 
-(defconst majutsu-op--log-template
-  (majutsu-tpl
-   [:concat
-    [:id]
-    "\x1e"
-    [:label "id short" [:id :short]]
-    "\x1e"
-    [:if [:current_operation]
-        [:label "current_operation" "@"]
-      ""]
-    "\x1e"
-    [:label "user" [:user]]
-    "\x1e"
-    [:label "workspace_name" [:workspace_name]]
-    "\x1e"
-    [:label "time end" [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
-    "\x1e"
-    [:label "time end ago" [:method [:time :end] :ago]]
-    "\x1e"
-    [:label "time duration" [:method [:time] :duration]]
-    "\x1e"
-    [:if [:snapshot]
-        [:label "snapshot" "snapshot"]
-      "op"]
-    "\x1e"
-    [:label "description first_line"
-            [:method [:description] :first_line]]
-    "\x1e"
-    [:label "tags first_line" [:method [:tags] :first_line]]
-    "\n"]
-   'Operation)
-  "Template used by `majutsu-op-log'.")
-
 (defconst majutsu-op--show-template
   (majutsu-tpl
    [:concat
@@ -133,28 +101,14 @@
   "Return FIELD without text properties or surrounding whitespace."
   (string-trim (substring-no-properties (or field ""))))
 
+(defun majutsu-op--row-machine-field (value &optional _ctx)
+  "Row postprocessor returning VALUE as a machine field."
+  (majutsu-op--machine-field value))
+
 (defun majutsu-op--split-record (line expected)
   "Split LINE into EXPECTED fields, or return nil when malformed."
-  (let ((fields (split-string line majutsu-op--field-separator)))
+  (let ((fields (majutsu--split-fields line majutsu-op--field-separator)))
     (and (= (length fields) expected) fields)))
-
-(defun majutsu-op--parse-log-line (line)
-  "Parse one operation log LINE into a plist."
-  (when-let* ((fields (majutsu-op--split-record line 11)))
-    (pcase-let ((`(,op-id ,op-id-short ,current ,user ,workspace
-                  ,time ,time-ago ,duration ,kind ,description ,tags)
-                 fields))
-      (list :op-id (majutsu-op--machine-field op-id)
-            :op-id-short (majutsu-op--display-field op-id-short)
-            :current (majutsu-op--machine-field current)
-            :user (majutsu-op--display-field user)
-            :workspace (majutsu-op--display-field workspace)
-            :time (majutsu-op--display-field time)
-            :time-ago (majutsu-op--display-field time-ago)
-            :duration (majutsu-op--display-field duration)
-            :kind (majutsu-op--machine-field kind)
-            :desc (majutsu-op--display-field description)
-            :tags (majutsu-op--display-field tags)))))
 
 (defun majutsu-op--parse-show-line (line)
   "Parse one operation metadata LINE into a plist."
@@ -171,12 +125,6 @@
             :duration    duration
             :kind        kind
             :desc        description))))
-
-(defun majutsu-op--parse-log-output (output)
-  "Parse operation log OUTPUT into entry plists."
-  (delq nil
-        (mapcar #'majutsu-op--parse-log-line
-                (split-string (or output "") "\n" t))))
 
 (defun majutsu-op--nonempty-field-p (field)
   "Return non-nil when FIELD is present and non-empty."
@@ -344,8 +292,6 @@
 
 (defclass majutsu-op-option (majutsu-selection-option) ())
 
-(defclass majutsu-op-toggle-option (majutsu-selection-toggle-option) ())
-
 (defclass majutsu-op-target-prefix (transient-prefix) ())
 
 (defun majutsu-op--section-in-lineage (types &optional section)
@@ -430,16 +376,11 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :selection-face '(:background "goldenrod" :foreground "black")
   :locate-fn #'majutsu-op--selection-locate
   :targets-fn #'majutsu-op--selection-targets
+  :selection-toggle-key "o"
   :key "-o"
   :argument "--operation="
   :prompt "Operation: "
   :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-arg:operation ()
-  :description "Operation (toggle at point)"
-  :class 'majutsu-op-toggle-option
-  :key "o"
-  :argument "--operation=")
 
 (transient-define-argument majutsu-op-arg:--from ()
   :description "From operation"
@@ -448,16 +389,11 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :selection-face '(:background "dark orange" :foreground "black")
   :locate-fn #'majutsu-op--selection-locate
   :targets-fn #'majutsu-op--selection-targets
+  :selection-toggle-key "f"
   :shortarg "-f"
   :argument "--from="
   :prompt "From operation: "
   :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-arg:from ()
-  :description "From operation (toggle at point)"
-  :class 'majutsu-op-toggle-option
-  :key "f"
-  :argument "--from=")
 
 (transient-define-argument majutsu-op-arg:--to ()
   :description "To operation"
@@ -466,16 +402,11 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   :selection-face '(:background "dark cyan" :foreground "white")
   :locate-fn #'majutsu-op--selection-locate
   :targets-fn #'majutsu-op--selection-targets
+  :selection-toggle-key "t"
   :shortarg "-t"
   :argument "--to="
   :prompt "To operation: "
   :reader #'majutsu-op--transient-read-operation)
-
-(transient-define-argument majutsu-op-arg:to ()
-  :description "To operation (toggle at point)"
-  :class 'majutsu-op-toggle-option
-  :key "t"
-  :argument "--to=")
 
 ;;; op transient
 
@@ -499,8 +430,93 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 (defvar-local majutsu-op-log--args nil
   "Arguments used for the current operation log buffer.")
 
-(defvar-local majutsu-op-log--cached-entries nil
-  "Cached operation log entries.")
+(defcustom majutsu-op-log-columns
+  '((:field op-id-short :module heading
+     :template [:label "id short" [:id :short]] :face t)
+    (:field kind :module heading
+     :template [:if [:snapshot] [:label "snapshot" "snapshot"] "op"]
+     :face t :post majutsu-op--row-machine-field)
+    (:field description :module heading
+     :template [:label "description first_line"
+                [:method [:description] :first_line]] :face t)
+    (:field id-line :module body
+     :template [:concat "Id: " [:id]] :face t)
+    (:field user-line :module body
+     :template [:concat "User: " [:label "user" [:user]]] :face t)
+    (:field workspace-line :module body
+     :template [:concat "Workspace: "
+                [:label "workspace_name" [:workspace_name]]] :face t)
+    (:field time-line :module body
+     :template [:concat
+                "Time: "
+                [:label "time end"
+                 [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
+                " (" [:label "time end ago" [:method [:time :end] :ago]]
+                "), lasted "
+                [:label "time duration" [:method [:time] :duration]]]
+     :face t)
+    (:field tags :module body
+     :template [:label "tags first_line" [:method [:tags] :first_line]]
+     :face t)
+    (:field op-id :module metadata :template [:id]
+     :face nil :post majutsu-op--row-machine-field)
+    (:field user :module metadata
+     :template [:label "user" [:user]] :face nil)
+    (:field workspace :module metadata
+     :template [:label "workspace_name" [:workspace_name]] :face nil)
+    (:field time :module metadata
+     :template [:label "time end"
+                [:method [:time :end] :format "%Y-%m-%d %H:%M:%S"]]
+     :face nil)
+    (:field time-ago :module metadata
+     :template [:label "time end ago" [:method [:time :end] :ago]] :face nil)
+    (:field duration :module metadata
+     :template [:label "time duration" [:method [:time] :duration]] :face nil))
+  "Flat row columns controlling operation log rendering."
+  :type 'sexp
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-op-log--compiled-template-cache nil)))
+
+(defvar majutsu-op-log--compiled-template-cache nil
+  "Cached compiled operation log row template metadata.")
+
+(defun majutsu-op-log--invalidate-template-cache (&rest _)
+  "Invalidate cached operation log row template metadata."
+  (setq majutsu-op-log--compiled-template-cache nil))
+
+(when (fboundp 'add-variable-watcher)
+  (add-variable-watcher 'majutsu-op-log-columns
+                        #'majutsu-op-log--invalidate-template-cache))
+
+(defun majutsu-op-log--entry-id (entry)
+  "Return stable section id string from operation log ENTRY."
+  (let ((op-id (majutsu-row-column entry 'op-id)))
+    (if (and (stringp op-id)
+             (not (string-empty-p (string-trim op-id))))
+        (substring-no-properties op-id)
+      "unknown")))
+
+(defun majutsu-op-log--row-profile ()
+  "Return the row profile for operation log entries."
+  (majutsu-row-make-profile
+   :name 'op-log
+   :self-type 'Operation
+   :columns-var 'majutsu-op-log-columns
+   :entry-id-function 'majutsu-op-log--entry-id
+   :section-class 'jj-op
+   :section-value-function 'majutsu-op-log--entry-id))
+
+(defun majutsu-op-log--compile-columns ()
+  "Compile operation log columns into row metadata."
+  (majutsu-row-compile (majutsu-op-log--row-profile)))
+
+(defun majutsu-op-log--ensure-template ()
+  "Return cached compiled operation log template metadata."
+  (or majutsu-op-log--compiled-template-cache
+      (setq majutsu-op-log--compiled-template-cache
+            (majutsu-op-log--compile-columns))))
 
 (defun majutsu-op-log-arguments ()
   "Return operation log arguments from the active transient, if any."
@@ -513,7 +529,8 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
   (append majutsu-op--read-only-global-args
           '("op" "log" "--no-graph")
           (or args majutsu-op-log--args)
-          (list "-T" majutsu-op--log-template)))
+          (list "-T" (plist-get (majutsu-op-log--ensure-template)
+                                :template))))
 
 (defun majutsu-parse-op-log-entries (&optional buf log-output)
   "Parse jj operation log output.
@@ -521,70 +538,31 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
 When LOG-OUTPUT is nil, run jj in BUF or the current buffer and cache the
 result."
   (with-current-buffer (or buf (current-buffer))
-    (if (and majutsu-op-log--cached-entries (not log-output))
-        majutsu-op-log--cached-entries
-      (let ((entries (majutsu-op--parse-log-output
-                      (or log-output
-                          (apply #'majutsu-jj-buffer-string
-                                 (majutsu-op--log-command-args))))))
+    (if (and majutsu-row-cached-entries (not log-output))
+        majutsu-row-cached-entries
+      (let* ((cmd-args (unless log-output (majutsu-op--log-command-args)))
+             (entries
+              (with-temp-buffer
+                (insert (or log-output
+                            (apply #'majutsu-jj-buffer-string cmd-args)))
+                (goto-char (point-min))
+                (majutsu-row-parse-buffer
+                 (majutsu-op-log--ensure-template)))))
         (unless log-output
-          (setq majutsu-op-log--cached-entries entries))
+          (majutsu-row-set-buffer-data
+           (majutsu-op-log--ensure-template)
+           entries))
         entries))))
-
-(defun majutsu-op--log-current-marker (entry)
-  "Return the current-operation marker for ENTRY."
-  (if (string-empty-p (or (plist-get entry :current) ""))
-      " "
-    (propertize "@" 'face 'font-lock-warning-face)))
-
-(defun majutsu-op--format-log-entry-heading (entry)
-  "Return the heading line for one operation log ENTRY."
-  (format "%s %-12s %-8s %s"
-          (majutsu-op--log-current-marker entry)
-          (plist-get entry :op-id-short)
-          (plist-get entry :kind)
-          (plist-get entry :desc)))
-
-(defun majutsu-op--insert-log-entry-body (entry)
-  "Insert multiline operation log body for ENTRY."
-  (majutsu-op--insert-field "Id" (plist-get entry :op-id))
-  (majutsu-op--insert-field "User" (plist-get entry :user))
-  (majutsu-op--insert-field "Workspace" (plist-get entry :workspace))
-  (majutsu-op--insert-field
-   "Time"
-   (format "%s (%s), lasted %s"
-           (plist-get entry :time)
-           (plist-get entry :time-ago)
-           (plist-get entry :duration)))
-  (when (majutsu-op--nonempty-field-p (plist-get entry :tags))
-    (majutsu-op--insert-colored-block (plist-get entry :tags))))
-
-(defun majutsu-op--wash-log-entry ()
-  "Wash the current raw operation log line into one `jj-op' section."
-  (let* ((line (majutsu-op--diff-line-string))
-         (entry (majutsu-op--parse-log-line line)))
-    (majutsu-op--delete-line)
-    (when entry
-      (let ((op-id (plist-get entry :op-id)))
-        (magit-insert-section (jj-op op-id)
-          (magit-insert-heading (majutsu-op--format-log-entry-heading entry))
-          (majutsu-op--insert-log-entry-body entry)))
-      entry)))
 
 (defun majutsu-op--wash-log-output (_args)
   "Wash raw `jj op log` output in the current narrowed region."
-  (let (entries)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (when-let* ((entry (majutsu-op--wash-log-entry)))
-        (push entry entries)))
-    (setq majutsu-op-log--cached-entries (nreverse entries))))
+  (majutsu-row-wash-buffer (majutsu-op-log--ensure-template)))
 
 (defun majutsu-op-log-insert-entries ()
   "Insert operation log entries."
   (magit-insert-section (jj-op-log)
     (magit-insert-heading "Operation Log")
-    (setq majutsu-op-log--cached-entries nil)
+    (majutsu-row-clear-buffer-data)
     (apply #'majutsu-jj-wash
            #'majutsu-op--wash-log-output
            'wash-anyway
@@ -600,7 +578,7 @@ result."
   "Refresh the op log buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-op-log-mode)
-  (setq majutsu-op-log--cached-entries nil)
+  (majutsu-row-clear-buffer-data)
   (majutsu-op-log-render))
 
 (defun majutsu-op-log-show-at-point ()
@@ -609,6 +587,18 @@ result."
   (if-let* ((op-id (majutsu-op--operation-at-point)))
       (majutsu-op-show op-id)
     (user-error "No operation at point")))
+
+;;;###autoload
+(defun majutsu-op-log-copy-operation-id ()
+  "Copy the current operation log entry id."
+  (interactive)
+  (majutsu-row-copy-entry-field-at-point 'op-id "No operation at point"))
+
+;;;###autoload(autoload 'majutsu-op-log-copy-transient "majutsu-op" nil t)
+(majutsu-row-define-copy-transient
+ majutsu-op-log-copy-transient
+ "Transient for semantic copy commands in `majutsu-op-log-mode'."
+ ("o" "Operation id" majutsu-op-log-copy-operation-id))
 
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
@@ -621,6 +611,8 @@ result."
   :group 'majutsu
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (setq-local filter-buffer-substring-function
+              #'majutsu-row-filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t))
 
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments
@@ -769,7 +761,6 @@ result."
   :description "JJ Operation Restore"
   [["Selection"
     (majutsu-op-arg:--operation)
-    (majutsu-op-arg:operation)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["What"
     ("-r" "Repo state" "--what=repo")
@@ -790,7 +781,6 @@ result."
   :description "JJ Operation Revert"
   [["Selection"
     (majutsu-op-arg:--operation)
-    (majutsu-op-arg:operation)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["What"
     ("-r" "Repo state" "--what=repo")
@@ -1195,11 +1185,8 @@ result."
    "JJ Operation Diff"
    ["Selection"
     (majutsu-op-arg:--operation)
-    (majutsu-op-arg:operation)
     (majutsu-op-arg:--from)
-    (majutsu-op-arg:from)
     (majutsu-op-arg:--to)
-    (majutsu-op-arg:to)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Actions"
     ("d" "Open diff" majutsu-op-diff)

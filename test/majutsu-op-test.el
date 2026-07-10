@@ -44,17 +44,50 @@
                      (propertize "description" 'font-lock-face 'font-lock-string-face))
                majutsu-op--field-separator))
 
+(defun majutsu-op-test--log-payload (&rest fields)
+  "Join operation log row FIELDS."
+  (string-join fields majutsu-row-field-separator))
+
+(defun majutsu-op-test--log-raw-entry (&rest kvs)
+  "Return one row encoded operation log entry from KVS."
+  (let* ((op-id (or (plist-get kvs :op-id) "full-id"))
+         (op-id-short (or (plist-get kvs :op-id-short) "short-id"))
+         (user (or (plist-get kvs :user) "user"))
+         (workspace (or (plist-get kvs :workspace) "workspace"))
+         (time (or (plist-get kvs :time) "2026-05-02 04:50:00"))
+         (time-ago (or (plist-get kvs :time-ago) "2 minutes ago"))
+         (duration (or (plist-get kvs :duration) "3 milliseconds"))
+         (kind (or (plist-get kvs :kind) "op"))
+         (desc (or (plist-get kvs :desc) "description"))
+         (tags (or (plist-get kvs :tags) "args: jj op")))
+    (concat majutsu-row-start-token
+            (majutsu-op-test--log-payload op-id-short kind desc)
+            majutsu-row-tail-token
+            majutsu-row-body-token
+            (majutsu-op-test--log-payload
+             (concat "Id: " op-id)
+             (concat "User: " user)
+             (concat "Workspace: " workspace)
+             (concat "Time: " time " (" time-ago "), lasted " duration)
+             tags)
+            majutsu-row-meta-token
+            (majutsu-op-test--log-payload
+             op-id user workspace time time-ago duration)
+            majutsu-row-end-token
+            "\n")))
+
 (ert-deftest majutsu-op-log-template/carries-rich-line-fields ()
-  "Operation log template should carry ids, current marker, time, and duration."
-  (should (string-match-p "self.id()" majutsu-op--log-template))
-  (should (string-match-p "self.id().short()" majutsu-op--log-template))
-  (should (string-match-p "self.current_operation()" majutsu-op--log-template))
-  (should (string-match-p "self.time().end().format" majutsu-op--log-template))
-  (should (string-match-p "self.time().duration()" majutsu-op--log-template))
-  (should (string-match-p "self.description().first_line()"
-                          majutsu-op--log-template))
-  (should (string-match-p "self.tags().first_line()" majutsu-op--log-template))
-  (should-not (string-match-p "separate(" majutsu-op--log-template)))
+  "Operation log template should carry ids, time, duration, and details."
+  (let ((template (plist-get (majutsu-op-log--ensure-template) :template)))
+    (should (string-match-p (regexp-quote "\\x1dS") (prin1-to-string template)))
+    (should (string-match-p "self.id()" template))
+    (should (string-match-p "self.id().short()" template))
+    (should-not (string-match-p "self.current_operation()" template))
+    (should (string-match-p "self.time().end().format" template))
+    (should (string-match-p "self.time().duration()" template))
+    (should (string-match-p "self.description().first_line()" template))
+    (should (string-match-p "self.tags().first_line()" template))
+    (should-not (string-match-p "separate(" template))))
 
 (ert-deftest majutsu-op-commit-summary-template/carries-full-ids ()
   "Operation diff commit summary should carry full ids for actions."
@@ -70,40 +103,26 @@
                               majutsu-op--commit-summary-template))
   (should-not (string-match-p "separate(" majutsu-op--commit-summary-template)))
 
-(ert-deftest majutsu-op-parse-log-entries/strips-machine-id-and-keeps-display-face ()
-  "Parser should strip ANSI from machine ids and keep display field faces."
-  (let* ((raw (concat (propertize "full-operation-id" 'font-lock-face 'error)
-                      majutsu-op--field-separator
-                      (propertize "short-id" 'font-lock-face 'success)
-                      majutsu-op--field-separator
-                      "@"
-                      majutsu-op--field-separator
-                      "user"
-                      majutsu-op--field-separator
-                      "workspace"
-                      majutsu-op--field-separator
-                      "2026-05-02 04:50:00"
-                      majutsu-op--field-separator
-                      "2 minutes ago"
-                      majutsu-op--field-separator
-                      "3 milliseconds"
-                      majutsu-op--field-separator
-                      "op"
-                      majutsu-op--field-separator
-                      "description"
-                      majutsu-op--field-separator
-                      "args: jj op\n"))
+(ert-deftest majutsu-op-parse-log-entries/separates-metadata-and-display-values ()
+  "Parser should keep machine metadata separate from visible field faces."
+  (let* ((raw (majutsu-op-test--log-raw-entry
+               :op-id (propertize "full-operation-id" 'font-lock-face 'error)
+               :op-id-short (propertize "short-id" 'font-lock-face 'success)))
          (entry (car (majutsu-parse-op-log-entries nil raw)))
-         (short (plist-get entry :op-id-short)))
-    (should (equal (plist-get entry :op-id) "full-operation-id"))
+         (short-column
+          (seq-find (lambda (column)
+                      (and (eq (plist-get column :field) 'op-id-short)
+                           (eq (plist-get column :module) 'heading)))
+                    (plist-get (majutsu-op-log--ensure-template) :columns)))
+         (short (majutsu-row-column-value entry short-column)))
+    (should (equal (majutsu-row-column entry 'op-id) "full-operation-id"))
+    (should-not (majutsu-row-column entry 'op-id-short))
     (should (equal short "short-id"))
     (should (get-text-property 0 'font-lock-face short))
-    (should (equal (plist-get entry :current) "@"))
-    (should (equal (plist-get entry :time) "2026-05-02 04:50:00"))
-    (should (equal (plist-get entry :duration) "3 milliseconds"))
-    (should (equal (plist-get entry :kind) "op"))
-    (should (equal (plist-get entry :desc) "description"))
-    (should (equal (plist-get entry :tags) "args: jj op"))))
+    (should (equal (majutsu-row-column entry 'time) "2026-05-02 04:50:00"))
+    (should (equal (majutsu-row-column entry 'duration) "3 milliseconds"))
+    (should-not (majutsu-row-column entry 'kind))
+    (should-not (majutsu-row-column entry 'description))))
 
 (ert-deftest majutsu-op-parse-log-entries/rejects-malformed-records ()
   "Malformed records should be ignored instead of creating bad sections."
@@ -125,17 +144,13 @@
     (cl-letf (((symbol-function 'majutsu-jj-buffer-string)
                (lambda (&rest args)
                  (setq captured args)
-                 (concat "full" majutsu-op--field-separator
-                         "short" majutsu-op--field-separator
-                         "" majutsu-op--field-separator
-                         "user" majutsu-op--field-separator
-                         "workspace" majutsu-op--field-separator
-                         "time" majutsu-op--field-separator
-                         "ago" majutsu-op--field-separator
-                         "duration" majutsu-op--field-separator
-                         "op" majutsu-op--field-separator
-                         "desc" majutsu-op--field-separator
-                         "args: jj op\n"))))
+                 (majutsu-op-test--log-raw-entry
+                  :op-id "full"
+                  :op-id-short "short"
+                  :time "time"
+                  :time-ago "ago"
+                  :duration "duration"
+                  :desc "desc"))))
       (with-temp-buffer
         (majutsu-op-log-mode)
         (setq majutsu-op-log--args '("--limit=2" "--reversed"))
@@ -148,7 +163,6 @@
   "Operation log entries should render useful multiline details by default."
   (let ((entry (list :op-id "full-id"
                      :op-id-short "short-id"
-                     :current "@"
                      :kind "snapshot"
                      :user "user"
                      :workspace "workspace"
@@ -159,17 +173,10 @@
                      :tags "args: jj op")))
     (cl-letf (((symbol-function 'majutsu-jj-wash)
                (lambda (washer _keep-error &rest _args)
-                 (insert (concat "full-id" majutsu-op--field-separator
-                                 "short-id" majutsu-op--field-separator
-                                 "@" majutsu-op--field-separator
-                                 "user" majutsu-op--field-separator
-                                 "workspace" majutsu-op--field-separator
-                                 "2026-05-02 04:50:00" majutsu-op--field-separator
-                                 "2 minutes ago" majutsu-op--field-separator
-                                 "3 milliseconds" majutsu-op--field-separator
-                                 "snapshot" majutsu-op--field-separator
-                                 "description" majutsu-op--field-separator
-                                 "args: jj op\n"))
+                 (insert (majutsu-op-test--log-raw-entry
+                          :op-id "full-id"
+                          :op-id-short "short-id"
+                          :kind "snapshot"))
                  (funcall washer nil)
                  0)))
       (with-temp-buffer
@@ -177,7 +184,7 @@
         (let ((inhibit-read-only t))
           (majutsu-op-log-insert-entries))
         (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-          (should (string-match-p "@ short-id" content))
+          (should (string-match-p "short-id" content))
           (should (string-match-p "description" content))
           (should (string-match-p "Id: full-id" content))
           (should (string-match-p "Time: 2026-05-02 04:50:00" content))

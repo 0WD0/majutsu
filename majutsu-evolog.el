@@ -1,65 +1,149 @@
-;;; majutsu-evolog.el --- JJ evolution log views for Majutsu  -*- lexical-binding: t; -*-
+;;; majutsu-evolog.el --- JJ evolution log view for Majutsu  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 
-;; This library renders `jj evolog' output as Majutsu sections and provides a
-;; detail buffer for a single evolution entry's `inter_diff()' patch.
+;; This library renders `jj evolog' using a Majutsu-owned template equivalent
+;; to jj's default compact evolog template.  Entries use the shared
+;; row protocol, so jj keeps rendering the graph while Majutsu parses
+;; heading and metadata modules back into real Magit sections.
 
 ;;; Code:
 
 (require 'majutsu)
-(require 'seq)
 (require 'subr-x)
 
-(declare-function majutsu-jj-buffer-string "majutsu-jj" (&rest args))
 (declare-function majutsu-jj-wash "majutsu-jj" (washer keep-error &rest args))
 
-(defconst majutsu-evolog--field-separator "\x1e"
-  "Field separator used by Majutsu evolog templates.")
+(defconst majutsu-evolog--change-offset-template
+  '[:if [:commit :change_offset]
+       [:concat [:label "change_offset" "/"]
+                [:commit :change_offset]]]
+  "Template fragment equivalent to jj's format_change_offset(commit).")
+
+(defconst majutsu-evolog--short-change-id-template
+  `[:coalesce
+    [:if [:commit :hidden]
+        [:label "hidden"
+                [:concat [:commit :change_id :shortest 8]
+                         ,majutsu-evolog--change-offset-template]]]
+    [:if [:commit :divergent]
+        [:label "divergent"
+                [:concat [:commit :change_id :shortest 8]
+                         ,majutsu-evolog--change-offset-template]]]
+    [:commit :change_id :shortest 8]]
+  "Template fragment equivalent to jj's short change-id formatter.")
+
+(defconst majutsu-evolog--commit-labels-template
+  '[:separate " "
+    [:coalesce
+     [:if [:commit :hidden]
+         [:label "hidden" "(hidden)"]]
+     [:if [:commit :divergent]
+         [:label "divergent" "(divergent)"]]]
+    [:if [:commit :conflict]
+        [:label "conflict" "(conflict)"]]]
+  "Template fragment equivalent to jj's format_commit_labels(commit).")
+
+(defconst majutsu-evolog--commit-header-template
+  `[:separate " "
+    ,majutsu-evolog--short-change-id-template
+    [:coalesce [:commit :author :email]
+               [:label "email placeholder" "(no email set)"]]
+    [:commit :committer :timestamp :local :format "%Y-%m-%d %H:%M:%S"]
+    [:commit :bookmarks]
+    [:commit :tags]
+    [:commit :working_copies]
+    [:commit :commit_id :shortest 8]
+    ,majutsu-evolog--commit-labels-template]
+  "Template fragment equivalent to jj's format_short_commit_header(commit).")
+
+(defconst majutsu-evolog--description-template
+  '[:separate " "
+    [:if [:commit :empty]
+        [:label "empty" "(empty)"]]
+    [:if [:commit :description]
+        [:commit :description :first_line]
+      [:label [:if [:commit :empty]
+                  "empty"
+                "description placeholder"]
+              "(no description set)"]]]
+  "Template fragment equivalent to builtin_log_compact's description line.")
+
+(defconst majutsu-evolog--commit-compact-template
+  `[:if [:commit :root]
+       [:label "immutable"
+               [:separate " "
+                          [:commit :change_id :shortest 8]
+                          [:label "root" "root()"]
+                          [:commit :commit_id :shortest 8]
+                          [:commit :bookmarks]]]
+     [:label
+      [:separate " "
+                 [:if [:commit :current_working_copy] "working_copy"]
+                 [:if [:commit :immutable] "immutable" "mutable"]
+                 [:if [:commit :conflict] "conflicted"]]
+      [:concat ,majutsu-evolog--commit-header-template
+               "\n"
+               ,majutsu-evolog--description-template]]]
+  "Template fragment equivalent to compact log for one evolog commit.")
+
+(defconst majutsu-evolog--operation-line-template
+  '[:if [:operation]
+       [:concat
+        "\n"
+        [:separate " "
+                   [:label "separator" "--"]
+                   "operation"
+                   [:operation :id :short]
+                   [:operation :description :first_line]]]]
+  "Template fragment for the builtin_evolog_compact operation line.")
+
+(defconst majutsu-evolog--entry-display-template
+  `[:concat
+    ,majutsu-evolog--commit-compact-template
+    ,majutsu-evolog--operation-line-template]
+  "Visible evolog entry template, equivalent to jj's builtin_evolog_compact.")
+
+(defconst majutsu-evolog-entry-columns
+  `((:field display :module heading
+     :template ,majutsu-evolog--entry-display-template :face t)
+    (:field change-id :module metadata
+     :template [:commit :change_id] :face nil)
+    (:field commit-id :module metadata
+     :template [:commit :commit_id] :face nil)
+    (:field operation-id :module metadata
+     :template [:if [:operation] [:operation :id] ""] :face nil))
+  "Flat row columns for `majutsu-evolog'.")
+
+(defun majutsu-evolog--entry-id (entry)
+  "Return stable section id string from evolog ENTRY."
+  (or (let ((commit-id (majutsu-row-column entry 'commit-id)))
+        (and (stringp commit-id)
+             (not (string-empty-p (string-trim commit-id)))
+             (substring-no-properties commit-id)))
+      (let ((change-id (majutsu-row-column entry 'change-id)))
+        (and (stringp change-id)
+             (not (string-empty-p (string-trim change-id)))
+             (substring-no-properties change-id)))
+      "unknown"))
+
+(defun majutsu-evolog--row-profile ()
+  "Return the row profile for `majutsu-evolog'."
+  (majutsu-row-make-profile
+   :name 'evolog
+   :self-type 'CommitEvolutionEntry
+   :columns-var 'majutsu-evolog-entry-columns
+   :entry-id-function 'majutsu-evolog--entry-id
+   :section-class 'jj-evolog-entry
+   :section-value-function 'majutsu-evolog--entry-id))
+
+(defconst majutsu-evolog--entry-compiled
+  (majutsu-row-compile (majutsu-evolog--row-profile))
+  "Compiled row layout metadata for `majutsu-evolog'.")
 
 (defconst majutsu-evolog--entry-template
-  (majutsu-tpl
-   [:concat
-    [:commit :change_id]
-    "\x1e"
-    [:label "change_id" [:commit :change_id :short]]
-    "\x1e"
-    [:commit :commit_id]
-    "\x1e"
-    [:label "commit_id" [:commit :commit_id :short]]
-    "\x1e"
-    [:label "author email" [:commit :author :email]]
-    "\x1e"
-    [:label "time ago" [:commit :committer :timestamp :ago]]
-    "\x1e"
-    [:if [:commit :hidden] "hidden" ""]
-    "\x1e"
-    [:if [:commit :conflict] "conflict" ""]
-    "\x1e"
-    [:if [:commit :empty] "empty" ""]
-    "\x1e"
-    [:if [:commit :root] "root" ""]
-    "\x1e"
-    [:coalesce
-     [:if [:commit :description]
-         [:commit :description :first_line]]
-     [:if [:commit :empty] "(empty)"]
-     "(no description set)"]
-    "\x1e"
-    [:if [:operation] [:operation :id] ""]
-    "\x1e"
-    [:if [:operation] [:label "operation_id" [:operation :id :short]] ""]
-    "\x1e"
-    [:if [:operation]
-        [:operation :description :first_line]
-      ""]
-    "\n"]
-   'CommitEvolutionEntry)
+  (plist-get majutsu-evolog--entry-compiled :template)
   "Template used by `majutsu-evolog'.")
-
-(defconst majutsu-evolog--inter-diff-template
-  "self.inter_diff().git()"
-  "Template used for a single evolog entry patch.")
 
 (defconst majutsu-evolog--read-only-global-args
   '("--at-op=@" "--ignore-working-copy")
@@ -71,167 +155,22 @@
 (defvar-local majutsu-evolog--args nil
   "Arguments used for the current evolog buffer.")
 
-(defvar-local majutsu-evolog--cached-entries nil
-  "Parsed entries for the current evolog buffer.")
-
-(defvar-local majutsu-evolog-show--commit-id nil
-  "Full commit id used for the current evolog entry buffer.")
-
-(defun majutsu-evolog--machine-field (field)
-  "Return FIELD without text properties or surrounding whitespace."
-  (string-trim (substring-no-properties (or field ""))))
-
-(defun majutsu-evolog--display-field (field)
-  "Return FIELD as a display string, preserving text properties."
-  (or field ""))
-
-(defun majutsu-evolog--nonempty-field-p (field)
-  "Return non-nil when FIELD is present and non-empty."
-  (and field
-       (not (string-empty-p
-             (string-trim (substring-no-properties field))))))
-
-(defun majutsu-evolog--split-record (line expected)
-  "Split LINE into EXPECTED fields, or return nil when malformed."
-  (let ((fields (split-string line majutsu-evolog--field-separator)))
-    (and (= (length fields) expected) fields)))
-
-(defun majutsu-evolog--parse-entry-line (line)
-  "Parse one evolog LINE into a plist."
-  (when-let* ((fields (majutsu-evolog--split-record line 14)))
-    (pcase-let ((`(,change-id ,change-id-short ,commit-id ,commit-id-short
-                   ,author-email ,time-ago ,hidden ,conflict ,empty ,root
-                   ,description ,operation-id ,operation-id-short
-                   ,operation-description)
-                 fields))
-      (list :change-id (majutsu-evolog--machine-field change-id)
-            :change-id-short (majutsu-evolog--machine-field change-id-short)
-            :change-id-short-display (majutsu-evolog--display-field change-id-short)
-            :commit-id (majutsu-evolog--machine-field commit-id)
-            :commit-id-short (majutsu-evolog--machine-field commit-id-short)
-            :commit-id-short-display (majutsu-evolog--display-field commit-id-short)
-            :author-email (majutsu-evolog--display-field author-email)
-            :time-ago (majutsu-evolog--display-field time-ago)
-            :hidden (majutsu-evolog--nonempty-field-p hidden)
-            :conflict (majutsu-evolog--nonempty-field-p conflict)
-            :empty (majutsu-evolog--nonempty-field-p empty)
-            :root (majutsu-evolog--nonempty-field-p root)
-            :description (majutsu-evolog--display-field description)
-            :operation-id (majutsu-evolog--machine-field operation-id)
-            :operation-id-short (majutsu-evolog--machine-field operation-id-short)
-            :operation-id-short-display (majutsu-evolog--display-field operation-id-short)
-            :operation-description (majutsu-evolog--display-field operation-description)))))
-
-(defun majutsu-evolog--parse-output (output)
-  "Parse evolog OUTPUT into entry plists."
-  (delq nil
-        (mapcar #'majutsu-evolog--parse-entry-line
-                (split-string (or output "") "\n" t))))
-
 (defun majutsu-evolog--command-args (revset &optional args)
   "Return jj arguments for evolog REVSET with ARGS."
   (append majutsu-evolog--read-only-global-args
-          '("evolog" "--no-graph")
+          majutsu-row-protocol-global-args
+          '("evolog")
           (or args majutsu-evolog--args)
           (list "-r" revset "-T" majutsu-evolog--entry-template)))
 
-(defun majutsu-evolog--show-command-args (commit-id)
-  "Return jj arguments for the inter-diff of COMMIT-ID."
-  (append majutsu-evolog--read-only-global-args
-          (list "evolog" "--no-graph" "--limit=1"
-                "-r" (format "commit_id(%s)" commit-id)
-                "-T" majutsu-evolog--inter-diff-template)))
-
-(defun majutsu-parse-evolog-entries (&optional buf output)
-  "Parse evolog entries in BUF or OUTPUT.
-When OUTPUT is nil, run jj in BUF or the current buffer and cache the result."
-  (with-current-buffer (or buf (current-buffer))
-    (if (and majutsu-evolog--cached-entries (not output))
-        majutsu-evolog--cached-entries
-      (let ((entries (majutsu-evolog--parse-output
-                      (or output
-                          (apply #'majutsu-jj-buffer-string
-                                 (majutsu-evolog--command-args
-                                  (or majutsu-evolog--revset "@")))))))
-        (unless output
-          (setq majutsu-evolog--cached-entries entries))
-        entries))))
-
-(defun majutsu-evolog--line-string ()
-  "Return the current line, preserving text properties and omitting newline."
-  (buffer-substring (line-beginning-position) (line-end-position)))
-
-(defun majutsu-evolog--delete-line ()
-  "Delete the current line, including its trailing newline when present."
-  (delete-region (line-beginning-position)
-                 (min (point-max) (1+ (line-end-position)))))
-
-(defun majutsu-evolog--insert-field (label value)
-  "Insert LABEL and VALUE when VALUE is non-empty."
-  (when (majutsu-evolog--nonempty-field-p value)
-    (insert (propertize (concat label ": ") 'face 'magit-section-heading)
-            value
-            "\n")))
-
-(defun majutsu-evolog--entry-flags (entry)
-  "Return a display string for ENTRY flags."
-  (string-join
-   (delq nil
-         (list (and (plist-get entry :hidden) "hidden")
-               (and (plist-get entry :conflict) "conflict")
-               (and (plist-get entry :empty) "empty")
-               (and (plist-get entry :root) "root")))
-   " "))
-
-(defun majutsu-evolog--format-entry-heading (entry)
-  "Return the heading line for one evolog ENTRY."
-  (string-join
-   (delq nil
-         (list (plist-get entry :change-id-short-display)
-               (plist-get entry :commit-id-short-display)
-               (let ((flags (majutsu-evolog--entry-flags entry)))
-                 (unless (string-empty-p flags)
-                   (propertize flags 'face 'font-lock-warning-face)))
-               (plist-get entry :description)))
-   " "))
-
-(defun majutsu-evolog--insert-entry-body (entry)
-  "Insert multiline evolog body for ENTRY."
-  (majutsu-evolog--insert-field "Change" (plist-get entry :change-id))
-  (majutsu-evolog--insert-field "Commit" (plist-get entry :commit-id))
-  (majutsu-evolog--insert-field "Author" (plist-get entry :author-email))
-  (majutsu-evolog--insert-field "Committed" (plist-get entry :time-ago))
-  (when (majutsu-evolog--nonempty-field-p (plist-get entry :operation-id))
-    (majutsu-evolog--insert-field "Operation" (plist-get entry :operation-id-short-display))
-    (majutsu-evolog--insert-field "Operation id" (plist-get entry :operation-id))
-    (majutsu-evolog--insert-field "Operation description"
-                                  (plist-get entry :operation-description))))
-
-(defun majutsu-evolog--wash-entry ()
-  "Wash the current raw evolog line into one `jj-evolog-entry' section."
-  (let* ((line (majutsu-evolog--line-string))
-         (entry (majutsu-evolog--parse-entry-line line)))
-    (majutsu-evolog--delete-line)
-    (when entry
-      (magit-insert-section (jj-evolog-entry entry)
-        (magit-insert-heading (majutsu-evolog--format-entry-heading entry))
-        (majutsu-evolog--insert-entry-body entry))
-      entry)))
-
 (defun majutsu-evolog--wash-output (_args)
   "Wash raw `jj evolog` output in the current narrowed region."
-  (let (entries)
-    (goto-char (point-min))
-    (while (not (eobp))
-      (when-let* ((entry (majutsu-evolog--wash-entry)))
-        (push entry entries)))
-    (setq majutsu-evolog--cached-entries (nreverse entries))))
+  (majutsu-row-wash-buffer majutsu-evolog--entry-compiled))
 
 (defun majutsu-evolog--insert-entries ()
-  "Insert evolog entries for the current buffer."
+  "Insert evolog output for the current buffer."
   (magit-insert-section (jj-evolog majutsu-evolog--revset)
     (magit-insert-heading (format "Evolution Log %s" majutsu-evolog--revset))
-    (setq majutsu-evolog--cached-entries nil)
     (apply #'majutsu-jj-wash
            #'majutsu-evolog--wash-output
            'wash-anyway
@@ -243,32 +182,27 @@ When OUTPUT is nil, run jj in BUF or the current buffer and cache the result."
   "Refresh the current evolog buffer."
   (interactive)
   (majutsu--assert-mode 'majutsu-evolog-mode)
+  (majutsu-row-clear-buffer-data)
   (magit-insert-section (evologbuf)
     (majutsu-evolog--insert-entries)))
 
-(defun majutsu-evolog--entry-at-point ()
-  "Return the evolog entry at point, or nil."
-  (magit-section-value-if 'jj-evolog-entry))
-
-(defun majutsu-evolog-show-at-point ()
-  "Show the inter-diff patch for the evolog entry at point."
-  (interactive)
-  (if-let* ((entry (majutsu-evolog--entry-at-point))
-            (commit-id (plist-get entry :commit-id)))
-      (majutsu-evolog-show commit-id)
-    (user-error "No evolog entry at point")))
+;;;###autoload(autoload 'majutsu-evolog-copy-transient "majutsu-evolog" nil t)
+(majutsu-row-define-copy-transient
+ majutsu-evolog-copy-transient
+ "Transient for semantic copy commands in `majutsu-evolog-mode'."
+ ("h" "Commit hash" majutsu-row-copy-commit-id))
 
 (defvar-keymap majutsu-evolog-mode-map
   :doc "Keymap for `majutsu-evolog-mode'."
-  :parent majutsu-mode-map
-  "RET" 'majutsu-evolog-show-at-point
-  "d" 'majutsu-evolog-show-at-point)
+  :parent majutsu-mode-map)
 
 (define-derived-mode majutsu-evolog-mode majutsu-mode "Majutsu Evolog"
   "Major mode for viewing jj change evolution history."
   :group 'majutsu
   (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
+  (setq-local revert-buffer-function #'majutsu-refresh-buffer)
+  (setq-local filter-buffer-substring-function
+              #'majutsu-row-filter-buffer-substring))
 
 (defun majutsu-evolog--buffer-name (revset)
   "Return buffer name for evolog REVSET."
@@ -290,55 +224,6 @@ Optional ARGS are passed to `jj evolog`."
       :directory root
       (majutsu-evolog--revset revset)
       (majutsu-evolog--args args))))
-
-(defun majutsu-evolog-show-refresh-buffer ()
-  "Refresh the current evolog entry patch buffer."
-  (interactive)
-  (majutsu--assert-mode 'majutsu-evolog-show-mode)
-  (let ((commit-id (or majutsu-evolog-show--commit-id
-                       (user-error "No evolog entry commit id"))))
-    (magit-insert-section (jj-evolog-show commit-id)
-      (magit-insert-heading (format "Evolution Patch %s" commit-id))
-      (apply #'majutsu-jj-wash
-             (lambda (_args)
-               (goto-char (point-min))
-               (if (= (point-min) (point-max))
-                   (insert (propertize "No patch\n" 'face 'shadow))
-                 (majutsu-diff-wash-diffs '("--git"))))
-             'wash-anyway
-             (majutsu-evolog--show-command-args commit-id)))))
-
-(defvar-keymap majutsu-evolog-show-mode-map
-  :doc "Keymap for `majutsu-evolog-show-mode'."
-  :parent majutsu-diff-mode-map)
-
-(define-derived-mode majutsu-evolog-show-mode majutsu-diff-mode "Majutsu Evolog Show"
-  "Major mode for viewing one jj evolution patch."
-  :group 'majutsu
-  (setq-local line-number-mode nil)
-  (setq-local revert-buffer-function #'majutsu-refresh-buffer))
-
-(defun majutsu-evolog-show--buffer-name (commit-id)
-  "Return buffer name for evolog entry COMMIT-ID."
-  (let* ((root (majutsu--toplevel-safe))
-         (repo (file-name-nondirectory (directory-file-name root))))
-    (format "*majutsu-evolog-show: %s:%s*" repo
-            (if (> (length commit-id) 12)
-                (substring commit-id 0 12)
-              commit-id))))
-
-;;;###autoload
-(defun majutsu-evolog-show (commit-id)
-  "Show the evolution patch for entry COMMIT-ID."
-  (interactive
-   (list (or (when-let* ((entry (majutsu-evolog--entry-at-point)))
-               (plist-get entry :commit-id))
-             (read-string "Full commit id: "))))
-  (let ((root (majutsu--toplevel-safe)))
-    (majutsu-setup-buffer #'majutsu-evolog-show-mode nil
-      :buffer (majutsu-evolog-show--buffer-name commit-id)
-      :directory root
-      (majutsu-evolog-show--commit-id commit-id))))
 
 (provide 'majutsu-evolog)
 ;;; majutsu-evolog.el ends here
