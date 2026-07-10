@@ -117,6 +117,30 @@
    ((listp value) (string-join value majutsu-log--field-list-separator))
    (t (format "%s" value))))
 
+(ert-deftest majutsu-log-insert-conflicts/uses-path-section-values ()
+  "Conflict headings should show sidedness but retain pure file section values."
+  (cl-letf (((symbol-function 'majutsu-jj-conflicted-files)
+             (lambda (&optional _rev _filesets)
+               '((:path "dir with spaces/file name.txt" :sides 2)
+                 (:path "other.txt" :sides 3)))))
+    (with-temp-buffer
+      (require 'magit-section)
+      (majutsu-log-mode)
+      (setq buffer-read-only nil)
+      (magit-insert-section (root)
+        (majutsu-log-insert-conflicts))
+      (should (string-match-p
+               (regexp-quote
+                "dir with spaces/file name.txt (2-sided conflict)")
+               (buffer-string)))
+      (goto-char (point-min))
+      (search-forward "dir with spaces/file name.txt")
+      (should (equal (magit-section-value-if 'jj-file)
+                     "dir with spaces/file name.txt"))
+      (search-forward "other.txt")
+      (should (equal (magit-section-value-if 'jj-file)
+                     "other.txt")))))
+
 (defun majutsu-log-test--module-payload (compiled module values)
   "Return transport payload for MODULE in COMPILED using VALUES alist."
   (string-join

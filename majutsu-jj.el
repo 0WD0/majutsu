@@ -30,8 +30,7 @@
 (require 'with-editor)
 (require 'majutsu-base)
 (require 'majutsu-completion)
-
-(eval-when-compile (require 'majutsu-template))
+(require 'majutsu-template)
 
 (autoload 'majutsu-process-file "majutsu-process" nil nil)
 
@@ -822,6 +821,43 @@ Empty items are omitted from the result."
     (with-temp-buffer
       (apply #'majutsu-jj-insert args)
       (split-string (buffer-string) "\0" t))))
+
+(defconst majutsu-jj--conflicted-file-field-separator (string 31)
+  "Separator inserted between conflicted-file machine fields.")
+
+(defconst majutsu-jj--conflicted-files-template
+  (majutsu-tpl
+   [:if [:conflict]
+       [:concat [:conflict_side_count] "\x1f" [:path] "\0"]]
+   'TreeEntry)
+  "Template used to collect conflicted files with their side counts.")
+
+(defun majutsu-jj--parse-conflicted-file-record (record)
+  "Parse one conflicted-file machine RECORD into a plist."
+  (let* ((fields (majutsu--split-fields
+                   (or record "") majutsu-jj--conflicted-file-field-separator 2))
+         (sides (string-to-number (or (nth 0 fields) "")))
+         (path (nth 1 fields)))
+    (when (and (stringp path)
+               (not (string-empty-p path))
+               (> sides 0))
+      (list :path path :sides sides))))
+
+(defun majutsu-jj-conflicted-files (&optional rev filesets)
+  "Return conflicted file entries at REV using `jj file list -T'.
+REV defaults to \"@\".  FILESETS, when non-nil, is a string or list of jj
+fileset expressions used to restrict the query.  Each returned entry is a
+plist with `:path' and `:sides'."
+  (let* ((filesets (cond
+                    ((null filesets) nil)
+                    ((listp filesets) filesets)
+                    (t (list filesets))))
+         (args (append (list "file" "list" "-r" (or rev "@")
+                             "-T" majutsu-jj--conflicted-files-template)
+                       (and filesets (cons "--" filesets)))))
+    (delq nil
+          (mapcar #'majutsu-jj--parse-conflicted-file-record
+                  (apply #'majutsu-jj-items args)))))
 
 (defun majutsu-jj-string (&rest args)
   "Run jj command with ARGS and return the first line of output.

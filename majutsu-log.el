@@ -19,6 +19,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-jj)
 (require 'majutsu-row)
 
 ;;; Section Keymaps
@@ -562,14 +563,18 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 (defun majutsu-log-insert-conflicts ()
   "Insert conflicted files section."
-  (let ((lines (majutsu-jj-lines "resolve" "--list")))
-    (when lines
+  (let ((entries (majutsu-jj-conflicted-files)))
+    (when entries
       (magit-insert-section (conflict)
         (magit-insert-heading "Unresolved Conflicts")
-        (dolist (line lines)
-          (let ((file (string-trim line)))
+        (dolist (entry entries)
+          (let* ((file (plist-get entry :path))
+                 (sides (plist-get entry :sides))
+                 (heading (if sides
+                              (format "%s (%d-sided conflict)" file sides)
+                            file)))
             (magit-insert-section (jj-file file)
-              (magit-insert-heading (propertize file 'face 'error))
+              (magit-insert-heading (propertize heading 'face 'error))
               (insert "\n"))))
         (insert "\n")))))
 

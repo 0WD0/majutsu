@@ -269,36 +269,42 @@
                    "--" "f.txt"))))
 
 (ert-deftest majutsu-ediff-test-conflict-side-count ()
-  "Conflict side count should be parsed from `jj resolve --list` output."
-  (cl-letf (((symbol-function 'majutsu-jj-lines)
-             (lambda (&rest _)
-               '("f.txt    4-sided conflict")))
-            ((symbol-function 'majutsu-file--root)
-             (lambda () default-directory)))
-    (should (= 4 (majutsu-ediff--conflict-side-count "@" "f.txt")))))
+  "Conflict side count should come from structured file-list data."
+  (let (seen-rev seen-filesets)
+    (cl-letf (((symbol-function 'majutsu-jj-conflicted-files)
+               (lambda (rev filesets)
+                 (setq seen-rev rev
+                       seen-filesets filesets)
+                 '((:path "f.txt" :sides 4))))
+              ((symbol-function 'majutsu-file--root)
+               (lambda () default-directory)))
+      (should (= 4 (majutsu-ediff--conflict-side-count "@" "f.txt")))
+      (should (equal seen-rev "@"))
+      (should (equal seen-filesets "file:\"f.txt\"")))))
 
-(ert-deftest majutsu-ediff-test-list-conflicted-files/preserves-spaces ()
-  "Conflicted file parsing should preserve spaces inside paths."
-  (cl-letf (((symbol-function 'majutsu-jj-lines)
-             (lambda (&rest _)
-               '("dir with spaces/file name.txt    2-sided conflict"
-                 "other.txt    3-sided conflict including 1 deletion")))
-            ((symbol-function 'majutsu-file--root)
-             (lambda () default-directory)))
-    (should (equal (majutsu-ediff--list-conflicted-files "@")
-                   '("dir with spaces/file name.txt"
-                     "other.txt")))))
-
-(ert-deftest majutsu-ediff-test-conflict-side-count/handles-spaces-and-details ()
-  "Conflict side parsing should ignore padding and trailing conflict details."
-  (cl-letf (((symbol-function 'majutsu-jj-lines)
-             (lambda (&rest _)
-               '("dir with spaces/file name.txt    3-sided conflict including 1 deletion and a directory")))
-            ((symbol-function 'majutsu-file--root)
-             (lambda () default-directory)))
-    (should (= 3 (majutsu-ediff--conflict-side-count
-                  "@"
-                  "dir with spaces/file name.txt")))))
+(ert-deftest majutsu-ediff-test-read-conflicted-file/annotates-side-count ()
+  "Conflicted-file completion should preserve paths and annotate side counts."
+  (let (seen-collection seen-history seen-category)
+    (cl-letf (((symbol-function 'majutsu-jj-conflicted-files)
+               (lambda (&optional _rev _filesets)
+                 '((:path "dir with spaces/file name.txt" :sides 2)
+                   (:path "other.txt" :sides 3))))
+              ((symbol-function 'majutsu-file--root)
+               (lambda () default-directory))
+              ((symbol-function 'majutsu-completing-read)
+               (lambda (_prompt collection _predicate _require-match
+                        _initial history _default category)
+                 (setq seen-collection collection
+                       seen-history history
+                       seen-category category)
+                 "dir with spaces/file name.txt")))
+      (should (equal (majutsu-ediff--read-conflicted-file "@")
+                     "dir with spaces/file name.txt"))
+      (should (equal seen-collection
+                     '(("dir with spaces/file name.txt" . "2-sided conflict")
+                       ("other.txt" . "3-sided conflict"))))
+      (should (eq seen-history 'majutsu-file-path-history))
+      (should (eq seen-category 'majutsu-file)))))
 
 (ert-deftest majutsu-ediff-test-directory-common-files ()
   "Directory common file discovery should ignore JJ-INSTRUCTIONS."
