@@ -31,7 +31,8 @@
 
 (defvar-keymap majutsu-bookmark-section-map
   :doc "Keymap for `jj-bookmark' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset)
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset
+  "<remap> <majutsu-delete-thing>" #'majutsu-bookmark-delete)
 
 ;;; majutsu-bookmark
 (defun majutsu--extract-bookmark-names (text)
@@ -193,8 +194,16 @@ bookmark(s) at point."
 ;;;###autoload
 (defun majutsu-bookmark-delete (names)
   "Delete bookmarks or bookmark patterns NAMES and propagate on next push."
-  (interactive (list (majutsu-read-bookmark-patterns
-                      "Delete bookmark(s)/pattern(s) (propagates on push)")))
+  (interactive
+   (let ((names (majutsu-read-bookmark-patterns
+                 "Delete bookmark(s)/pattern(s) (propagates on push)")))
+     (when names
+       (unless (majutsu-confirm
+                'bookmark-delete
+                (format "Delete bookmark(s) %s and propagate on next push? "
+                        (string-join names ", ")))
+         (user-error "Delete canceled")))
+     (list names)))
   (if (null names)
       (message "No bookmark name/pattern provided")
     (when (zerop (majutsu-run-jj "bookmark" "delete" names))

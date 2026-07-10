@@ -82,6 +82,7 @@ which in turn uses the function specified here."
   '((const undo)
     (const redo)
     (const abandon)
+    (const bookmark-delete)
     (const tag-delete)
     (const git-remote-remove)
     (const rebase)
