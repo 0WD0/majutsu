@@ -28,6 +28,39 @@
               (should majutsu-diffedit-mode))))
       (delete-directory root t))))
 
+(ert-deftest majutsu-diffedit-test-maybe-enable-mode-ignores-instructions-directory ()
+  "A directory named JJ-INSTRUCTIONS should not identify a diffedit tree."
+  (let ((root (make-temp-file "majutsu-diffedit" t)))
+    (unwind-protect
+        (let* ((nested (expand-file-name "right/file.txt" root))
+               (dir (file-name-directory nested)))
+          (make-directory (expand-file-name "JJ-INSTRUCTIONS" root))
+          (make-directory dir t)
+          (write-region "" nil nested nil 'silent)
+          (with-temp-buffer
+            (setq-local buffer-file-name nested)
+            (majutsu-diffedit--maybe-enable-mode)
+            (should-not majutsu-diffedit-mode)))
+      (delete-directory root t))))
+
+(ert-deftest majutsu-diffedit-test-maybe-enable-mode-skips-directory-for-parent-file ()
+  "Detection should continue above a same-named directory to a regular file."
+  (let ((root (make-temp-file "majutsu-diffedit" t)))
+    (unwind-protect
+        (let* ((workspace (expand-file-name "workspace" root))
+               (nested (expand-file-name "right/file.txt" workspace))
+               (dir (file-name-directory nested)))
+          (write-region "" nil (expand-file-name "JJ-INSTRUCTIONS" root)
+                        nil 'silent)
+          (make-directory (expand-file-name "JJ-INSTRUCTIONS" workspace) t)
+          (make-directory dir t)
+          (write-region "" nil nested nil 'silent)
+          (with-temp-buffer
+            (setq-local buffer-file-name nested)
+            (majutsu-diffedit--maybe-enable-mode)
+            (should majutsu-diffedit-mode)))
+      (delete-directory root t))))
+
 (ert-deftest majutsu-diffedit-test-finish-on-save-calls-with-editor ()
   "Finish-on-save should call with-editor-finish when active."
   (let ((called nil))
