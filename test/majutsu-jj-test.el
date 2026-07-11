@@ -202,6 +202,65 @@
                          0))
           (should (equal seen-columns "80")))))))
 
+(ert-deftest majutsu-jj-wash/discards-stderr-on-success ()
+  "Successful wash output should exclude warning stderr."
+  (cl-letf (((symbol-function 'majutsu-process-file)
+             (lambda (_program _infile destination _display &rest _args)
+               (insert "diff output\n")
+               (write-region "Warning: refused to snapshot\n" nil
+                             (cadr destination) nil 'silent)
+               0)))
+    (with-temp-buffer
+      (should (= 0 (majutsu-jj-wash (lambda (&rest _) (goto-char (point-max)))
+                       nil
+                     "diff")))
+      (should (equal (buffer-string) "diff output\n")))))
+
+(ert-deftest majutsu-jj-wash/keeps-clean-stderr-on-failure ()
+  "Requested failure stderr should be preserved without ANSI escapes."
+  (cl-letf (((symbol-function 'majutsu-process-file)
+             (lambda (_program _infile destination _display &rest _args)
+               (write-region "\e[31mError: invalid revset\e[0m\n" nil
+                             (cadr destination) nil 'silent)
+               1)))
+    (with-temp-buffer
+      (should (= 1 (majutsu-jj-wash #'ignore t "log" "-r" "bad")))
+      (should (string-match-p "jj .* failed (exit 1)" (buffer-string)))
+      (should (string-match-p "Error: invalid revset" (buffer-string)))
+      (should-not (string-match-p (regexp-quote "\e[") (buffer-string))))))
+
+(ert-deftest majutsu-jj-wash/deletes-stderr-file-when-colorizer-signals ()
+  "The stderr temp file should be deleted if stdout colorization signals."
+  (let ((majutsu-process-apply-ansi-colors t)
+        err-file)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (_program _infile destination _display &rest _args)
+                 (setq err-file (cadr destination))
+                 (insert "output\n")
+                 0))
+              ((symbol-function 'ansi-color-apply-on-region)
+               (lambda (&rest _) (error "colorizer failed"))))
+      (with-temp-buffer
+        (should-error (majutsu-jj-wash #'ignore nil "diff"))))
+    (should err-file)
+    (should-not (file-exists-p err-file))))
+
+(ert-deftest majutsu-jj-wash/deletes-stderr-file-when-washer-signals ()
+  "The stderr temp file should be deleted if the washer signals."
+  (let ((majutsu-process-apply-ansi-colors nil)
+        err-file)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (_program _infile destination _display &rest _args)
+                 (setq err-file (cadr destination))
+                 (insert "output\n")
+                 0)))
+      (with-temp-buffer
+        (should-error
+         (majutsu-jj-wash (lambda (&rest _) (error "washer failed")) nil
+           "diff"))))
+    (should err-file)
+    (should-not (file-exists-p err-file))))
+
 (ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
   "majutsu--jj-insert should return error message when return-error is t and command fails."
   (let ((err-file (make-temp-file "majutsu-jj-err")))

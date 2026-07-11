@@ -613,12 +613,13 @@ silenced so the captured stderr is verbatim, and is drained explicitly
 before the file is written so its output cannot lag behind."
   (let* ((stdout-dest (if (consp destination) (car destination) destination))
          (stderr-dest (and (consp destination) (cadr destination)))
+         (stderr-discard (and (consp destination) (null stderr-dest)))
          (stdout-buffer (majutsu--process-destination-buffer stdout-dest))
          (stdout-marker (and stdout-buffer
                              (copy-marker (with-current-buffer stdout-buffer
                                             (point))
                                           t)))
-         (stderr-buffer (and (stringp stderr-dest)
+         (stderr-buffer (and (or (stringp stderr-dest) stderr-discard)
                              (generate-new-buffer " *majutsu-stderr*")))
          (process (make-process
                    :name (file-name-nondirectory program)
@@ -649,7 +650,7 @@ before the file is written so its output cannot lag behind."
                 (process-send-eof process)
               (error nil)))
           (setq exit (majutsu--process-wait process stderr-process))
-          (when stderr-buffer
+          (when (and stderr-buffer (stringp stderr-dest))
             (with-current-buffer stderr-buffer
               (write-region (point-min) (point-max) stderr-dest nil 'silent)))
           exit)
