@@ -30,26 +30,38 @@
                 arg))
             majutsu-buffer-diff-range)))
 
+(defun majutsu-split--remove-interactive-tool-args (args)
+  "Return ARGS without native interactive-editor or tool arguments."
+  (let (result)
+    (while args
+      (let ((arg (pop args)))
+        (cond
+         ((member arg '("-i" "--interactive")) nil)
+         ((member arg '("-t" "--tool")) (pop args))
+         ((or (string-prefix-p "--tool=" arg)
+              (string-prefix-p "-t=" arg)) nil)
+         (t (push arg result)))))
+    (nreverse result)))
+
 (transient-define-suffix majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."
   :description "Execute split"
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-split)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               ;; Generate patch for SELECTED content (invert=nil)
-               ;; This is what goes into the first commit
-               (patch (majutsu-interactive-build-patch-if-selected nil nil nil))
-               (args (if patch
-                         (seq-remove (lambda (arg)
-                                       (or (string= arg "--interactive")
-                                           (transient-arg-value "--tool=" (list arg))))
-                                     args)
+               ;; Text hunks and hunkless files coexist in one operation.
+               (operation (majutsu-interactive-build-operation-if-selected
+                           nil nil nil nil))
+               (patch (plist-get operation :patch))
+               (file-ops (plist-get operation :file-ops))
+               (args (if operation
+                         (majutsu-split--remove-interactive-tool-args args)
                        args)))
-    (if patch
+    (if operation
         (progn
-          ;; reverse=t means reset $right to $left, then apply patch forward
-          ;; Result: $right = selected content = first commit
-          (majutsu-interactive-run-with-patch "split" args filesets patch t)
+          ;; Reset to the left tree, then replay precisely the selections.
+          (majutsu-interactive-run-with-patch
+           "split" args filesets patch t file-ops)
           (majutsu-interactive-clear))
       (majutsu-run-jj-with-editor
        (cons "split" (majutsu-jj-append-filesets args filesets))))))

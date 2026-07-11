@@ -42,6 +42,11 @@
   "Face for selected regions within hunks."
   :group 'majutsu-interactive)
 
+(defface majutsu-interactive-selected-file
+  '((t :background "#3a4f5f"))
+  "Face for selected whole-file changes."
+  :group 'majutsu-interactive)
+
 ;;; Selection Model
 
 (defun majutsu-interactive-selection-available-p ()
@@ -63,6 +68,18 @@ Selection spec is either `:all' for whole hunk, or (BEG . END) for region.")
   "Return the file name for hunk SECTION."
   (let ((val (oref section value)))
     (if (consp val) (car val) val)))
+
+(defun majutsu-interactive--file-id (file)
+  "Return the selection identifier for whole-file FILE."
+  (list :file file))
+
+(defun majutsu-interactive--file-id-p (id)
+  "Return non-nil when ID identifies a whole-file selection."
+  (and (consp id) (eq (car id) :file)))
+
+(defun majutsu-interactive--file-id-file (id)
+  "Return the path stored in whole-file selection ID."
+  (cadr id))
 
 (defun majutsu-interactive--ensure-selections ()
   "Ensure selections hash table exists."
@@ -129,8 +146,42 @@ When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context."
        magit-root-section))
     result))
 
+(defun majutsu-interactive--file-section-for-file (file)
+  "Find the real diff file section for FILE, ignoring diffstat if possible."
+  (let (fallback result)
+    (when (and file magit-root-section)
+      (magit-map-sections
+       (lambda (section)
+         (when (and (magit-section-match 'jj-file section)
+                    (equal (oref section value) file))
+           (unless fallback (setq fallback section))
+           (when (and (not result) (oref section header))
+             (setq result section))))
+       magit-root-section))
+    (or result fallback)))
+
+(defun majutsu-interactive--file-section-hunks (file-section)
+  "Return the hunk children of FILE-SECTION."
+  (seq-filter (lambda (child) (magit-section-match 'jj-hunk child))
+              (oref file-section children)))
+
+(defun majutsu-interactive--whole-file-selection-allowed-p ()
+  "Return non-nil when the active transient supports whole-file selections."
+  (and (boundp 'transient-current-command)
+       (eq transient-current-command 'majutsu-split)))
+
+(defun majutsu-interactive--toggle-whole-file (file-section)
+  "Toggle the whole-file selection represented by FILE-SECTION."
+  (unless (majutsu-interactive--whole-file-selection-allowed-p)
+    (user-error "Whole-file selections are only supported by jj split"))
+  (let* ((id (majutsu-interactive--file-id (oref file-section value)))
+         (current (majutsu-interactive--get-selection id)))
+    (majutsu-interactive--set-selection id (unless current :all))
+    (majutsu-interactive--render-overlays)
+    (message "%s whole-file change" (if current "Deselected" "Selected"))))
+
 (defun majutsu-interactive-toggle-file ()
-  "Toggle selection of all hunks in the file at point."
+  "Toggle all hunks, or a hunkless whole-file change, at point."
   (interactive)
   (let (file-section)
     (magit-section-case
@@ -138,25 +189,28 @@ When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context."
       (jj-file (setq file-section it)))
     (let ((file (and file-section (oref file-section value))))
       (when (and file-section (magit-section-match 'jj-file file-section))
-        (unless (seq-some (lambda (child) (magit-section-match 'jj-hunk child))
-                          (oref file-section children))
-          (setq file-section (majutsu-interactive--file-section-with-hunks file)))
+        (unless (majutsu-interactive--file-section-hunks file-section)
+          (setq file-section
+                (or (majutsu-interactive--file-section-with-hunks file)
+                    (majutsu-interactive--file-section-for-file file))))
         (unless file-section
-          (user-error "No hunks for file at point"))
-        (let* ((hunks (oref file-section children))
-               (all-selected (cl-every
-                              (lambda (h)
-                                (majutsu-interactive--get-selection
-                                 (majutsu-interactive--hunk-id h)))
-                              hunks)))
-          (dolist (hunk hunks)
-            (when (magit-section-match 'jj-hunk hunk)
-              (majutsu-interactive--set-selection
-               (majutsu-interactive--hunk-id hunk)
-               (unless all-selected :all))))
-          (majutsu-interactive--render-overlays)
-          (message "%s all hunks in file"
-                   (if all-selected "Deselected" "Selected")))))))
+          (user-error "No file change at point"))
+        (let ((hunks (majutsu-interactive--file-section-hunks file-section)))
+          (if (null hunks)
+              (majutsu-interactive--toggle-whole-file file-section)
+            (let ((all-selected
+                   (cl-every
+                    (lambda (h)
+                      (majutsu-interactive--get-selection
+                       (majutsu-interactive--hunk-id h)))
+                    hunks)))
+              (dolist (hunk hunks)
+                (majutsu-interactive--set-selection
+                 (majutsu-interactive--hunk-id hunk)
+                 (unless all-selected :all)))
+              (majutsu-interactive--render-overlays)
+              (message "%s all hunks in file"
+                       (if all-selected "Deselected" "Selected")))))))))
 
 (defun majutsu-interactive--normalize-line-range (start end limit-start limit-end)
   "Return a line-aligned range between START and END.
@@ -261,21 +315,27 @@ The range is clamped to LIMIT-START and LIMIT-END."
   (let ((selections majutsu-interactive--selections))
     (when selections
       (maphash
-       (lambda (hunk-id spec)
-         (when-let* ((section (majutsu-interactive--find-hunk-section hunk-id)))
-           (cond
-            ((eq spec :all)
-             (let ((ov (make-overlay (oref section start) (oref section end))))
-               (overlay-put ov 'face 'majutsu-interactive-selected-hunk)
-               (overlay-put ov 'evaporate t)
-               (push ov majutsu-interactive--overlays)))
-            ((consp spec)
-             (let ((ranges (if (and spec (consp (car spec))) spec (list spec))))
-               (dolist (range ranges)
-                 (let ((ov (make-overlay (car range) (cdr range))))
-                   (overlay-put ov 'face 'majutsu-interactive-selected-region)
-                   (overlay-put ov 'evaporate t)
-                   (push ov majutsu-interactive--overlays))))))))
+       (lambda (id spec)
+         (if (majutsu-interactive--file-id-p id)
+             (when-let* ((section (majutsu-interactive--find-file-section id)))
+               (let ((ov (make-overlay (oref section start) (oref section end))))
+                 (overlay-put ov 'face 'majutsu-interactive-selected-file)
+                 (overlay-put ov 'evaporate t)
+                 (push ov majutsu-interactive--overlays)))
+           (when-let* ((section (majutsu-interactive--find-hunk-section id)))
+             (cond
+              ((eq spec :all)
+               (let ((ov (make-overlay (oref section start) (oref section end))))
+                 (overlay-put ov 'face 'majutsu-interactive-selected-hunk)
+                 (overlay-put ov 'evaporate t)
+                 (push ov majutsu-interactive--overlays)))
+              ((consp spec)
+               (let ((ranges (if (and spec (consp (car spec))) spec (list spec))))
+                 (dolist (range ranges)
+                   (let ((ov (make-overlay (car range) (cdr range))))
+                     (overlay-put ov 'face 'majutsu-interactive-selected-region)
+                     (overlay-put ov 'evaporate t)
+                     (push ov majutsu-interactive--overlays)))))))))
        selections))))
 
 (defun majutsu-interactive--find-hunk-section (hunk-id)
@@ -291,6 +351,11 @@ The range is clamped to LIMIT-START and LIMIT-END."
         (walk magit-root-section)))
     result))
 
+(defun majutsu-interactive--find-file-section (file-id)
+  "Find the real diff section identified by whole-file FILE-ID."
+  (majutsu-interactive--file-section-for-file
+   (majutsu-interactive--file-id-file file-id)))
+
 ;;; Patch Generation
 
 (defun majutsu-interactive--collect-selected-hunks ()
@@ -304,6 +369,79 @@ Returns list of (FILE-SECTION HUNK-SECTION SPEC)."
            (push (list (oref hunk parent) hunk spec) result)))
        majutsu-interactive--selections))
     (nreverse result)))
+
+(defun majutsu-interactive--collect-selected-files ()
+  "Return the real diff sections for selected whole-file changes."
+  (let (result)
+    (when majutsu-interactive--selections
+      (maphash
+       (lambda (id _spec)
+         (when (majutsu-interactive--file-id-p id)
+           (when-let* ((section (majutsu-interactive--find-file-section id)))
+             (push section result))))
+       majutsu-interactive--selections))
+    (nreverse result)))
+
+(defun majutsu-interactive--header-path (header prefix)
+  "Return the path following PREFIX on a line in HEADER."
+  (when (string-match (concat "^" (regexp-quote prefix) "\\(.+\\)$")
+                      (or header ""))
+    (let ((path (match-string 1 header)))
+      (if (not (string-prefix-p "\"" path))
+          path
+        (condition-case nil
+            (pcase-let ((`(,decoded . ,end) (read-from-string path)))
+              (unless (and (stringp decoded) (= end (length path)))
+                (user-error "Invalid quoted Git path: %s" path))
+              decoded)
+          (error (user-error "Invalid quoted Git path: %s" path)))))))
+
+(defun majutsu-interactive--safe-relative-path (path)
+  "Return PATH, or signal a user error if it is unsafe for the helper tool."
+  (unless (and (stringp path)
+               (not (string-empty-p path))
+               (not (file-name-absolute-p path))
+               (not (string-match-p "[\n\r\0]" path))
+               (not (member ".." (split-string path "/" t))))
+    (user-error "Unsafe whole-file selection path: %S" path))
+  path)
+
+(defun majutsu-interactive--file-operation (file-section)
+  "Parse an explicit whole-file operation from FILE-SECTION metadata."
+  (let* ((header (or (oref file-section header) ""))
+         (value (oref file-section value))
+         (rename-from (majutsu-interactive--header-path header "rename from "))
+         (rename-to (majutsu-interactive--header-path header "rename to "))
+         (copy-from (majutsu-interactive--header-path header "copy from "))
+         (copy-to (majutsu-interactive--header-path header "copy to "))
+         (path (majutsu-interactive--safe-relative-path
+                (or rename-to copy-to value))))
+    (cond
+     ((or rename-from rename-to)
+      (unless (and rename-from rename-to)
+        (user-error "Incomplete rename metadata for %s" value))
+      (list :action 'rename
+            :source (majutsu-interactive--safe-relative-path rename-from)
+            :path path))
+     ((or copy-from copy-to)
+      (unless (and copy-from copy-to)
+        (user-error "Incomplete copy metadata for %s" value))
+      (list :action 'copy
+            :source (majutsu-interactive--safe-relative-path copy-from)
+            :path path))
+     ((or (string-match-p "^deleted file mode " header)
+          (string-match-p "^+++ /dev/null$" header))
+      (list :action 'delete :path path))
+     ((or (string-match-p "^new file mode " header)
+          (string-match-p "^--- /dev/null$" header))
+      (list :action 'add :path path))
+     (t
+      (list :action 'modify :path path)))))
+
+(defun majutsu-interactive--build-file-operations ()
+  "Return explicit operations for all selected whole-file changes."
+  (mapcar #'majutsu-interactive--file-operation
+          (majutsu-interactive--collect-selected-files)))
 
 (defun majutsu-interactive--collect-hunks-by-file ()
   "Return hash table of FILE-SECTION to list of HUNK-SECTIONS."
@@ -500,8 +638,6 @@ When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context.
 Returns patch string or nil if no selections."
   (let* ((selected (majutsu-interactive--collect-selected-hunks))
          (by-file (make-hash-table :test 'eq)))
-    (unless selected
-      (user-error "No hunks selected"))
     ;; Group by file section
     (dolist (item selected)
       (let ((file (car item))
@@ -564,6 +700,23 @@ Returns patch string or nil if no selections."
         (majutsu-interactive--fixup-patch
          (mapconcat #'identity (nreverse patches) ""))))))
 
+(defun majutsu-interactive-build-operation-if-selected
+    (&optional buffer invert include-all-files context-on-added)
+  "Return BUFFER's selected text patch and explicit whole-file operations.
+The result is a plist containing :patch and :file-ops, or nil when nothing
+usable is selected.  Whole-file selections never cause unselected text hunks
+to be included, regardless of INVERT or INCLUDE-ALL-FILES.
+CONTEXT-ON-ADDED has the same meaning as in
+`majutsu-interactive-build-patch-if-selected'."
+  (with-current-buffer (or buffer (current-buffer))
+    (when (majutsu-interactive--has-selections-p)
+      (let ((patch (and (majutsu-interactive--collect-selected-hunks)
+                        (majutsu-interactive--build-patch
+                         invert include-all-files context-on-added)))
+            (file-ops (majutsu-interactive--build-file-operations)))
+        (when (or patch file-ops)
+          (list :patch patch :file-ops file-ops))))))
+
 
 (defun majutsu-interactive--fixup-patch (patch)
   "Fix hunk header line counts in PATCH using diff-mode."
@@ -599,9 +752,15 @@ Returns patch string or nil if no selections."
       (insert patch))
     file))
 
-(defun majutsu-interactive--write-applypatch-script (reverse)
+(defun majutsu-interactive--script-path (root path)
+  "Return a safely shell-quoted PATH beneath shell variable ROOT."
+  (format "\"$%s\"/%s" root (shell-quote-argument path)))
+
+(defun majutsu-interactive--write-applypatch-script (reverse &optional file-ops)
   "Write the applypatch helper script and return its path.
-When REVERSE is non-nil, reset $right to $left state first, then apply patch."
+When REVERSE is non-nil, reset $right to $left state first, then apply patch.
+FILE-OPS contains explicit `add', `modify', `delete', `rename', or `copy'
+actions.  Only right-tree paths needed by those operations are preserved."
   (let ((script (expand-file-name "applypatch.sh" (majutsu-interactive--temp-dir))))
     (with-temp-file script
       (insert "#!/bin/sh\n")
@@ -610,31 +769,74 @@ When REVERSE is non-nil, reset $right to $left state first, then apply patch."
       (insert "LEFT=\"$1\"\n")
       (insert "RIGHT=\"$2\"\n")
       (insert "PATCH=\"$3\"\n")
+      (insert "majutsu_apply_patch() {\n")
+      (insert "  [ -s \"$PATCH\" ] || return 0\n")
+      (insert "  git apply --recount --unidiff-zero -v \"$PATCH\" 2>&1 && return 0\n")
+      (insert "  git init -q || return $?\n")
+      (insert "  git add -A || return $?\n")
+      (insert "  git -c user.name=Majutsu -c user.email=majutsu.invalid commit -q -m base --allow-empty || return $?\n")
+      (insert "  git apply --3way --recount -v \"$PATCH\" 2>&1\n")
+      (insert "  STATUS=$?\n")
+      (insert "  rm -rf -- .git || return $?\n")
+      (insert "  return $STATUS\n")
+      (insert "}\n")
+      (when file-ops
+        (unless reverse
+          (error "Whole-file operations require a reset-style merge tool"))
+        (insert "majutsu_remove() { rm -rf -- \"$1\"; }\n")
+        (insert "majutsu_copy() {\n")
+        (insert "  mkdir -p -- \"$(dirname -- \"$2\")\" || return $?\n")
+        (insert "  cp -a -- \"$1\" \"$2\"\n")
+        (insert "}\n")
+        (insert "PRESERVED=$(mktemp -d \"${TMPDIR:-/tmp}/majutsu-interactive-right.XXXXXX\") || exit $?\n")
+        (insert "majutsu_cleanup() { rm -rf -- \"$PRESERVED\"; }\n")
+        (insert "trap majutsu_cleanup 0 1 2 3 15\n")
+        (dolist (op file-ops)
+          (when (memq (plist-get op :action) '(add modify rename copy))
+            (let ((path (plist-get op :path)))
+              (insert
+               (format "majutsu_copy %s %s || exit $?\n"
+                       (majutsu-interactive--script-path "RIGHT" path)
+                       (majutsu-interactive--script-path "PRESERVED" path)))))))
       (when reverse
-        ;; For split/squash: reset $right to $left (parent) state first
-        ;; Then apply the patch containing remaining content
         (insert "# Reset right to left state\n")
-        (insert "rm -rf \"$RIGHT\"/* 2>/dev/null\n")
-        (insert "rm -rf \"$RIGHT\"/.[!.]* 2>/dev/null\n")
-        (insert "cp -a \"$LEFT\"/. \"$RIGHT\"/ 2>/dev/null || true\n"))
-      (insert "cd \"$RIGHT\"\n")
-      ;; Try git apply with --recount which recalculates line numbers
-      (insert "git apply --recount --unidiff-zero -v \"$PATCH\" 2>&1 && exit 0\n")
-      ;; Fallback: init git repo for 3way merge
-      (insert "git init -q 2>/dev/null\n")
-      (insert "git add -A 2>/dev/null\n")
-      (insert "git commit -q -m 'base' --allow-empty 2>/dev/null\n")
-      (insert "git apply --3way --recount -v \"$PATCH\" 2>&1\n")
-      (insert "EXIT=$?\n")
-      (insert "rm -rf .git 2>/dev/null\n")
-      (insert "exit $EXIT\n"))
+        (insert "find \"$RIGHT\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + || exit $?\n")
+        (insert "cp -a -- \"$LEFT\"/. \"$RIGHT\"/ || exit $?\n"))
+      (insert "cd \"$RIGHT\" || exit $?\n")
+      (insert "majutsu_apply_patch || exit $?\n")
+      (dolist (op file-ops)
+        (let* ((action (plist-get op :action))
+               (path (plist-get op :path))
+               (destination (majutsu-interactive--script-path "RIGHT" path))
+               (preserved (majutsu-interactive--script-path "PRESERVED" path)))
+          (pcase action
+            ((or 'add 'modify)
+             (insert (format "majutsu_remove %s || exit $?\n" destination))
+             (insert (format "majutsu_copy %s %s || exit $?\n"
+                             preserved destination)))
+            ('delete
+             (insert (format "majutsu_remove %s || exit $?\n" destination)))
+            ('rename
+             (insert
+              (format "majutsu_remove %s || exit $?\n"
+                      (majutsu-interactive--script-path
+                       "RIGHT" (plist-get op :source))))
+             (insert (format "majutsu_remove %s || exit $?\n" destination))
+             (insert (format "majutsu_copy %s %s || exit $?\n"
+                             preserved destination)))
+            ('copy
+             (insert (format "majutsu_remove %s || exit $?\n" destination))
+             (insert (format "majutsu_copy %s %s || exit $?\n"
+                             preserved destination)))
+            (_ (error "Unknown whole-file operation: %S" action)))))
+      (insert "exit 0\n"))
     (set-file-modes script #o755)
     script))
 
-(defun majutsu-interactive--build-tool-config (patch-file reverse)
+(defun majutsu-interactive--build-tool-config (patch-file reverse &optional file-ops)
   "Build jj --config arguments for applypatch tool with PATCH-FILE.
-When REVERSE is non-nil, the script will apply the patch in reverse."
-  (let* ((script (majutsu-interactive--write-applypatch-script reverse))
+When REVERSE is non-nil, reset before applying.  FILE-OPS are replayed after."
+  (let* ((script (majutsu-interactive--write-applypatch-script reverse file-ops))
          (script-path (majutsu-convert-filename-for-jj script))
          (patch-path (majutsu-convert-filename-for-jj patch-file)))
     (list
@@ -645,11 +847,14 @@ When REVERSE is non-nil, the script will apply the patch in reverse."
 
 ;;; Pending Operation Flow
 
-(defun majutsu-interactive-run-with-patch (command args filesets patch &optional reverse)
-  "Run jj COMMAND with ARGS and FILESETS, applying PATCH via custom tool.
-If REVERSE is non-nil, apply the patch in reverse using git apply -R."
-  (let* ((patch-file (majutsu-interactive--write-patch patch))
-         (tool-config (majutsu-interactive--build-tool-config patch-file reverse))
+(defun majutsu-interactive-run-with-patch
+    (command args filesets patch &optional reverse file-ops)
+  "Run jj COMMAND with ARGS and FILESETS, applying PATCH and FILE-OPS.
+If REVERSE is non-nil, reset the right tree to the left tree before applying
+the selected text patch and explicit whole-file operations."
+  (let* ((patch-file (majutsu-interactive--write-patch (or patch "")))
+         (tool-config (majutsu-interactive--build-tool-config
+                       patch-file reverse file-ops))
          (args (append args
                        (list "-i" "--tool" "majutsu-applypatch")
                        tool-config))
