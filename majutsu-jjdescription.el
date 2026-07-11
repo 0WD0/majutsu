@@ -79,6 +79,61 @@ When nil, do not override whatever `auto-mode-alist' selects."
   :group 'majutsu
   :type 'string)
 
+(defcustom majutsu-jjdescription-summary-max-length 68
+  "Column beyond which summary line characters are highlighted.
+
+This uses the same default as `git-commit-summary-max-length'.
+Set to nil to disable overlong summary highlighting."
+  :group 'majutsu
+  :type '(choice (const :tag "Disable" nil)
+                 (natnum :tag "Column")))
+
+(defun majutsu-jjdescription--positive-integer-p (value)
+  "Return non-nil when VALUE is a positive integer."
+  (and (integerp value) (> value 0)))
+
+(defcustom majutsu-jjdescription-fill-column 72
+  "Column used as `fill-column' in JJ description buffers.
+
+The value must be a positive integer.  Set it to nil to disable Auto Fill;
+in that case the buffer's existing `fill-column' is left unchanged."
+  :group 'majutsu
+  :type '(choice (const :tag "Disable Auto Fill" nil)
+                 (restricted-sexp
+                  :tag "Column"
+                  :value 72
+                  :match-alternatives
+                  (majutsu-jjdescription--positive-integer-p)
+                  :type-error "This field should contain a positive integer")))
+
+(defun majutsu-jjdescription-setup-auto-fill ()
+  "Configure Auto Fill in JJ descriptions, except on the summary line."
+  (cond
+   ((null majutsu-jjdescription-fill-column)
+    (auto-fill-mode -1))
+   ((majutsu-jjdescription--positive-integer-p
+     majutsu-jjdescription-fill-column)
+    (auto-fill-mode 1)
+    (setq-local comment-auto-fill-only-comments nil)
+    (setq-local auto-fill-function
+                #'majutsu-jjdescription--auto-fill-except-summary))
+   (t
+    (error "`majutsu-jjdescription-fill-column' must be nil or a positive integer"))))
+
+(defun majutsu-jjdescription--auto-fill-except-summary ()
+  "Run the major mode's Auto Fill function outside the summary line."
+  (unless (eq (line-beginning-position)
+              (car-safe (majutsu-jjdescription--summary-range)))
+    (when (functionp normal-auto-fill-function)
+      (funcall normal-auto-fill-function))))
+
+(defun majutsu-jjdescription-setup-line-length ()
+  "Configure filling and summary length behavior in the current buffer."
+  (when (majutsu-jjdescription--positive-integer-p
+         majutsu-jjdescription-fill-column)
+    (setq-local fill-column majutsu-jjdescription-fill-column))
+  (majutsu-jjdescription-setup-auto-fill))
+
 (with-eval-after-load 'recentf
   (add-to-list 'recentf-exclude majutsu-jjdescription-regexp))
 
@@ -242,8 +297,14 @@ Added to `font-lock-extend-region-functions'."
       (let ((ranges (delq nil (list majutsu-jjdescription--summary-range
                                     majutsu-jjdescription--summary-last-range))))
         (when ranges
-          (let ((summary-beg (apply #'min (mapcar #'car ranges)))
-                (summary-end (apply #'max (mapcar #'cdr ranges))))
+          (let* ((buffer-beg (point-min))
+                 (buffer-end (point-max))
+                 (summary-beg
+                  (max buffer-beg
+                       (min buffer-end (apply #'min (mapcar #'car ranges)))))
+                 (summary-end
+                  (max summary-beg
+                       (min buffer-end (apply #'max (mapcar #'cdr ranges))))))
             (when (or (< summary-beg font-lock-beg summary-end)
                       (< summary-beg font-lock-end summary-end))
               (setq font-lock-beg (min font-lock-beg summary-beg))
@@ -264,6 +325,22 @@ Added to `font-lock-extend-region-functions'."
     (let ((beg (car majutsu-jjdescription--summary-range))
           (end (cdr majutsu-jjdescription--summary-range)))
       (when (and (< beg limit) (< (point) end))
+        (goto-char end)
+        (set-match-data (list beg end))
+        t))))
+
+(defun majutsu-jjdescription--overlong-summary-matcher (limit)
+  "Match the configured overlong part of the real summary before LIMIT."
+  (majutsu-jjdescription--refresh-summary-range)
+  (when (and (integerp majutsu-jjdescription-summary-max-length)
+             (>= majutsu-jjdescription-summary-max-length 0)
+             majutsu-jjdescription--summary-range)
+    (let* ((summary-beg (car majutsu-jjdescription--summary-range))
+           (summary-end (cdr majutsu-jjdescription--summary-range))
+           (beg (+ summary-beg majutsu-jjdescription-summary-max-length))
+           (end (min summary-end limit)))
+      (setq beg (max beg (point)))
+      (when (< beg end)
         (goto-char end)
         (set-match-data (list beg end))
         t))))
@@ -302,6 +379,11 @@ Added to `font-lock-extend-region-functions'."
         (ignore-rest-re (majutsu-jjdescription--ignore-rest-line-re)))
     `((majutsu-jjdescription--summary-matcher
        (0 '(face git-commit-summary font-lock-face git-commit-summary) t))
+      ,@(when (and (integerp majutsu-jjdescription-summary-max-length)
+                   (>= majutsu-jjdescription-summary-max-length 0))
+          `((majutsu-jjdescription--overlong-summary-matcher
+             (0 '(face git-commit-overlong-summary
+                  font-lock-face git-commit-overlong-summary) t))))
       (,comment-line-re
        (0 '(face font-lock-comment-face font-lock-face font-lock-comment-face) append))
       (,ignore-rest-re
@@ -568,13 +650,20 @@ available to `majutsu-jjdescription-setup' in `find-file-hook'."
                                 (majutsu-convert-filename-for-jj buffer-file-name))
                                "\\'")
                        majutsu-jjdescription-major-mode)))
+          ;; `normal-mode' runs this global hook while selecting the requested
+          ;; mode.  Defer Majutsu's refresh until below so Auto Fill setup and
+          ;; user hooks run exactly once for this complete setup operation.
+          (after-change-major-mode-hook
+           (remove #'majutsu-jjdescription-setup-font-lock-in-buffer
+                   after-change-major-mode-hook))
           ;; Pre-enable modes so hooks can see them
           (majutsu-jjdescription-mode t)
           (with-editor-mode t))
       (normal-mode t)))
 
-  ;; Setup comments
+  ;; Setup comments and line length.
   (majutsu-jjdescription-setup-comments)
+  (majutsu-jjdescription-setup-line-length)
 
   ;; Ensure with-editor-mode is enabled
   (unless with-editor-mode
@@ -601,10 +690,11 @@ available to `majutsu-jjdescription-setup' in `find-file-hook'."
     (majutsu-jjdescription-setup)))
 
 (defun majutsu-jjdescription-setup-font-lock-in-buffer ()
-  "Refresh JJ description font-lock after major-mode changes."
+  "Refresh JJ description setup after major-mode changes."
   (when (and buffer-file-name
              (string-match-p majutsu-jjdescription-regexp buffer-file-name))
     (majutsu-jjdescription-setup-comments)
+    (majutsu-jjdescription-setup-line-length)
     (majutsu-jjdescription-setup-font-lock)))
 
 (defun majutsu-jjdescription--set-global-hooks (enable)
