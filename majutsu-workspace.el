@@ -18,17 +18,18 @@
 ;; This library provides helpers and UI for `jj workspace` commands, inspired
 ;; by Magit's worktree support.
 ;;
-;; Majutsu queries workspace data using a structured
+;; Majutsu queries workspace data using a JSON-field
 ;; `jj workspace list -T ...' template and prefers the parsed workspace root
-;; from that output when available. It falls back to `jj workspace root --name'
+;; from that output when available.  It falls back to `jj workspace root --name'
 ;; (available since jj v0.38.0) when a root still needs to be resolved.
-;; The trash flow checks for `.jj/repo' to avoid trashing the root that owns
-;; the shared repository store.
+;; The trash flow rejects `.jj/repo' owners and binds local directory identity
+;; across confirmation and `jj workspace forget'.
 
 ;;; Code:
 
 (require 'ansi-color)
 (require 'cl-lib)
+(require 'json)
 (require 'subr-x)
 
 (require 'majutsu-completion)
@@ -40,7 +41,9 @@
 
 (defconst majutsu-workspace--field-separator (string 30)
   "Separator inserted between template fields for parsing.
-We use an ASCII record separator so parsing stays robust.")
+Each field is JSON-encoded first, so the separator can never occur in a
+field even when a workspace name, description, or root contains control
+characters.")
 
 (defconst majutsu-workspace--default-fields
   '(current name change-id commit-id desc root)
@@ -64,20 +67,21 @@ Return a normalized directory path, or nil if jj rendered an error string."
 
 (defconst majutsu-workspace--field-specs
   '((current
-     :template [:if [:target :current_working_copy] "@"]
+     :template [:if [:target :current_working_copy] "@" ""]
      :parse majutsu-workspace--parse-current)
     (name
      :template [:name]
      :parse identity)
     (change-id
-     :template [:target :change_id :shortest 8]
+     :template [:stringify [:target :change_id :shortest 8]]
      :parse identity)
     (commit-id
-     :template [:target :commit_id :shortest 8]
+     :template [:stringify [:target :commit_id :shortest 8]]
      :parse identity)
     (desc
      :template [:if [:target :description]
-                   [:method [:target :description] :first_line]]
+                   [:method [:target :description] :first_line]
+                   ""]
      :parse majutsu-workspace--parse-desc)
     (root
      :template [:root]
@@ -103,7 +107,9 @@ When FIELDS is nil, use `majutsu-workspace--default-fields'."
   (cons :join
         (cons majutsu-workspace--field-separator
               (mapcar (lambda (field)
-                        (plist-get (majutsu-workspace--field-spec field) :template))
+                        (list :json
+                              (plist-get (majutsu-workspace--field-spec field)
+                                         :template)))
                       fields))))
 
 (defun majutsu-workspace--compile-fields (&optional fields)
@@ -130,6 +136,15 @@ When FIELDS is nil, use `majutsu-workspace--default-fields'."
   "Split VALUE by `majutsu-workspace--field-separator', preserving empties."
   (majutsu--split-fields value majutsu-workspace--field-separator))
 
+(defun majutsu-workspace--decode-field (value)
+  "Decode JSON string field VALUE, returning nil for invalid data."
+  (condition-case nil
+      (let ((decoded (json-parse-string (or value "")
+                                        :null-object nil
+                                        :false-object nil)))
+        (and (stringp decoded) decoded))
+    (error nil)))
+
 (defun majutsu-workspace--parse-line (line &optional plan)
   "Parse a single workspace LINE using PLAN.
 Return an entry plist, or nil if the line does not contain a workspace name."
@@ -144,7 +159,8 @@ Return an entry plist, or nil if the line does not contain a workspace name."
                       (plist-put entry
                                  (majutsu-workspace--field-key field)
                                  (funcall (plist-get spec :parse)
-                                          (nth idx fields)))))
+                                          (majutsu-workspace--decode-field
+                                           (nth idx fields))))))
     (when-let* ((name (plist-get entry :name)))
       (unless (string-empty-p name)
         entry))))
@@ -342,47 +358,128 @@ root remains unavailable, the matching alist value is nil."
   (and root
        (file-directory-p (expand-file-name ".jj/repo" root))))
 
-(defun majutsu-workspace--validate-trash-roots (root-alist)
-  "Signal if any workspace root in ROOT-ALIST must not be trashed.
-ROOT-ALIST maps workspace names to directory paths.  Nil roots and
-already-deleted paths are allowed because `jj workspace forget' can also
-be used after deleting a workspace directory manually.  Remote roots are
-always rejected: Emacs cannot guarantee that deleting one moves it to a
-local or remote system trash instead of permanently removing it."
-  (dolist (entry root-alist)
-    (pcase-let ((`(,name . ,root) entry))
-      (when (and root (not (string-empty-p root)))
-        ;; Check the path syntax before any file operation can contact a
-        ;; remote host.
-        (when (file-remote-p root)
-          (user-error "Refusing to trash remote workspace %s at %s"
-                      name root))
-        (when (and (file-exists-p root)
-                   (majutsu-workspace--repo-store-p root))
-          (user-error "Refusing to trash workspace %s; %s owns the shared .jj/repo store"
-                      name root))))))
+(defun majutsu-workspace--directory-identity (attributes)
+  "Return the stable local file identity from ATTRIBUTES."
+  (and attributes (file-attribute-file-identifier attributes)))
 
-(defun majutsu-workspace--trash-roots (root-alist)
-  "Move known workspace roots in ROOT-ALIST to the system trash.
-ROOT-ALIST maps workspace names to directory paths.  Nil roots and
-already-deleted paths are ignored.  Call
-`majutsu-workspace--validate-trash-roots' before forgetting workspaces to
-reject roots that own shared repo storage without mutating repository
-state."
-  ;; Keep this guard here as defense in depth for non-interactive callers.
-  (majutsu-workspace--validate-trash-roots root-alist)
-  (dolist (entry root-alist)
-    (pcase-let ((`(,name . ,root) entry))
-      (when (and root
-                 (not (string-empty-p root))
-                 (file-exists-p root))
-        (condition-case err
-            (let ((delete-by-moving-to-trash t))
-              (delete-directory root t t))
-          (error
-           (user-error
-            "Workspace %s was forgotten, but %s was not moved to trash: %s; move it manually"
-            name root (error-message-string err))))))))
+(defun majutsu-workspace--prepare-trash-targets (root-alist)
+  "Validate ROOT-ALIST and bind each existing root to its file identity.
+
+ROOT-ALIST maps workspace names to directory paths.  The returned target
+plists contain `:name', `:root', `:existed', and `:identity'.  Nil roots and
+already-missing paths are allowed because `jj workspace forget' is also useful
+after a directory was removed manually.
+
+Remote roots are rejected before any file operation.  Existing targets must
+be real directories, must not own the shared `.jj/repo' store, and must retain
+the same device/inode identity throughout validation."
+  (mapcar
+   (lambda (entry)
+     (pcase-let ((`(,name . ,root) entry))
+       (cond
+        ((or (null root) (string-empty-p root))
+         (list :name name :root root :existed nil :identity nil))
+        ((file-remote-p root)
+         (user-error "Refusing to trash remote workspace %s at %s" name root))
+        (t
+         (let ((before (file-attributes root 'integer)))
+           (if (null before)
+               (list :name name :root root :existed nil :identity nil)
+             (unless (eq (file-attribute-type before) t)
+               (user-error "Refusing to trash workspace %s; %s is not a real directory"
+                           name root))
+             (when (majutsu-workspace--repo-store-p root)
+               (user-error "Refusing to trash workspace %s; %s owns the shared .jj/repo store"
+                           name root))
+             (let* ((after (file-attributes root 'integer))
+                    (before-id (majutsu-workspace--directory-identity before))
+                    (after-id (majutsu-workspace--directory-identity after)))
+               (unless (and before-id
+                            (eq (file-attribute-type after) t)
+                            (equal before-id after-id))
+                 (user-error "Refusing to trash workspace %s; %s changed while it was validated"
+                             name root))
+               (list :name name :root root :existed t :identity before-id))))))))
+   root-alist))
+
+(defun majutsu-workspace--trash-target-failure (target reason)
+  "Return a failure plist for TARGET with REASON."
+  (list :name (plist-get target :name)
+        :root (plist-get target :root)
+        :reason reason))
+
+(defun majutsu-workspace--quoted-root (root)
+  "Return ROOT quoted with control characters escaped for messages."
+  (let ((print-escape-control-characters t)
+        (print-escape-newlines t))
+    (prin1-to-string root)))
+
+(defun majutsu-workspace--trash-roots (targets)
+  "Move identity-bound TARGETS to the system trash.
+
+TARGETS must come from `majutsu-workspace--prepare-trash-targets'.  Every
+target is checked again after `jj workspace forget'.  A path that appeared,
+disappeared, changed device/inode, or became a shared repo-store owner is not
+deleted.  Continue after individual failures and return all failure plists."
+  (let (failures)
+    (dolist (target targets)
+      (condition-case err
+          (let* ((root (plist-get target :root))
+                 (existed (plist-get target :existed))
+                 (identity (plist-get target :identity))
+                 (attributes (and root
+                                  (not (string-empty-p root))
+                                  (file-attributes root 'integer))))
+            (cond
+             ((and (not existed) (null attributes)))
+             ((not existed)
+              (push (majutsu-workspace--trash-target-failure
+                     target "a filesystem object appeared there after confirmation")
+                    failures))
+             ((null attributes)
+              (push (majutsu-workspace--trash-target-failure
+                     target "the confirmed directory disappeared")
+                    failures))
+             ((or (not (eq (file-attribute-type attributes) t))
+                  (not (equal identity
+                              (majutsu-workspace--directory-identity attributes))))
+              (push (majutsu-workspace--trash-target-failure
+                     target "the directory identity changed after confirmation")
+                    failures))
+             ((majutsu-workspace--repo-store-p root)
+              (push (majutsu-workspace--trash-target-failure
+                     target "the directory now owns the shared .jj/repo store")
+                    failures))
+             (t
+              (let ((delete-by-moving-to-trash t))
+                (delete-directory root t t)))))
+        (error
+         (push (majutsu-workspace--trash-target-failure
+                target (error-message-string err))
+               failures))))
+    (nreverse failures)))
+
+(defun majutsu-workspace--signal-trash-failures (failures)
+  "Signal one user error that reports every entry in FAILURES."
+  (when failures
+    (user-error
+     "Workspace forget succeeded, but these directories were not moved to trash:\n%s\nMove them manually"
+     (mapconcat
+      (lambda (failure)
+        (format "- %s (%s): %s"
+                (plist-get failure :name)
+                (majutsu-workspace--quoted-root
+                 (plist-get failure :root))
+                (plist-get failure :reason)))
+      failures "\n"))))
+
+(defun majutsu-workspace--trash-target-label (target)
+  "Return a confirmation label for identity-bound TARGET."
+  (let ((name (plist-get target :name))
+        (root (plist-get target :root)))
+    (if (and root (not (string-empty-p root)))
+        (format "%s at %s" name (majutsu-workspace--quoted-root root))
+      (format "%s (root unavailable)" name))))
 
 (defun majutsu-workspace--transient-trash-p ()
   "Return non-nil when the active workspace transient has `--trash' enabled."
@@ -395,10 +492,16 @@ state."
   "Return the workspace root directory for NAME, or nil.
 
 This calls `jj workspace root --name NAME' (available since jj v0.38.0)
-and returns a directory name with a trailing slash."
-  (let ((line (car (majutsu-jj-lines "workspace" "root" "--name" name))))
-    (when (and line (not (string-empty-p line)))
-      (majutsu-jj-expand-directory-from-jj line default-directory))))
+and returns a directory name with a trailing slash.  Only the one newline
+written by jj is removed; embedded or trailing newlines belonging to the
+actual path are preserved."
+  (let ((output (or (majutsu-jj-buffer-string
+                     "workspace" "root" "--name" name)
+                    "")))
+    (when (string-suffix-p "\n" output)
+      (setq output (substring output 0 -1)))
+    (when (not (string-empty-p output))
+      (majutsu-jj-expand-directory-from-jj output default-directory))))
 
 (defun majutsu-workspace--sibling-root (name root)
   "Return a sibling directory of ROOT named NAME if it is a matching workspace.
@@ -582,18 +685,23 @@ workspace roots only."
     (let* ((action (if trash 'workspace-trash 'workspace-forget))
            (root-alist (when trash
                          (majutsu-workspace--roots-for-names
-                          names (majutsu--toplevel-safe)))))
-      (when trash
-        (majutsu-workspace--validate-trash-roots root-alist))
+                          names (majutsu--toplevel-safe))))
+           (trash-targets (when trash
+                            (majutsu-workspace--prepare-trash-targets root-alist))))
       (unless (majutsu-confirm action
                                (format "%s workspace(s) %s? "
                                        (if trash "Forget and trash" "Forget")
-                                       (string-join names ", ")))
+                                       (if trash
+                                           (mapconcat
+                                            #'majutsu-workspace--trash-target-label
+                                            trash-targets ", ")
+                                         (string-join names ", "))))
         (user-error "Forget canceled"))
       (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
           (progn
             (when trash
-              (majutsu-workspace--trash-roots root-alist))
+              (majutsu-workspace--signal-trash-failures
+               (majutsu-workspace--trash-roots trash-targets)))
             (message (if trash
                          "Workspace(s) forgotten; available directories trashed"
                        "Workspace(s) forgotten")))

@@ -80,7 +80,7 @@ by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffer
 * Requirements
 
 - Emacs 29.1+
-- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.39.0+
+- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.40.0+
 - [[https://magit.vc/][magit]], [[https://github.com/magit/transient][transient]], [[https://github.com/magit/with-editor][with-editor]]
 
 * Documentation

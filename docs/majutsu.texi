@@ -265,7 +265,7 @@ Brandon Olivier for the initial codebase of @samp{jj-mode.el}.
 @item
 Emacs 29.1 or later.
 @item
-Jujutsu (jj) v0.39.0 or later installed and in your @samp{PATH}.
+Jujutsu (jj) v0.40.0 or later installed and in your @samp{PATH}.
 @item
 @samp{magit} 3.3.0 or later (for section management).
 @item
@@ -1508,7 +1508,7 @@ Majutsu provides Magit-style partial hunk selection for Jujutsu operations. This
 
 Interactive selection is integrated into the Split (@code{S})@comma{} Squash (@code{s})@comma{} and Restore (@code{R}) transients. When you open one of these transients from a Diff buffer@comma{} a "Patch Selection" group appears with the following commands:
 
-@multitable {aaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Key
 @tab Command
 @tab Description
@@ -1517,7 +1517,7 @@ Interactive selection is integrated into the Split (@code{S})@comma{} Squash (@c
 @tab Toggle selection of hunk at point
 @item @code{F}
 @tab majutsu-interactive-toggle-file
-@tab Toggle selection of all hunks in file
+@tab Toggle all hunks; hunkless file in Split
 @item @code{R}
 @tab majutsu-interactive-toggle-region
 @tab Toggle selection of active region
@@ -1552,7 +1552,7 @@ The restore will apply only to those hunks@comma{} using the diff's revision con
 @node Visual Feedback
 @subsection Visual Feedback
 
-Selected hunks are highlighted with @samp{majutsu-interactive-selected-hunk} face (green background by default). Selected regions within hunks use @samp{majutsu-interactive-selected-region} face (purple background).
+Selected hunks are highlighted with @samp{majutsu-interactive-selected-hunk} face (green background by default). Selected regions within hunks use @samp{majutsu-interactive-selected-region} face (purple background). A selected hunkless whole-file Split change uses @samp{majutsu-interactive-selected-file}.
 
 @node Selection Semantics
 @subsection Selection Semantics
@@ -1609,6 +1609,10 @@ Majutsu uses a custom merge tool to apply partial patches. When you execute an o
 @item
 @strong{Tool Invocation}: Jujutsu's @samp{-i --tool} mechanism is used with a custom @samp{majutsu-applypatch} tool.
 
+Each invocation receives its own temporary patch and helper directory. An
+overlapping asynchronous operation therefore cannot overwrite another
+operation's inputs.
+
 @item
 @strong{Patch Application}:
 @itemize
@@ -1624,7 +1628,8 @@ This approach avoids the complexity of reverse patch application (@samp{git appl
 @node Edge Cases
 @subsection Edge Cases
 
-Interactive patching supports all file operation types:
+Text-hunk selection supports the file operations below. Split additionally
+supports hunkless whole-file changes as described at the end of this section.
 
 @enumerate
 @item
@@ -1667,10 +1672,18 @@ matching.
 Renamed and copied files are handled correctly:
 @itemize
 @item
-The rename/copy metadata is preserved in the patch
+Text-hunk patches preserve the rendered rename/copy headers
 @item
 You can select specific hunks within renamed files just like regular modifications
 @end itemize
+
+In a Git-format diff buffer@comma{} hunkless whole-file changes (for example binary
+or mode-only changes) can be selected as a unit by Split. Their status and
+source/target paths come from a separate JSON @samp{jj diff -T} query for the same
+range and filesets@comma{} never from the rendered @samp{diff --git} header. If that
+metadata is unavailable@comma{} reordered@comma{} or inconsistent with the displayed patch@comma{}
+Majutsu refuses the whole-file selection. Squash and Restore do not support
+hunkless whole-file selection.
 @end enumerate
 
 @node Workflow Example
@@ -1699,6 +1712,8 @@ Execute the operation - only selected changes will be affected
 Face for selected hunks.
 @item Face: majutsu-interactive-selected-region
 Face for selected regions.
+@item Face: majutsu-interactive-selected-file
+Face for selected hunkless whole-file Split changes.
 @end table
 
 @node Metaediting
@@ -2110,7 +2125,7 @@ Toggle trashing workspace directories after forgetting them.
 @item @kbd{f} (@code{majutsu-workspace-forget})
 @kindex f
 @findex majutsu-workspace-forget
-Forget a workspace. With @samp{-t} enabled from the workspace transient@comma{} also move its local directory to the system trash after @samp{jj workspace forget} succeeds. Majutsu refuses remote roots and any root that owns the shared @samp{.jj/repo} store. If moving to trash fails after the workspace was forgotten@comma{} Majutsu reports the directory that must be moved manually.
+Forget a workspace. With @samp{-t} enabled from the workspace transient@comma{} also move its local directory to the system trash after @samp{jj workspace forget} succeeds. Majutsu refuses remote roots and any root that owns the shared @samp{.jj/repo} store. Before confirmation it records each existing directory's device/inode identity; after forget it will not trash a path that appeared@comma{} disappeared@comma{} changed identity@comma{} or became a repo-store owner. After a successful forget@comma{} every target is checked/attempted and any failures are reported together for manual cleanup.
 @item @kbd{u} (@code{majutsu-workspace-update-stale})
 @kindex u
 @findex majutsu-workspace-update-stale
@@ -2129,7 +2144,9 @@ Workspace sections are rendered from a structured @samp{jj workspace list -T}
 template. By default they show each workspace name@comma{} working-copy ids@comma{}
 description@comma{} and resolved root path when available. If jj cannot resolve a
 workspace root@comma{} Majutsu treats it as unavailable instead of showing the raw
-@samp{<Error: ...>} text in the section body.
+@samp{<Error: ...>} text in the section body. Every machine field is JSON-encoded@comma{}
+so newlines and other control characters in legal workspace paths cannot split
+or truncate a record.
 
 @node Conflict Resolution
 @chapter Conflict Resolution

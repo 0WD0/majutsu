@@ -13,8 +13,8 @@
 (require 'ert)
 (require 'majutsu-interactive)
 
-(defun majutsu-interactive-test--insert-diff (diff &optional file)
-  "Wash DIFF and return its real jj-file section, optionally matching FILE."
+(defun majutsu-interactive-test--insert-diff (diff &optional file metadata)
+  "Wash DIFF, attach METADATA, and return the real section matching FILE."
   (majutsu-diff-mode)
   (let ((inhibit-read-only t)
         (magit-section-inhibit-markers t))
@@ -22,7 +22,9 @@
       (insert diff)
       (save-restriction
         (narrow-to-region (point-min) (point-max))
-        (majutsu-diff-wash-diffs '("--git")))))
+        (majutsu-diff-wash-diffs '("--git"))))
+    (when metadata
+      (majutsu-diff--attach-file-metadata metadata)))
   (let (result)
     (magit-map-sections
      (lambda (section)
@@ -46,9 +48,9 @@
   "Patch runner should keep jj options before filesets."
   (let (called)
     (cl-letf (((symbol-function 'majutsu-interactive--write-patch)
-               (lambda (_patch) "/tmp/patch.diff"))
+               (lambda (_patch &optional _directory) "/tmp/patch.diff"))
               ((symbol-function 'majutsu-interactive--build-tool-config)
-               (lambda (_patch-file _reverse &optional _file-ops)
+               (lambda (_patch-file _reverse &optional _file-ops _directory)
                  '("--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch")))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -65,9 +67,9 @@
   "Patch runner should also normalize transient-files groups."
   (let (called)
     (cl-letf (((symbol-function 'majutsu-interactive--write-patch)
-               (lambda (_patch) "/tmp/patch.diff"))
+               (lambda (_patch &optional _directory) "/tmp/patch.diff"))
               ((symbol-function 'majutsu-interactive--build-tool-config)
-               (lambda (_patch-file _reverse &optional _file-ops)
+               (lambda (_patch-file _reverse &optional _file-ops _directory)
                  '("--config" "tool=config")))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -84,7 +86,7 @@
   "Tool config should pass local remote paths to jj merge-tool args."
   (let ((config
          (cl-letf (((symbol-function 'majutsu-interactive--write-applypatch-script)
-                    (lambda (_reverse &optional _file-ops)
+                    (lambda (_reverse &optional _file-ops _directory)
                       "/ssh:demo:/tmp/applypatch.sh"))
                    ((symbol-function 'majutsu-convert-filename-for-jj)
                     (lambda (path)
@@ -100,89 +102,146 @@
     (should-not (string-match-p "/ssh:demo:" (nth 1 config)))
     (should-not (string-match-p "/ssh:demo:" (nth 3 config)))))
 
-(ert-deftest majutsu-interactive--temp-dir/uses-nearby-temp-file ()
-  "Temp dir helper should allocate directories near current workspace."
-  (let ((majutsu-interactive--temp-dir nil)
-        (majutsu-interactive--temp-dir-remote nil)
-        seen)
-    (cl-letf (((symbol-function 'file-directory-p)
-               (lambda (_path) nil))
-              ((symbol-function 'make-nearby-temp-file)
+(ert-deftest majutsu-interactive--make-operation-temp-dir/uses-nearby-temp-file ()
+  "Each operation should allocate a nearby private directory."
+  (let (seen)
+    (cl-letf (((symbol-function 'make-nearby-temp-file)
                (lambda (prefix dir-flag &optional suffix)
                  (setq seen (list prefix dir-flag suffix))
                  "/tmp/majutsu-interactive-dir")))
-      (should (equal (majutsu-interactive--temp-dir)
+      (should (equal (majutsu-interactive--make-operation-temp-dir)
                      "/tmp/majutsu-interactive-dir"))
       (should (equal seen '("majutsu-interactive-" t nil))))))
 
-(ert-deftest majutsu-interactive--temp-dir/recreates-when-remote-prefix-changes ()
-  "Temp dir cache should be invalidated when host context changes."
-  (let ((default-directory "/tmp/")
-        (majutsu-interactive--temp-dir nil)
-        (majutsu-interactive--temp-dir-remote nil)
-        seen)
-    (cl-letf (((symbol-function 'file-directory-p)
-               (lambda (_path) t))
-              ((symbol-function 'file-remote-p)
-               (lambda (path &optional identification _connected)
-                 (when (and (equal path default-directory)
-                            (null identification))
-                   (if (string-prefix-p "/ssh:demo:" default-directory)
-                       "/ssh:demo:"
-                     nil))))
-              ((symbol-function 'make-nearby-temp-file)
-               (lambda (_prefix _dir-flag &optional _suffix)
-                 (let ((value (format "/tmp/majutsu-interactive-%d" (length seen))))
-                   (push value seen)
-                   value))))
-      (let ((local (majutsu-interactive--temp-dir)))
-        (setq default-directory "/ssh:demo:/tmp/")
-        (let ((remote (majutsu-interactive--temp-dir)))
-          (should (not (equal local remote)))
-          (should (equal (length seen) 2)))))))
+(ert-deftest majutsu-interactive-run-with-patch/uses-private-directory-per-run ()
+  "Overlapping async operations must never share patch or helper paths."
+  (let (created writes configs cleaned)
+    (cl-letf (((symbol-function 'majutsu-interactive--make-operation-temp-dir)
+               (lambda ()
+                 (let ((dir (format "/tmp/majutsu-operation-%d" (length created))))
+                   (push dir created)
+                   dir)))
+              ((symbol-function 'majutsu-interactive--write-patch)
+               (lambda (_patch &optional directory)
+                 (push directory writes)
+                 (expand-file-name "patch.diff" directory)))
+              ((symbol-function 'majutsu-interactive--build-tool-config)
+               (lambda (_patch _reverse &optional _ops directory)
+                 (push directory configs)
+                 nil))
+              ((symbol-function 'majutsu-run-jj-with-editor)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'majutsu-interactive--delete-operation-temp-dir)
+               (lambda (directory) (push directory cleaned))))
+      (majutsu-interactive-run-with-patch "split" nil nil "one")
+      (majutsu-interactive-run-with-patch "split" nil nil "two")
+      (should (= (length (delete-dups (copy-sequence created))) 2))
+      (should (equal writes configs))
+      (should (= (length cleaned) 2)))))
+
+(ert-deftest majutsu-interactive-retain-temp-dir/closes-installation-race ()
+  "An exit between liveness check and sentinel install cleans immediately."
+  (let ((checks 0)
+        installed
+        cleaned
+        properties
+        (original (lambda (&rest _))))
+    (cl-letf (((symbol-function 'processp) (lambda (_process) t))
+              ((symbol-function 'process-live-p)
+               (lambda (_process) (= (cl-incf checks) 1)))
+              ((symbol-function 'process-sentinel)
+               (lambda (_process) original))
+              ((symbol-function 'process-put)
+               (lambda (_process key value)
+                 (setf (alist-get key properties) value)))
+              ((symbol-function 'set-process-sentinel)
+               (lambda (_process sentinel) (push sentinel installed)))
+              ((symbol-function 'majutsu-interactive--delete-operation-temp-dir)
+               (lambda (directory) (push directory cleaned))))
+      (should (majutsu-interactive--retain-temp-dir-for-process
+               'fake "/tmp/private-operation"))
+      (should (= checks 2))
+      (should (equal installed
+                     (list original
+                           #'majutsu-interactive--temp-dir-process-sentinel)))
+      (should (equal cleaned '("/tmp/private-operation")))
+      (should-not (alist-get 'majutsu-interactive-temp-dir properties))
+      (should-not
+       (alist-get 'majutsu-interactive-original-sentinel properties)))))
+
+(ert-deftest majutsu-interactive-temp-dir-sentinel/cleans-on-exit-and-signal ()
+  "The wrapper runs the original sentinel and cleans for both terminal states."
+  (dolist (status '(exit signal))
+    (let (original-called cleaned)
+      (cl-letf (((symbol-function 'process-get)
+                 (lambda (_process key)
+                   (pcase key
+                     ('majutsu-interactive-original-sentinel
+                      (lambda (&rest _) (setq original-called t)))
+                     ('majutsu-interactive-temp-dir "/tmp/private-operation"))))
+                ((symbol-function 'process-status) (lambda (_process) status))
+                ((symbol-function 'majutsu-interactive--delete-operation-temp-dir)
+                 (lambda (directory) (setq cleaned directory))))
+        (majutsu-interactive--temp-dir-process-sentinel 'fake "done")
+        (should original-called)
+        (should (equal cleaned "/tmp/private-operation"))))))
 
 (ert-deftest majutsu-interactive-file-operation/parses-explicit-actions ()
-  "Whole-file actions must come from diff metadata, including rename/copy."
+  "Whole-file actions must come only from structured jj metadata."
   (dolist
       (case
        '(("diff --git a/add.bin b/add.bin\nnew file mode 100644\nBinary files /dev/null and b/add.bin differ\n"
-          "add.bin" (:action add :path "add.bin"))
+          "add.bin" (:status "added" :path "add.bin" :source "add.bin" :target "add.bin")
+          (:action add :path "add.bin"))
          ("diff --git a/mod.bin b/mod.bin\nindex 123..456 100644\nBinary files a/mod.bin and b/mod.bin differ\n"
-          "mod.bin" (:action modify :path "mod.bin"))
+          "mod.bin" (:status "modified" :path "mod.bin" :source "mod.bin" :target "mod.bin")
+          (:action modify :path "mod.bin"))
          ("diff --git a/del.bin b/del.bin\ndeleted file mode 100644\nBinary files a/del.bin and /dev/null differ\n"
-          "del.bin" (:action delete :path "del.bin"))
+          "del.bin" (:status "removed" :path "del.bin" :source "del.bin" :target "del.bin")
+          (:action delete :path "del.bin"))
          ("diff --git a/old.bin b/new.bin\nsimilarity index 100%\nrename from old.bin\nrename to new.bin\n"
-          "new.bin" (:action rename :source "old.bin" :path "new.bin"))
+          "new.bin" (:status "renamed" :path "new.bin" :source "old.bin" :target "new.bin")
+          (:action rename :source "old.bin" :path "new.bin"))
          ("diff --git a/src.bin b/copy.bin\nsimilarity index 100%\ncopy from src.bin\ncopy to copy.bin\n"
-          "copy.bin" (:action copy :source "src.bin" :path "copy.bin"))
-         ("diff --git a/x b/x\nsimilarity index 100%\nrename from \"old\\040name.bin\"\nrename to \"new\\040name.bin\"\n"
-          "x" (:action rename :source "old name.bin" :path "new name.bin"))
-         ("diff --git a/x b/x\nsimilarity index 100%\ncopy from \"src\\042quote\\134path.bin\"\ncopy to \"dst\\040name.bin\"\n"
-          "x" (:action copy :source "src\"quote\\path.bin"
-               :path "dst name.bin"))))
+          "copy.bin" (:status "copied" :path "copy.bin" :source "src.bin" :target "copy.bin")
+          (:action copy :source "src.bin" :path "copy.bin"))
+         ("diff --git a/foo b/bar.bin b/foo b/bar.bin\nindex 123..456 100644\nBinary files a/foo b/bar.bin and b/foo b/bar.bin differ\n"
+          "foo b/bar.bin"
+          (:status "modified" :path "foo b/bar.bin"
+           :source "foo b/bar.bin" :target "foo b/bar.bin")
+          (:action modify :path "foo b/bar.bin"))
+         ("diff --git \"a/literal\\\"old.bin\" \"b/literal\\\"new.bin\"\nsimilarity index 100%\nrename from \"literal\\\"old.bin\"\nrename to \"literal\\\"new.bin\"\n"
+          "literal\"new.bin"
+          (:status "renamed" :path "literal\"new.bin"
+           :source "literal\"old.bin" :target "literal\"new.bin")
+          (:action rename :source "literal\"old.bin"
+           :path "literal\"new.bin"))))
     (with-temp-buffer
-      (pcase-let ((`(,diff ,file ,expected) case))
-        (let ((section (majutsu-interactive-test--insert-diff diff file)))
+      (pcase-let ((`(,diff ,file ,metadata ,expected) case))
+        (let ((section (majutsu-interactive-test--insert-diff
+                        diff file (list metadata))))
           (should section)
           (should (equal (majutsu-interactive--file-operation section)
                          expected)))))))
 
-(ert-deftest majutsu-interactive-header-path/rejects-malformed-git-quoting ()
-  "Malformed Git C-style paths must not silently become filesystem paths."
-  (should-error
-   (majutsu-interactive--header-path
-    "rename from \"unterminated\\040path\n" "rename from ")
-   :type 'user-error)
-  (should-error
-   (majutsu-interactive--header-path
-    "copy from \"valid\"trailing\n" "copy from ")
-   :type 'user-error))
+(ert-deftest majutsu-interactive-toggle-file/fails-closed-without-machine-metadata ()
+  "Rendered Git headers alone must never authorize a whole-file operation."
+  (with-temp-buffer
+    (let* ((diff "diff --git a/bin.dat b/bin.dat\nnew file mode 100644\nBinary files /dev/null and b/bin.dat differ\n")
+           (section (majutsu-interactive-test--insert-diff diff "bin.dat"))
+           (transient-current-command 'majutsu-split))
+      (goto-char (oref section start))
+      (should-error (majutsu-interactive-toggle-file) :type 'user-error)
+      (should-not (majutsu-interactive-has-selections-p)))))
 
 (ert-deftest majutsu-interactive-toggle-file/selects-hunkless-file-for-split ()
   "A binary file section is selectable as a whole-file split operation."
   (with-temp-buffer
     (let* ((diff "diff --git a/bin.dat b/bin.dat\nnew file mode 100644\nBinary files /dev/null and b/bin.dat differ\n")
-           (section (majutsu-interactive-test--insert-diff diff "bin.dat"))
+           (section (majutsu-interactive-test--insert-diff
+                     diff "bin.dat"
+                     '((:status "added" :path "bin.dat"
+                        :source "bin.dat" :target "bin.dat"))))
            (transient-current-command 'majutsu-split))
       (goto-char (oref section start))
       (majutsu-interactive-toggle-file)
@@ -210,7 +269,12 @@
                   "@@ -10 +10 @@\n-old two\n+unselected two\n"
                   "diff --git a/bin.dat b/bin.dat\nnew file mode 100644\n"
                   "Binary files /dev/null and b/bin.dat differ\n"))
-           (text (majutsu-interactive-test--insert-diff diff "text.txt"))
+           (text (majutsu-interactive-test--insert-diff
+                  diff "text.txt"
+                  '((:status "modified" :path "text.txt"
+                     :source "text.txt" :target "text.txt")
+                    (:status "added" :path "bin.dat"
+                     :source "bin.dat" :target "bin.dat"))))
            (binary (majutsu-interactive--file-section-for-file "bin.dat"))
            (hunk (car (majutsu-interactive--file-section-hunks text))))
       (majutsu-interactive--set-selection
@@ -231,10 +295,13 @@
          (right (expand-file-name "right" dir))
          (patch-file (expand-file-name "patch.diff" dir))
          (ops '((:action add :path "added.bin")
+                (:action add :path "line\nbreak.bin")
                 (:action modify :path "modified.bin")
                 (:action delete :path "deleted.bin")
                 (:action delete :path "collision")
                 (:action rename :source "old.bin" :path "renamed.bin")
+                (:action rename :source "literal\"old.bin"
+                 :path "literal\"new.bin")
                 (:action copy :source "source.bin" :path "copied.bin"))))
     (unwind-protect
         (progn
@@ -245,13 +312,16 @@
                            ("deleted.bin" . "delete-me")
                            ("collision" . "left-file")
                            ("old.bin" . "rename-me")
+                           ("literal\"old.bin" . "quoted-rename")
                            ("source.bin" . "copy-me")))
             (with-temp-file (expand-file-name (car entry) left)
               (insert (cdr entry))))
           (dolist (entry '(("text.txt" . "unselected-right\n")
                            ("added.bin" . "added")
+                           ("line\nbreak.bin" . "newline")
                            ("modified.bin" . "new-mod")
                            ("renamed.bin" . "rename-me")
+                           ("literal\"new.bin" . "quoted-rename")
                            ("source.bin" . "copy-me")
                            ("copied.bin" . "copy-me")
                            ("unselected.bin" . "must-disappear")))
@@ -264,11 +334,8 @@
             (insert "unrelated"))
           (with-temp-file patch-file
             (insert "diff --git a/text.txt b/text.txt\n--- a/text.txt\n+++ b/text.txt\n@@ -1 +1 @@\n-old\n+selected\n"))
-          (let (script)
-            (cl-letf (((symbol-function 'majutsu-interactive--temp-dir)
-                       (lambda () dir)))
-              (setq script
-                    (majutsu-interactive--write-applypatch-script t ops)))
+          (let ((script (majutsu-interactive--write-applypatch-script
+                         t ops dir)))
             (should (zerop (call-process script nil nil nil
                                          left right patch-file))))
           (should (equal (majutsu-interactive-test--file-contents
@@ -277,18 +344,90 @@
           (should (equal (majutsu-interactive-test--file-contents
                           (expand-file-name "added.bin" right)) "added"))
           (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "line\nbreak.bin" right)) "newline"))
+          (should (equal (majutsu-interactive-test--file-contents
                           (expand-file-name "modified.bin" right)) "new-mod"))
           (should-not (file-exists-p (expand-file-name "deleted.bin" right)))
           (should-not (file-exists-p (expand-file-name "collision" right)))
           (should-not (file-exists-p (expand-file-name "old.bin" right)))
           (should (equal (majutsu-interactive-test--file-contents
                           (expand-file-name "renamed.bin" right)) "rename-me"))
+          (should-not (file-exists-p
+                       (expand-file-name "literal\"old.bin" right)))
+          (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "literal\"new.bin" right))
+                         "quoted-rename"))
           (should (equal (majutsu-interactive-test--file-contents
                           (expand-file-name "source.bin" right)) "copy-me"))
           (should (equal (majutsu-interactive-test--file-contents
                           (expand-file-name "copied.bin" right)) "copy-me"))
           (should-not (file-exists-p (expand-file-name "unselected.bin" right))))
       (delete-directory dir t))))
+
+(ert-deftest majutsu-interactive/integration-machine-paths-with-minimum-jj ()
+  "Exercise sidecar binding against the jj binary named by MAJUTSU_TEST_JJ."
+  (let ((jj (getenv "MAJUTSU_TEST_JJ")))
+    (skip-unless (and jj (file-executable-p jj)))
+    (let* ((parent (make-temp-file "majutsu-jj-integration-" t))
+           (repo (expand-file-name "repo" parent)))
+      (unwind-protect
+          (progn
+            (should (zerop (call-process jj nil nil nil "git" "init" repo)))
+            (let* ((default-directory (file-name-as-directory repo))
+                   (majutsu-jj-executable jj)
+                   (odd "foo b/bar.bin")
+                   (old "literal\"old.bin")
+                   (new "literal\"new.bin")
+                   (odd-file (expand-file-name odd repo))
+                   (old-file (expand-file-name old repo))
+                   (new-file (expand-file-name new repo)))
+              (make-directory (file-name-directory odd-file) t)
+              (cl-labels ((write-bytes
+                           (file bytes)
+                           (with-temp-buffer
+                             (set-buffer-multibyte nil)
+                             (insert bytes)
+                             (let ((coding-system-for-write 'binary))
+                               (write-region (point-min) (point-max)
+                                             file nil 'silent)))))
+                (write-bytes odd-file (unibyte-string 0 1 2))
+                (with-temp-file old-file (insert "rename me"))
+                (should (zerop (call-process jj nil nil nil
+                                             "commit" "-m" "base")))
+                (write-bytes odd-file (unibyte-string 0 3 4))
+                (rename-file old-file new-file))
+              ;; The rendered diff snapshots first; the sidecar intentionally
+              ;; reads that snapshot without doing a second one.
+              (let* ((git-output (majutsu-jj-buffer-string "diff" "--git"))
+                     (metadata (majutsu-diff--query-file-metadata nil nil)))
+                (with-temp-buffer
+                  (majutsu-diff-mode)
+                  (let ((inhibit-read-only t)
+                        (magit-section-inhibit-markers t)
+                        (majutsu-diff--active-file-metadata metadata)
+                        (majutsu-diff--file-metadata-queue
+                         (copy-sequence metadata)))
+                    (magit-insert-section (root)
+                      (insert git-output)
+                      (save-restriction
+                        (narrow-to-region (point-min) (point-max))
+                        (majutsu-diff-wash-diffs '("--git")))))
+                  (majutsu-diff--attach-file-metadata metadata)
+                  (let ((odd-section (majutsu-interactive--file-section-for-file odd))
+                        (rename-section
+                         (majutsu-interactive--file-section-for-file new)))
+                    (unless odd-section
+                      (ert-fail (format "odd path not bound; metadata=%S git=%S"
+                                        metadata git-output)))
+                    (unless rename-section
+                      (ert-fail (format "rename path not bound; metadata=%S git=%S"
+                                        metadata git-output)))
+                    (should (equal (majutsu-interactive--file-operation odd-section)
+                                   `(:action modify :path ,odd)))
+                    (should (equal
+                             (majutsu-interactive--file-operation rename-section)
+                             `(:action rename :source ,old :path ,new))))))))
+        (delete-directory parent t)))))
 
 (provide 'majutsu-interactive-test)
 ;;; majutsu-interactive-test.el ends here

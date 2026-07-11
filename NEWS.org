@@ -5,6 +5,10 @@
 
 ** Breaking changes
 
+- The minimum supported Jujutsu version is now 0.40.0 ::
+  Workspace root discovery uses =WorkspaceRef.root()=, which was added in jj
+  0.40.0.  Earlier jj releases are no longer supported.
+
 - The Squash transient now uses =--from= for source revisions ::
   The =-r/--revision= shortcut was removed.  Use =-f/--from= instead.
   Diff =--revisions= selections are carried into squash as =--from= sources.
@@ -61,6 +65,14 @@
   Reviewer, CC, and topic prompts use Majutsu's native Gerrit REST client.
 
 ** Changed
+
+- Workspace trash and whole-file Split paths are fail-closed ::
+  Workspace list fields use JSON transport, trash targets are bound to their
+  device/inode identity across confirmation and forget, and multi-root trash
+  failures are reported together after every target is attempted.  Hunkless
+  whole-file Split operations now use structured =jj diff -T= metadata instead
+  of parsing Git display headers.  Each asynchronous patch operation also gets
+  a private temporary directory.
 
 - Evil dispatcher entries show Evil-facing keys ::
   The top-level dispatcher now mirrors buffer bindings such as ~x~, ~L~, ~_~,
