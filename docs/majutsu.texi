@@ -2110,7 +2110,7 @@ Toggle trashing workspace directories after forgetting them.
 @item @kbd{f} (@code{majutsu-workspace-forget})
 @kindex f
 @findex majutsu-workspace-forget
-Forget a workspace. With @samp{-t} enabled from the workspace transient@comma{} also move its directory to the system trash after @samp{jj workspace forget} succeeds. Majutsu refuses to trash a workspace root that owns the shared @samp{.jj/repo} store.
+Forget a workspace. With @samp{-t} enabled from the workspace transient@comma{} also move its local directory to the system trash after @samp{jj workspace forget} succeeds. Majutsu refuses remote roots and any root that owns the shared @samp{.jj/repo} store. If moving to trash fails after the workspace was forgotten@comma{} Majutsu reports the directory that must be moved manually.
 @item @kbd{u} (@code{majutsu-workspace-update-stale})
 @kindex u
 @findex majutsu-workspace-update-stale

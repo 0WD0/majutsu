@@ -478,6 +478,58 @@ The Emacs-facing path remains unchanged for visiting the new workspace."
       (when (file-directory-p primary)
         (delete-directory primary t)))))
 
+(ert-deftest majutsu-workspace-forget/refuses-to-trash-remote-root-before-io ()
+  "Trash flow must never turn a remote root into recursive deletion."
+  (let (confirmed ran-jj deleted touched-remote)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/tmp/main/"))
+              ((symbol-function 'majutsu-workspace-list-entries)
+               (lambda (&optional _directory)
+                 '((:name "remote" :root "/ssh:demo:/tmp/remote/"))))
+              ((symbol-function 'file-exists-p)
+               (lambda (path)
+                 (when (file-remote-p path)
+                   (setq touched-remote t))
+                 nil))
+              ((symbol-function 'majutsu-confirm)
+               (lambda (&rest _args) (setq confirmed t) t))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest _args) (setq ran-jj t) 0))
+              ((symbol-function 'delete-directory)
+               (lambda (&rest _args) (setq deleted t))))
+      (should-error (majutsu-workspace-forget '("remote") t)
+                    :type 'user-error)
+      (should-not touched-remote)
+      (should-not confirmed)
+      (should-not ran-jj)
+      (should-not deleted))))
+
+(ert-deftest majutsu-workspace-forget/reports-trash-failure-after-forget ()
+  "A trash failure must say that jj metadata already changed."
+  (let ((feature (make-temp-file "majutsu-feature-" t))
+        ran-jj condition)
+    (unwind-protect
+        (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+                   (lambda (&optional _directory) "/tmp/main/"))
+                  ((symbol-function 'majutsu-workspace-list-entries)
+                   (lambda (&optional _directory)
+                     `((:name "feature" :root ,(file-name-as-directory feature)))))
+                  ((symbol-function 'majutsu-confirm)
+                   (lambda (&rest _args) t))
+                  ((symbol-function 'majutsu-run-jj)
+                   (lambda (&rest _args) (setq ran-jj t) 0))
+                  ((symbol-function 'delete-directory)
+                   (lambda (&rest _args) (error "trash unavailable"))))
+          (setq condition
+                (should-error (majutsu-workspace-forget '("feature") t)
+                              :type 'user-error))
+          (should ran-jj)
+          (should (string-match-p
+                   "was forgotten.*was not moved to trash.*move it manually"
+                   (error-message-string condition))))
+      (when (file-directory-p feature)
+        (delete-directory feature t)))))
+
 (ert-deftest majutsu-workspace-forget/trash-with-missing-root-does-not-prompt ()
   "Trash flow should forget but not prompt or delete when root is unavailable."
   (let (seen-args deleted)
