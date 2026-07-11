@@ -906,46 +906,61 @@ error text.  Output is optionally colorized based on
   (declare (indent 2))
   (setq args (majutsu-process-jj-arguments args))
   (let* ((beg (point))
-         (exit (apply #'majutsu-process-file (majutsu-jj--executable) nil t nil args)))
-    (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
-               (> (point) beg))
-      ;; Use text-properties instead of overlays so that subsequent
-      ;; washing/parsing that uses `buffer-substring' preserves faces.
-      (let ((ansi-color-apply-face-function #'ansi-color-apply-text-property-face))
-        (ansi-color-apply-on-region beg (point))))
-    (cond
-     ;; Command produced no output.
-     ((= (point) beg)
-      (if (= exit 0)
-          (magit-cancel-section)
-        (insert (propertize (format "jj %s failed (exit %s)\n"
-                                    (string-join args " ") exit)
-                            'font-lock-face 'error))
-        (unless (bolp)
-          (insert "\n"))))
-     ;; Failure path (unless we explicitly wash anyway).
-     ((and (not (eq keep-error 'wash-anyway))
-           (not (= exit 0)))
-      (goto-char beg)
-      (insert (propertize (format "jj %s failed (exit %s)\n"
-                                  (string-join args " ") exit)
-                          'font-lock-face 'error))
-      (unless (bolp)
-        (insert "\n")))
-     ;; Success (or wash anyway).
-     (t
-      (unless (bolp)
-        (insert "\n"))
-      (when (or (= exit 0)
-                (eq keep-error 'wash-anyway))
-        (save-restriction
-          (narrow-to-region beg (point))
-          (goto-char beg)
-          (funcall washer args))
-        (when (or (= (point) beg)
-                  (= (point) (1+ beg)))
-          (magit-cancel-section)))))
-    exit))
+         (err-file (make-nearby-temp-file "majutsu-jj-err")))
+    (unwind-protect
+        (let ((exit (apply #'majutsu-process-file (majutsu-jj--executable) nil
+                           (list t err-file) nil args)))
+          (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
+                     (> (point) beg))
+            ;; Use text-properties instead of overlays so that subsequent
+            ;; washing/parsing that uses `buffer-substring' preserves faces.
+            (let ((ansi-color-apply-face-function
+                   #'ansi-color-apply-text-property-face))
+              (ansi-color-apply-on-region beg (point))))
+          (cond
+           ;; Command produced no output.
+           ((= (point) beg)
+            (if (= exit 0)
+                (magit-cancel-section)
+              (insert (propertize (format "jj %s failed (exit %s)\n"
+                                          (string-join args " ") exit)
+                                  'font-lock-face 'error))
+              (when keep-error
+                (insert (ansi-color-filter-apply
+                         (with-temp-buffer
+                           (insert-file-contents err-file)
+                           (buffer-string)))))
+              (unless (bolp)
+                (insert "\n"))))
+           ;; Failure path (unless we explicitly wash anyway).
+           ((and (not (eq keep-error 'wash-anyway))
+                 (not (= exit 0)))
+            (goto-char beg)
+            (insert (propertize (format "jj %s failed (exit %s)\n"
+                                        (string-join args " ") exit)
+                                'font-lock-face 'error))
+            (when keep-error
+              (insert (ansi-color-filter-apply
+                       (with-temp-buffer
+                         (insert-file-contents err-file)
+                         (buffer-string)))))
+            (unless (bolp)
+              (insert "\n")))
+           ;; Success (or wash anyway).
+           (t
+            (unless (bolp)
+              (insert "\n"))
+            (when (or (= exit 0)
+                      (eq keep-error 'wash-anyway))
+              (save-restriction
+                (narrow-to-region beg (point))
+                (goto-char beg)
+                (funcall washer args))
+              (when (or (= (point) beg)
+                        (= (point) (1+ beg)))
+                (magit-cancel-section)))))
+          exit)
+      (ignore-errors (delete-file err-file)))))
 
 ;;; _
 (provide 'majutsu-jj)
