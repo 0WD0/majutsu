@@ -165,6 +165,136 @@
         (should-not (string-match-p (regexp-quote "\e[")
                                     (buffer-string)))))))
 
+(ert-deftest majutsu-diff-file-metadata/preserves-ambiguous-and-quoted-paths ()
+  "JSON sidecar parsing must preserve paths Git display syntax cannot delimit."
+  (let* ((output (concat
+                  "[\"renamed\",\"foo b/bar.bin\","
+                  "\"literal\\\"old.bin\",\"foo b/bar.bin\"]\n"
+                  "[\"copied\",\"line\\nbreak.bin\","
+                  "\"source.bin\",\"line\\nbreak.bin\"]\n"))
+         (entries (majutsu-diff--parse-file-metadata-output output)))
+    (should (equal entries
+                   '((:status "renamed" :path "foo b/bar.bin"
+                      :source "literal\"old.bin" :target "foo b/bar.bin")
+                     (:status "copied" :path "line\nbreak.bin"
+                      :source "source.bin" :target "line\nbreak.bin"))))))
+
+(ert-deftest majutsu-diff-file-metadata/validates-git-c-quoted-controls ()
+  "Header validation should understand Git escapes without sourcing paths from them."
+  (let* ((path (concat "café\t\"" (string 7)))
+         (header (concat
+                  "diff --git \"a/caf\\303\\251\\t\\042\\a\" "
+                  "\"b/caf\\303\\251\\t\\042\\a\"\n"))
+         (entry (list :status "modified" :path path
+                      :source path :target path)))
+    (should (majutsu-diff--git-header-paths-match-p header entry))
+    (should-not (majutsu-diff--git-quoted-token-value "\"\\777\""))))
+
+(ert-deftest majutsu-diff-file-metadata/query-matches-range-and-filesets ()
+  "The sidecar query must use the displayed diff's exact range and filesets."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-jj-insert)
+               (lambda (&rest args)
+                 (setq seen args)
+                 (insert "[\"modified\",\"src/a.el\",\"src/a.el\",\"src/a.el\"]\n")
+                 0)))
+      (should (equal
+               (majutsu-diff--query-file-metadata
+                '("--from=A" "--to=B") '("src/a.el"))
+               '((:status "modified" :path "src/a.el"
+                  :source "src/a.el" :target "src/a.el"))))
+      (should (equal (seq-take seen 4)
+                     (list "--ignore-working-copy" "diff" "-T"
+                           majutsu-diff--file-metadata-template)))
+      (should (equal (seq-drop seen 4)
+                     '("--from=A" "--to=B" "--" "src/a.el"))))))
+
+(ert-deftest majutsu-diff-file-metadata/count-mismatch-fails-closed ()
+  "Metadata is not attached when its count differs from washed file sections."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t))
+      (magit-insert-section (root)
+        (insert "diff --git a/one.bin b/one.bin\nnew file mode 100644\nBinary files /dev/null and b/one.bin differ\n")
+        (save-restriction
+          (narrow-to-region (point-min) (point-max))
+          (majutsu-diff-wash-diffs '("--git"))))
+      (let ((section (car (oref magit-root-section children))))
+        (majutsu-diff--attach-file-metadata
+         '((:status "added" :path "one.bin" :source "one.bin" :target "one.bin")
+           (:status "added" :path "two.bin" :source "two.bin" :target "two.bin")))
+        (should-not (majutsu-diff-file-metadata section))))))
+
+(ert-deftest majutsu-diff-file-metadata/reordered-sidecar-fails-closed ()
+  "Equal counts must not authorize reordered sidecar entries."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t))
+      (magit-insert-section (root)
+        (insert "diff --git a/one.bin b/one.bin\nindex 1..2 100644\nBinary files a/one.bin and b/one.bin differ\n"
+                "diff --git a/two.bin b/two.bin\nindex 3..4 100644\nBinary files a/two.bin and b/two.bin differ\n")
+        (save-restriction
+          (narrow-to-region (point-min) (point-max))
+          (majutsu-diff-wash-diffs '("--git"))))
+      (let ((sections (oref magit-root-section children)))
+        (majutsu-diff--attach-file-metadata
+         '((:status "modified" :path "two.bin"
+            :source "two.bin" :target "two.bin")
+           (:status "modified" :path "one.bin"
+            :source "one.bin" :target "one.bin")))
+        (should-not (seq-some #'majutsu-diff-file-metadata sections))))))
+
+(ert-deftest majutsu-diff-file-metadata/raw-order-validation-rejects-reorder ()
+  "Pre-wash validation must reject same-count metadata in a different order."
+  (with-temp-buffer
+    (insert "diff --git a/one.bin b/one.bin\nindex 1..2 100644\nBinary files a/one.bin and b/one.bin differ\n"
+            "diff --git a/two.bin b/two.bin\nindex 3..4 100644\nBinary files a/two.bin and b/two.bin differ\n")
+    (let* ((one '(:status "modified" :path "one.bin"
+                  :source "one.bin" :target "one.bin"))
+           (two '(:status "modified" :path "two.bin"
+                  :source "two.bin" :target "two.bin")))
+      (should (majutsu-diff--raw-file-metadata-consistent-p (list one two)))
+      (should-not
+       (majutsu-diff--raw-file-metadata-consistent-p (list two one))))))
+
+(ert-deftest majutsu-diff-wash-file/accepts-quoted-git-display-header ()
+  "A quoted Git display header should still form a section for sidecar binding."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t))
+      (magit-insert-section (root)
+        (insert "diff --git \"a/old\\\"name.bin\" \"b/new\\\"name.bin\"\n"
+                "similarity index 100%\nrename from old\nrename to new\n")
+        (save-restriction
+          (narrow-to-region (point-min) (point-max))
+          (majutsu-diff-wash-diffs '("--git"))))
+      (let ((section (car (oref magit-root-section children)))
+            (metadata '(:status "renamed" :path "new\"name.bin"
+                        :source "old\"name.bin" :target "new\"name.bin")))
+        (should (oref section header))
+        (majutsu-diff--attach-file-metadata (list metadata))
+        (should (equal (oref section value) "new\"name.bin"))
+        (should (equal (majutsu-diff-file-metadata section) metadata))))))
+
+(ert-deftest majutsu-diff-wash-diffs/malformed-header-always-advances ()
+  "A future or malformed `diff --git' header must not trap the washer loop."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t))
+      (magit-insert-section (root)
+        (insert "diff --git malformed-header\nunrecognized extended data\n"
+                "diff --git a/good.bin b/good.bin\nindex 1..2 100644\n"
+                "Binary files a/good.bin and b/good.bin differ\n")
+        (save-restriction
+          (narrow-to-region (point-min) (point-max))
+          (with-timeout (1 (ert-fail "diff washer did not advance"))
+            (majutsu-diff-wash-diffs '("--git")))))
+      (should (= (length (oref magit-root-section children)) 2)))))
+
 (ert-deftest majutsu-insert-diff/puts-filesets-after-separator ()
   "Diff command construction should pass filesets after --."
   (let (called heading)

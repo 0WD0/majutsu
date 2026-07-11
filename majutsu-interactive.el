@@ -174,6 +174,9 @@ When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context."
   "Toggle the whole-file selection represented by FILE-SECTION."
   (unless (majutsu-interactive--whole-file-selection-allowed-p)
     (user-error "Whole-file selections are only supported by jj split"))
+  (unless (majutsu-diff-file-metadata file-section)
+    (user-error
+     "Whole-file selection requires exact jj diff metadata; refresh the diff and try again"))
   (let* ((id (majutsu-interactive--file-id (oref file-section value)))
          (current (majutsu-interactive--get-selection id)))
     (majutsu-interactive--set-selection id (unless current :all))
@@ -382,61 +385,42 @@ Returns list of (FILE-SECTION HUNK-SECTION SPEC)."
        majutsu-interactive--selections))
     (nreverse result)))
 
-(defun majutsu-interactive--header-path (header prefix)
-  "Return the path following PREFIX on a line in HEADER."
-  (when (string-match (concat "^" (regexp-quote prefix) "\\(.+\\)$")
-                      (or header ""))
-    (let ((path (match-string 1 header)))
-      (if (not (string-prefix-p "\"" path))
-          path
-        (condition-case nil
-            (pcase-let ((`(,decoded . ,end) (read-from-string path)))
-              (unless (and (stringp decoded) (= end (length path)))
-                (user-error "Invalid quoted Git path: %s" path))
-              decoded)
-          (error (user-error "Invalid quoted Git path: %s" path)))))))
-
 (defun majutsu-interactive--safe-relative-path (path)
   "Return PATH, or signal a user error if it is unsafe for the helper tool."
   (unless (and (stringp path)
                (not (string-empty-p path))
                (not (file-name-absolute-p path))
-               (not (string-match-p "[\n\r\0]" path))
+               (not (string= path "."))
+               (not (string-match-p "\0" path))
                (not (member ".." (split-string path "/" t))))
     (user-error "Unsafe whole-file selection path: %S" path))
   path)
 
 (defun majutsu-interactive--file-operation (file-section)
-  "Parse an explicit whole-file operation from FILE-SECTION metadata."
-  (let* ((header (or (oref file-section header) ""))
-         (value (oref file-section value))
-         (rename-from (majutsu-interactive--header-path header "rename from "))
-         (rename-to (majutsu-interactive--header-path header "rename to "))
-         (copy-from (majutsu-interactive--header-path header "copy from "))
-         (copy-to (majutsu-interactive--header-path header "copy to "))
-         (path (majutsu-interactive--safe-relative-path
-                (or rename-to copy-to value))))
-    (cond
-     ((or rename-from rename-to)
-      (unless (and rename-from rename-to)
-        (user-error "Incomplete rename metadata for %s" value))
-      (list :action 'rename
-            :source (majutsu-interactive--safe-relative-path rename-from)
-            :path path))
-     ((or copy-from copy-to)
-      (unless (and copy-from copy-to)
-        (user-error "Incomplete copy metadata for %s" value))
-      (list :action 'copy
-            :source (majutsu-interactive--safe-relative-path copy-from)
-            :path path))
-     ((or (string-match-p "^deleted file mode " header)
-          (string-match-p "^+++ /dev/null$" header))
-      (list :action 'delete :path path))
-     ((or (string-match-p "^new file mode " header)
-          (string-match-p "^--- /dev/null$" header))
-      (list :action 'add :path path))
-     (t
-      (list :action 'modify :path path)))))
+  "Return an explicit whole-file operation from FILE-SECTION metadata.
+Never infer filesystem paths from rendered Git patch headers."
+  (let ((metadata (majutsu-diff-file-metadata file-section)))
+    (unless metadata
+      (user-error
+       "Whole-file selection requires exact jj diff metadata; refresh the diff and try again"))
+    (let ((status (plist-get metadata :status))
+          (path (majutsu-interactive--safe-relative-path
+                 (plist-get metadata :target))))
+      (pcase status
+        ("added" (list :action 'add :path path))
+        ("modified" (list :action 'modify :path path))
+        ("removed" (list :action 'delete :path path))
+        ("renamed"
+         (list :action 'rename
+               :source (majutsu-interactive--safe-relative-path
+                        (plist-get metadata :source))
+               :path path))
+        ("copied"
+         (list :action 'copy
+               :source (majutsu-interactive--safe-relative-path
+                        (plist-get metadata :source))
+               :path path))
+        (_ (user-error "Unsupported whole-file jj diff status: %S" status))))))
 
 (defun majutsu-interactive--build-file-operations ()
   "Return explicit operations for all selected whole-file changes."
@@ -728,26 +712,15 @@ CONTEXT-ON-ADDED has the same meaning as in
 
 ;;; Tool Invocation
 
-(defvar majutsu-interactive--temp-dir nil
-  "Temporary directory for patch files.")
+(defun majutsu-interactive--make-operation-temp-dir ()
+  "Create and return a private nearby directory for one jj operation."
+  (make-nearby-temp-file "majutsu-interactive-" t))
 
-(defvar majutsu-interactive--temp-dir-remote nil
-  "Remote prefix associated with `majutsu-interactive--temp-dir'.")
-
-(defun majutsu-interactive--temp-dir ()
-  "Return or create temporary directory."
-  (let ((remote (file-remote-p default-directory)))
-    (unless (and majutsu-interactive--temp-dir
-                 (equal remote majutsu-interactive--temp-dir-remote)
-                 (file-directory-p majutsu-interactive--temp-dir))
-      (setq majutsu-interactive--temp-dir
-            (make-nearby-temp-file "majutsu-interactive-" t)
-            majutsu-interactive--temp-dir-remote remote)))
-  majutsu-interactive--temp-dir)
-
-(defun majutsu-interactive--write-patch (patch)
-  "Write PATCH to a temporary file and return its path."
-  (let ((file (expand-file-name "patch.diff" (majutsu-interactive--temp-dir))))
+(defun majutsu-interactive--write-patch (patch &optional directory)
+  "Write PATCH to a temporary file in DIRECTORY and return its path."
+  (let ((file (expand-file-name
+               "patch.diff"
+               (or directory (majutsu-interactive--make-operation-temp-dir)))))
     (with-temp-file file
       (insert patch))
     file))
@@ -756,12 +729,16 @@ CONTEXT-ON-ADDED has the same meaning as in
   "Return a safely shell-quoted PATH beneath shell variable ROOT."
   (format "\"$%s\"/%s" root (shell-quote-argument path)))
 
-(defun majutsu-interactive--write-applypatch-script (reverse &optional file-ops)
+(defun majutsu-interactive--write-applypatch-script
+    (reverse &optional file-ops directory)
   "Write the applypatch helper script and return its path.
 When REVERSE is non-nil, reset $right to $left state first, then apply patch.
 FILE-OPS contains explicit `add', `modify', `delete', `rename', or `copy'
-actions.  Only right-tree paths needed by those operations are preserved."
-  (let ((script (expand-file-name "applypatch.sh" (majutsu-interactive--temp-dir))))
+actions.  Only right-tree paths needed by those operations are preserved.
+Write the script in DIRECTORY when non-nil."
+  (let ((script (expand-file-name
+                 "applypatch.sh"
+                 (or directory (majutsu-interactive--make-operation-temp-dir)))))
     (with-temp-file script
       (insert "#!/bin/sh\n")
       (insert "# Majutsu applypatch helper\n")
@@ -833,10 +810,13 @@ actions.  Only right-tree paths needed by those operations are preserved."
     (set-file-modes script #o755)
     script))
 
-(defun majutsu-interactive--build-tool-config (patch-file reverse &optional file-ops)
+(defun majutsu-interactive--build-tool-config
+    (patch-file reverse &optional file-ops directory)
   "Build jj --config arguments for applypatch tool with PATCH-FILE.
-When REVERSE is non-nil, reset before applying.  FILE-OPS are replayed after."
-  (let* ((script (majutsu-interactive--write-applypatch-script reverse file-ops))
+When REVERSE is non-nil, reset before applying.  FILE-OPS are replayed after.
+Write the helper script in DIRECTORY when non-nil."
+  (let* ((script (majutsu-interactive--write-applypatch-script
+                  reverse file-ops directory))
          (script-path (majutsu-convert-filename-for-jj script))
          (patch-path (majutsu-convert-filename-for-jj patch-file)))
     (list
@@ -847,19 +827,65 @@ When REVERSE is non-nil, reset before applying.  FILE-OPS are replayed after."
 
 ;;; Pending Operation Flow
 
+(defun majutsu-interactive--delete-operation-temp-dir (directory)
+  "Best-effort removal of operation DIRECTORY."
+  (when (and directory (file-exists-p directory))
+    (ignore-errors (delete-directory directory t))))
+
+(defun majutsu-interactive--temp-dir-process-sentinel (process event)
+  "Run PROCESS's original sentinel for EVENT, then remove its temp directory."
+  (let ((original (process-get process 'majutsu-interactive-original-sentinel)))
+    (unwind-protect
+        (when original
+          (funcall original process event))
+      (when (memq (process-status process) '(exit signal))
+        (majutsu-interactive--delete-operation-temp-dir
+         (process-get process 'majutsu-interactive-temp-dir))))))
+
+(defun majutsu-interactive--retain-temp-dir-for-process (process directory)
+  "Keep DIRECTORY until asynchronous PROCESS exits."
+  (if (and (processp process) (process-live-p process))
+      (let ((original (process-sentinel process)))
+        (process-put process 'majutsu-interactive-temp-dir directory)
+        (process-put process 'majutsu-interactive-original-sentinel
+                     original)
+        (set-process-sentinel process
+                              #'majutsu-interactive--temp-dir-process-sentinel)
+        ;; The process can exit after the first liveness check but before the
+        ;; replacement sentinel is installed.  In that case the old sentinel
+        ;; may already have consumed the only exit event, so clean up here.
+        (unless (process-live-p process)
+          (ignore-errors (set-process-sentinel process original))
+          (process-put process 'majutsu-interactive-temp-dir nil)
+          (process-put process 'majutsu-interactive-original-sentinel nil)
+          (majutsu-interactive--delete-operation-temp-dir directory))
+        t)
+    nil))
+
 (defun majutsu-interactive-run-with-patch
     (command args filesets patch &optional reverse file-ops)
   "Run jj COMMAND with ARGS and FILESETS, applying PATCH and FILE-OPS.
 If REVERSE is non-nil, reset the right tree to the left tree before applying
 the selected text patch and explicit whole-file operations."
-  (let* ((patch-file (majutsu-interactive--write-patch (or patch "")))
-         (tool-config (majutsu-interactive--build-tool-config
-                       patch-file reverse file-ops))
-         (args (append args
-                       (list "-i" "--tool" "majutsu-applypatch")
-                       tool-config))
-         (full-args (cons command (majutsu-jj-append-filesets args filesets))))
-    (majutsu-run-jj-with-editor full-args)))
+  (let ((directory (majutsu-interactive--make-operation-temp-dir))
+        retained)
+    (unwind-protect
+        (let* ((patch-file (majutsu-interactive--write-patch
+                            (or patch "") directory))
+               (tool-config (majutsu-interactive--build-tool-config
+                             patch-file reverse file-ops directory))
+               (args (append args
+                             (list "-i" "--tool" "majutsu-applypatch")
+                             tool-config))
+               (full-args
+                (cons command (majutsu-jj-append-filesets args filesets)))
+               (process (majutsu-run-jj-with-editor full-args)))
+          (setq retained
+                (majutsu-interactive--retain-temp-dir-for-process
+                 process directory))
+          process)
+      (unless retained
+        (majutsu-interactive--delete-operation-temp-dir directory)))))
 
 ;;; _
 (provide 'majutsu-interactive)
