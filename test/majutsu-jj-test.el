@@ -216,6 +216,30 @@
                      "diff")))
       (should (equal (buffer-string) "diff output\n")))))
 
+(ert-deftest majutsu-jj-wash/wash-anyway-appends-stderr-after-stdout-wash ()
+  "A failed wash should parse only stdout, then append cleaned diagnostics."
+  (let (washed)
+    (cl-letf (((symbol-function 'majutsu-process-file)
+               (lambda (_program _infile destination _display &rest _args)
+                 (insert "diff output\n")
+                 (write-region "\e[31mError: partial diff\e[0m\n" nil
+                               (cadr destination) nil 'silent)
+                 1)))
+      (with-temp-buffer
+        (should (= 1 (majutsu-jj-wash
+                       (lambda (&rest _)
+                         (setq washed (buffer-string))
+                         (goto-char (point-max)))
+                       'wash-anyway
+                       "diff")))
+        (should (equal washed "diff output\n"))
+        (should (string-prefix-p washed (buffer-string)))
+        (should (string-match-p "jj .*diff failed (exit 1)"
+                                (buffer-string)))
+        (should (string-match-p "Error: partial diff" (buffer-string)))
+        (should-not (string-match-p (regexp-quote "\e[")
+                                    (buffer-string)))))))
+
 (ert-deftest majutsu-jj-wash/keeps-clean-stderr-on-failure ()
   "Requested failure stderr should be preserved without ANSI escapes."
   (cl-letf (((symbol-function 'majutsu-process-file)

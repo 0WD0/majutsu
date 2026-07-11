@@ -13,7 +13,9 @@
 (require 'majutsu-forge)
 
 (ert-deftest majutsu-forge-section-hooks/adds-and-removes-default-hooks ()
-  (let ((original (default-value 'majutsu-log-sections-hook)))
+  (let ((original (default-value 'majutsu-log-sections-hook))
+        (majutsu-forge--sections-installed nil)
+        (majutsu-forge--installed-section-hooks nil))
     (unwind-protect
         (progn
           (set-default 'majutsu-log-sections-hook '(majutsu-log-insert-logs))
@@ -34,6 +36,33 @@
           (majutsu-forge--remove-section-hooks)
           (should (equal (default-value 'majutsu-log-sections-hook)
                          '(majutsu-log-insert-logs))))
+      (set-default 'majutsu-log-sections-hook original))))
+
+(ert-deftest majutsu-forge-section-hooks/rolls-back-partial-installation ()
+  "An error midway through section setup should leave no installed prefix."
+  (let ((original (default-value 'majutsu-log-sections-hook))
+        (real-add (symbol-function 'magit-add-section-hook))
+        (majutsu-forge--sections-installed nil)
+        (majutsu-forge--installed-section-hooks nil))
+    (unwind-protect
+        (progn
+          (set-default 'majutsu-log-sections-hook '(majutsu-log-insert-logs))
+          (cl-letf (((symbol-function 'magit-add-section-hook)
+                     (lambda (hook function &rest args)
+                       (if (eq function 'majutsu-forge-insert-issues)
+                           (error "section setup failed")
+                         (apply real-add hook function args)))))
+            (should-error (majutsu-forge--add-section-hooks)))
+          (should-not majutsu-forge--sections-installed)
+          (should (equal (default-value 'majutsu-log-sections-hook)
+                         '(majutsu-log-insert-logs
+                           majutsu-forge--clear-section-errors
+                           majutsu-forge-insert-pullreqs)))
+          (majutsu-forge--cleanup-installation)
+          (should (equal (default-value 'majutsu-log-sections-hook)
+                         '(majutsu-log-insert-logs)))
+          (should-not majutsu-forge--installed-section-hooks))
+      (majutsu-forge--cleanup-installation)
       (set-default 'majutsu-log-sections-hook original))))
 
 (ert-deftest majutsu-forge-insert-pullreq-commits/uses-placeholder ()
@@ -71,6 +100,141 @@
               (forge--insert-pullreq-commits nil))
             (should (equal (buffer-string) "git log body\n"))))
       (majutsu-forge--remove-advices))))
+
+(ert-deftest majutsu-forge-refresh-advice/explicit-buffer-refreshes-once ()
+  "Forge's recursive explicit-BUFFER dispatch should trigger one refresh."
+  (let ((majutsu-forge--installed-advices nil)
+        (majutsu-forge--refreshing nil)
+        (majutsu-forge--pending-refresh-roots nil)
+        (refreshes 0)
+        roots
+        (target (generate-new-buffer " *majutsu-forge-target*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'forge-refresh-buffer)
+                   (lambda (&optional buffer)
+                     (when (buffer-live-p buffer)
+                       (with-current-buffer buffer
+                         (forge-refresh-buffer))))))
+          (unwind-protect
+              (progn
+                (majutsu-forge--add-advices)
+                (with-temp-buffer
+                  (cl-letf (((symbol-function 'majutsu-forge--buffer-root)
+                             (lambda (&optional buffer)
+                               (should-not buffer)
+                               (should (eq (current-buffer) target))
+                               "/repo/"))
+                            ((symbol-function
+                              'majutsu-forge--refresh-majutsu-buffers)
+                             (lambda (&optional root)
+                               (push root roots)
+                               (cl-incf refreshes))))
+                    (forge-refresh-buffer target)))
+                (should (= refreshes 1))
+                (should (equal roots '("/repo/"))))
+            (majutsu-forge--remove-advices)))
+      (when (buffer-live-p target)
+        (kill-buffer target)))))
+
+(ert-deftest majutsu-forge-refresh-advice/coalesces-reentrant-refreshes ()
+  "Nested Forge refreshes should cause at most one supplemental pass."
+  (let ((majutsu-forge--installed-advices nil)
+        (majutsu-forge--refreshing nil)
+        (majutsu-forge--pending-refresh-roots nil)
+        (refreshes 0))
+    (cl-letf (((symbol-function 'forge-refresh-buffer) #'ignore)
+              ((symbol-function 'majutsu-forge--buffer-root)
+               (lambda (&optional _buffer) "/repo/"))
+              ((symbol-function 'majutsu-forge--refresh-majutsu-buffers)
+               (lambda (&optional _root)
+                 (cl-incf refreshes)
+                 ;; Queue multiple requests in both the initial and
+                 ;; supplemental passes.  Only the initial queue is drained.
+                 (forge-refresh-buffer)
+                 (forge-refresh-buffer))))
+      (unwind-protect
+          (progn
+            (majutsu-forge--add-advices)
+            (forge-refresh-buffer)
+            (should (= refreshes 2))
+            (should-not majutsu-forge--refreshing)
+            (should-not majutsu-forge--pending-refresh-roots))
+        (majutsu-forge--remove-advices)))))
+
+(ert-deftest majutsu-forge-refresh/pending-nil-means-refresh-all ()
+  "A queued all-buffer request should get one complete supplemental pass."
+  (let ((majutsu-forge--refreshing nil)
+        (majutsu-forge--pending-refresh-roots nil)
+        (refreshes 0))
+    (with-temp-buffer
+      (let ((target (current-buffer)))
+        (cl-letf (((symbol-function 'buffer-list) (lambda () (list target)))
+                  ((symbol-function 'derived-mode-p) (lambda (&rest _) t))
+                  ((symbol-function 'majutsu-refresh-buffer)
+                   (lambda ()
+                     (cl-incf refreshes)
+                     (majutsu-forge--request-majutsu-refresh nil))))
+          (majutsu-forge--request-majutsu-refresh nil))))
+    (should (= refreshes 2))
+    (should-not majutsu-forge--refreshing)
+    (should-not majutsu-forge--pending-refresh-roots)))
+
+(ert-deftest majutsu-forge-cleanup/preserves-preexisting-hooks-and-advices ()
+  "Cleanup should only remove entries installed by the current mode run."
+  (let ((original-sections (default-value 'majutsu-log-sections-hook))
+        (original-log-mode (default-value 'majutsu-log-mode-hook))
+        (original-refresh (default-value 'majutsu-refresh-buffer-hook))
+        (majutsu-forge--sections-installed nil)
+        (majutsu-forge--installed-section-hooks nil)
+        (majutsu-forge--installed-hooks nil)
+        (majutsu-forge--installed-advices nil)
+        (majutsu-forge--bindings-installed nil)
+        (majutsu-forge--saved-bindings nil))
+    (cl-letf (((symbol-function 'forge-refresh-buffer) #'ignore)
+              ((symbol-function 'forge--insert-pullreq-commits) #'ignore))
+      (unwind-protect
+          (progn
+            (set-default 'majutsu-log-sections-hook
+                         '(majutsu-log-insert-logs
+                           majutsu-forge-insert-pullreqs))
+            (set-default 'majutsu-log-mode-hook
+                         '(majutsu-forge--init-buffer))
+            (set-default 'majutsu-refresh-buffer-hook
+                         '(majutsu-forge--expand-sections))
+            ;; Model identical advice installed independently before the mode.
+            (advice-add 'forge-refresh-buffer :after
+                        #'majutsu-forge--after-forge-refresh)
+            (advice-add 'forge--insert-pullreq-commits :around
+                        #'majutsu-forge--insert-pullreq-commits-around)
+            (majutsu-forge--add-section-hooks)
+            (majutsu-forge--add-owned-hook
+             'majutsu-log-mode-hook #'majutsu-forge--connect-database-once)
+            (majutsu-forge--add-owned-hook
+             'majutsu-log-mode-hook #'majutsu-forge--init-buffer)
+            (majutsu-forge--add-owned-hook
+             'majutsu-refresh-buffer-hook #'majutsu-forge--expand-sections)
+            (majutsu-forge--add-advices)
+            (majutsu-forge--cleanup-installation)
+            (should (equal (default-value 'majutsu-log-sections-hook)
+                           '(majutsu-log-insert-logs
+                             majutsu-forge-insert-pullreqs)))
+            (should (equal (default-value 'majutsu-log-mode-hook)
+                           '(majutsu-forge--init-buffer)))
+            (should (equal (default-value 'majutsu-refresh-buffer-hook)
+                           '(majutsu-forge--expand-sections)))
+            (should (advice-member-p #'majutsu-forge--after-forge-refresh
+                                     'forge-refresh-buffer))
+            (should (advice-member-p
+                     #'majutsu-forge--insert-pullreq-commits-around
+                     'forge--insert-pullreq-commits)))
+        (advice-remove 'forge-refresh-buffer
+                       #'majutsu-forge--after-forge-refresh)
+        (advice-remove 'forge--insert-pullreq-commits
+                       #'majutsu-forge--insert-pullreq-commits-around)
+        (majutsu-forge--cleanup-installation)
+        (set-default 'majutsu-log-sections-hook original-sections)
+        (set-default 'majutsu-log-mode-hook original-log-mode)
+        (set-default 'majutsu-refresh-buffer-hook original-refresh)))))
 
 (ert-deftest majutsu-forge-mode-bindings/restore-previous-bindings ()
   (let ((original-n (keymap-lookup majutsu-mode-map "N"))

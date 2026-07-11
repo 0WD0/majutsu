@@ -398,6 +398,93 @@ is not silently reported as passed."
       (should (= 3 (majutsu--process-file-responsive
                     "sh" nil t "-c" "exit 3"))))))
 
+(ert-deftest majutsu-process-test-file-responsive-cleans-stderr-on-create-error ()
+  "A `make-process' error should not leak the temporary stderr buffer."
+  (let (stderr-buffer)
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest plist)
+                 (setq stderr-buffer (plist-get plist :stderr))
+                 (error "process creation failed"))))
+      (with-temp-buffer
+        (should-error
+         (majutsu--process-file-responsive
+          "missing-jj" nil (list t "/tmp/majutsu-unused-stderr")))))
+    (should (bufferp stderr-buffer))
+    (should-not (buffer-live-p stderr-buffer))))
+
+(ert-deftest majutsu-process-test-file-responsive-cleans-identifiable-created-process ()
+  "Clean a real process when a non-atomic wrapper creates it then signals."
+  (majutsu-process-test--with-sh
+    (let ((real-make-process (symbol-function 'make-process))
+          blocker
+          created
+          stderr-process
+          stderr-buffer)
+      (unwind-protect
+          (progn
+            ;; Force Emacs to uniquify the main process name independently
+            ;; from the stderr process name.
+            (setq blocker
+                  (funcall real-make-process
+                           :name "sh"
+                           :command '("sh" "-c" "sleep 20")
+                           :noquery t))
+            (cl-letf (((symbol-function 'make-process)
+                       (lambda (&rest plist)
+                         (setq stderr-buffer (plist-get plist :stderr))
+                         (setq created (apply real-make-process plist))
+                         (setq stderr-process
+                               (get-buffer-process stderr-buffer))
+                         (error "wrapper failed after process creation"))))
+              (with-temp-buffer
+                (should-error
+                 (majutsu--process-file-responsive
+                  "sh" nil (list t "/tmp/majutsu-unused-stderr")
+                  "-c" "sleep 20"))))
+            (should (processp created))
+            (should-not (process-live-p created))
+            (should-not (memq created (process-list)))
+            (should (process-live-p blocker))
+            (should (processp stderr-process))
+            (should-not (process-live-p stderr-process))
+            (should-not (memq stderr-process (process-list)))
+            (should-not (buffer-live-p stderr-buffer)))
+        (when (and created (process-live-p created))
+          (delete-process created))
+        (when (and blocker (process-live-p blocker))
+          (delete-process blocker))
+        (when (and stderr-process (process-live-p stderr-process))
+          (delete-process stderr-process))
+        (when (buffer-live-p stderr-buffer)
+          (kill-buffer stderr-buffer))))))
+
+(ert-deftest majutsu-process-test-file-responsive-does-not-guess-created-process ()
+  "Do not kill an unidentifiable process created by a failing wrapper."
+  (majutsu-process-test--with-sh
+    (let ((real-make-process (symbol-function 'make-process))
+          unrelated)
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'make-process)
+                       (lambda (&rest _plist)
+                         ;; This process is created during the wrapper call,
+                         ;; but is not linked to Majutsu's private stderr
+                         ;; buffer and therefore cannot be identified safely.
+                         (setq unrelated
+                               (funcall real-make-process
+                                        :name "majutsu-unrelated"
+                                        :command '("sh" "-c" "sleep 20")
+                                        :noquery t))
+                         (error "unrelated wrapper failure"))))
+              (with-temp-buffer
+                (should-error
+                 (majutsu--process-file-responsive
+                  "sh" nil (list t "/tmp/majutsu-unused-stderr")
+                  "-c" "sleep 20"))))
+            (should (process-live-p unrelated)))
+        (when (and unrelated (process-live-p unrelated))
+          (delete-process unrelated))))))
+
 (ert-deftest majutsu-process-test-file-responsive-stderr-file-has-no-sentinel-noise ()
   "Responsive runner must not write Emacs sentinel status lines to a stderr file.
 

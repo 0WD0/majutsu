@@ -55,7 +55,29 @@
 (defvar magit-status-margin)
 
 (defvar majutsu-forge--sections-installed nil
-  "Non-nil when `majutsu-forge-mode' installed section hooks.")
+  "Non-nil when `majutsu-forge-mode' completed section hook setup.")
+
+(defvar majutsu-forge--installed-section-hooks nil
+  "Section hook functions installed by `majutsu-forge-mode'.
+
+This only records entries that were absent before the mode was enabled, so
+cleanup does not remove an identical hook function installed by the user.")
+
+(defvar majutsu-forge--installed-hooks nil
+  "Ordinary hook entries installed by `majutsu-forge-mode'.
+
+Each entry is a cons cell of the form (HOOK . FUNCTION).")
+
+(defvar majutsu-forge--installed-advices nil
+  "Advice entries installed by `majutsu-forge-mode'.
+
+Each entry is a cons cell of the form (SYMBOL . FUNCTION).")
+
+(defvar majutsu-forge--refreshing nil
+  "Non-nil while Forge advice is refreshing Majutsu buffers.")
+
+(defvar majutsu-forge--pending-refresh-roots nil
+  "Repository roots queued by reentrant Forge refreshes.")
 
 (defvar majutsu-forge--bindings-installed nil
   "Non-nil when `majutsu-forge-mode' installed key bindings.")
@@ -241,25 +263,56 @@ default.  The pull-request section itself remains visitable."
   (majutsu-forge--with-section-errors "discussions"
     (forge-insert-discussions)))
 
+(defun majutsu-forge--default-hook-member-p (hook function)
+  "Return non-nil when FUNCTION is in HOOK's default value."
+  (let ((value (default-value hook)))
+    (or (eq value function)
+        (and (listp value) (memq function value)))))
+
+(defun majutsu-forge--add-owned-hook (hook function)
+  "Add FUNCTION to HOOK and remember when Majutsu owns the entry."
+  (unless (majutsu-forge--default-hook-member-p hook function)
+    (unwind-protect
+        (add-hook hook function)
+      ;; Record an entry even if a wrapper around `add-hook' signals after
+      ;; modifying the hook.  The mode's error path can then roll it back.
+      (when (majutsu-forge--default-hook-member-p hook function)
+        (cl-pushnew (cons hook function)
+                    majutsu-forge--installed-hooks
+                    :test #'equal)))))
+
+(defun majutsu-forge--remove-owned-hooks ()
+  "Remove ordinary hook entries installed by `majutsu-forge-mode'."
+  (dolist (entry majutsu-forge--installed-hooks)
+    (remove-hook (car entry) (cdr entry)))
+  (setq majutsu-forge--installed-hooks nil))
+
+(defun majutsu-forge--add-owned-section-hook (function)
+  "Add section hook FUNCTION and remember when Majutsu owns the entry."
+  (unless (majutsu-forge--default-hook-member-p
+           'majutsu-log-sections-hook function)
+    (unwind-protect
+        (magit-add-section-hook 'majutsu-log-sections-hook function nil t)
+      ;; As above, make a partially successful installation reversible.
+      (when (majutsu-forge--default-hook-member-p
+             'majutsu-log-sections-hook function)
+        (cl-pushnew function majutsu-forge--installed-section-hooks)))))
+
 (defun majutsu-forge--add-section-hooks ()
   "Add Forge section hooks to `majutsu-log-sections-hook'."
-  (magit-add-section-hook 'majutsu-log-sections-hook
-                          #'majutsu-forge--clear-section-errors nil t)
-  (magit-add-section-hook 'majutsu-log-sections-hook
-                          #'majutsu-forge-insert-pullreqs nil t)
-  (magit-add-section-hook 'majutsu-log-sections-hook
-                          #'majutsu-forge-insert-issues nil t)
-  (magit-add-section-hook 'majutsu-log-sections-hook
-                          #'majutsu-forge-insert-discussions nil t)
+  (dolist (function '(majutsu-forge--clear-section-errors
+                      majutsu-forge-insert-pullreqs
+                      majutsu-forge-insert-issues
+                      majutsu-forge-insert-discussions))
+    (majutsu-forge--add-owned-section-hook function))
   (setq majutsu-forge--sections-installed t))
 
 (defun majutsu-forge--remove-section-hooks ()
-  "Remove Forge section hooks from `majutsu-log-sections-hook'."
-  (remove-hook 'majutsu-log-sections-hook #'majutsu-forge--clear-section-errors)
-  (remove-hook 'majutsu-log-sections-hook #'majutsu-forge-insert-pullreqs)
-  (remove-hook 'majutsu-log-sections-hook #'majutsu-forge-insert-issues)
-  (remove-hook 'majutsu-log-sections-hook #'majutsu-forge-insert-discussions)
-  (setq majutsu-forge--sections-installed nil))
+  "Remove section hooks installed by `majutsu-forge-mode'."
+  (dolist (function majutsu-forge--installed-section-hooks)
+    (remove-hook 'majutsu-log-sections-hook function))
+  (setq majutsu-forge--installed-section-hooks nil
+        majutsu-forge--sections-installed nil))
 
 ;;; Bindings
 
@@ -365,53 +418,93 @@ default.  The pull-request section itself remains visitable."
          (file-equal-p (file-truename root) (file-truename other)))))
 
 (defun majutsu-forge--refresh-majutsu-buffers (&optional root)
-  "Refresh live Majutsu buffers under ROOT.
+  "Refresh live Majutsu buffers under ROOT or any root in a list.
 
-If ROOT is nil, refresh all live Majutsu buffers."
-  (dolist (buffer (buffer-list))
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (when (and (derived-mode-p 'majutsu-mode)
-                   (or (not root)
-                       (majutsu-forge--same-root-p
-                        root majutsu--default-directory)))
-          (ignore-errors (majutsu-refresh-buffer)))))))
+If ROOT is nil or a list containing nil, refresh all live Majutsu buffers."
+  (let ((roots (cond ((null root) nil)
+                     ((listp root) root)
+                     (t (list root)))))
+    (dolist (buffer (buffer-list))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (when (and (derived-mode-p 'majutsu-mode)
+                     (or (not roots)
+                         (memq nil roots)
+                         (cl-some (lambda (candidate)
+                                    (majutsu-forge--same-root-p
+                                     candidate majutsu--default-directory))
+                                  roots)))
+            (ignore-errors (majutsu-refresh-buffer))))))))
+
+(defun majutsu-forge--request-majutsu-refresh (root)
+  "Refresh Majutsu buffers for ROOT without recursive refresh fanout.
+
+Requests made while a refresh is running are coalesced by repository root.
+After the initial pass, all pending roots share one supplemental pass; requests
+made during that supplemental pass are deliberately dropped."
+  (if majutsu-forge--refreshing
+      (cl-pushnew root majutsu-forge--pending-refresh-roots :test #'equal)
+    (let ((majutsu-forge--refreshing t)
+          (majutsu-forge--pending-refresh-roots nil))
+      (unwind-protect
+          (progn
+            (majutsu-forge--refresh-majutsu-buffers root)
+            (let ((pending (nreverse majutsu-forge--pending-refresh-roots)))
+              ;; Clear the queue before the supplemental pass.  Nested
+              ;; requests can set it again, but the unwind cleanup below
+              ;; drops them instead of allowing an unbounded retry loop.
+              (setq majutsu-forge--pending-refresh-roots nil)
+              (when pending
+                (majutsu-forge--refresh-majutsu-buffers pending))))
+        (setq majutsu-forge--pending-refresh-roots nil)))))
 
 (defun majutsu-forge--after-forge-refresh (&optional buffer)
   "Refresh Majutsu buffers after `forge-refresh-buffer' refreshes BUFFER."
-  (when-let* ((root (majutsu-forge--buffer-root buffer)))
-    (majutsu-forge--refresh-majutsu-buffers root)))
+  ;; Forge handles a non-nil BUFFER by recursively calling itself without an
+  ;; argument inside that buffer.  The inner call performs the refresh and
+  ;; invokes this advice, so handling the outer call too would refresh every
+  ;; matching Majutsu buffer twice.
+  (unless buffer
+    (when-let* ((root (majutsu-forge--buffer-root)))
+      (majutsu-forge--request-majutsu-refresh root))))
 
 ;;; Advice
 
+(defun majutsu-forge--add-owned-advice (symbol where function)
+  "Advise SYMBOL at WHERE with FUNCTION and record Majutsu ownership."
+  (unless (advice-member-p function symbol)
+    (unwind-protect
+        (advice-add symbol where function)
+      ;; Preserve enough state to undo an advice installer that signals after
+      ;; changing the function definition.
+      (when (advice-member-p function symbol)
+        (cl-pushnew (cons symbol function)
+                    majutsu-forge--installed-advices
+                    :test #'equal)))))
+
 (defun majutsu-forge--add-advices ()
   "Install Forge advice used by `majutsu-forge-mode'."
-  (when (and (fboundp 'forge-refresh-buffer)
-             (not (advice-member-p #'majutsu-forge--after-forge-refresh
-                                   'forge-refresh-buffer)))
-    (advice-add 'forge-refresh-buffer :after
-                #'majutsu-forge--after-forge-refresh))
-  (when (and (fboundp 'forge--insert-pullreq-commits)
-             (not (advice-member-p #'majutsu-forge--insert-pullreq-commits-around
-                                   'forge--insert-pullreq-commits)))
-    (advice-add 'forge--insert-pullreq-commits :around
-                #'majutsu-forge--insert-pullreq-commits-around)))
+  (when (fboundp 'forge-refresh-buffer)
+    (majutsu-forge--add-owned-advice
+     'forge-refresh-buffer :after #'majutsu-forge--after-forge-refresh))
+  (when (fboundp 'forge--insert-pullreq-commits)
+    (majutsu-forge--add-owned-advice
+     'forge--insert-pullreq-commits :around
+     #'majutsu-forge--insert-pullreq-commits-around)))
 
 (defun majutsu-forge--remove-advices ()
   "Remove Forge advice installed by `majutsu-forge-mode'."
-  (when (fboundp 'forge-refresh-buffer)
-    (advice-remove 'forge-refresh-buffer #'majutsu-forge--after-forge-refresh))
-  (when (fboundp 'forge--insert-pullreq-commits)
-    (advice-remove 'forge--insert-pullreq-commits
-                   #'majutsu-forge--insert-pullreq-commits-around)))
+  (dolist (entry majutsu-forge--installed-advices)
+    (when (fboundp (car entry))
+      (advice-remove (car entry) (cdr entry))))
+  (setq majutsu-forge--installed-advices nil))
 
 (defun majutsu-forge--cleanup-installation ()
   "Remove global state installed by `majutsu-forge-mode'."
-  (when majutsu-forge--sections-installed
+  (when (or majutsu-forge--sections-installed
+            majutsu-forge--installed-section-hooks)
     (majutsu-forge--remove-section-hooks))
-  (remove-hook 'majutsu-log-mode-hook #'majutsu-forge--connect-database-once)
-  (remove-hook 'majutsu-log-mode-hook #'majutsu-forge--init-buffer)
-  (remove-hook 'majutsu-refresh-buffer-hook #'majutsu-forge--expand-sections)
+  (majutsu-forge--remove-owned-hooks)
   (when majutsu-forge--bindings-installed
     (majutsu-forge--remove-mode-bindings))
   (majutsu-forge--restore-bindings)
@@ -434,19 +527,22 @@ log buffers.  It is intended to work best in colocated jj/Git repositories."
             (majutsu-forge--require)
             (when majutsu-forge-add-default-sections
               (majutsu-forge--add-section-hooks)
-              (add-hook 'majutsu-log-mode-hook #'majutsu-forge--connect-database-once)
-              (add-hook 'majutsu-log-mode-hook #'majutsu-forge--init-buffer)
-              (add-hook 'majutsu-refresh-buffer-hook #'majutsu-forge--expand-sections))
+              (majutsu-forge--add-owned-hook
+               'majutsu-log-mode-hook #'majutsu-forge--connect-database-once)
+              (majutsu-forge--add-owned-hook
+               'majutsu-log-mode-hook #'majutsu-forge--init-buffer)
+              (majutsu-forge--add-owned-hook
+               'majutsu-refresh-buffer-hook #'majutsu-forge--expand-sections))
             (when majutsu-forge-add-default-bindings
               (majutsu-forge--add-mode-bindings))
             (majutsu-forge--add-advices)
-            (majutsu-forge--refresh-majutsu-buffers))
+            (majutsu-forge--request-majutsu-refresh nil))
         (error
          (majutsu-forge--cleanup-installation)
          (setq majutsu-forge-mode nil)
          (signal (car err) (cdr err))))
     (majutsu-forge--cleanup-installation)
-    (majutsu-forge--refresh-majutsu-buffers)))
+    (majutsu-forge--request-majutsu-refresh nil)))
 
 (provide 'majutsu-forge)
 ;;; majutsu-forge.el ends here

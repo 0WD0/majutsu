@@ -603,6 +603,38 @@ is discarded (nil), mixed with stdout (t), or written to a file (string)."
           (insert string)
           (set-marker marker (point)))))))
 
+(defun majutsu--process-file-created-main-process
+    (before stderr-buffer stderr-process stdout-buffer stdout-filter command name)
+  "Return a reliably identified main process created after BEFORE.
+
+STDERR-PROCESS must be the new process attached to Majutsu's private
+STDERR-BUFFER.  The returned process must also be new, have the corresponding
+Emacs-generated NAME, and retain the exact STDOUT-BUFFER, STDOUT-FILTER, and
+COMMAND passed to `make-process'.  Main and stderr process suffixes are checked
+independently because Emacs uniquifies those names independently.  Return nil
+instead of guessing when these constraints do not identify exactly one process."
+  (let ((main-name-re (format "\\`%s\\(?:<[0-9]+>\\)?\\'"
+                              (regexp-quote name)))
+        (stderr-name-re (format "\\`%s stderr\\(?:<[0-9]+>\\)?\\'"
+                                (regexp-quote name))))
+    (when (and (processp stderr-process)
+               (not (memq stderr-process before))
+               (eq (process-buffer stderr-process) stderr-buffer)
+               (string-match-p stderr-name-re (process-name stderr-process)))
+      (let ((candidates
+             (seq-filter
+              (lambda (candidate)
+                (and (not (memq candidate before))
+                     (not (eq candidate stderr-process))
+                     (string-match-p main-name-re (process-name candidate))
+                     (eq (process-buffer candidate) stdout-buffer)
+                     (equal (process-command candidate) command)
+                     (or (null stdout-filter)
+                         (eq (process-filter candidate) stdout-filter))))
+              (process-list))))
+        (and (null (cdr candidates))
+             (car candidates))))))
+
 (defun majutsu--process-file-responsive (program _infile destination &rest args)
   "Run PROGRAM with ARGS synchronously while servicing Emacs subprocesses.
 
@@ -610,7 +642,9 @@ DESTINATION follows the `process-file' stdout/stderr contract supported by
 `majutsu--process-file-supported-p'.  When stderr is requested as a file,
 the standard error process spawned by `make-process' has its sentinel
 silenced so the captured stderr is verbatim, and is drained explicitly
-before the file is written so its output cannot lag behind."
+before the file is written so its output cannot lag behind.  If a non-atomic
+wrapper signals after creating a process, reclaim that process only when its
+private stderr process and requested attributes identify it uniquely."
   (let* ((stdout-dest (if (consp destination) (car destination) destination))
          (stderr-dest (and (consp destination) (cadr destination)))
          (stderr-discard (and (consp destination) (null stderr-dest)))
@@ -619,29 +653,54 @@ before the file is written so its output cannot lag behind."
                              (copy-marker (with-current-buffer stdout-buffer
                                             (point))
                                           t)))
+         (stdout-filter (and stdout-marker
+                             (majutsu--process-file-insert-filter stdout-marker)))
          (stderr-buffer (and (or (stringp stderr-dest) stderr-discard)
                              (generate-new-buffer " *majutsu-stderr*")))
-         (process (make-process
-                   :name (file-name-nondirectory program)
-                   :buffer stdout-buffer
-                   :command (cons program args)
-                   :connection-type 'pipe
-                   :coding default-process-coding-system
-                   :noquery t
-                   :filter (and stdout-marker
-                                (majutsu--process-file-insert-filter stdout-marker))
-                   :sentinel #'ignore
-                   :stderr stderr-buffer
-                   :file-handler t))
-         (stderr-process (and stderr-buffer (get-buffer-process stderr-buffer)))
+         (process-name (file-name-nondirectory program))
+         (command (cons program args))
+         (processes-before (process-list))
+         process
+         stderr-process
          exit)
-    ;; Emacs' default sentinel on the standard error process appends a
-    ;; "Process ... finished" line to the stderr buffer; silence it so the
-    ;; captured stderr is verbatim.
-    (when stderr-process
-      (set-process-sentinel stderr-process #'ignore))
     (unwind-protect
         (progn
+          ;; Create the process inside the protected region.  In particular,
+          ;; a file-handler or invalid executable can make `make-process'
+          ;; signal after the temporary stderr buffer has been allocated.
+          (condition-case err
+              (setq process
+                    (make-process
+                     :name process-name
+                     :buffer stdout-buffer
+                     :command command
+                     :connection-type 'pipe
+                     :coding default-process-coding-system
+                     :noquery t
+                     :filter stdout-filter
+                     :sentinel #'ignore
+                     :stderr stderr-buffer
+                     :file-handler t))
+            (error
+             ;; A file handler or wrapper can create the real process and
+             ;; signal before returning it.  Recover that process only when
+             ;; its private stderr process and all requested attributes make
+             ;; the association unambiguous; otherwise leave PROCESS nil so
+             ;; cleanup cannot kill an unrelated process.
+             (setq stderr-process
+                   (and stderr-buffer (get-buffer-process stderr-buffer)))
+             (setq process
+                   (majutsu--process-file-created-main-process
+                    processes-before stderr-buffer stderr-process
+                    stdout-buffer stdout-filter command process-name))
+             (signal (car err) (cdr err))))
+          (setq stderr-process
+                (and stderr-buffer (get-buffer-process stderr-buffer)))
+          ;; Emacs' default sentinel on the standard error process appends a
+          ;; "Process ... finished" line to the stderr buffer; silence it so
+          ;; captured stderr is verbatim.
+          (when stderr-process
+            (set-process-sentinel stderr-process #'ignore))
           ;; The main process may have already exited (e.g. it does not
           ;; read stdin); guard `process-send-eof' so we never signal
           ;; "Process ... not running" from the dispatch path.
@@ -654,9 +713,9 @@ before the file is written so its output cannot lag behind."
             (with-current-buffer stderr-buffer
               (write-region (point-min) (point-max) stderr-dest nil 'silent)))
           exit)
-      (when (process-live-p process)
+      (when (and process (process-live-p process))
         (delete-process process))
-      (when (process-live-p stderr-process)
+      (when (and stderr-process (process-live-p stderr-process))
         (delete-process stderr-process))
       (when stdout-marker
         (set-marker stdout-marker nil))
