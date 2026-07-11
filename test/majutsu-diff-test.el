@@ -313,6 +313,335 @@
         (should (equal heading
                        "jj diff --git --from=A --to=B -- src/a.el"))))))
 
+(defun majutsu-diff-test--metadata-values (&optional description change-id)
+  "Return one list of metadata values for tests.
+Use DESCRIPTION and CHANGE-ID when non-nil."
+  (list (or change-id "change-id")
+        (vector "local")
+        (vector (vector "tracked" "origin")
+                (vector "ignored" "git"))
+        "0123456789abcdef"
+        "Arthur Heymans" "arthur@example.test" "author date"
+        "Committer" "committer@example.test" "commit date"
+        (or description "Summary\n\nBody")))
+
+(defun majutsu-diff-test--encode-metadata-values (values)
+  "Encode metadata VALUES as one NUL-framed record."
+  (concat (mapconcat #'json-serialize values
+                     majutsu-diff--revision-metadata-separator)
+          majutsu-diff--revision-metadata-separator))
+
+(defun majutsu-diff-test--metadata-output (&optional description change-id)
+  "Return one encoded metadata record for tests.
+Use DESCRIPTION and CHANGE-ID when non-nil."
+  (majutsu-diff-test--encode-metadata-values
+   (majutsu-diff-test--metadata-values description change-id)))
+
+(defun majutsu-diff-test--metadata (&optional description)
+  "Return parsed test metadata with DESCRIPTION."
+  (majutsu-diff--parse-revision-metadata
+   (majutsu-diff-test--metadata-output description)))
+
+(ert-deftest majutsu-diff-metadata-revision/default-and-explicit-single ()
+  "Default diffs and explicit revision options select a metadata revset."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-range nil)
+    (should (equal (majutsu-diff--metadata-revision) "@"))
+    (setq-local majutsu-buffer-diff-range '("-r" "mine"))
+    (should (equal (majutsu-diff--metadata-revision) "mine"))
+    (setq-local majutsu-buffer-diff-range '("--revisions=mine"))
+    (should (equal (majutsu-diff--metadata-revision) "mine"))
+    (setq-local majutsu-buffer-diff-range '("--revisions" "mine"))
+    (should (equal (majutsu-diff--metadata-revision) "mine"))))
+
+(ert-deftest majutsu-diff-metadata-revision/ranges-and-empty-do-not-qualify ()
+  "From/to ranges and an empty revision option never select TO metadata."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (dolist (range '(("--from=A" "--to=B")
+                     ("--from" "A")
+                     ("--to=B")
+                     ("--revisions=")
+                     ("-r" "")))
+      (setq-local majutsu-buffer-diff-range range)
+      (should-not (majutsu-diff--metadata-revision)))))
+
+(ert-deftest majutsu-diff-parse-revision-metadata/preserves-empty-fields ()
+  "JSON parsing preserves empty structured refs and scalar fields."
+  (let* ((output (majutsu-diff-test--encode-metadata-values
+                  '("change" [] [] "commit" "" "" "author date"
+                    "" "" "commit date" "")))
+         (fields (majutsu-diff--parse-revision-metadata output)))
+    (should fields)
+    (should-not (plist-get fields :local-bookmarks))
+    (should-not (plist-get fields :remote-bookmarks))
+    (should (equal (plist-get fields :author-name) ""))
+    (should (equal (plist-get fields :description) ""))))
+
+(ert-deftest majutsu-diff-parse-revision-metadata/preserves-nul-description ()
+  "An encoded token transports NUL inside a description safely."
+  (let* ((description (concat "Summary" (string 0) "Body"))
+         (fields (majutsu-diff--parse-revision-metadata
+                  (majutsu-diff-test--metadata-output description))))
+    (should fields)
+    (should (equal (plist-get fields :description) description))))
+
+(ert-deftest majutsu-diff-parse-revision-metadata/rejects-malformed-bookmarks ()
+  "Malformed JSON and remote entries without exact name/remote pairs fail."
+  (should-not (majutsu-diff--parse-revision-metadata "not-json"))
+  (dolist (case (list (list nil (vector))
+                      (list (vector 1) (vector))
+                      (list (vector) (vector (vector "name")))
+                      (list (vector) (vector (vector "name" nil)))))
+    (let ((record (majutsu-diff-test--metadata-values)))
+      (setf (nth 1 record) (car case)
+            (nth 2 record) (cadr case))
+      (should-not (majutsu-diff--parse-revision-metadata
+                   (majutsu-diff-test--encode-metadata-values record))))))
+
+(ert-deftest majutsu-diff-parse-revision-metadata/rejects-zero-and-two-matches ()
+  "Only one complete metadata record is accepted."
+  (should-not (majutsu-diff--parse-revision-metadata ""))
+  (let ((record (majutsu-diff-test--metadata-output)))
+    (should-not (majutsu-diff--parse-revision-metadata
+                 (concat record record)))))
+
+(ert-deftest majutsu-diff-parse-revision-metadata/preserves-labelled-faces ()
+  "Label properties should survive decoding for scalars and nested arrays."
+  (let* ((values (majutsu-diff-test--metadata-values))
+         (faces '(change-face local-face remote-face commit-face
+                  author-name-face author-email-face author-date-face
+                  committer-name-face committer-email-face committer-date-face
+                  description-face))
+         (output
+          (concat
+           (mapconcat
+            (lambda (pair)
+              (propertize (json-serialize (car pair))
+                          'font-lock-face (cadr pair)))
+            (cl-mapcar #'list values faces)
+            majutsu-diff--revision-metadata-separator)
+           majutsu-diff--revision-metadata-separator))
+         (fields (majutsu-diff--parse-revision-metadata output)))
+    (should (eq (get-text-property 0 'font-lock-face
+                                   (plist-get fields :change-id))
+                'change-face))
+    (should (eq (get-text-property 0 'font-lock-face
+                                   (car (plist-get fields :local-bookmarks)))
+                'local-face))
+    (should (eq (get-text-property
+                 0 'font-lock-face
+                 (caar (plist-get fields :remote-bookmarks)))
+                'remote-face))
+    (should (eq (get-text-property 0 'font-lock-face
+                                   (plist-get fields :author-name))
+                'author-name-face))
+    (should (eq (get-text-property 0 'font-lock-face
+                                   (plist-get fields :description))
+                'description-face))))
+
+(ert-deftest majutsu-diff-parse-revision-metadata/literal-esc-stays-data ()
+  "Decoded terminal escapes must not recolor or corrupt adjacent fields."
+  (let* ((description (concat "before" (string 27) "[31mRED"
+                              (string 27) "[0m" (string 0) "after"))
+         (values (majutsu-diff-test--metadata-values description))
+         (tokens (mapcar #'json-serialize values)))
+    (setf (nth 3 tokens)
+          (propertize (nth 3 tokens) 'font-lock-face 'commit-face)
+          (nth 10 tokens)
+          (propertize (nth 10 tokens) 'font-lock-face 'description-face))
+    (let ((fields
+           (majutsu-diff--parse-revision-metadata
+            (concat (mapconcat #'identity tokens
+                               majutsu-diff--revision-metadata-separator)
+                    majutsu-diff--revision-metadata-separator))))
+      (should (equal (plist-get fields :description) description))
+      (should (eq (get-text-property 0 'font-lock-face
+                                     (plist-get fields :description))
+                  'description-face))
+      (should (eq (get-text-property 0 'font-lock-face
+                                     (plist-get fields :commit-id))
+                  'commit-face)))))
+
+(ert-deftest majutsu-diff-revision-metadata/multi-revset-does-not-display ()
+  "A `--revisions' revset resolving to two changes has no metadata."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args '("--git")
+                majutsu-buffer-diff-range '("--revisions=A|B"))
+    (let ((record (concat (majutsu-diff-test--metadata-output) "\n")))
+      (cl-letf (((symbol-function 'majutsu-jj-insert)
+                 (lambda (&rest _args)
+                   (insert record record)
+                   0)))
+        (should-not (majutsu-diff--revision-metadata))))))
+
+(ert-deftest majutsu-diff-query-revision-metadata/uses-local-bookmarks ()
+  "Query labelled local and remote bookmark components as structured JSON."
+  (let (seen-args seen-global-args)
+    (cl-letf (((symbol-function 'majutsu-jj-insert)
+               (lambda (&rest args)
+                 (setq seen-args args
+                       seen-global-args majutsu-jj-global-arguments)
+                 1)))
+      (should-not (majutsu-diff--query-revision-metadata "@")))
+    (let ((template (cadr (member "-T" seen-args))))
+      (should (stringp template))
+      (should (string-search
+               "json(local_bookmarks.map(|ref| ref.name()))" template))
+      (should (string-search
+               "label(\"local_bookmarks map join name\"" template))
+      (should (string-search "remote_bookmarks.map(|ref|" template))
+      (should (string-search "json(ref.name())" template))
+      (should (string-search "json(ref.remote())" template))
+      (should (string-search "label(\"description\", json(description))"
+                             template))
+      (should (string-search "\\0" template))
+      (should (member "--limit" seen-args))
+      (should (member "--color=always" seen-global-args))
+      (should-not (member "--color=never" seen-global-args)))))
+
+(ert-deftest majutsu-diff-format-refs/filters-git-and-applies-faces ()
+  "Ref formatting hides synthetic git and escapes controls to one line."
+  (let* ((refs (majutsu-diff--format-refs
+                '(:local-bookmarks
+                  ("local" "feature space" "literal@local" "sigil*?"
+                   "line\nname" "line\\nname")
+                  :remote-bookmarks
+                  (("tracked" "origin")
+                   ("ignored" "git")
+                   ("remote only@mark" "up\rstream"))))))
+    (should (equal (substring-no-properties refs)
+                   (concat "local feature space literal@local sigil*? "
+                           "line\\nname line\\\\nname origin/tracked "
+                           "up\\rstream/remote only@mark")))
+    (should-not (string-match-p "[\n\r]" refs))
+    (should (eq (get-text-property 0 'font-lock-face refs)
+                'magit-branch-local))
+    (should (eq (get-text-property (string-match "origin" refs)
+                                   'font-lock-face refs)
+                'magit-branch-remote))))
+
+(ert-deftest majutsu-diff-format-refs/preserves-native-faces ()
+  "Native bookmark presentation should take precedence over fallback faces."
+  (let* ((local (propertize "local" 'font-lock-face 'native-local-face))
+         (remote (propertize "upstream" 'font-lock-face 'native-remote-face))
+         (name (propertize "topic" 'font-lock-face 'native-remote-face))
+         (refs (majutsu-diff--format-refs
+                (list :local-bookmarks (list local)
+                      :remote-bookmarks (list (list name remote))))))
+    (should (eq (get-text-property 0 'font-lock-face refs)
+                'native-local-face))
+    (should (eq (get-text-property (string-match "upstream" refs)
+                                   'font-lock-face refs)
+                'native-remote-face))))
+
+(ert-deftest majutsu-diff-revision-message/summary-face-survives-font-lock ()
+  "The revision summary uses Magit's managed font-lock face."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t)
+          (metadata (majutsu-diff-test--metadata)))
+      (cl-letf (((symbol-function 'majutsu-diff--revision-metadata)
+                 (lambda () metadata)))
+        (magit-insert-section (diffbuf)
+          (majutsu-insert-diff-revision-message)))
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (search-forward "Summary")
+      (let ((face (get-text-property (1- (point)) 'font-lock-face)))
+        (should (if (listp face)
+                    (memq 'magit-diff-revision-summary face)
+                  (eq face 'magit-diff-revision-summary)))))))
+
+(ert-deftest majutsu-diff-revision-sections/render-empty-message-and-headings ()
+  "Headers and an empty message are represented by toggleable sections."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t)
+          (metadata (majutsu-diff-test--metadata "")))
+      (cl-letf (((symbol-function 'majutsu-diff--revision-metadata)
+                 (lambda () metadata)))
+        (magit-insert-section (diffbuf)
+          (majutsu-insert-diff-revision-headers)
+          (majutsu-insert-diff-revision-message)))
+      (let ((children (oref magit-root-section children)))
+        (should (equal (mapcar (lambda (section) (oref section type)) children)
+                       '(commit-headers commit-message)))
+        (dolist (section children)
+          (should (oref section content))
+          (magit-section-hide section)
+          (should (oref section hidden)))
+        (should (string-match-p "(no description)" (buffer-string)))))))
+
+(ert-deftest majutsu-diff-revision-metadata/cache-key-invalidates-on-args-and-rev ()
+  "Metadata is shared until formatting arguments or revision change."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args '("--git")
+                majutsu-buffer-diff-range '("-r" "A"))
+    (let ((count 0))
+      (cl-letf (((symbol-function 'majutsu-diff--query-revision-metadata)
+                 (lambda (_rev)
+                   (cl-incf count)
+                   (majutsu-diff-test--metadata))))
+        (majutsu-diff--revision-metadata)
+        (majutsu-diff--revision-metadata)
+        (should (= count 1))
+        (setq-local majutsu-buffer-diff-args '("--git" "--stat"))
+        (majutsu-diff--revision-metadata)
+        (should (= count 2))
+        (setq-local majutsu-buffer-diff-range '("-r" "B"))
+        (majutsu-diff--revision-metadata)
+        (should (= count 3))))))
+
+(ert-deftest majutsu-diff-refresh/queries-once-and-runs-hooks-in-order ()
+  "One refresh shares one query across headers and message, before diff."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args '("--git")
+                majutsu-buffer-diff-range '("-r" "A"))
+    (let ((count 0)
+          order)
+      (cl-letf (((symbol-function 'majutsu-diff--query-revision-metadata)
+                 (lambda (_rev)
+                   (cl-incf count)
+                   (majutsu-diff-test--metadata)))
+                ((symbol-function 'majutsu-insert-diff-revision-headers)
+                 (lambda ()
+                   (push 'headers order)
+                   (majutsu-diff--revision-metadata)))
+                ((symbol-function 'majutsu-insert-diff-revision-message)
+                 (lambda ()
+                   (push 'message order)
+                   (majutsu-diff--revision-metadata)))
+                ((symbol-function 'majutsu-insert-diff)
+                 (lambda () (push 'diff order))))
+        (majutsu-diff-refresh-buffer))
+      (should (= count 1))
+      (should (equal (nreverse order) '(headers message diff))))))
+
+(ert-deftest majutsu-diff-refresh/metadata-failure-does-not-block-diff ()
+  "A failed metadata query is cached as nil and diff insertion continues."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args '("--git")
+                majutsu-buffer-diff-range '("-r" "missing"))
+    (let ((count 0)
+          diff-inserted)
+      (cl-letf (((symbol-function 'majutsu-jj-insert)
+                 (lambda (&rest _args)
+                   (cl-incf count)
+                   1))
+                ((symbol-function 'majutsu-insert-diff)
+                 (lambda () (setq diff-inserted t))))
+        (majutsu-diff-refresh-buffer))
+      (should (= count 1))
+      (should diff-inserted))))
+
 (ert-deftest majutsu-diff-remembered-args-filters-only-formatting-options ()
   "Only diff formatting options should be remembered per buffer."
   (should (equal (majutsu-diff--remembered-args

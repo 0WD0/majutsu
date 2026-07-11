@@ -908,6 +908,16 @@ If you diff @samp{-r A::D | B::E}@comma{} there are two heads (D@comma{} E) and 
 @subsection Diff Buffer
 
 The diff buffer is highly interactive:
+
+For a diff of exactly one change@comma{} Majutsu displays collapsible revision
+headers and the change description above the diff.  This includes the default
+working-copy diff and an explicit @samp{-r} or @samp{--revisions} revset that resolves to
+one change.  The metadata is omitted for @samp{--from} / @samp{--to} ranges and revsets
+that resolve to zero or multiple changes.  Bookmark labels use structured jj
+template fields available in every supported jj version@comma{} so remote-only
+bookmarks and names containing spaces@comma{} sigils@comma{} or @samp{@@} are preserved.  Control
+characters are escaped when rendered to keep the collapsible heading on one line.
+
 @table @asis
 @item @kbd{@key{RET}} (@code{majutsu-diff-visit-file})
 @kindex RET

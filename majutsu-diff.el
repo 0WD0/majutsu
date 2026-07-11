@@ -52,7 +52,9 @@
 ;;;; Diff Mode
 
 (defcustom majutsu-diff-sections-hook
-  (list #'majutsu-insert-diff
+  (list #'majutsu-insert-diff-revision-headers
+        #'majutsu-insert-diff-revision-message
+        #'majutsu-insert-diff
         ;; #'majutsu-insert-xref-buttons
         )
   "Hook run to insert sections into a `majutsu-diff-mode' buffer."
@@ -206,6 +208,12 @@ These are the only arguments that are remembered per diff buffer.")
 
 (defvar-local majutsu-diff-backend 'git
   "Backend used to render the current diff buffer.")
+
+(defvar-local majutsu-diff--revision-metadata-cache nil
+  "Cached revision metadata for the current diff arguments.
+The value is (KEY . METADATA).  A nil METADATA value is cached too, so
+zero-match, multi-match, and failed queries are not repeated by section
+inserters during the same refresh.")
 
 (defun majutsu-diff--backend-from-args (args)
   "Return diff backend inferred from ARGS."
@@ -780,6 +788,273 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
       (narrow-to-region start (point))
       (goto-char (point-min))
       (majutsu-diff-wash-diffs args))))
+
+(defconst majutsu-diff--revision-metadata-field-count 11
+  "Number of tokens emitted in each revision metadata record.")
+
+(defconst majutsu-diff--revision-metadata-separator (string 0)
+  "NUL separator between encoded revision metadata tokens.")
+
+(defconst majutsu-diff--revision-metadata-template
+  (concat
+   (string-join
+    '("label(\"change_id\", json(change_id))"
+      "label(\"local_bookmarks map join name\", json(local_bookmarks.map(|ref| ref.name())))"
+      "label(\"remote_bookmarks map join name remote\", \"[\" ++ remote_bookmarks.map(|ref| \"[\" ++ json(ref.name()) ++ \",\" ++ json(ref.remote()) ++ \"]\").join(\",\") ++ \"]\")"
+      "label(\"commit_id\", json(commit_id))"
+      "label(\"author name\", json(author.name()))"
+      "label(\"author email\", json(author.email()))"
+      "label(\"author timestamp format\", json(author.timestamp().format(\"%a %b %e %T %Y %z\")))"
+      "label(\"committer name\", json(committer.name()))"
+      "label(\"committer email\", json(committer.email()))"
+      "label(\"committer timestamp format\", json(committer.timestamp().format(\"%a %b %e %T %Y %z\")))"
+      "label(\"description\", json(description))")
+    " ++ \"\\0\" ++ ")
+   " ++ \"\\0\"")
+  "Template for labelled, unambiguous revision metadata tokens.")
+
+(defun majutsu-diff--range-option (long &optional short)
+  "Return LONG (or SHORT) option value from the current diff range.
+Both `--option=VALUE' and the two-argument `--option VALUE' forms are
+accepted.  Return the symbol `missing' when the option is absent, and an
+empty string when it is present without a value."
+  (let ((args majutsu-buffer-diff-range)
+        (value 'missing))
+    (while (and args (eq value 'missing))
+      (let ((arg (pop args)))
+        (cond
+         ((or (equal arg long) (and short (equal arg short)))
+          (setq value (if (and args (stringp (car args)))
+                          (pop args)
+                        "")))
+         ((and (stringp arg)
+               (string-prefix-p (concat long "=") arg))
+          (setq value (substring arg (1+ (length long))))))))
+    value))
+
+(defun majutsu-diff--metadata-revision ()
+  "Return the revision eligible for display metadata, or nil.
+Metadata is only appropriate for a single-revision change diff: the
+project default (working-copy revision `@') or an explicit `-r' /
+`--revisions' revset.  Explicit `--from' or `--to' ranges never qualify;
+the metadata query later rejects revsets resolving to zero or many changes."
+  (let ((from (majutsu-diff--range-option "--from"))
+        (to (majutsu-diff--range-option "--to"))
+        (revisions (majutsu-diff--range-option "--revisions" "-r")))
+    (cond
+     ((or (not (eq from 'missing)) (not (eq to 'missing))) nil)
+     ((null majutsu-buffer-diff-range) "@")
+     ((and (stringp revisions) (not (string-empty-p revisions))) revisions)
+     (t nil))))
+
+(defun majutsu-diff--presentation-properties (value)
+  "Return face properties at the beginning of string VALUE."
+  (when (and (stringp value) (not (string-empty-p value)))
+    (let ((face (get-text-property 0 'face value))
+          (font-lock-face (get-text-property 0 'font-lock-face value)))
+      (append (and face (list 'face face))
+              (and font-lock-face (list 'font-lock-face font-lock-face))))))
+
+(defun majutsu-diff--apply-presentation-properties (value properties)
+  "Apply PROPERTIES recursively to strings in JSON VALUE."
+  (cond
+   ((stringp value)
+    (when (and properties (not (string-empty-p value)))
+      (add-text-properties 0 (length value) properties value))
+    value)
+   ((vectorp value)
+    (dotimes (index (length value))
+      (aset value index
+            (majutsu-diff--apply-presentation-properties
+             (aref value index) properties)))
+    value)
+   (t value)))
+
+(defun majutsu-diff--decode-metadata-token (token)
+  "Decode one labelled JSON TOKEN and transfer its presentation properties."
+  (let ((properties (majutsu-diff--presentation-properties token))
+        (decoded (json-parse-string (substring-no-properties token)
+                                    :array-type 'array
+                                    :null-object :null)))
+    (majutsu-diff--apply-presentation-properties decoded properties)))
+
+(defun majutsu-diff--parse-revision-metadata (output)
+  "Parse one NUL-framed revision metadata record from OUTPUT.
+Return a plist, or nil for malformed output and revsets resolving to zero
+or multiple changes.  Each field is JSON, so NUL, terminal escapes, and other
+control characters remain data while externally applied jj labels survive as
+Emacs presentation properties."
+  (condition-case nil
+      (let* ((ansi-color-apply-face-function
+              #'ansi-color-apply-text-property-face)
+             (colored (ansi-color-apply (or output "")))
+             (tokens (majutsu--split-fields
+                      colored majutsu-diff--revision-metadata-separator)))
+        (when (and (= (length tokens)
+                      (1+ majutsu-diff--revision-metadata-field-count))
+                   (string-empty-p (car (last tokens))))
+          (let ((record
+                 (vconcat
+                  (mapcar #'majutsu-diff--decode-metadata-token
+                          (butlast tokens)))))
+            (pcase-let ((`[,change-id ,local ,remote ,commit-id
+                           ,author-name ,author-email ,author-date
+                           ,committer-name ,committer-email ,committer-date
+                           ,description]
+                         record))
+              (when (and (seq-every-p
+                          #'stringp
+                          (list change-id commit-id
+                                author-name author-email author-date
+                                committer-name committer-email committer-date
+                                description))
+                         (vectorp local)
+                         (seq-every-p #'stringp local)
+                         (vectorp remote)
+                         (seq-every-p
+                          (lambda (pair)
+                            (and (vectorp pair)
+                                 (= (length pair) 2)
+                                 (stringp (aref pair 0))
+                                 (stringp (aref pair 1))))
+                          remote))
+                (list :change-id change-id
+                      :local-bookmarks (append local nil)
+                      :remote-bookmarks
+                      (mapcar (lambda (pair) (append pair nil)) remote)
+                      :commit-id commit-id
+                      :author-name author-name
+                      :author-email author-email
+                      :author-date author-date
+                      :committer-name committer-name
+                      :committer-email committer-email
+                      :committer-date committer-date
+                      :description description))))))
+    (error nil)))
+
+(defun majutsu-diff--query-revision-metadata (rev)
+  "Query all display metadata for REV with one `jj log' invocation.
+Return nil if the command fails or REV does not resolve to exactly one
+change."
+  (let ((majutsu-jj-global-arguments
+         (cons "--color=always"
+               (seq-remove (lambda (arg) (string-prefix-p "--color" arg))
+                           majutsu-jj-global-arguments))))
+    (condition-case nil
+        (with-temp-buffer
+          (when (zerop (majutsu-jj-insert
+                        "log" "--no-graph" "--limit" "2"
+                        "-r" rev "-T"
+                        majutsu-diff--revision-metadata-template))
+            (majutsu-diff--parse-revision-metadata (buffer-string))))
+      (error nil))))
+
+(defun majutsu-diff--revision-metadata ()
+  "Return cached metadata for the current single-revision diff.
+The cache key includes formatting arguments, range arguments, and the
+selected revision.  Consequently changing any diff argument or revision
+invalidates the cache while the two metadata section inserters share one
+query."
+  (let* ((rev (majutsu-diff--metadata-revision))
+         (key (list (copy-sequence majutsu-buffer-diff-args)
+                    (copy-sequence majutsu-buffer-diff-range)
+                    rev)))
+    (if (and majutsu-diff--revision-metadata-cache
+             (equal key (car majutsu-diff--revision-metadata-cache)))
+        (cdr majutsu-diff--revision-metadata-cache)
+      (let ((metadata (and rev (majutsu-diff--query-revision-metadata rev))))
+        (setq majutsu-diff--revision-metadata-cache (cons key metadata))
+        metadata))))
+
+(defun majutsu-diff--propertize-ref (ref face)
+  "Return REF propertized like a Magit ref label using FACE."
+  (let* ((properties (majutsu-diff--presentation-properties ref))
+         (display
+          (apply #'concat
+                 (mapcar
+                  (lambda (char)
+                    (pcase char
+                      (?\\ "\\\\")
+                      (?\n "\\n")
+                      (?\r "\\r")
+                      (?\t "\\t")
+                      ((pred (lambda (value)
+                               (or (< value 32) (= value 127))))
+                       (format "\\x%02X" char))
+                      (_ (char-to-string char))))
+                  (string-to-list ref)))))
+    (when (not (string-empty-p display))
+      (add-text-properties
+       0 (length display)
+       (append (or properties (list 'font-lock-face face))
+               (list 'help-echo (substring-no-properties ref)))
+       display))
+    display))
+
+(defun majutsu-diff--with-fallback-face (value face)
+  "Return VALUE with FACE unless it already has presentation properties."
+  (if (or (not (stringp value))
+          (string-empty-p value)
+          (majutsu-diff--presentation-properties value))
+      value
+    (propertize value 'font-lock-face face)))
+
+(defun majutsu-diff--format-refs (fields)
+  "Return Magit-style local and remote ref labels from FIELDS.
+The synthetic `git' remote used by jj's Git backend is omitted."
+  (string-join
+   (delete-dups
+    (append
+     (mapcar (lambda (ref)
+               (majutsu-diff--propertize-ref ref 'magit-branch-local))
+             (plist-get fields :local-bookmarks))
+     (delq nil
+           (mapcar
+            (lambda (ref)
+              (pcase-let ((`(,name ,remote) ref))
+                (unless (string= remote "git")
+                  (majutsu-diff--propertize-ref
+                   (format "%s/%s" remote name)
+                   'magit-branch-remote))))
+            (plist-get fields :remote-bookmarks)))))
+   " "))
+
+(defun majutsu-insert-diff-revision-headers ()
+  "Insert collapsible revision headers for a single-change diff."
+  (when-let* ((fields (majutsu-diff--revision-metadata)))
+    (magit-insert-section (commit-headers)
+      (let ((refs (majutsu-diff--format-refs fields)))
+        (magit-insert-heading
+          (unless (string-empty-p refs) (concat refs " "))
+          (majutsu-diff--with-fallback-face
+           (plist-get fields :commit-id) 'magit-hash)))
+      (insert "Author:     " (plist-get fields :author-name)
+              " <" (plist-get fields :author-email) ">\n"
+              "AuthorDate: " (plist-get fields :author-date) "\n"
+              "Commit:     " (plist-get fields :committer-name)
+              " <" (plist-get fields :committer-email) ">\n"
+              "CommitDate: " (plist-get fields :committer-date) "\n\n"))))
+
+(defun majutsu-insert-diff-revision-message ()
+  "Insert a collapsible revision message for a single-change diff."
+  (when-let* ((fields (majutsu-diff--revision-metadata)))
+    (let ((message (plist-get fields :description)))
+      (magit-insert-section
+          (commit-message nil nil
+            :heading-highlight-face 'magit-diff-revision-summary-highlight)
+        (if (string-empty-p message)
+            (progn
+              (magit-insert-heading "(no description)")
+              (insert "\n"))
+          (save-excursion
+            (insert message)
+            (unless (bolp) (insert "\n")))
+          (magit--add-face-text-property
+           (point) (progn (forward-line) (point))
+           'magit-diff-revision-summary t)
+          (magit-insert-heading)
+          (goto-char (point-max)))
+        (insert "\n")))))
 
 (defun majutsu-insert-diff ()
   "Insert a diff section and wash it."
@@ -1707,6 +1982,9 @@ With prefix STYLE, cycle between `all' and `t'."
   "Refresh the current diff buffer."
   (interactive)
   (when majutsu-buffer-diff-args
+    ;; Metadata is refreshed once per buffer refresh, then shared by the
+    ;; header and message inserters through the argument-keyed cache.
+    (setq majutsu-diff--revision-metadata-cache nil)
     (let* ((backend (majutsu-diff--sync-backend))
            (majutsu-jj-global-arguments
             (cons (if (eq backend 'color-words) "--color=debug" "--color=never")
