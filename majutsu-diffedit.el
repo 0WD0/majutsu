@@ -50,7 +50,11 @@
 (defun majutsu-diffedit--maybe-enable-mode ()
   "Enable `majutsu-diffedit-mode' in jj diffedit temp buffers."
   (when-let* ((file buffer-file-name))
-    (when (locate-dominating-file (file-name-directory file) "JJ-INSTRUCTIONS")
+    (when (locate-dominating-file
+           (file-name-directory file)
+           (lambda (directory)
+             (file-regular-p
+              (expand-file-name "JJ-INSTRUCTIONS" directory))))
       (majutsu-diffedit-mode 1))))
 
 (add-hook 'find-file-hook #'majutsu-diffedit--maybe-enable-mode)
