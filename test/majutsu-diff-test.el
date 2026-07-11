@@ -101,6 +101,70 @@
         (should-not (text-properties-at 0 (oref diffstat-file value)))
         (should-not (text-properties-at 0 (oref diff-file value)))))))
 
+(ert-deftest majutsu-jj-wash/failed-diff-keeps-stderr-outside-parser ()
+  "Failed `--git --stat' output should keep its tree and append stderr safely."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let* ((inhibit-read-only t)
+           (magit-section-inhibit-markers t)
+           (real-wash-file (symbol-function 'majutsu-diff-wash-file))
+           (wash-file-calls 0)
+           (stdout
+            (concat
+             (string-join
+              '("foo | 1 +"
+                "1 file changed, 1 insertion(+), 0 deletions(-)"
+                "diff --git a/foo b/foo"
+                "index 1234567..89abcde 100644"
+                "--- a/foo"
+                "+++ b/foo"
+                "@@ -1 +1 @@"
+                "-foo"
+                "+bar")
+              "\n")
+             "\n")))
+      (cl-letf (((symbol-function 'majutsu-process-file)
+                 (lambda (_program _infile destination _display &rest _args)
+                   (insert stdout)
+                   (write-region "\e[31mdiff --git malformed diagnostic\e[0m\n"
+                                 nil (cadr destination) nil 'silent)
+                   1))
+                ((symbol-function 'majutsu-diff-wash-file)
+                 (lambda ()
+                   ;; Fail instead of hanging if a malformed pseudo-header is
+                   ;; ever allowed into the real washer's progress loop.
+                   (when (> (cl-incf wash-file-calls) 2)
+                     (ert-fail "Diff washer stopped advancing"))
+                   (funcall real-wash-file))))
+        (magit-insert-section (diffbuf)
+          (magit-insert-section (diff-root)
+            (should (= 1 (majutsu-jj-wash
+                           #'majutsu-diff-wash-diffs 'wash-anyway
+                           "diff" "--git" "--stat"))))))
+      (let* ((diff-root (car (oref magit-root-section children)))
+             (children (oref diff-root children))
+             (diffstat (seq-find (lambda (section)
+                                   (eq (oref section type) 'diffstat))
+                                 children))
+             (stat-file (and diffstat
+                             (seq-find (lambda (section)
+                                         (eq (oref section type) 'jj-file))
+                                       (oref diffstat children))))
+             (diff-file (seq-find (lambda (section)
+                                    (and (eq (oref section type) 'jj-file)
+                                         (equal (oref section value) "foo")))
+                                  children)))
+        (should (= wash-file-calls 1))
+        (should (eieio-object-p diffstat))
+        (should (eieio-object-p stat-file))
+        (should (eieio-object-p diff-file))
+        (should (string-match-p "jj .*diff .*failed (exit 1)"
+                                (buffer-string)))
+        (should (string-match-p "diff --git malformed diagnostic"
+                                (buffer-string)))
+        (should-not (string-match-p (regexp-quote "\e[")
+                                    (buffer-string)))))))
+
 (ert-deftest majutsu-insert-diff/puts-filesets-after-separator ()
   "Diff command construction should pass filesets after --."
   (let (called heading)

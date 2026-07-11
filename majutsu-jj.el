@@ -897,19 +897,38 @@ newline, return an empty string.  This function aligns with
   "Return S as a jj fileset string literal."
   (format "file:\"%s\"" (majutsu-jj--escape-fileset-string s)))
 
+(defun majutsu-jj--insert-failure-output (args exit error-text)
+  "Insert a failure summary for ARGS, EXIT, and cleaned ERROR-TEXT."
+  (insert (propertize (format "jj %s failed (exit %s)\n"
+                              (string-join args " ") exit)
+                      'font-lock-face 'error))
+  (when error-text
+    (insert error-text))
+  (unless (bolp)
+    (insert "\n")))
+
 (defun majutsu-jj-wash (washer keep-error &rest args)
   "Run jj with ARGS, insert output at point, then call WASHER.
 KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,
-`wash-anyway' keeps output even on non-zero exit, anything else keeps the
-error text.  Output is optionally colorized based on
-`majutsu-process-apply-ansi-colors'."
+`wash-anyway' washes stdout even on non-zero exit and then appends stderr,
+and anything else keeps the error text without washing stdout.  Output is
+optionally colorized based on `majutsu-process-apply-ansi-colors'."
   (declare (indent 2))
   (setq args (majutsu-process-jj-arguments args))
   (let* ((beg (point))
          (err-file (make-nearby-temp-file "majutsu-jj-err")))
     (unwind-protect
-        (let ((exit (apply #'majutsu-process-file (majutsu-jj--executable) nil
-                           (list t err-file) nil args)))
+        (let* ((exit (apply #'majutsu-process-file (majutsu-jj--executable) nil
+                            (list t err-file) nil args))
+               (error-text
+                (when (and keep-error (not (= exit 0)))
+                  (let ((text
+                         (ansi-color-filter-apply
+                          (with-temp-buffer
+                            (insert-file-contents err-file)
+                            (buffer-string)))))
+                    (unless (string-empty-p text)
+                      text)))))
           (when (and (bound-and-true-p majutsu-process-apply-ansi-colors)
                      (> (point) beg))
             ;; Use text-properties instead of overlays so that subsequent
@@ -922,43 +941,41 @@ error text.  Output is optionally colorized based on
            ((= (point) beg)
             (if (= exit 0)
                 (magit-cancel-section)
-              (insert (propertize (format "jj %s failed (exit %s)\n"
-                                          (string-join args " ") exit)
-                                  'font-lock-face 'error))
-              (when keep-error
-                (insert (ansi-color-filter-apply
-                         (with-temp-buffer
-                           (insert-file-contents err-file)
-                           (buffer-string)))))
-              (unless (bolp)
-                (insert "\n"))))
+              (majutsu-jj--insert-failure-output args exit error-text)))
            ;; Failure path (unless we explicitly wash anyway).
            ((and (not (eq keep-error 'wash-anyway))
                  (not (= exit 0)))
             (goto-char beg)
-            (insert (propertize (format "jj %s failed (exit %s)\n"
-                                        (string-join args " ") exit)
-                                'font-lock-face 'error))
-            (when keep-error
-              (insert (ansi-color-filter-apply
-                       (with-temp-buffer
-                         (insert-file-contents err-file)
-                         (buffer-string)))))
-            (unless (bolp)
-              (insert "\n")))
+            (majutsu-jj--insert-failure-output args exit error-text))
            ;; Success (or wash anyway).
            (t
             (unless (bolp)
               (insert "\n"))
             (when (or (= exit 0)
                       (eq keep-error 'wash-anyway))
-              (save-restriction
-                (narrow-to-region beg (point))
-                (goto-char beg)
-                (funcall washer args))
-              (when (or (= (point) beg)
-                        (= (point) (1+ beg)))
-                (magit-cancel-section)))))
+              (let ((stdout-end (copy-marker (point) t)))
+                (unwind-protect
+                    (progn
+                      ;; Structured washers such as
+                      ;; `majutsu-diff-wash-diffs' must only ever see stdout.
+                      (save-restriction
+                        (narrow-to-region beg stdout-end)
+                        (goto-char beg)
+                        (funcall washer args))
+                      (let ((washer-point (point)))
+                        (goto-char stdout-end)
+                        (if (and (not (= exit 0))
+                                 (eq keep-error 'wash-anyway))
+                            ;; Diagnostics are deliberately outside the
+                            ;; washer's narrowed region.  A stderr line that
+                            ;; resembles structured output cannot confuse the
+                            ;; parser or prevent it from advancing.
+                            (majutsu-jj--insert-failure-output
+                             args exit error-text)
+                          (when (or (= washer-point beg)
+                                    (= washer-point (1+ beg)))
+                            (magit-cancel-section)))))
+                  (set-marker stdout-end nil))))))
           exit)
       (ignore-errors (delete-file err-file)))))
 
