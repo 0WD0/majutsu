@@ -2416,6 +2416,14 @@ Normal hook run after refreshing.
 Major mode used for editing JJ description buffers (default: @code{text-mode}).
 @end defopt
 
+@defopt majutsu-jjdescription-summary-max-length
+Column beyond which summary line characters are highlighted (default: 68@comma{} same as Magit). Set to @code{nil} to disable this highlighting; zero highlights the entire nonempty summary.
+@end defopt
+
+@defopt majutsu-jjdescription-fill-column
+Local @code{fill-column} used in JJ description buffers (default: 72). A positive integer enables Auto Fill for the body but never folds the summary line; filling is delegated to the selected major mode@comma{} so constructs that mode protects (such as Org headings@comma{} tables@comma{} and blocks) remain intact. Set this option to @code{nil} to disable Auto Fill and leave the buffer's current @code{fill-column} unchanged.
+@end defopt
+
 @defopt majutsu-jjdescription-comment-prefix
 Comment prefix used in JJ description buffers (default: @samp{"JJ:"}).
 @end defopt

@@ -938,6 +938,8 @@ Evil bindings are available in normal state:
 
 ** Description Options
 - User Option: majutsu-jjdescription-major-mode :: Major mode used for editing JJ description buffers (default: ~text-mode~).
+- User Option: majutsu-jjdescription-summary-max-length :: Column beyond which summary line characters are highlighted (default: 68, same as Magit). Set to ~nil~ to disable this highlighting; zero highlights the entire nonempty summary.
+- User Option: majutsu-jjdescription-fill-column :: Local ~fill-column~ used in JJ description buffers (default: 72). A positive integer enables Auto Fill for the body but never folds the summary line; filling is delegated to the selected major mode, so constructs that mode protects (such as Org headings, tables, and blocks) remain intact. Set this option to ~nil~ to disable Auto Fill and leave the buffer's current ~fill-column~ unchanged.
 - User Option: majutsu-jjdescription-comment-prefix :: Comment prefix used in JJ description buffers (default: ="JJ:"=).
 - User Option: majutsu-jjdescription-change-id-face :: Face used for JJ Change ID values.
 - User Option: global-majutsu-jjdescription-mode :: Global minor mode to enable JJ description buffer enhancements.
