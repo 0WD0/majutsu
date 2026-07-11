@@ -29,6 +29,8 @@
 (require 'majutsu-process)
 (require 'majutsu-config)
 (require 'majutsu-selection)
+(require 'majutsu-template)
+(require 'json)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
 (require 'smerge-mode)
@@ -432,15 +434,272 @@ The returned value is a (ARGS RANGE FILESETS) triple."
           "\\(?: +\\(\\+*\\)\\(-*\\)\\)?$") ; add/del graph (optional)
   "Regexp matching `jj diff --stat` entries, modeled after Magit's statline.")
 
-(defun majutsu-diff--collect-diff-files ()
-  "Return a list of file paths from \"diff --git\" headers in the buffer.
-The list is in the same order as the diff headers appear."
+(defconst majutsu-diff--file-metadata-template
+  (majutsu-template-compile
+   ["[" [:json [:status]]
+    "," [:json [:source :path]]
+    "," [:json [:target :path]] "]\n"]
+   'TreeDiffEntry)
+  "Template for unambiguous machine-readable diff entry metadata.")
+
+(defvar majutsu-diff--active-file-metadata nil
+  "Structured file metadata matching the Git diff currently being washed.")
+
+(defvar majutsu-diff--file-metadata-queue nil
+  "Remaining structured entries while Git file sections are being washed.")
+
+(defvar-local majutsu-diff--file-metadata-by-section nil
+  "Hash table mapping Git-format patch sections to structured metadata.")
+
+(defun majutsu-diff--parse-file-metadata-line (line)
+  "Parse one JSON diff metadata LINE into a plist, or return nil."
+  (condition-case nil
+      (pcase (json-parse-string line
+                                :array-type 'list
+                                :null-object nil
+                                :false-object nil)
+        (`(,status ,source ,target)
+         (when (and (stringp status)
+                    (stringp source)
+                    (stringp target))
+           (list :status status
+                 :source source
+                 :target target))))
+    (error nil)))
+
+(defun majutsu-diff--parse-file-metadata-output (output)
+  "Parse newline-delimited JSON diff metadata OUTPUT.
+Ignore malformed records."
+  (delq nil
+        (mapcar #'majutsu-diff--parse-file-metadata-line
+                (split-string (or output "") "\n" t))))
+
+(defun majutsu-diff--query-file-metadata (range filesets)
+  "Return structured metadata for diff RANGE and FILESETS, or nil on failure.
+The caller must already have snapshotted the main diff; this query uses
+`--ignore-working-copy' to read that same state."
+  (let ((args (majutsu-jj-append-filesets
+               (append (list "--ignore-working-copy"
+                             "diff" "-T" majutsu-diff--file-metadata-template)
+                       range)
+               filesets)))
+    (condition-case nil
+        (majutsu--with-no-color
+          (with-temp-buffer
+            (when (zerop (apply #'majutsu-jj-insert args))
+              (majutsu-diff--parse-file-metadata-output (buffer-string)))))
+      (error nil))))
+
+(defun majutsu-diff--raw-git-file-headers ()
+  "Return raw Git file header blocks in the current narrowed buffer."
   (save-excursion
     (goto-char (point-min))
-    (let (files)
-      (while (re-search-forward "^diff --git a/\\(.*\\) b/\\(.*\\)$" nil t)
-        (push (match-string-no-properties 2) files))
-      (nreverse files))))
+    (let (headers)
+      (while (re-search-forward "^diff --git " nil t)
+        (let ((beg (match-beginning 0)))
+          (forward-line 1)
+          (let ((end (or (save-excursion
+                           (when (re-search-forward
+                                  "^\\(?:diff --git \\|@@ \\)" nil t)
+                             (match-beginning 0)))
+                         (point-max))))
+            (push (buffer-substring-no-properties beg end) headers)
+            (goto-char end))))
+      (nreverse headers))))
+
+(defun majutsu-diff--set-section-path (section path)
+  "Set real file SECTION and its hunk identities to exact PATH."
+  (oset section value path)
+  (dolist (child (oref section children))
+    (when (magit-section-match 'jj-hunk child)
+      (let ((value (oref child value)))
+        (when (consp value)
+          (oset child value (cons path (cdr value))))))))
+
+(defun majutsu-diff--read-git-quoted-token (token)
+  "Decode one C-quoted Git path at the start of TOKEN.
+Return (VALUE . END), where END is the first position after the closing quote,
+or nil for malformed input."
+  (when (string-prefix-p "\"" token)
+    (catch 'done
+      (let ((index 1)
+            bytes)
+        (cl-labels
+            ((push-char
+              (char)
+              (dolist (byte (string-to-list
+                             (encode-coding-string (string char) 'utf-8 t)))
+                (push byte bytes))))
+          (while (< index (length token))
+            (let ((char (aref token index)))
+              (setq index (1+ index))
+              (cond
+               ((= char ?\")
+                (let ((raw (apply #'unibyte-string (nreverse bytes))))
+                  (throw 'done
+                         (cons (decode-coding-string raw 'utf-8 t) index))))
+               ((/= char ?\\)
+                (push-char char))
+               ((>= index (length token))
+                (throw 'done nil))
+               (t
+                (let ((escaped (aref token index)))
+                  (cond
+                   ((and (>= escaped ?0) (<= escaped ?7))
+                    (let ((start index)
+                          (count 0))
+                      (while (and (< index (length token))
+                                  (< count 3)
+                                  (>= (aref token index) ?0)
+                                  (<= (aref token index) ?7))
+                        (setq index (1+ index)
+                              count (1+ count)))
+                      (let ((byte (string-to-number
+                                   (substring token start index) 8)))
+                        (when (> byte 255)
+                          (throw 'done nil))
+                        (push byte bytes))))
+                   (t
+                    (setq index (1+ index))
+                    (let ((byte (cdr (assq escaped
+                                           '((?a . 7) (?b . 8) (?t . 9)
+                                             (?n . 10) (?v . 11) (?f . 12)
+                                             (?r . 13) (?\" . 34) (?\\ . 92))))))
+                      (unless byte
+                        (throw 'done nil))
+                      (push byte bytes))))))))))
+        nil))))
+
+(defun majutsu-diff--git-quoted-token-value (token)
+  "Decode a complete quoted Git path TOKEN, or return nil."
+  (pcase (majutsu-diff--read-git-quoted-token token)
+    (`(,value . ,end)
+     (and (= end (length token)) value))))
+
+(defun majutsu-diff--git-token-matches-p (token expected)
+  "Return non-nil when Git path TOKEN represents EXPECTED."
+  (or (equal token expected)
+      (equal (majutsu-diff--git-quoted-token-value token) expected)))
+
+(defun majutsu-diff--git-header-paths-match-p (header entry)
+  "Return non-nil when Git diff HEADER paths match structured ENTRY.
+ENTRY remains the source of truth; this only rejects a stale or reordered
+metadata result."
+  (let* ((header (or header ""))
+         (left (concat "a/" (plist-get entry :source)))
+         (right (concat "b/" (plist-get entry :target)))
+         (raw (concat left " " right)))
+    (or (string-prefix-p (concat "diff --git " raw "\n") header)
+        (when-let* ((line (car (split-string header "\n")))
+                    ((string-prefix-p "diff --git " line)))
+          (let ((payload (string-remove-prefix "diff --git " line)))
+            (or (equal payload raw)
+          ;; If the left token is raw, its exact structured value tells us
+          ;; where the otherwise ambiguous separator must be.
+                (and (string-prefix-p (concat left " ") payload)
+                     (majutsu-diff--git-token-matches-p
+                      (substring payload (1+ (length left))) right))
+          ;; A quoted left token is self-delimiting; decode it and validate the
+          ;; complete remaining token independently.
+                (and (string-prefix-p "\"" payload)
+                     (pcase (majutsu-diff--read-git-quoted-token payload)
+                       (`(,value . ,end)
+                        (and (equal value left)
+                             (< end (length payload))
+                             (= (aref payload end) ?\s)
+                             (majutsu-diff--git-token-matches-p
+                              (substring payload (1+ end)) right)))))))))))
+
+(defun majutsu-diff--git-header-status-match-p (header status)
+  "Return non-nil when extended Git HEADER agrees with structured STATUS."
+  (let ((added (or (string-match-p "^new file mode " header)
+                   (string-match-p "^--- /dev/null$" header)))
+        (removed (or (string-match-p "^deleted file mode " header)
+                     (string-match-p "^+++ /dev/null$" header)))
+        (renamed (and (string-match-p "^rename from " header)
+                      (string-match-p "^rename to " header)))
+        (copied (and (string-match-p "^copy from " header)
+                     (string-match-p "^copy to " header))))
+    (pcase status
+      ("added" added)
+      ("removed" removed)
+      ("renamed" renamed)
+      ("copied" copied)
+      ("modified" (not (or added removed renamed copied)))
+      (_ nil))))
+
+(defun majutsu-diff--file-metadata-matches-section-p (entry section)
+  "Return non-nil when structured ENTRY is consistent with file SECTION."
+  (let ((header (oref section header)))
+    (and (majutsu-diff--git-header-paths-match-p header entry)
+         (majutsu-diff--git-header-status-match-p
+         header (plist-get entry :status)))))
+
+(defun majutsu-diff--raw-file-metadata-consistent-p (metadata)
+  "Return non-nil when ordered METADATA agrees with the raw Git file headers.
+The check covers file count, order, paths, and operation status."
+  (let ((headers (majutsu-diff--raw-git-file-headers)))
+    (and metadata
+         (= (length headers) (length metadata))
+         (cl-every
+          #'identity
+          (cl-mapcar
+           (lambda (entry header)
+             (and (majutsu-diff--git-header-paths-match-p header entry)
+                  (majutsu-diff--git-header-status-match-p
+                   header (plist-get entry :status))))
+           metadata headers)))))
+
+(defun majutsu-diff--attach-file-metadata (metadata)
+  "Attach ordered structured METADATA to washed file sections.
+Fail closed unless section count, order, paths, and operation statuses all
+agree with the structured metadata."
+  (setq majutsu-diff--file-metadata-by-section (make-hash-table :test #'eq))
+  (let ((root (or (bound-and-true-p magit-insert-section--current)
+                  magit-root-section))
+        real-files stat-files)
+    (when root
+      (magit-map-sections
+       (lambda (section)
+         (when (magit-section-match 'jj-file section)
+           (if (oref section header)
+               (push section real-files)
+             (push section stat-files))))
+       root))
+    (setq real-files (nreverse real-files)
+          stat-files (nreverse stat-files))
+    (when (and metadata
+               (= (length real-files) (length metadata))
+               (cl-every #'identity
+                         (cl-mapcar #'majutsu-diff--file-metadata-matches-section-p
+                                    metadata real-files)))
+      (cl-mapc
+       (lambda (section entry)
+         (majutsu-diff--set-section-path section (plist-get entry :target))
+         (puthash section entry majutsu-diff--file-metadata-by-section))
+       real-files metadata)
+      (when (= (length stat-files) (length metadata))
+        (cl-mapc (lambda (section entry)
+                   (oset section value (plist-get entry :target)))
+                 stat-files metadata)))))
+
+(defun majutsu-diff-file-metadata (section)
+  "Return structured metadata attached to file SECTION, or nil."
+  (and majutsu-diff--file-metadata-by-section
+       (gethash section majutsu-diff--file-metadata-by-section)))
+
+(defun majutsu-diff--collect-diff-files ()
+  "Return file paths in the order they appear in the current diff.
+Prefer active structured metadata; otherwise fall back to simple
+unquoted `diff --git' headers."
+  (or (mapcar (lambda (entry) (plist-get entry :target))
+              majutsu-diff--active-file-metadata)
+      (save-excursion
+        (goto-char (point-min))
+        (let (files)
+          (while (re-search-forward "^diff --git a/\\(.*\\) b/\\(.*\\)$" nil t)
+            (push (match-string-no-properties 2) files))
+          (nreverse files)))))
 
 (defun majutsu-jump-to-diffstat-or-diff (&optional expand)
   "Jump to the diffstat or diff.
@@ -533,7 +792,25 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
          (washer (majutsu-diff--backend-washer backend)))
     (magit-insert-section (diff-root)
       (magit-insert-heading (format "jj %s" (string-join args " ")))
-      (majutsu-jj-wash washer 'wash-anyway args))))
+      (majutsu-jj-wash
+          (lambda (wash-args)
+            ;; The Git command has already snapshotted the working copy.
+            ;; Query the same range without snapshotting again, then
+            ;; attach exact paths/statuses only if the ordered raw headers and
+            ;; operation kinds agree.
+            (let* ((metadata (and (eq backend 'git)
+                                  (majutsu-diff--query-file-metadata
+                                   majutsu-buffer-diff-range
+                                   majutsu-buffer-diff-filesets)))
+                   (matching-git-metadata
+                    (and (majutsu-diff--raw-file-metadata-consistent-p metadata)
+                         metadata))
+                   (majutsu-diff--active-file-metadata matching-git-metadata)
+                   (majutsu-diff--file-metadata-queue
+                    (copy-sequence matching-git-metadata)))
+              (funcall washer wash-args)
+              (majutsu-diff--attach-file-metadata metadata)))
+        'wash-anyway args))))
 
 ;;; Diff wash
 
@@ -604,15 +881,25 @@ Assumes point is at the start of the diff output."
   (when (looking-at "^diff --git ")
     (while (and (not (eobp))
                 (looking-at "^diff --git "))
-      (majutsu-diff-wash-file))
+      (let ((before (point)))
+        (majutsu-diff-wash-file)
+        ;; A malformed or future Git header must never trap refresh in a
+        ;; non-advancing parser loop.
+        (when (= before (point))
+          (forward-line 1))))
     (unless (bolp) (insert "\n"))))
 
 (defun majutsu-diff-wash-file ()
   "Parse a single file section at point and wrap it in Magit sections."
-  (when (looking-at "^diff --git a/\\(.*\\) b/\\(.*\\)$")
-    (let* ((file-a (match-string-no-properties 1))
-           (file-b (match-string-no-properties 2))
-           (file (or file-b file-a))
+  (when (looking-at "^diff --git ")
+    (let* ((diff-line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position)))
+           (metadata (pop majutsu-diff--file-metadata-queue))
+           (fallback
+            (if (string-match "^diff --git a/\\(.*\\) b/\\(.*\\)$" diff-line)
+                (or (match-string 2 diff-line) (match-string 1 diff-line))
+              (string-remove-prefix "diff --git " diff-line)))
+           (file (or (plist-get metadata :target) fallback))
            (headers nil)
            (diff-header (buffer-substring-no-properties
                          (line-beginning-position)
@@ -628,11 +915,12 @@ Assumes point is at the start of the diff output."
                                                    (1+ (line-end-position))))
               headers)
         (majutsu-diff--delete-line))
+      (setq headers (nreverse headers))
       (magit-insert-section
           (jj-file file nil
-                   :header (concat diff-header (string-join (nreverse headers) "")))
+                   :header (concat diff-header (string-join headers "")))
         (magit-insert-heading
-          (propertize (majutsu-diff--file-heading file (nreverse headers))
+          (propertize (majutsu-diff--file-heading file headers)
                       'font-lock-face 'magit-diff-file-heading))
         ;; Hunk bodies remain in the buffer; just wrap them.
         (while (and (not (eobp)) (looking-at "^@@ "))

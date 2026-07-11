@@ -27,7 +27,7 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 * Installation
 ** Requirements
 - Emacs 29.1 or later.
-- Jujutsu (jj) v0.39.0 or later installed and in your =PATH=.
+- Jujutsu (jj) v0.40.0 or later installed and in your =PATH=.
 - =magit= 3.3.0 or later (for section management).
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit completion).
 - =transient= 0.5.0 or later (popup menus).
@@ -592,12 +592,12 @@ Majutsu provides Magit-style partial hunk selection for Jujutsu operations. This
 *** How It Works
 Interactive selection is integrated into the Split (~S~), Squash (~s~), and Restore (~R~) transients. When you open one of these transients from a Diff buffer, a "Patch Selection" group appears with the following commands:
 
-| Key | Command                           | Description                           |
-|-----+-----------------------------------+---------------------------------------|
-| ~H~ | majutsu-interactive-toggle-hunk   | Toggle selection of hunk at point     |
-| ~F~ | majutsu-interactive-toggle-file   | Toggle selection of all hunks in file |
-| ~R~ | majutsu-interactive-toggle-region | Toggle selection of active region     |
-| ~C~ | majutsu-interactive-clear         | Clear all patch selections            |
+| Key | Command                           | Description                                                     |
+|-----+-----------------------------------+-----------------------------------------------------------------|
+| ~H~   | majutsu-interactive-toggle-hunk   | Toggle selection of hunk at point                               |
+| ~F~   | majutsu-interactive-toggle-file   | Toggle all file hunks or a Split file change with no text hunks |
+| ~R~   | majutsu-interactive-toggle-region | Toggle selection of active region                               |
+| ~C~   | majutsu-interactive-clear         | Clear all patch selections                                      |
 
 *** Diff Context Inheritance
 When opening Split, Squash, or Restore from a Diff buffer, the transient automatically inherits the diff's context:
@@ -611,7 +611,11 @@ This means you can:
 4. The restore will apply only to those hunks, using the diff's revision context
 
 *** Visual Feedback
-Selected hunks are highlighted with =majutsu-interactive-selected-hunk= face (green background by default). Selected regions within hunks use =majutsu-interactive-selected-region= face (purple background).
+Selected hunks are highlighted with the =majutsu-interactive-selected-hunk=
+face (green background by default). Selected regions within hunks use the
+=majutsu-interactive-selected-region= face (purple background). In Split,
+selected file changes with no text hunks use the
+=majutsu-interactive-selected-file= face.
 
 *** Selection Semantics
 The meaning of "selected" differs by operation:
@@ -639,6 +643,10 @@ Majutsu uses a custom merge tool to apply partial patches. When you execute an o
 
 2. *Tool Invocation*: Jujutsu's =-i --tool= mechanism is used with a custom =majutsu-applypatch= tool.
 
+   Each operation stores its patch file and helper script in a separate
+   temporary directory, so overlapping asynchronous operations do not share
+   input files.
+
 3. *Patch Application*:
    - For *Split/Squash*: The tool resets =$right= (current state) to =$left= (parent state), then applies the patch forward. This results in =$right= containing only the selected changes.
    - For *Restore*: The tool applies the patch directly to =$right=.
@@ -646,7 +654,9 @@ Majutsu uses a custom merge tool to apply partial patches. When you execute an o
 This approach avoids the complexity of reverse patch application (=git apply -R=), which has edge cases with new files, deleted files, and content starting with =+= or =-=.
 
 *** Edge Cases
-Interactive patching supports all file operation types:
+Text-hunk selection supports the file operations below. Split additionally
+supports file changes without text hunks as described at the end of this
+section.
 
 **** New Files
 When splitting or squashing a new file:
@@ -668,8 +678,15 @@ matching.
 
 **** Renamed/Copied Files
 Renamed and copied files are handled correctly:
-- The rename/copy metadata is preserved in the patch
+- Text-hunk patches preserve rename/copy information
 - You can select specific hunks within renamed files just like regular modifications
+
+**** Changes Without Text Hunks
+In a Git-format diff buffer, Split can select a file change with no text hunks,
+such as a binary or mode-only change, as a unit. Majutsu uses structured
+metadata from jj as the source of the file operation and paths, and verifies it
+against the displayed file headers. If the selection cannot be verified,
+Majutsu refuses it. Squash and Restore still require text hunks.
 
 *** Workflow Example
 1. Open a diff with ~D~ or ~d~
@@ -682,6 +699,7 @@ Renamed and copied files are handled correctly:
 *** Customization
 - Face: majutsu-interactive-selected-hunk :: Face for selected hunks.
 - Face: majutsu-interactive-selected-region :: Face for selected regions.
+- Face: majutsu-interactive-selected-file :: Face for selected Split file changes with no text hunks.
 
 ** Metaediting
 - Key: ? m (majutsu-metaedit) :: Open the Metaedit transient. Defaults to one revision from point (fallback =@=). If multiple revisions are selected, Majutsu asks you to narrow it down.
@@ -831,7 +849,7 @@ Jujutsu supports multiple workspaces sharing the same repository storage. This i
 - Key: v (majutsu-workspace-visit) :: Visit a workspace by changing =default-directory= and refreshing Majutsu buffers.
 - Key: a (majutsu-workspace-add) :: Add a new workspace.
 - Key: -t :: Toggle trashing workspace directories after forgetting them.
-- Key: f (majutsu-workspace-forget) :: Forget a workspace. With =-t= enabled from the workspace transient, also move its local directory to the system trash after =jj workspace forget= succeeds. Majutsu refuses remote roots and any root that owns the shared =.jj/repo= store. If moving to trash fails after the workspace was forgotten, Majutsu reports the directory that must be moved manually.
+- Key: f (majutsu-workspace-forget) :: Forget a workspace. With =-t= enabled, also move its local directory to the system trash after =jj workspace forget= succeeds. Majutsu refuses remote roots. Before moving a directory, it verifies that the path still identifies the directory the user confirmed and does not own the shared =.jj/repo= store. It checks all selected workspaces and reports all paths requiring manual cleanup together.
 - Key: u (majutsu-workspace-update-stale) :: Update a stale workspace.
 - Key: n (majutsu-workspace-rename) :: Rename a workspace.
 - Key: r (majutsu-workspace-root) :: Show and copy the current workspace root.
@@ -840,7 +858,8 @@ Workspace sections are rendered from a structured =jj workspace list -T=
 template. By default they show each workspace name, working-copy ids,
 description, and resolved root path when available. If jj cannot resolve a
 workspace root, Majutsu treats it as unavailable instead of showing the raw
-=<Error: ...>= text in the section body.
+=<Error: ...>= text in the section body. Workspace paths containing embedded
+newlines or other control characters are preserved as complete values.
 
 * Conflict Resolution
 ** Detecting Conflicts

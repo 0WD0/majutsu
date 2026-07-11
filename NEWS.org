@@ -5,6 +5,9 @@
 
 ** Breaking changes
 
+- Jujutsu 0.40.0 or later is now required ::
+  Workspace listing relies on template functionality introduced in jj 0.40.0.
+
 - The Squash transient now uses =--from= for source revisions ::
   The =-r/--revision= shortcut was removed.  Use =-f/--from= instead.
   Diff =--revisions= selections are carried into squash as =--from= sources.
@@ -155,6 +158,25 @@
   corresponding repository changes.
 
 ** Fixed
+
+- Workspace paths with control characters are preserved ::
+  Workspace paths containing embedded newlines or other control characters
+  remain intact when listed or selected for trashing.
+
+- Forget-and-trash revalidates workspace directories ::
+  After =jj workspace forget= succeeds, Majutsu moves a directory to trash
+  only if it is still the local directory the user confirmed and does not own
+  the shared repository store.  All selected targets are checked, and unsafe
+  or failed trash moves are reported together.
+
+- File changes without text hunks require matching metadata for Split ::
+  Structured metadata from jj supplies the file operation and paths.  Majutsu
+  verifies it against the displayed Git-format file headers and refuses the
+  selection when the records are missing or inconsistent.
+
+- Concurrent interactive patch operations use separate inputs ::
+  Each operation stores its patch file and helper script in a separate
+  temporary directory.
 
 - Conflict file discovery preserves exact paths ::
   Log and Ediff views now query =jj file list -T= for structured conflict

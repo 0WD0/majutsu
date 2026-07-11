@@ -1541,7 +1541,7 @@ bare keyword self dispatch."
     (WorkspaceRef
      (name :returns RefSymbol :keyword t)
      (target :returns Commit :keyword t)
-     (root :returns Template :keyword t)))
+     (root :returns String :keyword t)))
   "Built-in template method metadata.")
 
 (majutsu-template--register-methods majutsu-template--builtin-method-specs)
@@ -1916,7 +1916,7 @@ Further passes (type-checking, rendering) operate on these nodes."
                                (content Template))
   (:returns Template :doc "label helper."))
 
-(majutsu-template-defun json ((value Any))
+(majutsu-template-defun json ((value Serialize))
   (:returns String :doc "json(VALUE)."))
 
 (majutsu-template-defun join ((separator Template)
