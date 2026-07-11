@@ -346,15 +346,21 @@ root remains unavailable, the matching alist value is nil."
   "Signal if any workspace root in ROOT-ALIST must not be trashed.
 ROOT-ALIST maps workspace names to directory paths.  Nil roots and
 already-deleted paths are allowed because `jj workspace forget' can also
-be used after deleting a workspace directory manually."
+be used after deleting a workspace directory manually.  Remote roots are
+always rejected: Emacs cannot guarantee that deleting one moves it to a
+local or remote system trash instead of permanently removing it."
   (dolist (entry root-alist)
     (pcase-let ((`(,name . ,root) entry))
-      (when (and root
-                 (not (string-empty-p root))
-                 (file-exists-p root)
-                 (majutsu-workspace--repo-store-p root))
-        (user-error "Refusing to trash workspace %s; %s owns the shared .jj/repo store"
-                    name root)))))
+      (when (and root (not (string-empty-p root)))
+        ;; Check the path syntax before any file operation can contact a
+        ;; remote host.
+        (when (file-remote-p root)
+          (user-error "Refusing to trash remote workspace %s at %s"
+                      name root))
+        (when (and (file-exists-p root)
+                   (majutsu-workspace--repo-store-p root))
+          (user-error "Refusing to trash workspace %s; %s owns the shared .jj/repo store"
+                      name root))))))
 
 (defun majutsu-workspace--trash-roots (root-alist)
   "Move known workspace roots in ROOT-ALIST to the system trash.
@@ -363,13 +369,20 @@ already-deleted paths are ignored.  Call
 `majutsu-workspace--validate-trash-roots' before forgetting workspaces to
 reject roots that own shared repo storage without mutating repository
 state."
+  ;; Keep this guard here as defense in depth for non-interactive callers.
+  (majutsu-workspace--validate-trash-roots root-alist)
   (dolist (entry root-alist)
-    (pcase-let ((`(,_name . ,root) entry))
+    (pcase-let ((`(,name . ,root) entry))
       (when (and root
                  (not (string-empty-p root))
                  (file-exists-p root))
-        (let ((delete-by-moving-to-trash t))
-          (delete-directory root t t))))))
+        (condition-case err
+            (let ((delete-by-moving-to-trash t))
+              (delete-directory root t t))
+          (error
+           (user-error
+            "Workspace %s was forgotten, but %s was not moved to trash: %s; move it manually"
+            name root (error-message-string err))))))))
 
 (defun majutsu-workspace--transient-trash-p ()
   "Return non-nil when the active workspace transient has `--trash' enabled."
@@ -557,7 +570,8 @@ directory."
 
 This stops tracking the workspaces' working-copy commits in the repo.
 With TRASH, also move the corresponding workspace directories to the
-system trash after `jj workspace forget' succeeds."
+system trash after `jj workspace forget' succeeds.  TRASH accepts local
+workspace roots only."
   (interactive
    (let* ((names (majutsu-workspace--names)))
      (list (majutsu-completing-read-multiple
@@ -565,25 +579,25 @@ system trash after `jj workspace forget' succeeds."
             'majutsu-workspace-name-history nil 'majutsu-workspace)
            (majutsu-workspace--transient-trash-p))))
   (when names
-    (let ((action (if trash 'workspace-trash 'workspace-forget)))
+    (let* ((action (if trash 'workspace-trash 'workspace-forget))
+           (root-alist (when trash
+                         (majutsu-workspace--roots-for-names
+                          names (majutsu--toplevel-safe)))))
+      (when trash
+        (majutsu-workspace--validate-trash-roots root-alist))
       (unless (majutsu-confirm action
                                (format "%s workspace(s) %s? "
                                        (if trash "Forget and trash" "Forget")
                                        (string-join names ", ")))
         (user-error "Forget canceled"))
-      (let ((root-alist (when trash
-                          (majutsu-workspace--roots-for-names
-                           names (majutsu--toplevel-safe)))))
-        (when trash
-          (majutsu-workspace--validate-trash-roots root-alist))
-        (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
-            (progn
-              (when trash
-                (majutsu-workspace--trash-roots root-alist))
-              (message (if trash
-                           "Workspace(s) forgotten; available directories trashed"
-                         "Workspace(s) forgotten")))
-          (message "Workspace forget failed"))))))
+      (if (zerop (apply #'majutsu-run-jj (append '("workspace" "forget") names)))
+          (progn
+            (when trash
+              (majutsu-workspace--trash-roots root-alist))
+            (message (if trash
+                         "Workspace(s) forgotten; available directories trashed"
+                       "Workspace(s) forgotten")))
+        (message "Workspace forget failed")))))
 
 ;;;###autoload
 (defun majutsu-workspace-add (destination &optional name revision sparse-patterns)

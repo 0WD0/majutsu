@@ -831,7 +831,7 @@ Jujutsu supports multiple workspaces sharing the same repository storage. This i
 - Key: v (majutsu-workspace-visit) :: Visit a workspace by changing =default-directory= and refreshing Majutsu buffers.
 - Key: a (majutsu-workspace-add) :: Add a new workspace.
 - Key: -t :: Toggle trashing workspace directories after forgetting them.
-- Key: f (majutsu-workspace-forget) :: Forget a workspace. With =-t= enabled from the workspace transient, also move its directory to the system trash after =jj workspace forget= succeeds. Majutsu refuses to trash a workspace root that owns the shared =.jj/repo= store.
+- Key: f (majutsu-workspace-forget) :: Forget a workspace. With =-t= enabled from the workspace transient, also move its local directory to the system trash after =jj workspace forget= succeeds. Majutsu refuses remote roots and any root that owns the shared =.jj/repo= store. If moving to trash fails after the workspace was forgotten, Majutsu reports the directory that must be moved manually.
 - Key: u (majutsu-workspace-update-stale) :: Update a stale workspace.
 - Key: n (majutsu-workspace-rename) :: Rename a workspace.
 - Key: r (majutsu-workspace-root) :: Show and copy the current workspace root.
