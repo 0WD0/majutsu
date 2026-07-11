@@ -91,6 +91,214 @@
     (forward-line 1)
     (should-not (memq 'git-commit-summary (majutsu-test--faces-at (point))))))
 
+(ert-deftest majutsu-jjdescription-overlong-summary-boundaries ()
+  "Highlight only summary characters strictly beyond the configured limit."
+  (dolist (case '((nil "1234567" nil)
+                  (0 "1234567" 0)
+                  (5 "12345" nil)
+                  (5 "1234567" 5)
+                  (-1 "1234567" nil)))
+    (pcase-let ((`(,limit ,summary ,overlong-offset) case))
+      (let ((majutsu-jjdescription-summary-max-length limit))
+        (with-temp-buffer
+          (text-mode)
+          (setq buffer-file-name "/tmp/editor-123.jjdescription")
+          (insert summary "\n\nJJ: note\n")
+          (majutsu-jjdescription-setup)
+          (font-lock-ensure)
+          (goto-char (point-min))
+          (when (and (integerp limit) (> limit 0))
+            (should-not (memq 'git-commit-overlong-summary
+                              (majutsu-test--faces-at (point)))))
+          (if overlong-offset
+              (progn
+                (forward-char overlong-offset)
+                (should (memq 'git-commit-overlong-summary
+                              (majutsu-test--faces-at (point)))))
+            (should-not
+             (cl-loop for pos from (line-beginning-position)
+                      below (line-end-position)
+                      thereis (memq 'git-commit-overlong-summary
+                                    (majutsu-test--faces-at pos))))))))))
+
+(ert-deftest majutsu-jjdescription-summary-limit-is-natnum ()
+  "The summary limit customization must reject negative values."
+  (should
+   (equal (get 'majutsu-jjdescription-summary-max-length 'custom-type)
+          '(choice (const :tag "Disable" nil)
+                   (natnum :tag "Column")))))
+
+(ert-deftest majutsu-jjdescription-overlong-summary-respects-ignore-rest ()
+  "Text after JJ's ignore-rest marker is never treated as a summary."
+  (let ((majutsu-jjdescription-summary-max-length 5))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "JJ: ignore-rest\n1234567\n")
+      (majutsu-jjdescription-setup)
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (search-forward "1234567")
+      (let ((beg (- (point) 7))
+            (end (point)))
+        (should-not
+         (cl-loop for pos from beg below end
+                  thereis (memq 'git-commit-overlong-summary
+                                (majutsu-test--faces-at pos))))))))
+
+(ert-deftest majutsu-jjdescription-overlong-summary-shrink-clamps-old-range ()
+  "Shrinking a summary never extends font-lock past the new buffer end."
+  (let ((majutsu-jjdescription-summary-max-length 5))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "1234567\n")
+      (majutsu-jjdescription-setup)
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (delete-region (+ (point-min) 5) (line-end-position))
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (should (equal (buffer-substring-no-properties
+                      (line-beginning-position) (line-end-position))
+                     "12345"))
+      (should-not
+       (cl-loop for pos from (line-beginning-position)
+                below (line-end-position)
+                thereis (memq 'git-commit-overlong-summary
+                              (majutsu-test--faces-at pos)))))))
+
+(ert-deftest majutsu-jjdescription-fill-column-and-auto-fill ()
+  "Keep the summary intact and fill body text at the configured column."
+  (let ((majutsu-jjdescription-fill-column 12))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "summary line that must remain intact\n\none two three four five")
+      (majutsu-jjdescription-setup)
+      (should (= fill-column 12))
+      (should (eq auto-fill-function
+                  #'majutsu-jjdescription--auto-fill-except-summary))
+      (goto-char (point-min))
+      (end-of-line)
+      (funcall auto-fill-function)
+      (should (equal (buffer-substring-no-properties
+                      (line-beginning-position) (line-end-position))
+                     "summary line that must remain intact"))
+      (goto-char (point-max))
+      (funcall auto-fill-function)
+      (should (equal (buffer-substring-no-properties
+                      (save-excursion
+                        (goto-char (point-min))
+                        (search-forward "one")
+                        (match-beginning 0))
+                      (point-max))
+                     "one two\nthree four\nfive")))))
+
+(ert-deftest majutsu-jjdescription-fill-column-accepts-only-positive-integers ()
+  "The fill option accepts positive integers or nil as the disabled value."
+  (require 'wid-edit)
+  (let ((widget (widget-convert
+                 (get 'majutsu-jjdescription-fill-column 'custom-type))))
+    (should (widget-apply widget :match nil))
+    (should (widget-apply widget :match 1))
+    (should (widget-apply widget :match 72))
+    (should-not (widget-apply widget :match 0))
+    (should-not (widget-apply widget :match -1))))
+
+(ert-deftest majutsu-jjdescription-nil-fill-column-disables-auto-fill ()
+  "A nil option keeps the current fill column and disables Auto Fill."
+  (let ((majutsu-jjdescription-major-mode nil)
+        (majutsu-jjdescription-fill-column nil))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (setq-local fill-column 37)
+      (majutsu-jjdescription-setup)
+      (should (= fill-column 37))
+      (should-not auto-fill-function))))
+
+(ert-deftest majutsu-jjdescription-auto-fill-delegates-to-major-mode ()
+  "Body filling delegates to the major mode's normal Auto Fill function."
+  (let ((majutsu-jjdescription-major-mode nil)
+        (majutsu-jjdescription-fill-column 20))
+    (with-temp-buffer
+      (text-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "summary\n\nbody text")
+      (majutsu-jjdescription-setup)
+      (let (called)
+        (setq-local normal-auto-fill-function
+                    (lambda () (setq called (point))))
+        (goto-char (point-max))
+        (funcall auto-fill-function)
+        (should (= called (point)))))))
+
+(ert-deftest majutsu-jjdescription-org-auto-fill-preserves-structures ()
+  "Org headings, tables, and blocks retain Org's Auto Fill behavior."
+  (let ((majutsu-jjdescription-major-mode nil)
+        (majutsu-jjdescription-fill-column 12))
+    (with-temp-buffer
+      (org-mode)
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert (concat "summary\n\n"
+                      "* heading one two three four five\n\n"
+                      "| cell one two three four | cell two |\n\n"
+                      "#+begin_src emacs-lisp\n"
+                      "(message \"one two three four five\")\n"
+                      "#+end_src\n"))
+      (majutsu-jjdescription-setup)
+      (should (eq normal-auto-fill-function #'org-auto-fill-function))
+      (let ((before (buffer-string)))
+        (dolist (line '("* heading" "| cell" "(message"))
+          (goto-char (point-min))
+          (search-forward line)
+          (end-of-line)
+          (funcall auto-fill-function))
+        (should (equal (buffer-string) before))))))
+
+(ert-deftest majutsu-jjdescription-major-mode-refresh-reapplies-setup ()
+  "Changing major mode reapplies JJ description buffer configuration."
+  (let ((majutsu-jjdescription-fill-column 41))
+    (global-majutsu-jjdescription-mode 1)
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (text-mode)
+      (setq-local fill-column 99)
+      (auto-fill-mode -1)
+      (fundamental-mode)
+      (should (= fill-column 41))
+      (should (equal comment-start majutsu-jjdescription-comment-prefix))
+      (should (eq auto-fill-function
+                  #'majutsu-jjdescription--auto-fill-except-summary))
+      (should majutsu-jjdescription-mode))))
+
+(ert-deftest majutsu-jjdescription-complete-setup-enables-auto-fill-once ()
+  "One complete description setup runs Auto Fill hooks exactly once."
+  (let ((majutsu-jjdescription-major-mode #'text-mode)
+        (majutsu-jjdescription-fill-column 41)
+        (count 0)
+        (auto-fill-mode-hook nil))
+    (add-hook 'auto-fill-mode-hook (lambda () (cl-incf count)))
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/editor-123.jjdescription")
+      (insert "summary\n\nbody\n")
+      (majutsu-jjdescription-setup)
+      (should (= count 1)))))
+
+(ert-deftest majutsu-jjdescription-major-mode-refresh-does-not-duplicate-hook ()
+  "Repeated mode refreshes do not duplicate the global refresh hook."
+  (global-majutsu-jjdescription-mode 1)
+  (global-majutsu-jjdescription-mode 1)
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/editor-123.jjdescription")
+    (text-mode)
+    (fundamental-mode)
+    (text-mode))
+  (should (= (cl-count #'majutsu-jjdescription-setup-font-lock-in-buffer
+                       after-change-major-mode-hook :test #'eq)
+             1)))
+
 (ert-deftest majutsu-jjdescription-font-lock-comments ()
   "JJ comment lines should be highlighted with comment faces."
   (with-temp-buffer
