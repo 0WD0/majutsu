@@ -489,14 +489,33 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
     (let ((template (cadr (member "-T" seen-args))))
       (should (stringp template))
       (should (string-search
-               "json(local_bookmarks.map(|ref| ref.name()))" template))
+               "json(self.local_bookmarks().map(|ref| ref.name()))" template))
       (should (string-search
                "label(\"local_bookmarks map join name\"" template))
-      (should (string-search "remote_bookmarks.map(|ref|" template))
+      (should (string-search "self.remote_bookmarks().map(|ref|" template))
       (should (string-search "json(ref.name())" template))
       (should (string-search "json(ref.remote())" template))
-      (should (string-search "label(\"description\", json(description))"
+      (should (string-search "label(\"description\", json(self.description()))"
                              template))
+      (should (string-prefix-p "concat(join(\"\\0\"," template))
+      (should (string-suffix-p ", \"\\0\")" template))
+      (should-not (string-search "separate(" template))
+      (let ((cursor 0))
+        (dolist (label '("change_id"
+                         "local_bookmarks map join name"
+                         "remote_bookmarks map join name remote"
+                         "commit_id"
+                         "author name"
+                         "author email"
+                         "author timestamp format"
+                         "committer name"
+                         "committer email"
+                         "committer timestamp format"
+                         "description"))
+          (let ((position (string-search (format "label(\"%s\"" label)
+                                         template cursor)))
+            (should position)
+            (setq cursor (1+ position)))))
       (should (string-search "\\0" template))
       (should (member "--limit" seen-args))
       (should (member "--color=always" seen-global-args))

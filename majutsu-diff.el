@@ -796,21 +796,32 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
   "NUL separator between encoded revision metadata tokens.")
 
 (defconst majutsu-diff--revision-metadata-template
-  (concat
-   (string-join
-    '("label(\"change_id\", json(change_id))"
-      "label(\"local_bookmarks map join name\", json(local_bookmarks.map(|ref| ref.name())))"
-      "label(\"remote_bookmarks map join name remote\", \"[\" ++ remote_bookmarks.map(|ref| \"[\" ++ json(ref.name()) ++ \",\" ++ json(ref.remote()) ++ \"]\").join(\",\") ++ \"]\")"
-      "label(\"commit_id\", json(commit_id))"
-      "label(\"author name\", json(author.name()))"
-      "label(\"author email\", json(author.email()))"
-      "label(\"author timestamp format\", json(author.timestamp().format(\"%a %b %e %T %Y %z\")))"
-      "label(\"committer name\", json(committer.name()))"
-      "label(\"committer email\", json(committer.email()))"
-      "label(\"committer timestamp format\", json(committer.timestamp().format(\"%a %b %e %T %Y %z\")))"
-      "label(\"description\", json(description))")
-    " ++ \"\\0\" ++ ")
-   " ++ \"\\0\"")
+  (majutsu-template-compile
+   `[:concat
+     [:join ,majutsu-diff--revision-metadata-separator
+            [:label "change_id" [:json [:change_id]]]
+            [:label "local_bookmarks map join name"
+                    [:json [:local_bookmarks :map [:|ref| [:name]]]]]
+            [:label "remote_bookmarks map join name remote"
+                    [:concat
+                     "["
+                     [:remote_bookmarks
+                      :map [:|ref|
+                            [:concat "[" [:json [:name]] "," [:json [:remote]] "]"]]
+                      :join ","]
+                     "]"]]
+            [:label "commit_id" [:json [:commit_id]]]
+            [:label "author name" [:json [:author :name]]]
+            [:label "author email" [:json [:author :email]]]
+            [:label "author timestamp format"
+                    [:json [:author :timestamp :format "%a %b %e %T %Y %z"]]]
+            [:label "committer name" [:json [:committer :name]]]
+            [:label "committer email" [:json [:committer :email]]]
+            [:label "committer timestamp format"
+                    [:json [:committer :timestamp :format "%a %b %e %T %Y %z"]]]
+            [:label "description" [:json [:description]]]]
+     ,majutsu-diff--revision-metadata-separator]
+   'Commit)
   "Template for labelled, unambiguous revision metadata tokens.")
 
 (defun majutsu-diff--range-option (long &optional short)
