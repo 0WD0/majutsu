@@ -22,44 +22,61 @@
 (defclass majutsu-split-option (majutsu-selection-option)
   ())
 
-(defun majutsu-split--diff-source-revision (&optional buffer)
-  "Return the single Split source represented by diff BUFFER.
-Return the resolved change ID only when the displayed diff represents exactly
-one change."
+(defvar-local majutsu-split--patch-source-cache-key :uncomputed
+  "Diff range and rendered-text tick for the cached split source.")
+
+(defvar-local majutsu-split--patch-source-cache-value nil
+  "Cached canonical commit ID for the rendered split source.")
+
+(defun majutsu-split--diff-source-revset ()
+  "Return the safe single-source revset described by the current diff.
+The default diff range denotes @.  Explicit ranges must use exactly one
+-r/--revisions option; arbitrary from/to ranges are never split sources."
+  (let* ((range majutsu-buffer-diff-range)
+         (from (majutsu-jj-option-values range "--from" "-f"))
+         (to (majutsu-jj-option-values range "--to" "-t"))
+         (revisions (majutsu-jj-option-values range "--revisions" "-r")))
+    (cond
+     ((or from to) nil)
+     ((null range) "@")
+     ((= (length revisions) 1) (car revisions)))))
+
+(defun majutsu-split--patch-source-commit (&optional buffer)
+  "Return BUFFER's canonical commit ID when it is safe for patch split."
   (with-current-buffer (or buffer (current-buffer))
     (when (derived-mode-p 'majutsu-diff-mode)
-      (plist-get (majutsu-diff--revision-metadata) :change-id))))
-
-(defun majutsu-split--default-args ()
-  "Return a safe Split default from the current diff context."
-  (when-let* ((revision (majutsu-split--diff-source-revision)))
-    (list (concat "--revision=" revision))))
+      (let* ((range (copy-tree majutsu-buffer-diff-range))
+             (cache-key (list range (buffer-chars-modified-tick))))
+        (unless (equal cache-key majutsu-split--patch-source-cache-key)
+          (setq-local majutsu-split--patch-source-cache-key cache-key)
+          (setq-local majutsu-split--patch-source-cache-value
+                      (when-let* ((revset (majutsu-split--diff-source-revset)))
+                        (majutsu-jj-resolve-single-commit revset))))
+        majutsu-split--patch-source-cache-value))))
 
 (defun majutsu-split-interactive-selection-available-p ()
-  "Return non-nil when the current diff can safely drive a patch Split."
+  "Return non-nil when split patch selection is safe in the current diff."
   (and (majutsu-interactive-selection-available-p)
-       (majutsu-split--diff-source-revision)))
+       (majutsu-split--patch-source-commit)))
 
 (defun majutsu-split--check-patch-source (args patch-source)
-  "Signal if ARGS select a revision incompatible with PATCH-SOURCE."
+  "Signal when ARGS would split a commit other than PATCH-SOURCE."
   (unless patch-source
-    (user-error "Patch selection for split requires a single-revision diff"))
-  (when-let* ((revision (transient-arg-value "--revision=" args)))
-    (unless (equal revision patch-source)
-      (user-error "Patch selection for split requires the diff source"))))
+    (user-error "Patch selection for split requires a diff for exactly one commit"))
+  (let ((revisions (majutsu-jj-option-values args "--revision" "-r")))
+    (unless (<= (length revisions) 1)
+      (user-error "Patch selection for split requires exactly one revision"))
+    (let ((source (majutsu-jj-resolve-single-commit
+                   (if revisions (car revisions) "@"))))
+      (unless (and source (equal source patch-source))
+        (user-error "Patch selection for split requires the rendered diff source")))))
 
-(defun majutsu-split--remove-interactive-tool-args (args)
-  "Return ARGS without native interactive-editor or tool arguments."
-  (let (result)
-    (while args
-      (let ((arg (pop args)))
-        (cond
-         ((member arg '("-i" "--interactive")) nil)
-         ((member arg '("-t" "--tool")) (pop args))
-         ((or (string-prefix-p "--tool=" arg)
-              (string-prefix-p "-t=" arg)) nil)
-         (t (push arg result)))))
-    (nreverse result)))
+(defun majutsu-split--default-args ()
+  "Return a resolved single-revision default from the diff buffer context."
+  (when (derived-mode-p 'majutsu-diff-mode)
+    (when-let* ((range majutsu-buffer-diff-range)
+                (commit (majutsu-split--patch-source-commit)))
+      (list (concat "--revision=" commit)))))
 
 (transient-define-suffix majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."
@@ -76,10 +93,14 @@ one change."
       (let* (;; Text hunks and hunkless files coexist in one operation.
              (plan (majutsu-interactive-build-replay-plan-if-selected
                     nil nil 'majutsu-split))
-             (patch-source
-              (and plan (majutsu-split--diff-source-revision))))
+             (patch-source (and plan
+                                (majutsu-split--patch-source-commit))))
         (when plan
-          (majutsu-split--check-patch-source args patch-source))
+          (majutsu-split--check-patch-source args patch-source)
+          ;; Execute against the immutable commit which was just validated;
+          ;; a dynamic @/bookmark must not move between the guard and jj.
+          (setq args (majutsu-jj-set-option-value
+                      args "--revision" patch-source "-r")))
         (cond
          (plan
           ;; Reset to the left tree, then replay precisely the selections.
@@ -89,7 +110,7 @@ one change."
            filesets plan))
          ;; `jj split' selects interactively by default when no fileset is given.
          ((null filesets)
-          (majutsu-diff-editor-start
+         (majutsu-diff-editor-start
            "split" args filesets :origin-buffer (current-buffer)))
          (t
           (majutsu-run-jj-with-editor

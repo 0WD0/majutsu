@@ -467,7 +467,7 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
        (revisions (cons (concat revisions "-") revisions))
        ((and from to) (cons from to))
        (from (cons from "@"))
-       (to (cons "@" to))
+       (to (cons "@-" to))
        (t (cons "@-" "@"))))))
 
 (defun majutsu-jj-read-diff-file (from to)
@@ -772,8 +772,43 @@ contributes an empty string; callers can distinguish it from an absent option."
          ((and short (stringp arg)
                (string-prefix-p short arg)
                (> (length arg) (length short)))
-          (push (substring arg (length short)) values)))))
+          (let ((value (substring arg (length short))))
+            ;; clap accepts both `-rREV' and `-r=REV'.  Keep the attached
+            ;; equals as syntax instead of returning it as part of REV.
+            (push (if (string-prefix-p "=" value)
+                      (substring value 1)
+                    value)
+                  values))))))
     (nreverse values)))
+
+(defun majutsu-jj-set-option-value (args option value &optional short)
+  "Return ARGS with OPTION replaced by VALUE, also removing SHORT spellings.
+
+Every spelling recognized by `majutsu-jj-option-values' is removed before a
+single =VALUE spelling is inserted.  When VALUE is nil, only remove the
+option.  Preserve arguments at and after `--' unchanged."
+  (let (kept tail)
+    (while args
+      (let ((arg (pop args)))
+        (cond
+         ((equal arg "--")
+          (setq tail (cons arg args)
+                args nil))
+         ((or (equal arg option) (and short (equal arg short)))
+          (when (and args
+                     (stringp (car args))
+                     (not (string-prefix-p "-" (car args))))
+            (pop args)))
+         ((and (stringp arg)
+               (or (string-prefix-p (concat option "=") arg)
+                   (and short
+                        (string-prefix-p short arg)
+                        (> (length arg) (length short))))))
+         (t
+          (push arg kept)))))
+    (append (nreverse kept)
+            (and value (list (concat option "=" value)))
+            tail)))
 
 (defun majutsu--jj-insert (return-error &rest args)
   "Run jj with ARGS and insert output at point.
@@ -856,7 +891,7 @@ Empty items are omitted from the result."
 (defun majutsu-jj--parse-conflicted-file-record (record)
   "Parse one conflicted-file machine RECORD into a plist."
   (let* ((fields (majutsu--split-fields
-                  (or record "") majutsu-jj--conflicted-file-field-separator 2))
+                   (or record "") majutsu-jj--conflicted-file-field-separator 2))
          (sides (string-to-number (or (nth 0 fields) "")))
          (path (nth 1 fields)))
     (when (and (stringp path)
@@ -893,6 +928,21 @@ newline, return an empty string.  This function aligns with
       (unless (bobp)
         (goto-char (point-min))
         (buffer-substring-no-properties (point) (line-end-position))))))
+
+(defun majutsu-jj-operation-id (&optional directory snapshot)
+  "Return DIRECTORY's current jj operation ID.
+
+DIRECTORY defaults to `default-directory'.  Return nil when jj cannot provide
+a nonempty ID.  When SNAPSHOT is nil, do not snapshot the working copy first."
+  (condition-case nil
+      (let ((default-directory (or directory default-directory)))
+        (when-let* ((id (majutsu-jj-string
+                         (unless snapshot "--ignore-working-copy")
+                         "operation" "log"
+                         "--no-graph" "-n" "1" "-T" "id")))
+          (unless (string-empty-p id)
+            id)))
+    (error nil)))
 
 (defun majutsu-jj-resolve-single-commit (revset)
   "Return REVSET's only commit ID, or nil unless it resolves exactly once.
