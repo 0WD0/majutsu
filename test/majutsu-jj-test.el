@@ -51,6 +51,26 @@
                (insert "\nsecond line") 0)))
     (should (equal (majutsu-jj-string "log" "-r" "@") ""))))
 
+(ert-deftest majutsu-jj-option-values/accepts-all-option-spellings ()
+  "Parse long, separate, and short option values before a fileset separator."
+  (should (equal (majutsu-jj-option-values
+                  '("--revisions=A" "-r" "B" "-rC" "--" "--revisions=D")
+                  "--revisions" "-r")
+                 '("A" "B" "C"))))
+
+(ert-deftest majutsu-jj-resolve-single-commit/requires-exact-cardinality ()
+  "A singleton probe must not use `latest' or otherwise reduce a range."
+  (let (called)
+    (cl-letf (((symbol-function 'majutsu-jj-string)
+               (lambda (&rest args)
+                 (setq called args)
+                 "deadbeef")))
+      (should (equal (majutsu-jj-resolve-single-commit "B::C") "deadbeef"))
+      (should (equal called
+                     '("--ignore-working-copy" "log" "-r"
+                       "exactly((B::C), 1)"
+                       "--no-graph" "--limit" "1" "-T" "commit_id"))))))
+
 
 
 ;; Tests for majutsu-jj-lines
