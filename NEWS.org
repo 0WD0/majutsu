@@ -34,8 +34,7 @@
   Revset arguments complete the same command-context candidates as the jj CLI.
 
 - Blob buffers in other windows and frames ::
-  Add ~majutsu-find-file-other-window~ and
-  ~majutsu-find-file-other-frame~.
+  Add ~majutsu-find-file-other-window~ and ~majutsu-find-file-other-frame~.
 
 - Visible DAG relation navigation ::
   In log buffers, ~[~ jumps to a visible parent and ~]~ jumps to a visible
