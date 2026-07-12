@@ -1986,12 +1986,10 @@ With prefix STYLE, cycle between `all' and `t'."
   ;; Majutsu owns refinement state.  Otherwise `diff-font-lock-keywords'
   ;; consults the independent `diff-refine' option and recreates fine overlays
   ;; even when `majutsu-diff-refine-hunk' is nil.
-  (setq-local diff-refine nil)
-  ;; Use diff-mode's keywords as a fallback, but primarily rely on
-  ;; `font-lock-face' properties applied during the washing process.
-  ;; We set this to enable JIT Lock, which renders our `font-lock-face' properties.
-  (setq-local font-lock-defaults '(diff-font-lock-keywords t))
-  (setq-local font-lock-multiline t))
+  ;; `magit-section-mode' disables syntactic font locking.  The diff washer
+  ;; attaches faces to actual hunk lines as text properties, so revision
+  ;; messages cannot be mistaken for patches.
+  (setq-local diff-refine nil))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-diff-mode))
   (list majutsu-buffer-diff-args
@@ -2016,15 +2014,8 @@ With prefix STYLE, cycle between `all' and `t'."
            ;; contain literal ANSI escape sequences.  Color-words handles its
            ;; own ANSI/debug output in its washer.
            (majutsu-process-apply-ansi-colors nil))
-      (if (eq backend 'color-words)
-          (progn
-            ;; No diff-mode keywords — ANSI faces via `font-lock-face'
-            ;; provide all coloring.  Font-lock must stay enabled so the
-            ;; display engine honours `font-lock-face' text properties.
-            (setq-local font-lock-defaults '(nil t))
-            (font-lock-mode 1))
-        (setq-local font-lock-defaults '(diff-font-lock-keywords t))
-        (font-lock-mode 1))
+      ;; Refresh JIT Lock so it renders the faces attached by the washer.
+      (font-lock-mode 1)
       (unless (eq backend 'color-words)
         (majutsu-diff--set-left-margin 0))
       (magit-insert-section (diffbuf)
