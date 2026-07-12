@@ -654,20 +654,27 @@ a different diff.
 The default jj editor, =:builtin=, is a terminal TUI.  Customize
 =majutsu-diff-editor-host= to choose how Majutsu hosts it:
 
-- =auto= (the default) uses Ghostel when available with a local
-  =emacsclient=.  Otherwise it only falls back to a normal process for a known
-  external editor such as Meld.
+- =auto= (the default) uses Ghostel when available.  Local sessions also need
+  a working =emacsclient=; Ghostel-supported TRAMP sessions use with-editor's
+  remote sleeping-editor bridge instead.
 - =ghostel= requires Ghostel and supports jj's built-in TUI and external
   terminal editors.
 - =process= is for external non-terminal tools only; Majutsu rejects
   =:builtin= rather than trying to render it in a process buffer.
 
-Ghostel is optional.  Ghostel-hosted sessions require a local working
-=emacsclient= for jj's later description-editor invocation.  On TRAMP,
-=auto= routes a configured external editor through Majutsu's ordinary process
-path; the built-in =:builtin= recorder is rejected because Ghostel cannot
-bridge the later description editor there.  The same external-editor fallback
-is used locally when no usable =emacsclient= is configured.
+Ghostel is optional.  A local Ghostel session requires a working
+=emacsclient= for jj's later description-editor invocation.  On a
+Ghostel-supported POSIX TRAMP remote, Ghostel starts a remote PTY and
+with-editor uses its sleeping-editor protocol, so no local =emacsclient= is
+needed.  Majutsu associates jj's remote temporary description file with its
+repository before it is visited, keeping description-buffer commands in the
+right repository.  A =WITH-EDITOR= control line may remain visible in the
+Ghostel transcript.
+
+Ghostel's remote PTY path needs a POSIX remote reachable by a supported TRAMP
+method; Windows remotes are not supported.  The ordinary external-editor
+fallback is used when Ghostel is unavailable, or locally when no usable
+=emacsclient= is configured.
 
 *** Selection Semantics
 The meaning of "selected" differs by operation:
