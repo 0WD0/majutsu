@@ -90,6 +90,17 @@
   Use ~F~ to select whole-file changes, including binary and other hunkless
   changes, for Split, Squash, and Restore.
 
+- Configured jj diff editors ::
+  Split, Squash, and Restore honor =--interactive= and =--tool= using jj's
+  configured diff editor.  An explicit editor request takes precedence over
+  an Emacs patch selection.  Split also opens the editor when neither a patch
+  selection nor a fileset is supplied.
+
+- Terminal diff editors through Ghostel ::
+  Optional Ghostel integration hosts jj's built-in terminal diff editor.
+  ~majutsu-diff-editor-host~ selects the host; external non-terminal tools
+  can also run without Ghostel.
+
 - Revision information in diff buffers ::
   Single-revision change diffs show collapsible commit metadata and the full
   description.  Comparisons using =--from= / =--to= do not show a single commit's
@@ -198,6 +209,11 @@
 
 - Patch selection safety ::
   Concurrent patch operations no longer overwrite each other's patch input.
+
+- Cancelled editor sessions preserve selections ::
+  When a jj editor exits without changing the repository, the Emacs patch
+  selection remains available.  A changed or unverifiable repository state
+  invalidates the selection before it can be reused.
 
 - Files without a final newline ::
   Partial patch selections no longer join added text onto an unselected final

@@ -487,6 +487,12 @@ The returned value is a list of entries of the form:
 
 CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
   (when-let* ((refresh (majutsu--refresh-buffer-function)))
+    ;; Diff-buffer patch selections store rendered buffer positions.  They
+    ;; cannot safely survive the rebuild below, so invalidate them before the
+    ;; old sections and text disappear.  Keep this dynamic to avoid making the
+    ;; base mode depend on the optional interactive-selection feature.
+    (when (fboundp 'majutsu-interactive-invalidate)
+      (majutsu-interactive-invalidate))
     (let ((action (if created "Creating" "Refreshing")))
       (when (eq major-mode 'majutsu-mode)
         (majutsu--debug "%s buffer `%s'..." action (buffer-name)))

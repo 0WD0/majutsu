@@ -94,6 +94,32 @@ the heading of each process section."
 (defvar majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)
   "Map with-editor temp files to the repository roots that opened them.")
 
+(defvar majutsu-process--start-success-msg nil
+  "Success message captured by a process being started.
+
+This is dynamically bound by `majutsu-start-jj' so it can be installed on
+the child before its sentinel is installed.")
+
+(defvar majutsu-process--start-finish-callback nil
+  "Completion callback captured by a process being started.
+
+This is dynamically bound by `majutsu-start-jj' so it can be installed on
+the child before its sentinel is installed.")
+
+(defvar majutsu-process--inhibit-refresh nil
+  "Whether the process currently being started owns its refresh lifecycle.
+
+This is dynamically bound by `majutsu-start-jj'.  `majutsu-start-process'
+captures it on the child before installing the process sentinel, which is
+important for commands that can exit before their caller regains control.")
+
+(defvar majutsu-process--start-created-callback nil
+  "Function called with a process immediately after it is created.
+
+This dynamic hook is for a caller that must retain ownership of a child even
+if a non-local exit interrupts setup before `majutsu-start-process' returns.
+It runs before Majutsu installs the process sentinel.")
+
 (defun majutsu-process--with-editor-open-file (process line)
   "Return the file opened by with-editor control LINE from PROCESS."
   (save-match-data
@@ -404,6 +430,15 @@ is not a `magit-section', in which case the section slots are left unset."
   (process-put process 'section section)
   (process-put process 'command-buf (current-buffer))
   (process-put process 'default-dir root)
+  ;; These values must be present before installing SENTINEL.  A short-lived
+  ;; child can finish as soon as the sentinel is installed.
+  (when majutsu-process--start-success-msg
+    (process-put process 'success-msg majutsu-process--start-success-msg))
+  (when majutsu-process--start-finish-callback
+    (process-put process 'finish-callback
+                 majutsu-process--start-finish-callback))
+  (when majutsu-process--inhibit-refresh
+    (process-put process 'inhibit-refresh t))
   (when (magit-process-section-p section)
     (oset section process process)
     (oset section value process))
@@ -429,17 +464,31 @@ repository's log buffer (see `majutsu-refresh')."
          (section (with-current-buffer process-buf
                     (prog1 (majutsu--process-insert-section pwd program args nil nil)
                       (backward-char 1))))
-         (process (let ((process-environment (majutsu-process-environment args))
-                        (default-process-coding-system '(utf-8-unix . utf-8-unix)))
-                    (apply #'start-file-process (file-name-nondirectory program)
-                           process-buf program args))))
-    (majutsu--process-setup process section root #'majutsu--process-sentinel)
-    (when input
-      (with-current-buffer input
-        (process-send-region process (point-min) (point-max))
-        (process-send-eof process)))
-    (majutsu--process-display-buffer process)
-    process))
+         process
+         (setup-complete nil))
+    ;; A quit while configuring a just-created child must not leave an
+    ;; unowned process behind.  The creation callback lets session owners see
+    ;; the child early enough to make their own cleanup decision.
+    (unwind-protect
+        (progn
+          (setq process
+                (let ((process-environment (majutsu-process-environment args))
+                      (default-process-coding-system '(utf-8-unix . utf-8-unix)))
+                  (apply #'start-file-process (file-name-nondirectory program)
+                         process-buf program args)))
+          (when majutsu-process--start-created-callback
+            (funcall majutsu-process--start-created-callback process))
+          (majutsu--process-setup process section root #'majutsu--process-sentinel)
+          (setq setup-complete t)
+          (when input
+            (with-current-buffer input
+              (process-send-region process (point-min) (point-max))
+              (process-send-eof process)))
+          (majutsu--process-display-buffer process)
+          process)
+      (unless setup-complete
+        (when (and (processp process) (process-live-p process))
+          (ignore-errors (delete-process process)))))))
 
 (defun majutsu--with-editor-control-line-p (line)
   "Return non-nil when LINE is a with-editor sleeping OPEN packet."
@@ -750,23 +799,34 @@ Resolve the appropriate jj executable and prepare ARGS using
          nil destination nil
          (majutsu-process-jj-arguments args)))
 
-(defun majutsu-start-jj (args &optional success-msg finish-callback)
+(defun majutsu-start-jj (args &optional success-msg finish-callback inhibit-refresh)
   "Run jj ARGS asynchronously for side-effects and log output.
 
 Return the process object.
 
 SUCCESS-MSG is displayed on exit code 0.  When FINISH-CALLBACK is
 non-nil, call it as (FINISH-CALLBACK PROCESS EXIT-CODE) after the
-process terminates."
+process terminates.  When INHIBIT-REFRESH is non-nil, suppress the default
+sentinel refresh so FINISH-CALLBACK can own completion handling.
+
+All of these values are recorded on the child before its sentinel is
+installed, so they are reliable even for a short-lived process."
   (let* ((default-directory (majutsu--toplevel-safe default-directory))
          (jj (majutsu-jj--executable))
-         (args (majutsu-process-jj-arguments args))
-         (process (apply #'majutsu-start-process jj nil args)))
-    (when success-msg
-      (process-put process 'success-msg success-msg))
-    (when finish-callback
-      (process-put process 'finish-callback finish-callback))
-    process))
+         (args (majutsu-process-jj-arguments args)))
+    (let ((majutsu-process--start-success-msg success-msg)
+          (majutsu-process--start-finish-callback finish-callback)
+          (majutsu-process--inhibit-refresh inhibit-refresh))
+      (apply #'majutsu-start-process jj nil args))))
+
+(defun majutsu-start-jj-with-editor
+    (args &optional success-msg finish-callback inhibit-refresh)
+  "Start jj ARGS with `JJ_EDITOR' integration.
+
+SUCCESS-MSG, FINISH-CALLBACK, and INHIBIT-REFRESH have the same meaning as
+for `majutsu-start-jj'."
+  (majutsu-with-editor
+    (majutsu-start-jj args success-msg finish-callback inhibit-refresh)))
 
 (defun majutsu--process-wait (process &optional stderr-process)
   "Wait for PROCESS to finish while continuing to service Emacs subprocesses.
@@ -871,8 +931,15 @@ Process output goes into a new section in the buffer returned by
     exit))
 
 (defun majutsu-run-jj-with-editor (&rest args)
-  "Run JJ ARGS using with-editor."
-  (majutsu-with-editor (apply #'majutsu-run-jj-async args)))
+  "Run JJ ARGS using with-editor.
+
+This compatibility wrapper retains the existing variadic command interface.
+Use `majutsu-start-jj-with-editor' when completion handling is needed."
+  (let ((flat (flatten-tree args)))
+    (majutsu--message-with-log "Running %s %s"
+                               (majutsu-jj--executable)
+                               (string-join flat " ")))
+  (majutsu-start-jj-with-editor args))
 
 ;;; _
 (provide 'majutsu-process)
