@@ -210,6 +210,9 @@
 
 - Patch selection safety ::
   Concurrent patch operations no longer overwrite each other's patch input.
+  Patch operations reject stale selections or a source different from the
+  displayed diff, and pin execution to the validated revisions.  Restore
+  requires an explicit operation for ambiguous multi-revision diffs.
 
 - Cancelled editor sessions preserve selections ::
   When a jj editor exits without changing the repository, the Emacs patch
@@ -219,6 +222,10 @@
 - Files without a final newline ::
   Partial patch selections no longer join added text onto an unselected final
   line when the file lacks a trailing newline.
+
+- Restore selections spanning multiple files ::
+  Restore reuses the displayed fileset when applying a partial patch, preserving
+  unselected changes in other files.
 
 - Ediff conflict results ::
   Quitting Ediff without edits keeps a conflict unresolved.  Saving edited

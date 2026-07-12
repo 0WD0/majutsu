@@ -10,6 +10,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'majutsu-jj-integration)
 
 (defconst majutsu-ediff-test--root
   (file-name-directory
@@ -45,10 +46,28 @@
     (should (equal (cdr result) "@"))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-to-only ()
-  "Test parsing --to only."
+  "A lone --to defaults the source revision to @."
   (let ((result (majutsu-jj--parse-diff-range '("--to=bar"))))
     (should (equal (car result) "@"))
     (should (equal (cdr result) "bar"))))
+
+(ert-deftest majutsu-ediff/integration-to-only-range-matches-jj ()
+  "Match jj's working-copy default for an omitted --from."
+  (majutsu-jj-integration-with-repo repo
+    (let ((file (majutsu-jj-integration-file repo "file.txt")))
+      (majutsu-jj-integration-write-text file "base\n")
+      (majutsu-jj-integration-commit repo "base")
+      (majutsu-jj-integration-write-text file "working\n")
+      (let* ((range (majutsu-jj--parse-diff-range '("--to=@-")))
+             (implicit (majutsu-jj-integration-output
+                        repo "diff" "--git" "--to=@-"))
+             (explicit (majutsu-jj-integration-output
+                        repo "diff" "--git"
+                        (concat "--from=" (car range))
+                        (concat "--to=" (cdr range)))))
+        (should (equal range '("@" . "@-")))
+        (should (> (length implicit) 0))
+        (should (equal explicit implicit))))))
 
 (ert-deftest majutsu-ediff-test-parse-diff-range-nil ()
   "Test parsing nil range."
