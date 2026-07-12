@@ -19,9 +19,9 @@
 (require 'majutsu-jj)
 (require 'majutsu-process)
 (require 'majutsu-interactive)
+(require 'majutsu-terminal-session)
 
 (declare-function ghostel-exec "ghostel" (buffer program &optional args))
-(declare-function ghostel-mode "ghostel" ())
 (declare-function majutsu-start-jj-with-editor "majutsu-process"
                   (args &optional success-msg finish-callback inhibit-refresh))
 (declare-function majutsu-process-completion-owned-p "majutsu-process"
@@ -33,14 +33,12 @@
                   (root origin-buffer operation-before
                         &optional unchanged-message))
 
-(defvar ghostel-exit-functions)
-(defvar ghostel-kill-buffer-on-exit)
 (defvar majutsu-process--start-created-callback)
 
 ;;; Customization
 
 (defgroup majutsu-diff-editor nil
-  "jj diff-editor sessions in Majutsu."
+  "Host jj diff-editor sessions in Majutsu."
   :group 'majutsu)
 
 (defcustom majutsu-diff-editor-host 'auto
@@ -159,9 +157,7 @@ Ignore tokens after `--'."
 
 Ghostel remains an optional dependency, so it is only required when a
 diff-editor session needs it."
-  (and (require 'ghostel nil t)
-       (fboundp 'ghostel-exec)
-       (fboundp 'ghostel-mode)))
+  (majutsu-terminal-session-available-p))
 
 (defun majutsu-diff-editor--config-overrides (args)
   "Return global config overrides in ARGS, before its fileset separator."
@@ -265,7 +261,7 @@ only needs emacsclient when it can later request a description editor."
 Signal `user-error' rather than starting a terminal editor in a pipe.
 The return value is either `ghostel' or `process'."
   (when (majutsu-diff-editor--missing-tool-value-p args)
-    (user-error "jj --tool requires a tool name"))
+    (user-error "The jj --tool option requires a tool name"))
   (pcase majutsu-diff-editor-host
     ('ghostel
      (if (majutsu-diff-editor-ghostel-available-p)
@@ -314,59 +310,30 @@ The return value is either `ghostel' or `process'."
 ;;; Sessions
 
 (cl-defstruct (majutsu-diff-editor-session
+               (:include majutsu-terminal-session)
                (:constructor majutsu-diff-editor-session-create))
   "A running jj diff-editor session."
-  command args filesets origin-buffer repository-root
-  host terminal-buffer process
-  operation-id-before completed-p)
+  command args filesets host)
 
-(defvar-local majutsu-diff-editor--session nil
-  "The `majutsu-diff-editor-session' associated with this terminal buffer.")
-
-(defvar majutsu-diff-editor--live-sessions (make-hash-table :test 'equal)
-  "Majutsu-owned diff-editor sessions indexed by workspace root.")
+;; Keep the old private registry name as an alias while the terminal lifecycle
+;; lives in one shared implementation.  Dynamic test isolation therefore still
+;; isolates Arrange and diff-editor sessions together.
+(defvaralias 'majutsu-diff-editor--live-sessions
+  'majutsu-terminal-session--live-sessions)
 
 (defun majutsu-diff-editor--register-session (session)
   "Reserve SESSION's workspace slot, or signal if another session owns it."
-  (let* ((root (majutsu-diff-editor-session-repository-root session))
-         (existing (gethash root majutsu-diff-editor--live-sessions)))
-    (when existing
-      ;; Completion owns the slot even after a child exits, until its deferred
-      ;; freshness check has run and explicitly unregisters the session.
-      (user-error "A jj diff-editor session is already active for this workspace"))
-    (puthash root session majutsu-diff-editor--live-sessions)))
+  (majutsu-terminal-session-register
+   (majutsu-diff-editor-session-repository-root session) session))
 
 (defun majutsu-diff-editor--unregister-session (session)
   "Release SESSION's workspace slot if it is still its owner."
-  (let ((root (majutsu-diff-editor-session-repository-root session)))
-    (when (eq (gethash root majutsu-diff-editor--live-sessions) session)
-      (remhash root majutsu-diff-editor--live-sessions))))
+  (majutsu-terminal-session-unregister
+   (majutsu-diff-editor-session-repository-root session) session))
 
 (defun majutsu-diff-editor--session-lifecycle-process (session)
   "Return SESSION's known lifecycle process, if one has been created."
-  (or (majutsu-diff-editor-session-process session)
-      (when-let* ((buffer (majutsu-diff-editor-session-terminal-buffer session))
-                  ((buffer-live-p buffer)))
-        ;; This is a public Emacs association.  It also covers a non-local
-        ;; exit from `ghostel-exec' after the PTY process exists but before it
-        ;; could return its lifecycle object to us.
-        (get-buffer-process buffer))))
-
-(defun majutsu-diff-editor--cleanup-unstarted-terminal-buffer (session)
-  "Remove SESSION bookkeeping and kill its terminal buffer before spawn.
-
-The function is deliberately quiet and idempotent so it is safe from the
-inner Ghostel startup cleanup and the outer session-start cleanup."
-  (when-let* ((buffer (majutsu-diff-editor-session-terminal-buffer session))
-              ((buffer-live-p buffer)))
-    (let ((inhibit-quit t))
-      (with-current-buffer buffer
-        (setq-local majutsu-diff-editor--session nil)
-        (remove-hook 'kill-buffer-hook
-                     #'majutsu-diff-editor--terminal-buffer-killed t)
-        (remove-hook 'ghostel-exit-functions
-                     #'majutsu-diff-editor--ghostel-exit t))
-      (ignore-errors (kill-buffer buffer)))))
+  (majutsu-terminal-session--lifecycle-process session))
 
 (defun majutsu-diff-editor--abort-session-start (session)
   "Clean up SESSION after a non-local exit during startup.
@@ -374,38 +341,22 @@ inner Ghostel startup cleanup and the outer session-start cleanup."
 If a session-owned child exists, retain its workspace slot until completion:
 it may have exited just before its deferred callback runs.  A child that never
 received a completion owner is stopped and treated as an unknown outcome."
-  (let ((process (majutsu-diff-editor--session-lifecycle-process session)))
-    (when (and process (not (majutsu-diff-editor-session-process session)))
-      (setf (majutsu-diff-editor-session-process session) process))
-    (cond
-     ;; No child exists, so this is a pure setup failure.  The user selection
-     ;; remains valid and the slot can be released immediately.
-     ((not process)
-      (let ((inhibit-quit t))
-        (majutsu-diff-editor--cleanup-unstarted-terminal-buffer session)
-        (majutsu-diff-editor--unregister-session session)))
-     ;; Ghostel installs its exit hook before spawning.  Even a dead lifecycle
-     ;; process may already have queued that hook, so retain the slot.  Queue a
-     ;; duplicate-safe fallback only after the reaper is no longer live.
-     ((eq (majutsu-diff-editor-session-host session) 'ghostel)
-      (unless (and (processp process) (process-live-p process))
-        (run-at-time 0 nil #'majutsu-diff-editor--finish-ghostel-session
-                     session nil)))
-     ;; Only the process layer can publish completion ownership.  A callback
-     ;; property may already exist when filter or sentinel setup fails.
-     ((and (processp process)
-           (majutsu-process-completion-owned-p process))
-      nil)
-     ;; A child was created but setup was interrupted before it gained a
-     ;; completion owner.  It could have mutated the repo, so make selection
-     ;; state conservative before freeing the slot.
-     (t
-      (let ((inhibit-quit t))
-        (when (and (processp process) (process-live-p process))
-          (ignore-errors (delete-process process)))
-        (majutsu-diff-editor--cleanup-unstarted-terminal-buffer session)
-        (majutsu-diff-editor--invalidate-unowned-session session)
-        (majutsu-diff-editor--unregister-session session))))))
+  (if (eq (majutsu-diff-editor-session-host session) 'ghostel)
+      (majutsu-terminal-session--abort-start session)
+    (let ((process (majutsu-diff-editor--session-lifecycle-process session)))
+      (when (and process (not (majutsu-diff-editor-session-process session)))
+        (setf (majutsu-diff-editor-session-process session) process))
+      (cond
+       ((not process)
+        (majutsu-diff-editor--unregister-session session))
+       ((and (processp process)
+             (majutsu-process-completion-owned-p process)))
+       (t
+        (let ((inhibit-quit t))
+          (when (and (processp process) (process-live-p process))
+            (ignore-errors (delete-process process)))
+          (majutsu-diff-editor--invalidate-unowned-session session)
+          (majutsu-diff-editor--unregister-session session)))))))
 
 (defvar majutsu-diff-editor-session-exit-hook nil
   "Functions called after a Ghostel diff-editor session ends.
@@ -413,24 +364,13 @@ received a completion owner is stopped and treated as an unknown outcome."
 Each function receives SESSION and Ghostel's EVENT string.  It runs via a
 zero-delay timer, outside Ghostel's process sentinel.")
 
-(defun majutsu-diff-editor--refresh-origin (session)
-  "Refresh SESSION's live origin buffer after a repository state change."
-  (when-let* ((buffer (majutsu-diff-editor-session-origin-buffer session))
-              ((buffer-live-p buffer)))
-    (with-current-buffer buffer
-      (let ((default-directory
-             (majutsu-diff-editor-session-repository-root session)))
-        (when (derived-mode-p 'majutsu-mode)
-          (majutsu-refresh))))))
-
 (defun majutsu-diff-editor--invalidate-unowned-session (session)
   "Conservatively invalidate SESSION after unowned process setup fails."
-  ;; A child without a completion owner may have mutated the repository.
-  ;; Invalidate every selection for its root before releasing the slot.
-  (let ((inhibit-quit t))
-    (majutsu-interactive-invalidate-repository
-     (majutsu-diff-editor-session-repository-root session))
-    (run-at-time 0 nil #'majutsu-diff-editor--refresh-origin session)))
+  (majutsu-terminal-session--invalidate-unowned session))
+
+(defun majutsu-diff-editor--notify-exit (session event)
+  "Run diff-editor observers for SESSION after Ghostel EVENT."
+  (run-hook-with-args 'majutsu-diff-editor-session-exit-hook session event))
 
 (defun majutsu-diff-editor--complete-session
     (session &optional event unchanged-message)
@@ -438,23 +378,13 @@ zero-delay timer, outside Ghostel's process sentinel.")
 
 UNCHANGED-MESSAGE is displayed by the shared completion helper only when the
 repository operation id is unchanged."
-  (unless (majutsu-diff-editor-session-completed-p session)
-    (setf (majutsu-diff-editor-session-completed-p session) t)
-    (let (outcome)
-      (unwind-protect
-          (setq outcome
-                (majutsu-interactive-complete-repository-operation
-                 (majutsu-diff-editor-session-repository-root session)
-                 (majutsu-diff-editor-session-origin-buffer session)
-                 (majutsu-diff-editor-session-operation-id-before session)
-                 unchanged-message))
-        (majutsu-diff-editor--unregister-session session))
-      ;; Hooks are observers, not part of the transactional completion path.
-      ;; In particular they may immediately start another session for ROOT.
-      (when event
-        (run-hook-with-args 'majutsu-diff-editor-session-exit-hook
-                            session event))
-      outcome)))
+  (setf (majutsu-diff-editor-session-unchanged-message session)
+        unchanged-message)
+  (unless (or (majutsu-diff-editor-session-exit-function session)
+              (null event))
+    (setf (majutsu-diff-editor-session-exit-function session)
+          #'majutsu-diff-editor--notify-exit))
+  (majutsu-terminal-session--complete session event))
 
 (defun majutsu-diff-editor--finish-process-session (session exit-code)
   "Finish process-hosted SESSION after EXIT-CODE outside its sentinel."
@@ -470,45 +400,6 @@ repository operation id is unchanged."
         (majutsu-jj-append-filesets
          (majutsu-diff-editor-session-args session)
          (majutsu-diff-editor-session-filesets session))))
-
-(defun majutsu-diff-editor--terminal-buffer-name (session)
-  "Return a fresh Ghostel terminal buffer name for SESSION."
-  (format "*majutsu %s diff editor: %s*"
-          (majutsu-diff-editor-session-command session)
-          (abbreviate-file-name
-           (directory-file-name
-            (majutsu-diff-editor-session-repository-root session)))))
-
-(defun majutsu-diff-editor--finish-ghostel-session (session event)
-  "Run SESSION's Ghostel exit hook after EVENT outside its sentinel."
-  (majutsu-diff-editor--complete-session
-   session event "jj diff editor ended without a repository operation"))
-
-(defun majutsu-diff-editor--ghostel-exit (buffer event)
-  "Defer completion of BUFFER's diff-editor session after Ghostel EVENT."
-  (when (buffer-live-p buffer)
-    (when-let* ((session
-                 (buffer-local-value 'majutsu-diff-editor--session buffer)))
-      (run-at-time 0 nil #'majutsu-diff-editor--finish-ghostel-session
-                   session event))))
-
-(defun majutsu-diff-editor--terminal-buffer-killed ()
-  "Finish the session associated with a manually killed Ghostel buffer."
-  (when majutsu-diff-editor--session
-    (run-at-time 0 nil #'majutsu-diff-editor--finish-terminal-kill
-                 majutsu-diff-editor--session)))
-
-(defun majutsu-diff-editor--finish-terminal-kill (session)
-  "Complete SESSION after its Ghostel lifecycle process has stopped.
-
-Killing the terminal buffer first closes its display.  Ghostel's native
-reaper may still be waiting for jj to finish and record an operation, so do
-not compare operation ids until that lifecycle process has exited."
-  (let ((process (majutsu-diff-editor-session-process session)))
-    (if (and (processp process) (process-live-p process))
-        (run-at-time 0.05 nil #'majutsu-diff-editor--finish-terminal-kill
-                     session)
-      (majutsu-diff-editor--finish-ghostel-session session nil))))
 
 (defun majutsu-diff-editor--assert-ghostel-editor-support (root command args)
   "Signal unless Ghostel can support COMMAND with ARGS under ROOT.
@@ -550,7 +441,7 @@ filter."
       (process-put process 'majutsu-with-editor-tracker-installed t))))
 
 (defun majutsu-diff-editor--remote-ghostel-exec (buffer program args root)
-  "Run remote Ghostel in BUFFER and track editor packets from its first byte.
+  "Run remote PROGRAM with ARGS in Ghostel BUFFER under ROOT.
 
 Ghostel currently exposes the lifecycle process only after `ghostel-exec'
 returns.  Temporarily decorate the one remote PTY `make-process' call targeting
@@ -581,7 +472,7 @@ processes, is delegated untouched."
       (ghostel-exec buffer program args))))
 
 (defun majutsu-diff-editor--ghostel-exec (session buffer program args)
-  "Run Ghostel for SESSION and compose its remote editor tracker.
+  "Run PROGRAM with ARGS in Ghostel BUFFER for SESSION.
 
 Use Ghostel's returned public lifecycle process.  Its existing filter already
 combines Ghostel rendering with with-editor, so wrapping that filter preserves
@@ -598,6 +489,18 @@ their order while putting Majutsu's tracker first."
       (majutsu-diff-editor--install-remote-with-editor-tracker process root))
     process))
 
+(defun majutsu-diff-editor--terminal-exec (session buffer program args)
+  "Run diff-editor SESSION in BUFFER with PROGRAM and ARGS.
+
+Install with-editor before constructing Majutsu's process environment so both
+JJ_EDITOR and the user's jj environment reach the Ghostel child."
+  (let ((root (majutsu-diff-editor-session-repository-root session)))
+    (let ((default-directory root))
+      (majutsu-with-editor
+        (let ((process-environment (majutsu-process-environment args)))
+          (majutsu-diff-editor--ghostel-exec
+           session buffer program args))))))
+
 (defun majutsu-diff-editor--start-ghostel (session)
   "Start SESSION through Ghostel's public API and return SESSION."
   (let ((root (majutsu-diff-editor-session-repository-root session)))
@@ -605,49 +508,19 @@ their order while putting Majutsu's tracker first."
      root
      (majutsu-diff-editor-session-command session)
      (majutsu-diff-editor-session-args session))
-    (let* ((buffer (generate-new-buffer
-                    (majutsu-diff-editor--terminal-buffer-name session)))
-           (command (majutsu-diff-editor--session-jj-arguments session))
-           (args (let ((default-directory root))
-                   (majutsu-process-jj-arguments command)))
-           (program (let ((default-directory root))
-                      (majutsu-jj--executable))))
-      (let ((started nil))
-        (unwind-protect
-            (progn
-              (setf (majutsu-diff-editor-session-terminal-buffer session) buffer)
-              (with-current-buffer buffer
-                (setq default-directory root)
-                ;; `ghostel-exec' initializes a non-Ghostel buffer by enabling
-                ;; its major mode.  Major-mode activation clears ordinary
-                ;; buffer-local variables, so do that public initialization
-                ;; first; the session hook and retained transcript settings must
-                ;; be installed afterwards.
-                (ghostel-mode)
-                (setq default-directory root)
-                (setq-local majutsu-diff-editor--session session)
-                (add-hook 'kill-buffer-hook
-                          #'majutsu-diff-editor--terminal-buffer-killed nil t)
-                ;; Preserve the transcript, and install the hook before the child exists.
-                (setq-local ghostel-kill-buffer-on-exit nil)
-                (add-hook 'ghostel-exit-functions
-                          #'majutsu-diff-editor--ghostel-exit nil t))
-              ;; `ghostel-exec' uses an undisplayed buffer's 80x24 fallback,
-              ;; which is unsuitable for jj's full-screen built-in editor.
-              (majutsu-display-buffer buffer)
-              (let ((default-directory root))
-                (majutsu-with-editor
-                  ;; `majutsu-with-editor' has installed JJ_EDITOR in the dynamic
-                  ;; environment.  Build Majutsu's normal jj environment after
-                  ;; that, so Ghostel inherits both JJ_EDITOR and user overrides.
-                  (let ((process-environment (majutsu-process-environment args)))
-                    (setf (majutsu-diff-editor-session-process session)
-                          (majutsu-diff-editor--ghostel-exec
-                           session buffer program args))))
-                (setq started t)
-                session))
-          (unless started
-            (majutsu-diff-editor--abort-session-start session)))))))
+    (setf (majutsu-diff-editor-session-argv session)
+          (majutsu-diff-editor--session-jj-arguments session)
+          (majutsu-diff-editor-session-title session)
+          (format "%s diff editor"
+                  (majutsu-diff-editor-session-command session))
+          (majutsu-diff-editor-session-unchanged-message session)
+          "jj diff editor ended without a repository operation"
+          (majutsu-diff-editor-session-exec-function session)
+          #'majutsu-diff-editor--terminal-exec
+          (majutsu-diff-editor-session-exit-function session)
+          #'majutsu-diff-editor--notify-exit
+          (majutsu-diff-editor-session-terminal-p session) t)
+    (majutsu-terminal-session--start session)))
 
 (defun majutsu-diff-editor--start-process (session)
   "Start SESSION in Majutsu's ordinary asynchronous process buffer."
@@ -696,17 +569,19 @@ current buffer does.  Return a `majutsu-diff-editor-session'."
            :origin-buffer origin-buffer
            :repository-root (file-name-as-directory root)
            :host (let ((default-directory (file-name-as-directory root)))
-                   (majutsu-diff-editor-select-host command args))
-           :operation-id-before
-           (majutsu-jj-operation-id (file-name-as-directory root)))))
+                   (majutsu-diff-editor-select-host command args)))))
     (majutsu-diff-editor--register-session session)
     (let ((started nil))
       (unwind-protect
-          (prog1
-              (pcase (majutsu-diff-editor-session-host session)
-                ('ghostel (majutsu-diff-editor--start-ghostel session))
-                ('process (majutsu-diff-editor--start-process session)))
-            (setq started t))
+          (progn
+            (setf (majutsu-diff-editor-session-operation-id-before session)
+                  (majutsu-jj-operation-id
+                   (majutsu-diff-editor-session-repository-root session)))
+            (prog1
+                (pcase (majutsu-diff-editor-session-host session)
+                  ('ghostel (majutsu-diff-editor--start-ghostel session))
+                  ('process (majutsu-diff-editor--start-process session)))
+              (setq started t)))
         (unless started
           (majutsu-diff-editor--abort-session-start session))))))
 
