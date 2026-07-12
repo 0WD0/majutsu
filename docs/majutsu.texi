@@ -1262,9 +1262,6 @@ Runs: @samp{jj edit REV}
 @kindex s
 @findex majutsu-squash
 Open the Squash transient. You can select multiple source revisions (@samp{--from}) to squash into a destination (@samp{--into}).
-@item @kbd{-r}
-@kindex -r
-Revision to squash.
 @item @kbd{-f}
 @kindex -f
 Source revisions (@samp{--from}).

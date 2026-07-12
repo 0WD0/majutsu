@@ -514,7 +514,6 @@ Runs: =jj edit REV=
 
 ** Squashing
 - Key: s (majutsu-squash) :: Open the Squash transient. You can select multiple source revisions (=--from=) to squash into a destination (=--into=).
-- Key: -r :: Revision to squash.
 - Key: -f :: Source revisions (=--from=).
 - Key: -t :: Destination revision (=--into=).
 - Key: -o :: Onto destination.
