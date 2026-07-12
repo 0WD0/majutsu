@@ -120,6 +120,19 @@ This dynamic hook is for a caller that must retain ownership of a child even
 if a non-local exit interrupts setup before `majutsu-start-process' returns.
 It runs before Majutsu installs the process sentinel.")
 
+(defconst majutsu-process--control-fragment-max-bytes 1000
+  "Maximum size of an incomplete process control packet.")
+
+(defun majutsu-process-completion-owned-p (process)
+  "Return non-nil when PROCESS has a complete Majutsu completion path.
+
+This becomes non-nil only after both the Majutsu filter and sentinel have
+been installed successfully.  Callers which receive a child through
+`majutsu-process--start-created-callback' can use this to distinguish a child
+whose completion is owned by Majutsu from one still in startup setup."
+  (and (processp process)
+       (process-get process 'majutsu-completion-owned)))
+
 (defun majutsu-process--with-editor-open-file (process line)
   "Return the file opened by with-editor control LINE from PROCESS."
   (save-match-data
@@ -446,6 +459,15 @@ is not a `magit-section', in which case the section slots are left unset."
     (set-marker (process-mark process) (point)))
   (majutsu--process-install-filter process)
   (set-process-sentinel process sentinel)
+  ;; Do not publish completion ownership until both installation calls have
+  ;; returned.  In particular, a wrapper can install one of them and then
+  ;; signal; startup cleanup must still reclaim that child.
+  (process-put process 'majutsu-completion-owned t)
+  ;; Emacs does not replay an exit event which was delivered before the
+  ;; sentinel was installed.  The Majutsu sentinel is idempotent, so this
+  ;; explicit dispatch also closes the exit-at-installation boundary race.
+  (when (memq (process-status process) '(exit signal))
+    (funcall sentinel process "finished\n"))
   process)
 
 (defun majutsu-start-process (program &optional input &rest args)
@@ -464,8 +486,7 @@ repository's log buffer (see `majutsu-refresh')."
          (section (with-current-buffer process-buf
                     (prog1 (majutsu--process-insert-section pwd program args nil nil)
                       (backward-char 1))))
-         process
-         (setup-complete nil))
+         process)
     ;; A quit while configuring a just-created child must not leave an
     ;; unowned process behind.  The creation callback lets session owners see
     ;; the child early enough to make their own cleanup decision.
@@ -479,14 +500,13 @@ repository's log buffer (see `majutsu-refresh')."
           (when majutsu-process--start-created-callback
             (funcall majutsu-process--start-created-callback process))
           (majutsu--process-setup process section root #'majutsu--process-sentinel)
-          (setq setup-complete t)
           (when input
             (with-current-buffer input
               (process-send-region process (point-min) (point-max))
               (process-send-eof process)))
           (majutsu--process-display-buffer process)
           process)
-      (unless setup-complete
+      (unless (majutsu-process-completion-owned-p process)
         (when (and (processp process) (process-live-p process))
           (ignore-errors (delete-process process)))))))
 
@@ -510,6 +530,14 @@ repository's log buffer (see `majutsu-refresh')."
        (or (string-prefix-p "MAJUTSU-EDIFF:" fragment)
            (string-prefix-p fragment "MAJUTSU-EDIFF:"))))
 
+(defun majutsu--process-bounded-control-fragment (fragment)
+  "Return control FRAGMENT when it fits the pending-packet bound.
+Return the empty string when FRAGMENT exceeds that bound."
+  (if (<= (string-bytes fragment)
+          majutsu-process--control-fragment-max-bytes)
+      fragment
+    ""))
+
 (defun majutsu-process-track-with-editor-output (process output)
   "Record roots for with-editor OPEN packets in raw PROCESS OUTPUT.
 
@@ -532,7 +560,7 @@ process-buffer filter."
     (let ((trailing (substring input start)))
       (process-put process 'majutsu--with-editor-root-pending
                    (if (majutsu--with-editor-control-fragment-p trailing)
-                       trailing
+                       (majutsu--process-bounded-control-fragment trailing)
                      "")))))
 
 (defun majutsu--process-handle-control-line (proc line)
@@ -567,7 +595,8 @@ Return non-nil when LINE is consumed as a control packet."
       (cond
        ((or (majutsu--with-editor-control-fragment-p trailing)
             (majutsu--ediff-control-fragment-p trailing))
-        (process-put proc 'majutsu--with-editor-filter-pending trailing))
+        (process-put proc 'majutsu--with-editor-filter-pending
+                     (majutsu--process-bounded-control-fragment trailing)))
        ((string-empty-p trailing)
         (process-put proc 'majutsu--with-editor-filter-pending ""))
        (t
@@ -575,23 +604,37 @@ Return non-nil when LINE is consumed as a control packet."
         (push trailing visible)))
       (apply #'concat (nreverse visible)))))
 
+(defun majutsu--process-last-bare-carriage-return (string)
+  "Return the last carriage return in STRING that is not part of CRLF."
+  (let ((position (1- (length string)))
+        found)
+    (while (and (>= position 0) (not found))
+      (when (and (eq (aref string position) ?\r)
+                 (or (= position (1- (length string)))
+                     (not (eq (aref string (1+ position)) ?\n))))
+        (setq found position))
+      (setq position (1- position)))
+    found))
+
 (defun majutsu--process-filter (proc string)
   "Default filter used by `majutsu-start-process'."
   (with-current-buffer (process-buffer proc)
     (let ((inhibit-read-only t))
       (goto-char (process-mark proc))
-      ;; Find last ^M in STRING.  If one was found, ignore everything
-      ;; before it and delete the current line.
-      (when-let* ((ret-pos (cl-position ?\r string :from-end t)))
-        (setq string (substring string (1+ ret-pos)))
-        (delete-region (line-beginning-position) (point)))
       ;; Control packets (with-editor and Majutsu Ediff) are not user-facing
-      ;; process output and should be consumed before insertion.
+      ;; process output and should be consumed before insertion.  Do this
+      ;; before handling bare carriage returns so packet CRLF, including a
+      ;; CR/LF chunk boundary, remains available to the packet parser.
       (setq string
             (majutsu--process-strip-with-editor-control-packets
              proc
              (concat (or (process-get proc 'majutsu--with-editor-filter-pending) "")
                      string)))
+      ;; A bare ^M is progress-style line replacement.  CRLF is an ordinary
+      ;; line ending and must not discard a preceding control packet or text.
+      (when-let* ((ret-pos (majutsu--process-last-bare-carriage-return string)))
+        (setq string (substring string (1+ ret-pos)))
+        (delete-region (line-beginning-position) (point)))
       (unless (string-empty-p string)
         (insert (propertize string 'magit-section
                             (process-get proc 'section)))
@@ -610,7 +653,12 @@ Return non-nil when LINE is consumed as a control packet."
 
 (defun majutsu--process-sentinel (process _event)
   "Default sentinel used by `majutsu-start-process'."
-  (when (memq (process-status process) '(exit signal))
+  (when (and (memq (process-status process) '(exit signal))
+             (not (process-get process 'majutsu-completion-finished)))
+    ;; Mark completion before any callback or refresh.  Setup may dispatch an
+    ;; already-finished child explicitly while an ordinary exit event is also
+    ;; pending, and both paths must converge here exactly once.
+    (process-put process 'majutsu-completion-finished t)
     (majutsu-process-finish process)
     (unless (process-get process 'inhibit-refresh)
       (let ((command-buf (process-get process 'command-buf))
