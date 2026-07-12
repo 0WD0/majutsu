@@ -1290,8 +1290,8 @@ Runs: @samp{jj squash --from SRC --into DEST [FILESETS...]}
 @section Absorbing
 
 @table @asis
-@item @kbd{a (Emacs/Evil) / ? A} (@code{majutsu-absorb})
-@kindex a (Emacs/Evil) / ? A
+@item @kbd{a} (@code{majutsu-absorb})
+@kindex a
 @findex majutsu-absorb
 Open the Absorb transient.
 @item @kbd{-f}

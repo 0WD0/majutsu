@@ -524,7 +524,7 @@ Runs: =jj edit REV=
 Runs: =jj squash --from SRC --into DEST [FILESETS...]=
 
 ** Absorbing
-- Key: a (Emacs/Evil) / ? A (majutsu-absorb) :: Open the Absorb transient.
+- Key: a (majutsu-absorb) :: Open the Absorb transient.
 - Key: -f :: Source revision (=--from=, default =@=).
 - Key: -t :: Destination revset filters (=--into=, repeatable, default =mutable()=).
 - Key: -- :: Limit absorb to specific filesets.
