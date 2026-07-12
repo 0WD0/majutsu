@@ -97,9 +97,9 @@
   selection nor a fileset is supplied.
 
 - Terminal diff editors through Ghostel ::
-  Optional Ghostel integration hosts jj's built-in terminal diff editor.
-  ~majutsu-diff-editor-host~ selects the host; external non-terminal tools
-  can also run without Ghostel.
+  Optional Ghostel integration hosts jj's built-in terminal diff editor,
+  locally and over supported POSIX TRAMP connections.  ~majutsu-diff-editor-host~
+  selects the host; external non-terminal tools can also run without Ghostel.
 
 - Revision information in diff buffers ::
   Single-revision change diffs show collapsible commit metadata and the full
