@@ -411,6 +411,8 @@
                     ((symbol-function 'majutsu-display-buffer)
                      (lambda (buffer)
                        (set-window-buffer (selected-window) buffer)))
+                    ((symbol-function 'processp)
+                     (lambda (value) (eq value 'ghostel-process)))
                     ((symbol-function 'ghostel-exec)
                      (lambda (buffer program args)
                        (with-current-buffer buffer
@@ -423,7 +425,7 @@
                                      :environment process-environment
                                      :kill-on-exit ghostel-kill-buffer-on-exit
                                      :exit-hook
-                                     (memq #'majutsu-diff-editor--ghostel-exit
+                                     (memq #'majutsu-terminal-session--ghostel-exit
                                            ghostel-exit-functions))))
                        'ghostel-process)))
             (let ((session
@@ -446,12 +448,12 @@
               (should-not (plist-get seen :kill-on-exit))
               (should (plist-get seen :exit-hook))
               (with-current-buffer terminal
-                (should (eq majutsu-diff-editor--session session)))))
+                (should (eq majutsu-terminal-session--session session)))))
           (when (buffer-live-p terminal)
             (with-current-buffer terminal
-              (setq-local majutsu-diff-editor--session nil)
+              (setq-local majutsu-terminal-session--session nil)
               (remove-hook 'kill-buffer-hook
-                           #'majutsu-diff-editor--terminal-buffer-killed t))
+                           #'majutsu-terminal-session--buffer-killed t))
             (kill-buffer terminal)))))))
 
 (ert-deftest majutsu-diff-editor-start/process-uses-session-aware-runner ()
@@ -610,67 +612,9 @@
                  (gethash root majutsu-diff-editor--live-sessions))
                 (should (equal invalidated root))
                 (should (equal (nth 2 scheduled)
-                               #'majutsu-diff-editor--refresh-origin)))))
+                               #'majutsu-terminal-session--refresh-origin)))))
         (when (and (processp process) (process-live-p process))
           (delete-process process))))))
-
-(ert-deftest majutsu-diff-editor-finish-terminal-kill/waits-for-live-reaper ()
-  "Do not compare operation ids until Ghostel's reaper has exited."
-  (let ((session (majutsu-diff-editor-session-create :process 'reaper))
-        scheduled completed)
-    (cl-letf (((symbol-function 'processp) (lambda (_process) t))
-              ((symbol-function 'process-live-p) (lambda (_process) t))
-              ((symbol-function 'run-at-time)
-               (lambda (&rest args) (setq scheduled args)))
-              ((symbol-function 'majutsu-diff-editor--complete-session)
-               (lambda (&rest _) (setq completed t))))
-      (majutsu-diff-editor--finish-terminal-kill session)
-      (should-not completed)
-      (should (equal scheduled
-                     (list 0.05 nil
-                           #'majutsu-diff-editor--finish-terminal-kill
-                           session))))))
-
-(ert-deftest majutsu-diff-editor-finish-terminal-kill/completes-after-reaper ()
-  "A stopped lifecycle process completes the session immediately."
-  (let ((session (majutsu-diff-editor-session-create :process 'reaper))
-        completed)
-    (cl-letf (((symbol-function 'processp) (lambda (_process) t))
-              ((symbol-function 'process-live-p) (lambda (_process) nil))
-              ((symbol-function 'majutsu-diff-editor--complete-session)
-               (lambda (value &rest _) (setq completed value))))
-      (majutsu-diff-editor--finish-terminal-kill session)
-      (should (eq completed session)))))
-
-(ert-deftest majutsu-diff-editor-ghostel-exit/defers-event-without-exit-status ()
-  "Ghostel completion uses its event and never interprets a process status."
-  (let* ((buffer (generate-new-buffer " *majutsu-ghostel-exit*"))
-         (session (majutsu-diff-editor-session-create
-                   :repository-root "/repo/"))
-         scheduled
-         completed)
-    (unwind-protect
-        (progn
-          (with-current-buffer buffer
-            (setq-local majutsu-diff-editor--session session))
-          (cl-letf (((symbol-function 'run-at-time)
-                     (lambda (&rest args) (setq scheduled args))))
-            (majutsu-diff-editor--ghostel-exit buffer "finished\n"))
-          (should (equal scheduled
-                         (list 0 nil
-                               #'majutsu-diff-editor--finish-ghostel-session
-                               session "finished\n")))
-          (cl-letf (((symbol-function 'process-exit-status)
-                     (lambda (&rest _)
-                       (ert-fail "Ghostel completion read process status")))
-                    ((symbol-function 'majutsu-diff-editor--complete-session)
-                     (lambda (&rest args) (setq completed args))))
-            (apply (nth 2 scheduled) (nthcdr 3 scheduled)))
-          (should (equal completed
-                         (list session "finished\n"
-                               "jj diff editor ended without a repository operation"))))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
 
 (ert-deftest majutsu-diff-editor-complete-session/delegates-repository-freshness ()
   "Use the shared repository-wide completion contract."
