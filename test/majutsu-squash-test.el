@@ -150,9 +150,63 @@
                      '(("squash" "--from=B" "--into=parents(roots((B)))"
                         "--" "majutsu-squash.el")))))))
 
+(ert-deftest majutsu-squash-execute/routes-jj-editor-flags-to-diff-editor ()
+  "Preserve jj editor flags and canonical squash arguments in the session."
+  (let ((origin (current-buffer)))
+    (dolist (editor-args '(("-i")
+                           ("--interactive")
+                           ("--tool" "meld")
+                           ("--tool=meld")))
+      (let (called)
+        (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'majutsu-squash--point-revision)
+                   (lambda () nil))
+                  ((symbol-function 'majutsu-diff-editor-start)
+                   (lambda (&rest args)
+                     (setq called args))))
+          (majutsu-squash-execute
+           (append '(("--" "src/a.el") "--from=B") editor-args))
+          (should (equal (cl-subseq called 0 4)
+                         (list "squash"
+                               (append '("--from=B")
+                                       editor-args
+                                       '("--into=parents(roots((B)))"))
+                               '("src/a.el")
+                               :origin-buffer)))
+          (should (eq (nth 4 called) origin)))))))
+(ert-deftest majutsu-squash-execute/explicit-jj-editor-wins-over-patch-selection ()
+  "A requested jj editor bypasses patch-source validation and keeps selection."
+  (let ((origin (current-buffer)) called cleared)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+               (lambda (&rest _) '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
+              ((symbol-function 'majutsu-squash--patch-source-revset)
+               (lambda (&rest _) nil))
+              ((symbol-function 'majutsu-squash--point-revision)
+               (lambda () nil))
+              ((symbol-function 'majutsu-diff-editor-start)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-interactive-run-replay-plan)
+               (lambda (&rest _)
+                 (ert-fail "Should not replace an explicit jj editor")))
+              ((symbol-function 'majutsu-interactive-clear)
+               (lambda () (setq cleared t))))
+      (majutsu-squash-execute '("--from=B" "--tool" "meld"))
+      (should (equal (cl-subseq called 0 4)
+                     '("squash"
+                       ("--from=B" "--tool" "meld"
+                        "--into=parents(roots((B)))")
+                       nil :origin-buffer)))
+      (should (eq (nth 4 called) origin))
+      (should-not cleared))))
+(ert-deftest majutsu-squash-transient/exposes-tool-infix ()
+  "Squash should expose the jj --tool option without shadowing --into."
+  (should (transient-get-suffix 'majutsu-squash "=t")))
+
 (ert-deftest majutsu-squash-execute/patch-removes-native-interactive-tool-args ()
-  "Patch mode injects Majutsu's tool and strips native tool args."
-  (let (called cleared)
+  "Patch mode calls the shared jj-editor argument stripper."
+  (let (called cleared stripped)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _)
                  (list :base 'left :payload-root 'right
@@ -161,6 +215,10 @@
                        '((:action modify :path "image.bin")))))
               ((symbol-function 'majutsu-squash--patch-source-revset)
                (lambda (&rest _) "B"))
+              ((symbol-function 'majutsu-diff-editor-strip-interactive-arguments)
+               (lambda (args)
+                 (setq stripped args)
+                 args))
               ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args)
                  (setq called args)))
@@ -168,7 +226,7 @@
                (lambda () (setq cleared t)))
               ((symbol-function 'majutsu-squash--point-revision)
                (lambda () nil)))
-      (majutsu-squash-execute '("--from=B" "--interactive" "--tool=meld" "--tool" "vimdiff"))
+      (majutsu-squash-execute '("--from=B"))
       (should (equal called
                      '("squash"
                        ("--from=B" "--into=parents(roots((B)))")
@@ -177,7 +235,10 @@
                         :patch "PATCH"
                         :file-ops
                         ((:action modify :path "image.bin"))))))
-      (should cleared))))
+      (should (equal stripped
+                     '("--from=B" "--into=parents(roots((B)))")))
+      (should-not cleared))))
+
 
 (ert-deftest majutsu-squash-execute/patch-rejects-different-source ()
   "Patch mode should not apply the current diff patch to another source."
