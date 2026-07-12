@@ -53,6 +53,8 @@ Majutsu stands on the shoulders of giants. We are grateful to:
   completion).
 - =transient= 0.7.0 or later (popup menus).
 - =with-editor= (for descriptive message editing).
+- =ghostel= (optional, but required for terminal TUIs such as =jj arrange=
+  and jj's built-in diff editor).
 
 ** Installing from Git
 Majutsu is currently available via GitHub. You can install it using your
@@ -1173,6 +1175,31 @@ Ghostel's remote PTY path needs a POSIX remote reachable by a supported TRAMP
 method; Windows remotes are not supported.  The ordinary external-editor
 fallback is used when Ghostel is unavailable, or locally when no usable
 =emacsclient= is configured.
+
+*** Native Arrange TUI
+~majutsu-arrange-tui~ hosts jj's own full-screen =arrange= command in Ghostel.
+It is available from the top-level dispatcher with =? A= or directly with
+=M-x majutsu-arrange-tui=.  The direct =A= binding in a log buffer remains
+~majutsu-new-with-after~; Arrange's =A= belongs to the dispatcher.
+
+With no prefix argument, Majutsu runs exactly =jj arrange= and leaves target
+selection to jj's =revsets.arrange= configuration.  With a prefix argument,
+Majutsu prompts for one revset.  Lisp callers may pass several revsets, which
+remain separate positional arguments and are combined by jj.
+
+Arrange is not a diff-editor session: it has no =-i=, =--tool=, or
+description-editor phase.  It always requires a PTY, so Majutsu requires
+Ghostel and never falls back to the ordinary process buffer or installs
+=JJ_EDITOR=.  Local repositories and Ghostel-supported POSIX TRAMP repositories
+use the same terminal-session lifecycle.
+
+Majutsu compares jj operation ids after every exit, including =q= cancellation,
+startup errors, and no-op confirmation.  This is necessary because jj may
+snapshot the working copy while starting Arrange even when no arrange plan is
+confirmed.  A changed or unreadable operation invalidates stale patch
+selections before refreshing the originating Majutsu buffer; an unchanged
+operation preserves them.  The Ghostel transcript remains available after the
+TUI exits.
 
 *** Selection Semantics
 The meaning of "selected" differs by operation:

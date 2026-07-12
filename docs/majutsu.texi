@@ -140,6 +140,7 @@ Interactive Patching
 * Diff Context Inheritance::
 * Visual Feedback::
 * jj Diff Editors and Terminal Hosts::
+* Native Arrange TUI::
 * Selection Semantics::
 * Technical Implementation::
 * Edge Cases::
@@ -290,6 +291,9 @@ completion).
 @samp{transient} 0.7.0 or later (popup menus).
 @item
 @samp{with-editor} (for descriptive message editing).
+@item
+@samp{ghostel} (optional@comma{} but required for terminal TUIs such as @samp{jj arrange}
+and jj's built-in diff editor).
 @end itemize
 
 @node Installing from Git
@@ -1989,6 +1993,7 @@ session ends; they are not a persistent staging area.
 * Diff Context Inheritance::
 * Visual Feedback::
 * jj Diff Editors and Terminal Hosts::
+* Native Arrange TUI::
 * Selection Semantics::
 * Technical Implementation::
 * Edge Cases::
@@ -2125,6 +2130,33 @@ Ghostel's remote PTY path needs a POSIX remote reachable by a supported TRAMP
 method; Windows remotes are not supported.  The ordinary external-editor
 fallback is used when Ghostel is unavailable@comma{} or locally when no usable
 @samp{emacsclient} is configured.
+
+@node Native Arrange TUI
+@subsection Native Arrange TUI
+
+@code{majutsu-arrange-tui} hosts jj's own full-screen @samp{arrange} command in Ghostel.
+It is available from the top-level dispatcher with @samp{? A} or directly with
+@samp{M-x majutsu-arrange-tui}.  The direct @samp{A} binding in a log buffer remains
+@code{majutsu-new-with-after}; Arrange's @samp{A} belongs to the dispatcher.
+
+With no prefix argument@comma{} Majutsu runs exactly @samp{jj arrange} and leaves target
+selection to jj's @samp{revsets.arrange} configuration.  With a prefix argument@comma{}
+Majutsu prompts for one revset.  Lisp callers may pass several revsets@comma{} which
+remain separate positional arguments and are combined by jj.
+
+Arrange is not a diff-editor session: it has no @samp{-i}@comma{} @samp{--tool}@comma{} or
+description-editor phase.  It always requires a PTY@comma{} so Majutsu requires
+Ghostel and never falls back to the ordinary process buffer or installs
+@samp{JJ_EDITOR}.  Local repositories and Ghostel-supported POSIX TRAMP repositories
+use the same terminal-session lifecycle.
+
+Majutsu compares jj operation ids after every exit@comma{} including @samp{q} cancellation@comma{}
+startup errors@comma{} and no-op confirmation.  This is necessary because jj may
+snapshot the working copy while starting Arrange even when no arrange plan is
+confirmed.  A changed or unreadable operation invalidates stale patch
+selections before refreshing the originating Majutsu buffer; an unchanged
+operation preserves them.  The Ghostel transcript remains available after the
+TUI exits.
 
 @node Selection Semantics
 @subsection Selection Semantics

@@ -101,6 +101,11 @@
   locally and over supported POSIX TRAMP connections.  ~majutsu-diff-editor-host~
   selects the host; external non-terminal tools can also run without Ghostel.
 
+- jj's Arrange TUI ::
+  ~majutsu-arrange-tui~ (~? A~) runs =jj arrange= in Ghostel.  Without explicit
+  revisions it uses jj's =revsets.arrange= setting; a prefix argument prompts
+  for a revset.
+
 - Revision information in diff buffers ::
   Single-revision change diffs show collapsible commit metadata and the full
   description.  Comparisons using =--from= / =--to= do not show a single commit's
