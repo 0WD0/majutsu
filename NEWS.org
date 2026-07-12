@@ -199,8 +199,9 @@
 ** Fixed
 
 - Split, Squash, and Restore defaults ::
-  Split inherits a displayed change only when the diff resolves to one revision;
-  multi-change ranges are no longer forwarded as invalid Split arguments.
+  Split inherits only single-change diff sources.  Squash keeps every
+  =--revisions= source from the displayed diff when given an explicit
+  destination; arbitrary =--from= / =--to= comparisons do not imply a Squash source.
 
 - Transient command context ::
   Revision and file prompts, selection toggles, and point-sensitive actions
