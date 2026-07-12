@@ -111,29 +111,42 @@
       (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
                   'process)))))
 
-(ert-deftest majutsu-diff-editor-select-host/auto-remote-external-uses-process ()
-  "TRAMP external editors use the ordinary process path, even with Ghostel."
-  (let ((majutsu-diff-editor-host 'auto))
+(ert-deftest majutsu-diff-editor-select-host/auto-remote-prefers-ghostel ()
+  "TRAMP sessions use Ghostel without requiring a local emacsclient."
+  (let ((majutsu-diff-editor-host 'auto)
+        (with-editor-emacsclient-executable nil))
     (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) t))
               ((symbol-function 'majutsu-diff-editor-ghostel-available-p)
                (lambda () t))
               ((symbol-function 'majutsu-diff-editor--effective-tool)
-               (lambda (_args) "meld"))
-              ((symbol-function 'message) (lambda (&rest _) nil)))
+               (lambda (_args) "meld")))
       (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
-                  'process)))))
+                  'ghostel)))))
 
-(ert-deftest majutsu-diff-editor-select-host/auto-remote-rejects-builtin ()
-  "TRAMP cannot host jj's built-in recorder through Ghostel."
-  (let ((majutsu-diff-editor-host 'auto))
+(ert-deftest majutsu-diff-editor-select-host/auto-remote-hosts-builtin ()
+  "TRAMP Ghostel sessions support jj's built-in recorder."
+  (let ((majutsu-diff-editor-host 'auto)
+        (with-editor-emacsclient-executable nil))
     (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) t))
               ((symbol-function 'majutsu-diff-editor-ghostel-available-p)
                (lambda () t))
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) ":builtin")))
-      (should-error
-       (majutsu-diff-editor-select-host '("--interactive"))
-       :type 'user-error))))
+      (should (eq (majutsu-diff-editor-select-host '("--interactive"))
+                  'ghostel)))))
+
+(ert-deftest majutsu-diff-editor-select-host/auto-remote-falls-back-without-ghostel ()
+  "A remote external editor still has a process fallback without Ghostel."
+  (let ((majutsu-diff-editor-host 'auto)
+        (with-editor-emacsclient-executable nil))
+    (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) t))
+              ((symbol-function 'majutsu-diff-editor-ghostel-available-p)
+               (lambda () nil))
+              ((symbol-function 'majutsu-diff-editor--effective-tool)
+               (lambda (_args) "meld"))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
+                  'process)))))
 
 (ert-deftest majutsu-diff-editor-configured-tool/preserves-global-then-local-order ()
   "The config probe must match jj's global-then-invocation argv order."
@@ -196,6 +209,97 @@
                    (and (not (memq buffer before))
                         (string-prefix-p "*majutsu split diff editor:" (buffer-name buffer))))
                  (buffer-list))))))
+
+(ert-deftest majutsu-diff-editor-assert-ghostel-editor-support/remote-needs-no-emacsclient ()
+  "The remote with-editor bridge uses its sleeping editor."
+  (let ((with-editor-emacsclient-executable nil))
+    (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) t)))
+      (should-not
+       (majutsu-diff-editor--assert-ghostel-editor-support "/ssh:example:/repo/")))))
+
+(ert-deftest majutsu-diff-editor-ghostel-exec/installs-tracker-before-delegating-output ()
+  "The remote tracker precedes Ghostel's already-installed output filter."
+  (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal))
+        (root "/ssh:example:/repo/")
+        called)
+    (with-temp-buffer
+      (let* ((buffer (current-buffer))
+             (session (majutsu-diff-editor-session-create :repository-root root))
+             (proc (make-process :name "majutsu-test"
+                                 :buffer buffer
+                                 :command (list "cat"))))
+        (unwind-protect
+            (progn
+              (set-process-filter proc (lambda (&rest _) (setq called t)))
+              (cl-letf (((symbol-function 'file-remote-p)
+                         (lambda (&rest _) "/ssh:example:"))
+                        ;; The outer binding is the pre-existing advised
+                        ;; `make-process' implementation seen by the helper.
+                        ((symbol-function 'make-process)
+                         (lambda (&rest _) proc))
+                        ((symbol-function 'ghostel-exec)
+                         (lambda (target-buffer _program _args)
+                           (make-process :name "ghostel"
+                                         :buffer target-buffer
+                                         :file-handler "/ssh:example:"))))
+                (should (eq (majutsu-diff-editor--ghostel-exec
+                             session buffer "jj" '("split"))
+                            proc)))
+              (funcall (process-filter proc) proc
+                       (format "WITH-EDITOR: 123 OPEN /tmp/editor.jjdescription%c IN /repo\n"
+                               ?\x1f))
+              (should called)
+              (should
+               (equal
+                (majutsu-process-with-editor-file-root
+                 "/ssh:example:/tmp/editor.jjdescription")
+                root)))
+          (delete-process proc))))))
+
+(ert-deftest majutsu-diff-editor-remote-with-editor-advice/composes-the-tracker ()
+  "The real with-editor advice preserves Ghostel after Majutsu tracks output."
+  (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal))
+        (root "/ssh:example:/repo/")
+        command order seen-root)
+    (with-temp-buffer
+      (let ((terminal (current-buffer))
+            (proc (let ((default-directory temporary-file-directory))
+                    (make-process :name "majutsu-test"
+                                  :buffer (current-buffer)
+                                  :command (list "cat")))))
+        (unwind-protect
+            (let ((default-directory root)
+                  (with-editor-emacsclient-executable nil))
+              (cl-letf (((symbol-function 'with-editor-process-filter)
+                         (lambda (_process _output &optional no-default-filter)
+                           (push (if no-default-filter 'with-editor :unexpected)
+                                 order)
+                           (setq seen-root
+                                 (majutsu-process-with-editor-file-root
+                                  "/ssh:example:/tmp/editor.jjdescription")))))
+                (majutsu-with-editor
+                  (let ((process
+                         (make-process@with-editor-process-filter
+                          (lambda (&rest keys)
+                            (setq command (plist-get keys :command))
+                            (set-process-filter proc (plist-get keys :filter))
+                            proc)
+                          :name "ghostel"
+                          :buffer terminal
+                          :command '("/bin/sh" "-c" "exec jj split -i")
+                          :connection-type 'pty
+                          :filter (lambda (&rest _) (push 'ghostel order))
+                          :file-handler "/ssh:example:")))
+                    (majutsu-diff-editor--install-remote-with-editor-tracker
+                     process root)
+                    (funcall (process-filter process) process
+                             (format "WITH-EDITOR: 123 OPEN /tmp/editor.jjdescription%c IN /repo\n"
+                                     ?\x1f)))))
+              (should (equal (car command) "env"))
+              (should (string-prefix-p "JJ_EDITOR=" (cadr command)))
+              (should (equal (nreverse order) '(ghostel with-editor)))
+              (should (equal seen-root root)))
+          (delete-process proc))))))
 
 (ert-deftest majutsu-diff-editor-start/ghostel-displays-and-prepares-buffer ()
   "Ghostel starts only after its session buffer is displayed and prepared."

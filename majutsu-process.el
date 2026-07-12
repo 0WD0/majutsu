@@ -510,6 +510,31 @@ repository's log buffer (see `majutsu-refresh')."
        (or (string-prefix-p "MAJUTSU-EDIFF:" fragment)
            (string-prefix-p fragment "MAJUTSU-EDIFF:"))))
 
+(defun majutsu-process-track-with-editor-output (process output)
+  "Record roots for with-editor OPEN packets in raw PROCESS OUTPUT.
+
+Do not consume OUTPUT or alter PROCESS's visible filter.  This is for a
+terminal host which must preserve its own rendering filter but needs the
+repository association before with-editor visits jj's temporary description
+file.  Partial packets are retained independently of Majutsu's ordinary
+process-buffer filter."
+  (let ((input (concat (or (process-get process
+                                        'majutsu--with-editor-root-pending)
+                           "")
+                       output))
+        (start 0))
+    (while (string-match "\n" input start)
+      (let* ((end (match-beginning 0))
+             (line (substring input start end)))
+        (when (majutsu--with-editor-control-line-p line)
+          (majutsu-process--remember-with-editor-file-root process line))
+        (setq start (1+ end))))
+    (let ((trailing (substring input start)))
+      (process-put process 'majutsu--with-editor-root-pending
+                   (if (majutsu--with-editor-control-fragment-p trailing)
+                       trailing
+                     "")))))
+
 (defun majutsu--process-handle-control-line (proc line)
   "Handle known control LINE values for PROC.
 Return non-nil when LINE is consumed as a control packet."
