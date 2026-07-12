@@ -1349,34 +1349,39 @@ added/context text."
   "Apply or remove word-level refinement overlays.
 When SECTION is nil, walk all hunk sections."
   (if section
-      (unless (oref section hidden)
-        (pcase (list majutsu-diff-refine-hunk
-                     (oref section refined)
-                     (eq section (magit-current-section)))
-          ((or `(all nil ,_) '(t nil t))
-           (oset section refined t)
-           (if (eq majutsu-diff-backend 'color-words)
-               (majutsu-diff--color-words-refine-hunk section)
-             (save-excursion
-               (goto-char (oref section start))
-               (let ((len (- (oref section end) (oref section start))))
-                 (if (and majutsu-diff-refine-max-chars
-                          (> len majutsu-diff-refine-max-chars))
-                     (progn
-                       (oset section refined nil)
-                       (remove-overlays (oref section start)
-                                        (oref section end)
-                                        'diff-mode 'fine))
-                   (let ((smerge-refine-ignore-whitespace
-                          majutsu-diff-refine-ignore-whitespace)
-                         (write-region-inhibit-fsync t))
-                     (diff-refine-hunk)))))))
-          ((and (guard allow-remove)
-                (or `(nil t ,_) '(t t nil)))
-           (oset section refined nil)
-           (remove-overlays (oref section start)
-                            (oref section end)
-                            'diff-mode 'fine))))
+      (let ((current (eq section (magit-current-section))))
+        (if (and allow-remove
+                 (or (null majutsu-diff-refine-hunk)
+                     (and (eq majutsu-diff-refine-hunk t)
+                          (oref section refined)
+                          (not current))))
+            (progn
+              (oset section refined nil)
+              (remove-overlays (oref section start)
+                               (oref section end)
+                               'diff-mode 'fine))
+          (unless (oref section hidden)
+            (pcase (list majutsu-diff-refine-hunk
+                         (oref section refined)
+                         current)
+              ((or `(all nil ,_) '(t nil t))
+               (oset section refined t)
+               (if (eq majutsu-diff-backend 'color-words)
+                   (majutsu-diff--color-words-refine-hunk section)
+                 (save-excursion
+                   (goto-char (oref section start))
+                   (let ((len (- (oref section end) (oref section start))))
+                     (if (and majutsu-diff-refine-max-chars
+                              (> len majutsu-diff-refine-max-chars))
+                         (progn
+                           (oset section refined nil)
+                           (remove-overlays (oref section start)
+                                            (oref section end)
+                                            'diff-mode 'fine))
+                       (let ((smerge-refine-ignore-whitespace
+                              majutsu-diff-refine-ignore-whitespace)
+                             (write-region-inhibit-fsync t))
+                         (diff-refine-hunk)))))))))))
     (cl-labels ((walk (node)
                   (if (magit-section-match 'jj-hunk node)
                       (majutsu-diff--update-hunk-refinement node t)
@@ -1978,6 +1983,10 @@ With prefix STYLE, cycle between `all' and `t'."
   "Major mode for viewing jj diffs."
   :group 'majutsu
   (setq-local line-number-mode nil)
+  ;; Majutsu owns refinement state.  Otherwise `diff-font-lock-keywords'
+  ;; consults the independent `diff-refine' option and recreates fine overlays
+  ;; even when `majutsu-diff-refine-hunk' is nil.
+  (setq-local diff-refine nil)
   ;; Use diff-mode's keywords as a fallback, but primarily rely on
   ;; `font-lock-face' properties applied during the washing process.
   ;; We set this to enable JIT Lock, which renders our `font-lock-face' properties.

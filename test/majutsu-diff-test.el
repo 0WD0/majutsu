@@ -28,6 +28,66 @@
                 (get ,suffix 'transient--suffix))))
      ,@body))
 
+(defconst majutsu-diff-test--refinable-git-diff
+  (string-join
+   '("diff --git a/foo b/foo"
+     "index 1234567..89abcde 100644"
+     "--- a/foo"
+     "+++ b/foo"
+     "@@ -1 +1 @@"
+     "-alpha old omega"
+     "+alpha new omega"
+     "@@ -10 +10 @@"
+     "-bravo old omega"
+     "+bravo new omega")
+   "\n")
+  "Git diff with two hunks that produce word-level refinement overlays.")
+
+(defmacro majutsu-diff-test--with-washed-git-hunks (&rest body)
+  "Create a real Majutsu diff buffer with washed Git hunks, then run BODY."
+  (declare (indent 0) (debug t))
+  ;; Exercise the upstream default that caused issue #42.  Majutsu must
+  ;; override it buffer-locally instead of changing the user's global value.
+  `(cl-letf (((default-value 'diff-refine) 'font-lock))
+     (with-temp-buffer
+       (majutsu-diff-mode)
+       (setq-local majutsu-diff-backend 'git)
+       (let ((inhibit-read-only t)
+             (magit-section-inhibit-markers t)
+             (majutsu-diff-paint-whitespace nil))
+         (magit-insert-section (diffbuf)
+           (magit-insert-heading "Diff")
+           (majutsu--insert-diff-hunks
+            majutsu-diff-test--refinable-git-diff '("--git")))
+         ,@body))))
+
+(defun majutsu-diff-test--hunk-sections ()
+  "Return all hunk sections in the current buffer in display order."
+  (let (hunks)
+    (cl-labels ((walk (section)
+                  (when (eq (oref section type) 'jj-hunk)
+                    (push section hunks))
+                  (dolist (child (oref section children))
+                    (walk child))))
+      (walk magit-root-section))
+    (nreverse hunks)))
+
+(defun majutsu-diff-test--fine-overlays (&optional section)
+  "Return diff refinement overlays, optionally limited to SECTION."
+  (let ((beg (if section (oref section start) (point-min)))
+        (end (if section (oref section end) (point-max))))
+    (cl-remove-if-not
+     (lambda (overlay)
+       (eq (overlay-get overlay 'diff-mode) 'fine))
+     (overlays-in beg end))))
+
+(defun majutsu-diff-test--font-lock-refine-markers ()
+  "Return overlays created by `diff--font-lock-refined'."
+  (cl-remove-if-not
+   (lambda (overlay)
+     (overlay-get overlay 'diff--font-lock-refined))
+   (overlays-in (point-min) (point-max))))
+
 (ert-deftest majutsu-diff-inserts-toggleable-sections ()
   "Diff sections should create headings so users can toggle them."
   (with-temp-buffer
@@ -993,6 +1053,68 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
         (majutsu-diff-toggle-refine-hunk nil)
         (should-not majutsu-diff-refine-hunk)
         (should (= calls 4))))))
+
+(ert-deftest majutsu-diff-refinement/majutsu-owns-git-hunks ()
+  "Git font-lock must not refine hunks independently of Majutsu.
+This is a regression test for issue #42."
+  (majutsu-diff-test--with-washed-git-hunks
+   (let ((hunks (majutsu-diff-test--hunk-sections)))
+     (should (= (length hunks) 2))
+     (should (local-variable-p 'diff-refine))
+     (should-not diff-refine)
+     (should (eq (default-value 'diff-refine) 'font-lock))
+     (should-not majutsu-diff-refine-hunk)
+
+     ;; The complete diff-mode keyword set is active for Git coloring, but it
+     ;; must not create its own refinement overlays or bookkeeping marker.
+     (font-lock-ensure (point-min) (point-max))
+     (should-not (majutsu-diff-test--fine-overlays))
+     (should-not (majutsu-diff-test--font-lock-refine-markers))
+
+     ;; Majutsu's `t' style refines only the current hunk.
+     (let ((current (car hunks))
+           (other (cadr hunks)))
+       (goto-char (oref current content))
+       (majutsu-diff-toggle-refine-hunk)
+       (should (eq majutsu-diff-refine-hunk t))
+       (should (oref current refined))
+       (should-not (oref other refined))
+       (should (majutsu-diff-test--fine-overlays current))
+       (should-not (majutsu-diff-test--fine-overlays other))
+       (should-not (majutsu-diff-test--font-lock-refine-markers))
+
+       ;; Toggling off removes Majutsu's overlays.  A complete re-fontify must
+       ;; not resurrect upstream automatic refinement.
+       (majutsu-diff-toggle-refine-hunk)
+       (should-not majutsu-diff-refine-hunk)
+       (should-not (oref current refined))
+       (should-not (majutsu-diff-test--fine-overlays))
+       (font-lock-flush (point-min) (point-max))
+       (font-lock-ensure (point-min) (point-max))
+       (should-not (majutsu-diff-test--fine-overlays))
+       (should-not (majutsu-diff-test--font-lock-refine-markers))))))
+
+(ert-deftest majutsu-diff-refinement/cleans-up-hidden-hunk ()
+  "Disabling refinement cleans overlays from a hidden hunk."
+  (majutsu-diff-test--with-washed-git-hunks
+   (font-lock-ensure (point-min) (point-max))
+   (let ((hunk (car (majutsu-diff-test--hunk-sections))))
+     (goto-char (oref hunk content))
+     (majutsu-diff-toggle-refine-hunk)
+     (should (oref hunk refined))
+     (should (majutsu-diff-test--fine-overlays hunk))
+
+     (magit-section-hide hunk)
+     (should (oref hunk hidden))
+     (majutsu-diff-toggle-refine-hunk)
+     (should-not majutsu-diff-refine-hunk)
+     (should-not (oref hunk refined))
+     (should-not (majutsu-diff-test--fine-overlays hunk))
+
+     (font-lock-flush (point-min) (point-max))
+     (font-lock-ensure (point-min) (point-max))
+     (should-not (majutsu-diff-test--fine-overlays))
+     (should-not (majutsu-diff-test--font-lock-refine-markers)))))
 
 (ert-deftest majutsu-diff-color-words-goto-from-uses-removed-block ()
   "For shared color-words lines, removed block should target old side."

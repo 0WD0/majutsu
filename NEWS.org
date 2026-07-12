@@ -159,6 +159,11 @@
 
 ** Fixed
 
+- Diff refinement follows Majutsu's setting ::
+  Emacs diff-mode font locking no longer refines hunks independently when
+  =majutsu-diff-refine-hunk= is nil.  Toggling refinement off also removes
+  refinement overlays from hidden hunks.
+
 - Workspace paths with control characters are preserved ::
   Workspace paths containing embedded newlines or other control characters
   remain intact when listed or selected for trashing.
