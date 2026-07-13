@@ -17,7 +17,7 @@ DOCS_SOURCE_REVISION ?= $(shell jj --repository "$(REPO_ROOT)" log --no-graph -r
 .PHONY: docs texi info html pdf clean \
 	docs-content-check docs-texi-check docs-contract-check docs-test \
 	docs-export docs-compile docs-site docs-search docs-check docs-build \
-	docs-dev docs-clean
+	docs-dev docs-clean docs-dev-preview-check docs-dev-preview-deploy
 
 docs: info
 
@@ -119,3 +119,9 @@ docs-dev: docs-compile
 docs-clean: clean
 	@printf 'Cleaning %s and %s...\n' "$(CACHE_ROOT)" "$(DIST_ROOT)"
 	@rm -rf -- "$(CACHE_ROOT)" "$(DIST_ROOT)"
+
+docs-dev-preview-check: docs-build
+	@$(NODE) "$(CURDIR)/deploy/check-dev-preview.mjs" "$(DIST_ROOT)"
+
+docs-dev-preview-deploy: docs-build
+	@sh "$(CURDIR)/deploy/deploy-dev-preview.sh" "$(DIST_ROOT)" "$(DOCS_SOURCE_REVISION)"

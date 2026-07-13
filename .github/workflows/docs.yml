@@ -1,0 +1,55 @@
+name: Docs
+
+on:
+  pull_request:
+    paths: ['docs/**', '.github/workflows/docs.yml', '.gitattributes', '.gitignore', 'wrangler.toml']
+  push:
+    branches: [main]
+    paths: ['docs/**', '.github/workflows/docs.yml', '.gitattributes', '.gitignore', 'wrangler.toml']
+
+permissions:
+  contents: read
+
+jobs:
+  dev-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+          cache-dependency-path: |
+            docs/site/package-lock.json
+      - uses: purcell/setup-emacs@1f1e9c315c2e3312705e920ae1ddd7e0e2b13c69
+        with:
+          version: 30.2
+      - uses: babashka/setup-babashka@v1
+        with:
+          babashka-version: 1.12.218
+      - name: Install Texinfo
+        run: sudo apt-get update && sudo apt-get install -y texinfo
+      - name: Check out pinned producers
+        shell: bash
+        run: |
+          lock() { bb -e "(-> (slurp \"docs/deps.lock.edn\") clojure.edn/read-string $1 println)"; }
+          ox_edn_repository=$(lock ':ox-edn :repository')
+          ox_edn_commit=$(lock ':ox-edn :commit')
+          loam_repository=$(lock ':loam :repository')
+          loam_commit=$(lock ':loam :commit')
+          git clone "$ox_edn_repository" "$RUNNER_TEMP/ox-edn"
+          git -C "$RUNNER_TEMP/ox-edn" checkout --detach "$ox_edn_commit"
+          git clone "$loam_repository" "$RUNNER_TEMP/loam"
+          git -C "$RUNNER_TEMP/loam" checkout --detach "$loam_commit"
+      - name: Install dependencies
+        run: |
+          npm ci --prefix "$RUNNER_TEMP/loam" --no-audit --no-fund
+          npm ci --prefix docs/site --no-audit --no-fund
+          npm --prefix docs/site exec playwright install --with-deps chromium
+      - name: Build and verify the development preview
+        env:
+          DOCS_SOURCE_REVISION: ${{ github.sha }}
+          OX_EDN_ROOT: ${{ runner.temp }}/ox-edn
+          LOAM_ROOT: ${{ runner.temp }}/loam
+        run: make -C docs docs-dev-preview-check
