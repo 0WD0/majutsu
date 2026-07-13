@@ -5,8 +5,9 @@
 
 ** Breaking changes
 
-- Jujutsu 0.40.0 or later is now required ::
-  Workspace listing relies on template functionality introduced in jj 0.40.0.
+- Jujutsu 0.41.0 or later is now required ::
+  The Gerrit upload transient exposes =--message=, =--edit=, and =--merged=,
+  and the template registry includes =replace()= require jj 0.41.0.
 
 - The Squash transient now uses =--from= for source revisions ::
   The =-r/--revision= shortcut was removed.  Use =-f/--from= instead.
