@@ -1,0 +1,54 @@
+---
+import EditLink from 'virtual:starlight/components/EditLink';
+import LastUpdated from 'virtual:starlight/components/LastUpdated';
+import Pagination from 'virtual:starlight/components/Pagination';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+const repoRoot = path.resolve(
+  process.env.MAJUTSU_DOCS_REPO_ROOT ?? path.resolve(process.cwd(), '../..'),
+);
+const manifestPath = path.resolve(
+  repoRoot,
+  process.env.MAJUTSU_DOCS_MANIFEST ?? '.cache/majutsu-docs/compiled/manifest.json',
+);
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+const route = Astro.locals.starlightRoute;
+const version = route.entry?.data?.org?.version ?? 'unknown';
+const pinnedSourceUrl = route.editUrl?.pathname.includes('/blob/') ? route.editUrl : undefined;
+const pageUrl = new URL(Astro.url.pathname, 'https://majutsu.org').toString();
+const issueUrl = new URL('https://github.com/0WD0/majutsu/issues/new');
+issueUrl.searchParams.set('title', `Docs: ${route.entry?.data?.title ?? Astro.url.pathname}`);
+issueUrl.searchParams.set(
+  'body',
+  `Page: ${pageUrl}\nVersion: ${version}\nBuild: ${manifest.build.commitId}\n\nWhat should be improved?\n`,
+);
+---
+
+<footer class="sl-flex">
+  <div class="meta sl-flex">
+    {version === 'unknown' && <a class="source-link print:hidden" href="/docs/dev/guide/introduction/">Development docs</a>}
+    {pinnedSourceUrl
+      ? <a class="source-link print:hidden" href={pinnedSourceUrl.toString()}>View source</a>
+      : <EditLink />}
+    <a class="report-issue print:hidden" href={issueUrl.toString()} rel="noreferrer">Report issue</a>
+    <LastUpdated />
+  </div>
+  <Pagination />
+</footer>
+
+<style>
+  @layer starlight.core {
+    footer { flex-direction: column; gap: 1.5rem; }
+    .meta {
+      gap: 0.75rem 2rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 3rem;
+      font-size: var(--sl-text-sm);
+      color: var(--sl-color-gray-3);
+    }
+    .report-issue, .source-link { color: inherit; text-decoration: none; }
+    .report-issue:hover, .source-link:hover { color: var(--sl-color-white); }
+  }
+</style>

@@ -1,0 +1,6 @@
+{:ox-edn
+ {:repository "https://github.com/0WD0/ox-edn.git"
+  :commit "446769e30287678777d008d32606c67342b82abe"}
+ :loam
+ {:repository "https://github.com/0WD0/loam.git"
+  :commit "89aebfeca363f598db8fe6e085653b4756c407e8"}}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Majutsu</title>
+  <rect width="64" height="64" rx="13" fill="#176b48"/>
+  <path d="M15 44V20h7l10 13 10-13h7v24h-7V31L32 43 22 31v13z" fill="#fbfcfa"/>
+  <path d="M12 13h12M40 51h12" stroke="#70d6a3" stroke-width="3" stroke-linecap="round"/>
+</svg>

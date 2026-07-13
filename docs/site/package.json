@@ -1,0 +1,21 @@
+{
+  "name": "majutsu-docs-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.12.1",
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.41.3",
+    "astro": "7.0.7",
+    "pagefind": "1.5.2"
+  },
+  "devDependencies": {
+    "@astrojs/language-server": "2.16.14",
+    "parse5": "7.3.0",
+    "typescript": "6.0.3"
+  }
+}
