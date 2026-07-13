@@ -1,0 +1,119 @@
+---
+// Loam owns the semantic HTML contract; Starlight owns the surrounding shell.
+const docsCommit = __MAJUTSU_DOCS_COMMIT__;
+---
+
+<div class="version-banner">
+  <span>Unreleased development manual at <code>{docsCommit.slice(0, 12)}</code>; interfaces may change.</span>
+</div>
+<section class="keymap-switcher docs-mode-switcher" aria-label="Documentation mode" hidden>
+  <div class="keymap-switcher-copy">
+    <span class="keymap-switcher-label">Documentation mode</span>
+    <span class="keymap-switcher-hint">Examples and workflows adapt across the manual</span>
+  </div>
+  <div class="keymap-switcher-options" role="group" aria-label="Choose documentation mode">
+    <button type="button" data-keymap="vanilla" aria-controls="majutsu-org-content">Vanilla</button>
+    <button type="button" data-keymap="evil" aria-controls="majutsu-org-content">Evil</button>
+  </div>
+  <output class="keymap-switcher-count" aria-live="polite" hidden></output>
+</section>
+<div id="majutsu-org-content" class="org-content" data-docs-version="dev"><slot /></div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('figure.org-src-block > pre.shiki').forEach((pre) => {
+    const figure = pre.parentElement;
+    if (!figure || figure.querySelector('.copy-code')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-code';
+    button.dataset.state = 'idle';
+    button.setAttribute('aria-label', 'Copy code');
+    button.title = 'Copy code';
+    button.setAttribute('aria-live', 'polite');
+    button.innerHTML = `
+      <svg class="copy-code-icon copy-code-icon-copy" aria-hidden="true" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+        <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path>
+      </svg>
+      <svg class="copy-code-icon copy-code-icon-success" aria-hidden="true" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6"></path>
+      </svg>
+      <svg class="copy-code-icon copy-code-icon-failure" aria-hidden="true" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M12 7.5v6M12 17h.01"></path>
+      </svg>`;
+    const setCopyState = (state: 'idle' | 'copied' | 'failed', label: string) => {
+      button.dataset.state = state;
+      button.setAttribute('aria-label', label);
+      button.title = label;
+    };
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(pre.textContent ?? '');
+        setCopyState('copied', 'Copied');
+      } catch {
+        setCopyState('failed', 'Copy failed');
+      }
+      window.setTimeout(() => { setCopyState('idle', 'Copy code'); }, 1600);
+    });
+    figure.classList.add('copy-enabled');
+    figure.insertBefore(button, pre);
+  });
+
+  const switcher = document.querySelector<HTMLElement>('.docs-mode-switcher');
+  const orgDocument = document.querySelector<HTMLElement>('.org-content .org-document');
+  if (switcher && orgDocument) {
+    const storageKey = 'majutsu-docs-mode';
+    const legacyStorageKey = 'majutsu-keymap-view';
+    const modes = ['vanilla', 'evil'] as const;
+    type KeymapMode = typeof modes[number];
+    let selected: KeymapMode = 'vanilla';
+    try {
+      const stored = window.localStorage.getItem(storageKey)
+        ?? window.localStorage.getItem(legacyStorageKey);
+      if (stored && modes.includes(stored as KeymapMode)) selected = stored as KeymapMode;
+    } catch {
+      // Storage can be disabled; the Vanilla default remains fully usable.
+    }
+    const buttons = Array.from(
+      switcher.querySelectorAll<HTMLButtonElement>('button[data-keymap]'),
+    );
+    const count = switcher.querySelector<HTMLOutputElement>('.keymap-switcher-count');
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.org-reference-list > dt[data-reference-type="key"]',
+      ),
+    );
+    const applyMode = (mode: KeymapMode) => {
+      selected = mode;
+      const authoredScope = mode === 'vanilla' ? 'Vanilla' : 'Evil';
+      document.documentElement.dataset.majutsuDocsMode = mode;
+      buttons.forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.keymap === mode));
+      });
+      if (count && rows.length > 0) {
+        const visible = rows.filter((term) => {
+          const scopes = (term.dataset.keymapScope ?? '').split(/\s+/).filter(Boolean);
+          return scopes.length === 0 || scopes.includes(authoredScope);
+        }).length;
+        count.textContent = `${visible} of ${rows.length} bindings`;
+        count.hidden = false;
+      }
+    };
+
+    buttons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const mode = button.dataset.keymap as KeymapMode;
+        applyMode(mode);
+        try {
+          window.localStorage.setItem(storageKey, mode);
+          window.localStorage.removeItem(legacyStorageKey);
+        } catch {
+          // A private browsing policy should not disable the in-page switch.
+        }
+      });
+    });
+    applyMode(selected);
+    switcher.hidden = false;
+  }
+</script>

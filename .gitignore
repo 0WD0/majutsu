@@ -13,7 +13,14 @@
 *.tar
 packages/
 dist/
+.artifacts/
+.wrangler/
 archive/
+node_modules
+.astro/
+.pagefind/
+docs/site/test-results/
+docs/site/playwright-report/
 
 # 依赖与构建工具目录
 .log/
@@ -44,6 +51,8 @@ Thumbs.db
 
 # 文档生成产物 (straight.el 会从 .texi 生成)
 docs/*.info
+docs/*.html
+docs/*.pdf
 docs/dir
 
 .env

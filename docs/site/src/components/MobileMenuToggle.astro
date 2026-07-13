@@ -1,0 +1,23 @@
+---
+import StarlightMobileMenuToggle from '@astrojs/starlight/components/MobileMenuToggle.astro';
+---
+
+<StarlightMobileMenuToggle />
+
+<script>
+  // Starlight stores the expanded state on its custom element for styling.
+  // Mirror it onto the actual control so assistive technology receives the
+  // same state as sighted users.
+  document.querySelectorAll<HTMLElement>('starlight-menu-button').forEach((menu) => {
+    const button = menu.querySelector<HTMLButtonElement>('button[aria-controls="starlight__sidebar"]');
+    if (!button) return;
+    const syncExpanded = () => {
+      button.setAttribute('aria-expanded', String(menu.getAttribute('aria-expanded') === 'true'));
+    };
+    syncExpanded();
+    new MutationObserver(syncExpanded).observe(menu, {
+      attributes: true,
+      attributeFilter: ['aria-expanded'],
+    });
+  });
+</script>

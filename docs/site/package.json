@@ -1,0 +1,25 @@
+{
+  "name": "majutsu-docs-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.12.1",
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev",
+    "check:site": "node scripts/check-build.mjs ../../.cache/majutsu-docs/compiled/manifest.json ../../.cache/majutsu-docs/compiled/build-report.json ../../dist",
+    "check:search": "node scripts/check-search.mjs ../../dist ../../.cache/majutsu-docs/compiled/manifest.json tests/fixtures/search.json",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.41.3",
+    "astro": "7.0.7",
+    "pagefind": "1.5.2"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.61.1",
+    "parse5": "7.3.0",
+    "shiki": "4.0.2"
+  }
+}

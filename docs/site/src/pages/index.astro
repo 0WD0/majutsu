@@ -1,0 +1,42 @@
+---
+import '../styles/landing.css';
+const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${__MAJUTSU_DOCS_COMMIT__}/docs/majutsu.org`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="Majutsu is a Magit-inspired interface for Jujutsu in Emacs." />
+    <link rel="canonical" href="https://majutsu.org/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="Majutsu — Jujutsu, at home in Emacs" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://majutsu.org/" />
+    <meta property="og:description" content="A Magit-inspired interface for Jujutsu in Emacs." />
+    <title>Majutsu — Jujutsu, at home in Emacs</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Majutsu home"><img src="/favicon.svg" alt="" width="30" height="30" /><span>Majutsu</span></a>
+      <nav aria-label="Primary"><a href="/docs/dev/guide/introduction/">Docs</a><a href="https://github.com/0WD0/majutsu">GitHub</a></nav>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="eyebrow">Jujutsu · Emacs · experimental</p>
+        <h1 id="hero-title">Shape history<br />without leaving Emacs.</h1>
+        <p class="lede">Majutsu brings a Magit-inspired, section-oriented interface to Jujutsu—built for inspecting, rewriting, and understanding changes quickly.</p>
+        <div class="actions"><a class="primary" href="/docs/dev/guide/getting-started/">Read the docs <span aria-hidden="true">→</span></a><a class="secondary" href="https://github.com/0WD0/majutsu">View source</a></div>
+        <p class="version-note"><strong>Development manual</strong> · Tracks the current <code>main</code> branch; interfaces may still change.</p>
+      </section>
+      <section class="features" aria-label="Highlights">
+        <article><p class="index">01</p><h2>Inspect with context</h2><p>Navigate logs, diffs, files, operations, and conflicts in structured Emacs buffers.</p></article>
+        <article><p class="index">02</p><h2>Rewrite directly</h2><p>Describe, squash, rebase, split, restore, and edit revisions through focused transients.</p></article>
+        <article><p class="index">03</p><h2>Stay editor-native</h2><p>Use familiar keys, completion, sections, and customization instead of switching tools.</p></article>
+      </section>
+      <section class="quickstart" aria-labelledby="quickstart-title"><div><p class="eyebrow">Start here</p><h2 id="quickstart-title">Open a repository.</h2><p>Install Majutsu, visit a Jujutsu workspace, then run:</p></div><pre><code>M-x majutsu</code></pre></section>
+    </main>
+    <footer><span>Majutsu documentation</span><span>Built from <a href={orgSourceUrl}>one Org source</a>.</span></footer>
+  </body>
+</html>

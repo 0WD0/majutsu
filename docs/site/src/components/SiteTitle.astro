@@ -1,0 +1,24 @@
+---
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="majutsu-site-title">
+  <img src="/favicon.svg" width="30" height="30" alt="" />
+  <span class="title" translate="no">{siteTitle}</span>
+</a>
+
+<style>
+  .majutsu-site-title {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: .58rem;
+    color: var(--sl-color-text-accent);
+    font-weight: 760;
+    letter-spacing: -.025em;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  img { flex: none; border-radius: .42rem; }
+  .title { overflow: hidden; }
+</style>
