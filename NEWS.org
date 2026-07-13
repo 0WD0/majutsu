@@ -5,8 +5,11 @@
 
 ** Breaking changes
 
-- Jujutsu 0.40.0 or later is now required ::
-  Workspace listing relies on template functionality introduced in jj 0.40.0.
+- Jujutsu 0.41.0 or later is now required ::
+  Majutsu's workspace list uses =WorkspaceRef.root()=, introduced in jj
+  0.40.0.  The Gerrit upload transient also exposes =--message=, =--edit=,
+  and =--merged=, and the template registry includes =replace()=; those
+  additions require jj 0.41.0.
 
 - The Squash transient now uses =--from= for source revisions ::
   The =-r/--revision= shortcut was removed.  Use =-f/--from= instead.
@@ -328,7 +331,7 @@
 
 ** Release highlights
 
-- *Interactive Patching*: Select specific hunks, files, or regions within diff buffers for Split, Squash, and Restore operations. Provides Magit-style partial staging workflow for Jujutsu.
+- *Interactive Patching*: Select specific hunks, files, or regions within diff buffers for Split, Squash, and Restore operations. Provides transient-scoped partial patch selection for Jujutsu.
 - *Workspace Support*: Full ~jj workspace~ integration with list/add/forget/rename/visit commands.
 - *Split & Restore Transients*: New transients for ~jj split~ and ~jj restore~ with visual revision selection.
 
