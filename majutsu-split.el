@@ -21,14 +21,31 @@
 (defclass majutsu-split-option (majutsu-selection-option)
   ())
 
+(defun majutsu-split--diff-source-revision (&optional buffer)
+  "Return the single Split source represented by diff BUFFER.
+Return the resolved change ID only when the displayed diff represents exactly
+one change."
+  (with-current-buffer (or buffer (current-buffer))
+    (when (derived-mode-p 'majutsu-diff-mode)
+      (plist-get (majutsu-diff--revision-metadata) :change-id))))
+
 (defun majutsu-split--default-args ()
-  "Return default args from diff buffer context."
-  (when (derived-mode-p 'majutsu-diff-mode)
-    (mapcar (lambda (arg)
-              (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
-                  (concat "--revision=" rev)
-                arg))
-            majutsu-buffer-diff-range)))
+  "Return a safe Split default from the current diff context."
+  (when-let* ((revision (majutsu-split--diff-source-revision)))
+    (list (concat "--revision=" revision))))
+
+(defun majutsu-split-interactive-selection-available-p ()
+  "Return non-nil when the current diff can safely drive a patch Split."
+  (and (majutsu-interactive-selection-available-p)
+       (majutsu-split--diff-source-revision)))
+
+(defun majutsu-split--check-patch-source (args patch-source)
+  "Signal if ARGS select a revision incompatible with PATCH-SOURCE."
+  (unless patch-source
+    (user-error "Patch selection for split requires a single-revision diff"))
+  (when-let* ((revision (transient-arg-value "--revision=" args)))
+    (unless (equal revision patch-source)
+      (user-error "Patch selection for split requires the diff source"))))
 
 (defun majutsu-split--remove-interactive-tool-args (args)
   "Return ARGS without native interactive-editor or tool arguments."
@@ -54,11 +71,14 @@
                            nil nil nil nil))
                (patch (plist-get operation :patch))
                (file-ops (plist-get operation :file-ops))
+               (patch-source
+                (and operation (majutsu-split--diff-source-revision)))
                (args (if operation
                          (majutsu-split--remove-interactive-tool-args args)
                        args)))
     (if operation
         (progn
+          (majutsu-split--check-patch-source args patch-source)
           ;; Reset to the left tree, then replay precisely the selections.
           (majutsu-interactive-run-with-patch
            "split" args filesets patch t file-ops)
@@ -74,7 +94,7 @@
   :selection-label "[REV]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "r"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
   :shortarg "-r"
   :argument "--revision="
   :reader #'majutsu-transient-read-revset)
@@ -85,7 +105,7 @@
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
   :selection-toggle-key "o"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -97,7 +117,7 @@
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -109,7 +129,7 @@
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "b"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
@@ -146,12 +166,12 @@
     (majutsu-split:--insert-after)
     (majutsu-split:--insert-before)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
-   ["Patch Selection" :if majutsu-interactive-selection-available-p
+   ["Patch Selection" :if majutsu-split-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
-   ["Paths" :if-not majutsu-interactive-selection-available-p
+   ["Paths" :if-not majutsu-split-interactive-selection-available-p
     (majutsu-split:--)]
    ["Options"
     ("-i" "Interactive" ("-i" "--interactive"))

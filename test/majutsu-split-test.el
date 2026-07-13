@@ -12,6 +12,27 @@
 (require 'cl-lib)
 (require 'majutsu-split)
 
+(ert-deftest majutsu-split-default-args/inherits-resolved-revision ()
+  "A diff resolving to one revision should become one Split source."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (cl-letf (((symbol-function 'majutsu-diff--revision-metadata)
+               (lambda () '(:change-id "resolved"))))
+      (should (equal (majutsu-split--default-args)
+                     '("--revision=resolved"))))))
+
+(ert-deftest majutsu-split-default-args/rejects-incompatible-diff-ranges ()
+  "Split must not inherit diffs which do not resolve to one revision."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (dolist (range '(("--from=A" "--to=B")
+                     ("--revisions=B::D")))
+      (setq-local majutsu-buffer-diff-range range)
+      (cl-letf (((symbol-function 'majutsu-diff--revision-metadata)
+                 (lambda () nil)))
+        (should-not (majutsu-split--default-args))
+        (should-not (majutsu-split--diff-source-revision))))))
+
 (ert-deftest majutsu-split-execute/places-structured-filesets-after-options ()
   "Execute split with transient filesets after option arguments."
   (let (called)
@@ -33,6 +54,8 @@
               ((symbol-function 'majutsu-interactive-run-with-patch)
                (lambda (&rest args)
                  (setq called args)))
+              ((symbol-function 'majutsu-split--diff-source-revision)
+               (lambda (&rest _) "@"))
               ((symbol-function 'majutsu-interactive-clear)
                (lambda () (setq cleared t))))
       (majutsu-split-execute '(("--" "src/a.el") "--revision=@" "--interactive"))
@@ -47,6 +70,8 @@
                (lambda (&rest _) (list :patch nil :file-ops ops)))
               ((symbol-function 'majutsu-interactive-run-with-patch)
                (lambda (&rest args) (setq called args)))
+              ((symbol-function 'majutsu-split--diff-source-revision)
+               (lambda (&rest _) "@"))
               ((symbol-function 'majutsu-interactive-clear)
                (lambda () (setq cleared t))))
       (majutsu-split-execute
@@ -56,6 +81,15 @@
                      (list "split" '("--revision=@") '("bin/gone.bin")
                            nil t ops)))
       (should cleared))))
+
+(ert-deftest majutsu-split-execute/patch-rejects-different-source ()
+  "Patch mode must not apply the displayed diff to another revision."
+  (cl-letf (((symbol-function 'majutsu-interactive-build-operation-if-selected)
+             (lambda (&rest _) '(:patch "PATCH" :file-ops nil)))
+            ((symbol-function 'majutsu-split--diff-source-revision)
+             (lambda (&rest _) "B")))
+    (should-error (majutsu-split-execute '("--revision=C"))
+                  :type 'user-error)))
 
 (provide 'majutsu-split-test)
 ;;; majutsu-split-test.el ends here

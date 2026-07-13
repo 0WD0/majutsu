@@ -164,6 +164,12 @@
 
 ** Fixed
 
+- Split inherits only single-change diff sources ::
+  Split resolves the displayed diff and inherits its change ID only when it
+  represents exactly one change.  Ranges and multi-change revsets are not
+  forwarded as invalid Split arguments, and patch selection refuses a source
+  different from the displayed diff.
+
 - Diff refinement follows Majutsu's setting ::
   Emacs diff-mode font locking no longer refines hunks independently when
   =majutsu-diff-refine-hunk= is nil.  Toggling refinement off also removes
