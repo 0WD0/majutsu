@@ -147,6 +147,10 @@
 
 ** Removed
 
+- ~majutsu-diff-refine-max-chars~ was removed ::
+  Explicit diff refinement no longer silently skips hunks over 4000
+  characters, matching Magit's behavior.
+
 - ~majutsu-find-file-at-point~ was removed ::
   Use ~majutsu-find-file~, which still defaults the revset and path from
   context.

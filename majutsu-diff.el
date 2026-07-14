@@ -98,13 +98,6 @@ This is experimental and can be slow because fontification is synchronous."
   :group 'majutsu
   :type 'boolean)
 
-(defcustom majutsu-diff-refine-max-chars 4000
-  "Skip word refinement when a hunk spans more than this many characters.
-Set to nil to always refine."
-  :group 'majutsu
-  :type '(choice (const :tag "No limit" nil)
-          (integer :tag "Max characters")))
-
 (defcustom majutsu-diff-paint-whitespace t
   "Whether to highlight whitespace issues inside diff hunks."
   :group 'majutsu
@@ -1370,18 +1363,10 @@ When SECTION is nil, walk all hunk sections."
                    (majutsu-diff--color-words-refine-hunk section)
                  (save-excursion
                    (goto-char (oref section start))
-                   (let ((len (- (oref section end) (oref section start))))
-                     (if (and majutsu-diff-refine-max-chars
-                              (> len majutsu-diff-refine-max-chars))
-                         (progn
-                           (oset section refined nil)
-                           (remove-overlays (oref section start)
-                                            (oref section end)
-                                            'diff-mode 'fine))
-                       (let ((smerge-refine-ignore-whitespace
-                              majutsu-diff-refine-ignore-whitespace)
-                             (write-region-inhibit-fsync t))
-                         (diff-refine-hunk)))))))))))
+                   (let ((smerge-refine-ignore-whitespace
+                          majutsu-diff-refine-ignore-whitespace)
+                         (write-region-inhibit-fsync t))
+                     (diff-refine-hunk)))))))))
     (cl-labels ((walk (node)
                   (if (magit-section-match 'jj-hunk node)
                       (majutsu-diff--update-hunk-refinement node t)
