@@ -756,23 +756,6 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
-(ert-deftest majutsu-diff-refresh-keeps-transient-filesets ()
-  "Refreshing from diff transient should update args, range and filesets."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (let (refreshed)
-      (cl-letf (((symbol-function 'transient-args)
-                 (lambda (&rest _)
-                   '(("--stat") ("--from=A" "--to=B") ("src/a.el"))))
-                ((symbol-function 'majutsu-diff-refresh-buffer)
-                 (lambda () (setq refreshed t)))
-                ((symbol-function 'majutsu-repository-config-id) #'ignore))
-        (majutsu-diff-refresh))
-      (should refreshed)
-      (should (equal majutsu-buffer-diff-args '("--stat")))
-      (should (equal majutsu-buffer-diff-range '("--from=A" "--to=B")))
-      (should (equal majutsu-buffer-diff-filesets '("src/a.el"))))))
-
 (ert-deftest majutsu-diff-transient-revset-completion-args/uses-transient-objects ()
   "Transient revset readers should complete in the matching jj context."
   (majutsu-diff-test--with-transient-context
@@ -882,7 +865,7 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
 
 (ert-deftest majutsu-diff-selection-actions/use-session-buffer-advice ()
   "Point- or repository-sensitive diff actions should use the source buffer."
-  (dolist (key '("d" "W" "g"))
+  (dolist (key '("d" "W"))
     (let* ((suffix (transient-get-suffix 'majutsu-diff key))
            (command (plist-get (cdr suffix) :command))
            (prototype (get command 'transient--suffix)))

@@ -147,6 +147,10 @@
 
 ** Removed
 
+- ~majutsu-diff-refresh~ was removed ::
+  Use ~d~ to execute the transient with the selected arguments, or ~g~ in an
+  existing diff buffer to refresh that buffer.
+
 - ~majutsu-diff-refine-max-chars~ was removed ::
   Explicit diff refinement no longer silently skips hunks over 4000
   characters, matching Magit's behavior.

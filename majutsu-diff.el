@@ -2084,8 +2084,7 @@ REVSET is passed to jj diff using `--revisions='."
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
     ("s" "Save as default" majutsu-diff-save-arguments)
-    ("W" "Save as repo default" majutsu-transient-save-repository-defaults)
-    ("g" "Refresh" majutsu-diff-refresh)]]
+    ("W" "Save as repo default" majutsu-transient-save-repository-defaults)]]
   (interactive)
   (transient-setup
    'majutsu-diff nil nil
@@ -2189,28 +2188,6 @@ REVSET is passed to jj diff using `--revisions='."
     (user-error "Not in a Majutsu diff transient"))
   (transient-save-value transient--prefix)
   (message "Saved diff arguments as global defaults"))
-
-(transient-define-suffix majutsu-diff-refresh ()
-  "Refresh diff buffer with current transient arguments."
-  :transient t
-  :advice* #'majutsu--transient-with-selection-buffer
-  (interactive)
-  (pcase-let* ((`(,args ,range ,filesets)
-                (transient-args 'majutsu-diff)))
-    (cond
-     ((eq major-mode 'majutsu-diff-mode)
-      (majutsu-diff--set-value major-mode args range filesets)
-      (majutsu-diff-refresh-buffer))
-     ((and (memq majutsu-prefix-use-buffer-arguments '(always selected))
-           (when-let* ((buf (majutsu--get-mode-buffer
-                             'majutsu-diff-mode
-                             (eq majutsu-prefix-use-buffer-arguments 'selected))))
-             (with-current-buffer buf
-               (majutsu-diff--set-value major-mode args range filesets)
-               (majutsu-diff-refresh-buffer))
-             t)))
-     (t
-      (user-error "No majutsu diff buffer found to refresh")))))
 
 ;;; _
 (provide 'majutsu-diff)
