@@ -21,6 +21,7 @@
 
 (defmacro majutsu-diff-test--with-transient-context (prefix suffix &rest body)
   "Run BODY as if transient PREFIX were reading infix SUFFIX."
+  (declare (indent 2) (debug (form form body)))
   `(cl-letf (((symbol-function 'transient-prefix-object)
               (lambda () (get ,prefix 'transient--prefix)))
              ((symbol-function 'transient-suffix-object)
