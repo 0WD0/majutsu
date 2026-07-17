@@ -17,6 +17,7 @@
 
 (require 'ert)
 (require 'majutsu-workspace)
+(require 'majutsu-jj-integration)
 
 (defun majutsu-workspace-test--row (&rest fields)
   "Return one structured workspace row for FIELDS."
@@ -797,42 +798,35 @@ The Emacs-facing path remains unchanged for visiting the new workspace."
 
 (ert-deftest majutsu-workspace/integration-control-root-with-minimum-jj ()
   "Exercise NUL-framed root transport against MAJUTSU_TEST_JJ."
-  (let ((jj (getenv "MAJUTSU_TEST_JJ")))
-    (skip-unless (and jj (file-executable-p jj)))
-    (let* ((parent (make-temp-file "majutsu-workspace-integration-" t))
-           (repo (expand-file-name "repo" parent))
-           (odd-root (concat (expand-file-name "line\nbreak" parent)
-                             (string 30)
-                             "tail"
-                             (string 27) "[31mRED" (string 27) "[0m")))
-      (unwind-protect
-          (progn
-            (should (zerop (call-process jj nil nil nil "git" "init" repo)))
-            (let ((default-directory (file-name-as-directory repo))
-                  (majutsu-jj-executable jj))
-              (should (zerop (call-process jj nil nil nil
-                                           "workspace" "add" odd-root
-                                           "--name" "odd")))
-              (let ((entry (cl-find "odd" (majutsu-workspace-list-entries)
-                                    :key (lambda (item)
-                                           (plist-get item :name))
-                                    :test #'equal)))
-                (should entry)
-                (should (equal (plist-get entry :root)
-                               (file-name-as-directory odd-root))))
-              (should (equal (majutsu-workspace--root-for-name "odd")
-                             (file-name-as-directory odd-root)))
-              ;; A root() error includes the unresolved path verbatim.  Its
-              ;; newline and record-separator characters must not corrupt the
-              ;; surrounding NUL-framed workspace records.
-              (delete-directory odd-root t)
-              (let ((entry (cl-find "odd" (majutsu-workspace-list-entries)
-                                    :key (lambda (item)
-                                           (plist-get item :name))
-                                    :test #'equal)))
-                (should entry)
-                (should-not (plist-get entry :root)))))
-        (delete-directory parent t)))))
+  (majutsu-jj-integration-with-repo repo
+    (let ((odd-root (concat (expand-file-name "line\nbreak"
+                                              (file-name-directory
+                                               (directory-file-name repo)))
+                            (string 30)
+                            "tail"
+                            (string 27) "[31mRED" (string 27) "[0m")))
+      (majutsu-jj-integration-call repo
+                                   "workspace" "add" odd-root
+                                   "--name" "odd")
+      (let ((entry (cl-find "odd" (majutsu-workspace-list-entries)
+                            :key (lambda (item)
+                                   (plist-get item :name))
+                            :test #'equal)))
+        (should entry)
+        (should (equal (plist-get entry :root)
+                       (file-name-as-directory odd-root))))
+      (should (equal (majutsu-workspace--root-for-name "odd")
+                     (file-name-as-directory odd-root)))
+      ;; A root() error includes the unresolved path verbatim.  Its newline
+      ;; and record-separator characters must not corrupt the surrounding
+      ;; NUL-framed workspace records.
+      (delete-directory odd-root t)
+      (let ((entry (cl-find "odd" (majutsu-workspace-list-entries)
+                            :key (lambda (item)
+                                   (plist-get item :name))
+                            :test #'equal)))
+        (should entry)
+        (should-not (plist-get entry :root))))))
 
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here

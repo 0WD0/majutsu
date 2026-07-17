@@ -9,7 +9,11 @@
 
 (package-file "majutsu.el")
 
-(script "test" "eask test ert test/*.el")
+;; Test helpers (e.g. majutsu-jj-integration) live under test/ and are
+;; outside the package files-spec, so expose them on load-path for ERT.
+(load-paths "./test/")
+
+(script "test" "eask test ert test/*-test.el")
 
 (source "gnu")
 
