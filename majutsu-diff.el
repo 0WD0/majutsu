@@ -527,10 +527,10 @@ or nil for malformed input."
             bytes)
         (cl-labels
             ((push-char
-              (char)
-              (dolist (byte (string-to-list
-                             (encode-coding-string (string char) 'utf-8 t)))
-                (push byte bytes))))
+               (char)
+               (dolist (byte (string-to-list
+                              (encode-coding-string (string char) 'utf-8 t)))
+                 (push byte bytes))))
           (while (< index (length token))
             (let ((char (aref token index)))
               (setq index (1+ index))
@@ -595,13 +595,13 @@ metadata result."
                     ((string-prefix-p "diff --git " line)))
           (let ((payload (string-remove-prefix "diff --git " line)))
             (or (equal payload raw)
-          ;; If the left token is raw, its exact structured value tells us
-          ;; where the otherwise ambiguous separator must be.
+                ;; If the left token is raw, its exact structured value tells us
+                ;; where the otherwise ambiguous separator must be.
                 (and (string-prefix-p (concat left " ") payload)
                      (majutsu-diff--git-token-matches-p
                       (substring payload (1+ (length left))) right))
-          ;; A quoted left token is self-delimiting; decode it and validate the
-          ;; complete remaining token independently.
+                ;; A quoted left token is self-delimiting; decode it and validate the
+                ;; complete remaining token independently.
                 (and (string-prefix-p "\"" payload)
                      (pcase (majutsu-diff--read-git-quoted-token payload)
                        (`(,value . ,end)
@@ -634,7 +634,7 @@ metadata result."
   (let ((header (oref section header)))
     (and (majutsu-diff--git-header-paths-match-p header entry)
          (majutsu-diff--git-header-status-match-p
-         header (plist-get entry :status)))))
+          header (plist-get entry :status)))))
 
 (defun majutsu-diff--raw-file-metadata-consistent-p (metadata)
   "Return non-nil when ordered METADATA agrees with the raw Git file headers.
@@ -1045,7 +1045,7 @@ The synthetic `git' remote used by jj's Git backend is omitted."
     (let ((message (plist-get fields :description)))
       (magit-insert-section
           (commit-message nil nil
-            :heading-highlight-face 'magit-diff-revision-summary-highlight)
+                          :heading-highlight-face 'magit-diff-revision-summary-highlight)
         (if (string-empty-p message)
             (progn
               (magit-insert-heading "(no description)")
@@ -1089,7 +1089,7 @@ The synthetic `git' remote used by jj's Git backend is omitted."
                     (copy-sequence matching-git-metadata)))
               (funcall washer wash-args)
               (majutsu-diff--attach-file-metadata metadata)))
-        'wash-anyway args))))
+          'wash-anyway args))))
 
 ;;; Diff wash
 

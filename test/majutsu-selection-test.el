@@ -29,17 +29,17 @@
     (magit-section-mode)
     (let ((inhibit-read-only t))
       (insert "1234567890")
-        (let* ((session (majutsu-selection-session-begin))
-               (obj (make-instance 'majutsu-test-option
-                                   :command 'ignore
-                                   :key "a"
-                                   :argument "--a="
-                                   :selection-label "A"
-                                   :locate-fn (lambda (val)
-                                                (if (equal val "1")
-                                                    (cons 1 3)
-                                                  (cons 4 6)))))
-               (transient--suffixes (list obj)))
+      (let* ((session (majutsu-selection-session-begin))
+             (obj (make-instance 'majutsu-test-option
+                                 :command 'ignore
+                                 :key "a"
+                                 :argument "--a="
+                                 :selection-label "A"
+                                 :locate-fn (lambda (val)
+                                              (if (equal val "1")
+                                                  (cons 1 3)
+                                                (cons 4 6)))))
+             (transient--suffixes (list obj)))
         (oset obj value "1")
         (majutsu-selection-render session)
         (let ((ovs (overlays-at 1)))

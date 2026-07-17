@@ -275,13 +275,13 @@
                                (oref file children))))
           (should (cl-typep file 'majutsu-evolog-file-section))
           (should (cl-typep hunk 'majutsu-evolog-hunk-section))))
-    (should-not seen-keep)
-    (should-not seen-ansi)
-    (should (member "--color=never" seen-global-args))
-    (should (= 1 (seq-count (lambda (arg) (string-prefix-p "--color" arg))
-                            seen-global-args)))
-    (should (equal seen-args
-                   (majutsu-evolog--inter-diff-command-args "0123abcdef"))))))
+      (should-not seen-keep)
+      (should-not seen-ansi)
+      (should (member "--color=never" seen-global-args))
+      (should (= 1 (seq-count (lambda (arg) (string-prefix-p "--color" arg))
+                              seen-global-args)))
+      (should (equal seen-args
+                     (majutsu-evolog--inter-diff-command-args "0123abcdef"))))))
 
 (ert-deftest majutsu-evolog-inter-diff-refresh/shows-empty-patch ()
   (cl-letf (((symbol-function 'majutsu-jj-wash)

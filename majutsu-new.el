@@ -46,7 +46,7 @@ With prefix ARG, open the new transient for interactive selection."
   "Create a new changeset with the commit at point as --after."
   (interactive)
   (if-let* ((after (or (majutsu-thing-at-point 'jj-revision t)
-                        (majutsu-revision-at-point))))
+                       (majutsu-revision-at-point))))
       (majutsu-new--run-command (list "new" "--insert-after" after))
     (user-error "No revision at point")))
 
@@ -55,7 +55,7 @@ With prefix ARG, open the new transient for interactive selection."
   "Create a new changeset with the commit at point as --before."
   (interactive)
   (if-let* ((before (or (majutsu-thing-at-point 'jj-revision t)
-                         (majutsu-revision-at-point))))
+                        (majutsu-revision-at-point))))
       (majutsu-new--run-command (list "new" "--insert-before" before))
     (user-error "No revision at point")))
 

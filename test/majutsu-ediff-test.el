@@ -293,7 +293,7 @@
                (lambda () default-directory))
               ((symbol-function 'majutsu-completing-read)
                (lambda (_prompt collection _predicate _require-match
-                        _initial history _default category)
+                                _initial history _default category)
                  (setq seen-collection collection
                        seen-history history
                        seen-category category)

@@ -106,7 +106,7 @@
   "Column declarations should not use compiler-internal :instance."
   (let* ((columns
           '((:field title :module heading :template "Title" :face nil
-                    :instance 0)))
+             :instance 0)))
          (profile (append majutsu-row-test--profile
                           (list :columns-var 'majutsu-row-test--columns)))
          (majutsu-row-test--columns columns))

@@ -48,7 +48,7 @@
 
 (defconst majutsu-evolog--signature-template
   '[:if [:method [:call 'config "ui.show-cryptographic-signatures"]
-                 :as_boolean]
+         :as_boolean]
        [:call 'format_short_cryptographic_signature
               [:commit :signature]]]
   "Template fragment for jj's optional compact signature marker.")

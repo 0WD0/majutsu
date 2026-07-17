@@ -51,7 +51,7 @@
   (let (called cleared)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) '(:base left :payload-root right
-                                  :patch "PATCH" :file-ops nil)))
+                                   :patch "PATCH" :file-ops nil)))
               ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args)
                  (setq called args)))
@@ -63,7 +63,7 @@
       (should (equal called
                      '("split" ("--revision=@") ("src/a.el")
                        (:base left :payload-root right
-                              :patch "PATCH" :file-ops nil))))
+                        :patch "PATCH" :file-ops nil))))
       (should cleared))))
 
 (ert-deftest majutsu-split-execute/file-op-only-forwards-filesets-and-strips-tool ()
@@ -71,7 +71,7 @@
   (let ((ops '((:action delete :path "gone.bin"))) called cleared)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) (list :base 'left :payload-root 'right
-                                      :patch nil :file-ops ops)))
+                                       :patch nil :file-ops ops)))
               ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args) (setq called args)))
               ((symbol-function 'majutsu-split--diff-source-revision)
@@ -91,7 +91,7 @@
   "Patch mode must not apply the displayed diff to another revision."
   (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
              (lambda (&rest _) '(:base left :payload-root right
-                                :patch "PATCH" :file-ops nil)))
+                                 :patch "PATCH" :file-ops nil)))
             ((symbol-function 'majutsu-split--diff-source-revision)
              (lambda (&rest _) "B")))
     (should-error (majutsu-split-execute '("--revision=C"))

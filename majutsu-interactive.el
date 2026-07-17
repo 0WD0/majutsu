@@ -436,13 +436,13 @@ Never infer filesystem paths from rendered Git patch headers."
   (let ((status (plist-get change :status))
         (path (plist-get change :target))
         (source (plist-get change :source)))
-      (pcase status
-        ("added" (list :action 'add :path path))
-        ("modified" (list :action 'modify :path path))
-        ("removed" (list :action 'delete :path path))
-        ("renamed" (list :action 'rename :source source :path path))
-        ("copied" (list :action 'copy :source source :path path))
-        (_ (user-error "Unsupported whole-file jj diff status: %S" status)))))
+    (pcase status
+      ("added" (list :action 'add :path path))
+      ("modified" (list :action 'modify :path path))
+      ("removed" (list :action 'delete :path path))
+      ("renamed" (list :action 'rename :source source :path path))
+      ("copied" (list :action 'copy :source source :path path))
+      (_ (user-error "Unsupported whole-file jj diff status: %S" status)))))
 
 (defun majutsu-interactive--build-file-operations (file-sections)
   "Return forward whole-file operations for FILE-SECTIONS."

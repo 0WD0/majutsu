@@ -301,23 +301,23 @@
                         "<remap> <majutsu-visit-thing>" #'ignore)
             (majutsu-forge--add-section-remaps)
             (should (eq (keymap-lookup forge-pullreqs-section-map
-                                        "<remap> <majutsu-visit-thing>")
+                                       "<remap> <majutsu-visit-thing>")
                         #'forge-list-pullreqs))
             (should (eq (keymap-lookup forge-pullreq-section-map
-                                        "<remap> <majutsu-visit-thing>")
+                                       "<remap> <majutsu-visit-thing>")
                         #'forge-visit-this-topic))
             (should (eq (keymap-lookup forge-issues-section-map
-                                        "<remap> <majutsu-visit-thing>")
+                                       "<remap> <majutsu-visit-thing>")
                         #'forge-list-issues))
             (should (eq (keymap-lookup forge-discussions-section-map
-                                        "<remap> <majutsu-visit-thing>")
+                                       "<remap> <majutsu-visit-thing>")
                         #'forge-list-discussions))
             (should (eq (keymap-lookup forge-repository-section-map
-                                        "<remap> <majutsu-visit-thing>")
+                                       "<remap> <majutsu-visit-thing>")
                         #'forge-visit-this-repository))
             (majutsu-forge--restore-bindings)
             (should (eq (keymap-lookup forge-pullreqs-section-map
-                                        "<remap> <majutsu-visit-thing>")
+                                       "<remap> <majutsu-visit-thing>")
                         #'ignore))
             (should-not (keymap-lookup forge-pullreq-section-map
                                        "<remap> <majutsu-visit-thing>")))

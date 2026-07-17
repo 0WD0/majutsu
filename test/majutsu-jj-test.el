@@ -227,10 +227,10 @@
                  1)))
       (with-temp-buffer
         (should (= 1 (majutsu-jj-wash
-                       (lambda (&rest _)
-                         (setq washed (buffer-string))
-                         (goto-char (point-max)))
-                       'wash-anyway
+                         (lambda (&rest _)
+                           (setq washed (buffer-string))
+                           (goto-char (point-max)))
+                         'wash-anyway
                        "diff")))
         (should (equal washed "diff output\n"))
         (should (string-prefix-p washed (buffer-string)))

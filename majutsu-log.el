@@ -325,7 +325,7 @@ can survive transport through the single-line log format.")
   (setq majutsu-log--children-by-id nil))
 
 (when (fboundp 'add-variable-watcher)
-(add-variable-watcher 'majutsu-log-commit-columns
+  (add-variable-watcher 'majutsu-log-commit-columns
                         #'majutsu-log--invalidate-template-cache))
 
 (defun majutsu-log-post-decode-line-separator (value &optional _ctx)

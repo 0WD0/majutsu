@@ -213,8 +213,8 @@
                  '("gerrit"))))
       (let* ((value (funcall reader "Remote: " "gerri" 'test-history))
              (obj (make-instance 'transient-option
-                                  :argument "--remote="
-                                  :multi-value 'repeat)))
+                                 :argument "--remote="
+                                 :multi-value 'repeat)))
         (oset obj value value)
         (should (equal value '("gerrit")))
         (should (equal (transient-infix-value obj)

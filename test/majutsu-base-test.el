@@ -82,7 +82,7 @@
                  (setq seen-history hist
                        seen-category (plist-get completion-extra-properties :category)
                        seen-annotation (funcall (plist-get completion-extra-properties
-                                                            :annotation-function)
+                                                           :annotation-function)
                                                 "main"))
                  (should (equal collection '(("main" . "default branch") "dev")))
                  "main")))

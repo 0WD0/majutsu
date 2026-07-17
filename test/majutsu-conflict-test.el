@@ -42,41 +42,6 @@
    "some text after\n")
   "Sample JJ diff-style conflict.")
 
-(defconst majutsu-conflict-test--jj-diff-long
-  "<<<<<<< conflict 1 of 1
-%%%%%%% diff from: utzqqyqr d1e4c728 \"snapshot refine\" (parents of rebased revision)
-\\\\\\\\\\        to: utzqqyqr 3e1a7f5b \"snapshot refine\" (rebase destination)
-   (majutsu-evil--define-keys '(normal visual) 'majutsu-diff-mode-map
-     (kbd \"g d\") #'majutsu-jump-to-diffstat-or-diff
-     (kbd \"C-<return>\") #'majutsu-diff-visit-workspace-file)
-   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-blob-mode-map
-     (kbd \"p\") #'majutsu-blob-previous
-     (kbd \"n\") #'majutsu-blob-next
-     (kbd \"q\") #'majutsu-blob-quit
--    (kbd \"V\") #'majutsu-blob-visit-file
-+    ;; (kbd \"V\") #'majutsu-blob-visit-file
-     (kbd \"b\") #'majutsu-annotate-addition
-     ;; RET visits the revision (edit)
-     (kbd \"RET\") #'majutsu-edit-changeset)
-+++++++ ntknkwlu 1c8cca65 \"X | refactor majutsu-evil\" (rebased revision)
-          (define-key map (kbd (number-to-string n))
-                      (lambda () (interactive)
-                        (majutsu-conflict-keep-side n nil)))))
-      map)
-    \"Keymap for JJ conflict actions under Evil.\")
-  (when (and (featurep 'evil) majutsu-evil-enable-integration)
-    (majutsu-evil--define-keys 'normal 'majutsu-conflict-mode-map
-      (kbd \"g j\") #'majutsu-conflict-next
-      (kbd \"] ]\") #'majutsu-conflict-next
-      (kbd \"g k\") #'majutsu-conflict-prev
-      (kbd \"[ [\") #'majutsu-conflict-prev
-      (kbd \"g b\") #'majutsu-conflict-keep-base
-      (kbd \"g r\") majutsu-conflict-evil-resolve-map
-      (kbd \"g R\") majutsu-conflict-evil-before-map)))
->>>>>>> conflict 1 of 1 ends
-"
-  "JJ diff-style conflict with longer content.")
-
 (defconst majutsu-conflict-test--jj-diff-long-markers
   (concat
    (make-string 15 ?<) " conflict 1 of 1\n"

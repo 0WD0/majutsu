@@ -86,7 +86,7 @@ This uses the same default as `git-commit-summary-max-length'.
 Set to nil to disable overlong summary highlighting."
   :group 'majutsu
   :type '(choice (const :tag "Disable" nil)
-                 (natnum :tag "Column")))
+          (natnum :tag "Column")))
 
 (defun majutsu-jjdescription--positive-integer-p (value)
   "Return non-nil when VALUE is a positive integer."
@@ -99,12 +99,12 @@ The value must be a positive integer.  Set it to nil to disable Auto Fill;
 in that case the buffer's existing `fill-column' is left unchanged."
   :group 'majutsu
   :type '(choice (const :tag "Disable Auto Fill" nil)
-                 (restricted-sexp
-                  :tag "Column"
-                  :value 72
-                  :match-alternatives
-                  (majutsu-jjdescription--positive-integer-p)
-                  :type-error "This field should contain a positive integer")))
+          (restricted-sexp
+           :tag "Column"
+           :value 72
+           :match-alternatives
+           (majutsu-jjdescription--positive-integer-p)
+           :type-error "This field should contain a positive integer")))
 
 (defun majutsu-jjdescription-setup-auto-fill ()
   "Configure Auto Fill in JJ descriptions, except on the summary line."

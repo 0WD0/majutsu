@@ -354,16 +354,16 @@ bookmark(s) at point."
     (:field conflict-details :module body
      :template
      [:if [:conflict]
-      [:separate "\x1f"
-       [:method [:removed_targets]
-        :map [:lambda (target)
-              [:concat "  - " [:majutsu-bookmark-list-commit-summary]]]
-        :join "\x1f"]
-       [:method [:added_targets]
-        :map [:lambda (target)
-              [:concat "  + " [:majutsu-bookmark-list-commit-summary]]]
-        :join "\x1f"]]
-      ""]
+         [:separate "\x1f"
+                    [:method [:removed_targets]
+                     :map [:lambda (target)
+                                   [:concat "  - " [:majutsu-bookmark-list-commit-summary]]]
+                     :join "\x1f"]
+                    [:method [:added_targets]
+                     :map [:lambda (target)
+                                   [:concat "  + " [:majutsu-bookmark-list-commit-summary]]]
+                     :join "\x1f"]]
+       ""]
      :face t)
     (:field name :module metadata :template [:name] :face nil)
     (:field remote :module metadata :template [:remote] :face nil
@@ -486,7 +486,7 @@ Return nil when ENTRY has no conflict target data."
   "Insert one bookmark conflict TARGET as a commit section."
   (magit-insert-section (jj-commit (car target) t)
     (magit-insert-heading
-     (majutsu-bookmark--target-heading (cdr target)))))
+      (majutsu-bookmark--target-heading (cdr target)))))
 
 (defun majutsu-bookmark--insert-list-entry
     (entry compiled &optional tracked-remotes)

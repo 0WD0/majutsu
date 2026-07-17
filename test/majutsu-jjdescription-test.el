@@ -126,7 +126,7 @@
   (should
    (equal (get 'majutsu-jjdescription-summary-max-length 'custom-type)
           '(choice (const :tag "Disable" nil)
-                   (natnum :tag "Column")))))
+            (natnum :tag "Column")))))
 
 (ert-deftest majutsu-jjdescription-overlong-summary-respects-ignore-rest ()
   "Text after JJ's ignore-rest marker is never treated as a summary."

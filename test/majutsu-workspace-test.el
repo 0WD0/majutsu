@@ -24,7 +24,7 @@
   (concat (mapconcat (lambda (entry)
                        (pcase-let ((`(,field ,value) entry))
                          (if (plist-get (majutsu-workspace--field-spec field)
-                                       :json)
+                                        :json)
                              (json-serialize value)
                            value)))
                      (cl-mapcar #'list

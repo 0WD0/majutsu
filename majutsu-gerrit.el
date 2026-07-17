@@ -78,7 +78,7 @@ which is intended for UI autocompletion and may be faster.  The value
 which supports account search operators and returns candidates even
 for very short seeds."
   :type '(choice (const :tag "Use suggest endpoint" suggest)
-                 (const :tag "Use query endpoint" query))
+          (const :tag "Use query endpoint" query))
   :group 'majutsu-gerrit)
 
 (defcustom majutsu-gerrit-account-show-avatars t

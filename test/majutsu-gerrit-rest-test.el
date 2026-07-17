@@ -102,7 +102,7 @@
                  "assignee:self" nil nil nil majutsu-gerrit-rest-test--spec)
                 :type 'majutsu-gerrit-rest-error)))
       (should (equal (cdr err) '(400 "invalid query"
-                                     "http://example.com:8080/a/changes/?q=assignee%3Aself&pp=0"))))))
+                                 "http://example.com:8080/a/changes/?q=assignee%3Aself&pp=0"))))))
 
 (ert-deftest majutsu-gerrit-rest-request/returns-status-zero-on-curl-error ()
   "Transport/TLS failures (plz-curl-error) should yield (:status 0 ...)
