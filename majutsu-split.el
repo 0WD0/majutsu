@@ -67,21 +67,17 @@ one change."
   (interactive (list (transient-args 'majutsu-split)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
                ;; Text hunks and hunkless files coexist in one operation.
-               (operation (majutsu-interactive-build-operation-if-selected
-                           nil nil nil nil))
-               (patch (plist-get operation :patch))
-               (file-ops (plist-get operation :file-ops))
+               (plan (majutsu-interactive-build-replay-plan-if-selected))
                (patch-source
-                (and operation (majutsu-split--diff-source-revision)))
-               (args (if operation
+                (and plan (majutsu-split--diff-source-revision)))
+               (args (if plan
                          (majutsu-split--remove-interactive-tool-args args)
                        args)))
-    (if operation
+    (if plan
         (progn
           (majutsu-split--check-patch-source args patch-source)
           ;; Reset to the left tree, then replay precisely the selections.
-          (majutsu-interactive-run-with-patch
-           "split" args filesets patch t file-ops)
+          (majutsu-interactive-run-replay-plan "split" args filesets plan)
           (majutsu-interactive-clear))
       (majutsu-run-jj-with-editor
        (cons "split" (majutsu-jj-append-filesets args filesets))))))

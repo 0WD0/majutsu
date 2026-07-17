@@ -18,6 +18,9 @@
 
 (require 'majutsu)
 
+(declare-function majutsu-diff--revision-metadata "majutsu-diff" ())
+(defvar majutsu-buffer-diff-range)
+
 (defclass majutsu-restore-option (majutsu-selection-option)
   ())
 
@@ -42,13 +45,84 @@
 ;;; Restore
 
 (defun majutsu-restore--default-args ()
-  "Return default args from diff buffer context."
+  "Return default args from diff buffer context.
+Diff =--revisions= / =-r= become Restore =--changes-in=; other range args
+are passed through unchanged."
   (when (derived-mode-p 'majutsu-diff-mode)
-    (mapcar (lambda (arg)
-              (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
-                  (concat "--changes-in=" rev)
-                arg))
-            majutsu-buffer-diff-range)))
+    (if (and (equal (car majutsu-buffer-diff-range) "-r")
+             (cadr majutsu-buffer-diff-range))
+        (list (concat "--changes-in=" (cadr majutsu-buffer-diff-range)))
+      (mapcar (lambda (arg)
+                (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
+                    (concat "--changes-in=" rev)
+                  arg))
+              majutsu-buffer-diff-range))))
+
+(defun majutsu-restore--selector (args)
+  "Return Restore selector canonicalized from ARGS.
+The selector is either (:changes-in REV) or (:from FROM :to TO).
+Missing --from/--to default to @, matching jj restore/diff."
+  (let ((changes-in (transient-arg-value "--changes-in=" args))
+        (from (transient-arg-value "--from=" args))
+        (to (transient-arg-value "--to=" args)))
+    (cond
+     (changes-in (list :changes-in changes-in))
+     ((or from to) (list :from (or from "@") :to (or to "@")))
+     (t (list :changes-in "@")))))
+
+(defun majutsu-restore--patch-selector (&optional buffer)
+  "Return Restore selector for BUFFER, or nil when patch restore is unsafe.
+Only single-revision diffs (with structured metadata) and explicit
+--from/--to ranges can drive patch selection."
+  (with-current-buffer (or buffer (current-buffer))
+    (when (derived-mode-p 'majutsu-diff-mode)
+      (let* ((range majutsu-buffer-diff-range)
+             (from (transient-arg-value "--from=" range))
+             (to (transient-arg-value "--to=" range))
+             (revisions
+              (append
+               (seq-keep (lambda (arg)
+                           (transient-arg-value "--revisions=" (list arg)))
+                         range)
+               (and (equal (car range) "-r") (cadr range)
+                    (list (cadr range))))))
+        (cond
+         ((or from to)
+          (majutsu-restore--selector (majutsu-restore--default-args)))
+         ((null range)
+          (list :changes-in "@"))
+         ((and (= (length revisions) 1)
+               (majutsu-diff--revision-metadata))
+          (list :changes-in (car revisions))))))))
+
+(defun majutsu-restore--check-patch-selector (args selector)
+  "Signal unless ARGS match the displayed diff SELECTOR."
+  (unless selector
+    (user-error
+     "Patch selection for restore requires a single-revision or explicit-range diff"))
+  (unless (equal selector (majutsu-restore--selector args))
+    (user-error
+     "Patch selection for restore requires the displayed diff selector")))
+
+(defun majutsu-restore-interactive-selection-available-p ()
+  "Return non-nil when the current diff can safely drive patch Restore."
+  (and (majutsu-interactive-selection-available-p)
+       (majutsu-restore--patch-selector)))
+
+(defun majutsu-restore--remove-interactive-tool-args (args)
+  "Return ARGS without native interactive-editor or tool arguments."
+  (let (out)
+    (while args
+      (let ((arg (pop args)))
+        (cond
+         ((member arg '("-i" "--interactive")))
+         ((member arg '("-t" "--tool"))
+          (when args (pop args)))
+         ((and (stringp arg)
+               (or (string-prefix-p "--tool=" arg)
+                   (string-prefix-p "-t=" arg))))
+         (t (push arg out)))))
+    (nreverse out)))
 
 ;;;###autoload
 (defun majutsu-restore-dwim ()
@@ -69,16 +143,19 @@ In diff buffer on a file section, restore only that file."
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-restore)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               (patch (majutsu-interactive-build-patch-if-selected nil t t))
-               (args (if patch
-                         (seq-remove (lambda (arg)
-                                       (or (string= arg "--interactive")
-                                           (transient-arg-value "--tool=" (list arg))))
-                                     args)
+               ;; jj presents destination on the left and restore source on
+               ;; the right.  The complement plan keeps that source tree and
+               ;; replays only unselected changes forward from the left.
+               (plan (majutsu-interactive-build-replay-plan-if-selected
+                      nil 'complement))
+               (selector (and plan (majutsu-restore--patch-selector)))
+               (args (if plan
+                         (majutsu-restore--remove-interactive-tool-args args)
                        args)))
-    (if patch
+    (if plan
         (progn
-          (majutsu-interactive-run-with-patch "restore" args filesets patch)
+          (majutsu-restore--check-patch-selector args selector)
+          (majutsu-interactive-run-replay-plan "restore" args filesets plan)
           (majutsu-interactive-clear))
       (let ((exit (apply #'majutsu-run-jj
                          "restore"
@@ -147,7 +224,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-restore:--to)
     (majutsu-restore:--changes-in)
     ("x" "Clear selections" majutsu-selection-clear :transient t)]
-   ["Patch Selection" :if majutsu-interactive-selection-available-p
+   ["Patch Selection" :if majutsu-restore-interactive-selection-available-p
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)

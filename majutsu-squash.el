@@ -146,11 +146,10 @@ return the same context defaults that execution would use."
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-squash-arguments)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               ;; Generate patch for SELECTED content (invert=nil).
-               ;; This is what gets squashed into the destination.
-               (patch (majutsu-interactive-build-patch-if-selected nil nil nil))
-               (patch-source (and patch (majutsu-squash--patch-source-revset))))
-    (when patch
+               ;; Text hunks and whole-file changes both move into the destination.
+               (plan (majutsu-interactive-build-replay-plan-if-selected))
+               (patch-source (and plan (majutsu-squash--patch-source-revset))))
+    (when plan
       (majutsu-squash--check-patch-source args patch-source)
       (setq args (majutsu-squash--remove-interactive-tool-args args)))
     (let* ((explicit-sources (majutsu-squash--source-values args))
@@ -174,11 +173,10 @@ return the same context defaults that execution would use."
                              (majutsu-squash--destination-revset
                               (majutsu-squash--source-revset sources)
                               explicit-sources))))))))
-    (if patch
+    (if plan
         (progn
-          ;; reverse=t means reset $right to $left, then apply patch forward.
-          ;; Result: $right = selected content = what gets squashed.
-          (majutsu-interactive-run-with-patch "squash" args filesets patch t)
+          ;; The selected plan rebuilds right from left, then applies forward.
+          (majutsu-interactive-run-replay-plan "squash" args filesets plan)
           (majutsu-interactive-clear))
       (majutsu-run-jj-with-editor
        (cons "squash" (majutsu-jj-append-filesets args filesets))))))

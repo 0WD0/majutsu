@@ -14,6 +14,11 @@
 
 ** Added
 
+- Whole-file patch selections ::
+  Split, Squash, and Restore can select hunkless changes, including binary
+  files, with ~F~.  Structured jj metadata supplies and verifies the file
+  operations and paths before they are replayed.
+
 - Bug references in logs and description buffers ::
   Majutsu enables ~bug-reference-mode~ there and can derive setup from JJ Git
   remotes.
@@ -192,11 +197,6 @@
   only if it is still the local directory the user confirmed and does not own
   the shared repository store.  All selected targets are checked, and unsafe
   or failed trash moves are reported together.
-
-- File changes without text hunks require matching metadata for Split ::
-  Structured metadata from jj supplies the file operation and paths.  Majutsu
-  verifies it against the displayed Git-format file headers and refuses the
-  selection when the records are missing or inconsistent.
 
 - Concurrent interactive patch operations use separate inputs ::
   Each operation stores its patch file and helper script in a separate

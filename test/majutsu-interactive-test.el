@@ -44,38 +44,40 @@
       (insert-file-contents path))
     (buffer-string)))
 
-(ert-deftest majutsu-interactive-run-with-patch/inserts-tool-before-filesets ()
-  "Patch runner should keep jj options before filesets."
+(ert-deftest majutsu-interactive-run-replay-plan/inserts-tool-before-filesets ()
+  "Replay plan should keep jj options before filesets."
   (let (called)
     (cl-letf (((symbol-function 'majutsu-interactive--write-patch)
                (lambda (_patch &optional _directory) "/tmp/patch.diff"))
               ((symbol-function 'majutsu-interactive--build-tool-config)
-               (lambda (_patch-file _reverse &optional _file-ops _directory)
+               (lambda (_patch-file _plan _directory)
                  '("--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch")))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
                  (setq called (flatten-tree args)))))
-      (majutsu-interactive-run-with-patch
-       "restore" '("--from=A" "--to=B") '("src/a.el") "PATCH")
+      (majutsu-interactive-run-replay-plan
+       "restore" '("--from=A" "--to=B") '("src/a.el")
+       '(:base left :payload-root right :patch "PATCH" :file-ops nil))
       (should (equal called
                      '("restore" "--from=A" "--to=B"
                        "-i" "--tool" "majutsu-applypatch"
                        "--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch"
                        "--" "src/a.el"))))))
 
-(ert-deftest majutsu-interactive-run-with-patch/normalizes-structured-filesets ()
-  "Patch runner should also normalize transient-files groups."
+(ert-deftest majutsu-interactive-run-replay-plan/normalizes-structured-filesets ()
+  "Replay plan should also normalize structured filesets."
   (let (called)
     (cl-letf (((symbol-function 'majutsu-interactive--write-patch)
                (lambda (_patch &optional _directory) "/tmp/patch.diff"))
               ((symbol-function 'majutsu-interactive--build-tool-config)
-               (lambda (_patch-file _reverse &optional _file-ops _directory)
+               (lambda (_patch-file _plan _directory)
                  '("--config" "tool=config")))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
                  (setq called (flatten-tree args)))))
-      (majutsu-interactive-run-with-patch
-       "split" '("--revision=@") '("src/a.el") "PATCH" t)
+      (majutsu-interactive-run-replay-plan
+       "split" '("--revision=@") '("src/a.el")
+       '(:base left :payload-root right :patch "PATCH" :file-ops nil))
       (should (equal called
                      '("split" "--revision=@"
                        "-i" "--tool" "majutsu-applypatch"
@@ -86,7 +88,7 @@
   "Tool config should pass local remote paths to jj merge-tool args."
   (let ((config
          (cl-letf (((symbol-function 'majutsu-interactive--write-applypatch-script)
-                    (lambda (_reverse &optional _file-ops _directory)
+                    (lambda (_plan _directory)
                       "/ssh:demo:/tmp/applypatch.sh"))
                    ((symbol-function 'majutsu-convert-filename-for-jj)
                     (lambda (path)
@@ -95,7 +97,9 @@
                         ("/ssh:demo:/tmp/patch.diff" "/tmp/patch.diff")
                         (_ path)))))
            (majutsu-interactive--build-tool-config
-            "/ssh:demo:/tmp/patch.diff" nil nil "/ssh:demo:/tmp"))))
+            "/ssh:demo:/tmp/patch.diff"
+            '(:base left :payload-root right :patch "" :file-ops nil)
+            "/ssh:demo:/tmp"))))
     (should (equal (length config) 4))
     (should (string-match-p "merge-tools\\.majutsu-applypatch\\.program=/tmp/applypatch\\.sh"
                             (nth 1 config)))
@@ -114,7 +118,7 @@
                      "/tmp/majutsu-interactive-dir"))
       (should (equal seen '("majutsu-interactive-" t nil))))))
 
-(ert-deftest majutsu-interactive-run-with-patch/uses-private-directory-per-run ()
+(ert-deftest majutsu-interactive-run-replay-plan/uses-private-directory-per-run ()
   "Overlapping async operations must never share patch or helper paths."
   (let (created writes configs cleaned)
     (cl-letf (((symbol-function 'majutsu-interactive--make-operation-temp-dir)
@@ -127,15 +131,19 @@
                  (push directory writes)
                  (expand-file-name "patch.diff" directory)))
               ((symbol-function 'majutsu-interactive--build-tool-config)
-               (lambda (_patch _reverse &optional _ops directory)
-                 (push directory configs)
+               (lambda (_patch _plan _directory)
+                 (push _directory configs)
                  nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest _args) nil))
               ((symbol-function 'majutsu-interactive--delete-operation-temp-dir)
                (lambda (directory) (push directory cleaned))))
-      (majutsu-interactive-run-with-patch "split" nil nil "one")
-      (majutsu-interactive-run-with-patch "split" nil nil "two")
+      (majutsu-interactive-run-replay-plan
+       "split" nil nil
+       '(:base left :payload-root right :patch "one" :file-ops nil))
+      (majutsu-interactive-run-replay-plan
+       "split" nil nil
+       '(:base left :payload-root right :patch "two" :file-ops nil))
       (should (= (length (delete-dups (copy-sequence created))) 2))
       (should (equal writes configs))
       (should (= (length cleaned) 2)))))
@@ -222,8 +230,32 @@
         (let ((section (majutsu-interactive-test--insert-diff
                         diff file (list metadata))))
           (should section)
-          (should (equal (majutsu-interactive--file-operation section)
+          (should (equal (majutsu-interactive--file-operation
+                          (majutsu-interactive--file-change section))
                          expected)))))))
+
+(ert-deftest majutsu-interactive-build-replay-plan/complement-uses-unselected-file-ops ()
+  "Restore complement keeps selected whole-file ops by replaying the rest."
+  (with-temp-buffer
+    (let* ((diff (concat
+                  "diff --git a/keep.bin b/keep.bin\nnew file mode 100644\n"
+                  "Binary files /dev/null and b/keep.bin differ\n"
+                  "diff --git a/drop.bin b/drop.bin\nnew file mode 100644\n"
+                  "Binary files /dev/null and b/drop.bin differ\n"))
+           (keep (majutsu-interactive-test--insert-diff
+                  diff "keep.bin"
+                  '((:status "added" :source "keep.bin" :target "keep.bin")
+                    (:status "added" :source "drop.bin" :target "drop.bin"))))
+           (drop (majutsu-interactive--file-section-for-file "drop.bin")))
+      (should keep)
+      (should drop)
+      (majutsu-interactive--set-selection
+       (majutsu-interactive--file-id (oref keep value)) :all)
+      (should (equal (majutsu-interactive-build-replay-plan-if-selected
+                      nil 'complement)
+                     '(:base right :payload-root left
+                       :patch nil
+                       :file-ops ((:action add :path "drop.bin"))))))))
 
 (ert-deftest majutsu-interactive-toggle-file/fails-closed-without-machine-metadata ()
   "Rendered Git headers alone must never authorize a whole-file operation."
@@ -235,31 +267,22 @@
       (should-error (majutsu-interactive-toggle-file) :type 'user-error)
       (should-not (majutsu-interactive-has-selections-p)))))
 
-(ert-deftest majutsu-interactive-toggle-file/selects-hunkless-file-for-split ()
-  "A binary file section is selectable as a whole-file split operation."
-  (with-temp-buffer
-    (let* ((diff "diff --git a/bin.dat b/bin.dat\nnew file mode 100644\nBinary files /dev/null and b/bin.dat differ\n")
-           (section (majutsu-interactive-test--insert-diff
-                     diff "bin.dat"
-                     '((:status "added" :source "bin.dat"
-                        :target "bin.dat"))))
-           (transient-current-command 'majutsu-split))
-      (goto-char (oref section start))
-      (majutsu-interactive-toggle-file)
-      (should
-       (equal (majutsu-interactive-build-operation-if-selected nil t t nil)
-              '(:patch nil :file-ops ((:action add :path "bin.dat"))))))))
-
-(ert-deftest majutsu-interactive-toggle-file/rejects-hunkless-non-split ()
-  "Restore/squash must reject and not record a whole-file selection."
-  (dolist (command '(majutsu-restore majutsu-squash nil))
+(ert-deftest majutsu-interactive-toggle-file/selects-hunkless-file-for-supported-operations ()
+  "Split, squash, and restore can select a binary file as one operation."
+  (dolist (command '(majutsu-split majutsu-squash majutsu-restore))
     (with-temp-buffer
-      (let* ((diff "diff --git a/bin.dat b/bin.dat\nindex 1..2 100644\nBinary files a/bin.dat and b/bin.dat differ\n")
-             (section (majutsu-interactive-test--insert-diff diff "bin.dat"))
+      (let* ((diff "diff --git a/bin.dat b/bin.dat\nnew file mode 100644\nBinary files /dev/null and b/bin.dat differ\n")
+             (section (majutsu-interactive-test--insert-diff
+                       diff "bin.dat"
+                       '((:status "added" :source "bin.dat"
+                          :target "bin.dat"))))
              (transient-current-command command))
         (goto-char (oref section start))
-        (should-error (majutsu-interactive-toggle-file) :type 'user-error)
-        (should-not (majutsu-interactive-has-selections-p))))))
+        (majutsu-interactive-toggle-file)
+        (should (equal (majutsu-interactive-build-replay-plan-if-selected)
+                       '(:base left :payload-root right
+                         :patch nil
+                         :file-ops ((:action add :path "bin.dat")))))))))
 
 (ert-deftest majutsu-interactive-operation/mixed-does-not-include-unselected-hunks ()
   "A mixed text/binary operation must not carry an unselected text hunk."
@@ -280,7 +303,7 @@
        (majutsu-interactive--hunk-id hunk) :all)
       (majutsu-interactive--set-selection
        (majutsu-interactive--file-id (oref binary value)) :all)
-      (let* ((operation (majutsu-interactive-build-operation-if-selected))
+      (let* ((operation (majutsu-interactive-build-replay-plan-if-selected))
              (patch (plist-get operation :patch)))
         (should (string-match-p "selected one" patch))
         (should-not (string-match-p "unselected two" patch))
@@ -334,7 +357,9 @@
           (with-temp-file patch-file
             (insert "diff --git a/text.txt b/text.txt\n--- a/text.txt\n+++ b/text.txt\n@@ -1 +1 @@\n-old\n+selected\n"))
           (let ((script (majutsu-interactive--write-applypatch-script
-                         t ops dir)))
+                         (list :base 'left :payload-root 'right
+                               :patch nil :file-ops ops)
+                         dir)))
             (should (zerop (call-process script nil nil nil
                                          left right patch-file))))
           (should (equal (majutsu-interactive-test--file-contents
@@ -362,6 +387,148 @@
                           (expand-file-name "copied.bin" right)) "copy-me"))
           (should-not (file-exists-p (expand-file-name "unselected.bin" right))))
       (delete-directory dir t))))
+
+(ert-deftest majutsu-interactive--write-applypatch-script/complement-keeps-selected ()
+  "A restore complement plan keeps the source tree and applies unselected ops."
+  (let* ((dir (make-temp-file "majutsu-interactive-restore-" t))
+         (left (expand-file-name "left" dir))
+         (right (expand-file-name "right" dir))
+         (patch-file (expand-file-name "patch.diff" dir))
+         ;; Unselected whole-file ops only: keep selected modified.bin from right.
+         (ops '((:action add :path "added.bin")
+                (:action delete :path "removed.bin")
+                (:action rename :source "old.bin" :path "renamed.bin")
+                (:action copy :source "source.bin" :path "copied.bin"))))
+    (unwind-protect
+        (progn
+          (make-directory left)
+          (make-directory right)
+          ;; Destination (tool left): has the unselected destination-side state.
+          (dolist (entry '(("text.txt" . "dest\n")
+                           ("added.bin" . "added")
+                           ("modified.bin" . "dest-mod")
+                           ("renamed.bin" . "rename-me")
+                           ("source.bin" . "copy-me")
+                           ("copied.bin" . "copy-me")))
+            (with-temp-file (expand-file-name (car entry) left)
+              (insert (cdr entry))))
+          ;; Source (tool right): start here; selected modified.bin stays.
+          (dolist (entry '(("text.txt" . "source\n")
+                           ("modified.bin" . "source-mod")
+                           ("removed.bin" . "remove-me")
+                           ("old.bin" . "rename-me")
+                           ("source.bin" . "copy-me")))
+            (with-temp-file (expand-file-name (car entry) right)
+              (insert (cdr entry))))
+          ;; Complement text: apply the unselected text change from left.
+          (with-temp-file patch-file
+            (insert "diff --git a/text.txt b/text.txt\n--- a/text.txt\n+++ b/text.txt\n@@ -1 +1 @@\n-source\n+dest\n"))
+          (let ((script (majutsu-interactive--write-applypatch-script
+                         (list :base 'right :payload-root 'left
+                               :patch nil :file-ops ops)
+                         dir)))
+            (should (zerop (call-process script nil nil nil
+                                         left right patch-file))))
+          (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "text.txt" right))
+                         "dest\n"))
+          (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "added.bin" right))
+                         "added"))
+          (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "modified.bin" right))
+                         "source-mod"))
+          (should-not (file-exists-p (expand-file-name "removed.bin" right)))
+          (should-not (file-exists-p (expand-file-name "old.bin" right)))
+          (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "renamed.bin" right))
+                         "rename-me"))
+          (should (file-exists-p (expand-file-name "source.bin" right)))
+          (should (equal (majutsu-interactive-test--file-contents
+                          (expand-file-name "copied.bin" right))
+                         "copy-me")))
+      (delete-directory dir t))))
+(ert-deftest majutsu-interactive/integration-non-split-binary-selections ()
+  "Run real jj restore and squash operations with selected binary files."
+  (let ((jj (getenv "MAJUTSU_TEST_JJ")))
+    (skip-unless (and jj (file-executable-p jj)))
+    (let ((parent (make-temp-file "majutsu-jj-non-split-" t)))
+      (unwind-protect
+          (cl-labels
+              ((run-jj
+                (directory &rest args)
+                (let ((default-directory (file-name-as-directory directory)))
+                  (apply #'call-process jj nil nil nil args)))
+               (jj-output
+                (directory &rest args)
+                (with-temp-buffer
+                  (let ((default-directory (file-name-as-directory directory)))
+                    (should (zerop (apply #'call-process
+                                          jj nil (current-buffer) nil args))))
+                  (buffer-string)))
+               (write-bytes
+                (path bytes)
+                (with-temp-buffer
+                  (set-buffer-multibyte nil)
+                  (insert bytes)
+                  (let ((coding-system-for-write 'binary))
+                    (write-region (point-min) (point-max) path nil 'silent))))
+               (read-bytes
+                (path)
+                (with-temp-buffer
+                  (insert-file-contents-literally path)
+                  (buffer-string)))
+               (run-operation
+                (repo command args plan)
+                (let* ((directory (make-temp-file
+                                   (expand-file-name "majutsu-tool-" parent) t))
+                       (patch (majutsu-interactive--write-patch
+                               (or (plist-get plan :patch) "") directory))
+                       (config (majutsu-interactive--build-tool-config
+                                patch plan directory)))
+                  (should (zerop
+                           (apply #'run-jj repo
+                                  (append (list command "-i" "--tool"
+                                                "majutsu-applypatch")
+                                          args config)))))))
+            (let ((restore-repo (expand-file-name "restore" parent)))
+              (should (zerop (call-process jj nil nil nil "git" "init" restore-repo)))
+              (let ((selected (expand-file-name "selected.bin" restore-repo))
+                    (kept (expand-file-name "kept.bin" restore-repo)))
+                (write-bytes selected (unibyte-string 0 1))
+                (write-bytes kept (unibyte-string 2 3))
+                (should (zerop (run-jj restore-repo "commit" "-m" "base")))
+                (write-bytes selected (unibyte-string 0 4))
+                (write-bytes kept (unibyte-string 2 5))
+                ;; Complement: keep selected.bin from source, replay kept.bin
+                ;; from destination.
+                (run-operation restore-repo "restore" '("--changes-in=@")
+                               '(:base right :payload-root left :patch nil
+                                 :file-ops ((:action modify :path "kept.bin"))))
+                (should (equal (read-bytes selected) (unibyte-string 0 1)))
+                (should (equal (read-bytes kept) (unibyte-string 2 5)))))
+            (let ((squash-repo (expand-file-name "squash" parent)))
+              (should (zerop (call-process jj nil nil nil "git" "init" squash-repo)))
+              (let ((selected (expand-file-name "selected.bin" squash-repo))
+                    (kept (expand-file-name "kept.bin" squash-repo)))
+                (write-bytes selected (unibyte-string 0 1))
+                (write-bytes kept (unibyte-string 2 3))
+                (should (zerop (run-jj squash-repo "commit" "-m" "base")))
+                (write-bytes selected (unibyte-string 0 4))
+                (write-bytes kept (unibyte-string 2 5))
+                (run-operation squash-repo "squash" '("--from=@" "--into=@-")
+                               '(:base left :payload-root right :patch nil
+                                 :file-ops
+                                 ((:action modify :path "selected.bin"))))
+                ;; The child inherits selected content from its rewritten
+                ;; parent, so inspect its diff rather than its absolute tree.
+                (should (equal (read-bytes selected) (unibyte-string 0 4)))
+                (should (equal (read-bytes kept) (unibyte-string 2 5)))
+                (let ((diff (jj-output squash-repo "diff" "--git"
+                                       "--from=@-" "--to=@")))
+                  (should-not (string-match-p "selected\\.bin" diff))
+                  (should (string-match-p "kept\\.bin" diff))))))
+        (delete-directory parent t)))))
 
 (ert-deftest majutsu-interactive/integration-machine-paths-with-minimum-jj ()
   "Exercise sidecar binding against the jj binary named by MAJUTSU_TEST_JJ."
@@ -430,13 +597,16 @@
                     (unless newline-section
                       (ert-fail (format "newline path not bound; metadata=%S git=%S"
                                         metadata git-output)))
-                    (should (equal (majutsu-interactive--file-operation odd-section)
+                    (should (equal (majutsu-interactive--file-operation
+                                    (majutsu-interactive--file-change odd-section))
                                    `(:action modify :path ,odd)))
                     (should (equal
-                             (majutsu-interactive--file-operation newline-section)
+                             (majutsu-interactive--file-operation
+                              (majutsu-interactive--file-change newline-section))
                              `(:action modify :path ,newline)))
                     (should (equal
-                             (majutsu-interactive--file-operation rename-section)
+                             (majutsu-interactive--file-operation
+                              (majutsu-interactive--file-change rename-section))
                              `(:action rename :source ,old :path ,new))))))))
         (delete-directory parent t)))))
 

@@ -470,7 +470,7 @@ RANGE is a list like (\"--revisions=xxx\") or (\"--from=xxx\" \"--to=xxx\")."
        (revisions (cons (concat revisions "-") revisions))
        ((and from to) (cons from to))
        (from (cons from "@"))
-       (to (cons "@-" to))
+       (to (cons "@" to))
        (t (cons "@-" "@"))))))
 
 (defun majutsu-jj-read-diff-file (from to)
@@ -835,7 +835,7 @@ Empty items are omitted from the result."
 (defun majutsu-jj--parse-conflicted-file-record (record)
   "Parse one conflicted-file machine RECORD into a plist."
   (let* ((fields (majutsu--split-fields
-                   (or record "") majutsu-jj--conflicted-file-field-separator 2))
+                  (or record "") majutsu-jj--conflicted-file-field-separator 2))
          (sides (string-to-number (or (nth 0 fields) "")))
          (path (nth 1 fields)))
     (when (and (stringp path)

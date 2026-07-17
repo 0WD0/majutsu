@@ -64,7 +64,7 @@
 (ert-deftest majutsu-squash-execute/runs-jj-squash-with-inferred-destination ()
   "Execute non-patch squash through `majutsu-run-jj-with-editor'."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -78,7 +78,7 @@
 (ert-deftest majutsu-squash-execute/defaults-to-working-copy-parent ()
   "No source defaults to @ and its external parent."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -94,7 +94,7 @@
 (ert-deftest majutsu-squash-execute/uses-context-default-source ()
   "Execution-time context defaults become --from when user selected no source."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -110,7 +110,7 @@
 (ert-deftest majutsu-squash-execute/keeps-explicit-destination ()
   "Do not infer destination when user selected one."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -124,7 +124,7 @@
 (ert-deftest majutsu-squash-execute/keeps-literal-none-source-for-jj-noop ()
   "Do not add --into for literal --from=none(); let jj keep no-op behavior."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -138,7 +138,7 @@
 (ert-deftest majutsu-squash-execute/places-structured-filesets-after-options ()
   "Transient fileset groups should be emitted after completed options."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -153,11 +153,15 @@
 (ert-deftest majutsu-squash-execute/patch-removes-native-interactive-tool-args ()
   "Patch mode injects Majutsu's tool and strips native tool args."
   (let (called cleared)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
-               (lambda (&rest _) "PATCH"))
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+               (lambda (&rest _)
+                 (list :base 'left :payload-root 'right
+                       :patch "PATCH"
+                       :file-ops
+                       '((:action modify :path "image.bin")))))
               ((symbol-function 'majutsu-squash--patch-source-revset)
                (lambda (&rest _) "B"))
-              ((symbol-function 'majutsu-interactive-run-with-patch)
+              ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args)
                  (setq called args)))
               ((symbol-function 'majutsu-interactive-clear)
@@ -169,14 +173,18 @@
                      '("squash"
                        ("--from=B" "--into=parents(roots((B)))")
                        nil
-                       "PATCH" t)))
+                       (:base left :payload-root right
+                        :patch "PATCH"
+                        :file-ops
+                        ((:action modify :path "image.bin"))))))
       (should cleared))))
 
 (ert-deftest majutsu-squash-execute/patch-rejects-different-source ()
   "Patch mode should not apply the current diff patch to another source."
   (let (cleared)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-patch-if-selected)
-               (lambda (&rest _) "PATCH"))
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+               (lambda (&rest _)
+                 '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
               ((symbol-function 'majutsu-squash--patch-source-revset)
                (lambda (&rest _) "B"))
               ((symbol-function 'majutsu-interactive-clear)

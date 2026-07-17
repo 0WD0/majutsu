@@ -36,7 +36,7 @@
 (ert-deftest majutsu-split-execute/places-structured-filesets-after-options ()
   "Execute split with transient filesets after option arguments."
   (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-operation-if-selected)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-run-jj-with-editor)
                (lambda (&rest args)
@@ -49,9 +49,10 @@
 (ert-deftest majutsu-split-execute/patch-keeps-filesets-after-options ()
   "Patch split should still pass transient filesets after option arguments."
   (let (called cleared)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-operation-if-selected)
-               (lambda (&rest _) '(:patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-interactive-run-with-patch)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+               (lambda (&rest _) '(:base left :payload-root right
+                                  :patch "PATCH" :file-ops nil)))
+              ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args)
                  (setq called args)))
               ((symbol-function 'majutsu-split--diff-source-revision)
@@ -60,15 +61,18 @@
                (lambda () (setq cleared t))))
       (majutsu-split-execute '(("--" "src/a.el") "--revision=@" "--interactive"))
       (should (equal called
-                     '("split" ("--revision=@") ("src/a.el") "PATCH" t nil)))
+                     '("split" ("--revision=@") ("src/a.el")
+                       (:base left :payload-root right
+                              :patch "PATCH" :file-ops nil))))
       (should cleared))))
 
 (ert-deftest majutsu-split-execute/file-op-only-forwards-filesets-and-strips-tool ()
   "File-op-only splits use the custom tool and preserve current filesets."
   (let ((ops '((:action delete :path "gone.bin"))) called cleared)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-operation-if-selected)
-               (lambda (&rest _) (list :patch nil :file-ops ops)))
-              ((symbol-function 'majutsu-interactive-run-with-patch)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+               (lambda (&rest _) (list :base 'left :payload-root 'right
+                                      :patch nil :file-ops ops)))
+              ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args) (setq called args)))
               ((symbol-function 'majutsu-split--diff-source-revision)
                (lambda (&rest _) "@"))
@@ -79,13 +83,15 @@
          "--tool" "meld" "--tool=vimdiff"))
       (should (equal called
                      (list "split" '("--revision=@") '("bin/gone.bin")
-                           nil t ops)))
+                           (list :base 'left :payload-root 'right
+                                 :patch nil :file-ops ops))))
       (should cleared))))
 
 (ert-deftest majutsu-split-execute/patch-rejects-different-source ()
   "Patch mode must not apply the displayed diff to another revision."
-  (cl-letf (((symbol-function 'majutsu-interactive-build-operation-if-selected)
-             (lambda (&rest _) '(:patch "PATCH" :file-ops nil)))
+  (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+             (lambda (&rest _) '(:base left :payload-root right
+                                :patch "PATCH" :file-ops nil)))
             ((symbol-function 'majutsu-split--diff-source-revision)
              (lambda (&rest _) "B")))
     (should-error (majutsu-split-execute '("--revision=C"))

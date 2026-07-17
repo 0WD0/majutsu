@@ -603,7 +603,7 @@ Interactive selection is integrated into the Split (~S~), Squash (~s~), and Rest
 | Key | Command                           | Description                                                     |
 |-----+-----------------------------------+-----------------------------------------------------------------|
 | ~H~   | majutsu-interactive-toggle-hunk   | Toggle selection of hunk at point                               |
-| ~F~   | majutsu-interactive-toggle-file   | Toggle all file hunks or a Split file change with no text hunks |
+| ~F~   | majutsu-interactive-toggle-file   | Toggle all file hunks or a whole-file change with no text hunks |
 | ~R~   | majutsu-interactive-toggle-region | Toggle selection of active region                               |
 | ~C~   | majutsu-interactive-clear         | Clear all patch selections                                      |
 
@@ -621,8 +621,8 @@ This means you can:
 *** Visual Feedback
 Selected hunks are highlighted with the =majutsu-interactive-selected-hunk=
 face (green background by default). Selected regions within hunks use the
-=majutsu-interactive-selected-region= face (purple background). In Split,
-selected file changes with no text hunks use the
+=majutsu-interactive-selected-region= face (purple background). Selected file
+changes with no text hunks use the
 =majutsu-interactive-selected-file= face.
 
 *** Selection Semantics
@@ -649,6 +649,10 @@ Majutsu uses a custom merge tool to apply partial patches. When you execute an o
 
 1. *Patch Generation*: Majutsu generates a unified diff patch containing only the selected hunks/regions.
 
+   For Restore, it instead builds complementary replay data: the unselected
+   hunks and whole-file changes.  Hunkless whole-file changes are represented
+   by structured jj metadata rather than inferred from rendered Git headers.
+
 2. *Tool Invocation*: Jujutsu's =-i --tool= mechanism is used with a custom =majutsu-applypatch= tool.
 
    Each operation stores its patch file and helper script in a separate
@@ -657,32 +661,32 @@ Majutsu uses a custom merge tool to apply partial patches. When you execute an o
 
 3. *Patch Application*:
    - For *Split/Squash*: The tool resets =$right= (current state) to =$left= (parent state), then applies the patch forward. This results in =$right= containing only the selected changes.
-   - For *Restore*: The tool applies the patch directly to =$right=.
+   - For *Restore*: =$right= starts at the source state.  The tool applies the
+     complementary text patch and whole-file changes forward, reconstructing
+     the result with the selected changes restored to their source state.
 
 This approach avoids the complexity of reverse patch application (=git apply -R=), which has edge cases with new files, deleted files, and content starting with =+= or =-=.
 
 *** Edge Cases
-Text-hunk selection supports the file operations below. Split additionally
-supports file changes without text hunks as described at the end of this
-section.
+Text-hunk selection supports the file operations below.  Hunkless whole-file
+selection is available for all three operations as described at the end of
+this section.
 
 **** New Files
 When splitting or squashing a new file:
 - If you select the entire file, it goes to the first commit / gets squashed
 - If you select only part of the file, only those lines go; the rest stays
-- Partial selection of new files works correctly because the patch is applied forward after resetting to parent state
+
+For Restore, selected lines are restored to the source state and unselected
+lines are retained.  This also covers a selected portion of a newly added
+file without reverse-applying a new-file patch.
 
 **** Deleted Files
-*Note: Interactive selection for deleted files is currently limited.*
+*Note: Partial text selection for deleted files is currently limited.*
 
-When splitting or squashing a file deletion:
-- Selecting the *entire* deletion works correctly - the file gets deleted in the first commit / parent
-- *Partial selection of deleted files is not yet supported* - you must select all lines or none
-
-This limitation exists because git's patch format requires =deleted file mode=
-patches to remove the entire file contents. Partial deletion would require
-converting to a regular modification patch, which has edge cases with context
-matching.
+Select the entire deletion or none.  This limitation is independent of
+hunkless whole-file selection, which handles file changes that have no text
+hunks.
 
 **** Renamed/Copied Files
 Renamed and copied files are handled correctly:
@@ -690,11 +694,13 @@ Renamed and copied files are handled correctly:
 - You can select specific hunks within renamed files just like regular modifications
 
 **** Changes Without Text Hunks
-In a Git-format diff buffer, Split can select a file change with no text hunks,
-such as a binary or mode-only change, as a unit. Majutsu uses structured
+In a Git-format diff buffer, Split, Squash, and Restore can select a file
+change with no text hunks, such as a binary or mode-only change, as a unit.
+Majutsu uses structured
 metadata from jj as the source of the file operation and paths, and verifies it
 against the displayed file headers. If the selection cannot be verified,
-Majutsu refuses it. Squash and Restore still require text hunks.
+Majutsu refuses it.  Restore replays the complementary whole-file changes,
+so the selected file change is restored as a unit.
 
 *** Workflow Example
 1. Open a diff with ~D~ or ~d~
@@ -707,7 +713,7 @@ Majutsu refuses it. Squash and Restore still require text hunks.
 *** Customization
 - Face: majutsu-interactive-selected-hunk :: Face for selected hunks.
 - Face: majutsu-interactive-selected-region :: Face for selected regions.
-- Face: majutsu-interactive-selected-file :: Face for selected Split file changes with no text hunks.
+- Face: majutsu-interactive-selected-file :: Face for selected file changes with no text hunks.
 
 ** Metaediting
 - Key: ? m (majutsu-metaedit) :: Open the Metaedit transient. Defaults to one revision from point (fallback =@=). If multiple revisions are selected, Majutsu asks you to narrow it down.

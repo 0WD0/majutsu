@@ -1754,7 +1754,7 @@ FROM-REV is the old/left side, TO-REV is the new/right side."
       (cons (concat revisions "-") revisions))
      ;; --from=X --to=Y: explicit range
      ((or from to)
-      (cons (or from "@-") (or to "@")))
+      (cons (or from "@") (or to "@")))
      ;; Default: working copy changes (parent to @)
      (t (cons "@-" "@")))))
 
@@ -1807,18 +1807,7 @@ If on a removed line, return the from-rev; otherwise return the to-rev."
 (defun majutsu-diff--visit-workspace-p ()
   "Return non-nil if the current diff should visit the workspace file.
 This is true when diffing the working copy (@) on the new/right side."
-  (let* ((range majutsu-buffer-diff-range)
-         (to (transient-arg-value "--to=" range))
-         (revisions (transient-arg-value "--revisions=" range)))
-    (cond
-     ;; Explicit --to=@ means we're looking at working copy changes
-     ((equal to "@") t)
-     ;; No range specified defaults to -r @ (working copy)
-     ((null range) t)
-     ;; Single revision diff (-r @) shows working copy
-     ((and revisions (equal revisions "@")) t)
-     ;; Otherwise we're looking at committed changes
-     (t nil))))
+  (equal (cdr (majutsu-diff--revisions)) "@"))
 
 ;;;###autoload
 (defun majutsu-diff-visit-file (&optional force-workspace)
