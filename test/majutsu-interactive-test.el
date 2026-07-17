@@ -451,7 +451,8 @@
       (delete-directory dir t))))
 
 (ert-deftest majutsu-interactive/integration-non-split-binary-selections ()
-  "Run real jj restore and squash operations with selected binary files."
+  "Run real jj restore/squash with selected whole-file binary changes.
+Covers restore modify/add/delete/rename and squash modify."
   (majutsu-jj-integration-with-sandbox sandbox
     ;; Restore: partial modify.  Complement keeps selected.bin from the source
     ;; tree and replays unselected kept.bin from dest.
@@ -471,6 +472,53 @@
                      (unibyte-string 0 1)))
       (should (equal (majutsu-jj-integration-read-bytes kept)
                      (unibyte-string 2 5))))
+    ;; Restore: undo a selected add (file disappears), keep another add.
+    (let* ((repo (majutsu-jj-integration-init sandbox "restore-add"))
+           (selected (majutsu-jj-integration-file repo "selected.bin"))
+           (kept (majutsu-jj-integration-file repo "kept.bin")))
+      (majutsu-jj-integration-commit repo "base")
+      (majutsu-jj-integration-write-bytes selected (unibyte-string 0 1))
+      (majutsu-jj-integration-write-bytes kept (unibyte-string 2 3))
+      (majutsu-jj-integration-run-replay
+       repo "restore" '("--changes-in=@")
+       '(:base right :payload-root left :patch nil
+         :file-ops ((:action add :path "kept.bin"))))
+      (should-not (file-exists-p selected))
+      (should (equal (majutsu-jj-integration-read-bytes kept)
+                     (unibyte-string 2 3))))
+    ;; Restore: undo a selected delete (file returns), leave another deletion
+    ;; unrestored.
+    (let* ((repo (majutsu-jj-integration-init sandbox "restore-delete"))
+           (selected (majutsu-jj-integration-file repo "selected.bin"))
+           (kept-gone (majutsu-jj-integration-file repo "kept-gone.bin")))
+      (majutsu-jj-integration-write-bytes selected (unibyte-string 0 1))
+      (majutsu-jj-integration-write-bytes kept-gone (unibyte-string 2 3))
+      (majutsu-jj-integration-commit repo "base")
+      (delete-file selected)
+      (delete-file kept-gone)
+      (majutsu-jj-integration-run-replay
+       repo "restore" '("--changes-in=@")
+       '(:base right :payload-root left :patch nil
+         :file-ops ((:action delete :path "kept-gone.bin"))))
+      (should (equal (majutsu-jj-integration-read-bytes selected)
+                     (unibyte-string 0 1)))
+      (should-not (file-exists-p kept-gone)))
+    ;; Restore: undo a selected rename.
+    (let* ((repo (majutsu-jj-integration-init sandbox "restore-rename"))
+           (old (majutsu-jj-integration-file repo "old.bin"))
+           (new (majutsu-jj-integration-file repo "new.bin")))
+      (majutsu-jj-integration-write-bytes old (unibyte-string 0 1 2 3))
+      (majutsu-jj-integration-commit repo "base")
+      (rename-file old new)
+      ;; Selected rename: complement has no unselected whole-file ops, so the
+      ;; source tree (old name) is kept as-is.
+      (majutsu-jj-integration-run-replay
+       repo "restore" '("--changes-in=@")
+       '(:base right :payload-root left :patch nil :file-ops nil))
+      (should (file-exists-p old))
+      (should-not (file-exists-p new))
+      (should (equal (majutsu-jj-integration-read-bytes old)
+                     (unibyte-string 0 1 2 3))))
     ;; Squash: move only selected.bin into the parent.
     (let* ((repo (majutsu-jj-integration-init sandbox "squash-modify"))
            (selected (majutsu-jj-integration-file repo "selected.bin"))
@@ -493,6 +541,45 @@
         (should-not (string-match-p "selected\\.bin" diff))
         (should (string-match-p "kept\\.bin" diff))))))
 
+(ert-deftest majutsu-interactive/integration-restore-partial-new-file-text ()
+  "Partial restore of a new text file must not reverse-apply the new-file patch.
+Selecting only the first added line leaves the unselected line in place."
+  (majutsu-jj-integration-with-repo repo
+    (let ((added (majutsu-jj-integration-file repo "added.txt"))
+          plan)
+      (majutsu-jj-integration-write-text
+       (majutsu-jj-integration-file repo "note.txt") "base\n")
+      (majutsu-jj-integration-commit repo "base")
+      (majutsu-jj-integration-write-text added "one\ntwo\n")
+      (setq plan
+            (majutsu-jj-integration-with-washed-diff
+             repo
+             (lambda ()
+               (let* ((file (majutsu-interactive--file-section-for-file
+                             "added.txt"))
+                      (hunk (car (majutsu-interactive--file-section-hunks file)))
+                      (lines (majutsu-interactive--hunk-lines hunk))
+                      (one (seq-find (lambda (line)
+                                       (equal (car line) "+one\n"))
+                                     lines)))
+                 (should file)
+                 (should hunk)
+                 (should one)
+                 ;; Select only the "+one" line for restore.
+                 (majutsu-interactive--set-selection
+                  (majutsu-interactive--hunk-id hunk)
+                  (list (cons (nth 2 one) (nth 3 one))))
+                 (majutsu-interactive-build-replay-plan-if-selected
+                  nil 'complement)))))
+      (should plan)
+      (should (eq (plist-get plan :base) 'right))
+      (should (eq (plist-get plan :payload-root) 'left))
+      (should (string-match-p "\\+two" (or (plist-get plan :patch) "")))
+      (should-not (string-match-p "\\+one" (or (plist-get plan :patch) "")))
+      (majutsu-jj-integration-run-replay
+       repo "restore" '("--changes-in=@") plan)
+      (should (equal (majutsu-interactive-test--file-contents added)
+                     "two\n")))))
 
 (ert-deftest majutsu-interactive/integration-machine-paths-with-minimum-jj ()
   "Exercise sidecar binding against the jj binary named by MAJUTSU_TEST_JJ."
