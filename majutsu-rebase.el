@@ -137,6 +137,7 @@ ARGS are passed from the transient."
    ["Options"
     ("-ke" "Skip emptied" "--skip-emptied")
     ("-kd" "Keep divergent" "--keep-divergent")
+    ("-p" "Simplify parents" "--simplify-parents")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     (majutsu-rebase-execute)]]
