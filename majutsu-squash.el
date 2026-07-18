@@ -282,6 +282,7 @@ return the same context defaults that execution would use."
     (majutsu-squash:--)]
    ["Options"
     ("-k" "Keep emptied commit" ("-k" "--keep-emptied"))
+    ("-u" "Use destination message" ("-u" "--use-destination-message"))
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute squash" majutsu-squash-execute)]]
