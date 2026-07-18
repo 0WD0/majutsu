@@ -14,6 +14,11 @@
 
 ** Added
 
+- Commit signing transients ::
+  Add selection-aware =jj sign= and =jj unsign= frontends.  Both accept
+  repeatable revision selections; Sign also exposes an explicit signing key
+  with backend-aware completion for GPG, GPGSM, and SSH.
+
 - Whole-file patch selections ::
   Split, Squash, and Restore can select hunkless changes, including binary
   files, with ~F~.  Structured jj metadata supplies and verifies the file

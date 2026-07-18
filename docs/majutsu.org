@@ -520,6 +520,7 @@ Runs: =jj edit REV=
 - Key: -A / -B :: Insert after or before constraints.
 - Key: -- :: Limit squash to specific filesets.
 - Key: -k :: Keep commits that become empty after squashing.
+- Key: -u :: Use the destination revision's description and discard source descriptions (=--use-destination-message=).
 Runs: =jj squash --from SRC --into DEST [FILESETS...]=
 
 ** Absorbing
@@ -534,6 +535,7 @@ Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 - Key: -s :: Rebase a specific revision.
 - Key: -b :: Rebase an entire branch.
 - Key: -o :: Specify the destination (=--onto=).
+- Key: -p :: Remove redundant parent edges while rebasing (=--simplify-parents=).
 Runs: =jj rebase -s SRC -o DEST=
 
 ** Duplicating
@@ -723,6 +725,18 @@ so the selected file change is restored as a unit.
 - Key: -I :: Ignore immutable revisions.
 Runs: =jj metaedit [OPTIONS...] [REVSETS]...=
 
+** Signing and Unsigning
+- Key: ? j (majutsu-sign) :: Open the Sign transient. Revisions in the active region are selected initially, followed by the revision at point, then =@= as fallbacks.
+- Key: ? J (majutsu-unsign) :: Open the Unsign transient with the same visual revision selection.
+- Key: r / -r / c :: Toggle revisions at point or in the active region, read a revset, or clear the visual revision selections.
+- Key: -k :: Override the configured signing key for =jj sign=. Majutsu
+  completes secret signing keys for the =gpg= and =gpgsm= backends, and the
+  configured key plus =~/.ssh/*.pub= for the =ssh= backend. Arbitrary values
+  remain available for backend-specific key formats. A commit-signing backend
+  must be configured in jj.
+- Key: -I :: Ignore immutable revisions.
+Runs: =jj sign --revision REVSETS...= or =jj unsign --revision REVSETS...=
+
 ** Simplifying Parents
 - Key: ? P (majutsu-simplify-parents) :: Open the Simplify Parents transient.
 - Key: -s :: Simplify specified revision(s) together with descendant trees (=--source=).
@@ -781,24 +795,26 @@ selection, while set/delete prompts still allow entering string patterns manuall
   Open the Git transient. Jujutsu can interact directly with Git remotes.
 
 ** Pushing
-- Key: p (majutsu-git-push-transient) :: Open the Push transient. You can push bookmarks, revisions, or changes.
-- Key: -a :: Push all bookmarks.
-- Key: -t :: Push tracked bookmarks only.
+- Key: p (majutsu-git-push-transient) :: Open the Push transient. You can push bookmarks, tags, revisions, or changes.
+- Key: -a :: Push all bookmarks and tags.
+- Key: -t :: Push tracked bookmarks and tags only.
 - Key: -b :: Push specific bookmark(s).
+- Key: -T :: Push specific tag(s) or tag patterns.
 - Key: -c :: Push a specific change.
 - Key: -r :: Push specific revision(s).
 - Key: -o :: Pass a Git push option; may be repeated.
 - Key: -y :: Show what would be pushed without pushing (=--dry-run=).
-- Key: W :: Save stable push options as defaults for this jj repository. Majutsu remembers sync policy such as =--remote=, =--all=, =--tracked=, =--deleted=, =--allow-empty-description=, and =--allow-private=, but does not remember one-off targets like =--bookmark=, =--change=, =--revisions=, =--named=, =--option=, or =--dry-run=.
+- Key: W :: Save stable push options as defaults for this jj repository. Majutsu remembers sync policy such as =--remote=, =--all=, =--tracked=, =--deleted=, =--allow-empty-description=, and =--allow-private=, but does not remember one-off targets like =--bookmark=, =--tag=, =--change=, =--revisions=, =--named=, =--option=, or =--dry-run=.
 Runs: =jj git push=
 
 ** Fetching
 - Key: f (majutsu-git-fetch-transient) :: Open the Fetch transient to pull changes from a remote.
 - Key: -R :: Fetch from a specific remote; may be repeated.
 - Key: -b :: Fetch a specific branch; may be repeated.
-- Key: -t :: Fetch only tracked bookmarks.
+- Key: -T :: Fetch specific tag(s) or tag patterns; may be repeated.
+- Key: -t :: Fetch only tracked bookmarks and tags.
 - Key: -A :: Fetch from all remotes.
-- Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not branch-specific =--branch= selections.
+- Key: W :: Save stable fetch options as defaults for this jj repository. Majutsu remembers =--remote=, =--tracked=, and =--all-remotes=, but not one-off =--branch= or =--tag= selections.
 Runs: =jj git fetch=
 
 ** Gerrit Upload
