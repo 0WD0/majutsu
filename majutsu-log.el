@@ -936,7 +936,8 @@ minibuffer for editing.  Empty input clears the filter."
    ["Paths"
     (majutsu-log:--)]
    ["Actions"
-    ("g" "buffer" majutsu-log-transient)
+    ("g" "buffer" majutsu-log-transient
+     :class majutsu-transient-default-action-suffix)
     ("s" "buffer and set defaults" transient-set-and-exit)
     ("w" "buffer and save defaults" transient-save-and-exit)
     ("W" "buffer and save repo defaults" majutsu-transient-save-repository-defaults)

@@ -232,6 +232,10 @@
 - Squash and split execute consistently with ~RET~ ::
   Their transients keep ~s~ while also using the shared default action key.
 
+- Diff, Ediff, and log transients execute with ~RET~ ::
+  Their primary actions now use the shared default action key alongside the
+  existing ~d~, ~e~, and ~g~ bindings.
+
 - Quitting Ediff resolve without edits keeps conflicts unresolved ::
   ~majutsu-ediff-resolve~ no longer writes a resolved result in that case.
 
