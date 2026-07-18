@@ -716,11 +716,12 @@ so the selected file change is restored as a unit.
 - Face: majutsu-interactive-selected-file :: Face for selected file changes with no text hunks.
 
 ** Metaediting
-- Key: ? m (majutsu-metaedit) :: Open the Metaedit transient. Defaults to one revision from point (fallback =@=). If multiple revisions are selected, Majutsu asks you to narrow it down.
-- Key: -r / -m / -a / -t :: Set revision, message, author, and author timestamp.
+- Key: ? m (majutsu-metaedit) :: Open the Metaedit transient. Revisions in the active region are selected initially, followed by the revision at point, then =@= as fallbacks.
+- Key: r / -r / c :: Toggle revisions at point or in the active region, read a revset, or clear the visual revision selections. Multiple revisions are supported.
+- Key: -m / -a / -t :: Set message, author, and author timestamp.
 - Key: -c / -u / -U / -f :: Toggle update-change-id, update-author, update-author-timestamp, or force-rewrite.
 - Key: -I :: Ignore immutable revisions.
-Runs: =jj metaedit [OPTIONS...] REV=
+Runs: =jj metaedit [OPTIONS...] [REVSETS]...=
 
 ** Simplifying Parents
 - Key: ? P (majutsu-simplify-parents) :: Open the Simplify Parents transient.

@@ -17,45 +17,37 @@
 
 (require 'majutsu)
 
-(defun majutsu-metaedit--default-revision ()
-  "Return a single default revision for `jj metaedit'."
-  (let ((revsets (magit-region-values 'jj-commit t)))
-    (cond
-     ((and revsets (> (length revsets) 1))
-      (user-error "Metaedit only supports a single revision"))
-     ((car revsets))
-     ((magit-section-value-if 'jj-commit))
-     (t "@"))))
+(defclass majutsu-metaedit-option (majutsu-selection-option)
+  ())
+
+(defun majutsu-metaedit--selection-targets ()
+  "Return revisions selected by the region or point."
+  (or (magit-region-values 'jj-commit t)
+      (when-let* ((revision (magit-section-value-if 'jj-commit)))
+        (list revision))))
+
+(defun majutsu-metaedit--default-revisions ()
+  "Return default revisions for `jj metaedit'."
+  (or (majutsu-metaedit--selection-targets)
+      '("@")))
 
 (defun majutsu-metaedit--default-args ()
   "Return default arguments for `jj metaedit'."
-  (list (concat "-r=" (majutsu-metaedit--default-revision))))
-
-(defun majutsu-metaedit--read-revset (prompt initial-input _history)
-  "Read a revset for metaedit transient options."
-  (unless current-prefix-arg
-    (majutsu-read-revset prompt
-                         (or initial-input
-                             (majutsu-metaedit--default-revision))
-                         (majutsu-transient-revset-completion-args))))
+  (mapcar (lambda (revision) (concat "-r=" revision))
+          (majutsu-metaedit--default-revisions)))
 
 (defun majutsu-metaedit-arguments ()
   "Return the current metaedit arguments.
-If inside the transient, return transient args, ensuring exactly one
-revision argument is present. Outside the transient, return defaults."
+If inside the transient, return transient args, ensuring revision
+arguments are present.  Outside the transient, return defaults."
   (let* ((inside-transient (eq transient-current-command 'majutsu-metaedit-transient))
          (args (if inside-transient
                    (transient-args 'majutsu-metaedit-transient)
                  '()))
-         (rev-args (seq-filter (lambda (arg)
-                                 (transient-arg-value "-r=" (list arg)))
-                               args)))
-    (cond
-     ((null rev-args)
-      (append args (majutsu-metaedit--default-args)))
-     ((cdr rev-args)
-      (user-error "Metaedit only supports a single revision"))
-     (t args))))
+         (has-revision (transient-arg-value "-r=" args)))
+    (if has-revision
+        args
+      (append args (majutsu-metaedit--default-args)))))
 
 ;;;###autoload(autoload 'majutsu-metaedit-execute "majutsu-metaedit" nil t)
 (transient-define-suffix majutsu-metaedit-execute (args)
@@ -68,10 +60,17 @@ revision argument is present. Outside the transient, return defaults."
       (message "Metaedit completed"))))
 
 (transient-define-argument majutsu-metaedit:-r ()
-  :description "Revision"
-  :class 'transient-option
+  :description "Revisions"
+  :class 'majutsu-metaedit-option
+  :selection-label "[REVS]"
+  :selection-face '(:background "goldenrod" :foreground "black")
+  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
+  :targets-fn #'majutsu-metaedit--selection-targets
+  :selection-toggle-key "r"
+  :shortarg "-r"
   :argument "-r="
-  :reader #'majutsu-metaedit--read-revset)
+  :multi-value 'repeat
+  :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-metaedit:--message ()
   :description "Message"
@@ -122,6 +121,7 @@ With prefix ARG, pre-enable --ignore-immutable."
   (interactive "P")
   (transient-setup
    'majutsu-metaedit-transient nil nil
+   :scope (majutsu-selection-session-begin)
    :value (append (majutsu-metaedit-arguments)
                   (when arg '("--ignore-immutable")))))
 
@@ -135,7 +135,8 @@ With prefix ARG, pre-enable --ignore-immutable."
   :transient-non-suffix t
   :description "JJ Metaedit"
   [["Selection"
-    (majutsu-metaedit:-r)]
+    (majutsu-metaedit:-r)
+    ("c" "Clear selections" majutsu-selection-clear :transient t)]
    ["Metadata"
     (majutsu-metaedit:--message)
     (majutsu-metaedit:--author)

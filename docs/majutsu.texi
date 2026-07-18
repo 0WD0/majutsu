@@ -1734,10 +1734,13 @@ Face for selected file changes with no text hunks.
 @item @kbd{? m} (@code{majutsu-metaedit})
 @kindex ? m
 @findex majutsu-metaedit
-Open the Metaedit transient. Defaults to one revision from point (fallback @samp{@@}). If multiple revisions are selected@comma{} Majutsu asks you to narrow it down.
-@item @kbd{-r / -m / -a / -t}
-@kindex -r / -m / -a / -t
-Set revision@comma{} message@comma{} author@comma{} and author timestamp.
+Open the Metaedit transient. Revisions in the active region are selected initially@comma{} followed by the revision at point@comma{} then @samp{@@} as fallbacks.
+@item @kbd{r / -r / c}
+@kindex r / -r / c
+Toggle revisions at point or in the active region@comma{} read a revset@comma{} or clear the visual revision selections. Multiple revisions are supported.
+@item @kbd{-m / -a / -t}
+@kindex -m / -a / -t
+Set message@comma{} author@comma{} and author timestamp.
 @item @kbd{-c / -u / -U / -f}
 @kindex -c / -u / -U / -f
 Toggle update-change-id@comma{} update-author@comma{} update-author-timestamp@comma{} or force-rewrite.
@@ -1745,7 +1748,7 @@ Toggle update-change-id@comma{} update-author@comma{} update-author-timestamp@co
 @kindex -I
 Ignore immutable revisions.
 @end table
-Runs: @samp{jj metaedit [OPTIONS...] REV}
+Runs: @samp{jj metaedit [OPTIONS...] [REVSETS]...}
 
 @node Simplifying Parents
 @section Simplifying Parents

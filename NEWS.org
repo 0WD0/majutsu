@@ -69,6 +69,12 @@
 
 ** Changed
 
+- Metaedit supports visual multi-revision selection ::
+  The Metaedit transient preselects revisions from the region, point, or =@=,
+  and ~r~ can toggle additional point or region revisions with selection
+  overlays.  The old single-revision restriction has been removed to match
+  current jj.
+
 - Direct duplicate ~y~ / ~Y~ bindings were removed ::
   Open ~majutsu-duplicate~ from the dispatcher with ~? y~.  The standalone
   ~majutsu-duplicate-dwim~ command was removed, and the Duplicate transient
