@@ -340,6 +340,14 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :multi-value 'repeat
   :reader #'majutsu-read-bookmark-patterns)
 
+(transient-define-argument majutsu-git:--tag ()
+  :description "Tag"
+  :class 'transient-option
+  :key "-T"
+  :argument "--tag="
+  :multi-value 'repeat
+  :reader #'majutsu-read-tag-patterns)
+
 (transient-define-argument majutsu-git-remote-add:--push-url ()
   :description "Push URL"
   :class 'transient-option
@@ -419,7 +427,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [["Arguments"
     (majutsu-git-push:--remote)
     (majutsu-git:--bookmark)
-    ("-a" "All bookmarks" "--all")
+    (majutsu-git:--tag)
+    ("-a" "All bookmarks and tags" "--all")
     ("-t" "Tracked only" "--tracked")
     ("-D" "Deleted" "--deleted")
     ("-E" "Allow empty desc" "--allow-empty-description")
@@ -443,6 +452,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   [["Arguments"
     (majutsu-git-fetch:--remote)
     (majutsu-git:--branch)
+    (majutsu-git:--tag)
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)

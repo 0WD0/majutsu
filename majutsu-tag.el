@@ -100,6 +100,10 @@ If REQUIRE-MATCH is non-nil, require existing local tag names."
   "Read tag name patterns with PROMPT."
   (majutsu-tag--read-candidates prompt 'majutsu-tag-pattern-history nil))
 
+(defun majutsu-read-tag-patterns (prompt &optional _initial-input _history)
+  "Read tag name patterns with PROMPT for a transient option."
+  (majutsu-tag--read-patterns prompt))
+
 (defun majutsu-tag--read-names (prompt)
   "Compatibility wrapper around `majutsu-tag--read-patterns'."
   (majutsu-tag--read-patterns prompt))

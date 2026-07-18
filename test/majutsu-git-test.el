@@ -147,7 +147,7 @@
 (ert-deftest majutsu-git-push-repo-args/keeps-stable-sync-policy ()
   "Push repo defaults should omit target-specific arguments."
   (should (equal (majutsu-git-push--repo-args
-                  '("--remote=upstream" "--bookmark=main" "--all"
+                  '("--remote=upstream" "--bookmark=main" "--tag=v1" "--all"
                     "--tracked" "--deleted" "--allow-private"
                     "--allow-empty-description" "--revisions=mine()"
                     "--change=abc" "--named=foo=@" "--option=ci.skip"
@@ -156,9 +156,9 @@
                    "--allow-private" "--allow-empty-description"))))
 
 (ert-deftest majutsu-git-fetch-repo-args/keeps-stable-sync-policy ()
-  "Fetch repo defaults should omit branch-specific arguments."
+  "Fetch repo defaults should omit branch/tag-specific arguments."
   (should (equal (majutsu-git-fetch--repo-args
-                  '("--remote=upstream" "--branch=main"
+                  '("--remote=upstream" "--branch=main" "--tag=v1"
                     "--tracked" "--all-remotes"))
                  '("--remote=upstream" "--tracked" "--all-remotes"))))
 
@@ -173,9 +173,23 @@
 (ert-deftest majutsu-git-transients/expose-simple-upstream-options ()
   "Git transients should expose simple upstream jj options."
   (should (transient-get-suffix 'majutsu-git-push-transient "-o"))
+  (should (transient-get-suffix 'majutsu-git-push-transient "-T"))
   (should (transient-get-suffix 'majutsu-git-fetch-transient "-R"))
   (should (transient-get-suffix 'majutsu-git-fetch-transient "-b"))
+  (should (transient-get-suffix 'majutsu-git-fetch-transient "-T"))
   (should (transient-get-suffix 'majutsu-git-clone-transient "-b")))
+
+(ert-deftest majutsu-git-tag-options/use-tag-pattern-reader ()
+  "Push and fetch tag options should share annotated tag completion."
+  (dolist (prefix '(majutsu-git-push-transient
+                    majutsu-git-fetch-transient))
+    (let* ((suffix (transient-get-suffix prefix "-T"))
+           (command (plist-get (cdr suffix) :command))
+           (obj (get command 'transient--suffix))
+           (reader (majutsu-git-test--suffix-reader suffix)))
+      (should (equal (oref obj argument) "--tag="))
+      (should (eq (oref obj multi-value) 'repeat))
+      (should (eq reader #'majutsu-read-tag-patterns)))))
 
 (defun majutsu-git-test--suffix-reader (suffix)
   "Return the reader configured for transient SUFFIX."
