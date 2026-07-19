@@ -113,8 +113,15 @@ for (const file of htmlFiles) {
 assert(documents.has('/') && documents.has('/404.html'), 'Build must contain root index and 404.html');
 assert(/Page not found/i.test(documents.get('/404.html').html), '404 page is missing its not-found message');
 await access(path.join(distRoot, 'favicon.svg'));
-const pinnedSource = `github.com/0WD0/majutsu/blob/${manifest.build.commitId}/docs/majutsu.org`;
-assert(documents.get('/').html.includes(pinnedSource), 'Homepage source link is not pinned to the build commit');
+const buildCommit = manifest.build.commitId ?? null;
+const expectedHomeSource = `github.com/0WD0/majutsu/blob/${buildCommit ?? 'main'}/docs/majutsu.org`;
+const expectedPageSource = buildCommit
+  ? expectedHomeSource
+  : 'github.com/0WD0/majutsu/edit/main/docs/majutsu.org';
+const expectedSourceMessage = buildCommit
+  ? 'source link is not pinned to the build commit'
+  : 'source link does not target the main branch';
+assert(documents.get('/').html.includes(expectedHomeSource), `Homepage ${expectedSourceMessage}`);
 
 for (const [route, document] of documents) {
   for (const node of document.nodes) {
@@ -144,7 +151,8 @@ for (const page of manifest.pages) {
   const document = documents.get(page.route);
   assert(document, `Built route is missing: ${page.route}`);
   assert(document.html.includes(page.title) && document.html.includes('org-document'), `Built route is missing Org content: ${page.route}`);
-  assert(document.html.includes(pinnedSource), `${page.route}: source link is not pinned to the build commit`);
+  assert(document.html.includes(expectedPageSource), `${page.route}: ${expectedSourceMessage}`);
+  assert(!document.html.includes('blob/undefined'), `${page.route}: unresolved build commit leaked into a source link`);
   const canonical = document.nodes.find((node) => node.tagName === 'link' && attrTokens(node, 'rel').includes('canonical'));
   assert(attr(canonical, 'href') === `https://majutsu.org${page.route}`, `${page.route}: page canonical mismatch`);
   const issue = document.nodes.find((node) => node.tagName === 'a' && attr(node, 'href')?.startsWith('https://github.com/0WD0/majutsu/issues/new?'));
@@ -152,7 +160,7 @@ for (const page of manifest.pages) {
   const issueBody = new URL(attr(issue, 'href')).searchParams.get('body') ?? '';
   assert(issueBody.includes(`Page: https://majutsu.org${page.route}`), `${page.route}: issue link misses page URL`);
   assert(issueBody.includes(`Version: ${page.version}`), `${page.route}: issue link misses version`);
-  assert(issueBody.includes(`Build: ${manifest.build.commitId}`), `${page.route}: issue link misses build context`);
+  assert(issueBody.includes(`Build: ${buildCommit ?? 'local'}`), `${page.route}: issue link misses build context`);
 }
 const totalBytes = await totalSize(distRoot);
 const pagefindBytes = await totalSize(path.join(distRoot, 'pagefind'));

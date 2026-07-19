@@ -10,7 +10,9 @@ ENVELOPE_ROOT := $(CACHE_ROOT)/envelopes
 COMPILED_ROOT := $(CACHE_ROOT)/compiled
 SITE_ROOT := $(CURDIR)/site
 MAJUTSU_ENVELOPE := $(ENVELOPE_ROOT)/majutsu.edn
-DOCS_SOURCE_REVISION ?= $(shell jj --repository "$(REPO_ROOT)" log --no-graph -r @ -T commit_id)
+# Provenance is a release property: local builds do not read version control
+# state. Local release tooling passes an exact DOCS_SOURCE_REVISION explicitly.
+DOCS_SOURCE_REVISION ?=
 
 .DEFAULT_GOAL := docs
 
@@ -84,7 +86,7 @@ docs-compile: docs-export
 	@$(NPM) --silent --prefix "$(LOAM_ROOT)" run docs:compile -- \
 		--repo-root "$(REPO_ROOT)" --output-dir "$(COMPILED_ROOT)" \
 		--base /docs --version dev \
-		--commit-id "$(DOCS_SOURCE_REVISION)" \
+		$(if $(DOCS_SOURCE_REVISION),--commit-id "$(DOCS_SOURCE_REVISION)") \
 		"$(MAJUTSU_ENVELOPE)"
 
 docs-site: export MAJUTSU_DOCS_SOURCE_REVISION = $(DOCS_SOURCE_REVISION)

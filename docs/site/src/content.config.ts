@@ -28,7 +28,7 @@ const docs = defineCollection({
   loader: orgDocsLoader({
     repoRoot,
     manifest,
-    sourceRevision: process.env.MAJUTSU_DOCS_SOURCE_REVISION,
+    sourceRevision: process.env.MAJUTSU_DOCS_SOURCE_REVISION || undefined,
   }),
   schema: docsSchema({ extend: orgPageDataSchema }),
 });

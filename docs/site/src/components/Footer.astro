@@ -1,6 +1,5 @@
 ---
 import EditLink from 'virtual:starlight/components/EditLink';
-import LastUpdated from 'virtual:starlight/components/LastUpdated';
 import Pagination from 'virtual:starlight/components/Pagination';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -21,7 +20,7 @@ const issueUrl = new URL('https://github.com/0WD0/majutsu/issues/new');
 issueUrl.searchParams.set('title', `Docs: ${route.entry?.data?.title ?? Astro.url.pathname}`);
 issueUrl.searchParams.set(
   'body',
-  `Page: ${pageUrl}\nVersion: ${version}\nBuild: ${manifest.build.commitId}\n\nWhat should be improved?\n`,
+  `Page: ${pageUrl}\nVersion: ${version}\nBuild: ${manifest.build.commitId ?? 'local'}\n\nWhat should be improved?\n`,
 );
 ---
 
@@ -32,7 +31,6 @@ issueUrl.searchParams.set(
       ? <a class="source-link print:hidden" href={pinnedSourceUrl.toString()}>View source</a>
       : <EditLink />}
     <a class="report-issue print:hidden" href={issueUrl.toString()} rel="noreferrer">Report issue</a>
-    <LastUpdated />
   </div>
   <Pagination />
 </footer>
