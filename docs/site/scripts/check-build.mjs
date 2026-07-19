@@ -20,6 +20,11 @@ const [manifest, report] = await Promise.all(
 );
 
 assert(manifest.schemaVersion === 1 && report.schemaVersion === 1, 'Unexpected Manifest/report schema');
+const docsCommit = manifest.build.commitId;
+assert(
+  docsCommit === undefined || /^[a-f0-9]{40}$/.test(docsCommit),
+  'Manifest build.commitId must be a full lowercase commit ID when present',
+);
 assert(!manifest.build.unreleasable && !report.unreleasable, 'Site artifacts are marked unreleasable');
 assert(!manifest.diagnostics.length && !report.diagnostics.length, 'Site artifacts contain diagnostics');
 assert(
@@ -108,8 +113,21 @@ for (const file of htmlFiles) {
 assert(documents.has('/') && documents.has('/404.html'), 'Build must contain root index and 404.html');
 assert(/Page not found/i.test(documents.get('/404.html').html), '404 page is missing its not-found message');
 await access(path.join(distRoot, 'favicon.svg'));
-const pinnedSource = `github.com/0WD0/majutsu/blob/${manifest.build.commitId}/docs/majutsu.org`;
-assert(documents.get('/').html.includes(pinnedSource), 'Homepage source link is not pinned to the build commit');
+const pinnedSource = docsCommit
+  ? `github.com/0WD0/majutsu/blob/${docsCommit}/docs/majutsu.org`
+  : undefined;
+if (pinnedSource) {
+  assert(documents.get('/').html.includes(pinnedSource), 'Homepage source link is not pinned to the build commit');
+} else {
+  assert(
+    !/github\.com\/0WD0\/majutsu\/blob\/(?:undefined|null)\//.test(documents.get('/').html),
+    'Homepage contains an invalid local-build source link',
+  );
+  assert(
+    documents.get('/').html.includes('github.com/0WD0/majutsu/blob/main/docs/majutsu.org'),
+    'Homepage local-build source link does not use main',
+  );
+}
 
 for (const [route, document] of documents) {
   for (const node of document.nodes) {
@@ -139,7 +157,15 @@ for (const page of manifest.pages) {
   const document = documents.get(page.route);
   assert(document, `Built route is missing: ${page.route}`);
   assert(document.html.includes(page.title) && document.html.includes('org-document'), `Built route is missing Org content: ${page.route}`);
-  assert(document.html.includes(pinnedSource), `${page.route}: source link is not pinned to the build commit`);
+  if (pinnedSource) {
+    assert(document.html.includes(pinnedSource), `${page.route}: source link is not pinned to the build commit`);
+  } else {
+    assert(!/Build: (?:undefined|null)/.test(document.html), `${page.route}: invalid local build context`);
+    assert(
+      document.html.includes('github.com/0WD0/majutsu/edit/main/docs/majutsu.org'),
+      `${page.route}: local source link does not use main`,
+    );
+  }
   const canonical = document.nodes.find((node) => node.tagName === 'link' && attrTokens(node, 'rel').includes('canonical'));
   assert(attr(canonical, 'href') === `https://majutsu.org${page.route}`, `${page.route}: page canonical mismatch`);
   const issue = document.nodes.find((node) => node.tagName === 'a' && attr(node, 'href')?.startsWith('https://github.com/0WD0/majutsu/issues/new?'));
@@ -147,7 +173,11 @@ for (const page of manifest.pages) {
   const issueBody = new URL(attr(issue, 'href')).searchParams.get('body') ?? '';
   assert(issueBody.includes(`Page: https://majutsu.org${page.route}`), `${page.route}: issue link misses page URL`);
   assert(issueBody.includes(`Version: ${page.version}`), `${page.route}: issue link misses version`);
-  assert(issueBody.includes(`Build: ${manifest.build.commitId}`), `${page.route}: issue link misses build context`);
+  if (docsCommit) {
+    assert(issueBody.includes(`Build: ${docsCommit}`), `${page.route}: issue link misses build context`);
+  } else {
+    assert(!issueBody.includes('Build:'), `${page.route}: local issue link claims a build commit`);
+  }
 }
 const totalBytes = await totalSize(distRoot);
 const pagefindBytes = await totalSize(path.join(distRoot, 'pagefind'));

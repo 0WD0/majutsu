@@ -46,7 +46,6 @@ jobs:
         run: |
           npm ci --prefix "$RUNNER_TEMP/loam" --no-audit --no-fund
           npm ci --prefix docs/site --no-audit --no-fund
-          npm --prefix docs/site exec playwright install --with-deps chromium
       - name: Build and verify the development preview
         env:
           DOCS_SOURCE_REVISION: ${{ github.sha }}

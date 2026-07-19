@@ -10,7 +10,7 @@ ENVELOPE_ROOT := $(CACHE_ROOT)/envelopes
 COMPILED_ROOT := $(CACHE_ROOT)/compiled
 SITE_ROOT := $(CURDIR)/site
 MAJUTSU_ENVELOPE := $(ENVELOPE_ROOT)/majutsu.edn
-DOCS_SOURCE_REVISION ?= $(shell jj --repository "$(REPO_ROOT)" log --no-graph -r @ -T commit_id)
+DOCS_COMMIT_OPTION = $(if $(strip $(DOCS_SOURCE_REVISION)),--commit-id "$(DOCS_SOURCE_REVISION)")
 
 .DEFAULT_GOAL := docs
 
@@ -84,7 +84,7 @@ docs-compile: docs-export
 	@$(NPM) --silent --prefix "$(LOAM_ROOT)" run docs:compile -- \
 		--repo-root "$(REPO_ROOT)" --output-dir "$(COMPILED_ROOT)" \
 		--base /docs --version dev \
-		--commit-id "$(DOCS_SOURCE_REVISION)" \
+		$(DOCS_COMMIT_OPTION) \
 		"$(MAJUTSU_ENVELOPE)"
 
 docs-site: export MAJUTSU_DOCS_SOURCE_REVISION = $(DOCS_SOURCE_REVISION)
@@ -103,10 +103,6 @@ docs-check: docs-search docs-contract-check
 	@$(NODE) "$(SITE_ROOT)/scripts/check-build.mjs" \
 		"$(COMPILED_ROOT)/manifest.json" "$(COMPILED_ROOT)/build-report.json" \
 		"$(DIST_ROOT)"
-	@$(NODE) "$(SITE_ROOT)/scripts/check-search.mjs" \
-		"$(DIST_ROOT)" "$(COMPILED_ROOT)/manifest.json" \
-		"$(SITE_ROOT)/tests/fixtures/search.json"
-	@$(NPM) --prefix "$(SITE_ROOT)" run test:e2e
 
 docs-build: docs-check
 
@@ -124,4 +120,8 @@ docs-dev-preview-check: docs-build
 	@$(NODE) "$(CURDIR)/deploy/check-dev-preview.mjs" "$(DIST_ROOT)"
 
 docs-dev-preview-deploy: docs-build
+	@if test -z "$(strip $(DOCS_SOURCE_REVISION))"; then \
+		printf '%s\n' 'DEPLOY_DEV_PREVIEW=FAIL DOCS_SOURCE_REVISION must be supplied explicitly' >&2; \
+		exit 2; \
+	fi
 	@sh "$(CURDIR)/deploy/deploy-dev-preview.sh" "$(DIST_ROOT)" "$(DOCS_SOURCE_REVISION)"

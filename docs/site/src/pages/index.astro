@@ -1,6 +1,7 @@
 ---
 import '../styles/landing.css';
-const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${__MAJUTSU_DOCS_COMMIT__}/docs/majutsu.org`;
+const docsCommit = __MAJUTSU_DOCS_COMMIT__;
+const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${docsCommit ?? 'main'}/docs/majutsu.org`;
 ---
 
 <!doctype html>
@@ -28,7 +29,7 @@ const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${__MAJUTSU_DOCS_COMM
         <h1 id="hero-title">Shape history<br />without leaving Emacs.</h1>
         <p class="lede">Majutsu brings a Magit-inspired, section-oriented interface to Jujutsu—built for inspecting, rewriting, and understanding changes quickly.</p>
         <div class="actions"><a class="primary" href="/docs/dev/guide/getting-started/">Read the docs <span aria-hidden="true">→</span></a><a class="secondary" href="https://github.com/0WD0/majutsu">View source</a></div>
-        <p class="version-note"><strong>Development manual</strong> · Tracks the current <code>main</code> branch; interfaces may still change.</p>
+        <p class="version-note"><strong>Development manual</strong> · {docsCommit ? <>Built from <code>{docsCommit.slice(0, 12)}</code></> : <>Built from the local working tree</>}; interfaces may still change.</p>
       </section>
       <section class="features" aria-label="Highlights">
         <article><p class="index">01</p><h2>Inspect with context</h2><p>Navigate logs, diffs, files, operations, and conflicts in structured Emacs buffers.</p></article>

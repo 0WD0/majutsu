@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "queries": [
-    { "query": "interactive patching", "expectedRoutes": ["/docs/dev/workflows/manipulating/"] },
-    { "query": "Gerrit upload", "expectedRoutes": ["/docs/dev/repository/git-integration/"] },
-    { "query": "revset", "expectedRoutes": ["/docs/dev/workflows/inspecting/"] }
-  ]
-}

@@ -18,7 +18,7 @@ const cacheDir = path.resolve(
   process.env.MAJUTSU_DOCS_CACHE_DIR ?? fileURLToPath(new URL('../../.cache/majutsu-docs/astro/', import.meta.url)),
 );
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-const docsCommit = manifest.build.commitId;
+const docsCommit = manifest.build.commitId ?? null;
 
 const groupLabels = new Map([
   ['guide', 'Guide'],

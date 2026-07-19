@@ -1,13 +1,9 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 
 const [originArg, commitArg] = process.argv.slice(2);
 if (!originArg) fail('origin is required');
 const origin = new URL(originArg);
-const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const commit = commitArg || process.env.MAJUTSU_DOCS_COMMIT || currentCommit(repoRoot);
+const commit = commitArg || process.env.MAJUTSU_DOCS_COMMIT;
 if (!commit) fail('build commit is required');
 
 const redirectTarget = '/docs/dev/guide/introduction/';
@@ -53,18 +49,6 @@ function assertPreviewHeaders(response, label) {
     'referrer-policy',
     'x-content-type-options',
   ]) assert(response.headers.has(header), `${label} lacks ${header}`);
-}
-
-function currentCommit(root) {
-  try {
-    return execFileSync(
-      'jj',
-      ['--repository', root, 'log', '--no-graph', '-r', '@', '-T', 'commit_id'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    ).trim();
-  } catch {
-    return '';
-  }
 }
 
 function isRevalidated(value) {

@@ -9,9 +9,6 @@ branch=${MAJUTSU_PREVIEW_BRANCH:-dev}
 
 case "$dist" in /*) ;; *) dist="$repo_root/$dist" ;; esac
 if test -z "$commit"; then
-  commit=$(jj --repository "$repo_root" log --no-graph -r @ -T commit_id 2>/dev/null || true)
-fi
-if test -z "$commit"; then
   printf '%s\n' 'DEPLOY_DEV_PREVIEW=FAIL build commit is required' >&2
   exit 2
 fi
@@ -35,6 +32,10 @@ test -f "$dist/docs/dev/guide/introduction/index.html"
 test -f "$dist/_headers"
 test -f "$dist/_redirects"
 node "$repo_root/docs/deploy/check-dev-preview.mjs" "$dist"
+if ! grep -Fq "$commit" "$dist/docs/dev/guide/introduction/index.html"; then
+  printf '%s\n' 'DEPLOY_DEV_PREVIEW=FAIL dist was not built for the requested commit' >&2
+  exit 2
+fi
 
 remote_production_branch=
 if test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"; then

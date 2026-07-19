@@ -15,13 +15,16 @@ const manifestPath = path.resolve(
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const route = Astro.locals.starlightRoute;
 const version = route.entry?.data?.org?.version ?? 'unknown';
+const docsCommit = manifest.build.commitId;
 const pinnedSourceUrl = route.editUrl?.pathname.includes('/blob/') ? route.editUrl : undefined;
 const pageUrl = new URL(Astro.url.pathname, 'https://majutsu.org').toString();
 const issueUrl = new URL('https://github.com/0WD0/majutsu/issues/new');
 issueUrl.searchParams.set('title', `Docs: ${route.entry?.data?.title ?? Astro.url.pathname}`);
+const issueContext = [`Page: ${pageUrl}`, `Version: ${version}`];
+if (docsCommit) issueContext.push(`Build: ${docsCommit}`);
 issueUrl.searchParams.set(
   'body',
-  `Page: ${pageUrl}\nVersion: ${version}\nBuild: ${manifest.build.commitId}\n\nWhat should be improved?\n`,
+  `${issueContext.join('\n')}\n\nWhat should be improved?\n`,
 );
 ---
 

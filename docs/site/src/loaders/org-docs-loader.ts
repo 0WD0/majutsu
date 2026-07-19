@@ -32,7 +32,7 @@ const manifestSchema = z.object({
     }),
   ),
   build: z.object({
-    commitId: z.string().min(1),
+    commitId: z.string().regex(/^[a-f0-9]{40}$/).optional(),
     contentHash: z.string().regex(/^[a-f0-9]{64}$/),
     unreleasable: z.boolean(),
   }),
