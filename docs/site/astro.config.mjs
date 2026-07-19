@@ -18,7 +18,7 @@ const cacheDir = path.resolve(
   process.env.MAJUTSU_DOCS_CACHE_DIR ?? fileURLToPath(new URL('../../.cache/majutsu-docs/astro/', import.meta.url)),
 );
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-const docsCommit = manifest.build.commitId;
+const docsCommit = manifest.build.commitId ?? null;
 
 const groupLabels = new Map([
   ['guide', 'Guide'],
@@ -49,6 +49,24 @@ export default defineConfig({
       title: 'Majutsu',
       description: 'A Magit-inspired interface for Jujutsu in Emacs.',
       favicon: '/favicon.svg',
+      head: [
+        {
+          tag: 'link',
+          attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+        },
+        {
+          tag: 'meta',
+          attrs: { property: 'og:image', content: 'https://majutsu.org/og.png' },
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'twitter:card', content: 'summary_large_image' },
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'twitter:image', content: 'https://majutsu.org/og.png' },
+        },
+      ],
       components: {
         Footer: './src/components/Footer.astro',
         MarkdownContent: './src/components/OrgContent.astro',

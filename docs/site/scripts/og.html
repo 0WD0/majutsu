@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- OG image master; maintainer release tools render public/og.png. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: 'Cormorant Garamond'; font-weight: 300 700; src: url('../node_modules/@fontsource-variable/cormorant-garamond/files/cormorant-garamond-latin-wght-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Spectral'; font-weight: 400; src: url('../node_modules/@fontsource/spectral/files/spectral-latin-400-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Spectral'; font-weight: 400; font-style: italic; src: url('../node_modules/@fontsource/spectral/files/spectral-latin-400-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Mono'; font-weight: 500; src: url('../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; }
+  body {
+    background: #f6f0e0;
+    color: #30241a;
+    font-family: 'Spectral', Georgia, serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 72px 84px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+  .frame { position: absolute; inset: 26px; border: 1px solid #dccdaa; pointer-events: none; }
+  header { display: flex; align-items: center; gap: 26px; }
+  header svg { width: 92px; height: 92px; flex: none; }
+  .wordmark { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 84px; font-weight: 700; letter-spacing: .01em; line-height: 1; }
+  .eyebrow { color: #a8770f; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 27px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; }
+  h1 { max-width: 16ch; margin-top: 18px; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 88px; font-weight: 700; line-height: 1.02; letter-spacing: -0.012em; }
+  .sub { margin-top: 26px; color: #7c6a4e; font-size: 32px; font-style: italic; }
+  footer { display: flex; justify-content: space-between; align-items: baseline; color: #7c6a4e; font-family: 'IBM Plex Mono', monospace; font-size: 24px; }
+  footer .sigil { color: #a8770f; letter-spacing: .6em; }
+</style>
+</head>
+<body>
+  <div class="frame"></div>
+  <header>
+    <svg viewBox="0 0 64 64">
+      <path d="M14 50 L14 16 L32 38 L50 16 L50 50" fill="none" stroke="#5b3a8e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path fill="#5b3a8e" d="M14 10l6 6-6 6-6-6z"/>
+      <path fill="#5b3a8e" d="M14 44l6 6-6 6-6-6z"/>
+      <circle cx="32" cy="38" r="5" fill="#5b3a8e"/>
+      <circle cx="50" cy="16" r="5" fill="#5b3a8e"/>
+      <circle cx="50" cy="50" r="7" fill="#f6f0e0" stroke="#a8770f" stroke-width="4"/>
+    </svg>
+    <span class="wordmark">Majutsu</span>
+  </header>
+  <main>
+    <p class="eyebrow">Jujutsu · Emacs</p>
+    <h1>Shape history without leaving Emacs.</h1>
+    <p class="sub">A Magit-inspired interface for Jujutsu.</p>
+  </main>
+  <footer><span>majutsu.org</span><span class="sigil">✦</span></footer>
+</body>
+</html>
