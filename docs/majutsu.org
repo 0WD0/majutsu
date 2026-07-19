@@ -1027,8 +1027,11 @@ Transient arguments:
 Runs: =jj metaedit [OPTIONS...] [REVSETS]...=
 
 ** Signing and Unsigning
+#+attr_reference: :kind command-binding :interface "Majutsu dispatcher"
 - Key: ? j (majutsu-sign) :: Open the Sign transient. Revisions in the active region are selected initially, followed by the revision at point, then =@= as fallbacks.
 - Key: ? J (majutsu-unsign) :: Open the Unsign transient with the same visual revision selection.
+
+#+attr_reference: :kind transient-argument :interface "Sign and Unsign transients"
 - Key: r / -r / c :: Toggle revisions at point or in the active region, read a revset, or clear the visual revision selections.
 - Key: -k :: Override the configured signing key for =jj sign=. Majutsu
   completes secret signing keys for the =gpg= and =gpgsm= backends, and the
