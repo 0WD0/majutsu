@@ -45,3 +45,15 @@ Majutsu was previously distributed under MIT terms.
 - =lisp/vc/smerge-mode.el= -> =majutsu-diff.el=
 - =lisp/vc/smerge-mode.el= -> =majutsu-conflict.el=
 - =lisp/vc/ediff-util.el= -> =majutsu-ediff.el=
+
+** Documentation site fonts
+
+The documentation website (=docs/site=) bundles the following font families
+as WOFF2 assets, fetched via =@fontsource= npm packages at build time. All
+are distributed under the SIL Open Font License 1.1.
+
+- Cormorant Garamond :: Christian Thalmann (Catharsis Fonts),
+  https://github.com/CatharsisFonts/Cormorant
+- Spectral :: Production Type (Jean-Baptiste Levée, Quentin Schmerber),
+  https://github.com/productiontype/Spectral
+- IBM Plex Mono :: IBM, https://github.com/IBM/plex

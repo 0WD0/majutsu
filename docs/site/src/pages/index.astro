@@ -1,6 +1,8 @@
 ---
 import '../styles/landing.css';
-const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${__MAJUTSU_DOCS_COMMIT__}/docs/majutsu.org`;
+const docsCommit = __MAJUTSU_DOCS_COMMIT__;
+const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${docsCommit ?? 'main'}/docs/majutsu.org`;
+const ogImageUrl = 'https://majutsu.org/og.png';
 ---
 
 <!doctype html>
@@ -11,16 +13,51 @@ const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${__MAJUTSU_DOCS_COMM
     <meta name="description" content="Majutsu is a Magit-inspired interface for Jujutsu in Emacs." />
     <link rel="canonical" href="https://majutsu.org/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:title" content="Majutsu — Jujutsu, at home in Emacs" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://majutsu.org/" />
     <meta property="og:description" content="A Magit-inspired interface for Jujutsu in Emacs." />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={ogImageUrl} />
     <title>Majutsu — Jujutsu, at home in Emacs</title>
+    <script is:inline>
+      (() => {
+        const stored = typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+        const theme = stored || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+        window.addEventListener('DOMContentLoaded', () => {
+          const select = document.getElementById('theme-select');
+          if (!select) return;
+          select.value = stored || 'auto';
+          select.addEventListener('change', () => {
+            const value = select.value;
+            if (value === 'auto') localStorage.removeItem('starlight-theme');
+            else localStorage.setItem('starlight-theme', value);
+            const next = value === 'auto'
+              ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+              : value;
+            document.documentElement.dataset.theme = next;
+          });
+        });
+      })();
+    </script>
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="/" aria-label="Majutsu home"><img src="/favicon.svg" alt="" width="30" height="30" /><span>Majutsu</span></a>
-      <nav aria-label="Primary"><a href="/docs/dev/guide/introduction/">Docs</a><a href="https://github.com/0WD0/majutsu">GitHub</a></nav>
+      <a class="brand" href="/" aria-label="Majutsu home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>Majutsu</span></a>
+      <nav aria-label="Primary">
+        <a href="/docs/dev/guide/introduction/">Docs</a>
+        <a href="https://github.com/0WD0/majutsu">GitHub</a>
+        <label class="theme-select">Theme
+          <select id="theme-select" aria-label="Color theme">
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </nav>
     </header>
     <main>
       <section class="hero" aria-labelledby="hero-title">
@@ -30,13 +67,49 @@ const orgSourceUrl = `https://github.com/0WD0/majutsu/blob/${__MAJUTSU_DOCS_COMM
         <div class="actions"><a class="primary" href="/docs/dev/guide/getting-started/">Read the docs <span aria-hidden="true">→</span></a><a class="secondary" href="https://github.com/0WD0/majutsu">View source</a></div>
         <p class="version-note"><strong>Development manual</strong> · Tracks the current <code>main</code> branch; interfaces may still change.</p>
       </section>
+      <section class="shot" aria-label="Majutsu in Emacs">
+        <figure>
+          <img data-shot="light" src="/landing/status-light.webp" alt="The Majutsu status buffer in Emacs, light theme: a jj change graph with sections for the working copy and parent revisions." width="1440" height="924" />
+          <img data-shot="dark" src="/landing/status-dark.webp" alt="The Majutsu status buffer in Emacs, dark theme: a jj change graph with sections for the working copy and parent revisions." width="1440" height="924" />
+          <figcaption>The Majutsu status buffer — the whole repository as one magit-section outline.</figcaption>
+        </figure>
+      </section>
       <section class="features" aria-label="Highlights">
         <article><p class="index">01</p><h2>Inspect with context</h2><p>Navigate logs, diffs, files, operations, and conflicts in structured Emacs buffers.</p></article>
         <article><p class="index">02</p><h2>Rewrite directly</h2><p>Describe, squash, rebase, split, restore, and edit revisions through focused transients.</p></article>
         <article><p class="index">03</p><h2>Stay editor-native</h2><p>Use familiar keys, completion, sections, and customization instead of switching tools.</p></article>
       </section>
-      <section class="quickstart" aria-labelledby="quickstart-title"><div><p class="eyebrow">Start here</p><h2 id="quickstart-title">Open a repository.</h2><p>Install Majutsu, visit a Jujutsu workspace, then run:</p></div><pre><code>M-x majutsu</code></pre></section>
+      <section class="install" aria-labelledby="install-title">
+        <p class="eyebrow-small">Install</p>
+        <h2 id="install-title">Two lines from MELPA-less Emacs.</h2>
+        <p>Majutsu lives on GitHub and installs with your favorite package manager:</p>
+        <div class="install-grid">
+          <figure>
+            <figcaption>use-package + straight.el</figcaption>
+            <pre><code>(use-package majutsu
+  :straight (:host github :repo "0WD0/majutsu"))</code></pre>
+          </figure>
+          <figure>
+            <figcaption>use-package + package-vc (Emacs 29+)</figcaption>
+            <pre><code>(use-package majutsu
+  :vc (:url "https://github.com/0WD0/majutsu"))</code></pre>
+          </figure>
+        </div>
+        <p class="more">Doom Emacs and requirements are covered in the <a href="/docs/dev/guide/installation/">Installation guide</a>.</p>
+      </section>
+      <section class="quickstart" aria-labelledby="quickstart-title">
+        <div><p class="eyebrow-small">Start here</p><h2 id="quickstart-title">Open a repository.</h2><p>Install Majutsu, visit a Jujutsu workspace, then run:</p></div>
+        <pre><code>M-x majutsu</code></pre>
+      </section>
     </main>
-    <footer><span>Majutsu documentation</span><span>Built from <a href={orgSourceUrl}>one Org source</a>.</span></footer>
+    <footer>
+      <span>Majutsu documentation — built from <a href={orgSourceUrl}>one Org source</a>.</span>
+      <nav aria-label="Footer">
+        <a href="/docs/dev/guide/introduction/">Docs</a>
+        <a href="https://github.com/0WD0/majutsu">GitHub</a>
+        <a href="https://github.com/0WD0/majutsu/issues">Issues</a>
+        <a href="https://github.com/0WD0/majutsu/blob/main/LICENSE">GPL-3.0</a>
+      </nav>
+    </footer>
   </body>
 </html>
