@@ -141,7 +141,7 @@
   (let ((value (org-element-property :attr_reference plain-list)))
     (cond
      ((stringp value) value)
-     ((listp value) (mapconcat #'identity value " "))
+     ((consp value) (mapconcat #'identity value " "))
      (t nil))))
 
 (defun majutsu-docs--reference-attribute (name text)
