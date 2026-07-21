@@ -675,6 +675,17 @@
         (majutsu-row-refresh-tail-spacers nil nil 'explicit-window))
       (should (eq seen 'explicit-window)))))
 
+(ert-deftest majutsu-log-window-size-change-refreshes-resized-log-window ()
+  "The buffer-local resize hook should refresh the window it receives."
+  (let (refreshed)
+    (with-temp-buffer
+      (majutsu-log-mode)
+      (cl-letf (((symbol-function 'window-buffer)
+                 (lambda (_window) (current-buffer)))
+                ((symbol-function 'majutsu-log--refresh-tail-window)
+                 (lambda (window) (setq refreshed window))))
+        (majutsu-log--after-window-size-change 'resized-log-window))
+      (should (eq refreshed 'resized-log-window)))))
 (ert-deftest majutsu-log-filter-buffer-substring-drops-tail-when-heading-present ()
   "Copying mixed heading+tail text should drop the tail by default."
   (let* ((compiled (majutsu-log-test--tail-compiled))
