@@ -718,7 +718,15 @@
                 ((symbol-function 'majutsu-log--refresh-tail-window)
                  (lambda (window) (setq refreshed window))))
         (majutsu-log--after-window-size-change 'resized-log-window))
-      (should (eq refreshed 'resized-log-window)))))
+      (should (eq refreshed 'resized-log-window))
+      ;; Unrelated windows (showing a different buffer) should be ignored.
+      (cl-letf (((symbol-function 'window-buffer)
+                 (lambda (_window) (get-buffer-create "majutsu-log-test-unrelated")))
+                ((symbol-function 'majutsu-log--refresh-tail-window)
+                 (lambda (window) (setq refreshed window))))
+        (setq refreshed nil)
+        (majutsu-log--after-window-size-change 'resized-log-window))
+      (should (null refreshed)))))
 
 (ert-deftest majutsu-log-filter-buffer-substring-drops-tail-when-heading-present ()
   "Copying mixed heading+tail text should drop the tail by default."
