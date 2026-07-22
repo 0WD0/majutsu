@@ -140,6 +140,28 @@
           (should (string-match-p (regexp-quote "normal\ntail\n") out))
           (should-not (string-match-p "MAJUTSU-EDIFF:" out)))))))
 
+(ert-deftest majutsu-process-test-process-jj-prepares-invocation ()
+  "`majutsu-process-jj' should prepare and forward a raw jj invocation."
+  (let ((default-directory "/repo/sub/")
+        (majutsu-jj-executable "/usr/bin/jj")
+        (majutsu-jj-global-arguments '("--no-pager" "--color=never"))
+        seen-directory
+        seen-call)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory)
+                 (ert-fail "Raw jj calls must preserve `default-directory'")))
+              ((symbol-function 'majutsu-process-file)
+               (lambda (&rest call)
+                 (setq seen-directory default-directory
+                       seen-call call)
+                 7)))
+      (should (= 7 (majutsu-process-jj '(t "/tmp/jj-stderr")
+                                       "log" '("-r" nil "@")))))
+    (should (equal seen-directory "/repo/sub/"))
+    (should (equal seen-call
+                   '("/usr/bin/jj" nil (t "/tmp/jj-stderr") nil
+                     "--no-pager" "--color=never" "log" "-r" "@")))))
+
 (ert-deftest majutsu-process-test-start-jj-binds-root-cwd ()
   "`majutsu-start-jj' should run from repo root."
   (let ((default-directory "/repo/sub/")

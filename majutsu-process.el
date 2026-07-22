@@ -738,6 +738,18 @@ Emacs-based GPG pinentry while jj is running."
       (apply #'majutsu--process-file-responsive
              program infile destination args))))
 
+(defun majutsu-process-jj (destination &rest args)
+  "Run jj synchronously, sending output to DESTINATION.
+
+DESTINATION is handled like the destination argument of `process-file'.
+Resolve the appropriate jj executable and prepare ARGS using
+`majutsu-process-jj-arguments'.  This low-level function preserves
+`default-directory' and does not log the command or refresh Majutsu buffers."
+  (apply #'majutsu-process-file
+         (majutsu-jj--executable)
+         nil destination nil
+         (majutsu-process-jj-arguments args)))
+
 (defun majutsu-start-jj (args &optional success-msg finish-callback)
   "Run jj ARGS asynchronously for side-effects and log output.
 

@@ -32,7 +32,7 @@
 (require 'majutsu-completion)
 (require 'majutsu-template)
 
-(autoload 'majutsu-process-file "majutsu-process" nil nil)
+(autoload 'majutsu-process-jj "majutsu-process" nil nil)
 
 (defvar corfu-margin-formatters)
 
@@ -205,10 +205,7 @@ Each returned item is a string or (CANDIDATE . HELP)."
   (condition-case nil
       (with-temp-buffer
         (let* ((process-environment (cons "COMPLETE=fish" process-environment))
-               (exit (apply #'majutsu-process-file
-                            (majutsu-jj--executable)
-                            nil t nil
-                            (append '("--" "jj") args))))
+               (exit (majutsu-process-jj t "--" "jj" args)))
           (when (zerop exit)
             (delq nil
                   (mapcar #'majutsu-jj--parse-completion-line
@@ -718,15 +715,14 @@ This runs `jj workspace root' and returns a directory name (with a
 trailing slash) or nil if not inside a JJ workspace."
   (majutsu--with-safe-default-directory directory
     (majutsu--with-no-color
-      (let* ((args (majutsu-process-jj-arguments '("workspace" "root"))))
-        (with-temp-buffer
-          (let ((coding-system-for-read 'utf-8-unix)
-                (coding-system-for-write 'utf-8-unix)
-                (exit (apply #'majutsu-process-file (majutsu-jj--executable) nil t nil args)))
-            (when (zerop exit)
-              (let ((out (string-trim (buffer-string))))
-                (unless (string-empty-p out)
-                  (majutsu-jj-expand-directory-from-jj out default-directory))))))))))
+      (with-temp-buffer
+        (let ((coding-system-for-read 'utf-8-unix)
+              (coding-system-for-write 'utf-8-unix)
+              (exit (majutsu-process-jj t "workspace" "root")))
+          (when (zerop exit)
+            (let ((out (string-trim (buffer-string))))
+              (unless (string-empty-p out)
+                (majutsu-jj-expand-directory-from-jj out default-directory)))))))))
 
 (defun majutsu--toplevel-safe (&optional directory)
   "Return the workspace root for DIRECTORY or signal an error."
@@ -750,8 +746,7 @@ to do the following.
 
 * Flatten ARGS, removing nil arguments.
 * Prepend `majutsu-jj-global-arguments' to ARGS."
-  (setq args (seq-remove #'null (flatten-tree args)))
-  (append (seq-remove #'null majutsu-jj-global-arguments) args))
+  (append majutsu-jj-global-arguments (flatten-tree args)))
 
 (defun majutsu--jj-insert (return-error &rest args)
   "Run jj with ARGS and insert output at point.
@@ -763,14 +758,13 @@ exit code if there is no error output.  When RETURN-ERROR is
 
 This is the low-level worker for `majutsu-jj-insert' and similar
 functions."
-  (setq args (majutsu-process-jj-arguments args))
+  (setq args (flatten-tree args))
   (let* ((start-time (current-time))
          (err-file (and return-error
                         (make-nearby-temp-file "majutsu-jj-err")))
          exit-code)
     (majutsu--debug "Running command: %s %s" (majutsu-jj--executable) (string-join args " "))
-    (setq exit-code (apply #'majutsu-process-file (majutsu-jj--executable) nil
-                           (list t err-file) nil args))
+    (setq exit-code (majutsu-process-jj (list t err-file) args))
     (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
                     (float-time (time-subtract (current-time) start-time))
                     exit-code)
@@ -914,12 +908,11 @@ KEEP-ERROR matches `magit--git-wash': nil drops stderr on error,
 and anything else keeps the error text without washing stdout.  Output is
 optionally colorized based on `majutsu-process-apply-ansi-colors'."
   (declare (indent 2))
-  (setq args (majutsu-process-jj-arguments args))
+  (setq args (flatten-tree args))
   (let* ((beg (point))
          (err-file (make-nearby-temp-file "majutsu-jj-err")))
     (unwind-protect
-        (let* ((exit (apply #'majutsu-process-file (majutsu-jj--executable) nil
-                            (list t err-file) nil args))
+        (let* ((exit (majutsu-process-jj (list t err-file) args))
                (error-text
                 (when (and keep-error (not (= exit 0)))
                   (let ((text

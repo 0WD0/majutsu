@@ -416,6 +416,7 @@ This mirrors Magit's behavior."
 (ert-deftest majutsu-jj-completion-items/uses-native-complete-env ()
   "Native completion should invoke jj's COMPLETE protocol."
   (let ((majutsu-jj-executable "/usr/bin/jj")
+        (majutsu-jj-global-arguments '("--no-pager" "--color=never"))
         seen-program
         seen-args
         seen-complete)
@@ -430,7 +431,8 @@ This mirrors Magit's behavior."
       (should (equal (majutsu-jj-completion-items '("log" "-r" "ma"))
                      '(("main" . "Main bookmark"))))
       (should (equal seen-program "/usr/bin/jj"))
-      (should (equal seen-args '("--" "jj" "log" "-r" "ma")))
+      (should (equal seen-args '("--no-pager" "--color=never"
+                                 "--" "jj" "log" "-r" "ma")))
       (should (equal seen-complete "fish")))))
 
 (ert-deftest majutsu-jj-completion-table/exposes-annotations ()

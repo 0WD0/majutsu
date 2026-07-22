@@ -798,15 +798,14 @@ offer to create one using `jj git init`."
       (let* ((dest (file-name-as-directory (expand-file-name default-directory)))
              (default-directory dest)
              (_ (majutsu--assert-usable-jj))
-             (jj (majutsu-jj--executable))
-             (args (majutsu-process-jj-arguments (list "git" "init"
-                                                       (majutsu-convert-filename-for-jj dest))))
              (exit nil)
              (out ""))
         (with-temp-buffer
           (let ((coding-system-for-read 'utf-8-unix)
                 (coding-system-for-write 'utf-8-unix))
-            (setq exit (apply #'majutsu-process-file jj nil t nil args)))
+            (setq exit (majutsu-process-jj
+                        t "git" "init"
+                        (majutsu-convert-filename-for-jj dest))))
           (setq out (string-trim (buffer-string))))
         (if (zerop exit)
             (let ((default-directory dest))

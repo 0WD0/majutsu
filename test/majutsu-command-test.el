@@ -46,6 +46,7 @@
 (ert-deftest majutsu-command-test-jj-completion-items-calls-native-jj-completer ()
   "Completion should shell out through jj's COMPLETE protocol."
   (let ((majutsu-jj-executable "/usr/bin/jj")
+        (majutsu-jj-global-arguments '("--no-pager" "--color=never"))
         seen-program
         seen-args
         seen-complete)
@@ -60,7 +61,8 @@
       (should (equal (majutsu--jj-completion-items "jj l")
                      '(("log" . "Show revision history"))))
       (should (equal seen-program "/usr/bin/jj"))
-      (should (equal seen-args '("--" "jj" "l")))
+      (should (equal seen-args '("--no-pager" "--color=never"
+                                 "--" "jj" "l")))
       (should (equal seen-complete "fish")))))
 
 (ert-deftest majutsu-command-test-read-jj-command-uses-native-completion-map ()
