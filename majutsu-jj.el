@@ -912,7 +912,12 @@ optionally colorized based on `majutsu-process-apply-ansi-colors'."
   (let* ((beg (point))
          (err-file (make-nearby-temp-file "majutsu-jj-err")))
     (unwind-protect
-        (let* ((exit (majutsu-process-jj (list t err-file) args))
+        (let* ((exit
+                ;; jj log's structured row protocol is temporarily inserted
+                ;; as raw subprocess output.  Do not let it be redisplayed
+                ;; before the washer replaces it with sections.
+                (let ((inhibit-redisplay t))
+                  (majutsu-process-jj (list t err-file) args)))
                (error-text
                 (when (and keep-error (not (= exit 0)))
                   (let ((text

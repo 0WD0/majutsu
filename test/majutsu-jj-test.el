@@ -202,6 +202,18 @@
                          0))
           (should (equal seen-columns "80")))))))
 
+(ert-deftest majutsu-jj-wash/inhibits-redisplay-while-capturing-output ()
+  "Raw washer output must not be redisplayed before it is parsed."
+  (cl-letf (((symbol-function 'majutsu-process-file)
+             (lambda (&rest _args)
+               (should inhibit-redisplay)
+               (insert "raw output\n")
+               0)))
+    (with-temp-buffer
+      (should (= 0 (majutsu-jj-wash (lambda (&rest _) (goto-char (point-max)))
+                                     nil "log")))
+      (should (equal (buffer-string) "raw output\n")))))
+
 (ert-deftest majutsu-jj-wash/discards-stderr-on-success ()
   "Successful wash output should exclude warning stderr."
   (cl-letf (((symbol-function 'majutsu-process-file)
