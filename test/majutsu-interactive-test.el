@@ -45,6 +45,83 @@
       (insert-file-contents path))
     (buffer-string)))
 
+(defun majutsu-interactive-test--select-replacement (file removed added)
+  "Select the REMOVED/ADDED replacement in FILE's current washed diff."
+  (let* ((file-section
+          (majutsu-interactive--file-section-for-file file))
+         (hunk (and file-section
+                    (car (majutsu-interactive--file-section-hunks
+                          file-section))))
+         (lines (and hunk (majutsu-interactive--hunk-lines hunk)))
+         (removed-line
+          (seq-find (lambda (line)
+                      (equal (car line) (concat "-" removed "\n")))
+                    lines))
+         (added-line
+          (seq-find (lambda (line)
+                      (equal (car line) (concat "+" added "\n")))
+                    lines)))
+    (should file-section)
+    (should hunk)
+    (should removed-line)
+    (should added-line)
+    (majutsu-interactive--set-selection
+     (majutsu-interactive--hunk-id hunk)
+     (list (cons (nth 2 removed-line) (nth 3 added-line))))))
+
+(defun majutsu-interactive-test--toggle-whole-file (file command)
+  "Toggle hunkless FILE for transient COMMAND in the current washed diff."
+  (let ((section (majutsu-interactive--file-section-for-file file))
+        (transient-current-command command))
+    (should section)
+    (should-not (majutsu-interactive--file-section-hunks section))
+    (goto-char (oref section start))
+    (majutsu-interactive-toggle-file)))
+
+(defun majutsu-interactive-test--replacement-plan
+    (repo file removed added &optional mode)
+  "Select the REMOVED/ADDED replacement in FILE's diff and build MODE's plan."
+  (majutsu-jj-integration-with-washed-diff
+   repo
+   (lambda ()
+     (majutsu-interactive-test--select-replacement file removed added)
+     (majutsu-interactive-build-replay-plan-if-selected nil mode))))
+
+(defun majutsu-interactive-test--prepare-mixed-changes (repo)
+  "Create text, binary, and mode-only changes in REPO and return their paths."
+  (let ((text-file (majutsu-jj-integration-file repo "text.txt"))
+        (other-file (majutsu-jj-integration-file repo "other.txt"))
+        (mode-file (majutsu-jj-integration-file repo "executable.sh"))
+        (selected-bin (majutsu-jj-integration-file repo "selected.bin"))
+        (remaining-bin (majutsu-jj-integration-file repo "remaining.bin")))
+    (majutsu-jj-integration-write-text
+     text-file "old one\nunchanged\nold two\n")
+    (majutsu-jj-integration-write-text other-file "other old\n")
+    (majutsu-jj-integration-write-text mode-file "#!/bin/sh\n")
+    (majutsu-jj-integration-write-bytes selected-bin (unibyte-string 0 1))
+    (majutsu-jj-integration-write-bytes remaining-bin (unibyte-string 0 3))
+    (majutsu-jj-integration-commit repo "base")
+    (majutsu-jj-integration-write-text
+     text-file "new one\nunchanged\nnew two\n")
+    (majutsu-jj-integration-write-text other-file "other new\n")
+    (set-file-modes mode-file #o755)
+    (majutsu-jj-integration-write-bytes selected-bin (unibyte-string 0 4))
+    (majutsu-jj-integration-write-bytes remaining-bin (unibyte-string 0 5))
+    (list :text text-file :other other-file :mode mode-file
+          :selected-bin selected-bin :remaining-bin remaining-bin)))
+
+(defun majutsu-interactive-test--mixed-plan (repo command &optional mode)
+  "Build MODE's plan in REPO for a text region and two whole files.
+COMMAND identifies the transient whose whole-file selections are toggled."
+  (majutsu-jj-integration-with-washed-diff
+   repo
+   (lambda ()
+     (majutsu-interactive-test--select-replacement
+      "text.txt" "old one" "new one")
+     (majutsu-interactive-test--toggle-whole-file "selected.bin" command)
+     (majutsu-interactive-test--toggle-whole-file "executable.sh" command)
+     (majutsu-interactive-build-replay-plan-if-selected nil mode))))
+
 (ert-deftest majutsu-interactive-run-replay-plan/inserts-tool-before-filesets ()
   "Replay plan should keep jj options before filesets."
   (let (called)
@@ -580,6 +657,125 @@ Selecting only the first added line leaves the unselected line in place."
        repo "restore" '("--changes-in=@") plan)
       (should (equal (majutsu-interactive-test--file-contents added)
                      "two\n")))))
+
+(ert-deftest majutsu-interactive/integration-restore-region-modified-text ()
+  "Restore a selected replacement while retaining an adjacent replacement."
+  (majutsu-jj-integration-with-repo repo
+    (let ((file (majutsu-jj-integration-file repo "modified.txt"))
+          plan)
+      (majutsu-jj-integration-write-text file
+                                         "old one\nunchanged\nold two\n")
+      (majutsu-jj-integration-commit repo "base")
+      (majutsu-jj-integration-write-text file
+                                         "new one\nunchanged\nnew two\n")
+      (setq plan
+            (majutsu-interactive-test--replacement-plan
+             repo "modified.txt" "old one" "new one" 'complement))
+      (let ((patch (or (plist-get plan :patch) "")))
+        (should (string-match-p "^-old two$" patch))
+        (should (string-match-p "^+new two$" patch))
+        (should (string-match-p "^ old one$" patch))
+        (should-not (string-match-p "^ new one$" patch)))
+      (majutsu-jj-integration-run-replay
+       repo "restore" '("--from=@-" "--to=@") plan)
+      (should (equal (majutsu-interactive-test--file-contents file)
+                     "old one\nunchanged\nnew two\n")))))
+
+(ert-deftest majutsu-interactive/integration-split-region-modified-text ()
+  "Split a selected replacement while leaving an adjacent one in the child."
+  (majutsu-jj-integration-with-repo repo
+    (let ((file (majutsu-jj-integration-file repo "modified.txt"))
+          plan)
+      (majutsu-jj-integration-write-text file
+                                         "old one\nunchanged\nold two\n")
+      (majutsu-jj-integration-commit repo "base")
+      (majutsu-jj-integration-write-text file
+                                         "new one\nunchanged\nnew two\n")
+      (setq plan
+            (majutsu-interactive-test--replacement-plan
+             repo "modified.txt" "old one" "new one"))
+      (should (eq (plist-get plan :base) 'left))
+      (let ((patch (or (plist-get plan :patch) "")))
+        (should (string-match-p "^-old one$" patch))
+        (should (string-match-p "^+new one$" patch))
+        (should-not (string-match-p "^[+-].*two$" patch)))
+      (majutsu-jj-integration-run-replay
+       repo "split" '("--revision=@" "--message=selected") plan)
+      (should (equal (majutsu-jj-integration-output
+                      repo "file" "show" "-r" "@-" "modified.txt")
+                     "new one\nunchanged\nold two\n"))
+      (let ((diff (majutsu-jj-integration-output
+                   repo "diff" "--git" "--from=@-" "--to=@")))
+        (should-not (string-match-p "^[+-].*one$" diff))
+        (should (string-match-p "^-old two$" diff))
+        (should (string-match-p "^+new two$" diff))))))
+
+(ert-deftest majutsu-interactive/integration-mixed-text-and-whole-file-plans ()
+  "Build mixed plans from real diffs and run them through Restore and Split."
+  (majutsu-jj-integration-with-sandbox sandbox
+    ;; Restore one text replacement and one binary file while retaining every
+    ;; unselected text and binary change from the destination tree.
+    (let* ((repo (majutsu-jj-integration-init sandbox "mixed-restore"))
+           (files (majutsu-interactive-test--prepare-mixed-changes repo))
+           (text-file (plist-get files :text))
+           (other-file (plist-get files :other))
+           (mode-file (plist-get files :mode))
+           (selected-bin (plist-get files :selected-bin))
+           (remaining-bin (plist-get files :remaining-bin))
+           (plan (majutsu-interactive-test--mixed-plan
+                  repo 'majutsu-restore 'complement)))
+      (should (eq (plist-get plan :base) 'right))
+      (should (equal (plist-get plan :file-ops)
+                     '((:action modify :path "remaining.bin"))))
+      (let ((patch (or (plist-get plan :patch) "")))
+        (should-not (string-match-p "^+new one$" patch))
+        (should (string-match-p "^+new two$" patch))
+        (should (string-match-p "^+other new$" patch)))
+      (majutsu-jj-integration-run-replay
+       repo "restore" '("--changes-in=@") plan)
+      (should (equal (majutsu-interactive-test--file-contents text-file)
+                     "old one\nunchanged\nnew two\n"))
+      (should (equal (majutsu-interactive-test--file-contents other-file)
+                     "other new\n"))
+      (should (= (logand (file-modes mode-file) #o777) #o644))
+      (should (equal (majutsu-jj-integration-read-bytes selected-bin)
+                     (unibyte-string 0 1)))
+      (should (equal (majutsu-jj-integration-read-bytes remaining-bin)
+                     (unibyte-string 0 5))))
+    ;; Split the same mixed selection into the parent and leave both kinds of
+    ;; unselected changes in the child revision.
+    (let* ((repo (majutsu-jj-integration-init sandbox "mixed-split"))
+           (files (majutsu-interactive-test--prepare-mixed-changes repo))
+           (text-file (plist-get files :text))
+           (mode-file (plist-get files :mode))
+           (plan (majutsu-interactive-test--mixed-plan
+                  repo 'majutsu-split)))
+      (should (eq (plist-get plan :base) 'left))
+      (should (= (length (plist-get plan :file-ops)) 2))
+      (should (member '(:action modify :path "executable.sh")
+                      (plist-get plan :file-ops)))
+      (should (member '(:action modify :path "selected.bin")
+                      (plist-get plan :file-ops)))
+      (majutsu-jj-integration-run-replay
+       repo "split" '("--revision=@" "--message=selected") plan)
+      (should (equal (majutsu-jj-integration-output
+                      repo "file" "show" "-r" "@-" "text.txt")
+                     "new one\nunchanged\nold two\n"))
+      (should (= (logand (file-modes mode-file) #o777) #o755))
+      (let ((selected-diff
+             (majutsu-jj-integration-output repo "diff" "--summary"
+                                            "-r" "@-"))
+            (remaining-diff
+             (majutsu-jj-integration-output repo "diff" "--summary"
+                                            "--from=@-" "--to=@")))
+        (should (string-match-p "selected\\.bin" selected-diff))
+        (should (string-match-p "executable\\.sh" selected-diff))
+        (should-not (string-match-p "remaining\\.bin" selected-diff))
+        (should-not (string-match-p "other\\.txt" selected-diff))
+        (should-not (string-match-p "selected\\.bin" remaining-diff))
+        (should-not (string-match-p "executable\\.sh" remaining-diff))
+        (should (string-match-p "remaining\\.bin" remaining-diff))
+        (should (string-match-p "other\\.txt" remaining-diff))))))
 
 (ert-deftest majutsu-interactive/integration-machine-paths-with-minimum-jj ()
   "Exercise sidecar binding against the jj binary named by MAJUTSU_TEST_JJ."

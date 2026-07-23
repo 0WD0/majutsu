@@ -109,14 +109,13 @@ region within a hunk.")
   (with-current-buffer (or buffer (current-buffer))
     (majutsu-interactive--has-selections-p)))
 
-(defun majutsu-interactive-build-patch-if-selected (&optional buffer invert include-all-files context-on-added)
+(defun majutsu-interactive-build-patch-if-selected (&optional buffer invert include-all-files)
   "Return patch for BUFFER if there are selections, otherwise nil.
 When INVERT is non-nil, invert the selection within each hunk.
-When INCLUDE-ALL-FILES is non-nil, include hunks from all files in invert mode.
-When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context."
+When INCLUDE-ALL-FILES is non-nil, include hunks from all files in invert mode."
   (with-current-buffer (or buffer (current-buffer))
     (when (majutsu-interactive--has-selections-p)
-      (majutsu-interactive--build-patch invert include-all-files context-on-added))))
+      (majutsu-interactive--build-patch invert include-all-files))))
 
 ;;; Selection Functions
 
@@ -527,11 +526,10 @@ Each entry is (TEXT TYPE BOL EOL)."
         (forward-line 1)))
     (nreverse lines)))
 
-(defun majutsu-interactive--build-hunk-patch (section spec &optional invert context-on-added)
+(defun majutsu-interactive--build-hunk-patch (section spec &optional invert)
   "Build a patch hunk for SECTION using SPEC and INVERT.
 SPEC is `:all' or list of (BEG . END) ranges.
 When INVERT is non-nil, invert selection for change lines.
-When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context.
 Return a hunk string or nil when no change lines remain."
   (let* ((header (majutsu-interactive--hunk-header section))
          (parsed (majutsu-interactive--parse-hunk-header header))
@@ -554,12 +552,11 @@ Return a hunk string or nil when no change lines remain."
                              (majutsu-interactive--line-selected-p bol eol ranges)
                            t))
                (include-change (if invert (not selected) selected))
-               (convert-added (and context-on-added (eq type 'added) (not include-change)))
-               (convert-removed (and (not context-on-added) (eq type 'removed) (not include-change)))
+               (omitted-removed (and (eq type 'removed) (not include-change)))
                (include (pcase type
                           ('context t)
-                          ('added (or include-change convert-added))
-                          ('removed (or include-change convert-removed))
+                          ('added include-change)
+                          ('removed t)
                           ('meta prev-included-line)
                           (_ nil)))
                (old-inc (pcase type
@@ -578,11 +575,7 @@ Return a hunk string or nil when no change lines remain."
                   (setq has-change t))
                 (setq prev-included-line (memq type '(context added removed)))
                 (cond
-                 (convert-added
-                  (setq old-len (1+ old-len))
-                  (setq new-len (1+ new-len))
-                  (push (concat " " (substring text 1)) selected-lines))
-                 (convert-removed
+                 (omitted-removed
                   (setq old-len (1+ old-len))
                   (setq new-len (1+ new-len))
                   (push (concat " " (substring text 1)) selected-lines))
@@ -609,28 +602,18 @@ Return a hunk string or nil when no change lines remain."
                 header)))
         (concat hunk-header body)))))
 
-(defun majutsu-interactive--file-is-new-p (file-section)
-  "Return non-nil if FILE-SECTION represents a new file."
-  (let ((header (oref file-section header)))
-    (string-match-p "^--- /dev/null$" header)))
-
-(defun majutsu-interactive--build-file-patch (file-section hunks-with-specs &optional invert context-on-added)
+(defun majutsu-interactive--build-file-patch (file-section hunks-with-specs &optional invert)
   "Build patch string for FILE-SECTION with HUNKS-WITH-SPECS.
 HUNKS-WITH-SPECS is list of (HUNK-SECTION SPEC [INVERT]).
-When INVERT is non-nil, invert selected hunks by default.
-When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context.
-Note: context-on-added is disabled for new files (--- /dev/null)."
+When INVERT is non-nil, invert selected hunks by default."
   (let ((header (oref file-section header))
-        (hunk-patches nil)
-        ;; New files cannot have context lines, so disable context-on-added
-        (effective-context-on-added (and context-on-added
-                                         (not (majutsu-interactive--file-is-new-p file-section)))))
+        (hunk-patches nil))
     (dolist (hs hunks-with-specs)
       (let* ((hunk (nth 0 hs))
              (spec (nth 1 hs))
              (hunk-invert (if (> (length hs) 2) (nth 2 hs) invert))
              (hunk-patch (majutsu-interactive--build-hunk-patch
-                          hunk spec hunk-invert effective-context-on-added)))
+                          hunk spec hunk-invert)))
         (when hunk-patch
           (push hunk-patch hunk-patches))))
     (when hunk-patches
@@ -638,11 +621,10 @@ Note: context-on-added is disabled for new files (--- /dev/null)."
               (mapconcat #'identity (nreverse hunk-patches) "")))))
 
 
-(defun majutsu-interactive--build-patch (&optional invert include-all-files context-on-added)
+(defun majutsu-interactive--build-patch (&optional invert include-all-files)
   "Build complete patch from current selections.
 When INVERT is non-nil, select non-matching change lines.
 When INCLUDE-ALL-FILES is non-nil, include hunks from all files in invert mode.
-When CONTEXT-ON-ADDED is non-nil, treat unselected added lines as context.
 Returns patch string or nil if no selections."
   (let* ((selected (majutsu-interactive--collect-selected-hunks))
          (by-file (make-hash-table :test 'eq)))
@@ -661,7 +643,7 @@ Returns patch string or nil if no selections."
          (lambda (file hunks)
            (let ((hunks (nreverse hunks)))
              (when-let* ((patch (majutsu-interactive--build-file-patch
-                                 file hunks invert context-on-added)))
+                                 file hunks invert)))
                (push patch patches))))
          by-file))
        (include-all-files
@@ -680,7 +662,7 @@ Returns patch string or nil if no selections."
                    (push (list hunk :all nil) expanded))))
              (setq expanded (nreverse expanded))
              (when-let* ((patch (majutsu-interactive--build-file-patch
-                                 file expanded invert context-on-added)))
+                                 file expanded invert)))
                (push patch patches))))
          all-hunks-by-file))
        (t
@@ -701,7 +683,7 @@ Returns patch string or nil if no selections."
                    (push (list hunk :all nil) expanded))))
              (setq expanded (nreverse expanded))
              (when-let* ((patch (majutsu-interactive--build-file-patch
-                                 file expanded invert context-on-added)))
+                                 file expanded invert)))
                (push patch patches))))
          by-file)))
       (when patches
@@ -732,7 +714,7 @@ nil when BUFFER has no selections."
         ('complement
          (list :base 'right
                :payload-root 'left
-               :patch (majutsu-interactive--build-patch t t t)
+               :patch (majutsu-interactive--build-patch t t)
                :file-ops
                (majutsu-interactive--build-file-operations
                 (majutsu-interactive--collect-unselected-files))))
