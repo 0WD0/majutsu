@@ -23,7 +23,7 @@
 (require 'majutsu-gerrit)
 (require 'majutsu-selection)
 
-(require 'consult)
+(require 'consult nil t)
 
 (defvar majutsu-gerrit-remote-branch-history nil
   "Minibuffer history for Gerrit remote branch names.")

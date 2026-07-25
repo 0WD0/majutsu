@@ -25,12 +25,15 @@
 (require 'majutsu-remote)
 
 (require 'cl-lib)
-(require 'consult)
+;; Gerrit support is optional at build time.  Keep native compilation of
+;; the rest of Majutsu working when an Emacs package builder has not yet
+;; propagated these dependencies.
+(require 'consult nil t)
 (require 'json)
 (require 'subr-x)
 (require 'url-parse)
 (require 'svg)
-(require 'plz)
+(require 'plz nil t)
 
 (declare-function majutsu-jj-lines "majutsu-jj")
 

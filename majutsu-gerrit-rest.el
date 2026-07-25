@@ -25,7 +25,9 @@
 (require 'json)
 (require 'subr-x)
 (require 'url-util)
-(require 'plz)
+;; Keep this library loadable during package builds where optional Gerrit
+;; dependencies may not yet be on `load-path'.
+(require 'plz nil t)
 
 (declare-function majutsu-gerrit--remote-user "majutsu-gerrit"
                   (&optional remote directory))
