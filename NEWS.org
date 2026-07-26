@@ -255,7 +255,8 @@
 
 - Section folding and refresh ::
   Collapsed sections no longer leave invisible remnants that join adjacent
-  headings together.  =jj new= refreshes the buffer it was invoked from.
+  headings together, and refreshes arriving during a rebuild no longer corrupt
+  the buffer.  =jj new= refreshes the buffer it was invoked from.
 
 - GPG prompt responsiveness ::
   Emacs-based GPG/pinentry prompts can be answered while jj commands wait.
