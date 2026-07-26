@@ -130,6 +130,7 @@
 - Additional command options ::
   Squash exposes =--use-destination-message=, Rebase exposes
   =--simplify-parents=, and Absorb accepts repeated =--into= revsets.
+  Revert accepts =--insert-after= and =--insert-before= together.
   Split and Squash execute with ~RET~ as well as their action-specific keys.
 
 - Git synchronization options ::
@@ -176,7 +177,8 @@
 
 - Transient command context ::
   Revision and file prompts, selection toggles, and point-sensitive actions
-  use the buffer that opened the transient.
+  use the buffer that opened the transient.  Duplicate defaults only to commit
+  sections in the region, so file names are not mistaken for revision IDs.
 
 - Patch selection safety ::
   Concurrent patch operations no longer overwrite each other's patch input.
@@ -203,7 +205,7 @@
 
 - Section folding and refresh ::
   Collapsed sections no longer leave invisible remnants that join adjacent
-  headings together.
+  headings together.  =jj new= refreshes the buffer it was invoked from.
 
 - GPG prompt responsiveness ::
   Emacs-based GPG/pinentry prompts can be answered while jj commands wait.

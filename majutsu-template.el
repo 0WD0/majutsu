@@ -2180,7 +2180,7 @@ literal `.name(...)' segments. Lowering methods carry a real Elisp function."
   "Apply METHOD-NAME with ARGS to RECEIVER-NODE of RECEIVER-TYPE.
 Return a new template node representing the segment result. Native/rendered
 methods produce a raw method-call node. Local lowering methods invoke their
-registered Elisp body and return its rewritten node." 
+registered Elisp body and return its rewritten node."
   (let* ((dispatch (majutsu-template--method-dispatch-info receiver-type method-name))
          (dispatch-type (or (car-safe dispatch) receiver-type))
          (meta (cdr-safe dispatch))
@@ -2368,7 +2368,7 @@ CONTEXT is used in error messages."
      (let* ((params (majutsu-template--lambda-params node))
             (body (majutsu-template--lambda-body node)))
        (format "|%s| %s"
-               (mapconcat #'symbol-name params ", " )
+               (mapconcat #'symbol-name params ", ")
                (majutsu-template--render-node body))))
     (:call
      (let* ((name (majutsu-template-node-value node))

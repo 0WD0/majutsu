@@ -109,8 +109,7 @@ destination, fill with --revision and --insert-after defaults."
   :class 'majutsu-jj-transient-prefix
   :jj-command "revert"
   :incompatible '(("--onto=" "--insert-after=")
-                  ("--onto=" "--insert-before=")
-                  ("--insert-after=" "--insert-before="))
+                  ("--onto=" "--insert-before="))
   :transient-non-suffix t
   :description "JJ Revert"
   [["Selection"

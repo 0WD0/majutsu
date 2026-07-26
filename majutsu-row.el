@@ -620,7 +620,7 @@ Return a plist with :roots, :entries, and :diagnostics."
                          (let ((entry (car parsed))
                                (record-end (cdr parsed)))
                            (push entry roots)
-                           (setq entries (nconc entries (list entry)))
+                           (push entry entries)
                            (setq suffix-owner entry
                                  cursor record-end))
                        (push (list :position marker
@@ -637,7 +637,7 @@ Return a plist with :roots, :entries, and :diagnostics."
             (majutsu-row--finalize-entry-gap suffix-owner cursor end nil)
             (setq cursor end)))))
     (list :roots (nreverse roots)
-          :entries entries
+          :entries (nreverse entries)
           :diagnostics (nreverse diagnostics))))
 
 (defun majutsu-row--diagnostic-position (diagnostic)

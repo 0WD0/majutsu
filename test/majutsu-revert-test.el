@@ -84,5 +84,13 @@
       (majutsu-revert-execute '("--revision=abc123"))
       (should (string-match-p "destination" seen-message)))))
 
+(ert-deftest majutsu-revert-transient/insert-after-composes-with-insert-before ()
+  "jj revert accepts -A and -B together; only --onto excludes them."
+  (let ((incompatible (oref (get 'majutsu-revert 'transient--prefix)
+                            incompatible)))
+    (should (member '("--onto=" "--insert-after=") incompatible))
+    (should (member '("--onto=" "--insert-before=") incompatible))
+    (should-not (member '("--insert-after=" "--insert-before=") incompatible))))
+
 (provide 'majutsu-revert-test)
 ;;; majutsu-revert-test.el ends here

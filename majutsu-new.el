@@ -113,7 +113,7 @@ When called from a blob buffer, also visit the workspace file."
       (if (zerop exit)
           (progn
             (message "Created new changeset")
-            (majutsu-log-refresh)
+            (majutsu-refresh)
             ;; Visit workspace file when in blob buffer
             (when in-blob
               (find-file blob-file))
