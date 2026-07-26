@@ -742,6 +742,19 @@ Editable mode also changes cursor visuals (see
 ~majutsu-blob-edit-cursor-type~); with Evil, the normal-state cursor is updated
 too.
 
+#+attr_keymap: :scope Evil
+Evil bindings in blob buffers keep Evil's motions (~p~, ~n~, ~b~, ~e~, ~w~...)
+untouched; blob commands live on the =g= prefix and =C-j= / =C-k=, mirroring
+the annotate-mode keys:
+#+attr_reference: :kind command-binding :interface "Blob buffer" :mode majutsu-blob-mode :scope Evil :state Normal
+- Key: gj / C-j (majutsu-blob-next) :: Next revision touching the file.
+- Key: gk / C-k (majutsu-blob-previous) :: Previous revision touching the file.
+- Key: gb (majutsu-annotate-addition) :: Start annotate for the blob.
+- Key: gf (majutsu-blob-visit-file) :: Visit the workspace version of the file.
+- Key: gr :: Revert or reload the blob content.
+- Key: q :: Bury the blob buffer.
+- Key: RET (majutsu-edit-changeset) :: Edit the blob's revision.
+
 *** Annotate (Blame)
 Majutsu annotate is implemented by =majutsu-annotate= and uses
 =jj file annotate= under the hood.  The navigation bindings below belong to

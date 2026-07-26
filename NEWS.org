@@ -139,8 +139,11 @@
   =--fetch-tags= and separate push URLs through =--push-url=.
 
 - Evil keybindings ::
-  The dispatcher shows Evil-facing keys.  Diff context uses ~+~ to add,
-  ~=~ to remove, and =~= to reset context.
+  Blob buffers preserve normal text motions and paste: use ~gj~ / ~gk~
+  (or ~C-j~ / ~C-k~) for revision navigation, ~gb~ to annotate, ~gf~ to visit
+  the workspace file, and ~gr~ to revert the buffer.  The dispatcher shows
+  Evil-facing keys; diff context uses ~+~, ~=~, and =~= to add, remove,
+  and reset context.
 
 - Description formatting defaults ::
   Summary text beyond column 68 is highlighted, and the body uses Auto Fill

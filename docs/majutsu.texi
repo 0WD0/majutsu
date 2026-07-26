@@ -1294,6 +1294,38 @@ Editable mode also changes cursor visuals (see
 @code{majutsu-blob-edit-cursor-type}); with Evil@comma{} the normal-state cursor is updated
 too.
 
+Evil bindings in blob buffers keep Evil's motions (@code{p}@comma{} @code{n}@comma{} @code{b}@comma{} @code{e}@comma{} @code{w}@dots{})
+untouched; blob commands live on the @samp{g} prefix and @samp{C-j} / @samp{C-k}@comma{} mirroring
+the annotate-mode keys:
+@table @asis
+@item @kbd{gj / C-j} (@code{majutsu-blob-next})
+@kindex gj / C-j
+@findex majutsu-blob-next
+Next revision touching the file.
+@item @kbd{gk / C-k} (@code{majutsu-blob-previous})
+@kindex gk / C-k
+@findex majutsu-blob-previous
+Previous revision touching the file.
+@item @kbd{gb} (@code{majutsu-annotate-addition})
+@kindex gb
+@findex majutsu-annotate-addition
+Start annotate for the blob.
+@item @kbd{gf} (@code{majutsu-blob-visit-file})
+@kindex gf
+@findex majutsu-blob-visit-file
+Visit the workspace version of the file.
+@item @kbd{gr}
+@kindex gr
+Revert or reload the blob content.
+@item @kbd{q}
+@kindex q
+Bury the blob buffer.
+@item @kbd{@key{RET}} (@code{majutsu-edit-changeset})
+@kindex RET
+@findex majutsu-edit-changeset
+Edit the blob's revision.
+@end table
+
 @node Annotate (Blame)
 @subsection Annotate (Blame)
 

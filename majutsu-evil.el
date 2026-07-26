@@ -212,20 +212,23 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "RET") #'undefined
     (kbd "d") #'undefined)
 
-  ;; majutsu-blob-mode is a minor mode, need hook + define-keys
+  ;; majutsu-blob-mode is a minor mode over a file-visiting buffer, so
+  ;; Evil's motions (p/n/b/e/w...) must keep working on the file text.
+  ;; Blob commands live on the g prefix and C-j/C-k instead, mirroring
+  ;; the annotate-mode bindings and evil-collection's magit-blob keys.
   (add-hook 'majutsu-blob-mode-hook #'evil-normalize-keymaps)
-  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-blob-mode-map
-    (kbd "p") #'majutsu-blob-previous
-    (kbd "n") #'majutsu-blob-next
-    (kbd "q") #'majutsu-bury-or-kill-buffer
-    (kbd "b") #'majutsu-annotate-addition
-    (kbd "e") #'majutsu-blob-edit-start
+  (majutsu-evil--define-keys 'normal 'majutsu-blob-mode-map
+    (kbd "C-j") #'majutsu-blob-next
+    "gj" #'majutsu-blob-next
+    (kbd "C-k") #'majutsu-blob-previous
+    "gk" #'majutsu-blob-previous
+    "gb" #'majutsu-annotate-addition
+    "gf" #'majutsu-blob-visit-file
+    "gr" #'revert-buffer
     (kbd "i") #'majutsu-evil-blob-insert-dwim
+    (kbd "q") #'majutsu-bury-or-kill-buffer
     ;; RET visits the revision (edit)
     (kbd "RET") #'majutsu-edit-changeset)
-
-  (majutsu-evil--define-keys 'normal 'majutsu-blob-mode-map
-    (kbd "g r") #'revert-buffer)
 
   ;; Editable blob mode mirrors wdired-like finish/abort flow.
   (add-hook 'majutsu-blob-edit-mode-hook #'evil-normalize-keymaps)
