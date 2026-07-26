@@ -185,9 +185,9 @@ In diff buffer on a file section, restore only that file."
   (interactive)
   (let ((file (majutsu-file-at-point)))
     (if file
-        (when (yes-or-no-p (format "Discard changes to %s? " file))
+        (when (majutsu-confirm 'restore (format "Discard changes to %s? " file))
           (majutsu-run-jj "restore" (majutsu-jj-fileset-quote file)))
-      (when (yes-or-no-p "Discard all working copy changes? ")
+      (when (majutsu-confirm 'restore "Discard all working copy changes? ")
         (majutsu-run-jj "restore")))))
 
 ;;;###autoload(autoload 'majutsu-restore-execute "majutsu-restore" nil t)
@@ -230,11 +230,17 @@ In diff buffer on a file section, restore only that file."
             (copy-sequence majutsu-buffer-diff-filesets))
        plan))
      (t
-      (let ((exit (apply #'majutsu-run-jj
-                         "restore"
-                         (majutsu-jj-append-filesets args filesets))))
-        (when (zerop exit)
-          (message "Restored successfully")))))))
+      ;; Without filesets or an explicit tree context this is a bare
+      ;; "jj restore": it discards every working copy change, so guard
+      ;; it like the dwim command and abandon do.
+      (when (or filesets
+                (majutsu-restore--explicit-context-p args)
+                (majutsu-confirm 'restore "Discard all working copy changes? "))
+        (let ((exit (apply #'majutsu-run-jj
+                           "restore"
+                           (majutsu-jj-append-filesets args filesets))))
+          (when (zerop exit)
+            (message "Restored successfully"))))))))
 
 ;;; Infix Commands
 

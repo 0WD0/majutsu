@@ -86,6 +86,7 @@ which in turn uses the function specified here."
     (const tag-delete)
     (const git-remote-remove)
     (const rebase)
+    (const restore)
     (const workspace-forget)
     (const workspace-trash))
   "Actions that may require confirmation.")

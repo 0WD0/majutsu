@@ -180,6 +180,11 @@
   ~majutsu-jjdescription-fill-column~; setting either to nil disables that
   behavior.  The summary line is not automatically wrapped.
 
+- Restore confirmation ::
+  Executing a bare Restore asks before discarding all working-copy changes.
+  Restore DWIM also honors ~majutsu-no-confirm~ and ~majutsu-slow-confirm~
+  through the =restore= action.
+
 ** Removed
 
 - Obsolete diff and file commands ::
