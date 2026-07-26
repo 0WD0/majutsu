@@ -3264,8 +3264,8 @@ Each side snapshot gets a distinct background face@comma{} cycling through
 Base snapshots use @samp{majutsu-conflict-base-face} (inherits @samp{smerge-base}).
 @item
 Git-style (diff3) regions in mixed buffers (for example produced by
-@code{majutsu-conflict-restyle}) are colored the same way.  Buffers that
-contain only git-style conflicts are still handed to @samp{smerge-mode} by
+@code{majutsu-conflict-restyle}) are colored the same way. Buffers that contain
+only git-style conflicts are still handed to @samp{smerge-mode} by
 @code{majutsu-conflict-ensure-mode}; the two modes stay mutually exclusive.
 @item
 Eldoc describes the term at point ("jj conflict side 2/3: @dots{}").

@@ -1773,6 +1773,7 @@ Evil bindings are available in normal state:
 - Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
 - Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
 - Key: ge (majutsu-conflict-refine) :: Refine the conflict.
+
 *** Highlighting and Context Help
 Conflict regions are highlighted like smerge-mode, generalized to
 n-sided conflicts:
@@ -1781,8 +1782,8 @@ n-sided conflicts:
   =smerge-upper=, =side-2= inherits =smerge-lower=).
 - Base snapshots use =majutsu-conflict-base-face= (inherits =smerge-base=).
 - Git-style (diff3) regions in mixed buffers (for example produced by
-  ~majutsu-conflict-restyle~) are colored the same way.  Buffers that
-  contain only git-style conflicts are still handed to =smerge-mode= by
+  ~majutsu-conflict-restyle~) are colored the same way. Buffers that contain
+  only git-style conflicts are still handed to =smerge-mode= by
   ~majutsu-conflict-ensure-mode~; the two modes stay mutually exclusive.
 - Eldoc describes the term at point ("jj conflict side 2/3: ...").
 - =mouse-3= on a conflict pops up a resolution menu listing every side and

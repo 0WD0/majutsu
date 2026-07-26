@@ -31,9 +31,14 @@
   "jj executable bound while a sandbox/repo macro is active.")
 
 (defun majutsu-jj-integration-executable ()
-  "Return the pinned jj binary for integration tests, or nil."
+  "Return the jj binary for integration tests, or nil.
+Prefer the `MAJUTSU_TEST_JJ' pin so CI runs on a known jj version;
+fall back to the jj on PATH so development runs exercise the real
+binary instead of skipping."
   (let ((jj (getenv "MAJUTSU_TEST_JJ")))
-    (and jj (file-executable-p jj) jj)))
+    (if jj
+        (and (file-executable-p jj) jj)
+      (executable-find "jj"))))
 
 (defun majutsu-jj-integration--require-jj ()
   "Return the active or pinned jj binary, or fail the test."
