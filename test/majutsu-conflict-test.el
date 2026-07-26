@@ -56,21 +56,44 @@
    (make-string 15 ?>) " conflict 1 of 1 ends\n")
   "JJ diff-style conflict with long markers and fake short markers.")
 
-(defconst majutsu-conflict-test--jj-diff-base-first
+(defconst majutsu-conflict-test--jj-diff-snapshot-first
   (concat
    "<<<<<<< conflict 1 of 1\n"
-   "+++++++ base-rev\n"
-   "BASE\n"
-   "%%%%%%% diff from: left-1\n"
-   (make-string 7 ?\\) "        to: right-1\n"
+   "+++++++ side-1-rev\n"
+   "FIRST\n"
+   "%%%%%%% diff from: base-1\n"
+   (make-string 7 ?\\) "        to: side-2-rev\n"
    "-one\n"
    "+ONE\n"
-   "%%%%%%% diff from: left-2\n"
-   (make-string 7 ?\\) "        to: right-2\n"
+   "%%%%%%% diff from: base-2\n"
+   (make-string 7 ?\\) "        to: side-3-rev\n"
    "-two\n"
    "+TWO\n"
    ">>>>>>> conflict 1 of 1 ends\n")
-  "JJ diff-style conflict where snapshot base appears before diffs.")
+  "Three-sided JJ diff-style conflict where side #1 is shown as a snapshot.")
+
+(defconst majutsu-conflict-test--jj-diff-snapshot-middle
+  (concat
+   "<<<<<<< conflict 1 of 1\n"
+   "%%%%%%% diff from: base-1\n"
+   (make-string 7 ?\\) "        to: side-1-rev\n"
+   " line1\n"
+   "-AAA\n"
+   "+AAA-s1\n"
+   " line3\n"
+   "+++++++ side-2-rev\n"
+   "totally different\n"
+   "%%%%%%% diff from: base-2\n"
+   (make-string 7 ?\\) "        to: side-3-rev\n"
+   " line1\n"
+   "-AAA\n"
+   "+AAA-s3\n"
+   " line3\n"
+   ">>>>>>> conflict 1 of 1 ends\n")
+  "Three-sided JJ diff-style conflict whose snapshot is a middle side.
+jj emits this layout when a later side matches the base better than
+the current one (diff_size heuristic); layout captured from a real
+jj 0.43 materialization.")
 
 (defconst majutsu-conflict-test--jj-diff-no-terminating-newline
   (concat
@@ -139,8 +162,13 @@ ORANGE
   "Test parsing conflict label metadata."
   (let ((label "vpxusssl 38d49363 \"merge base\"")
         (label-with-suffix "tlwwkqxk d121763d \"commit A\" (no terminating newline)")
+        (quoted-label (concat "rtsqusxu 2768b0b9 \"fix "
+                              "\"quoted\""
+                              " subject\""))
+        (short-label "rtsqusxu 2768b0b9 (rebased revision)")
         (absorbed-label "absorbed changes (from kuvzpzvz d13eb0ec)")
-        (malformed "vpxusssl 38d49363"))
+        (multi-label "rtsqusxu 2768b0b9, ysrnknol 7a20f389")
+        (malformed "vpxusssl not-a-commit"))
     (should (equal (majutsu-conflict-parse-label label)
                    '(:change-id "vpxusssl"
                      :commit-id "38d49363"
@@ -149,12 +177,21 @@ ORANGE
                    '(:change-id "tlwwkqxk"
                      :commit-id "d121763d"
                      :description "commit A")))
+    (should (equal (majutsu-conflict-parse-label quoted-label)
+                   '(:change-id "rtsqusxu"
+                     :commit-id "2768b0b9"
+                     :description "fix \"quoted\" subject")))
+    (should (equal (majutsu-conflict-parse-label short-label)
+                   '(:change-id "rtsqusxu"
+                     :commit-id "2768b0b9"
+                     :description nil)))
     (should (equal (majutsu-conflict-parse-label absorbed-label)
                    '(:change-id "kuvzpzvz"
                      :commit-id "d13eb0ec"
                      :description "absorbed changes")))
     (should-not (majutsu-conflict-parse-label nil))
     (should-not (majutsu-conflict-parse-label ""))
+    (should-not (majutsu-conflict-parse-label multi-label))
     (should-not (majutsu-conflict-parse-label malformed))
     (should (equal (majutsu-conflict-label-change-id label) "vpxusssl"))
     (should (equal (majutsu-conflict-label-commit-id label) "38d49363"))
@@ -175,12 +212,16 @@ ORANGE
     (insert majutsu-conflict-test--jj-diff)
     (let ((conflicts (majutsu-conflict-parse-buffer)))
       (should (= 1 (length conflicts)))
-      (let ((c (car conflicts)))
+      (let* ((c (car conflicts))
+             (adds (majutsu-conflict-adds c))
+             (removes (majutsu-conflict-removes c)))
         (should (eq 'jj-diff (majutsu-conflict-style c)))
-        (should (= 1 (length (majutsu-conflict-removes c))))
-        (should (= 1 (length (majutsu-conflict-adds c))))
-        (should (majutsu-conflict-base c))
-        (should (string-match-p "GRAPE" (cdr (majutsu-conflict-base c))))))))
+        (should (= 1 (length removes)))
+        (should (= 2 (length adds)))
+        ;; Side #1 is reconstructed from the diff, side #2 is the snapshot.
+        (should (string-match-p "grapefruit" (cdr (car adds))))
+        (should (string-match-p "GRAPE" (cdr (cadr adds))))
+        (should (string-match-p "grape" (cdr (car removes))))))))
 
 (ert-deftest majutsu-conflict-test-parse-jj-snapshot ()
   "Test parsing JJ snapshot-style conflict."
@@ -188,23 +229,29 @@ ORANGE
     (insert majutsu-conflict-test--jj-snapshot)
     (let ((conflicts (majutsu-conflict-parse-buffer)))
       (should (= 1 (length conflicts)))
-      (let ((c (car conflicts)))
+      (let* ((c (car conflicts))
+             (adds (majutsu-conflict-adds c))
+             (removes (majutsu-conflict-removes c)))
         (should (eq 'jj-snapshot (majutsu-conflict-style c)))
-        (should (= 1 (length (majutsu-conflict-removes c))))
-        (should (= 1 (length (majutsu-conflict-adds c))))
-        (should (majutsu-conflict-base c))))))
+        (should (= 1 (length removes)))
+        (should (= 2 (length adds)))
+        ;; jj materializes side #1, base, side #2 in that order.
+        (should (string-match-p "grapefruit" (cdr (car adds))))
+        (should (string-match-p "GRAPE" (cdr (cadr adds))))
+        (should (string-match-p "grape" (cdr (car removes))))))))
 
-(ert-deftest majutsu-conflict-test-parse-jj-diff-base-first ()
-  "Test parsing JJ diff where snapshot base appears first."
+(ert-deftest majutsu-conflict-test-parse-jj-diff-snapshot-first ()
+  "Test parsing a three-sided JJ diff where side #1 is a snapshot."
   (with-temp-buffer
-    (insert majutsu-conflict-test--jj-diff-base-first)
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
     (let ((conflicts (majutsu-conflict-parse-buffer)))
       (should (= 1 (length conflicts)))
-      (let ((c (car conflicts)))
+      (let* ((c (car conflicts))
+             (adds (majutsu-conflict-adds c)))
         (should (eq 'jj-diff (majutsu-conflict-style c)))
         (should (= 2 (length (majutsu-conflict-removes c))))
-        (should (= 2 (length (majutsu-conflict-adds c))))
-        (should (string-match-p "BASE" (cdr (majutsu-conflict-base c))))))))
+        (should (= 3 (length adds)))
+        (should (equal (mapcar #'cdr adds) '("FIRST\n" "ONE\n" "TWO\n")))))))
 
 (ert-deftest majutsu-conflict-test-parse-git ()
   "Test parsing Git-style conflict."
@@ -228,8 +275,25 @@ ORANGE
         (should (eq 'jj-diff (majutsu-conflict-style c)))
         (should (= 15 (majutsu-conflict-marker-len c)))
         (should (= 1 (length (majutsu-conflict-removes c))))
-        (should (= 1 (length adds)))
-        (should (string-match-p "===========\n" (cdr (majutsu-conflict-base c))))))))
+        (should (= 2 (length adds)))
+        ;; The fake short "===========" marker stays snapshot content.
+        (should (string-match-p "===========\n" (cdr (cadr adds))))))))
+
+(ert-deftest majutsu-conflict-test-parse-jj-diff-snapshot-middle ()
+  "jj may snapshot a middle side; numbering still follows document order."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-snapshot-middle)
+    (let* ((c (car (majutsu-conflict-parse-buffer)))
+           (adds (majutsu-conflict-adds c)))
+      (should c)
+      (should (eq 'jj-diff (majutsu-conflict-style c)))
+      (should (= 2 (length (majutsu-conflict-removes c))))
+      (should (equal (mapcar #'cdr adds)
+                     '("line1\nAAA-s1\nline3\n"
+                       "totally different\n"
+                       "line1\nAAA-s3\nline3\n")))
+      (should (equal (mapcar #'car adds)
+                     '("side-1-rev" "side-2-rev" "side-3-rev"))))))
 
 (ert-deftest majutsu-conflict-test-parse-no-terminating-newline ()
   "Test parsing jj conflict with end marker missing terminating newline."
@@ -238,12 +302,12 @@ ORANGE
     (let ((conflicts (majutsu-conflict-parse-buffer)))
       (should (= 1 (length conflicts)))
       (let* ((c (car conflicts))
-             (base (cdr (majutsu-conflict-base c)))
              (add1 (cdr (car (majutsu-conflict-adds c))))
+             (add2 (cdr (cadr (majutsu-conflict-adds c))))
              (remove1 (cdr (car (majutsu-conflict-removes c)))))
-        (should (equal base "grapefruit"))
-        (should (equal remove1 "grape"))
-        (should (equal add1 "grape\n"))))))
+        (should (equal add1 "grapefruit"))
+        (should (equal add2 "grape\n"))
+        (should (equal remove1 "grape"))))))
 
 (ert-deftest majutsu-conflict-test-revision-at-point-absorbed-label ()
   "Test revision metadata extraction for absorb conflict labels."
@@ -269,45 +333,108 @@ ORANGE
       (should (equal (plist-get rev :commit-id) "a368d22d"))
       (should (eq (plist-get rev :side) 'add)))))
 
+(ert-deftest majutsu-conflict-test-revision-at-point-snapshot-sides ()
+  "Snapshot +++++++ sections are sides, ------- sections are bases."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (goto-char (point-min))
+
+    ;; Side #1 content resolves to commit A as an add side.
+    (search-forward "grapefruit")
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "rtsqusxu"))
+      (should (eq (plist-get rev :side) 'add)))
+
+    ;; Base content resolves to the merge base as a remove term.
+    (search-forward "grape\n")
+    (backward-char 2)
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "vpxusssl"))
+      (should (eq (plist-get rev :side) 'remove)))
+
+    ;; Side #2 content resolves to commit B as an add side.
+    (search-forward "GRAPE")
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "ysrnknol"))
+      (should (eq (plist-get rev :side) 'add)))))
+
 (ert-deftest majutsu-conflict-test-keep-side-indexing ()
-  "Test keep-side maps N to jj add term N."
+  "Test keep-side maps N to jj side #N."
   (with-temp-buffer
     (insert majutsu-conflict-test--jj-diff)
     (goto-char (point-min))
     (search-forward "<<<<<<<")
     (majutsu-conflict-keep-side 1 nil)
     (should (equal (buffer-string)
-                   "some text before\napple\ngrapefruit\norange\nsome text after\n"))))
-
-(ert-deftest majutsu-conflict-test-keep-side-indexing-second-side ()
-  "Test keep-side can select second jj side when present."
+                   "some text before\napple\ngrapefruit\norange\nsome text after\n")))
   (with-temp-buffer
-    (insert majutsu-conflict-test--jj-diff-base-first)
+    (insert majutsu-conflict-test--jj-diff)
     (goto-char (point-min))
     (search-forward "<<<<<<<")
     (majutsu-conflict-keep-side 2 nil)
     (should (equal (buffer-string)
+                   "some text before\nAPPLE\nGRAPE\nORANGE\nsome text after\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-side-snapshot-matches-labels ()
+  "keep-side N must return the content labeled side #N in snapshot style."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 1 nil)
+    (should (equal (buffer-string) "apple\ngrapefruit\norange\n")))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 2 nil)
+    (should (equal (buffer-string) "APPLE\nGRAPE\nORANGE\n")))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-base)
+    (should (equal (buffer-string) "apple\ngrape\norange\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-side-indexing-later-sides ()
+  "Test keep-side counts the leading snapshot as side #1."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 2 nil)
+    (should (equal (buffer-string)
+                   "ONE\n")))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 3 nil)
+    (should (equal (buffer-string)
                    "TWO\n"))))
 
 (ert-deftest majutsu-conflict-test-keep-before-second-side ()
-  "Test keep-side with BEFORE selects remove term for side N."
+  "Test keep-side with BEFORE selects remove term N."
   (with-temp-buffer
-    (insert majutsu-conflict-test--jj-diff-base-first)
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
     (goto-char (point-min))
     (search-forward "<<<<<<<")
     (majutsu-conflict-keep-side 2 t)
     (should (equal (buffer-string)
                    "two\n"))))
 
-(ert-deftest majutsu-conflict-test-keep-base-selects-snapshot ()
-  "Test keep-base chooses the snapshot base term."
+(ert-deftest majutsu-conflict-test-keep-base-selects-base ()
+  "Test keep-base chooses the first remove term (the merge base)."
   (with-temp-buffer
     (insert majutsu-conflict-test--jj-diff)
     (goto-char (point-min))
     (search-forward "<<<<<<<")
     (majutsu-conflict-keep-base)
     (should (equal (buffer-string)
-                   "some text before\nAPPLE\nGRAPE\nORANGE\nsome text after\n"))))
+                   "some text before\napple\ngrape\norange\nsome text after\n"))))
 
 (ert-deftest majutsu-conflict-test-keep-base-no-terminating-newline ()
   "Test keep-base preserves no-terminating-newline content."
@@ -316,7 +443,7 @@ ORANGE
     (goto-char (point-min))
     (search-forward "<<<<<<<")
     (majutsu-conflict-keep-base)
-    (should (equal (buffer-string) "grapefruit"))))
+    (should (equal (buffer-string) "grape"))))
 
 (ert-deftest majutsu-conflict-test-keep-side-no-terminating-newline ()
   "Test keep-side/keep-before preserve newline asymmetry from jj markers."
@@ -325,6 +452,12 @@ ORANGE
     (goto-char (point-min))
     (search-forward "<<<<<<<")
     (majutsu-conflict-keep-side 1 nil)
+    (should (equal (buffer-string) "grapefruit")))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 2 nil)
     (should (equal (buffer-string) "grape\n")))
   (with-temp-buffer
     (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
@@ -334,13 +467,20 @@ ORANGE
     (should (equal (buffer-string) "grape"))))
 
 (ert-deftest majutsu-conflict-test-at-point ()
-  "Test finding conflict at point."
+  "Test finding a conflict inside its half-open buffer region."
   (with-temp-buffer
     (insert majutsu-conflict-test--jj-diff)
     (goto-char (point-min))
     (should-not (majutsu-conflict-at-point))
     (search-forward "<<<<<<<")
     (should (majutsu-conflict-at-point))
+    (let* ((conflict (car (majutsu-conflict-parse-buffer)))
+           (end (majutsu-conflict-end-pos conflict)))
+      (goto-char (1- end))
+      (should (majutsu-conflict-at-point))
+      (goto-char end)
+      (should (looking-at "some text after"))
+      (should-not (majutsu-conflict-at-point)))
     (goto-char (point-max))
     (should-not (majutsu-conflict-at-point))))
 
@@ -410,10 +550,10 @@ Handles both single face and face list."
     (search-forward " orange")
     (should (eq (majutsu-conflict-test--face-at-line)
                 'majutsu-conflict-context-face))
-    ;; Check base content (+++++++ section in jj-diff)
+    ;; Check side snapshot content (+++++++ section in jj-diff)
     (search-forward "APPLE")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-base-face))))
+                'majutsu-conflict-added-face))))
 
 (ert-deftest majutsu-conflict-test-font-lock-jj-diff-long ()
   "Test font-lock highlighting for JJ diff-style long markers."
@@ -443,7 +583,7 @@ Handles both single face and face list."
     ;; Short fake marker line in snapshot section should be content.
     (search-forward "===========")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-base-face))))
+                'majutsu-conflict-added-face))))
 
 (ert-deftest majutsu-conflict-test-font-lock-jj-snapshot ()
   "Test font-lock highlighting for JJ snapshot-style conflict."
@@ -453,17 +593,17 @@ Handles both single face and face list."
     (font-lock-mode 1)
     (majutsu-conflict-mode 1)
     (font-lock-ensure)
-    ;; First +++++++ is base
+    ;; First +++++++ is side #1
     (goto-char (point-min))
     (search-forward "grapefruit")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-base-face))
-    ;; ------- is "from" side (removed)
+                'majutsu-conflict-added-face))
+    ;; ------- is the base
     (search-forward "grape\n")
     (backward-char 2)
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-removed-face))
-    ;; Second +++++++ is "to" side (added)
+                'majutsu-conflict-base-face))
+    ;; Second +++++++ is side #2
     (search-forward "GRAPE")
     (should (eq (majutsu-conflict-test--face-at-line)
                 'majutsu-conflict-added-face))))

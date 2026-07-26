@@ -73,8 +73,8 @@
   "Regexp matching Git-style separator marker.")
 
 (defconst majutsu-conflict-label-re
-  "^\\([[:alnum:]]+\\) \\([[:xdigit:]]+\\) \"\\([^\"]+\\)\"\\(?: ([^)]*)\\)?$"
-  "Regexp matching JJ conflict label metadata.")
+  "^\\([[:alnum:]]+\\) \\([[:xdigit:]]+\\)\\(?: \"\\(.*\\)\"\\)?\\(?: ([^)]*)\\)?$"
+  "Regexp matching metadata for a single revision in a JJ conflict label.")
 
 (defconst majutsu-conflict-label-absorbed-re
   "^absorbed changes (from \\([[:alnum:]]+\\) \\([[:xdigit:]]+\\))$"
@@ -92,9 +92,8 @@
   end-pos      ; position after >>>>>>> marker
   marker-len   ; length of markers (for regeneration)
   style        ; 'jj-diff, 'jj-snapshot, or 'git
-  removes      ; list of (label . content) for bases
-  adds         ; list of (label . content) for sides
-  base)        ; (label . content) for the snapshot base side
+  removes      ; list of (label . content) for bases; base = first remove
+  adds)        ; list of (label . content) for sides; jj side #N = nth (1- N)
 
 (defun majutsu-conflict-parse-label (label)
   "Parse JJ LABEL string into a plist.
@@ -205,11 +204,10 @@ If CONTENT ends with LF, drop it. If it ends with CRLF, drop both."
 
 (defun majutsu-conflict--drop-synthetic-ending-eol (parsed)
   "Undo JJ's synthetic trailing EOL when end marker has no EOL.
-PARSED is (STYLE REMOVES ADDS BASE)."
-  (let ((terms (append (cadr parsed) (caddr parsed) (list (cadddr parsed)))))
-    (dolist (cell terms)
-      (when (consp cell)
-        (setcdr cell (majutsu-conflict--strip-one-ending-eol (cdr cell))))))
+PARSED is (STYLE REMOVES ADDS)."
+  (dolist (cell (append (cadr parsed) (caddr parsed)))
+    (when (consp cell)
+      (setcdr cell (majutsu-conflict--strip-one-ending-eol (cdr cell)))))
   parsed)
 
 (defun majutsu-conflict-revision-at-point ()
@@ -226,7 +224,6 @@ or nil when point is not inside a labeled section."
           (goto-char begin)
           (let ((done nil)
                 (state nil)
-                (add-count 0)
                 (current-label nil)
                 (diff-remove-label nil)
                 (diff-add-label nil)
@@ -278,14 +275,12 @@ or nil when point is not inside a labeled section."
                           label current-label
                           done t)))
                  ((string-match majutsu-conflict-add-re line)
-                  (cl-incf add-count)
-                  (setq state (if (or (eq style 'jj-diff)
-                                      (and (eq style 'jj-snapshot) (= add-count 1)))
-                                  'base
-                                'add)
+                  ;; Every +++++++ section is a side snapshot; jj writes
+                  ;; sides in order, bases only as ------- or %%%%%%%.
+                  (setq state 'add
                         current-label (match-string 2 line))
                   (when on-line
-                    (setq side state
+                    (setq side 'add
                           label current-label
                           done t)))
                  ((string-match majutsu-conflict-git-ancestor-re line)
@@ -354,19 +349,19 @@ Returns \='jj-diff, \='jj-snapshot, or \='git."
 (defun majutsu-conflict--parse-jj-hunk (begin end marker-len)
   "Parse JJ-style conflict hunk between BEGIN and END.
 MARKER-LEN is the expected marker length.
-Returns (STYLE REMOVES ADDS BASE) or nil if invalid.
-BASE is the snapshot term shown as a standalone +++++++ section."
+Returns (STYLE REMOVES ADDS) or nil if invalid.
+ADDS are the conflict sides in jj's side order, whether shown as
++++++++ snapshots or reconstructed from %%%%%%% diffs.  REMOVES are
+the bases."
   (save-excursion
     (goto-char begin)
     (forward-line 1)  ; skip <<<<<<< line
     (let ((state 'unknown)
           (style 'jj-snapshot)
-          (seen-diff nil)
           (removes nil)
           (adds nil)
           (current-remove nil)
           (current-add nil)
-          (snapshot-cell nil)
           (done nil))
       (catch 'invalid
         (cl-labels
@@ -384,7 +379,6 @@ BASE is the snapshot term shown as a standalone +++++++ section."
                  (setq done t))
                 ('diff
                  (setq style 'jj-diff
-                       seen-diff t
                        state 'diff)
                  (push (cons (majutsu-conflict--normalize-diff-remove-label label) "") removes)
                  (push (cons nil "") adds)
@@ -397,12 +391,7 @@ BASE is the snapshot term shown as a standalone +++++++ section."
                 ('add
                  (setq state 'add)
                  (push (cons label "") adds)
-                 (setq current-add (car adds))
-                 (when (and (null snapshot-cell)
-                            (or seen-diff
-                                (and (null removes)
-                                     (= (length adds) 1))))
-                   (setq snapshot-cell current-add)))
+                 (setq current-add (car adds)))
                 ('note
                  (when (and (eq state 'diff)
                             current-add
@@ -434,19 +423,11 @@ BASE is the snapshot term shown as a standalone +++++++ section."
                     (throw 'invalid nil))))))
             (unless done
               (forward-line 1))))
-        (let* ((removes (nreverse removes))
-               (all-adds (nreverse adds))
-               (base nil)
-               (side-adds nil))
-          (dolist (cell all-adds)
-            (if (eq cell snapshot-cell)
-                (setq base cell)
-              (push cell side-adds)))
-          (setq side-adds (nreverse side-adds))
-          (if (and base
-                   (= (length side-adds) (length removes)))
-              (list style removes side-adds base)
-            nil))))))
+        (let ((removes (nreverse removes))
+              (adds (nreverse adds)))
+          ;; A valid jj conflict materializes N sides and N-1 bases.
+          (and (= (length adds) (1+ (length removes)))
+               (list style removes adds)))))))
 
 ;;; Git-Style Parser
 
@@ -508,10 +489,10 @@ Returns (\='git REMOVES ADDS) or nil if invalid."
 
         ;; Validate: must have reached right side before end marker
         (if (eq state 'right)
-            (let ((removes (list (cons base-label base)))
-                  (adds (list (cons left-label left)
-                              (cons right-label right))))
-              (list 'git removes adds (car removes)))
+            (list 'git
+                  (list (cons base-label base))
+                  (list (cons left-label left)
+                        (cons right-label right)))
           nil)))))
 
 ;;; Main Parser
@@ -549,8 +530,7 @@ Returns list of `majutsu-conflict' structs."
                        :marker-len marker-len
                        :style (car parsed)
                        :removes (cadr parsed)
-                       :adds (caddr parsed)
-                       :base (cadddr parsed))
+                       :adds (caddr parsed))
                       conflicts))))))
       (nreverse conflicts))))
 
@@ -560,7 +540,7 @@ Returns list of `majutsu-conflict' structs."
         (conflicts (majutsu-conflict-parse-buffer)))
     (cl-find-if (lambda (c)
                   (and (<= (majutsu-conflict-begin-pos c) pos)
-                       (<= pos (majutsu-conflict-end-pos c))))
+                       (< pos (majutsu-conflict-end-pos c))))
                 conflicts)))
 
 (defun majutsu-conflict-goto-nearest ()
@@ -614,8 +594,9 @@ Prefer the current conflict when point is inside one."
 
 (defun majutsu-conflict-keep-side (n &optional before)
   "Keep side N (1-indexed) of the conflict at point.
-With prefix arg (BEFORE non-nil), keep remove term N.
-Without prefix, keep add term N (jj side #N)."
+Without prefix, keep jj side #N.  With prefix arg (BEFORE non-nil),
+keep base N instead: bases are numbered in materialization order and
+are not paired with the side numbers."
   (interactive "p\nP")
   (let ((conflict (majutsu-conflict-at-point)))
     (unless conflict
@@ -626,17 +607,18 @@ Without prefix, keep add term N (jj side #N)."
                         (cdr (nth (1- n) removes))
                       (cdr (nth (1- n) adds)))))
       (unless content
-        (user-error "No side %d%s" n (if before " (before)" "")))
+        (user-error (if before "No base %d" "No side %d") n))
       (majutsu-conflict-resolve-with conflict content))))
 
 (defun majutsu-conflict-keep-base ()
-  "Keep the snapshot base of the conflict at point."
+  "Keep the base of the conflict at point.
+The base is the first remove term (jj's merge base, or the
+ancestor section of a git-style conflict)."
   (interactive)
   (let ((conflict (majutsu-conflict-at-point)))
     (unless conflict
       (user-error "No conflict at point"))
-    (let ((base (or (majutsu-conflict-base conflict)
-                    (car (majutsu-conflict-adds conflict)))))
+    (let ((base (car (majutsu-conflict-removes conflict))))
       (unless base
         (user-error "No base in this conflict"))
       (majutsu-conflict-resolve-with conflict (cdr base)))))
@@ -655,15 +637,6 @@ Without prefix, keep add term N (jj side #N)."
 (defvar-local majutsu-conflict--in-remove nil
   "Non-nil when inside a ------ section.")
 
-(defvar-local majutsu-conflict--style nil
-  "Current conflict style: `jj-diff' or `jj-snapshot'.")
-
-(defvar-local majutsu-conflict--is-first-add nil
-  "Non-nil when current ++++++ section is the first one (base).")
-
-(defvar-local majutsu-conflict--add-count 0
-  "Count of ++++++ sections seen in current conflict.")
-
 (defvar-local majutsu-conflict--marker-len nil
   "Current conflict marker length used by font-lock state machine.")
 
@@ -681,10 +654,10 @@ When BEFORE is non-nil, keep the before side."
 \\<majutsu-conflict-mode-map>
 \\[majutsu-conflict-next] - next conflict
 \\[majutsu-conflict-prev] - previous conflict
-\\[majutsu-conflict-keep-base] - keep base (rebase destination)
+\\[majutsu-conflict-keep-base] - keep base (the merge ancestor)
 \\[majutsu-conflict-refine] - add word-level refinement
-C-c ^ 1-9 - keep side N (after diff)
-C-c ^ M-1 to M-9 - keep side N (before diff)"
+C-c ^ 1-9 - keep side N
+C-c ^ M-1 to M-9 - keep base N"
   "C-c ^ n" #'majutsu-conflict-next
   "C-c ^ p" #'majutsu-conflict-prev
   "C-c ^ b" #'majutsu-conflict-keep-base
@@ -804,14 +777,10 @@ Sets match-data and updates state variables."
        ((memq kind '(begin end diff add remove))
         (pcase kind
           ('begin
-           ;; Detect style from first body line using this conflict's marker length.
            (setq majutsu-conflict--marker-len (plist-get parsed :len)
                  majutsu-conflict--in-diff nil
                  majutsu-conflict--in-add nil
-                 majutsu-conflict--in-remove nil
-                 majutsu-conflict--add-count 0)
-           (setq majutsu-conflict--style
-                 (majutsu-conflict--detect-style line-beg majutsu-conflict--marker-len)))
+                 majutsu-conflict--in-remove nil))
           ('end
            (setq majutsu-conflict--in-diff nil
                  majutsu-conflict--in-add nil
@@ -824,8 +793,7 @@ Sets match-data and updates state variables."
           ('add
            (setq majutsu-conflict--in-diff nil
                  majutsu-conflict--in-add t
-                 majutsu-conflict--in-remove nil)
-           (cl-incf majutsu-conflict--add-count))
+                 majutsu-conflict--in-remove nil))
           ('remove
            (setq majutsu-conflict--in-diff nil
                  majutsu-conflict--in-add nil
@@ -862,21 +830,12 @@ Sets match-data and updates state variables."
          ((looking-at "^-") 'majutsu-conflict-removed-face)
          ((looking-at "^ ") 'majutsu-conflict-context-face)
          (t nil)))
-       ;; In ++++++ section
+       ;; In ++++++ section: a side snapshot
        (majutsu-conflict--in-add
-        (cond
-         ;; In jj-diff, ++++++ is always the base
-         ((eq majutsu-conflict--style 'jj-diff)
-          'majutsu-conflict-base-face)
-         ;; In jj-snapshot, first ++++++ (count=1) is base
-         ((= majutsu-conflict--add-count 1)
-          'majutsu-conflict-base-face)
-         (t
-          ;; Subsequent ++++++ sections are "to" sides
-          'majutsu-conflict-added-face)))
-       ;; In ------ section ("from" side in snapshot style)
+        'majutsu-conflict-added-face)
+       ;; In ------ section: a base snapshot
        (majutsu-conflict--in-remove
-        'majutsu-conflict-removed-face)
+        'majutsu-conflict-base-face)
        (t nil)))))
 
 (defconst majutsu-conflict-font-lock-keywords
@@ -887,7 +846,6 @@ Sets match-data and updates state variables."
         (setq majutsu-conflict--in-diff nil
               majutsu-conflict--in-add nil
               majutsu-conflict--in-remove nil
-              majutsu-conflict--add-count 0
               majutsu-conflict--marker-len nil)
         (goto-char (match-beginning 0))
         (match-end 0))  ; Return conflict end position as limit

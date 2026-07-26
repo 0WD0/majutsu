@@ -227,6 +227,11 @@
   Restore reuses the displayed fileset when applying a partial patch, preserving
   unselected changes in other files.
 
+- Conflict side selection ::
+  Keep-side numbers match jj's side labels, and keep-base selects the actual
+  merge base.  A command at the line after a conflict no longer resolves that
+  conflict; revision labels also handle missing or quoted descriptions.
+
 - Ediff conflict results ::
   Quitting Ediff without edits keeps a conflict unresolved.  Saving edited
   merge results requires confirmation and preserves unresolved conflict markers.
