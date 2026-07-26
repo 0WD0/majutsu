@@ -51,7 +51,7 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 - =magit= 4.4.0 or later (for section management).
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit
   completion).
-- =transient= 0.7.0 or later (popup menus).
+- =transient= 0.8.7 or later (popup menus).
 - =with-editor= (for descriptive message editing).
 - =ghostel= (optional, but required for terminal TUIs such as =jj arrange=
   and jj's built-in diff editor).
@@ -1717,6 +1717,60 @@ workspace root, Majutsu treats it as unavailable instead of showing the raw
 =<Error: ...>= text in the section body. Workspace paths containing embedded
 newlines or other control characters are preserved as complete values.
 
+* Conflict Resolution
+** Detecting Conflicts
+JJ marks conflicts in the log with a "conflict" label. Expanding the revision
+shows each exact conflicted path together with its conflict side count.
+
+** Entering Conflict Mode
+You can enter conflict handling from multiple places:
+- Key: m in the Ediff transient (majutsu-ediff-resolve) :: Use the automatic
+  resolve strategy.
+- Key: M in the Ediff transient (majutsu-ediff-resolve-with-conflict) :: Force
+  the conflict workflow. This opens the working-copy file (or a revision blob
+  buffer for non-working-copy revisions), enables =majutsu-conflict-mode=, and
+  jumps to the first conflict.
+- Command: majutsu-conflict-ensure-mode :: Enable conflict handling in a file
+  with conflict markers.
+
+=majutsu-conflict= auto-detects marker styles:
+- JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable
+  =majutsu-conflict-mode=.
+- JJ long conflict markers (e.g., 15-char marker runs) are treated the same as
+  normal markers.
+- JJ conflicts with missing terminating newline markers are parsed with jj's
+  newline-compensation semantics.
+- Git-style markers (=|||||||= / =======) only -> enable =smerge-mode=.
+
+** majutsu-conflict-mode Commands
+Emacs bindings use the prefix ~C-c ^~:
+- Key: n / p (majutsu-conflict-next / majutsu-conflict-prev) :: Jump to the
+  next or previous conflict.
+- Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (the merge
+  ancestor: jj's first =-------= / "diff from" term).
+- Key: 1..9 (majutsu-conflict-keep-side) :: Keep side N, matching jj's "side
+  #N" labels.
+- Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep base N (bases in
+  materialization order; they are not paired with side numbers).
+- Key: R (majutsu-conflict-refine) :: Refine conflict regions with word-level
+  highlighting.
+
+Evil bindings are available in normal state:
+- Key: ]] / gj (majutsu-conflict-next) :: Jump to the next conflict.
+- Key: [[ / gk (majutsu-conflict-prev) :: Jump to the previous conflict.
+- Key: gb (majutsu-conflict-keep-base) :: Keep the base (the merge ancestor).
+- Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
+- Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
+- Key: ge (majutsu-conflict-refine) :: Refine the conflict.
+- User Option: majutsu-confirm-critical-actions :: If non-nil, prompt for
+  confirmation before critical operations like abandon, undo, redo, rebase, and
+  a bare restore of the whole working copy.
+- User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu
+  should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=,
+  =abandon=, =bookmark-delete=, =tag-delete=, =git-remote-remove=, =rebase=,
+  =restore=, =workspace-forget=, and =workspace-trash=.
+- User Option: majutsu-slow-confirm :: A list from the same action set that
+  should use =yes-or-no-p= instead of =y-or-n-p=, or =t= for all of them.
 * Customizing
 :PROPERTIES:
 :CUSTOM_ID: customizing
@@ -1744,11 +1798,12 @@ newlines or other control characters are preserved as complete values.
 
 ** Confirmation Settings
 - User Option: majutsu-confirm-critical-actions :: If non-nil, prompt for
-  confirmation before critical operations like abandon, undo, redo, rebase.
+  confirmation before critical operations like abandon, undo, redo, rebase, and
+  a bare restore of the whole working copy.
 - User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu
   should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=,
   =abandon=, =bookmark-delete=, =tag-delete=, =git-remote-remove=, =rebase=,
-  =workspace-forget=, and =workspace-trash=.
+  =restore=, =workspace-forget=, and =workspace-trash=.
 - User Option: majutsu-slow-confirm :: A list from the same action set that
   should use =yes-or-no-p= instead of =y-or-n-p=, or =t= for all of them.
 
