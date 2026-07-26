@@ -508,7 +508,7 @@ CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
                 ((majutsu--refresh-buffer-set-positions positions))))))
       (let ((magit-section-cache-visibility nil))
         (when (bound-and-true-p magit-root-section)
-          (magit-section-show magit-root-section)))
+          (majutsu-section-show magit-root-section)))
       (run-hooks 'majutsu-refresh-buffer-hook)
       (magit-section-update-highlight)
       (set-buffer-modified-p nil))))

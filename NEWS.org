@@ -201,6 +201,10 @@
   diff window policies, and custom jj wrapping or presentation no longer breaks
   history rows.  Patch-like text in a revision description stays ordinary text.
 
+- Section folding and refresh ::
+  Collapsed sections no longer leave invisible remnants that join adjacent
+  headings together.
+
 - GPG prompt responsiveness ::
   Emacs-based GPG/pinentry prompts can be answered while jj commands wait.
 

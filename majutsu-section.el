@@ -46,7 +46,12 @@ shifting the invisible range one character earlier as well."
   (magit-section--opportunistic-wash section)
   (magit-section--opportunistic-paint section)
   (when-let* ((bounds (majutsu-section--hidden-bounds section)))
-    (remove-overlays (car bounds) (cdr bounds) 'invisible t))
+    ;; Clear up to the unshifted end as well: Magit's own show/hide
+    ;; commands use [content, end) bounds and remove-overlays merely
+    ;; truncates partially overlapping overlays, so clearing only the
+    ;; shifted range would leave a one-character invisible remnant
+    ;; behind whenever both implementations touch the same section.
+    (remove-overlays (car bounds) (oref section end) 'invisible t))
   (magit-section-maybe-update-visibility-indicator section)
   (magit-section-maybe-cache-visibility section)
   (dolist (child (oref section children))
@@ -64,7 +69,9 @@ shifting the invisible range one character earlier as well."
       (pcase-let ((`(,beg . ,end) bounds))
         (when (< beg (point) end)
           (goto-char (oref section start)))
-        (remove-overlays beg end 'invisible t)
+        ;; Clear Magit-style [content, end) overlays too; see
+        ;; `majutsu-section-show'.
+        (remove-overlays beg (oref section end) 'invisible t)
         (let ((overlay (make-overlay beg end)))
           (overlay-put overlay 'evaporate t)
           (overlay-put overlay 'invisible t)

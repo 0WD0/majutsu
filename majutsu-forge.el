@@ -231,7 +231,7 @@ default.  The pull-request section itself remains visitable."
     (magit-map-sections
      (lambda (section)
        (when (eq (oref section type) type)
-         (magit-section-show section)))
+         (majutsu-section-show section)))
      magit-root-section)))
 
 (defun majutsu-forge--clear-section-errors ()

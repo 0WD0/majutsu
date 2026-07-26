@@ -756,7 +756,7 @@ section or a child thereof."
         (magit-section-ident magit-root-section)))]
      (goto-char (oref section start))
      (when expand
-       (with-local-quit (magit-section-show section))
+       (with-local-quit (majutsu-section-show section))
        (recenter 0)))
     ((user-error "No diffstat in this buffer"))))
 
