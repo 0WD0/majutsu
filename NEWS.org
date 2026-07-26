@@ -6,8 +6,8 @@
 ** Breaking changes
 
 - Updated dependencies ::
-  Majutsu requires Jujutsu 0.41.0 or later.  New package dependencies are
-  Compat 31.0.0.1, Consult 1.0, and plz 0.9.1.
+  Majutsu requires Jujutsu 0.41.0, Magit 4.4.0, and Transient 0.8.7 or later.
+  New package dependencies are Compat 31.0.0.1, Consult 1.0, and plz 0.9.1.
 
 - Custom log columns use a new format ::
   Custom ~majutsu-log-commit-columns~ values need updating: use ~:module~

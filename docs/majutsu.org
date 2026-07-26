@@ -48,10 +48,10 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 - Emacs 29.1 or later.
 - =compat= 31.0.0.1 or later.
 - Jujutsu (jj) v0.41.0 or later installed and in your =PATH=.
-- =magit= 3.3.0 or later (for section management).
+- =magit= 4.4.0 or later (for section management).
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit
   completion).
-- =transient= 0.5.0 or later (popup menus).
+- =transient= 0.7.0 or later (popup menus).
 - =with-editor= (for descriptive message editing).
 
 ** Installing from Git

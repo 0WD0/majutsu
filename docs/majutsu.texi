@@ -102,7 +102,6 @@ Log Buffer
 * Log Output Protocol (Sequential Markers)::
 * @code{majutsu-log-commit-columns}::
 * Configuration Examples::
-* Migration Notes::
 * Copying From Structured Row Buffers::
 
 Files@comma{} Diffs@comma{} and Operations
@@ -279,12 +278,12 @@ Emacs 29.1 or later.
 @item
 Jujutsu (jj) v0.41.0 or later installed and in your @samp{PATH}.
 @item
-@samp{magit} 3.3.0 or later (for section management).
+@samp{magit} 4.4.0 or later (for section management).
 @item
 @samp{consult} 1.0 or later and @samp{plz} 0.9.1 or later (for native Gerrit
 completion).
 @item
-@samp{transient} 0.5.0 or later (popup menus).
+@samp{transient} 0.7.0 or later (popup menus).
 @item
 @samp{with-editor} (for descriptive message editing).
 @end itemize
@@ -642,7 +641,6 @@ custom template DSL that mirrors the @samp{jj log} output but adds interactivity
 * Log Output Protocol (Sequential Markers)::
 * @code{majutsu-log-commit-columns}::
 * Configuration Examples::
-* Migration Notes::
 * Copying From Structured Row Buffers::
 @end menu
 
@@ -956,22 +954,6 @@ after the field's default postprocessors.
 @end lisp
 @end enumerate
 
-@node Migration Notes
-@subsection Migration Notes
-
-The old @code{majutsu-log-commit-layout}@comma{} its top-level @code{:schema} / @code{:columns}
-tree@comma{} compact @code{(FIELD TEMPLATE)} entries@comma{} and keys such as @code{:align} and
-@code{:visible} have been replaced by flat column plists in
-@code{majutsu-log-commit-columns}.
-The historical @code{right-margin} placement has been replaced by the @code{tail} module@comma{}
-which renders real text on the anchor line with right alignment.
-Move fields between visual areas by changing @code{:module} on the corresponding
-column plist@comma{} and adjust display behavior with @code{:face} and @code{:post}. In log
-buffers@comma{} copying a mixed heading+tail selection strips the tail text by default@comma{}
-while copying the tail itself preserves it. Graph prefixes and graph-related
-indentation are display-only@comma{} so ordinary copy operations only capture semantic
-content rather than the visible graph gutter.
-
 @node Copying From Structured Row Buffers
 @subsection Copying From Structured Row Buffers
 
@@ -1050,7 +1032,7 @@ Select the @samp{--from} and @samp{--to} revisions.
 @kindex --
 Limit diff to selected files/filesets.
   Completion shows full repository-relative paths changed by the active
-  @samp{--revisions} or @samp{--from=/}--to= selection. Without an explicit selection it
+  @samp{--revisions} or @samp{--from} / @samp{--to} selection. Without an explicit selection it
   uses revisions in the active log region@comma{} then the revision at point@comma{} and
   finally @samp{@@}. Fileset expressions remain free-form and can still be entered
   directly.

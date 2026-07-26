@@ -81,7 +81,9 @@ by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffer
 
 - Emacs 29.1+
 - [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.41.0+
-- [[https://magit.vc/][magit]], [[https://github.com/magit/transient][transient]], [[https://github.com/magit/with-editor][with-editor]]
+- [[https://magit.vc/][magit]] 4.4.0+, [[https://github.com/magit/transient][transient]] 0.8.7+, [[https://github.com/emacs-compat/compat][compat]]
+- [[https://github.com/minad/consult][consult]] 1.0+ and [[https://github.com/alphapapa/plz.el][plz]] 0.9.1+ (Gerrit completion)
+- [[https://github.com/magit/with-editor][with-editor]] (pulled in via magit; message editing)
 
 * Documentation
 
