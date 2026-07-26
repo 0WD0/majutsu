@@ -180,6 +180,14 @@
   ~majutsu-jjdescription-fill-column~; setting either to nil disables that
   behavior.  The summary line is not automatically wrapped.
 
+- Conflict interaction ::
+  Conflict sides have distinct backgrounds, Eldoc help, and a context menu.
+  New commands keep the term at point, concatenate complete side snapshots,
+  or switch marker styles.  Concatenation can duplicate shared context and
+  asks for confirmation when the base is nonempty.  Resolving the last conflict
+  disables the mode; undo re-enables it.  ~majutsu-conflict-auto-leave~ controls
+  automatic mode exit.
+
 - Restore confirmation ::
   Executing a bare Restore asks before discarding all working-copy changes.
   Restore DWIM also honors ~majutsu-no-confirm~ and ~majutsu-slow-confirm~

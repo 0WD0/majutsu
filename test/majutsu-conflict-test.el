@@ -550,10 +550,10 @@ Handles both single face and face list."
     (search-forward " orange")
     (should (eq (majutsu-conflict-test--face-at-line)
                 'majutsu-conflict-context-face))
-    ;; Check side snapshot content (+++++++ section in jj-diff)
+    ;; Check side snapshot content (+++++++ section in jj-diff, side #2)
     (search-forward "APPLE")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-added-face))))
+                'majutsu-conflict-side-2-face))))
 
 (ert-deftest majutsu-conflict-test-font-lock-jj-diff-long ()
   "Test font-lock highlighting for JJ diff-style long markers."
@@ -583,7 +583,7 @@ Handles both single face and face list."
     ;; Short fake marker line in snapshot section should be content.
     (search-forward "===========")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-added-face))))
+                'majutsu-conflict-side-2-face))))
 
 (ert-deftest majutsu-conflict-test-font-lock-jj-snapshot ()
   "Test font-lock highlighting for JJ snapshot-style conflict."
@@ -597,7 +597,7 @@ Handles both single face and face list."
     (goto-char (point-min))
     (search-forward "grapefruit")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-added-face))
+                'majutsu-conflict-side-1-face))
     ;; ------- is the base
     (search-forward "grape\n")
     (backward-char 2)
@@ -606,7 +606,7 @@ Handles both single face and face list."
     ;; Second +++++++ is side #2
     (search-forward "GRAPE")
     (should (eq (majutsu-conflict-test--face-at-line)
-                'majutsu-conflict-added-face))))
+                'majutsu-conflict-side-2-face))))
 
 (ert-deftest majutsu-conflict-test-overlay-cleanup ()
   "Test that refine overlays are cleaned up."
@@ -734,6 +734,627 @@ apricot
     (call-interactively
      (lookup-key majutsu-conflict-mode-map (kbd "C-c ^ M-2")))
     (should (equal (buffer-string) "two\n"))))
+
+(defun majutsu-conflict-test--keep-current-at (text search)
+  "Insert TEXT, move point to SEARCH, keep the current term."
+  (insert text)
+  (goto-char (point-min))
+  (let ((case-fold-search nil))
+    (search-forward search))
+  (majutsu-conflict-keep-current)
+  (buffer-string))
+
+(ert-deftest majutsu-conflict-test-keep-current-snapshot ()
+  "keep-current resolves with the snapshot term around point."
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-snapshot "grapefruit")
+                   "apple\ngrapefruit\norange\n")))
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-snapshot "-------")
+                   "apple\ngrape\norange\n")))
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-snapshot "GRAPE")
+                   "APPLE\nGRAPE\nORANGE\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-current-diff-style ()
+  "keep-current maps diff lines onto the reconstructed terms."
+  ;; A removed line belongs to the base.
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-diff "-grape")
+                   "some text before\napple\ngrape\norange\nsome text after\n")))
+  ;; Added and context lines belong to the reconstructed side.
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-diff "+grapefruit")
+                   "some text before\napple\ngrapefruit\norange\nsome text after\n")))
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-diff " orange")
+                   "some text before\napple\ngrapefruit\norange\nsome text after\n")))
+  ;; The %%%%%%% marker names the base; the snapshot section is side #2.
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-diff "%%%%%%%")
+                   "some text before\napple\ngrape\norange\nsome text after\n")))
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-diff "APPLE")
+                   "some text before\nAPPLE\nGRAPE\nORANGE\nsome text after\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-current-git ()
+  "keep-current works on all three git-style sections."
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--git "grapefruit")
+                   "apple\ngrapefruit\norange\n")))
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--git "|||||||")
+                   "apple\ngrape\norange\n")))
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--git "GRAPE")
+                   "APPLE\nGRAPE\nORANGE\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-current-rejects-plain-markers ()
+  "keep-current refuses jj begin markers and text outside conflicts."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (should-error (majutsu-conflict-keep-current) :type 'user-error))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (should-error (majutsu-conflict-keep-current) :type 'user-error)))
+
+(ert-deftest majutsu-conflict-test-keep-all-concatenates-sides ()
+  "keep-all keeps every side in side order and no base."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-all)
+    (should (equal (buffer-string)
+                   (concat "some text before\n"
+                           "apple\ngrapefruit\norange\n"
+                           "APPLE\nGRAPE\nORANGE\n"
+                           "some text after\n")))))
+
+(ert-deftest majutsu-conflict-test-keep-all-confirms-snapshot-concatenation ()
+  "Interactive keep-all confirms unless every base is empty."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (let ((original (buffer-string))
+          asked)
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (_prompt)
+                   (setq asked t)
+                   nil)))
+        (should-error (call-interactively #'majutsu-conflict-keep-all)
+                      :type 'user-error))
+      (should asked)
+      (should (equal (buffer-string) original))))
+  (with-temp-buffer
+    (insert (concat "<<<<<<< conflict\n"
+                    "+++++++ side-1\n"
+                    "a\n"
+                    "------- base\n"
+                    "+++++++ side-2\n"
+                    "b\n"
+                    ">>>>>>> conflict ends\n"))
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'yes-or-no-p)
+               (lambda (_prompt)
+                 (ert-fail "empty-base concatenation should not prompt"))))
+      (call-interactively #'majutsu-conflict-keep-all))
+    (should (equal (buffer-string) "a\nb\n"))))
+
+(ert-deftest majutsu-conflict-test-keep-all-separates-no-eol-sides ()
+  "keep-all inserts a separator after a no-newline side that is not last."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-all)
+    (should (equal (buffer-string) "grapefruit\ngrape\n"))))
+
+(ert-deftest majutsu-conflict-test-restyle-diff-to-snapshot ()
+  "Restyling a diff-style conflict yields jj's snapshot rendering."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (search-forward "%%%%%%%")
+    (majutsu-conflict-restyle)
+    (should (equal (buffer-string)
+                   (concat
+                    "some text before\n"
+                    "<<<<<<< conflict 1 of 1\n"
+                    "+++++++ rtsqusxu 2768b0b9 \"commit A\"\n"
+                    "apple\ngrapefruit\norange\n"
+                    "------- vpxusssl 38d49363 \"merge base\"\n"
+                    "apple\ngrape\norange\n"
+                    "+++++++ ysrnknol 7a20f389 \"commit B\"\n"
+                    "APPLE\nGRAPE\nORANGE\n"
+                    ">>>>>>> conflict 1 of 1 ends\n"
+                    "some text after\n")))))
+
+(ert-deftest majutsu-conflict-test-restyle-cycles-and-round-trips ()
+  "Each restyle step re-parses to the same terms."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (let* ((reference (car (majutsu-conflict-parse-buffer)))
+           (ref-adds (mapcar #'cdr (majutsu-conflict-adds reference)))
+           (ref-removes (mapcar #'cdr (majutsu-conflict-removes reference))))
+      (dolist (expected-style '(jj-snapshot git jj-snapshot git))
+        (goto-char (point-min))
+        (search-forward "apple")
+        (majutsu-conflict-restyle)
+        (let ((c (car (majutsu-conflict-parse-buffer))))
+          (should (eq (majutsu-conflict-style c) expected-style))
+          (should (equal (mapcar #'cdr (majutsu-conflict-adds c)) ref-adds))
+          (should (equal (mapcar #'cdr (majutsu-conflict-removes c))
+                         ref-removes)))))))
+
+(ert-deftest majutsu-conflict-test-restyle-snapshot-to-git-layout ()
+  "A 2-sided snapshot conflict converts to git's diff3 layout."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (goto-char (point-min))
+    (search-forward "grape")
+    (majutsu-conflict-restyle)
+    (should (equal (buffer-string)
+                   (concat
+                    "<<<<<<< rtsqusxu 2768b0b9 \"commit A\"\n"
+                    "apple\ngrapefruit\norange\n"
+                    "||||||| vpxusssl 38d49363 \"merge base\"\n"
+                    "apple\ngrape\norange\n"
+                    "=======\n"
+                    "APPLE\nGRAPE\nORANGE\n"
+                    ">>>>>>> ysrnknol 7a20f389 \"commit B\"\n")))))
+
+(ert-deftest majutsu-conflict-test-restyle-n-sided ()
+  "A many-sided diff conflict converts to snapshots; git is refused."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
+    (goto-char (point-min))
+    (search-forward "FIRST")
+    (majutsu-conflict-restyle)
+    (should (equal (buffer-string)
+                   (concat
+                    "<<<<<<< conflict 1 of 1\n"
+                    "+++++++ side-1-rev\n"
+                    "FIRST\n"
+                    "------- base-1\n"
+                    "one\n"
+                    "+++++++ side-2-rev\n"
+                    "ONE\n"
+                    "------- base-2\n"
+                    "two\n"
+                    "+++++++ side-3-rev\n"
+                    "TWO\n"
+                    ">>>>>>> conflict 1 of 1 ends\n")))
+    (goto-char (point-min))
+    (search-forward "FIRST")
+    (should-error (majutsu-conflict-restyle) :type 'user-error)))
+
+(ert-deftest majutsu-conflict-test-restyle-preserves-no-eol-semantics ()
+  "Restyling a no-terminating-newline conflict keeps jj's EOL spreading."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-no-terminating-newline)
+    (let* ((reference (car (majutsu-conflict-parse-buffer)))
+           (ref-adds (mapcar #'cdr (majutsu-conflict-adds reference)))
+           (ref-removes (mapcar #'cdr (majutsu-conflict-removes reference))))
+      (goto-char (point-min))
+      (search-forward "grapefruit")
+      (majutsu-conflict-restyle)
+      ;; The end marker still has no trailing newline.
+      (should (string-suffix-p "conflict 1 of 1 ends" (buffer-string)))
+      (let ((c (car (majutsu-conflict-parse-buffer))))
+        (should (eq (majutsu-conflict-style c) 'jj-snapshot))
+        (should (equal (mapcar #'cdr (majutsu-conflict-adds c)) ref-adds))
+        (should (equal (mapcar #'cdr (majutsu-conflict-removes c))
+                       ref-removes))))))
+
+(ert-deftest majutsu-conflict-test-restyle-preserves-long-markers ()
+  "Restyling keeps the conflict's escalated marker length."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-long-markers)
+    (let* ((reference (car (majutsu-conflict-parse-buffer)))
+           (ref-adds (mapcar #'cdr (majutsu-conflict-adds reference))))
+      (goto-char (point-min))
+      (search-forward "HEADING")
+      (majutsu-conflict-restyle)
+      (should (string-prefix-p (make-string 15 ?<) (buffer-string)))
+      (let ((c (car (majutsu-conflict-parse-buffer))))
+        (should (eq (majutsu-conflict-style c) 'jj-snapshot))
+        (should (= 15 (majutsu-conflict-marker-len c)))
+        ;; The fake short "===========" marker survives as content.
+        (should (equal (mapcar #'cdr (majutsu-conflict-adds c)) ref-adds))))))
+
+(ert-deftest majutsu-conflict-test-revision-at-point-git-left-is-add ()
+  "The left section of a git-style conflict is a side, not a remove."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--git)
+    (goto-char (point-min))
+    (search-forward "grapefruit")
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "rtsqusxu"))
+      (should (eq (plist-get rev :side) 'add)))
+    (search-forward "grape\n")
+    (backward-char 2)
+    (let ((rev (majutsu-conflict-revision-at-point)))
+      (should rev)
+      (should (equal (plist-get rev :change-id) "vpxusssl"))
+      (should (eq (plist-get rev :side) 'base)))))
+
+(ert-deftest majutsu-conflict-test-font-lock-git-style ()
+  "Git-style conflicts get per-side and base faces too."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--git)
+    (fundamental-mode)
+    (font-lock-mode 1)
+    (majutsu-conflict-mode 1)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "grapefruit")
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-side-1-face))
+      (search-forward "grape\n")
+      (backward-char 2)
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-base-face))
+      (search-forward "=======")
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-marker-face))
+      (search-forward "GRAPE")
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-side-2-face)))))
+
+(ert-deftest majutsu-conflict-test-font-lock-third-side-face ()
+  "A three-sided snapshot conflict cycles onto the third side face."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
+    (goto-char (point-min))
+    (search-forward "FIRST")
+    (majutsu-conflict-restyle)
+    (fundamental-mode)
+    (font-lock-mode 1)
+    (majutsu-conflict-mode 1)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "FIRST")
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-side-1-face))
+      (search-forward "ONE")
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-side-2-face))
+      (search-forward "TWO")
+      (should (eq (majutsu-conflict-test--face-at-line)
+                  'majutsu-conflict-side-3-face)))))
+
+(ert-deftest majutsu-conflict-test-region-props-lifecycle ()
+  "Conflict regions carry a mouse menu keymap that the mode cleans up."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (fundamental-mode)
+    (font-lock-mode 1)
+    (majutsu-conflict-mode 1)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "+grapefruit")
+    (should (eq (get-char-property (point) 'keymap)
+                majutsu-conflict--region-map))
+    (should (stringp (get-char-property (point) 'help-echo)))
+    (majutsu-conflict-mode -1)
+    (should-not (get-char-property (point) 'keymap))
+    (should-not (get-char-property (point) 'help-echo))))
+
+(ert-deftest majutsu-conflict-test-region-overlay-dropped-on-destroyed-conflict ()
+  "Destroying a conflict's markers removes its menu overlay immediately."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (fundamental-mode)
+    (font-lock-mode 1)
+    (majutsu-conflict-mode 1)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "+grapefruit")
+    (should (eq (get-char-property (point) 'keymap)
+                majutsu-conflict--region-map))
+    ;; Hand-merge: delete the begin marker line, breaking the conflict.
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (delete-region (line-beginning-position)
+                   (min (1+ (line-end-position)) (point-max)))
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "+grapefruit")
+    (should-not (get-char-property (point) 'keymap))
+    (should-not (get-char-property (point) 'help-echo))))
+
+(ert-deftest majutsu-conflict-test-unparseable-region-not-highlighted ()
+  "Regions the parser rejects get neither faces nor a context menu."
+  (with-temp-buffer
+    ;; A git merge-style conflict without a base section is not a
+    ;; parseable jj conflict.
+    (insert "<<<<<<< theirs\nAAA\n=======\nBBB\n>>>>>>> ours\n")
+    (insert "\n")
+    (insert majutsu-conflict-test--jj-snapshot)
+    (fundamental-mode)
+    (font-lock-mode 1)
+    (majutsu-conflict-mode 1)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "AAA")
+    (should-not (get-char-property (point) 'keymap))
+    (should-not (majutsu-conflict-test--face-at-line))
+    (let ((case-fold-search nil))
+      (search-forward "grapefruit"))
+    (should (eq (get-char-property (point) 'keymap)
+                majutsu-conflict--region-map))
+    (should (eq (majutsu-conflict-test--face-at-line)
+                'majutsu-conflict-side-1-face))))
+
+(ert-deftest majutsu-conflict-test-auto-leave-checks-whole-buffer ()
+  "Auto-leave must look past the current narrowing."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (insert "between\n")
+    (let ((second-start (point)))
+      (insert majutsu-conflict-test--jj-snapshot)
+      (majutsu-conflict-mode 1)
+      (narrow-to-region second-start (point-max))
+      (goto-char (point-min))
+      (search-forward "<<<<<<<")
+      (majutsu-conflict-keep-side 1)
+      ;; The first conflict is outside the restriction but unresolved.
+      (should majutsu-conflict-mode)
+      (widen)
+      (should (= 1 (length (majutsu-conflict-parse-buffer)))))))
+
+(ert-deftest majutsu-conflict-test-mode-disables-smerge ()
+  "Enabling majutsu-conflict-mode turns smerge-mode off."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (fundamental-mode)
+    (smerge-mode 1)
+    (should smerge-mode)
+    (majutsu-conflict-mode 1)
+    (should-not smerge-mode)
+    (should majutsu-conflict-mode)))
+
+(ert-deftest majutsu-conflict-test-enables-eldoc-for-plain-buffers ()
+  "The mode turns on eldoc when global-eldoc gave up on the buffer."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (fundamental-mode)
+    (let ((global-eldoc-mode t))
+      (majutsu-conflict-mode 1))
+    (should (bound-and-true-p eldoc-mode))
+    (majutsu-conflict-mode -1)
+    (should-not (bound-and-true-p eldoc-mode))))
+
+(ert-deftest majutsu-conflict-test-context-menu-lists-terms ()
+  "The context menu is a keymap with one entry per side and base."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff-snapshot-first)
+    (goto-char (point-min))
+    (search-forward "FIRST")
+    (let ((menu (majutsu-conflict--context-menu (majutsu-conflict-at-point))))
+      (let ((labels nil))
+        (map-keymap (lambda (_key def)
+                      (when (eq (car-safe def) 'menu-item)
+                        (push (cadr def) labels)))
+                    menu)
+        (should (seq-some (lambda (l) (string-match-p "Side #3: side-3-rev" l))
+                          labels))
+        (should (seq-some (lambda (l) (string-match-p "Base 2: base-2" l))
+                          labels))))))
+
+(ert-deftest majutsu-conflict-test-eldoc-describes-term ()
+  "Eldoc reports the term kind, number, and label at point."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "grapefruit"))
+    (let ((doc (majutsu-conflict--eldoc)))
+      (should (string-match-p "side 1/2" doc))
+      (should (string-match-p "commit A" doc)))
+    (let ((case-fold-search nil))
+      (search-forward "grape\n")
+      (backward-char 2))
+    (let ((doc (majutsu-conflict--eldoc)))
+      (should (string-match-p "base 1/1" doc))
+      (should (string-match-p "merge base" doc)))))
+
+(ert-deftest majutsu-conflict-test-auto-leave ()
+  "Resolving the last conflict turns the mode off; earlier ones do not."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (insert "between\n")
+    (insert majutsu-conflict-test--jj-snapshot)
+    (majutsu-conflict-mode 1)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 1)
+    (should majutsu-conflict-mode)
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-side 1)
+    (should-not majutsu-conflict-mode))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (majutsu-conflict-mode 1)
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (let ((majutsu-conflict-auto-leave nil))
+      (majutsu-conflict-keep-side 1))
+    (should majutsu-conflict-mode)))
+
+(ert-deftest majutsu-conflict-test-parse-buffer-cache ()
+  "Parsing is cached per buffer tick and invalidated by edits."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (let ((first (majutsu-conflict-parse-buffer)))
+      (should (eq first (majutsu-conflict-parse-buffer)))
+      (goto-char (point-max))
+      (insert "tail\n")
+      (should-not (eq first (majutsu-conflict-parse-buffer))))))
+
+(defconst majutsu-conflict-test--jj-snapshot-with-git-lines
+  "<<<<<<< conflict 1 of 1
++++++++ rtsqusxu 2768b0b9 \"commit A\"
+Title
+=======
+body A
+------- vpxusssl 38d49363 \"merge base\"
+Title
+body base
++++++++ ysrnknol 7a20f389 \"commit B\"
+Title
+body B
+>>>>>>> conflict 1 of 1 ends
+"
+  "Snapshot conflict whose side #1 contains a git-separator-like line.")
+
+(defconst majutsu-conflict-test--git-with-jj-lines
+  "<<<<<<< left-rev
+left top
+-------
+left bottom
+||||||| base-rev
+base
+=======
+right
+>>>>>>> right-rev
+"
+  "Git-style conflict whose left side contains a jj-marker-like line.")
+
+(ert-deftest majutsu-conflict-test-term-scan-ignores-other-style-markers ()
+  "Marker lines of the other style are term content, as in jj's parsers."
+  ;; jj style: a git separator inside side #1 stays side #1 content.
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--jj-snapshot-with-git-lines
+                    "body A")
+                   "Title\n=======\nbody A\n")))
+  ;; git style: a jj remove marker inside the left side stays content.
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--git-with-jj-lines
+                    "left bottom")
+                   "left top\n-------\nleft bottom\n"))))
+
+(ert-deftest majutsu-conflict-test-font-lock-ignores-other-style-markers ()
+  "Other-style marker lines keep their term's face, not the marker face."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot-with-git-lines)
+    (fundamental-mode)
+    (font-lock-mode 1)
+    (majutsu-conflict-mode 1)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "=======")
+    (should (eq (majutsu-conflict-test--face-at-line)
+                'majutsu-conflict-side-1-face))))
+
+(ert-deftest majutsu-conflict-test-keep-current-git-end-marker ()
+  "The git end marker labels side #2 and keeps it, like the begin marker."
+  (with-temp-buffer
+    (should (equal (majutsu-conflict-test--keep-current-at
+                    majutsu-conflict-test--git ">>>>>>>")
+                   "APPLE\nGRAPE\nORANGE\n"))))
+
+(ert-deftest majutsu-conflict-test-restyle-refuses-marker-collisions ()
+  "Restyling refuses when a term contains the target style's markers."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot-with-git-lines)
+    (goto-char (point-min))
+    (search-forward "body A")
+    (should-error (majutsu-conflict-restyle) :type 'user-error)
+    ;; The buffer is untouched.
+    (should (equal (buffer-string)
+                   majutsu-conflict-test--jj-snapshot-with-git-lines)))
+  (with-temp-buffer
+    (insert majutsu-conflict-test--git-with-jj-lines)
+    (goto-char (point-min))
+    (search-forward "left bottom")
+    (should-error (majutsu-conflict-restyle) :type 'user-error)))
+
+(ert-deftest majutsu-conflict-test-keep-all-empty-last-side ()
+  "An empty last side must not force a trailing newline onto the result."
+  (with-temp-buffer
+    (insert (concat "<<<<<<< conflict 1 of 1\n"
+                    "+++++++ a-rev (no terminating newline)\n"
+                    "a\n"
+                    "------- base-rev (no terminating newline)\n"
+                    "b\n"
+                    "+++++++ empty-rev\n"
+                    "\n"
+                    ">>>>>>> conflict 1 of 1 ends"))
+    (goto-char (point-min))
+    (search-forward "<<<<<<<")
+    (majutsu-conflict-keep-all)
+    (should (equal (buffer-string) "a"))))
+
+(ert-deftest majutsu-conflict-test-restyle-keeps-point-on-term ()
+  "Restyling moves point onto the same term in the new rendering."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "APPLE"))
+    (majutsu-conflict-restyle)
+    (let ((term (majutsu-conflict--term-at-point
+                 (majutsu-conflict-at-point))))
+      (should (equal term '(:kind add :index 1))))))
+
+(ert-deftest majutsu-conflict-test-restyle-read-only-keeps-point ()
+  "A failed restyle in a read-only buffer must not move point."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "APPLE"))
+    (setq buffer-read-only t)
+    (let ((before (point)))
+      (should-error (majutsu-conflict-restyle))
+      (should (= (point) before)))))
+
+(ert-deftest majutsu-conflict-test-restyle-restores-refinement ()
+  "Word-level refinement survives a restyle between jj styles."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-diff)
+    (majutsu-conflict-refine)
+    (should (majutsu-conflict--region-refined-p (point-min) (point-max)))
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "grapefruit"))
+    (majutsu-conflict-restyle)
+    (should (majutsu-conflict--region-refined-p (point-min) (point-max)))))
+
+(ert-deftest majutsu-conflict-test-restyle-recoordinates-modes ()
+  "Restyling to git hands a git-only buffer over to smerge-mode."
+  (with-temp-buffer
+    (insert majutsu-conflict-test--jj-snapshot)
+    (fundamental-mode)
+    (majutsu-conflict-mode 1)
+    (goto-char (point-min))
+    (let ((case-fold-search nil))
+      (search-forward "grapefruit"))
+    (majutsu-conflict-restyle)
+    (should smerge-mode)
+    (should-not majutsu-conflict-mode)))
 
 (provide 'majutsu-conflict-test)
 ;;; majutsu-conflict-test.el ends here

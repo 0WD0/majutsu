@@ -1735,7 +1735,8 @@ You can enter conflict handling from multiple places:
 
 =majutsu-conflict= auto-detects marker styles:
 - JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable
-  =majutsu-conflict-mode=.
+  =majutsu-conflict-mode=. All jj layouts are recognized, including the
+  snapshot-first rendering of =ui.conflict-marker-style "diff-experimental"=.
 - JJ long conflict markers (e.g., 15-char marker runs) are treated the same as
   normal markers.
 - JJ conflicts with missing terminating newline markers are parsed with jj's
@@ -1746,8 +1747,15 @@ You can enter conflict handling from multiple places:
 Emacs bindings use the prefix ~C-c ^~:
 - Key: n / p (majutsu-conflict-next / majutsu-conflict-prev) :: Jump to the
   next or previous conflict.
+- Key: RET (majutsu-conflict-keep-current) :: Keep the term at point, side or
+  base.
 - Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (the merge
   ancestor: jj's first =-------= / "diff from" term).
+- Key: a (majutsu-conflict-keep-all) :: Keep every side, in side order.
+- Key: s (majutsu-conflict-restyle) :: Re-render the conflict with different
+  markers (diff -> snapshot, and snapshot <-> git for 2-sided conflicts). jj
+  detects the marker style per conflict when parsing, so this only changes the
+  presentation.
 - Key: 1..9 (majutsu-conflict-keep-side) :: Keep side N, matching jj's "side
   #N" labels.
 - Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep base N (bases in
@@ -1759,18 +1767,30 @@ Evil bindings are available in normal state:
 - Key: ]] / gj (majutsu-conflict-next) :: Jump to the next conflict.
 - Key: [[ / gk (majutsu-conflict-prev) :: Jump to the previous conflict.
 - Key: gb (majutsu-conflict-keep-base) :: Keep the base (the merge ancestor).
+- Key: gr RET (majutsu-conflict-keep-current) :: Keep the term at point.
+- Key: gr a (majutsu-conflict-keep-all) :: Keep every side.
+- Key: gr s (majutsu-conflict-restyle) :: Re-render with different markers.
 - Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
 - Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
 - Key: ge (majutsu-conflict-refine) :: Refine the conflict.
-- User Option: majutsu-confirm-critical-actions :: If non-nil, prompt for
-  confirmation before critical operations like abandon, undo, redo, rebase, and
-  a bare restore of the whole working copy.
-- User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu
-  should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=,
-  =abandon=, =bookmark-delete=, =tag-delete=, =git-remote-remove=, =rebase=,
-  =restore=, =workspace-forget=, and =workspace-trash=.
-- User Option: majutsu-slow-confirm :: A list from the same action set that
-  should use =yes-or-no-p= instead of =y-or-n-p=, or =t= for all of them.
+*** Highlighting and Context Help
+Conflict regions are highlighted like smerge-mode, generalized to
+n-sided conflicts:
+- Each side snapshot gets a distinct background face, cycling through
+  ~majutsu-conflict-side-faces~ (=majutsu-conflict-side-1-face= inherits
+  =smerge-upper=, =side-2= inherits =smerge-lower=).
+- Base snapshots use =majutsu-conflict-base-face= (inherits =smerge-base=).
+- Git-style (diff3) regions in mixed buffers (for example produced by
+  ~majutsu-conflict-restyle~) are colored the same way.  Buffers that
+  contain only git-style conflicts are still handed to =smerge-mode= by
+  ~majutsu-conflict-ensure-mode~; the two modes stay mutually exclusive.
+- Eldoc describes the term at point ("jj conflict side 2/3: ...").
+- =mouse-3= on a conflict pops up a resolution menu listing every side and
+  base with its revision label. With =context-menu-mode= enabled, the entries
+  join the standard context menu instead of replacing it.
+- User Option: majutsu-conflict-auto-leave :: When non-nil (the default),
+  resolving the last conflict in the buffer turns off
+  =majutsu-conflict-mode=; undo re-enables it.
 * Customizing
 :PROPERTIES:
 :CUSTOM_ID: customizing

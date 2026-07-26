@@ -89,7 +89,10 @@ When BEFORE is non-nil, keep the before side."
 (majutsu-evil--bind-conflict-side-keys majutsu-conflict-evil-before-map t)
 
 (defvar-keymap majutsu-conflict-evil-resolve-map
-  :doc "Keymap for JJ conflict actions under Evil.")
+  :doc "Keymap for JJ conflict actions under Evil."
+  "RET" #'majutsu-conflict-keep-current
+  "a" #'majutsu-conflict-keep-all
+  "s" #'majutsu-conflict-restyle)
 
 (majutsu-evil--bind-conflict-side-keys majutsu-conflict-evil-resolve-map nil)
 
