@@ -819,5 +819,118 @@ Selecting only the first added line leaves the unselected line in place."
                            (majutsu-interactive--file-change rename-section))
                           `(:action rename :source ,old :path ,new)))))))))
 
+(defun majutsu-interactive-test--hunk-patch (diff select &optional invert)
+  "Wash DIFF, then build a patch from its first hunk.
+SELECT is `:all' or a list of hunk body line texts to select."
+  (let* ((file (majutsu-interactive-test--insert-diff diff))
+         (hunk (car (majutsu-interactive--file-section-hunks file)))
+         (spec (if (eq select :all)
+                   :all
+                 (mapcar (lambda (wanted)
+                           (let ((line (seq-find
+                                        (lambda (line) (equal (car line) wanted))
+                                        (majutsu-interactive--hunk-lines hunk))))
+                             (should line)
+                             (cons (nth 2 line) (nth 3 line))))
+                         select))))
+    (should hunk)
+    (majutsu-interactive--build-hunk-patch hunk spec invert)))
+
+(defconst majutsu-interactive-test--no-newline-diff
+  (concat "diff --git a/t.txt b/t.txt\n"
+          "index 1111111..2222222 100644\n"
+          "--- a/t.txt\n+++ b/t.txt\n"
+          "@@ -1 +1 @@\n"
+          "-old\n"
+          "\\ No newline at end of file\n"
+          "+new\n"
+          "\\ No newline at end of file\n")
+  "Replacement of a final line that lacks a trailing newline on both sides.")
+
+(ert-deftest majutsu-interactive-build-hunk-patch/readds-no-newline-line-before-kept-addition ()
+  "Keeping only the addition must not glue it onto the unremoved final line."
+  (with-temp-buffer
+    (should (equal (majutsu-interactive-test--hunk-patch
+                    majutsu-interactive-test--no-newline-diff
+                    '("+new\n"))
+                   (concat "@@ -1 +1,2 @@\n"
+                           "-old\n"
+                           "\\ No newline at end of file\n"
+                           "+old\n"
+                           "+new\n"
+                           "\\ No newline at end of file\n")))))
+
+(ert-deftest majutsu-interactive-build-hunk-patch/keeps-marker-for-selected-removal ()
+  "Selecting only the removal keeps the old side's no-newline marker."
+  (with-temp-buffer
+    (should (equal (majutsu-interactive-test--hunk-patch
+                    majutsu-interactive-test--no-newline-diff
+                    '("-old\n"))
+                   (concat "@@ -1 +1,0 @@\n"
+                           "-old\n"
+                           "\\ No newline at end of file\n")))))
+
+(ert-deftest majutsu-interactive-build-hunk-patch/inverted-selection-readds-no-newline-line ()
+  "The restore complement of a removal-only selection re-adds the kept line."
+  (with-temp-buffer
+    (should (equal (majutsu-interactive-test--hunk-patch
+                    majutsu-interactive-test--no-newline-diff
+                    '("-old\n")
+                    'invert)
+                   (concat "@@ -1 +1,2 @@\n"
+                           "-old\n"
+                           "\\ No newline at end of file\n"
+                           "+old\n"
+                           "+new\n"
+                           "\\ No newline at end of file\n")))))
+
+(ert-deftest majutsu-interactive-build-hunk-patch/full-selection-is-unchanged ()
+  "A whole-hunk selection reproduces the hunk verbatim."
+  (with-temp-buffer
+    (should (equal (majutsu-interactive-test--hunk-patch
+                    majutsu-interactive-test--no-newline-diff
+                    :all)
+                   (concat "@@ -1 +1 @@\n"
+                           "-old\n"
+                           "\\ No newline at end of file\n"
+                           "+new\n"
+                           "\\ No newline at end of file\n")))))
+
+(ert-deftest majutsu-interactive-build-hunk-patch/keeps-marker-on-context-line ()
+  "A no-newline marker on a trailing context line survives partial selection."
+  (with-temp-buffer
+    (let ((diff (concat "diff --git a/t.txt b/t.txt\n"
+                        "index 1111111..2222222 100644\n"
+                        "--- a/t.txt\n+++ b/t.txt\n"
+                        "@@ -1,2 +1,2 @@\n"
+                        "-a\n"
+                        "+b\n"
+                        " last\n"
+                        "\\ No newline at end of file\n")))
+      (should (equal (majutsu-interactive-test--hunk-patch diff '("+b\n"))
+                     (concat "@@ -1,2 +1,3 @@\n"
+                             " a\n"
+                             "+b\n"
+                             " last\n"
+                             "\\ No newline at end of file\n"))))))
+
+(ert-deftest majutsu-interactive-build-hunk-patch/keeps-context-conversion-without-later-addition ()
+  "An unselected final removal stays a context line when nothing follows it."
+  (with-temp-buffer
+    (let ((diff (concat "diff --git a/t.txt b/t.txt\n"
+                        "index 1111111..2222222 100644\n"
+                        "--- a/t.txt\n+++ b/t.txt\n"
+                        "@@ -1,2 +1,2 @@\n"
+                        "-a\n"
+                        "+b\n"
+                        "-old\n"
+                        "\\ No newline at end of file\n")))
+      (should (equal (majutsu-interactive-test--hunk-patch diff '("+b\n"))
+                     (concat "@@ -1,2 +1,3 @@\n"
+                             " a\n"
+                             "+b\n"
+                             " old\n"
+                             "\\ No newline at end of file\n"))))))
+
 (provide 'majutsu-interactive-test)
 ;;; majutsu-interactive-test.el ends here

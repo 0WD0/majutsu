@@ -526,6 +526,19 @@ Each entry is (TEXT TYPE BOL EOL)."
         (forward-line 1)))
     (nreverse lines)))
 
+(defun majutsu-interactive--group-hunk-lines (lines)
+  "Attach meta lines in LINES to the preceding hunk line.
+LINES is the output of `majutsu-interactive--hunk-lines'.  Return a
+list of (TEXT TYPE BOL EOL META) where META is the text of a
+\"\\ No newline at end of file\" marker following the line, or nil."
+  (let (grouped)
+    (dolist (line lines)
+      (if (eq (nth 1 line) 'meta)
+          (when grouped
+            (setf (nth 4 (car grouped)) (car line)))
+        (push (append line (list nil)) grouped)))
+    (nreverse grouped)))
+
 (defun majutsu-interactive--build-hunk-patch (section spec &optional invert)
   "Build a patch hunk for SECTION using SPEC and INVERT.
 SPEC is `:all' or list of (BEG . END) ranges.
@@ -533,11 +546,22 @@ When INVERT is non-nil, invert selection for change lines.
 Return a hunk string or nil when no change lines remain."
   (let* ((header (majutsu-interactive--hunk-header section))
          (parsed (majutsu-interactive--parse-hunk-header header))
-         (lines (majutsu-interactive--hunk-lines section))
+         (lines (majutsu-interactive--group-hunk-lines
+                 (majutsu-interactive--hunk-lines section)))
          (ranges (cond
                   ((eq spec :all) nil)
                   ((consp spec) (if (and spec (consp (car spec))) spec (list spec)))
                   (t nil)))
+         (decided
+          (mapcar (lambda (line)
+                    (pcase-let ((`(,text ,type ,bol ,eol ,meta) line))
+                      (let ((selected (if ranges
+                                          (majutsu-interactive--line-selected-p
+                                           bol eol ranges)
+                                        t)))
+                        (list text type meta
+                              (if invert (not selected) selected)))))
+                  lines))
          (selected-lines nil)
          (old-skip 0)
          (new-skip 0)
@@ -545,49 +569,48 @@ Return a hunk string or nil when no change lines remain."
          (new-len 0)
          (has-change nil)
          (started nil)
-         (prev-included-line nil))
-    (dolist (line lines)
-      (pcase-let ((`(,text ,type ,bol ,eol) line))
-        (let* ((selected (if ranges
-                             (majutsu-interactive--line-selected-p bol eol ranges)
-                           t))
-               (include-change (if invert (not selected) selected))
-               (omitted-removed (and (eq type 'removed) (not include-change)))
-               (include (pcase type
-                          ('context t)
-                          ('added include-change)
-                          ('removed t)
-                          ('meta prev-included-line)
-                          (_ nil)))
-               (old-inc (pcase type
-                          ('context 1)
-                          ('removed 1)
-                          (_ 0)))
-               (new-inc (pcase type
-                          ('context 1)
-                          ('added 1)
-                          (_ 0))))
-          (if include
-              (progn
-                (unless started
-                  (setq started t))
-                (when (and (memq type '(added removed)) include-change)
-                  (setq has-change t))
-                (setq prev-included-line (memq type '(context added removed)))
-                (cond
-                 (omitted-removed
-                  (setq old-len (1+ old-len))
-                  (setq new-len (1+ new-len))
-                  (push (concat " " (substring text 1)) selected-lines))
-                 (t
-                  (setq old-len (+ old-len old-inc))
-                  (setq new-len (+ new-len new-inc))
-                  (push text selected-lines))))
-            (when (and (not started) (memq type '(context added removed)))
-              (setq old-skip (+ old-skip old-inc))
-              (setq new-skip (+ new-skip new-inc)))
-            (unless (eq type 'meta)
-              (setq prev-included-line nil))))))
+         (rest decided))
+    (while rest
+      (pcase-let ((`(,text ,type ,meta ,include-change) (car rest)))
+        (setq rest (cdr rest))
+        (if (not (pcase type
+                   ('context t)
+                   ('added include-change)
+                   ('removed t)))
+            (unless started
+              (pcase type
+                ('added (setq new-skip (1+ new-skip)))
+                ('removed (setq old-skip (1+ old-skip)))))
+          (setq started t)
+          (when (and (memq type '(added removed)) include-change)
+            (setq has-change t))
+          (cond
+           ((and (eq type 'removed) (not include-change))
+            ;; The line stays in both files.  A plain context conversion
+            ;; is wrong when it carries a no-newline marker and kept
+            ;; added lines extend the new file past it: the new file
+            ;; copy must gain a newline, so remove and re-add it.
+            (setq old-len (1+ old-len))
+            (setq new-len (1+ new-len))
+            (if (and meta
+                     (seq-some (lambda (entry)
+                                 (and (eq (nth 1 entry) 'added)
+                                      (nth 3 entry)))
+                               rest))
+                (progn
+                  (push text selected-lines)
+                  (push meta selected-lines)
+                  (push (concat "+" (substring text 1)) selected-lines))
+              (push (concat " " (substring text 1)) selected-lines)
+              (when meta (push meta selected-lines))))
+           (t
+            (pcase type
+              ('context (setq old-len (1+ old-len))
+                        (setq new-len (1+ new-len)))
+              ('removed (setq old-len (1+ old-len)))
+              ('added (setq new-len (1+ new-len))))
+            (push text selected-lines)
+            (when meta (push meta selected-lines)))))))
     (when (and has-change selected-lines)
       (let* ((body (mapconcat #'identity (nreverse selected-lines) ""))
              (hunk-header

@@ -181,6 +181,10 @@
 - Patch selection safety ::
   Concurrent patch operations no longer overwrite each other's patch input.
 
+- Files without a final newline ::
+  Partial patch selections no longer join added text onto an unselected final
+  line when the file lacks a trailing newline.
+
 - Ediff conflict results ::
   Quitting Ediff without edits keeps a conflict unresolved.  Saving edited
   merge results requires confirmation and preserves unresolved conflict markers.
