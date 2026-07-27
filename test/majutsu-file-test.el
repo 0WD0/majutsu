@@ -18,6 +18,7 @@
 (require 'ert)
 (require 'majutsu-file)
 (require 'majutsu-annotate)
+(require 'majutsu-jj-integration)
 
 (ert-deftest majutsu-file-revset-for-files-quotes-path ()
   "Paths with single quotes should be fileset-quoted."
@@ -517,88 +518,6 @@
     (should majutsu-annotate-read-only-mode)
     (majutsu-annotate-mode -1)))
 
-(ert-deftest majutsu-blob-edit-apply-diffedit/noninteractive-copies-content ()
-  "Blob apply should run non-interactive diffedit via cp editor command."
-  (let (editor-command editor-target run-args copied)
-    (with-temp-buffer
-      (setq-local majutsu-buffer-blob-root "/tmp")
-      (setq-local majutsu-buffer-blob-path "docs/wiki/Configuration:-Layout.md")
-      (setq-local majutsu-buffer-blob-revision "rev")
-      (cl-letf (((symbol-function 'majutsu-jj--editor-command-config)
-                 (lambda (_key target &optional command)
-                   (setq editor-target target)
-                   (setq editor-command command)
-                   "CFG"))
-                ((symbol-function 'majutsu-run-jj)
-                 (lambda (&rest args)
-                   (setq run-args args)
-                   (setq copied
-                         (with-temp-buffer
-                           (insert-file-contents (cadr editor-command))
-                           (buffer-string)))
-                   0)))
-        (should (zerop (majutsu-blob-edit--apply-diffedit "after")))))
-    (should (equal editor-target "$right/docs/wiki/Configuration:-Layout.md"))
-    (should (equal (car editor-command) "cp"))
-    (should (equal copied "after"))
-    (should-not (file-exists-p (cadr editor-command)))
-    (should (equal run-args
-                   '("diffedit" "--config" "CFG"
-                     "--from" "rev-" "--to" "rev"
-                     "--" "file:\"docs/wiki/Configuration:-Layout.md\"")))))
-
-(ert-deftest majutsu-blob-edit-apply-diffedit/uses-local-temp-path-for-editor ()
-  "Diffedit editor command should use temp path stripped for remote execution."
-  (let (editor-command seen-temp)
-    (with-temp-buffer
-      (setq-local majutsu-buffer-blob-root "/tmp")
-      (setq-local majutsu-buffer-blob-path "src/a.el")
-      (setq-local majutsu-buffer-blob-revision "rev")
-      (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
-                 (lambda (path)
-                   (setq seen-temp path)
-                   "/tmp/local-temp"))
-                ((symbol-function 'majutsu-jj--editor-command-config)
-                 (lambda (_key _target &optional command)
-                   (setq editor-command command)
-                   "CFG"))
-                ((symbol-function 'majutsu-run-jj)
-                 (lambda (&rest _args) 0)))
-        (should (zerop (majutsu-blob-edit--apply-diffedit "after")))))
-    (should (stringp seen-temp))
-    (should (equal editor-command '("cp" "/tmp/local-temp")))))
-
-(ert-deftest majutsu-blob-edit-write-contents/calls-diffedit-apply ()
-  "Editable blob save should apply edits and refresh revision metadata."
-  (let (seen-content)
-    (with-temp-buffer
-      (insert "before")
-      (setq-local majutsu-buffer-blob-root "/tmp")
-      (setq-local majutsu-buffer-blob-path "src/a.el")
-      (setq-local majutsu-buffer-blob-revset "@")
-      (setq-local majutsu-buffer-blob-revision "rev")
-      (setq-local majutsu-buffer-blob-change-id "old-change")
-      (setq-local majutsu-buffer-blob-commit-id "old-commit")
-      (majutsu-blob-mode 1)
-      (majutsu-blob-edit-mode 1)
-      (erase-buffer)
-      (insert "after")
-      (cl-letf (((symbol-function 'majutsu-blob-edit--apply-diffedit)
-                 (lambda (content)
-                   (setq seen-content content)
-                   0))
-                ((symbol-function 'majutsu-file--resolve-single-rev-info)
-                 (lambda (_revset)
-                   '(:change-id "new-change" :commit-id "new-commit"))))
-        (should (majutsu-blob-edit--write-contents))
-        (should (equal seen-content "after"))
-        (should-not majutsu-blob-edit-mode)
-        (should (equal majutsu-buffer-blob-revision "new-change"))
-        (should (equal majutsu-buffer-blob-change-id "new-change"))
-        (should (equal majutsu-buffer-blob-commit-id "new-commit"))
-        (should (equal majutsu-buffer-blob-content-hash
-                       (secure-hash 'sha1 "after")))))))
-
 (ert-deftest majutsu-blob-edit-exit/no-changes-disables-mode ()
   "Exit should just leave editable mode when there are no changes."
   (with-temp-buffer
@@ -625,32 +544,6 @@
     (majutsu-blob-edit-finish)
     (should-not majutsu-blob-edit-mode)
     (should majutsu-blob-mode)))
-
-(ert-deftest majutsu-blob-edit-finish/changed-with-cleared-modified-applies ()
-  "Finish should still apply when content changed but modified flag is nil."
-  (let (seen-content)
-    (with-temp-buffer
-      (insert "before")
-      (setq-local majutsu-buffer-blob-root "/tmp")
-      (setq-local majutsu-buffer-blob-path "src/a.el")
-      (setq-local majutsu-buffer-blob-revset "@")
-      (setq-local majutsu-buffer-blob-revision "rev")
-      (majutsu-blob-mode 1)
-      (majutsu-blob-edit-mode 1)
-      (erase-buffer)
-      (insert "after")
-      (set-buffer-modified-p nil)
-      (cl-letf (((symbol-function 'majutsu-blob-edit--apply-diffedit)
-                 (lambda (content)
-                   (setq seen-content content)
-                   0))
-                ((symbol-function 'majutsu-file--resolve-single-rev-info)
-                 (lambda (_revset)
-                   '(:change-id "new-change" :commit-id "new-commit"))))
-        (majutsu-blob-edit-finish)
-        (should (equal seen-content "after"))
-        (should-not majutsu-blob-edit-mode)
-        (should majutsu-blob-mode)))))
 
 (ert-deftest majutsu-blob-edit-exit/uses-content-delta-not-modified-flag ()
   "Exit should still treat content deltas as changes when modified flag is nil."
@@ -736,5 +629,250 @@
       (should majutsu-blob-mode)
       (should (equal (buffer-string) original))
       (should (= (point) entry-point)))))
+
+(ert-deftest majutsu-blob-edit/integration-divergent-revision-editable ()
+  "A blob on a divergent change opens, edits, and tracks its successor."
+  (majutsu-jj-integration-with-repo repo
+    (let ((file (majutsu-jj-integration-file repo "f.txt")))
+      (majutsu-jj-integration-write-text file "one\n")
+      (majutsu-jj-integration-call repo "describe" "-m" "v1")
+      (let ((commit-a (string-trim
+                       (majutsu-jj-integration-output
+                        repo "log" "-r" "@" "--no-graph" "-T" "commit_id"))))
+        ;; Rewrite the change, then rewrite its hidden predecessor to
+        ;; make the change divergent with two visible versions.
+        (majutsu-jj-integration-call repo "describe" "-m" "v2")
+        (majutsu-jj-integration-call repo "describe" "-r" commit-a "-m" "v3")
+        (let* ((change (string-trim
+                        (majutsu-jj-integration-output
+                         repo "log" "-r" "@" "--no-graph" "-T" "change_id")))
+               (versions
+                (lambda ()
+                  (length
+                   (split-string
+                    (majutsu-jj-integration-output
+                     repo "log" "-r" (format "change_id(%s)" change)
+                     "--no-graph" "-T" "commit_id ++ \"\\n\"")
+                    "\n" t)))))
+          (should (= 2 (funcall versions)))
+          (let* ((default-directory (file-name-as-directory repo))
+                 ;; Opening by the divergent change id falls back to the
+                 ;; newest visible version instead of erroring.
+                 (buffer (majutsu-find-file-noselect change "f.txt")))
+            (unwind-protect
+                (with-current-buffer buffer
+                  (should majutsu-buffer-blob-commit-id)
+                  (let ((edited-commit majutsu-buffer-blob-commit-id))
+                    (majutsu-blob-edit-start)
+                    (let ((inhibit-read-only t))
+                      (erase-buffer)
+                      (insert "two\n"))
+                    ;; Saving edits a divergent revision successfully...
+                    (should (majutsu-blob-edit--write-contents))
+                    ;; ...rewrites content at the tracked successor...
+                    (should (equal (majutsu-jj-integration-output
+                                    repo "file" "show" "-r"
+                                    majutsu-buffer-blob-commit-id
+                                    "f.txt")
+                                   "two\n"))
+                    ;; ...moves the pin off the now-hidden commit...
+                    (should-not (equal majutsu-buffer-blob-commit-id
+                                       edited-commit))
+                    ;; ...and does not diverge the change any further.
+                    (should (= 2 (funcall versions)))))
+              (kill-buffer buffer))))))))
+
+(ert-deftest majutsu-blob-edit/integration-external-working-copy-move ()
+  "Successive saves rewrite the buffer's branch, not an external @ successor."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((path "docs/wiki/Configuration:-Layout.md")
+           (file (majutsu-jj-integration-file repo path)))
+      (make-directory (file-name-directory file) t)
+      (majutsu-jj-integration-write-text file "A\n")
+      (majutsu-jj-integration-call repo "describe" "-m" "original")
+      (let ((buffer (majutsu-find-file-noselect "@" path)))
+        (unwind-protect
+            (with-current-buffer buffer
+              (let ((pin majutsu-buffer-blob-commit-id)
+                    (change majutsu-buffer-blob-change-id))
+                (majutsu-jj-integration-write-text file "B\n")
+                (majutsu-jj-integration-call repo "describe" "-m" "external")
+                (let ((external (majutsu-jj-integration-output
+                                 repo "log" "-r" "@" "--no-graph" "-T" "commit_id")))
+                  (dolist (content '("C\n" "D\n"))
+                    (majutsu-blob-edit-start)
+                    (erase-buffer)
+                    (insert content)
+                    ;; Finish must detect content changes even when Emacs's
+                    ;; modified flag has been cleared by another command.
+                    (set-buffer-modified-p nil)
+                    (majutsu-blob-edit-finish)
+                    (should-not majutsu-blob-edit-mode)
+                    (should-not (buffer-modified-p))
+                    (should (equal (buffer-string) content))
+                    (should (equal majutsu-buffer-blob-content-hash
+                                   (secure-hash 'sha1 content)))
+                    (should (equal majutsu-buffer-blob-change-id change))
+                    (should-not (equal majutsu-buffer-blob-commit-id pin))
+                    (setq pin majutsu-buffer-blob-commit-id)
+                    (should (equal (majutsu-jj-integration-output
+                                    repo "file" "show" "-r" pin "--"
+                                    (majutsu-jj-fileset-quote path))
+                                   content))
+                    (should (equal (majutsu-jj-integration-output
+                                    repo "log" "-r" "@" "--no-graph" "-T" "commit_id")
+                                   external))
+                    (should (equal (majutsu-jj-integration-read-bytes file) "B\n"))
+                    (should
+                     (= 2 (length
+                           (split-string
+                            (majutsu-jj-integration-output
+                             repo "log" "--no-graph" "-r"
+                             (format "change_id(%s)" change)
+                             "-T" "commit_id ++ \"\\n\"")
+                            "\n" t))))))))
+          (kill-buffer buffer))))))
+
+(defun majutsu-file-test--historical-conflict (repo)
+  "Create a two-parent conflict in REPO and return its commit id.
+Leave the working copy on an unrelated revision."
+  (let ((file (majutsu-jj-integration-file repo "f.txt")))
+    (majutsu-jj-integration-write-text file "base\n")
+    (majutsu-jj-integration-commit repo "base")
+    (let ((base (majutsu-jj-integration-output
+                 repo "log" "-r" "@-" "--no-graph" "-T" "commit_id")))
+      (majutsu-jj-integration-write-text file "left\n")
+      (majutsu-jj-integration-call repo "describe" "-m" "left")
+      (let ((left (majutsu-jj-integration-output
+                   repo "log" "-r" "@" "--no-graph" "-T" "commit_id")))
+        (majutsu-jj-integration-call repo "new" base)
+        (majutsu-jj-integration-write-text file "right\n")
+        (majutsu-jj-integration-call repo "describe" "-m" "right")
+        (majutsu-jj-integration-call repo "new" left "@" "-m" "merge")
+        (prog1 (majutsu-jj-integration-output
+                repo "log" "-r" "@" "--no-graph" "-T" "commit_id")
+          (majutsu-jj-integration-call repo "new" "root()" "-m" "unrelated"))))))
+
+(ert-deftest majutsu-blob-edit/integration-historical-merge-save ()
+  "Resolving a historical two-parent merge rewrites that merge, not @."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((merge (majutsu-file-test--historical-conflict repo))
+           (working (majutsu-jj-integration-output
+                     repo "log" "-r" "@" "--no-graph" "-T" "commit_id"))
+           (buffer (majutsu-find-file-noselect merge "f.txt")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should (string-match-p "<<<<<<<" (buffer-string)))
+            (majutsu-blob-edit-start)
+            (erase-buffer)
+            (insert "resolved\n")
+            (majutsu-blob-edit-finish)
+            (should-not (equal majutsu-buffer-blob-commit-id merge))
+            (should (equal
+                     (majutsu-jj-integration-output
+                      repo "file" "show" "-r" majutsu-buffer-blob-commit-id "f.txt")
+                     "resolved\n"))
+            (should (equal
+                     (majutsu-jj-integration-output
+                      repo "log" "-r" majutsu-buffer-blob-commit-id "--no-graph"
+                      "-T" "parents.len() ++ \" \" ++ conflict")
+                     "2 false"))
+            (should (equal
+                     (majutsu-jj-integration-output
+                      repo "log" "-r"
+                      (format "change_id(%s)" majutsu-buffer-blob-change-id)
+                      "--no-graph" "-T" "commit_id")
+                     majutsu-buffer-blob-commit-id))
+            (should (equal
+                     (majutsu-jj-integration-output
+                      repo "log" "-r" "@" "--no-graph" "-T" "commit_id")
+                     working)))
+        (kill-buffer buffer)))))
+
+(ert-deftest majutsu-blob-edit/integration-semantic-noop-keeps-hidden-pin ()
+  "Restyling conflict labels must not select one of the divergent siblings."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((merge (majutsu-file-test--historical-conflict repo))
+           (buffer (majutsu-find-file-noselect merge "f.txt")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (majutsu-jj-integration-call repo "describe" "-r" merge "-m" "sibling one")
+            (majutsu-jj-integration-call repo "describe" "-r" merge "-m" "sibling two")
+            (let* ((revset (format "change_id(%s)" majutsu-buffer-blob-change-id))
+                   (versions (majutsu-jj-integration-output
+                              repo "log" "-r" revset "--no-graph"
+                              "-T" "commit_id ++ \"\\n\""))
+                   (operation (majutsu-jj-operation-id))
+                   (original (buffer-string))
+                   (restyled (replace-regexp-in-string
+                              "Conflict [^\n]*" "Restyled label" original)))
+              (should (= 2 (length (split-string versions "\n" t))))
+              (should-not (member merge (split-string versions "\n" t)))
+              (should-not (equal original restyled))
+              (majutsu-blob-edit-start)
+              (erase-buffer)
+              (insert restyled)
+              (majutsu-blob-edit-finish)
+              (should (equal majutsu-buffer-blob-commit-id merge))
+              (should (equal (buffer-string) restyled))
+              (should-not (buffer-modified-p))
+              (should-not majutsu-blob-edit--save-unverified)
+              (should (equal (majutsu-jj-operation-id) operation))
+              (should (equal
+                       (majutsu-jj-integration-output
+                        repo "log" "-r" revset "--no-graph" "-T" "commit_id ++ \"\\n\"")
+                       versions))
+              (should (equal
+                       (majutsu-jj-integration-output
+                        repo "file" "show" "-r" merge "f.txt")
+                       original))))
+        (kill-buffer buffer)))))
+
+(ert-deftest majutsu-blob-edit/integration-unverified-save-requires-revert ()
+  "An intervening operation must not leave a silently reusable stale pin."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-write-text
+     (majutsu-jj-integration-file repo "f.txt") "before\n")
+    (majutsu-jj-integration-call repo "describe" "-m" "original")
+    (let ((buffer (majutsu-find-file-noselect "@" "f.txt")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (let ((pin majutsu-buffer-blob-commit-id)
+                  (call-jj (symbol-function 'majutsu-call-jj)))
+              (majutsu-blob-edit-start)
+              (erase-buffer)
+              (insert "saved\n")
+              ;; Perform the real save, then race its provenance query with
+              ;; another real operation, rather than fabricating CLI output.
+              (cl-letf (((symbol-function 'majutsu-call-jj)
+                         (lambda (&rest args)
+                           (prog1 (apply call-jj args)
+                             (majutsu-jj-integration-call
+                              repo "describe" "-m" "concurrent")))))
+                (should-error (majutsu-blob-edit--write-contents) :type 'user-error))
+              (should majutsu-blob-edit--save-unverified)
+              (should (equal majutsu-buffer-blob-commit-id pin))
+              (should (buffer-modified-p))
+              (should (equal (buffer-string) "saved\n"))
+              (let ((operation (majutsu-jj-operation-id)))
+                (should-error (majutsu-blob-edit--write-contents) :type 'user-error)
+                (should (equal (majutsu-jj-operation-id) operation)))
+              (majutsu-blob-edit-abort)
+              (majutsu-file-revert-buffer nil t)
+              (should-not majutsu-blob-edit--save-unverified)
+              (should-not (equal majutsu-buffer-blob-commit-id pin))
+              (should (equal (buffer-string) "saved\n"))
+              (majutsu-blob-edit-start)
+              (erase-buffer)
+              (insert "next\n")
+              (majutsu-blob-edit-finish)
+              (should (equal
+                       (majutsu-jj-integration-output
+                        repo "file" "show" "-r" majutsu-buffer-blob-commit-id "f.txt")
+                       "next\n"))))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
 
 (provide 'majutsu-file-test)

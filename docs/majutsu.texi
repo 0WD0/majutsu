@@ -43,7 +43,6 @@ efficiency and comfort Emacs users expect.
 * Tags::                         Create, move, delete, and inspect Jujutsu tags.
 * Git Integration::              Synchronize Git remotes and upload changes for Gerrit review.
 * Workspaces::                   Create, visit, rename, and maintain Jujutsu workspaces.
-* Conflict Resolution: Conflict Resolution (1). 
 * Customizing::                  Configure Majutsu behavior, display, key bindings, and repository defaults.
 * Template DSL::                 Build typed Jujutsu templates for Majutsu rows and structured command output.
 * Keystroke Index::              Switch between Majutsu's Vanilla and Evil keymaps, with each binding's interface, mode, prefix, editor state, and command.
@@ -154,6 +153,10 @@ Conflict Resolution
 * Entering Conflict Mode::
 * majutsu-conflict-mode Commands::
 
+majutsu-conflict-mode Commands
+
+* Highlighting and Context Help::
+
 Bookmarks
 
 * Understanding Bookmarks::
@@ -181,16 +184,6 @@ Workspaces
 * Understanding Workspaces::
 * Embark Actions: Embark Actions (1). 
 * Workspace Transient::
-
-Conflict Resolution
-
-* Detecting Conflicts: Detecting Conflicts (1). 
-* Entering Conflict Mode: Entering Conflict Mode (1). 
-* majutsu-conflict-mode Commands: majutsu-conflict-mode Commands (1). 
-
-majutsu-conflict-mode Commands
-
-* Highlighting and Context Help::
 
 Customizing
 
@@ -2483,14 +2476,16 @@ Force
 @end table
 
 @deffn Command majutsu-conflict-ensure-mode
-Enable conflict handling in a file with conflict markers.
+Enable conflict handling in a file
+  with conflict markers.
 @end deffn
 
 @samp{majutsu-conflict} auto-detects marker styles:
 @itemize
 @item
 JJ conflict markers (@samp{%%%%%%%} / @samp{+++++++} / @samp{-------} ) -> enable
-@samp{majutsu-conflict-mode}.
+@samp{majutsu-conflict-mode}. All jj layouts are recognized@comma{} including the
+snapshot-first rendering of @samp{ui.conflict-marker-style "diff-experimental"}.
 @item
 JJ long conflict markers (e.g.@comma{} 15-char marker runs) are treated the same as
 normal markers.
@@ -2504,27 +2499,44 @@ Git-style markers (@samp{|||||||} / @samp{=====}) only -> enable @samp{smerge-mo
 @node majutsu-conflict-mode Commands
 @section majutsu-conflict-mode Commands
 
-Vanilla bindings use the prefix @code{C-c ^}:
+Emacs bindings use the prefix @code{C-c ^}:
 @table @asis
 @item @kbd{n / p} (@code{majutsu-conflict-next / majutsu-conflict-prev})
 @kindex n / p
 @findex majutsu-conflict-next / majutsu-conflict-prev
-Jump to the next
-  or previous conflict.
+Jump to the
+  next or previous conflict.
+@item @kbd{@key{RET}} (@code{majutsu-conflict-keep-current})
+@kindex RET
+@findex majutsu-conflict-keep-current
+Keep the term at point@comma{} side or
+  base.
 @item @kbd{b} (@code{majutsu-conflict-keep-base})
 @kindex b
 @findex majutsu-conflict-keep-base
-Keep the conflict base (snapshot /
-  rebase destination section).
+Keep the conflict base (the merge
+  ancestor: jj's first @samp{-------} / "diff from" term).
+@item @kbd{a} (@code{majutsu-conflict-keep-all})
+@kindex a
+@findex majutsu-conflict-keep-all
+Keep every side@comma{} in side order.
+@item @kbd{s} (@code{majutsu-conflict-restyle})
+@kindex s
+@findex majutsu-conflict-restyle
+Re-render the conflict with different
+  markers (diff -> snapshot@comma{} and snapshot <-> git for 2-sided conflicts). jj
+  detects the marker style per conflict when parsing@comma{} so this only changes the
+  presentation.
 @item @kbd{1..9} (@code{majutsu-conflict-keep-side})
 @kindex 1..9
 @findex majutsu-conflict-keep-side
-Keep side N (the "after" side in JJ
-  diff blocks).
+Keep side N@comma{} matching jj's "side
+  #N" labels.
 @item @kbd{M-1..M-9} (@code{majutsu-conflict-keep-side})
 @kindex M-1..M-9
 @findex majutsu-conflict-keep-side
-Keep side N's "before" variant.
+Keep base N (bases in
+  materialization order; they are not paired with side numbers).
 @item @kbd{R} (@code{majutsu-conflict-refine})
 @kindex R
 @findex majutsu-conflict-refine
@@ -2532,7 +2544,7 @@ Refine conflict regions with word-level
   highlighting.
 @end table
 
-Evil bindings are available in Normal state:
+Evil bindings are available in normal state:
 @table @asis
 @item @kbd{]] / gj} (@code{majutsu-conflict-next})
 @kindex ]] / gj
@@ -2545,20 +2557,65 @@ Jump to the previous conflict.
 @item @kbd{gb} (@code{majutsu-conflict-keep-base})
 @kindex gb
 @findex majutsu-conflict-keep-base
-Keep the base.
+Keep the base (the merge ancestor).
+@item @kbd{gr @key{RET}} (@code{majutsu-conflict-keep-current})
+@kindex gr RET
+@findex majutsu-conflict-keep-current
+Keep the term at point.
+@item @kbd{gr a} (@code{majutsu-conflict-keep-all})
+@kindex gr a
+@findex majutsu-conflict-keep-all
+Keep every side.
+@item @kbd{gr s} (@code{majutsu-conflict-restyle})
+@kindex gr s
+@findex majutsu-conflict-restyle
+Re-render with different markers.
 @item @kbd{gr 1..9} (@code{majutsu-conflict-keep-side})
 @kindex gr 1..9
 @findex majutsu-conflict-keep-side
-Keep side N (the "after" side).
+Keep side N@.
 @item @kbd{gR 1..9} (@code{majutsu-conflict-keep-side})
 @kindex gR 1..9
 @findex majutsu-conflict-keep-side
-Keep side N's "before" variant.
+Keep base N@.
 @item @kbd{ge} (@code{majutsu-conflict-refine})
 @kindex ge
 @findex majutsu-conflict-refine
 Refine the conflict.
 @end table
+
+@menu
+* Highlighting and Context Help::
+@end menu
+
+@node Highlighting and Context Help
+@subsection Highlighting and Context Help
+
+Conflict regions are highlighted like smerge-mode@comma{} generalized to
+n-sided conflicts:
+@itemize
+@item
+Each side snapshot gets a distinct background face@comma{} cycling through
+@code{majutsu-conflict-side-faces} (@samp{majutsu-conflict-side-1-face} inherits
+@samp{smerge-upper}@comma{} @samp{side-2} inherits @samp{smerge-lower}).
+@item
+Base snapshots use @samp{majutsu-conflict-base-face} (inherits @samp{smerge-base}).
+@item
+Git-style (diff3) regions in mixed buffers (for example produced by
+@code{majutsu-conflict-restyle}) are colored the same way. Buffers that contain
+only git-style conflicts are still handed to @samp{smerge-mode} by
+@code{majutsu-conflict-ensure-mode}; the two modes stay mutually exclusive.
+@item
+Eldoc describes the term at point ("jj conflict side 2/3: @dots{}").
+@item
+@samp{mouse-3} on a conflict pops up a resolution menu listing every side and
+base with its revision label. With @samp{context-menu-mode} enabled@comma{} the entries
+join the standard context menu instead of replacing it.
+@item User Option: majutsu-conflict-auto-leave
+When non-nil (the default)@comma{}
+resolving the last conflict in the buffer turns off
+@samp{majutsu-conflict-mode}; undo re-enables it.
+@end itemize
 
 @node Bookmarks
 @chapter Bookmarks
@@ -3102,182 +3159,6 @@ description@comma{} and resolved root path when available. If jj cannot resolve 
 workspace root@comma{} Majutsu treats it as unavailable instead of showing the raw
 @samp{<Error: ...>} text in the section body. Workspace paths containing embedded
 newlines or other control characters are preserved as complete values.
-
-@node Conflict Resolution (1)
-@chapter Conflict Resolution
-
-@menu
-* Detecting Conflicts: Detecting Conflicts (1). 
-* Entering Conflict Mode: Entering Conflict Mode (1). 
-* majutsu-conflict-mode Commands: majutsu-conflict-mode Commands (1). 
-@end menu
-
-@node Detecting Conflicts (1)
-@section Detecting Conflicts
-
-JJ marks conflicts in the log with a "conflict" label. Expanding the revision
-shows each exact conflicted path together with its conflict side count.
-
-@node Entering Conflict Mode (1)
-@section Entering Conflict Mode
-
-You can enter conflict handling from multiple places:
-@table @asis
-@item @kbd{m in the Ediff transient} (@code{majutsu-ediff-resolve})
-@kindex m in the Ediff transient
-@findex majutsu-ediff-resolve
-Use the automatic
-  resolve strategy.
-@item @kbd{M in the Ediff transient} (@code{majutsu-ediff-resolve-with-conflict})
-@kindex M in the Ediff transient
-@findex majutsu-ediff-resolve-with-conflict
-Force
-  the conflict workflow. This opens the working-copy file (or a revision blob
-  buffer for non-working-copy revisions)@comma{} enables @samp{majutsu-conflict-mode}@comma{} and
-  jumps to the first conflict.
-@end table
-
-@deffn Command majutsu-conflict-ensure-mode
-Enable conflict handling in a file
-  with conflict markers.
-@end deffn
-
-@samp{majutsu-conflict} auto-detects marker styles:
-@itemize
-@item
-JJ conflict markers (@samp{%%%%%%%} / @samp{+++++++} / @samp{-------} ) -> enable
-@samp{majutsu-conflict-mode}. All jj layouts are recognized@comma{} including the
-snapshot-first rendering of @samp{ui.conflict-marker-style "diff-experimental"}.
-@item
-JJ long conflict markers (e.g.@comma{} 15-char marker runs) are treated the same as
-normal markers.
-@item
-JJ conflicts with missing terminating newline markers are parsed with jj's
-newline-compensation semantics.
-@item
-Git-style markers (@samp{|||||||} / @samp{=====}) only -> enable @samp{smerge-mode}.
-@end itemize
-
-@node majutsu-conflict-mode Commands (1)
-@section majutsu-conflict-mode Commands
-
-Emacs bindings use the prefix @code{C-c ^}:
-@table @asis
-@item @kbd{n / p} (@code{majutsu-conflict-next / majutsu-conflict-prev})
-@kindex n / p
-@findex majutsu-conflict-next / majutsu-conflict-prev
-Jump to the
-  next or previous conflict.
-@item @kbd{@key{RET}} (@code{majutsu-conflict-keep-current})
-@kindex RET
-@findex majutsu-conflict-keep-current
-Keep the term at point@comma{} side or
-  base.
-@item @kbd{b} (@code{majutsu-conflict-keep-base})
-@kindex b
-@findex majutsu-conflict-keep-base
-Keep the conflict base (the merge
-  ancestor: jj's first @samp{-------} / "diff from" term).
-@item @kbd{a} (@code{majutsu-conflict-keep-all})
-@kindex a
-@findex majutsu-conflict-keep-all
-Keep every side@comma{} in side order.
-@item @kbd{s} (@code{majutsu-conflict-restyle})
-@kindex s
-@findex majutsu-conflict-restyle
-Re-render the conflict with different
-  markers (diff -> snapshot@comma{} and snapshot <-> git for 2-sided conflicts). jj
-  detects the marker style per conflict when parsing@comma{} so this only changes the
-  presentation.
-@item @kbd{1..9} (@code{majutsu-conflict-keep-side})
-@kindex 1..9
-@findex majutsu-conflict-keep-side
-Keep side N@comma{} matching jj's "side
-  #N" labels.
-@item @kbd{M-1..M-9} (@code{majutsu-conflict-keep-side})
-@kindex M-1..M-9
-@findex majutsu-conflict-keep-side
-Keep base N (bases in
-  materialization order; they are not paired with side numbers).
-@item @kbd{R} (@code{majutsu-conflict-refine})
-@kindex R
-@findex majutsu-conflict-refine
-Refine conflict regions with word-level
-  highlighting.
-@end table
-
-Evil bindings are available in normal state:
-@table @asis
-@item @kbd{]] / gj} (@code{majutsu-conflict-next})
-@kindex ]] / gj
-@findex majutsu-conflict-next
-Jump to the next conflict.
-@item @kbd{[[ / gk} (@code{majutsu-conflict-prev})
-@kindex [[ / gk
-@findex majutsu-conflict-prev
-Jump to the previous conflict.
-@item @kbd{gb} (@code{majutsu-conflict-keep-base})
-@kindex gb
-@findex majutsu-conflict-keep-base
-Keep the base (the merge ancestor).
-@item @kbd{gr @key{RET}} (@code{majutsu-conflict-keep-current})
-@kindex gr RET
-@findex majutsu-conflict-keep-current
-Keep the term at point.
-@item @kbd{gr a} (@code{majutsu-conflict-keep-all})
-@kindex gr a
-@findex majutsu-conflict-keep-all
-Keep every side.
-@item @kbd{gr s} (@code{majutsu-conflict-restyle})
-@kindex gr s
-@findex majutsu-conflict-restyle
-Re-render with different markers.
-@item @kbd{gr 1..9} (@code{majutsu-conflict-keep-side})
-@kindex gr 1..9
-@findex majutsu-conflict-keep-side
-Keep side N@.
-@item @kbd{gR 1..9} (@code{majutsu-conflict-keep-side})
-@kindex gR 1..9
-@findex majutsu-conflict-keep-side
-Keep base N@.
-@item @kbd{ge} (@code{majutsu-conflict-refine})
-@kindex ge
-@findex majutsu-conflict-refine
-Refine the conflict.
-@end table
-
-@menu
-* Highlighting and Context Help::
-@end menu
-
-@node Highlighting and Context Help
-@subsection Highlighting and Context Help
-
-Conflict regions are highlighted like smerge-mode@comma{} generalized to
-n-sided conflicts:
-@itemize
-@item
-Each side snapshot gets a distinct background face@comma{} cycling through
-@code{majutsu-conflict-side-faces} (@samp{majutsu-conflict-side-1-face} inherits
-@samp{smerge-upper}@comma{} @samp{side-2} inherits @samp{smerge-lower}).
-@item
-Base snapshots use @samp{majutsu-conflict-base-face} (inherits @samp{smerge-base}).
-@item
-Git-style (diff3) regions in mixed buffers (for example produced by
-@code{majutsu-conflict-restyle}) are colored the same way. Buffers that contain
-only git-style conflicts are still handed to @samp{smerge-mode} by
-@code{majutsu-conflict-ensure-mode}; the two modes stay mutually exclusive.
-@item
-Eldoc describes the term at point ("jj conflict side 2/3: @dots{}").
-@item
-@samp{mouse-3} on a conflict pops up a resolution menu listing every side and
-base with its revision label. With @samp{context-menu-mode} enabled@comma{} the entries
-join the standard context menu instead of replacing it.
-@item User Option: majutsu-conflict-auto-leave
-When non-nil (the default)@comma{}
-resolving the last conflict in the buffer turns off
-@samp{majutsu-conflict-mode}; undo re-enables it.
-@end itemize
 
 @node Customizing
 @chapter Customizing

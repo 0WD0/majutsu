@@ -1377,11 +1377,13 @@ You can enter conflict handling from multiple places:
   the conflict workflow. This opens the working-copy file (or a revision blob
   buffer for non-working-copy revisions), enables =majutsu-conflict-mode=, and
   jumps to the first conflict.
-- Command: majutsu-conflict-ensure-mode :: Enable conflict handling in a file with conflict markers.
+- Command: majutsu-conflict-ensure-mode :: Enable conflict handling in a file
+  with conflict markers.
 
 =majutsu-conflict= auto-detects marker styles:
 - JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable
-  =majutsu-conflict-mode=.
+  =majutsu-conflict-mode=. All jj layouts are recognized, including the
+  snapshot-first rendering of =ui.conflict-marker-style "diff-experimental"=.
 - JJ long conflict markers (e.g., 15-char marker runs) are treated the same as
   normal markers.
 - JJ conflicts with missing terminating newline markers are parsed with jj's
@@ -1390,29 +1392,59 @@ You can enter conflict handling from multiple places:
 
 ** majutsu-conflict-mode Commands
 #+attr_keymap: :scope Vanilla
-Vanilla bindings use the prefix ~C-c ^~:
+Emacs bindings use the prefix ~C-c ^~:
 #+attr_keymap: :scope Vanilla
 #+attr_reference: :kind command-binding :interface "Conflict buffer" :mode majutsu-conflict-mode :scope Vanilla :prefix "C-c ^"
-- Key: n / p (majutsu-conflict-next / majutsu-conflict-prev) :: Jump to the next
-  or previous conflict.
-- Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (snapshot /
-  rebase destination section).
-- Key: 1..9 (majutsu-conflict-keep-side) :: Keep side N (the "after" side in JJ
-  diff blocks).
-- Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep side N's "before" variant.
+- Key: n / p (majutsu-conflict-next / majutsu-conflict-prev) :: Jump to the
+  next or previous conflict.
+- Key: RET (majutsu-conflict-keep-current) :: Keep the term at point, side or
+  base.
+- Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (the merge
+  ancestor: jj's first =-------= / "diff from" term).
+- Key: a (majutsu-conflict-keep-all) :: Keep every side, in side order.
+- Key: s (majutsu-conflict-restyle) :: Re-render the conflict with different
+  markers (diff -> snapshot, and snapshot <-> git for 2-sided conflicts). jj
+  detects the marker style per conflict when parsing, so this only changes the
+  presentation.
+- Key: 1..9 (majutsu-conflict-keep-side) :: Keep side N, matching jj's "side
+  #N" labels.
+- Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep base N (bases in
+  materialization order; they are not paired with side numbers).
 - Key: R (majutsu-conflict-refine) :: Refine conflict regions with word-level
   highlighting.
 
 #+attr_keymap: :scope Evil
-Evil bindings are available in Normal state:
+Evil bindings are available in normal state:
 #+attr_keymap: :scope Evil
 #+attr_reference: :kind command-binding :interface "Conflict buffer" :mode majutsu-conflict-mode :scope Evil :state Normal
 - Key: ]] / gj (majutsu-conflict-next) :: Jump to the next conflict.
 - Key: [[ / gk (majutsu-conflict-prev) :: Jump to the previous conflict.
-- Key: gb (majutsu-conflict-keep-base) :: Keep the base.
-- Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N (the "after" side).
-- Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep side N's "before" variant.
+- Key: gb (majutsu-conflict-keep-base) :: Keep the base (the merge ancestor).
+- Key: gr RET (majutsu-conflict-keep-current) :: Keep the term at point.
+- Key: gr a (majutsu-conflict-keep-all) :: Keep every side.
+- Key: gr s (majutsu-conflict-restyle) :: Re-render with different markers.
+- Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
+- Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
 - Key: ge (majutsu-conflict-refine) :: Refine the conflict.
+
+*** Highlighting and Context Help
+Conflict regions are highlighted like smerge-mode, generalized to
+n-sided conflicts:
+- Each side snapshot gets a distinct background face, cycling through
+  ~majutsu-conflict-side-faces~ (=majutsu-conflict-side-1-face= inherits
+  =smerge-upper=, =side-2= inherits =smerge-lower=).
+- Base snapshots use =majutsu-conflict-base-face= (inherits =smerge-base=).
+- Git-style (diff3) regions in mixed buffers (for example produced by
+  ~majutsu-conflict-restyle~) are colored the same way. Buffers that contain
+  only git-style conflicts are still handed to =smerge-mode= by
+  ~majutsu-conflict-ensure-mode~; the two modes stay mutually exclusive.
+- Eldoc describes the term at point ("jj conflict side 2/3: ...").
+- =mouse-3= on a conflict pops up a resolution menu listing every side and
+  base with its revision label. With =context-menu-mode= enabled, the entries
+  join the standard context menu instead of replacing it.
+- User Option: majutsu-conflict-auto-leave :: When non-nil (the default),
+  resolving the last conflict in the buffer turns off
+  =majutsu-conflict-mode=; undo re-enables it.
 
 * Bookmarks
 :PROPERTIES:
@@ -1717,81 +1749,6 @@ workspace root, Majutsu treats it as unavailable instead of showing the raw
 =<Error: ...>= text in the section body. Workspace paths containing embedded
 newlines or other control characters are preserved as complete values.
 
-* Conflict Resolution
-** Detecting Conflicts
-JJ marks conflicts in the log with a "conflict" label. Expanding the revision
-shows each exact conflicted path together with its conflict side count.
-
-** Entering Conflict Mode
-You can enter conflict handling from multiple places:
-- Key: m in the Ediff transient (majutsu-ediff-resolve) :: Use the automatic
-  resolve strategy.
-- Key: M in the Ediff transient (majutsu-ediff-resolve-with-conflict) :: Force
-  the conflict workflow. This opens the working-copy file (or a revision blob
-  buffer for non-working-copy revisions), enables =majutsu-conflict-mode=, and
-  jumps to the first conflict.
-- Command: majutsu-conflict-ensure-mode :: Enable conflict handling in a file
-  with conflict markers.
-
-=majutsu-conflict= auto-detects marker styles:
-- JJ conflict markers (=%%%%%%%= / =+++++++= / =-------= ) -> enable
-  =majutsu-conflict-mode=. All jj layouts are recognized, including the
-  snapshot-first rendering of =ui.conflict-marker-style "diff-experimental"=.
-- JJ long conflict markers (e.g., 15-char marker runs) are treated the same as
-  normal markers.
-- JJ conflicts with missing terminating newline markers are parsed with jj's
-  newline-compensation semantics.
-- Git-style markers (=|||||||= / =======) only -> enable =smerge-mode=.
-
-** majutsu-conflict-mode Commands
-Emacs bindings use the prefix ~C-c ^~:
-- Key: n / p (majutsu-conflict-next / majutsu-conflict-prev) :: Jump to the
-  next or previous conflict.
-- Key: RET (majutsu-conflict-keep-current) :: Keep the term at point, side or
-  base.
-- Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (the merge
-  ancestor: jj's first =-------= / "diff from" term).
-- Key: a (majutsu-conflict-keep-all) :: Keep every side, in side order.
-- Key: s (majutsu-conflict-restyle) :: Re-render the conflict with different
-  markers (diff -> snapshot, and snapshot <-> git for 2-sided conflicts). jj
-  detects the marker style per conflict when parsing, so this only changes the
-  presentation.
-- Key: 1..9 (majutsu-conflict-keep-side) :: Keep side N, matching jj's "side
-  #N" labels.
-- Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep base N (bases in
-  materialization order; they are not paired with side numbers).
-- Key: R (majutsu-conflict-refine) :: Refine conflict regions with word-level
-  highlighting.
-
-Evil bindings are available in normal state:
-- Key: ]] / gj (majutsu-conflict-next) :: Jump to the next conflict.
-- Key: [[ / gk (majutsu-conflict-prev) :: Jump to the previous conflict.
-- Key: gb (majutsu-conflict-keep-base) :: Keep the base (the merge ancestor).
-- Key: gr RET (majutsu-conflict-keep-current) :: Keep the term at point.
-- Key: gr a (majutsu-conflict-keep-all) :: Keep every side.
-- Key: gr s (majutsu-conflict-restyle) :: Re-render with different markers.
-- Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
-- Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
-- Key: ge (majutsu-conflict-refine) :: Refine the conflict.
-
-*** Highlighting and Context Help
-Conflict regions are highlighted like smerge-mode, generalized to
-n-sided conflicts:
-- Each side snapshot gets a distinct background face, cycling through
-  ~majutsu-conflict-side-faces~ (=majutsu-conflict-side-1-face= inherits
-  =smerge-upper=, =side-2= inherits =smerge-lower=).
-- Base snapshots use =majutsu-conflict-base-face= (inherits =smerge-base=).
-- Git-style (diff3) regions in mixed buffers (for example produced by
-  ~majutsu-conflict-restyle~) are colored the same way. Buffers that contain
-  only git-style conflicts are still handed to =smerge-mode= by
-  ~majutsu-conflict-ensure-mode~; the two modes stay mutually exclusive.
-- Eldoc describes the term at point ("jj conflict side 2/3: ...").
-- =mouse-3= on a conflict pops up a resolution menu listing every side and
-  base with its revision label. With =context-menu-mode= enabled, the entries
-  join the standard context menu instead of replacing it.
-- User Option: majutsu-conflict-auto-leave :: When non-nil (the default),
-  resolving the last conflict in the buffer turns off
-  =majutsu-conflict-mode=; undo re-enables it.
 * Customizing
 :PROPERTIES:
 :CUSTOM_ID: customizing
