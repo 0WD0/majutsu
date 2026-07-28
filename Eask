@@ -28,4 +28,5 @@
 (source 'jcs-elpa)
 
 (development
- (depends-on "ellsp"))
+ (depends-on "ellsp")
+ (depends-on "embark"))

@@ -19,6 +19,18 @@
 (require 'majutsu-process)
 
 ;;;###autoload
+(defun majutsu-edit-revision (revset &optional arg)
+  "Edit REVSET.
+With prefix ARG, pass --ignore-immutable.  Return non-nil on success."
+  (interactive (list (majutsu-read-single-revset "Edit revision")
+                     current-prefix-arg))
+  (when (zerop (apply #'majutsu-run-jj
+                      (append (list "edit" revset)
+                              (when arg (list "--ignore-immutable")))))
+    (message "Now editing commit %s" revset)
+    t))
+
+;;;###autoload
 (defun majutsu-edit-changeset (&optional arg)
   "Edit commit at point.
 
@@ -29,11 +41,8 @@ When called from a blob buffer, also visit the workspace file."
                       majutsu-buffer-blob-root
                       majutsu-buffer-blob-path)))
     (if-let* ((revset (or (majutsu-thing-at-point 'jj-revision t)
-                          (majutsu-revision-at-point)))
-              (args (append (list "edit" revset)
-                            (when arg (list "--ignore-immutable")))))
-        (when (zerop (apply #'majutsu-run-jj args))
-          (message "Now editing commit %s" revset)
+                          (majutsu-revision-at-point))))
+        (when (majutsu-edit-revision revset arg)
           (when in-blob
             (let ((file (expand-file-name majutsu-buffer-blob-path
                                           majutsu-buffer-blob-root)))

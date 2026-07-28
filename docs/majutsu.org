@@ -771,6 +771,18 @@ Bookmark lists nest tracked remote bookmarks under their local bookmark.
 When a bookmark target is conflicted, its removed and added targets appear as
 child revision sections identified by their full commit IDs.
 
+** Bookmark Embark Actions
+When Embark is installed, bookmark completion candidates provide these actions:
+
+- Key: RET / e (majutsu-edit-revision) :: Edit the selected bookmark's target.
+- Key: D (majutsu-diff-revset) :: Show the selected bookmark's diff.
+- Key: v (majutsu-evolog) :: Show its evolution log.
+- Key: p / s / m / M / r :: Advance, set, move, move backwards, or rename it.
+- Key: d / f :: Delete it with remote propagation, or forget it locally.
+
+The bookmark action map inherits Embark's general actions, including ~w~ for
+copying the bookmark name.
+
 * Tags
 ** Understanding Tags
 In Jujutsu, tags are lightweight refs that point to revisions, similar to Git tags.
@@ -891,6 +903,16 @@ description, and resolved root path when available. If jj cannot resolve a
 workspace root, Majutsu treats it as unavailable instead of showing the raw
 =<Error: ...>= text in the section body. Workspace paths containing embedded
 newlines or other control characters are preserved as complete values.
+
+** Embark Actions
+When Embark is installed, workspace completion candidates provide these actions:
+
+- Key: RET / v (majutsu-workspace-visit-name) :: Visit the selected workspace.
+- Key: d (majutsu-workspace-dired) :: Open the selected workspace root in Dired.
+- Key: W (majutsu-workspace-copy-root) :: Copy the selected workspace root.
+
+Embark is optional; Majutsu registers these actions automatically after Embark
+is loaded.
 
 * Conflict Resolution
 ** Detecting Conflicts
