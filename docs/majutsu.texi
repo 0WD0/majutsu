@@ -1813,6 +1813,7 @@ Runs: @samp{jj simplify-parents [--source REVSET] [--revision REVSET]}
 @menu
 * Understanding Bookmarks::
 * Bookmark Transient::
+* Bookmark Embark Actions::
 @end menu
 
 @node Understanding Bookmarks
@@ -1886,6 +1887,35 @@ Untrack a remote bookmark.
 Bookmark lists nest tracked remote bookmarks under their local bookmark.
 When a bookmark target is conflicted@comma{} its removed and added targets appear as
 child revision sections identified by their full commit IDs.
+
+@node Bookmark Embark Actions
+@section Bookmark Embark Actions
+
+When Embark is installed@comma{} bookmark completion candidates provide these actions:
+
+@table @asis
+@item @kbd{@key{RET} / e} (@code{majutsu-edit-revision})
+@kindex RET / e
+@findex majutsu-edit-revision
+Edit the selected bookmark's target.
+@item @kbd{D} (@code{majutsu-diff-revset})
+@kindex D
+@findex majutsu-diff-revset
+Show the selected bookmark's diff.
+@item @kbd{v} (@code{majutsu-evolog})
+@kindex v
+@findex majutsu-evolog
+Show its evolution log.
+@item @kbd{p / s / m / M / r}
+@kindex p / s / m / M / r
+Advance@comma{} set@comma{} move@comma{} move backwards@comma{} or rename it.
+@item @kbd{d / f}
+@kindex d / f
+Delete it with remote propagation@comma{} or forget it locally.
+@end table
+
+The bookmark action map inherits Embark's general actions@comma{} including @samp{w} for
+copying the bookmark name.
 
 @node Tags
 @chapter Tags
@@ -2147,6 +2177,7 @@ Show the Git directory path (@samp{jj git root}).
 @menu
 * Understanding Workspaces::
 * Workspace Transient::
+* Embark Actions::
 @end menu
 
 @node Understanding Workspaces
@@ -2202,6 +2233,29 @@ description@comma{} and resolved root path when available. If jj cannot resolve 
 workspace root@comma{} Majutsu treats it as unavailable instead of showing the raw
 @samp{<Error: ...>} text in the section body. Workspace paths containing embedded
 newlines or other control characters are preserved as complete values.
+
+@node Embark Actions
+@section Embark Actions
+
+When Embark is installed@comma{} workspace completion candidates provide these actions:
+
+@table @asis
+@item @kbd{@key{RET} / v} (@code{majutsu-workspace-visit-name})
+@kindex RET / v
+@findex majutsu-workspace-visit-name
+Visit the selected workspace.
+@item @kbd{d} (@code{majutsu-workspace-dired})
+@kindex d
+@findex majutsu-workspace-dired
+Open the selected workspace root in Dired.
+@item @kbd{W} (@code{majutsu-workspace-copy-root})
+@kindex W
+@findex majutsu-workspace-copy-root
+Copy the selected workspace root.
+@end table
+
+Embark is optional; Majutsu registers these actions automatically after Embark
+is loaded.
 
 @node Conflict Resolution
 @chapter Conflict Resolution

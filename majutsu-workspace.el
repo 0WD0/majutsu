@@ -312,22 +312,34 @@ DIRECTORY is captured so suffix rendering stays stable in the minibuffer."
 (defvar majutsu-workspace-name-history nil
   "Minibuffer history for workspace-name input.")
 
+(defun majutsu-workspace--prompt-name (&optional prompt root default)
+  "Prompt for a workspace name from ROOT.
+DEFAULT is the default candidate; otherwise use the current workspace."
+  (let* ((root (or root default-directory))
+         (payload (majutsu-workspace-candidate-data root))
+         (current (cl-find-if (lambda (entry)
+                                (plist-get entry :current))
+                              (plist-get payload :entry-list)))
+         (default (or default (plist-get current :name) ""))
+         (prompt (or prompt "Workspace")))
+    (majutsu-completing-read-payload prompt payload
+                                     nil t nil 'majutsu-workspace-name-history
+                                     default 'majutsu-workspace payload root)))
+
 (defun majutsu-workspace--read-name (&optional prompt root default)
   "Read a workspace name.
 
-Prefer the workspace section at point, otherwise use completion over
-the workspaces for ROOT."
+Prefer the workspace section at point, otherwise prompt over the workspaces
+for ROOT."
   (or (majutsu-workspace--section-name)
-      (let* ((root (or root default-directory))
-             (payload (majutsu-workspace-candidate-data root))
-             (current (cl-find-if (lambda (entry)
-                                    (plist-get entry :current))
-                                  (plist-get payload :entry-list)))
-             (default (or default (plist-get current :name) ""))
-             (prompt (or prompt "Workspace")))
-        (majutsu-completing-read-payload prompt payload
-                                         nil t nil 'majutsu-workspace-name-history
-                                         default 'majutsu-workspace nil root))))
+      (majutsu-workspace--prompt-name prompt root default)))
+
+(defun majutsu-workspace--completion-context-entry (name)
+  "Return the structured completion entry for workspace NAME, if available."
+  (when (listp majutsu-completion-context)
+    (when-let* ((entries (plist-get majutsu-completion-context :entries))
+                ((hash-table-p entries)))
+      (gethash name entries))))
 
 (defun majutsu-workspace--read-root (name &optional root)
   "Return the workspace root directory for NAME.
@@ -338,9 +350,11 @@ that fails \(e.g. workspace created before jj v0.38.0), try a sibling
 directory of ROOT whose name matches NAME. Falls back to prompting the user."
   (let* ((root (file-name-as-directory (or root default-directory)))
          (entry (majutsu-workspace--section-entry))
+         (completion-entry (majutsu-workspace--completion-context-entry name))
          (dir (or (and entry
                        (equal (plist-get entry :name) name)
                        (plist-get entry :root))
+                  (plist-get completion-entry :root)
                   (majutsu-workspace--root-for-name name)
                   (majutsu-workspace--sibling-root name root)
                   (read-directory-name (format "Workspace root for %s: " name)
@@ -644,6 +658,28 @@ workspace root automatically; if not found, prompt for it."
     (setq majutsu--default-directory dir)
     (if (majutsu-refresh)
         (dired dir))))
+
+(defun majutsu-workspace-visit-name (name &optional root)
+  "Visit workspace NAME from repository ROOT.
+ROOT defaults to `default-directory'.  This command is suitable as an Embark
+action because NAME is its first argument."
+  (interactive (list (majutsu-workspace--prompt-name "Workspace: ")))
+  (majutsu-workspace-visit (majutsu-workspace--read-root name root)))
+
+(defun majutsu-workspace-dired (name &optional root)
+  "Open the root of workspace NAME in Dired.
+ROOT defaults to `default-directory'."
+  (interactive (list (majutsu-workspace--prompt-name "Workspace: ")))
+  (dired (majutsu-workspace--read-root name root)))
+
+(defun majutsu-workspace-copy-root (name &optional root)
+  "Copy the root directory of workspace NAME to the kill ring.
+ROOT defaults to `default-directory'."
+  (interactive (list (majutsu-workspace--prompt-name "Workspace: ")))
+  (let* ((directory (majutsu-workspace--read-root name root))
+         (path (directory-file-name directory)))
+    (kill-new path)
+    (message "%s (copied)" path)))
 
 ;;; Commands
 
