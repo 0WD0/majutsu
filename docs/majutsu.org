@@ -1352,6 +1352,11 @@ Deleted local bookmarks remain visible, and their tracked remote rows say
 =local deleted=.  Conflict targets appear beneath their own bookmark.
 Sections initially open and retain their folding state on refresh.
 
+** Embark Actions
+When Embark is loaded, bookmark completion candidates offer actions to inspect,
+edit, move, rename, delete and forget the selected bookmark.  Embark remains
+optional; the ordinary bookmark transient is available independently.
+
 ** Bookmark Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: b (majutsu-bookmark) ::

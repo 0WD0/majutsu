@@ -75,6 +75,10 @@
   discussions in the log buffer and access Forge commands.  It is intended
   primarily for colocated jj/Git repositories.
 
+- Optional Embark actions ::
+  Bookmark and workspace completion candidates offer Embark actions,
+  including visiting a workspace, opening Dired, and copying its root.
+
 - Gerrit uploads ::
   The Git dispatcher provides =jj gerrit upload= with revision and remote
   branch selection, review metadata, state flags, and repository-local

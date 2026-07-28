@@ -155,6 +155,7 @@ Bookmarks
 
 * Understanding Bookmarks::
 * Bookmark List::
+* Embark Actions::
 * Bookmark Transient::
 
 Tags
@@ -2435,6 +2436,7 @@ Refine the conflict.
 @menu
 * Understanding Bookmarks::
 * Bookmark List::
+* Embark Actions::
 * Bookmark Transient::
 @end menu
 
@@ -2465,6 +2467,13 @@ counts are relative to the local bookmark@comma{} from the remote's perspective.
 Deleted local bookmarks remain visible@comma{} and their tracked remote rows say
 @samp{local deleted}.  Conflict targets appear beneath their own bookmark.
 Sections initially open and retain their folding state on refresh.
+
+@node Embark Actions
+@section Embark Actions
+
+When Embark is loaded@comma{} bookmark completion candidates offer actions to inspect@comma{}
+edit@comma{} move@comma{} rename@comma{} delete and forget the selected bookmark.  Embark remains
+optional; the ordinary bookmark transient is available independently.
 
 @node Bookmark Transient
 @section Bookmark Transient
