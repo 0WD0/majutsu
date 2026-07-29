@@ -21,6 +21,7 @@
 (require 'majutsu)
 (require 'majutsu-jj)
 (require 'majutsu-row)
+(require 'majutsu-diff)
 
 ;;; Section Keymaps
 
@@ -548,16 +549,85 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 ;;; Log insert status
 
-(defun majutsu-log--wash-status (_args)
-  "Keep `jj status` output as-is in the current section."
+(defcustom majutsu-log-status-diff-arguments '("--git")
+  "List of arguments to pass to jj diff in `majutsu-log-insert-status-with-diffs'"
+  :type '(repeat string)
+  :group 'majutsu)
+
+(defun majutsu-log--wash-status-raw (_args)
+  "Keep jj status output as-is in the current section."
   (goto-char (point-max)))
 
-;; TODO: Enhance status output parsing to create sections per file and conflicts.
 (defun majutsu-log-insert-status ()
   "Insert jj status into current buffer."
   (magit-insert-section (status)
     (magit-insert-heading "Working Copy Status")
-    (majutsu-jj-wash #'majutsu-log--wash-status nil "status")))
+    (majutsu-jj-wash #'majutsu-log--wash-status-raw nil "status")))
+
+(defun majutsu-log--wash-status-header (_args)
+  "Wash jj status output, dropping the working copy change list."
+  (goto-char (point-min))
+  (when (re-search-forward "^Working copy changes:$" nil t)
+    (goto-char (line-beginning-position))
+    (magit-delete-line)
+    ;; Only [A]dded, [D]eleted, [M]odified, [C]opied, and [R]enamed are expected,
+    ;; but the space guards against metadata lines regardless:
+    (while (looking-at-p "^[A-Z] ")
+      (magit-delete-line)))
+  (goto-char (point-max)))
+
+(defun majutsu-log--status-insert-header ()
+  "Insert jj status metadata about working copy and its parent.
+
+Used by `majutsu-log-insert-status-with-diffs' together with
+`majutsu-log--status-insert-changed-files'."
+  (magit-insert-section (status)
+    ;; (magit-insert-heading "Working Copy Status")
+    (majutsu-jj-wash #'majutsu-log--wash-status-header nil
+      (majutsu-jj-append-filesets
+       (list "status") majutsu-buffer-log-filesets))))
+
+(defun majutsu-log--status-changed-files-visibility (section)
+  "Return `hide' for changed-file SECTIONs, nil otherwise.
+
+Installed buffer-locally by `majutsu-log--status-insert-changed-files',
+in order for the diffs to start out collapsed."
+  (and (magit-section-match '[jj-file changed-files] section)
+       'hide))
+
+(defun majutsu-log--status-insert-changed-files ()
+  "Insert jj status changed files with diffs (like `magit-status').
+
+The formatting of the diff is controlled by `majutsu-log-status-diff-arguments'."
+  (add-hook 'magit-section-set-visibility-hook
+            #'majutsu-log--status-changed-files-visibility nil t)
+  (let* ((args (majutsu-jj-append-filesets
+                (cons "diff" majutsu-log-status-diff-arguments)
+                majutsu-buffer-log-filesets))
+         (backend (majutsu-diff--sync-backend args))
+         (washer (majutsu-diff--backend-washer backend)))
+    (magit-insert-section (changed-files)
+      (magit-insert-heading "Changed files")
+      (majutsu-jj-wash washer 'wash-anyway args)
+      (insert "\n"))))
+
+;; TODO: Enhance status output parsing to handle conflicts.
+(defun majutsu-log-insert-status-with-diffs ()
+  "Insert jj status metadata with changed files with diffs (like `magit-status').
+
+An opt-in alternative to `majutsu-log-insert-status'.
+To use it, replace the default entry on `majutsu-log-sections-hook':
+
+  (remove-hook \\='majutsu-log-sections-hook #\\='majutsu-log-insert-status)
+  (magit-add-section-hook \\='majutsu-log-sections-hook
+                          #\\='majutsu-log-insert-status-with-diffs
+                          #\\='majutsu-log-insert-logs)
+
+Note that this runs jj diff on every refresh,
+whose formatting is controlled by `majutsu-log-status-diff-argumenst'."
+  (majutsu-log--status-insert-header)
+  (insert "\n")
+  (majutsu-log--status-insert-changed-files))
 
 ;;; Log insert conflicts
 
