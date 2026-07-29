@@ -33,6 +33,11 @@
   :type 'string
   :group 'majutsu-completion)
 
+(defvar majutsu-completion-context nil
+  "Dynamically bound domain context for the active Majutsu completion reader.
+Embark actions can use this value to recover structured candidate metadata
+without querying the repository again.")
+
 (defface majutsu-completion-key
   '((t :inherit font-lock-keyword-face))
   "Face used for primary completion labels such as kinds or categories."

@@ -272,6 +272,19 @@
       (should (eq seen-history 'majutsu-workspace-name-history))
       (should (eq seen-category 'majutsu-workspace)))))
 
+(ert-deftest majutsu-workspace-read-root/uses-completion-context ()
+  "Workspace actions should reuse roots captured by the completion payload."
+  (let ((entries (make-hash-table :test #'equal)))
+    (puthash "feature" '(:name "feature" :root "/tmp/feature/") entries)
+    (let ((majutsu-completion-context (list :entries entries)))
+      (cl-letf (((symbol-function 'majutsu-workspace--section-entry)
+                 (lambda () nil))
+                ((symbol-function 'majutsu-workspace--root-for-name)
+                 (lambda (_name)
+                   (ert-fail "should not query jj when completion supplied the root"))))
+        (should (equal (majutsu-workspace--read-root "feature" "/tmp/main/")
+                       "/tmp/feature/"))))))
+
 (ert-deftest majutsu-workspace-visit/binds-default-directory ()
   "Ensure visiting another workspace updates buffer context."
   (let ((new-dir (make-temp-file "majutsu-test-" t))
@@ -288,6 +301,45 @@
           (should (equal seen-default (file-name-as-directory (expand-file-name new-dir))))
           (should (equal seen-root (file-name-as-directory (expand-file-name new-dir)))))
       (delete-directory new-dir t))))
+
+(ert-deftest majutsu-workspace-actions/interactive-always-prompts ()
+  "Embark target injection should reach a minibuffer instead of point context."
+  (let (visited)
+    (cl-letf (((symbol-function 'majutsu-workspace--prompt-name)
+               (lambda (&rest _args) "feature"))
+              ((symbol-function 'majutsu-workspace--read-name)
+               (lambda (&rest _args)
+                 (ert-fail "workspace actions must not use point context")))
+              ((symbol-function 'majutsu-workspace--read-root)
+               (lambda (name &optional _root)
+                 (should (equal name "feature"))
+                 "/tmp/feature/"))
+              ((symbol-function 'majutsu-workspace-visit)
+               (lambda (directory) (setq visited directory))))
+      (call-interactively #'majutsu-workspace-visit-name)
+      (should (equal visited "/tmp/feature/")))))
+
+(ert-deftest majutsu-workspace-actions/resolve-selected-name ()
+  "Workspace candidate actions should resolve the selected name once."
+  (let (visited dired-root copied)
+    (cl-letf (((symbol-function 'majutsu-workspace--read-root)
+               (lambda (name &optional root)
+                 (should (equal name "feature"))
+                 (should (equal root "/tmp/main/"))
+                 "/tmp/feature/"))
+              ((symbol-function 'majutsu-workspace-visit)
+               (lambda (directory) (setq visited directory)))
+              ((symbol-function 'dired)
+               (lambda (directory) (setq dired-root directory)))
+              ((symbol-function 'kill-new)
+               (lambda (value) (setq copied value)))
+              ((symbol-function 'message) #'ignore))
+      (majutsu-workspace-visit-name "feature" "/tmp/main/")
+      (majutsu-workspace-dired "feature" "/tmp/main/")
+      (majutsu-workspace-copy-root "feature" "/tmp/main/")
+      (should (equal visited "/tmp/feature/"))
+      (should (equal dired-root "/tmp/feature/"))
+      (should (equal copied "/tmp/feature")))))
 
 ;;; Wash tests
 
