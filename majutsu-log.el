@@ -523,8 +523,8 @@ When WINDOW is nil, use the current row tail owner window."
   (majutsu-log--refresh-tail-window (selected-window)))
 
 (defun majutsu-log--after-window-size-change (window)
-  "Refresh tail alignment after the selected log WINDOW changes size."
-  (when (eq window (selected-window))
+  "Refresh tail alignment after log WINDOW changes size."
+  (when (eq (window-buffer window) (current-buffer))
     (majutsu-log--refresh-tail-window window)))
 
 (defun majutsu-log--wash-logs (_args)
