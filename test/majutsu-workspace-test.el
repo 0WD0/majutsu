@@ -467,6 +467,53 @@
     (should (equal (majutsu-workspace--read-root "feature")
                    "/tmp/feature/"))))
 
+(ert-deftest majutsu-workspace--read-add-destination/uses-name-as-sibling-default ()
+  "Workspace destinations should default to PREFIX_NAME beside the root."
+  (let (seen-args)
+    (cl-letf (((symbol-function 'read-directory-name)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 "/tmp/majutsu_FEATURE_B")))
+      (should (equal (majutsu-workspace--read-add-destination
+                      "/tmp/majutsu_OLD/" "FEATURE/B")
+                     "/tmp/majutsu_FEATURE_B"))
+      (should (equal seen-args
+                     '("Create workspace at: " "/tmp/" nil nil
+                       "majutsu_FEATURE-B"))))))
+
+(ert-deftest majutsu-workspace-add/interactive-reads-name-before-destination ()
+  "Interactive workspace add should use the name to default the destination."
+  (let (calls seen-args)
+    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+               (lambda (&optional _directory) "/tmp/majutsu/"))
+              ((symbol-function 'majutsu-workspace--names)
+               (lambda (&optional _directory) nil))
+              ((symbol-function 'majutsu-completing-read)
+               (lambda (prompt &rest _args)
+                 (cond
+                  ((string-prefix-p "Workspace name" prompt)
+                   (push 'name calls)
+                   "FEATURE_B")
+                  ((equal prompt "Sparse patterns") "copy"))))
+              ((symbol-function 'read-directory-name)
+               (lambda (_prompt directory _default _must-match initial)
+                 (push 'destination calls)
+                 (should (equal directory "/tmp/"))
+                 (should (equal initial "majutsu_FEATURE_B"))
+                 "/tmp/majutsu_FEATURE_B"))
+              ((symbol-function 'majutsu-read-optional-revset)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'majutsu-run-jj)
+               (lambda (&rest args)
+                 (setq seen-args args)
+                 0))
+              ((symbol-function 'majutsu-workspace-visit) #'ignore))
+      (call-interactively #'majutsu-workspace-add)
+      (should (equal (nreverse calls) '(name destination)))
+      (should (equal seen-args
+                     '("workspace" "add" "/tmp/majutsu_FEATURE_B"
+                       "--name" "FEATURE_B"))))))
+
 (ert-deftest majutsu-workspace-add/uses-local-destination-for-jj ()
   "Workspace add should pass a local destination path to remote jj.
 The Emacs-facing path remains unchanged for visiting the new workspace."
