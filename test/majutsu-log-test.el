@@ -214,6 +214,13 @@
     (should (eq (plist-get spec :face) t))
     (should (equal (plist-get spec :post) nil))))
 
+(ert-deftest majutsu-log-profile-controls-initial-section-visibility ()
+  "The log section visibility option should be passed to the row profile."
+  (let ((majutsu-log-commit-sections-initially-hidden t))
+    (should (eq (plist-get (majutsu-log--row-profile) :section-hide) t)))
+  (let ((majutsu-log-commit-sections-initially-hidden nil))
+    (should-not (plist-get (majutsu-log--row-profile) :section-hide))))
+
 (ert-deftest majutsu-log-metadata-templates-ignore-visible-customization ()
   "Presentation templates must not change canonical machine fields."
   (let ((majutsu-log-template-commit-id

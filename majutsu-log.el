@@ -146,6 +146,17 @@ decoded back to literal newlines after field splitting.")
   '[:description :first_line]
   "Machine template for the canonical one-line description.")
 
+(defcustom majutsu-log-commit-sections-initially-hidden nil
+  "Whether commit sections in log buffers are initially collapsed.
+
+When nil (the default), commit bodies are shown immediately.  Users can still
+toggle individual sections with `TAB'."
+  :type 'boolean
+  :group 'majutsu
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq majutsu-log--compiled-template-cache nil)))
+
 (defcustom majutsu-log-commit-columns
   '((:field change-id :module heading
      :template majutsu-log-template-change-id :face t)
@@ -366,6 +377,7 @@ transport logical newlines safely through single-line payload segments."
    :entry-id-function 'majutsu-log--entry-id
    :section-class 'jj-commit
    :section-value-function 'majutsu-log--entry-id
+   :section-hide majutsu-log-commit-sections-initially-hidden
    :tail-align t))
 
 (defun majutsu-log--compile-columns ()

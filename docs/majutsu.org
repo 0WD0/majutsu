@@ -163,7 +163,7 @@ Majutsu runs =jj= commands asynchronously whenever possible to keep the Emacs UI
 The log buffer is the heart of Majutsu. It displays the history graph using a custom template DSL that mirrors the =jj log= output but adds interactivity.
 
 *** Log Display
-Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Collapsed by default, you can expand a revision to see foldable ~body~ module content (for example, long descriptions).
+Each revision in the log is a section. The visible anchor line is built from fields assigned to the ~heading~ module plus any auxiliary fields assigned to the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and timestamp). Graph prefixes and graph-related indentation are rendered as display-only prefix decoration rather than real buffer text, so they do not get copied accidentally and point does not land on them as editable text. Commit sections are expanded by default; set ~majutsu-log-commit-sections-initially-hidden~ to ~t~ to collapse them initially. You can toggle a revision to see its foldable ~body~ module content (for example, long descriptions).
 
 Press =[= to jump to a visible parent and =]= to jump to a visible child. When more than one target is visible, completion returns the canonical revision id while displaying its description as an annotation.
 
@@ -949,6 +949,7 @@ Evil bindings are available in normal state:
 
 ** Display Options
 - User Option: majutsu-log-commit-columns :: Flat log row column declarations controlling templates, modules, face policy, and postprocessing. For protocol details, module semantics, and examples, see /Inspecting -> Log Buffer/.
+- User Option: majutsu-log-commit-sections-initially-hidden :: When non-nil, commit sections in log buffers start collapsed. The default is =nil=, which leaves them expanded; users can still toggle individual sections with =TAB=.
 - User Option: majutsu-log-template-<field> :: Template forms consumed by log fields. For newline and control-character rules, see /Inspecting -> Log Buffer/.
 - User Option: majutsu-log-sections-hook :: Hook run to insert sections in the log buffer.
 - User Option: majutsu-display-buffer-function :: Magit-style display strategy (default: =majutsu-display-buffer-traditional=; traditional, same-window-except-diff, fullframe, topleft, fullcolumn).
