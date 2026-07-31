@@ -741,6 +741,21 @@ workspace roots only."
                        "Workspace(s) forgotten")))
         (message "Workspace forget failed")))))
 
+(defun majutsu-workspace--read-add-destination (root name)
+  "Read a sibling destination for a new workspace named NAME at ROOT.
+The initial input is \"PREFIX_NAME\", where PREFIX is the basename of
+ROOT up to its first underscore.  Slashes in NAME are replaced with dashes."
+  (let* ((path (directory-file-name root))
+         (basename (file-name-nondirectory path))
+         (prefix (if (string-match "_" basename)
+                     (substring basename 0 (match-beginning 0))
+                   basename)))
+    (read-directory-name
+     "Create workspace at: " (file-name-directory path) nil nil
+     (concat prefix "_"
+             (unless (string-empty-p name)
+               (string-replace "/" "-" name))))))
+
 ;;;###autoload
 (defun majutsu-workspace-add (destination &optional name revision sparse-patterns)
   "Add a workspace.
@@ -750,8 +765,6 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
   `jj workspace add` options."
   (interactive
    (let* ((root (majutsu--toplevel-safe))
-          (parent (file-name-directory (directory-file-name root)))
-          (destination (read-directory-name "Create workspace at: " parent nil nil))
           (name (string-trim
                  (or (majutsu-completing-read
                       "Workspace name (empty = default)"
@@ -759,6 +772,7 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
                       nil nil nil 'majutsu-workspace-name-history
                       nil 'majutsu-workspace)
                      "")))
+          (destination (majutsu-workspace--read-add-destination root name))
           (revision (or (majutsu-read-optional-revset
                          "Parent revset (-r, empty = default)"
                          nil nil 'majutsu-read-revset-history)
