@@ -1615,9 +1615,9 @@ The default jj editor@comma{} @samp{:builtin}@comma{} is a terminal TUI@.  Custo
 
 @itemize
 @item
-@samp{auto} (the default) uses Ghostel when available with a local
-@samp{emacsclient}.  Otherwise it only falls back to a normal process for a known
-external editor such as Meld.
+@samp{auto} (the default) uses Ghostel when available.  Local sessions also need
+a working @samp{emacsclient}; Ghostel-supported TRAMP sessions use with-editor's
+remote sleeping-editor bridge instead.
 @item
 @samp{ghostel} requires Ghostel and supports jj's built-in TUI and external
 terminal editors.
@@ -1626,12 +1626,19 @@ terminal editors.
 @samp{:builtin} rather than trying to render it in a process buffer.
 @end itemize
 
-Ghostel is optional.  Ghostel-hosted sessions require a local working
-@samp{emacsclient} for jj's later description-editor invocation.  On TRAMP@comma{}
-@samp{auto} routes a configured external editor through Majutsu's ordinary process
-path; the built-in @samp{:builtin} recorder is rejected because Ghostel cannot
-bridge the later description editor there.  The same external-editor fallback
-is used locally when no usable @samp{emacsclient} is configured.
+Ghostel is optional.  A local Ghostel session requires a working
+@samp{emacsclient} for jj's later description-editor invocation.  On a
+Ghostel-supported POSIX TRAMP remote@comma{} Ghostel starts a remote PTY and
+with-editor uses its sleeping-editor protocol@comma{} so no local @samp{emacsclient} is
+needed.  Majutsu associates jj's remote temporary description file with its
+repository before it is visited@comma{} keeping description-buffer commands in the
+right repository.  A @samp{WITH-EDITOR} control line may remain visible in the
+Ghostel transcript.
+
+Ghostel's remote PTY path needs a POSIX remote reachable by a supported TRAMP
+method; Windows remotes are not supported.  The ordinary external-editor
+fallback is used when Ghostel is unavailable@comma{} or locally when no usable
+@samp{emacsclient} is configured.
 
 @node Selection Semantics
 @subsection Selection Semantics

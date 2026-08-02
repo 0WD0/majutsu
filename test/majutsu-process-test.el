@@ -97,6 +97,30 @@
         (should (equal (majutsu-process-with-editor-file-root "/tmp/manifest")
                        "/repo/"))))))
 
+(ert-deftest test-majutsu-process-track-with-editor-output/remembers-remote-root ()
+  "Raw terminal output records a split sleeping-editor packet before display."
+  (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (let* ((part1 "WITH-EDITOR: 123 OPEN /tmp/editor-")
+             (part2 (format "abc.jjdescription%c IN /repo\n" ?\x1f))
+             (proc (make-process :name "majutsu-test"
+                                 :buffer (current-buffer)
+                                 :command (list "cat"))))
+        (unwind-protect
+            (progn
+              (process-put proc 'default-dir "/ssh:example:/repo/")
+              (majutsu-process-track-with-editor-output proc part1)
+              (should-not
+               (majutsu-process-with-editor-file-root
+                "/ssh:example:/tmp/editor-abc.jjdescription"))
+              (majutsu-process-track-with-editor-output proc part2)
+              (should
+               (equal
+                (majutsu-process-with-editor-file-root
+                 "/ssh:example:/tmp/editor-abc.jjdescription")
+                "/ssh:example:/repo/")))
+          (delete-process proc))))))
+
 (ert-deftest test-majutsu-process-filter/dispatches-majutsu-ediff-control-packets ()
   (with-temp-buffer
     (let* ((packet (format "MAJUTSU-EDIFF: 123 DIFF /tmp/left%c/tmp/right%cfoo.txt\n"
