@@ -272,9 +272,11 @@ tricking buffer reuse logic into thinking a buffer belongs to a
 repository that it doesn't.")
 (put 'majutsu--default-directory 'permanent-local t)
 
-(defun majutsu-mode-get-buffers ()
-  "Return Majutsu buffers belonging to the current repository."
-  (let ((topdir (majutsu--toplevel-safe)))
+(defun majutsu-mode-get-buffers (&optional root)
+  "Return Majutsu buffers belonging to ROOT.
+When ROOT is nil, use the current repository."
+  (let ((topdir (file-name-as-directory
+                 (or root (majutsu--toplevel-safe)))))
     (seq-filter (lambda (buf)
                   (with-current-buffer buf
                     (and (derived-mode-p 'majutsu-mode)
@@ -492,7 +494,7 @@ CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
     ;; old sections and text disappear.  Keep this dynamic to avoid making the
     ;; base mode depend on the optional interactive-selection feature.
     (when (fboundp 'majutsu-interactive-invalidate)
-      (majutsu-interactive-invalidate))
+      (majutsu-interactive-invalidate t))
     (let ((action (if created "Creating" "Refreshing")))
       (when (eq major-mode 'majutsu-mode)
         (majutsu--debug "%s buffer `%s'..." action (buffer-name)))
@@ -515,6 +517,11 @@ CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
       (let ((magit-section-cache-visibility nil))
         (when (bound-and-true-p magit-root-section)
           (magit-section-show magit-root-section)))
+      (when (fboundp 'majutsu-interactive-record-render-context)
+        (majutsu-interactive-record-render-context))
+      ;; User hooks may modify the working copy or perform another jj
+      ;; operation.  Bind the context to the tree just rendered before giving
+      ;; those hooks control, so the next selection detects such changes.
       (run-hooks 'majutsu-refresh-buffer-hook)
       (magit-section-update-highlight)
       (set-buffer-modified-p nil))))

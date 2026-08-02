@@ -54,9 +54,63 @@
 (ert-deftest majutsu-jj-option-values/accepts-all-option-spellings ()
   "Parse long, separate, and short option values before a fileset separator."
   (should (equal (majutsu-jj-option-values
-                  '("--revisions=A" "-r" "B" "-rC" "--" "--revisions=D")
+                  '("--revisions=A" "-r" "B" "-rC" "-r=D"
+                    "--" "--revisions=E")
                   "--revisions" "-r")
-                 '("A" "B" "C"))))
+                 '("A" "B" "C" "D"))))
+
+(ert-deftest majutsu-jj-option-values/strips-attached-short-equals ()
+  "Treat the equals in -r=@ and -f=@ as option syntax."
+  (should (equal (majutsu-jj-option-values
+                  '("-r=@" "-r@-" "-r=" "--" "-r=ignored")
+                  "--revisions" "-r")
+                 '("@" "@-" "")))
+  (should (equal (majutsu-jj-option-values
+                  '("-f=@" "-fmain") "--from" "-f")
+                 '("@" "main"))))
+
+(ert-deftest majutsu-jj-set-option-value/replaces-spellings-before-filesets ()
+  "Canonical options replace long, short, attached, and repeated spellings."
+  (should
+   (equal (majutsu-jj-set-option-value
+           '("--message=x" "--from" "A" "-fB" "--from=C"
+             "--" "--from=fileset")
+           "--from" "commit-id" "-f")
+          '("--message=x" "--from=commit-id"
+            "--" "--from=fileset")))
+  (should
+   (equal (majutsu-jj-set-option-value
+           '("--from=A" "--to=B") "--from" nil "-f")
+          '("--to=B"))))
+
+(ert-deftest majutsu-jj-operation-id/uses-directory-and-no-snapshot-query ()
+  "Read the newest operation in the requested repository directory."
+  (let (called-directory called-args)
+    (cl-letf (((symbol-function 'majutsu-jj-string)
+               (lambda (&rest args)
+                 (setq called-directory default-directory
+                       called-args args)
+                 "operation-id")))
+      (should (equal (majutsu-jj-operation-id "/tmp/repository/")
+                     "operation-id"))
+      (should (equal called-directory "/tmp/repository/"))
+      (should (equal called-args
+                     '("--ignore-working-copy" "operation" "log"
+                       "--no-graph" "-n" "1" "-T" "id")))
+      (should (equal (majutsu-jj-operation-id "/tmp/repository/" t)
+                     "operation-id"))
+      (should (equal called-args
+                     '(nil "operation" "log"
+                       "--no-graph" "-n" "1" "-T" "id"))))))
+
+(ert-deftest majutsu-jj-operation-id/returns-nil-on-empty-or-error ()
+  "An unavailable operation ID is an unknown result, represented by nil."
+  (cl-letf (((symbol-function 'majutsu-jj-string)
+             (lambda (&rest _) "")))
+    (should-not (majutsu-jj-operation-id)))
+  (cl-letf (((symbol-function 'majutsu-jj-string)
+             (lambda (&rest _) (error "unavailable"))))
+    (should-not (majutsu-jj-operation-id))))
 
 (ert-deftest majutsu-jj-resolve-single-commit/requires-exact-cardinality ()
   "A singleton probe must not use `latest' or otherwise reduce a range."
@@ -259,10 +313,10 @@
                  1)))
       (with-temp-buffer
         (should (= 1 (majutsu-jj-wash
-                         (lambda (&rest _)
-                           (setq washed (buffer-string))
-                           (goto-char (point-max)))
-                         'wash-anyway
+                       (lambda (&rest _)
+                         (setq washed (buffer-string))
+                         (goto-char (point-max)))
+                       'wash-anyway
                        "diff")))
         (should (equal washed "diff output\n"))
         (should (string-prefix-p washed (buffer-string)))

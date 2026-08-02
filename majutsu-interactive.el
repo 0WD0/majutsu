@@ -26,6 +26,10 @@
 (require 'magit-section)
 (require 'transient)
 
+(declare-function majutsu-jj-operation-id "majutsu-jj"
+                  (&optional directory snapshot))
+(declare-function majutsu-process-completion-owned-p "majutsu-process" (process))
+
 ;;; Options
 
 (defgroup majutsu-interactive nil
@@ -64,6 +68,17 @@ region within a hunk.")
 (defvar-local majutsu-interactive--selection-operation nil
   "Transient operation that owns the current patch selection.")
 
+(cl-defstruct (majutsu-interactive-context
+               (:constructor majutsu-interactive-context-create))
+  "Repository and buffer generation that a patch selection belongs to."
+  operation root operation-id buffer-tick diff-range diff-filesets)
+
+(defvar-local majutsu-interactive--render-context nil
+  "Repository state represented by the current rendered diff.")
+
+(defvar-local majutsu-interactive--selection-context nil
+  "Rendered repository state copied when the first change is selected.")
+
 (defun majutsu-interactive--current-operation ()
   "Return the patch-selection operation active in the current transient."
   (and (boundp 'transient-current-command)
@@ -71,12 +86,76 @@ region within a hunk.")
              '(majutsu-split majutsu-squash majutsu-restore))
        transient-current-command))
 
+(defun majutsu-interactive--repository-root ()
+  "Return the current buffer's repository root without signaling."
+  (condition-case nil
+      (when-let* ((root (or (majutsu--buffer-root)
+                            (majutsu--toplevel-safe default-directory))))
+        (file-name-as-directory root))
+    (error nil)))
+
+(defun majutsu-interactive--current-repository-operation (root &optional snapshot)
+  "Return ROOT's current jj operation id without signaling.
+When SNAPSHOT is non-nil, snapshot working-copy filesystem changes first."
+  (and root
+       (fboundp 'majutsu-jj-operation-id)
+       (majutsu-jj-operation-id root snapshot)))
+
+(defun majutsu-interactive-record-render-context ()
+  "Record the repository state represented by the current diff buffer."
+  (when (derived-mode-p 'majutsu-diff-mode)
+    (let ((root (majutsu-interactive--repository-root)))
+      (setq-local
+       majutsu-interactive--render-context
+       (majutsu-interactive-context-create
+        :root root
+        :operation-id
+        ;; The refresh command has already produced the rendered tree.  Merely
+        ;; read that operation here; freshness checks snapshot later changes.
+        (majutsu-interactive--current-repository-operation root)
+        :buffer-tick (buffer-chars-modified-tick)
+        :diff-range (copy-tree majutsu-buffer-diff-range)
+        :diff-filesets (copy-tree majutsu-buffer-diff-filesets))))))
+
+(defun majutsu-interactive--context-current-p (context &optional check-operation)
+  "Return non-nil when CONTEXT still describes the current buffer.
+When CHECK-OPERATION is non-nil, also require the same readable jj operation."
+  (and context
+       (equal (majutsu-interactive-context-root context)
+              (majutsu-interactive--repository-root))
+       (equal (majutsu-interactive-context-buffer-tick context)
+              (buffer-chars-modified-tick))
+       (equal (majutsu-interactive-context-diff-range context)
+              majutsu-buffer-diff-range)
+       (equal (majutsu-interactive-context-diff-filesets context)
+              majutsu-buffer-diff-filesets)
+       (or (not check-operation)
+           (let ((before (majutsu-interactive-context-operation-id context))
+                 (after
+                  (majutsu-interactive--current-repository-operation
+                   (majutsu-interactive-context-root context) t)))
+             ;; Hand-built test/extension buffers may not have a render-time
+             ;; token.  Real refreshed diff buffers are rejected below when
+             ;; their token could not be recorded.
+             (or (null before)
+                 (and after (equal before after)))))))
+
+(defun majutsu-interactive--stale-selection-error ()
+  "Invalidate the current selection and report its stale repository state."
+  (majutsu-interactive-invalidate t)
+  (user-error "Repository changed since this diff was rendered; refresh and select again"))
+
 (defun majutsu-interactive--assert-selection-context (&optional operation)
-  "Signal if current selections belong to a different OPERATION.
+  "Signal if current selections do not belong to OPERATION and this diff.
 
 OPERATION is a transient command symbol such as `majutsu-split'.  A selection
 is deliberately not transferable between jj commands: its patch direction and
 the command's source semantics differ."
+  (when (and (majutsu-interactive--has-selections-p)
+             majutsu-interactive--selection-context
+             (not (majutsu-interactive--context-current-p
+                   majutsu-interactive--selection-context t)))
+    (majutsu-interactive--stale-selection-error))
   (when (and operation
              (majutsu-interactive--has-selections-p)
              (not (eq majutsu-interactive--selection-operation operation)))
@@ -84,23 +163,63 @@ the command's source semantics differ."
                 (or majutsu-interactive--selection-operation "another context")
                 operation)))
 
+
+
 (defun majutsu-interactive--ensure-selection-context ()
   "Bind a new selection to the current transient operation, or validate it."
   (let ((operation (majutsu-interactive--current-operation)))
     (if (majutsu-interactive--has-selections-p)
         (majutsu-interactive--assert-selection-context operation)
-      (setq majutsu-interactive--selection-operation operation))))
+      (let* ((root (majutsu-interactive--repository-root))
+             (render (or majutsu-interactive--render-context
+                         (majutsu-interactive-context-create
+                          :root root
+                          :operation-id
+                          (majutsu-interactive--current-repository-operation
+                           root t)
+                          :buffer-tick (buffer-chars-modified-tick)
+                          :diff-range (copy-tree majutsu-buffer-diff-range)
+                          :diff-filesets
+                          (copy-tree majutsu-buffer-diff-filesets)))))
+        ;; A real refreshed diff has a render token.  If jj advanced before the
+        ;; first selection, do not bind positions from the old tree to the new
+        ;; repository state.
+        (when majutsu-interactive--render-context
+          (unless (majutsu-interactive-context-operation-id render)
+            (user-error "Cannot verify the repository state for this diff; refresh and try again"))
+          (unless (majutsu-interactive--context-current-p render t)
+            (majutsu-interactive--stale-selection-error)))
+        (setq-local majutsu-interactive--selection-operation operation)
+        (setq-local majutsu-interactive--selection-context
+                    (copy-majutsu-interactive-context render))
+        (setf (majutsu-interactive-context-operation
+               majutsu-interactive--selection-context)
+              operation)))))
 
-(defun majutsu-interactive-invalidate ()
+
+(defun majutsu-interactive-invalidate (&optional forget-render-context)
   "Discard selections whose rendered diff is about to be rebuilt.
 
 Interactive selection ranges are buffer positions, so retaining them across a
 diff refresh would make a later patch apply to unrelated text.  This helper is
 quiet on purpose; callers use it as part of refresh lifecycle rather than an
-explicit user action."
+explicit user action.  When FORGET-RENDER-CONTEXT is non-nil, also mark the
+current diff rendering as stale."
   (setq majutsu-interactive--selections nil)
   (setq majutsu-interactive--selection-operation nil)
+  (setq majutsu-interactive--selection-context nil)
+  (when forget-render-context
+    (setq majutsu-interactive--render-context nil))
   (majutsu-interactive--clear-overlays))
+
+(defun majutsu-interactive-invalidate-repository (root)
+  "Invalidate patch selections in every Majutsu diff buffer for ROOT."
+  (dolist (buffer (majutsu-mode-get-buffers root))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'majutsu-diff-mode)
+        (majutsu-interactive-invalidate t)))))
+
+
 
 (defun majutsu-interactive--hunk-id (section)
   "Return unique identifier for hunk SECTION."
@@ -932,52 +1051,72 @@ Remove its temporary directory when PROCESS exits or is signaled."
         t)
     nil))
 
-(defun majutsu-interactive--operation-id (root)
-  "Return ROOT's current jj operation id without snapshotting its worktree.
 
-Return nil if the id cannot be read.  Selection positions must be considered
-unsafe in that case, so callers treat nil as an unknown operation result."
-  (condition-case nil
-      (let ((default-directory root))
-        (when-let* ((id (majutsu-jj-string
-                         "--ignore-working-copy" "operation" "log"
-                         "--no-graph" "-n" "1" "-T" "id")))
-          (unless (string-empty-p id)
-            id)))
-    (error nil)))
 
-(defun majutsu-interactive--complete-patch-operation (buffer operation-before)
-  "Refresh BUFFER after a custom patch operation when its repository changed.
-
-When jj reports no new operation, retain BUFFER's Emacs-owned selection so a
-cancelled external editor or failed helper does not discard the user's work.
-An unreadable operation id is handled conservatively: positions are cleared
-before refresh rather than being reused against a different diff."
+(defun majutsu-interactive--refresh-operation-origin (buffer root)
+  "Refresh live Majutsu BUFFER using repository ROOT."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (let ((operation-after
-             (majutsu-interactive--operation-id
-              (majutsu--toplevel-safe default-directory))))
-        (cond
-         ((and operation-before operation-after
-               (equal operation-before operation-after))
-          (message "jj patch selection ended without a repository operation"))
-         (t
-          (majutsu-interactive-invalidate)
-          (majutsu-refresh)
-          (unless (and operation-before operation-after)
-            (message "jj patch selection ended; could not verify its repository result"))))))))
+      (let ((default-directory root))
+        (when (derived-mode-p 'majutsu-mode)
+          (majutsu-refresh))))))
+
+(defun majutsu-interactive-complete-repository-operation
+    (root origin-buffer operation-before &optional unchanged-message)
+  "Complete a repository operation rooted at ROOT.
+
+Compare OPERATION-BEFORE with jj's current operation id.  A changed or
+unreadable id invalidates every patch selection for ROOT before refreshing
+ORIGIN-BUFFER.  An unchanged id preserves selections and optionally displays
+UNCHANGED-MESSAGE.  Return `unchanged', `changed', or `unknown'."
+  (let (completed outcome)
+    (unwind-protect
+        (let ((operation-after (majutsu-jj-operation-id root)))
+          (setq outcome
+                (cond
+                 ((not (and operation-before operation-after)) 'unknown)
+                 ((equal operation-before operation-after) 'unchanged)
+                 (t 'changed)))
+          (pcase outcome
+            ('unchanged
+             (when unchanged-message
+               (message "%s" unchanged-message)))
+            ((or 'changed 'unknown)
+             (majutsu-interactive-invalidate-repository root)
+             (majutsu-interactive--refresh-operation-origin
+              origin-buffer root)
+             (when (eq outcome 'unknown)
+               (message "jj operation ended; could not verify its repository result"))))
+          (setq completed t)
+          outcome)
+      (unless completed
+        ;; `quit' is not an `error'.  If the probe or refresh was interrupted,
+        ;; never leave position-based selections usable against an unknown tree.
+        (let ((inhibit-quit t))
+          (majutsu-interactive-invalidate-repository root)
+          (run-at-time 0 nil
+                       #'majutsu-interactive--refresh-operation-origin
+                       origin-buffer root))))))
+
+(defun majutsu-interactive--complete-patch-operation
+    (buffer root operation-before exit-code)
+  "Complete a custom patch operation from BUFFER after EXIT-CODE."
+  (majutsu-interactive-complete-repository-operation
+   root buffer operation-before
+   (and (integerp exit-code)
+        (zerop exit-code)
+        "jj patch selection ended without a repository operation")))
 
 (defun majutsu-interactive-run-replay-plan (command args filesets plan)
   "Run jj COMMAND with ARGS and FILESETS using replay PLAN.
 PLAN reconstructs the merge editor's right tree from its selected or
 complemented text and whole-file changes."
-  (let ((directory (majutsu-interactive--make-operation-temp-dir))
-        (origin-buffer (current-buffer))
-        (operation-before
-         (majutsu-interactive--operation-id
-          (majutsu--toplevel-safe default-directory)))
-        retained)
+  (let* ((origin-buffer (current-buffer))
+         (root (file-name-as-directory
+                (majutsu--toplevel-safe default-directory)))
+         (operation-before (majutsu-jj-operation-id root))
+         (directory (majutsu-interactive--make-operation-temp-dir))
+         retained)
     (unwind-protect
         (let* ((patch-file (majutsu-interactive--write-patch
                             (or (plist-get plan :patch) "") directory))
@@ -991,15 +1130,13 @@ complemented text and whole-file changes."
                (process
                 (majutsu-start-jj-with-editor
                  full-args nil
-                 (lambda (_process exit-code)
-                   ;; Process sentinels run with quitting inhibited.  Defer
-                   ;; refresh and selection invalidation until it is safe to
-                   ;; rebuild the originating diff buffer.  A reported jj
-                   ;; failure retains the user's selection.
-                   (when (and (integerp exit-code) (zerop exit-code))
+                 (lambda (process exit-code)
+                   (when (and (fboundp 'majutsu-process-completion-owned-p)
+                              (majutsu-process-completion-owned-p process))
                      (run-at-time 0 nil
                                   #'majutsu-interactive--complete-patch-operation
-                                  origin-buffer operation-before)))
+                                  origin-buffer root operation-before
+                                  exit-code)))
                  t)))
           (setq retained
                 (majutsu-interactive--retain-temp-dir-for-process
@@ -1007,6 +1144,7 @@ complemented text and whole-file changes."
           process)
       (unless retained
         (majutsu-interactive--delete-operation-temp-dir directory)))))
+
 
 ;;; _
 (provide 'majutsu-interactive)

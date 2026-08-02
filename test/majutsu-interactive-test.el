@@ -12,6 +12,13 @@
 
 (require 'ert)
 (require 'majutsu-interactive)
+
+(defun majutsu-interactive-test--overlay-face-p (face)
+  "Return non-nil when a selection overlay uses FACE."
+  (seq-some (lambda (overlay)
+              (eq (overlay-get overlay 'face) face))
+            majutsu-interactive--overlays))
+
 (require 'majutsu-jj-integration)
 
 (defun majutsu-interactive-test--insert-diff (diff &optional file metadata)
@@ -160,26 +167,33 @@ COMMAND identifies the transient whose whole-file selections are toggled."
 (ert-deftest majutsu-interactive-complete-patch-operation/retains-cancelled-selection ()
   "Only a changed or unknown repository operation invalidates a patch selection."
   (with-temp-buffer
+    (majutsu-diff-mode)
     (let ((table (make-hash-table :test 'equal))
           ids refreshed)
       (puthash 'hunk :all table)
       (setq-local majutsu-interactive--selections table)
-      (cl-letf (((symbol-function 'majutsu-interactive--operation-id)
+      (cl-letf (((symbol-function 'majutsu-jj-operation-id)
                  (lambda (&rest _)
                    (pop ids)))
                 ((symbol-function 'majutsu--toplevel-safe)
                  (lambda (&optional _directory) default-directory))
+                ((symbol-function 'majutsu-mode-get-buffers)
+                 (lambda (_root) (list (current-buffer))))
                 ((symbol-function 'majutsu-refresh)
                  (lambda () (setq refreshed (1+ (or refreshed 0)))))
                 ((symbol-function 'message) (lambda (&rest _) nil)))
         (setq ids '("before"))
-        (majutsu-interactive--complete-patch-operation (current-buffer) "before")
+        (majutsu-interactive--complete-patch-operation
+         (current-buffer) default-directory "before" 0)
         (should (eq (gethash 'hunk table) :all))
         (should-not refreshed)
         (setq ids '("after"))
-        (majutsu-interactive--complete-patch-operation (current-buffer) "before")
+        (majutsu-interactive--complete-patch-operation
+         (current-buffer) default-directory "before" 0)
         (should-not majutsu-interactive--selections)
         (should (= refreshed 1))))))
+
+
 
 (ert-deftest majutsu-interactive-run-replay-plan/inserts-tool-before-filesets ()
   "Replay plan should keep jj options before filesets."
@@ -189,6 +203,10 @@ COMMAND identifies the transient whose whole-file selections are toggled."
               ((symbol-function 'majutsu-interactive--build-tool-config)
                (lambda (_patch-file _plan _directory)
                  '("--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch")))
+              ((symbol-function 'majutsu-jj-operation-id)
+               (lambda (&rest _) "op-before"))
+              ((symbol-function 'majutsu-process-completion-owned-p)
+               (lambda (&rest _) t))
               ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest args)
                  (setq called args))))
@@ -212,6 +230,10 @@ COMMAND identifies the transient whose whole-file selections are toggled."
               ((symbol-function 'majutsu-interactive--build-tool-config)
                (lambda (_patch-file _plan _directory)
                  '("--config" "tool=config")))
+              ((symbol-function 'majutsu-jj-operation-id)
+               (lambda (&rest _) "op-before"))
+              ((symbol-function 'majutsu-process-completion-owned-p)
+               (lambda (&rest _) t))
               ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest args)
                  (setq called args))))
@@ -276,6 +298,10 @@ COMMAND identifies the transient whose whole-file selections are toggled."
                (lambda (_patch _plan _directory)
                  (push _directory configs)
                  nil))
+              ((symbol-function 'majutsu-jj-operation-id)
+               (lambda (&rest _) "op-before"))
+              ((symbol-function 'majutsu-process-completion-owned-p)
+               (lambda (&rest _) t))
               ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest _args) nil))
               ((symbol-function 'majutsu-interactive--delete-operation-temp-dir)
@@ -883,6 +909,198 @@ Selecting only the first added line leaves the unselected line in place."
            (should (equal (majutsu-interactive--file-operation
                            (majutsu-interactive--file-change rename-section))
                           `(:action rename :source ,old :path ,new)))))))))
+
+(ert-deftest majutsu-interactive-complete-operation/quit-invalidates-conservatively ()
+  "A quit in the after-operation probe must invalidate before propagating."
+  (with-temp-buffer
+    (let ((table (make-hash-table :test 'equal)) scheduled)
+      (puthash 'hunk :all table)
+      (setq-local majutsu-interactive--selections table)
+      (cl-letf (((symbol-function 'majutsu-jj-operation-id)
+                 (lambda (&rest _) (signal 'quit nil)))
+                ((symbol-function 'majutsu-interactive-invalidate-repository)
+                 (lambda (&rest _) (majutsu-interactive-invalidate t)))
+                ((symbol-function 'run-at-time)
+                 (lambda (&rest args) (setq scheduled args))))
+        (should
+         (eq (condition-case condition
+                 (progn
+                   (majutsu-interactive-complete-repository-operation "/repo/" (current-buffer) "before")
+                   nil)
+               (quit (car condition)))
+             'quit))
+        (should-not majutsu-interactive--selections)
+        (should scheduled)))))
+(ert-deftest majutsu-interactive-complete-operation/retains-cancelled-selection ()
+  "Only a changed or unknown repository operation invalidates a patch selection."
+  (with-temp-buffer
+    (let ((table (make-hash-table :test 'equal))
+          ids refreshed)
+      (puthash 'hunk :all table)
+      (setq-local majutsu-interactive--selections table)
+      (cl-letf (((symbol-function 'majutsu-jj-operation-id)
+                 (lambda (&rest _)
+                   (pop ids)))
+                ((symbol-function 'majutsu-interactive-invalidate-repository)
+                 (lambda (&rest _) (majutsu-interactive-invalidate t)))
+                ((symbol-function 'majutsu-interactive--refresh-operation-origin)
+                 (lambda (&rest _)
+                   (setq refreshed (1+ (or refreshed 0)))))
+                ((symbol-function 'message) (lambda (&rest _) nil)))
+        (setq ids '("before"))
+        (majutsu-interactive-complete-repository-operation default-directory (current-buffer) "before")
+        (should (eq (gethash 'hunk table) :all))
+        (should-not refreshed)
+        (setq ids '("after"))
+        (majutsu-interactive-complete-repository-operation default-directory (current-buffer) "before")
+        (should-not majutsu-interactive--selections)
+        (should (= refreshed 1))))))
+(ert-deftest majutsu-interactive-invalidate-repository/clears-all-diff-buffers ()
+  "A repository mutation invalidates selections outside the origin buffer."
+  (let ((one (generate-new-buffer " *majutsu-selection-one*"))
+        (two (generate-new-buffer " *majutsu-selection-two*"))
+        (other (generate-new-buffer " *majutsu-selection-other*")))
+    (unwind-protect
+        (progn
+          (dolist (entry `((,one . "/repo/") (,two . "/repo/")
+                           (,other . "/other/")))
+            (with-current-buffer (car entry)
+              (majutsu-diff-mode)
+              (setq-local majutsu--default-directory (cdr entry))
+              (setq-local majutsu-interactive--selections
+                          (let ((table (make-hash-table :test 'equal)))
+                            (puthash 'hunk :all table)
+                            table))))
+          (majutsu-interactive-invalidate-repository "/repo/")
+          (should-not (buffer-local-value
+                       'majutsu-interactive--selections one))
+          (should-not (buffer-local-value
+                       'majutsu-interactive--selections two))
+          (should (buffer-local-value
+                   'majutsu-interactive--selections other)))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list one two other)))))
+(ert-deftest majutsu-interactive-render-context/precedes-refresh-hooks ()
+  "A refresh hook operation must make the just-rendered context stale."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu--default-directory "/repo/")
+    (let ((operation "rendered")
+          snapshots
+          (transient-current-command 'majutsu-split))
+      (setq-local majutsu-refresh-buffer-hook
+                  (list (lambda () (setq operation "after-hook"))))
+      (cl-letf (((symbol-function 'majutsu--refresh-buffer-function)
+                 (lambda ()
+                   (lambda ()
+                     (let ((inhibit-read-only t))
+                       (insert "rendered diff\n")))))
+                ((symbol-function 'majutsu-interactive--repository-root)
+                 (lambda () "/repo/"))
+                ((symbol-function 'majutsu-jj-operation-id)
+                 (lambda (_root &optional snapshot)
+                   (push snapshot snapshots)
+                   operation))
+                ((symbol-function 'magit-section-update-highlight) #'ignore))
+        (majutsu-refresh-buffer-internal)
+        (should
+         (equal (majutsu-interactive-context-operation-id
+                 majutsu-interactive--render-context)
+                "rendered"))
+        (should (equal operation "after-hook"))
+        (should-error (majutsu-interactive--ensure-selection-context)
+                      :type 'user-error)
+        (should (equal (nreverse snapshots) '(nil t)))
+        (should-not majutsu-interactive--render-context)))))
+(ert-deftest majutsu-interactive-selection-context/rejects-operation-before-apply ()
+  "An external jj operation after selection must make the patch unusable."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu--default-directory "/repo/")
+    (let ((table (make-hash-table :test 'equal)))
+      (puthash 'hunk :all table)
+      (setq-local majutsu-interactive--selections table)
+      (setq-local majutsu-interactive--selection-operation 'majutsu-split)
+      (setq-local majutsu-interactive--selection-context
+                  (majutsu-interactive-context-create
+                   :operation 'majutsu-split :root "/repo/"
+                   :operation-id "before"
+                   :buffer-tick (buffer-chars-modified-tick)
+                   :diff-range nil :diff-filesets nil))
+      (cl-letf (((symbol-function 'majutsu-interactive--repository-root)
+                 (lambda () "/repo/"))
+                ((symbol-function 'majutsu-jj-operation-id)
+                 (lambda (&rest _) "after")))
+        (should-error
+         (majutsu-interactive-build-patch-if-selected nil nil nil 'majutsu-split)
+         :type 'user-error)
+        (should-not majutsu-interactive--selections)
+        (should-not majutsu-interactive--selection-context)))))
+(ert-deftest majutsu-interactive-selection-context/rejects-post-render-operation ()
+  "An external jj operation after render must block the first selection."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu--default-directory "/repo/")
+    (setq-local majutsu-interactive--render-context
+                (majutsu-interactive-context-create
+                 :root "/repo/" :operation-id "before"
+                 :buffer-tick (buffer-chars-modified-tick)
+                 :diff-range nil :diff-filesets nil))
+    (let ((transient-current-command 'majutsu-split))
+      (cl-letf (((symbol-function 'majutsu-interactive--repository-root)
+                 (lambda () "/repo/"))
+                ((symbol-function 'majutsu-jj-operation-id)
+                 (lambda (&rest _) "after")))
+        (should-error (majutsu-interactive--ensure-selection-context)
+                      :type 'user-error)
+        (should-not majutsu-interactive--render-context)
+        (should-not majutsu-interactive--selection-context)))))
+(ert-deftest majutsu-interactive-toggle-hunk/applies-selected-hunk-face ()
+  "A whole-hunk selection is visibly rendered with its documented face."
+  (with-temp-buffer
+    (let* ((diff (concat "diff --git a/a.txt b/a.txt\n"
+                         "index 1111111..2222222 100644\n"
+                         "--- a/a.txt\n+++ b/a.txt\n"
+                         "@@ -1 +1,2 @@\n base\n+added\n"))
+           (file (majutsu-interactive-test--insert-diff diff "a.txt"))
+           (hunk (car (majutsu-interactive--file-section-hunks file)))
+           (transient-current-command 'majutsu-split))
+      (goto-char (oref hunk content))
+      (cl-letf (((symbol-function 'majutsu-interactive--repository-root)
+                 #'ignore))
+        (majutsu-interactive-toggle-hunk))
+      (should
+       (majutsu-interactive-test--overlay-face-p
+        'majutsu-interactive-selected-hunk)))))
+(ert-deftest majutsu-interactive-toggle-region/applies-selected-region-face ()
+  "A sub-hunk region is visibly rendered with its documented face."
+  (with-temp-buffer
+    (let* ((diff (concat "diff --git a/a.txt b/a.txt\n"
+                         "index 1111111..2222222 100644\n"
+                         "--- a/a.txt\n+++ b/a.txt\n"
+                         "@@ -1 +1,2 @@\n base\n+added\n"))
+           (file (majutsu-interactive-test--insert-diff diff "a.txt"))
+           (hunk (car (majutsu-interactive--file-section-hunks file)))
+           (beg (save-excursion
+                  (goto-char (oref hunk content))
+                  (forward-line 1)
+                  (point)))
+           (end (save-excursion
+                  (goto-char beg)
+                  (forward-line 1)
+                  (point)))
+           (transient-current-command 'majutsu-restore)
+           (transient-mark-mode t))
+      (goto-char beg)
+      (set-mark end)
+      (setq mark-active t)
+      (cl-letf (((symbol-function 'majutsu-interactive--repository-root)
+                 #'ignore))
+        (majutsu-interactive-toggle-region))
+      (should
+       (majutsu-interactive-test--overlay-face-p
+        'majutsu-interactive-selected-region)))))
 
 (provide 'majutsu-interactive-test)
 ;;; majutsu-interactive-test.el ends here

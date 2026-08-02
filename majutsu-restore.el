@@ -19,7 +19,6 @@
 (require 'majutsu)
 (require 'majutsu-diff-editor)
 
-(declare-function majutsu-diff--revision-metadata "majutsu-diff" ())
 (defvar majutsu-buffer-diff-range)
 
 (defclass majutsu-restore-option (majutsu-selection-option)
@@ -45,85 +44,144 @@
 
 ;;; Restore
 
-(defun majutsu-restore--default-args ()
-  "Return default args from diff buffer context.
-Diff =--revisions= / =-r= become Restore =--changes-in=; other range args
-are passed through unchanged."
+(defvar-local majutsu-restore--unsafe-diff-context nil
+  "Diagnostic for a diff that cannot seed `jj restore' safely.")
+
+(defvar-local majutsu-restore--diff-context-cache-key :uncomputed
+  "Diff range and rendered generation for the cached Restore context.")
+
+(defvar-local majutsu-restore--diff-context-cache-value nil
+  "Cached semantic Restore context for the current rendered diff.")
+
+(defun majutsu-restore--only-value (values)
+  "Return the sole nonempty member of VALUES, or nil."
+  (and (= (length values) 1)
+       (not (string-empty-p (car values)))
+       (car values)))
+
+(defun majutsu-restore--endpoint-context (from to)
+  "Return canonical restore endpoint context for FROM and TO."
+  (when-let* ((source (majutsu-jj-resolve-single-commit (or from "@")))
+              (destination (majutsu-jj-resolve-single-commit (or to "@"))))
+    (list :endpoints source destination)))
+
+(defun majutsu-restore--changes-context (revision)
+  "Return canonical `--changes-in' context for REVISION."
+  (when-let* ((commit (majutsu-jj-resolve-single-commit revision)))
+    (list :changes-in commit)))
+
+(defun majutsu-restore--compute-diff-context ()
+  "Compute safe Restore defaults and patch context for the current diff.
+
+The returned plist contains `:args' and `:patch-context'.  A diff for one
+revision maps to `--changes-in'.  An aggregate revision diff is deliberately
+not guessed into a different Restore operation and instead carries `:error'."
   (when (derived-mode-p 'majutsu-diff-mode)
-    (if (and (equal (car majutsu-buffer-diff-range) "-r")
-             (cadr majutsu-buffer-diff-range))
-        (list (concat "--changes-in=" (cadr majutsu-buffer-diff-range)))
-      (mapcar (lambda (arg)
-                (if-let* ((rev (transient-arg-value "--revisions=" (list arg))))
-                    (concat "--changes-in=" rev)
-                  arg))
-              majutsu-buffer-diff-range))))
+    (let* ((range majutsu-buffer-diff-range)
+           (from-values (majutsu-jj-option-values range "--from" "-f"))
+           (to-values (majutsu-jj-option-values range "--to" "-t"))
+           (revisions (majutsu-jj-option-values range "--revisions" "-r")))
+      (cond
+       ((or from-values to-values)
+        (let* ((from (majutsu-restore--only-value from-values))
+               (to (majutsu-restore--only-value to-values))
+               (context (and (or from (null from-values))
+                             (or to (null to-values))
+                             (majutsu-restore--endpoint-context from to))))
+          (if context
+              (list :args (append (and from (list (concat "--from=" from)))
+                                  (and to (list (concat "--to=" to))))
+                    :patch-context context)
+            (list :error "Restore diff endpoints must each resolve to one commit"))))
+       ((null revisions)
+        (let ((context (majutsu-restore--changes-context "@")))
+          (list :args nil :patch-context context)))
+       ((and (= (length revisions) 1)
+             (not (string-empty-p (car revisions))))
+        (if-let* ((context (majutsu-restore--changes-context (car revisions))))
+            (list :args
+                  (list (concat "--changes-in=" (cadr context)))
+                  :patch-context context)
+          (list :error
+                "Restore patch selection requires a diff for exactly one commit")))
+       (t
+        (list :error
+              "Restore patch selection does not support aggregate revision diffs"))))))
 
-(defun majutsu-restore--selector (args)
-  "Return Restore selector canonicalized from ARGS.
-The selector is either (:changes-in REV) or (:from FROM :to TO).
-Missing --from/--to default to @, matching jj restore/diff."
-  (let ((changes-in (transient-arg-value "--changes-in=" args))
-        (from (transient-arg-value "--from=" args))
-        (to (transient-arg-value "--to=" args)))
+(defun majutsu-restore--diff-context ()
+  "Return the cached semantic Restore context for the current diff."
+  (when (derived-mode-p 'majutsu-diff-mode)
+    (let ((key (list (copy-tree majutsu-buffer-diff-range)
+                     (buffer-chars-modified-tick))))
+      (unless (equal key majutsu-restore--diff-context-cache-key)
+        (setq-local majutsu-restore--diff-context-cache-key key)
+        (setq-local majutsu-restore--diff-context-cache-value
+                    (majutsu-restore--compute-diff-context)))
+      majutsu-restore--diff-context-cache-value)))
+
+(defun majutsu-restore--args-context (args)
+  "Return the canonical Restore tree context selected by ARGS."
+  (let* ((changes (majutsu-jj-option-values args "--changes-in" "-c"))
+         (from (majutsu-jj-option-values args "--from" "-f"))
+         (to (append (majutsu-jj-option-values args "--to" "-t")
+                     (majutsu-jj-option-values args "--into"))))
     (cond
-     (changes-in (list :changes-in changes-in))
-     ((or from to) (list :from (or from "@") :to (or to "@")))
-     (t (list :changes-in "@")))))
+     ((not (or changes from to))
+      (majutsu-restore--changes-context "@"))
+     ((and changes (not (or from to)))
+      (when-let* ((revision (majutsu-restore--only-value changes)))
+        (majutsu-restore--changes-context revision)))
+     ((and (not changes)
+           (<= (length from) 1)
+           (<= (length to) 1))
+      (let ((from-value (majutsu-restore--only-value from))
+            (to-value (majutsu-restore--only-value to)))
+        (and (or from-value (null from))
+             (or to-value (null to))
+             (majutsu-restore--endpoint-context
+              from-value to-value)))))))
 
-(defun majutsu-restore--patch-selector (&optional buffer)
-  "Return Restore selector for BUFFER, or nil when patch restore is unsafe.
-Only single-revision diffs (with structured metadata) and explicit
---from/--to ranges can drive patch selection."
-  (with-current-buffer (or buffer (current-buffer))
-    (when (derived-mode-p 'majutsu-diff-mode)
-      (let* ((range majutsu-buffer-diff-range)
-             (from (transient-arg-value "--from=" range))
-             (to (transient-arg-value "--to=" range))
-             (revisions
-              (append
-               (seq-keep (lambda (arg)
-                           (transient-arg-value "--revisions=" (list arg)))
-                         range)
-               (and (equal (car range) "-r") (cadr range)
-                    (list (cadr range))))))
-        (cond
-         ((or from to)
-          (majutsu-restore--selector (majutsu-restore--default-args)))
-         ((null range)
-          (list :changes-in "@"))
-         ((and (= (length revisions) 1)
-               (majutsu-diff--revision-metadata))
-          (list :changes-in (car revisions))))))))
+(defun majutsu-restore--check-patch-context (args context)
+  "Signal unless ARGS select the same Restore tree pair as CONTEXT."
+  (unless context
+    (user-error "Patch selection is not safe for this diff context"))
+  (unless (equal (majutsu-restore--args-context args) context)
+    (user-error "Patch selection requires the source and destination shown by the diff")))
 
-(defun majutsu-restore--check-patch-selector (args selector)
-  "Signal unless ARGS match the displayed diff SELECTOR."
-  (unless selector
-    (user-error
-     "Patch selection for restore requires a single-revision or explicit-range diff"))
-  (unless (equal selector (majutsu-restore--selector args))
-    (user-error
-     "Patch selection for restore requires the displayed diff selector")))
+(defun majutsu-restore--pin-patch-context (args context)
+  "Return ARGS pinned to the canonical Restore CONTEXT."
+  (pcase context
+    (`(:changes-in ,commit)
+     (setq args (majutsu-jj-set-option-value args "--from" nil "-f"))
+     (setq args (majutsu-jj-set-option-value args "--to" nil "-t"))
+     (setq args (majutsu-jj-set-option-value args "--into" nil))
+     (majutsu-jj-set-option-value args "--changes-in" commit "-c"))
+    (`(:endpoints ,source ,destination)
+     (setq args (majutsu-jj-set-option-value args "--changes-in" nil "-c"))
+     (setq args (majutsu-jj-set-option-value args "--into" nil))
+     (setq args (majutsu-jj-set-option-value args "--from" source "-f"))
+     (majutsu-jj-set-option-value args "--to" destination "-t"))
+    (_ args)))
+
+(defun majutsu-restore--explicit-context-p (args)
+  "Return non-nil when ARGS explicitly choose a Restore tree context."
+  (or (majutsu-jj-option-values args "--changes-in" "-c")
+      (majutsu-jj-option-values args "--from" "-f")
+      (majutsu-jj-option-values args "--to" "-t")
+      (majutsu-jj-option-values args "--into")))
 
 (defun majutsu-restore-interactive-selection-available-p ()
-  "Return non-nil when the current diff can safely drive patch Restore."
+  "Return non-nil when this diff has a safe Restore patch context."
   (and (majutsu-interactive-selection-available-p)
-       (majutsu-restore--patch-selector)))
+       (plist-get (majutsu-restore--diff-context) :patch-context)))
 
-(defun majutsu-restore--remove-interactive-tool-args (args)
-  "Return ARGS without native interactive-editor or tool arguments."
-  (let (out)
-    (while args
-      (let ((arg (pop args)))
-        (cond
-         ((member arg '("-i" "--interactive")))
-         ((member arg '("-t" "--tool"))
-          (when args (pop args)))
-         ((and (stringp arg)
-               (or (string-prefix-p "--tool=" arg)
-                   (string-prefix-p "-t=" arg))))
-         (t (push arg out)))))
-    (nreverse out)))
+(defun majutsu-restore--default-args ()
+  "Return default args from diff buffer context."
+  (setq-local majutsu-restore--unsafe-diff-context nil)
+  (when-let* ((context (majutsu-restore--diff-context)))
+    (setq-local majutsu-restore--unsafe-diff-context
+                (plist-get context :error))
+    (plist-get context :args)))
 
 ;;;###autoload
 (defun majutsu-restore-dwim ()
@@ -145,15 +203,20 @@ In diff buffer on a file section, restore only that file."
   (interactive (list (transient-args 'majutsu-restore)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
                (jj-editor-p (majutsu-diff-editor-interactive-arguments-p args))
-               ;; jj presents destination on the left and restore source on
-               ;; the right.  The complement plan keeps that source tree and
-               ;; replays only unselected changes forward from the left.
+               (diff-context (majutsu-restore--diff-context))
                ;; A jj editor does not consume the Emacs selection, so avoid
                ;; validating a possibly different selection owner here.
                (plan (and (not jj-editor-p)
                           (majutsu-interactive-build-replay-plan-if-selected
-                           nil 'complement 'majutsu-restore)))
-               (selector (and plan (majutsu-restore--patch-selector))))
+                           nil 'complement 'majutsu-restore))))
+    (when (and (plist-get diff-context :error)
+               (not (majutsu-restore--explicit-context-p args)))
+      (user-error "%s" (plist-get diff-context :error)))
+    (when plan
+      (majutsu-restore--check-patch-context
+       args (plist-get diff-context :patch-context))
+      (setq args (majutsu-restore--pin-patch-context
+                  args (plist-get diff-context :patch-context))))
     (cond
      ;; Explicit jj editor flags win over an existing Majutsu patch selection.
      ;; Do not clear it: the user may return and apply it later.
@@ -161,11 +224,16 @@ In diff buffer on a file section, restore only that file."
       (majutsu-diff-editor-start
        "restore" args filesets :origin-buffer (current-buffer)))
      (plan
-      (majutsu-restore--check-patch-selector args selector)
+      ;; A transient opened at a file section carries that file as a convenient
+      ;; default for ordinary Restore.  A patch selection instead belongs to
+      ;; the entire rendered diff.  Reuse the diff's own matcher so jj checks
+      ;; out exactly the files represented by the inverse patch.
       (majutsu-interactive-run-replay-plan
        "restore"
        (majutsu-diff-editor-strip-interactive-arguments args)
-       filesets plan))
+       (and (derived-mode-p 'majutsu-diff-mode)
+            (copy-sequence majutsu-buffer-diff-filesets))
+       plan))
      (t
       (let ((exit (apply #'majutsu-run-jj
                          "restore"
@@ -181,7 +249,7 @@ In diff buffer on a file section, restore only that file."
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "f"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-restore-interactive-selection-available-p
   :shortarg "-f"
   :argument "--from="
   :reader #'majutsu-transient-read-revset)
@@ -192,7 +260,7 @@ In diff buffer on a file section, restore only that file."
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :selection-toggle-key "t"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-restore-interactive-selection-available-p
   :shortarg "-t"
   :argument "--to="
   :reader #'majutsu-transient-read-revset)
@@ -203,7 +271,7 @@ In diff buffer on a file section, restore only that file."
   :selection-label "[CHANGES-IN]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "c"
-  :selection-toggle-if-not #'majutsu-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-restore-interactive-selection-available-p
   :shortarg "-c"
   :argument "--changes-in="
   :reader #'majutsu-transient-read-revset)
@@ -239,7 +307,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
-   ["Paths" :if-not majutsu-interactive-selection-available-p
+   ["Paths" :if-not majutsu-restore-interactive-selection-available-p
     (majutsu-restore:--)]
    ["Options"
     ("-i" "Interactive" ("-i" "--interactive"))
@@ -259,7 +327,9 @@ In diff buffer on a file section, restore only that file."
     (transient-setup
      'majutsu-restore nil nil
      :scope (majutsu-selection-session-begin)
-     :value value)))
+     :value value)
+    (when majutsu-restore--unsafe-diff-context
+      (message "%s" majutsu-restore--unsafe-diff-context))))
 
 ;;; _
 (provide 'majutsu-restore)
