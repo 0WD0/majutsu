@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-diff-editor)
 
 (declare-function majutsu-diff--revision-metadata "majutsu-diff" ())
 (defvar majutsu-buffer-diff-range)
@@ -143,25 +144,34 @@ In diff buffer on a file section, restore only that file."
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-restore)))
   (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
+               (jj-editor-p (majutsu-diff-editor-interactive-arguments-p args))
                ;; jj presents destination on the left and restore source on
                ;; the right.  The complement plan keeps that source tree and
                ;; replays only unselected changes forward from the left.
-               (plan (majutsu-interactive-build-replay-plan-if-selected
-                      nil 'complement))
-               (selector (and plan (majutsu-restore--patch-selector)))
-               (args (if plan
-                         (majutsu-restore--remove-interactive-tool-args args)
-                       args)))
-    (if plan
-        (progn
-          (majutsu-restore--check-patch-selector args selector)
-          (majutsu-interactive-run-replay-plan "restore" args filesets plan)
-          (majutsu-interactive-clear))
+               ;; A jj editor does not consume the Emacs selection, so avoid
+               ;; validating a possibly different selection owner here.
+               (plan (and (not jj-editor-p)
+                          (majutsu-interactive-build-replay-plan-if-selected
+                           nil 'complement 'majutsu-restore)))
+               (selector (and plan (majutsu-restore--patch-selector))))
+    (cond
+     ;; Explicit jj editor flags win over an existing Majutsu patch selection.
+     ;; Do not clear it: the user may return and apply it later.
+     (jj-editor-p
+      (majutsu-diff-editor-start
+       "restore" args filesets :origin-buffer (current-buffer)))
+     (plan
+      (majutsu-restore--check-patch-selector args selector)
+      (majutsu-interactive-run-replay-plan
+       "restore"
+       (majutsu-diff-editor-strip-interactive-arguments args)
+       filesets plan))
+     (t
       (let ((exit (apply #'majutsu-run-jj
                          "restore"
                          (majutsu-jj-append-filesets args filesets))))
         (when (zerop exit)
-          (message "Restored successfully"))))))
+          (message "Restored successfully")))))))
 
 ;;; Infix Commands
 
@@ -233,6 +243,7 @@ In diff buffer on a file section, restore only that file."
     (majutsu-restore:--)]
    ["Options"
     ("-i" "Interactive" ("-i" "--interactive"))
+    ("=t" "Tool" "--tool=")
     ("-d" "Restore descendants" "--restore-descendants")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"

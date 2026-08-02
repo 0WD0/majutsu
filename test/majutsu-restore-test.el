@@ -30,7 +30,7 @@
 
 (ert-deftest majutsu-restore-execute/replays-complement-plan ()
   "Restore replays the complement plan after checking the displayed selector."
-  (let (called cleared)
+  (let (called cleared stripped)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _)
                  '(:base right :payload-root left
@@ -39,6 +39,10 @@
               ((symbol-function 'majutsu-restore--patch-selector)
                (lambda (&rest _)
                  (list :from "@-" :to "@")))
+              ((symbol-function 'majutsu-diff-editor-strip-interactive-arguments)
+               (lambda (args)
+                 (setq stripped args)
+                 args))
               ((symbol-function 'majutsu-interactive-run-replay-plan)
                (lambda (&rest args)
                  (setq called args)))
@@ -53,7 +57,54 @@
                         :payload-root left
                         :patch "PATCH"
                         :file-ops ((:action add :path "keep.bin"))))))
-      (should cleared))))
+      (should (equal stripped '("--from=@-" "--to=@")))
+      (should-not cleared))))
+
+
+(ert-deftest majutsu-restore-execute/routes-jj-editor-flags-to-diff-editor ()
+  "Restore routes every jj diff-editor spelling without rewriting its tool."
+  (let ((origin (current-buffer)))
+    (dolist (editor-args '(("-i")
+                           ("--interactive")
+                           ("--tool" "meld")
+                           ("--tool=meld")))
+      (let (called)
+        (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'majutsu-diff-editor-start)
+                   (lambda (&rest args)
+                     (setq called args))))
+          (majutsu-restore-execute
+           (append '(("--" "src/a.el") "--from=@-" "--to=@") editor-args))
+          (should (equal (cl-subseq called 0 4)
+                         (list "restore"
+                               (append '("--from=@-" "--to=@") editor-args)
+                               '("src/a.el")
+                               :origin-buffer)))
+          (should (eq (nth 4 called) origin)))))))
+(ert-deftest majutsu-restore-execute/explicit-jj-editor-wins-over-patch-selection ()
+  "An explicit jj editor route must leave a Majutsu patch selection intact."
+  (let ((origin (current-buffer)) called cleared)
+    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
+               (lambda (&rest _) '(:base right :payload-root left :patch "PATCH" :file-ops nil)))
+              ((symbol-function 'majutsu-diff-editor-start)
+               (lambda (&rest args)
+                 (setq called args)))
+              ((symbol-function 'majutsu-interactive-run-replay-plan)
+               (lambda (&rest _)
+                 (ert-fail "Should not replace an explicit jj editor")))
+              ((symbol-function 'majutsu-interactive-clear)
+               (lambda () (setq cleared t))))
+      (majutsu-restore-execute
+       '(("--" "src/a.el") "--from=@-" "--tool" "meld"))
+      (should (equal (cl-subseq called 0 4)
+                     '("restore" ("--from=@-" "--tool" "meld")
+                       ("src/a.el") :origin-buffer)))
+      (should (eq (nth 4 called) origin))
+      (should-not cleared))))
+(ert-deftest majutsu-restore-transient/exposes-tool-infix ()
+  "Restore should expose jj's --tool option."
+  (should (transient-get-suffix 'majutsu-restore "=t")))
 
 (ert-deftest majutsu-restore-execute/rejects-mismatched-selector ()
   "Patch restore refuses when transient selectors leave the displayed diff."

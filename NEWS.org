@@ -19,6 +19,17 @@
   repeatable revision selections; Sign also exposes an explicit signing key
   with backend-aware completion for GPG, GPGSM, and SSH.
 
+- jj diff-editor sessions with optional Ghostel terminal hosting ::
+  Split, Squash, and Restore now honor =-i= / =--interactive= and =--tool=NAME=
+  as jj-owned diff-editor sessions.  The default =:builtin= TUI is hosted in
+  Ghostel when available with =emacsclient= support; external GUI tools retain
+  a process fallback.
+  =majutsu-diff-editor-host= controls the host explicitly.
+
+- Patch selections now survive cancelled editor sessions ::
+  Majutsu retains an Emacs patch selection when jj reports no repository
+  operation, and clears position-based selections before a confirmed refresh.
+
 - Whole-file patch selections ::
   Split, Squash, and Restore can select hunkless changes, including binary
   files, with ~F~.  Structured jj metadata supplies and verifies the file

@@ -18,6 +18,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-diff-editor)
 
 (declare-function majutsu-read-optional-revset "majutsu-jj" (prompt &optional default initial-input history completion-args))
 (defvar majutsu-buffer-diff-range)
@@ -145,41 +146,53 @@ return the same context defaults that execution would use."
   :description "Execute squash"
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (majutsu-squash-arguments)))
-  (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               ;; Text hunks and whole-file changes both move into the destination.
-               (plan (majutsu-interactive-build-replay-plan-if-selected))
-               (patch-source (and plan (majutsu-squash--patch-source-revset))))
-    (when plan
-      (majutsu-squash--check-patch-source args patch-source)
-      (setq args (majutsu-squash--remove-interactive-tool-args args)))
-    (let* ((explicit-sources (majutsu-squash--source-values args))
-           (explicit-destination
-            (seq-some (lambda (arg) (transient-arg-value arg args))
-                      '("--into=" "--to=" "--onto=" "--destination="
-                        "--insert-after=" "--after="
-                        "--insert-before=" "--before=")))
-           (source-default (if explicit-destination
-                               '("--from=@")
-                             (or (majutsu-squash--default-args) '("--from=@")))))
-      (unless explicit-sources
-        (setq args (append args source-default)))
-      (let ((sources (majutsu-squash--source-values args)))
-        (unless (or explicit-destination
-                    (majutsu-squash--none-source-p sources))
-          (setq args (append
-                      args
-                      (list (concat
-                             "--into="
-                             (majutsu-squash--destination-revset
-                              (majutsu-squash--source-revset sources)
-                              explicit-sources))))))))
-    (if plan
-        (progn
-          ;; The selected plan rebuilds right from left, then applies forward.
-          (majutsu-interactive-run-replay-plan "squash" args filesets plan)
-          (majutsu-interactive-clear))
-      (majutsu-run-jj-with-editor
-       (cons "squash" (majutsu-jj-append-filesets args filesets))))))
+  (pcase-let ((`(,args ,filesets) (majutsu-filesets-split-transient-value args)))
+    (let* ((jj-editor-p (majutsu-diff-editor-interactive-arguments-p args))
+           ;; Text hunks and whole-file changes both move into the destination.
+           ;; A jj editor leaves an existing selection untouched, including
+           ;; one owned by another command.
+           (plan (and (not jj-editor-p)
+                      (majutsu-interactive-build-replay-plan-if-selected
+                       nil nil 'majutsu-squash)))
+           (patch-source (and plan (majutsu-squash--patch-source-revset))))
+      (when (and plan (not jj-editor-p))
+        (majutsu-squash--check-patch-source args patch-source))
+      (let* ((explicit-sources (majutsu-squash--source-values args))
+             (explicit-destination
+              (seq-some (lambda (arg) (transient-arg-value arg args))
+                        '("--into=" "--to=" "--onto=" "--destination="
+                          "--insert-after=" "--after="
+                          "--insert-before=" "--before=")))
+             (source-default (if explicit-destination
+                                 '("--from=@")
+                               (or (majutsu-squash--default-args) '("--from=@")))))
+        (unless explicit-sources
+          (setq args (append args source-default)))
+        (let ((sources (majutsu-squash--source-values args)))
+          (unless (or explicit-destination
+                      (majutsu-squash--none-source-p sources))
+            (setq args (append
+                        args
+                        (list (concat
+                               "--into="
+                               (majutsu-squash--destination-revset
+                                (majutsu-squash--source-revset sources)
+                                explicit-sources))))))))
+      (cond
+       ;; Do not replace a user's configured jj editor with Majutsu's patch
+       ;; tool.  The selection remains available after the session starts.
+       (jj-editor-p
+        (majutsu-diff-editor-start
+         "squash" args filesets :origin-buffer (current-buffer)))
+       (plan
+        ;; The selected plan rebuilds right from left, then applies forward.
+        (majutsu-interactive-run-replay-plan
+         "squash"
+         (majutsu-diff-editor-strip-interactive-arguments args)
+         filesets plan))
+       (t
+        (majutsu-run-jj-with-editor
+         (cons "squash" (majutsu-jj-append-filesets args filesets))))))))
 
 ;;;; Infix Commands
 
@@ -281,6 +294,8 @@ return the same context defaults that execution would use."
    ["Paths" :if-not majutsu-squash-interactive-selection-available-p
     (majutsu-squash:--)]
    ["Options"
+    ("-i" "Interactive" ("-i" "--interactive"))
+    ("=t" "Tool" "--tool=")
     ("-k" "Keep emptied commit" ("-k" "--keep-emptied"))
     ("-u" "Use destination message" ("-u" "--use-destination-message"))
     (majutsu-transient-arg-ignore-immutable)]

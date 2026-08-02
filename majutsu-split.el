@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-diff-editor)
 
 (defclass majutsu-split-option (majutsu-selection-option)
   ())
@@ -65,22 +66,34 @@ one change."
   :description "Execute split"
   :class 'majutsu-transient-default-action-suffix
   (interactive (list (transient-args 'majutsu-split)))
-  (pcase-let* ((`(,args ,filesets) (majutsu-filesets-split-transient-value args))
-               ;; Text hunks and hunkless files coexist in one operation.
-               (plan (majutsu-interactive-build-replay-plan-if-selected))
-               (patch-source
-                (and plan (majutsu-split--diff-source-revision)))
-               (args (if plan
-                         (majutsu-split--remove-interactive-tool-args args)
-                       args)))
-    (if plan
-        (progn
-          (majutsu-split--check-patch-source args patch-source)
+  (pcase-let ((`(,args ,filesets) (majutsu-filesets-split-transient-value args)))
+    ;; An explicit jj editor request takes precedence over an Emacs-owned
+    ;; patch selection.  Do not inspect its owner here: jj does not consume
+    ;; the selection, so it remains available for the originating command.
+    (if (majutsu-diff-editor-interactive-arguments-p args)
+        (majutsu-diff-editor-start
+         "split" args filesets :origin-buffer (current-buffer))
+      (let* (;; Text hunks and hunkless files coexist in one operation.
+             (plan (majutsu-interactive-build-replay-plan-if-selected
+                    nil nil 'majutsu-split))
+             (patch-source
+              (and plan (majutsu-split--diff-source-revision))))
+        (when plan
+          (majutsu-split--check-patch-source args patch-source))
+        (cond
+         (plan
           ;; Reset to the left tree, then replay precisely the selections.
-          (majutsu-interactive-run-replay-plan "split" args filesets plan)
-          (majutsu-interactive-clear))
-      (majutsu-run-jj-with-editor
-       (cons "split" (majutsu-jj-append-filesets args filesets))))))
+          (majutsu-interactive-run-replay-plan
+           "split"
+           (majutsu-diff-editor-strip-interactive-arguments args)
+           filesets plan))
+         ;; `jj split' selects interactively by default when no fileset is given.
+         ((null filesets)
+          (majutsu-diff-editor-start
+           "split" args filesets :origin-buffer (current-buffer)))
+         (t
+          (majutsu-run-jj-with-editor
+           (cons "split" (majutsu-jj-append-filesets args filesets)))))))))
 
 ;;;; Infix Commands
 
@@ -173,7 +186,7 @@ one change."
     ("-i" "Interactive" ("-i" "--interactive"))
     ("-p" "Parallel" ("-p" "--parallel"))
     ("-e" "Editor" "--editor")
-    ("-t" "Tool" "--tool=")
+    ("=t" "Tool" "--tool=")
     (majutsu-transient-arg-ignore-immutable)]
    ["Actions"
     ("s" "Execute split" majutsu-split-execute)]]

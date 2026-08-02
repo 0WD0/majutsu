@@ -175,6 +175,96 @@
       (should (eq (majutsu-start-jj '("status")) 'dummy-process))
       (should (equal seen-root "/repo/")))))
 
+(ert-deftest majutsu-process-test-start-jj-installs-session-state-before-sentinel ()
+  "Session state must reach a child before its sentinel can run."
+  (let ((real-set-process-sentinel (symbol-function 'set-process-sentinel))
+        callback-result
+        observed
+        created
+        process)
+    (unwind-protect
+        (with-temp-buffer
+          (let ((process-buf (current-buffer))
+                (default-directory temporary-file-directory)
+                (callback (lambda (proc exit-code)
+                            (setq callback-result (list proc exit-code))))
+                (majutsu-process--start-created-callback
+                 (lambda (proc) (setq created proc))))
+            (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+                       (lambda (&optional _directory) temporary-file-directory))
+                      ((symbol-function 'majutsu-process-jj-arguments)
+                       (lambda (args) args))
+                      ((symbol-function 'majutsu-process-buffer)
+                       (lambda (&optional _nodisplay) process-buf))
+                      ((symbol-function 'majutsu--process-insert-section)
+                       (lambda (&rest _args)
+                         (insert "\n")
+                         'not-a-section))
+                      ((symbol-function 'start-file-process)
+                       (lambda (name buffer _program &rest _args)
+                         (setq process
+                               (make-process :name (format "%s-session-test" name)
+                                             :buffer buffer
+                                             :command '("cat")
+                                             :noquery t))))
+                      ((symbol-function 'majutsu--process-install-filter) #'ignore)
+                      ((symbol-function 'set-process-sentinel)
+                       (lambda (proc sentinel)
+                         (setq observed
+                               (list (process-get proc 'success-msg)
+                                     (process-get proc 'finish-callback)
+                                     (process-get proc 'inhibit-refresh)
+                                     sentinel))
+                         ;; Keep cleanup silent without changing the point at
+                         ;; which the properties above are observed.
+                         (funcall real-set-process-sentinel proc #'ignore)))
+                      ((symbol-function 'majutsu--process-display-buffer) #'ignore))
+              (should (eq (majutsu-start-jj '("status") "Finished" callback t)
+                          process))
+              (should (eq created process))
+              (should (equal (butlast observed)
+                             (list "Finished" callback t)))
+              (should (eq (car (last observed)) #'majutsu--process-sentinel))
+              ;; Finish callbacks are now installed at that same safe point.
+              (process-put process 'section nil)
+              (cl-letf (((symbol-function 'process-exit-status)
+                         (lambda (_process) 0)))
+                (majutsu-process-finish process))
+              (should (equal callback-result (list process 0)))
+              ;; A session-owned completion path must be able to suppress
+              ;; the generic sentinel refresh.
+              (let (refreshed)
+                (cl-letf (((symbol-function 'process-status)
+                           (lambda (_process) 'exit))
+                          ((symbol-function 'majutsu-process-finish) #'ignore)
+                          ((symbol-function 'majutsu-refresh)
+                           (lambda () (setq refreshed t))))
+                  (majutsu--process-sentinel process "finished\n"))
+                (should-not refreshed)))))
+      (when (and process (process-live-p process))
+        (delete-process process)))))
+
+(ert-deftest majutsu-process-test-start-jj-with-editor-forwards-session-options ()
+  "The session-aware with-editor entry point forwards all completion options."
+  (let ((majutsu-process-popup-time 17)
+        (with-editor-emacsclient-executable nil)
+        callback
+        seen)
+    (setq callback (lambda (&rest _args) nil))
+    (cl-letf (((symbol-function 'majutsu-start-jj)
+               (lambda (&rest args)
+                 (setq seen (list args
+                                  majutsu-process-popup-time
+                                  (getenv majutsu-with-editor-envvar)))
+                 'dummy-process)))
+      (should (eq (majutsu-start-jj-with-editor
+                   '("split" "--interactive") "Finished" callback t)
+                  'dummy-process)))
+    (should (equal (car seen)
+                   (list '("split" "--interactive") "Finished" callback t)))
+    (should (= (nth 1 seen) -1))
+    (should (equal (nth 2 seen) with-editor-sleeping-editor))))
+
 (ert-deftest majutsu-process-test-call-jj-runs-at-root ()
   "`majutsu-call-jj' should execute jj in repo root.
 The process section should use root as command directory."
