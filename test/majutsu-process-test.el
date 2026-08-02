@@ -12,6 +12,66 @@
 (require 'cl-lib)
 (require 'majutsu-process)
 
+(defun majutsu-process-test--setup-failure-result (phase condition)
+  "Return startup state after PHASE signals CONDITION.
+PHASE is either `filter' or `sentinel'."
+  (let ((real-set-process-filter (symbol-function 'set-process-filter))
+        (real-set-process-sentinel (symbol-function 'set-process-sentinel))
+        process
+        caught
+        phase-owned
+        final-owned
+        live)
+    (unwind-protect
+        (with-temp-buffer
+          (let ((process-buf (current-buffer))
+                (default-directory temporary-file-directory))
+            (cl-letf (((symbol-function 'majutsu-process-buffer)
+                       (lambda (&optional _nodisplay) process-buf))
+                      ((symbol-function 'majutsu--process-insert-section)
+                       (lambda (&rest _args)
+                         (insert "\n")
+                         'not-a-section))
+                      ((symbol-function 'majutsu-process-environment)
+                       (lambda (_args) process-environment))
+                      ((symbol-function 'start-file-process)
+                       (lambda (name buffer _program &rest _args)
+                         (setq process
+                               (make-process
+                                :name (format "%s-setup-failure-test" name)
+                                :buffer buffer
+                                :command '("cat")
+                                :noquery t))))
+                      ((symbol-function 'majutsu--process-install-filter)
+                       (lambda (child)
+                         (if (eq phase 'filter)
+                             (progn
+                               (setq phase-owned
+                                     (majutsu-process-completion-owned-p child))
+                               (signal condition
+                                       (and (eq condition 'error)
+                                            '("filter setup failed"))))
+                           (funcall real-set-process-filter child #'ignore))))
+                      ((symbol-function 'set-process-sentinel)
+                       (lambda (child sentinel)
+                         (if (eq phase 'sentinel)
+                             (progn
+                               (setq phase-owned
+                                     (majutsu-process-completion-owned-p child))
+                               (signal condition
+                                       (and (eq condition 'error)
+                                            '("sentinel setup failed"))))
+                           (funcall real-set-process-sentinel child sentinel)))))
+              (condition-case err
+                  (majutsu-start-process "jj")
+                ((error quit) (setq caught err)))
+              (setq final-owned
+                    (majutsu-process-completion-owned-p process))
+              (setq live (and (processp process) (process-live-p process))))))
+      (when (and (processp process) (process-live-p process))
+        (delete-process process)))
+    (list (car-safe caught) phase-owned final-owned live)))
+
 (ert-deftest test-majutsu-process-error-summary-from-string/error ()
   (should (equal (majutsu--process-error-summary-from-string "Error: something went wrong\n")
                  "something went wrong")))
@@ -82,6 +142,33 @@
         (should (string-match-p (regexp-quote "normal\ntail\n") out))
         (should-not (string-match-p "WITH-EDITOR:" out))))))
 
+(ert-deftest test-majutsu-process-filter/handles-real-packet-across-crlf-chunks ()
+  "A real two-US packet records a relative file and stays invisible."
+  (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (let* ((us (char-to-string ?\x1f))
+             (parts (list "normal\nWITH-ED"
+                          (concat "ITOR: 123 OPEN +12:3" us "descriptions/edit.jj")
+                          (concat us " IN /tmp/majutsu-editor\r")
+                          "\ntail\n"))
+             (file "/tmp/majutsu-editor/descriptions/edit.jj")
+             (proc (make-process :name "majutsu-test"
+                                 :buffer (current-buffer)
+                                 :command (list "cat"))))
+        (unwind-protect
+            (progn
+              (process-put proc 'default-dir "/repo/")
+              (set-marker (process-mark proc) (point))
+              (dolist (part parts)
+                (majutsu--process-filter proc part))
+              (should (equal (buffer-string) "normal\ntail\n"))
+              (should (equal (majutsu-process-with-editor-file-root file)
+                             "/repo/"))
+              (should (equal
+                       (process-get proc 'majutsu--with-editor-filter-pending)
+                       "")))
+          (delete-process proc))))))
+
 (ert-deftest test-majutsu-process-filter/remembers-with-editor-file-root ()
   (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)))
     (with-temp-buffer
@@ -98,11 +185,13 @@
                        "/repo/"))))))
 
 (ert-deftest test-majutsu-process-track-with-editor-output/remembers-remote-root ()
-  "Raw terminal output records a split sleeping-editor packet before display."
+  "Raw output records a real split packet with relative file and CRLF."
   (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal)))
     (with-temp-buffer
-      (let* ((part1 "WITH-EDITOR: 123 OPEN /tmp/editor-")
-             (part2 (format "abc.jjdescription%c IN /repo\n" ?\x1f))
+      (let* ((part1 (format "WITH-EDITOR: 123 OPEN +1%cdesc/editor-"
+                            ?\x1f))
+             (part2 (format "abc.jjdescription%c IN /tmp/editor\r" ?\x1f))
+             (part3 "\n")
              (proc (make-process :name "majutsu-test"
                                  :buffer (current-buffer)
                                  :command (list "cat"))))
@@ -112,14 +201,54 @@
               (majutsu-process-track-with-editor-output proc part1)
               (should-not
                (majutsu-process-with-editor-file-root
-                "/ssh:example:/tmp/editor-abc.jjdescription"))
+                "/ssh:example:/tmp/editor/desc/editor-abc.jjdescription"))
               (majutsu-process-track-with-editor-output proc part2)
+              (should-not
+               (majutsu-process-with-editor-file-root
+                "/ssh:example:/tmp/editor/desc/editor-abc.jjdescription"))
+              (majutsu-process-track-with-editor-output proc part3)
               (should
                (equal
                 (majutsu-process-with-editor-file-root
-                 "/ssh:example:/tmp/editor-abc.jjdescription")
+                 "/ssh:example:/tmp/editor/desc/editor-abc.jjdescription")
                 "/ssh:example:/repo/")))
           (delete-process proc))))))
+
+(ert-deftest test-majutsu-process-filter/discards-oversized-control-fragment ()
+  "The ordinary filter must not retain or display an oversized fragment."
+  (with-temp-buffer
+    (let* ((fragment (concat "WITH-EDITOR: " (make-string 400 ?界)))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat"))))
+      (unwind-protect
+          (progn
+            (should (> (string-bytes fragment)
+                       majutsu-process--control-fragment-max-bytes))
+            (set-marker (process-mark proc) (point))
+            (majutsu--process-filter proc fragment)
+            (should (equal (buffer-string) ""))
+            (should (equal
+                     (process-get proc 'majutsu--with-editor-filter-pending)
+                     ""))
+            (majutsu--process-filter proc "tail\n")
+            (should (equal (buffer-string) "tail\n")))
+        (delete-process proc)))))
+
+(ert-deftest test-majutsu-process-track-with-editor-output/discards-oversized-fragment ()
+  "The raw tracker uses the same byte bound as the ordinary filter."
+  (with-temp-buffer
+    (let* ((fragment (concat "WITH-EDITOR: " (make-string 400 ?界)))
+           (proc (make-process :name "majutsu-test"
+                               :buffer (current-buffer)
+                               :command (list "cat"))))
+      (unwind-protect
+          (progn
+            (majutsu-process-track-with-editor-output proc fragment)
+            (should (equal
+                     (process-get proc 'majutsu--with-editor-root-pending)
+                     "")))
+        (delete-process proc)))))
 
 (ert-deftest test-majutsu-process-filter/dispatches-majutsu-ediff-control-packets ()
   (with-temp-buffer
@@ -205,6 +334,7 @@
         callback-result
         observed
         created
+        created-owned
         process)
     (unwind-protect
         (with-temp-buffer
@@ -213,7 +343,10 @@
                 (callback (lambda (proc exit-code)
                             (setq callback-result (list proc exit-code))))
                 (majutsu-process--start-created-callback
-                 (lambda (proc) (setq created proc))))
+                 (lambda (proc)
+                   (setq created proc)
+                   (setq created-owned
+                         (majutsu-process-completion-owned-p proc)))))
             (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                        (lambda (&optional _directory) temporary-file-directory))
                       ((symbol-function 'majutsu-process-jj-arguments)
@@ -238,6 +371,7 @@
                                (list (process-get proc 'success-msg)
                                      (process-get proc 'finish-callback)
                                      (process-get proc 'inhibit-refresh)
+                                     (majutsu-process-completion-owned-p proc)
                                      sentinel))
                          ;; Keep cleanup silent without changing the point at
                          ;; which the properties above are observed.
@@ -246,9 +380,11 @@
               (should (eq (majutsu-start-jj '("status") "Finished" callback t)
                           process))
               (should (eq created process))
+              (should-not created-owned)
               (should (equal (butlast observed)
-                             (list "Finished" callback t)))
+                             (list "Finished" callback t nil)))
               (should (eq (car (last observed)) #'majutsu--process-sentinel))
+              (should (majutsu-process-completion-owned-p process))
               ;; Finish callbacks are now installed at that same safe point.
               (process-put process 'section nil)
               (cl-letf (((symbol-function 'process-exit-status)
@@ -267,6 +403,53 @@
                 (should-not refreshed)))))
       (when (and process (process-live-p process))
         (delete-process process)))))
+
+(ert-deftest majutsu-process-test-start-process-filter-error-stops-unowned-child ()
+  "A filter installation error must stop the child before ownership."
+  (should (equal (majutsu-process-test--setup-failure-result 'filter 'error)
+                 '(error nil nil nil))))
+
+(ert-deftest majutsu-process-test-start-process-filter-quit-stops-unowned-child ()
+  "A quit during filter installation must stop the child before ownership."
+  (should (equal (majutsu-process-test--setup-failure-result 'filter 'quit)
+                 '(quit nil nil nil))))
+
+(ert-deftest majutsu-process-test-start-process-sentinel-error-stops-unowned-child ()
+  "A sentinel installation error must stop the child before ownership."
+  (should (equal (majutsu-process-test--setup-failure-result 'sentinel 'error)
+                 '(error nil nil nil))))
+
+(ert-deftest majutsu-process-test-start-process-sentinel-quit-stops-unowned-child ()
+  "A quit during sentinel installation must stop the child before ownership."
+  (should (equal (majutsu-process-test--setup-failure-result 'sentinel 'quit)
+                 '(quit nil nil nil))))
+
+(ert-deftest majutsu-process-test-setup-finalizes-an-already-exited-child-once ()
+  "Installing a sentinel after exit must still run completion exactly once."
+  (with-temp-buffer
+    (let* ((process (make-process :name "majutsu-already-exited-test"
+                                  :buffer (current-buffer)
+                                  :command '("sh" "-c" "exit 0")
+                                  :noquery t))
+           (calls 0)
+           (majutsu-process--start-finish-callback
+            (lambda (_process exit-code)
+              (should (= exit-code 0))
+              (setq calls (1+ calls))))
+           (majutsu-process--inhibit-refresh t))
+      (while (process-live-p process)
+        (accept-process-output process 0.05))
+      ;; Drain the original exit notification before Majutsu owns the child.
+      (accept-process-output process 0.01)
+      (cl-letf (((symbol-function 'message) #'ignore))
+        (majutsu--process-setup
+         process nil temporary-file-directory
+         #'majutsu--process-sentinel)
+        (should (majutsu-process-completion-owned-p process))
+        (should (= calls 1))
+        ;; A late duplicate notification must be harmless.
+        (majutsu--process-sentinel process "finished\n")
+        (should (= calls 1))))))
 
 (ert-deftest majutsu-process-test-start-jj-with-editor-forwards-session-options ()
   "The session-aware with-editor entry point forwards all completion options."
