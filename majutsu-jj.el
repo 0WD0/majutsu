@@ -748,6 +748,33 @@ to do the following.
 * Prepend `majutsu-jj-global-arguments' to ARGS."
   (append majutsu-jj-global-arguments (flatten-tree args)))
 
+(defun majutsu-jj-option-values (args option &optional short)
+  "Return values supplied for OPTION in ARGS, also accepting SHORT.
+
+Both `--option=VALUE' and separate-value spellings are recognized.  Stop at
+`--', so filesets cannot be mistaken for options.  An option without a value
+contributes an empty string; callers can distinguish it from an absent option."
+  (let (values)
+    (while args
+      (let ((arg (pop args)))
+        (cond
+         ((equal arg "--")
+          (setq args nil))
+         ((or (equal arg option) (and short (equal arg short)))
+          (if (and args
+                   (stringp (car args))
+                   (not (string-prefix-p "-" (car args))))
+              (push (pop args) values)
+            (push "" values)))
+         ((and (stringp arg)
+               (string-prefix-p (concat option "=") arg))
+          (push (substring arg (1+ (length option))) values))
+         ((and short (stringp arg)
+               (string-prefix-p short arg)
+               (> (length arg) (length short)))
+          (push (substring arg (length short)) values)))))
+    (nreverse values)))
+
 (defun majutsu--jj-insert (return-error &rest args)
   "Run jj with ARGS and insert output at point.
 
@@ -866,6 +893,21 @@ newline, return an empty string.  This function aligns with
       (unless (bobp)
         (goto-char (point-min))
         (buffer-substring-no-properties (point) (line-end-position))))))
+
+(defun majutsu-jj-resolve-single-commit (revset)
+  "Return REVSET's only commit ID, or nil unless it resolves exactly once.
+
+Unlike helpers that use `latest', this preserves cardinality: a range is not
+silently reduced to one of its commits."
+  (condition-case nil
+      (when-let* ((commit-id
+                   (majutsu-jj-string
+                    "--ignore-working-copy" "log" "-r"
+                    (format "exactly((%s), 1)" revset)
+                    "--no-graph" "--limit" "1" "-T" "commit_id")))
+        (unless (string-empty-p commit-id)
+          commit-id))
+    (error nil)))
 
 (defun majutsu-jj--escape-fileset-string (s)
   "Escape S for a jj fileset string literal."

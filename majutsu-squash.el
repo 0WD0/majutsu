@@ -30,8 +30,7 @@
 
 (defun majutsu-squash--source-values (args)
   "Return --from values in ARGS."
-  (seq-keep (lambda (arg) (transient-arg-value "--from=" (list arg)))
-            args))
+  (majutsu-jj-option-values args "--from"))
 
 (defun majutsu-squash--remove-interactive-tool-args (args)
   "Remove native interactive/tool arguments from ARGS."
@@ -75,11 +74,10 @@ The resulting revset is intentionally left for jj to resolve."
 (defun majutsu-squash--diff-default-args ()
   "Return default squash args from a diff buffer context."
   (let* ((range majutsu-buffer-diff-range)
-         (from (transient-arg-value "--from=" range))
-         (to (transient-arg-value "--to=" range))
-         (revisions (seq-keep (lambda (arg)
-                                (transient-arg-value "--revisions=" (list arg)))
-                              range)))
+         (from (majutsu-jj-option-values range "--from"))
+         (to (majutsu-jj-option-values range "--to"))
+         (revisions
+          (majutsu-jj-option-values range "--revisions" "-r")))
     (cond
      ;; Arbitrary --from/--to diff buffers do not describe a squash source.
      ((or from to) nil)
@@ -109,20 +107,37 @@ return the same context defaults that execution would use."
 
 ;;; Patch selection safety
 
+(defvar-local majutsu-squash--patch-source-cache-key :uncomputed
+  "Diff range and rendered-text tick for the cached patch source.")
+
+(defvar-local majutsu-squash--patch-source-cache-value nil
+  "Cached safe source revset for the current diff range.")
+
 (defun majutsu-squash--patch-source-revset (&optional buffer)
   "Return a source revset when BUFFER is a safe squash patch-selection buffer."
   (with-current-buffer (or buffer (current-buffer))
     (when (derived-mode-p 'majutsu-diff-mode)
-      (let* ((range majutsu-buffer-diff-range)
-             (from (transient-arg-value "--from=" range))
-             (to (transient-arg-value "--to=" range))
-             (revisions (seq-keep (lambda (arg)
-                                    (transient-arg-value "--revisions=" (list arg)))
-                                  range)))
-        (cond
-         ((or from to) nil)
-         ((null range) "@")
-         ((= (length revisions) 1) (car revisions)))))))
+      (let* ((range (copy-tree majutsu-buffer-diff-range))
+             (cache-key (list range (buffer-chars-modified-tick))))
+        ;; Transient predicates are evaluated repeatedly while rendering.  A
+        ;; range cardinality probe is synchronous, so cache it for this
+        ;; rendered diff.  A refresh changes the text tick even when a dynamic
+        ;; revset expression itself remains unchanged.
+        (unless (equal cache-key majutsu-squash--patch-source-cache-key)
+          (setq-local majutsu-squash--patch-source-cache-key cache-key)
+          (setq-local majutsu-squash--patch-source-cache-value
+                      (let* ((from (majutsu-jj-option-values range "--from"))
+                             (to (majutsu-jj-option-values range "--to"))
+                             (revisions (majutsu-jj-option-values
+                                         range "--revisions" "-r")))
+                        (cond
+                         ((or from to) nil)
+                         ((null range) "@")
+                         ((and (= (length revisions) 1)
+                               (majutsu-jj-resolve-single-commit
+                                (car revisions)))
+                          (car revisions))))))
+        majutsu-squash--patch-source-cache-value))))
 
 (defun majutsu-squash-interactive-selection-available-p ()
   "Return non-nil when squash patch selection is available."
@@ -133,7 +148,7 @@ return the same context defaults that execution would use."
   "Signal if ARGS select a source incompatible with PATCH-SOURCE."
   (let ((sources (majutsu-squash--source-values args)))
     (unless patch-source
-      (user-error "Patch selection for squash requires a revision diff"))
+      (user-error "Patch selection for squash requires a diff for exactly one commit"))
     (unless (or (null sources)
                 (and (= (length sources) 1)
                      (equal (car sources) patch-source)))
@@ -163,9 +178,7 @@ return the same context defaults that execution would use."
                         '("--into=" "--to=" "--onto=" "--destination="
                           "--insert-after=" "--after="
                           "--insert-before=" "--before=")))
-             (source-default (if explicit-destination
-                                 '("--from=@")
-                               (or (majutsu-squash--default-args) '("--from=@")))))
+             (source-default (or (majutsu-squash--default-args) '("--from=@"))))
         (unless explicit-sources
           (setq args (append args source-default)))
         (let ((sources (majutsu-squash--source-values args)))
