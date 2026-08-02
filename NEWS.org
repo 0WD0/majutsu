@@ -22,14 +22,17 @@
 - jj diff-editor sessions with optional Ghostel terminal hosting ::
   Split, Squash, and Restore now honor =-i= / =--interactive= and =--tool=NAME=
   as jj-owned diff-editor sessions.  The default =:builtin= TUI is hosted in
-  Ghostel when available; local sessions need =emacsclient= support, while
-  Ghostel-supported TRAMP remotes use with-editor's sleeping-editor bridge.
+  Ghostel when available; local commands that may edit descriptions need
+  =emacsclient= support, while Restore does not.  Ghostel-supported TRAMP
+  remotes use with-editor's sleeping-editor bridge.
   External GUI tools retain a process fallback.
   =majutsu-diff-editor-host= controls the host explicitly.
 
 - Patch selections now survive cancelled editor sessions ::
   Majutsu retains an Emacs patch selection when jj reports no repository
-  operation, and clears position-based selections before a confirmed refresh.
+  operation.  Selections are bound to the rendered operation and source
+  context; changed or unknown repository state clears every affected diff
+  buffer before refresh.
 
 - Whole-file patch selections ::
   Split, Squash, and Restore can select hunkless changes, including binary
@@ -205,6 +208,32 @@
   represents exactly one change.  Ranges and multi-change revsets are not
   forwarded as invalid Split arguments, and patch selection refuses a source
   different from the displayed diff.
+
+- Squash preserves its rendered source with an explicit destination ::
+  Squash retains a diff's =--revisions= source when an explicit destination is
+  selected, and accepts an equivalent revset only when jj resolves it to the
+  same commit.
+
+- Restore sub-hunk selection respects the rendered fileset ::
+  A point-file default no longer makes an inverse multi-file patch fail inside
+  jj's sparse diff-editor checkout.  Restore reuses the fileset of the rendered
+  diff and preserves unselected changes in other files.
+
+- Patch execution pins the validated revision context ::
+  Split, Squash, and Restore replace dynamic source/default revsets with the
+  canonical commits validated against the rendered diff before starting jj.
+  A moved =@=, bookmark, or refresh-hook operation can no longer redirect a
+  selected sub-hunk after its safety check.
+
+- Aggregate Restore diffs require an explicit operation ::
+  Majutsu does not infer Restore endpoints from a multi-revision diff.  This
+  guard also applies to =-i=/=--tool= sessions, preventing a bare editor route
+  from silently falling back to =--changes-in @=.
+
+- Interactive process completion is race-safe ::
+  Majutsu publishes completion ownership only after both the process filter
+  and sentinel are installed.  Interrupted startup no longer leaves a stale
+  per-workspace session slot or an unowned patch-helper process.
 
 - Diff refinement follows Majutsu's setting ::
   Emacs diff-mode font locking no longer refines hunks independently when

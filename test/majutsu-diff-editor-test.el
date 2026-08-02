@@ -56,11 +56,22 @@
   (should-not
    (majutsu-diff-editor-tool-from-arguments '("-t" "destination"))))
 
+(ert-deftest majutsu-diff-editor-tool-arguments/do-not-consume-another-option ()
+  "A missing `--tool' value must leave the following option parseable."
+  (should-not
+   (majutsu-diff-editor-tool-from-arguments
+    '("--tool" "--interactive")))
+  (should-not
+   (majutsu-diff-editor-strip-interactive-arguments
+    '("--tool" "--interactive"))))
+
 (ert-deftest majutsu-diff-editor-missing-tool-value-p/rejects-only-malformed-tools ()
   "A fileset separator cannot supply `--tool'."
   (should (majutsu-diff-editor--missing-tool-value-p '("--tool")))
   (should (majutsu-diff-editor--missing-tool-value-p
            '("--tool" "--" "literal")))
+  (should (majutsu-diff-editor--missing-tool-value-p
+           '("--tool" "--interactive")))
   (should (majutsu-diff-editor--missing-tool-value-p '("--tool=")))
   (should-not (majutsu-diff-editor--missing-tool-value-p
                '("--tool" "meld" "--" "literal"))))
@@ -73,7 +84,8 @@
                (lambda () t))
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) ":builtin")))
-      (should (eq (majutsu-diff-editor-select-host '("--interactive"))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--interactive"))
                   'ghostel)))))
 
 (ert-deftest majutsu-diff-editor-select-host/auto-falls-back-without-emacsclient ()
@@ -85,7 +97,8 @@
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) "meld"))
               ((symbol-function 'message) (lambda (&rest _) nil)))
-      (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--tool" "meld"))
                   'process)))))
 
 (ert-deftest majutsu-diff-editor-select-host/auto-rejects-builtin-without-emacsclient ()
@@ -97,7 +110,38 @@
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) ":builtin")))
       (should-error
-       (majutsu-diff-editor-select-host '("--interactive"))
+       (majutsu-diff-editor-select-host "split" '("--interactive"))
+       :type 'user-error))))
+
+(ert-deftest majutsu-diff-editor-select-host/auto-restores-without-emacsclient ()
+  "Restore uses Ghostel because it cannot invoke a description editor."
+  (let ((majutsu-diff-editor-host 'auto)
+        (with-editor-emacsclient-executable nil))
+    (cl-letf (((symbol-function 'majutsu-diff-editor-ghostel-available-p)
+               (lambda () t))
+              ((symbol-function 'majutsu-diff-editor--effective-tool)
+               (lambda (_args) ":builtin")))
+      (should (eq (majutsu-diff-editor-select-host
+                   "restore" '("--interactive"))
+                  'ghostel)))))
+
+(ert-deftest majutsu-diff-editor-select-host/explicit-message-needs-no-emacsclient ()
+  "Description-free Split and Squash paths can use a local Ghostel TUI."
+  (let ((majutsu-diff-editor-host 'auto)
+        (with-editor-emacsclient-executable nil))
+    (cl-letf (((symbol-function 'majutsu-diff-editor-ghostel-available-p)
+               (lambda () t))
+              ((symbol-function 'majutsu-diff-editor--effective-tool)
+               (lambda (_args) ":builtin")))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--message=first" "--interactive"))
+                  'ghostel))
+      (should (eq (majutsu-diff-editor-select-host
+                   "squash" '("--use-destination-message" "--interactive"))
+                  'ghostel))
+      (should-error
+       (majutsu-diff-editor-select-host
+        "split" '("--message=first" "--editor" "--interactive"))
        :type 'user-error))))
 
 (ert-deftest majutsu-diff-editor-select-host/auto-falls-back-for-external-tool ()
@@ -108,7 +152,8 @@
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) "meld"))
               ((symbol-function 'message) (lambda (&rest _) nil)))
-      (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--tool" "meld"))
                   'process)))))
 
 (ert-deftest majutsu-diff-editor-select-host/auto-remote-prefers-ghostel ()
@@ -120,7 +165,8 @@
                (lambda () t))
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) "meld")))
-      (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--tool" "meld"))
                   'ghostel)))))
 
 (ert-deftest majutsu-diff-editor-select-host/auto-remote-hosts-builtin ()
@@ -132,7 +178,8 @@
                (lambda () t))
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) ":builtin")))
-      (should (eq (majutsu-diff-editor-select-host '("--interactive"))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--interactive"))
                   'ghostel)))))
 
 (ert-deftest majutsu-diff-editor-select-host/auto-remote-falls-back-without-ghostel ()
@@ -145,7 +192,8 @@
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) "meld"))
               ((symbol-function 'message) (lambda (&rest _) nil)))
-      (should (eq (majutsu-diff-editor-select-host '("--tool" "meld"))
+      (should (eq (majutsu-diff-editor-select-host
+                   "split" '("--tool" "meld"))
                   'process)))))
 
 (ert-deftest majutsu-diff-editor-configured-tool/preserves-global-then-local-order ()
@@ -178,7 +226,8 @@
                 ((symbol-function 'majutsu-diff-editor--effective-tool)
                  (lambda (_args) ":builtin")))
         (should-error
-         (majutsu-diff-editor-select-host '("--tool=:builtin"))
+         (majutsu-diff-editor-select-host
+          "split" '("--tool=:builtin"))
          :type 'user-error)))))
 
 (ert-deftest majutsu-diff-editor-select-host/explicit-ghostel-needs-package ()
@@ -187,7 +236,7 @@
     (cl-letf (((symbol-function 'majutsu-diff-editor-ghostel-available-p)
                (lambda () nil)))
       (should-error
-       (majutsu-diff-editor-select-host '("--tool" "meld"))
+       (majutsu-diff-editor-select-host "split" '("--tool" "meld"))
        :type 'user-error))))
 
 (ert-deftest majutsu-diff-editor-start/ghostel-rejects-sleeping-editor-before-buffer-creation ()
@@ -199,7 +248,7 @@
                (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-diff-editor-ghostel-available-p)
                (lambda () t))
-              ((symbol-function 'majutsu-diff-editor--operation-id)
+              ((symbol-function 'majutsu-jj-operation-id)
                (lambda (&rest _) "before")))
       (should-error
        (majutsu-diff-editor-start "split" '("--tool=:builtin") nil)
@@ -215,13 +264,24 @@
   (let ((with-editor-emacsclient-executable nil))
     (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) t)))
       (should-not
-       (majutsu-diff-editor--assert-ghostel-editor-support "/ssh:example:/repo/")))))
+       (majutsu-diff-editor--assert-ghostel-editor-support
+        "/ssh:example:/repo/" "split" nil)))))
 
-(ert-deftest majutsu-diff-editor-ghostel-exec/installs-tracker-before-delegating-output ()
-  "The remote tracker precedes Ghostel's already-installed output filter."
+(ert-deftest majutsu-diff-editor-assert-ghostel-editor-support/restore-needs-no-emacsclient ()
+  "Local restore cannot invoke jj's description editor."
+  (let ((with-editor-emacsclient-executable nil))
+    (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) nil)))
+      (should-not
+       (majutsu-diff-editor--assert-ghostel-editor-support
+        "/repo/" "restore" nil)))))
+
+(ert-deftest majutsu-diff-editor-ghostel-exec/tracks-open-during-remote-spawn ()
+  "Track a fast JJ_EDITOR OPEN packet before `ghostel-exec' returns."
   (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal))
         (root "/ssh:example:/repo/")
-        called)
+        spawn-returned
+        seen-before-return
+        seen-root)
     (with-temp-buffer
       (let* ((buffer (current-buffer))
              (session (majutsu-diff-editor-session-create :repository-root root))
@@ -229,37 +289,49 @@
                                  :buffer buffer
                                  :command (list "cat"))))
         (unwind-protect
-            (progn
-              (set-process-filter proc (lambda (&rest _) (setq called t)))
-              (cl-letf (((symbol-function 'file-remote-p)
-                         (lambda (&rest _) "/ssh:example:"))
-                        ;; The outer binding is the pre-existing advised
-                        ;; `make-process' implementation seen by the helper.
-                        ((symbol-function 'make-process)
-                         (lambda (&rest _) proc))
-                        ((symbol-function 'ghostel-exec)
-                         (lambda (target-buffer _program _args)
-                           (make-process :name "ghostel"
-                                         :buffer target-buffer
-                                         :file-handler "/ssh:example:"))))
+            (let ((packet
+                   (format (concat "WITH-EDITOR: 123 OPEN "
+                                   "/tmp/editor.jjdescription%c%c IN /repo\n")
+                           ?\x1f ?\x1f)))
+              (cl-letf
+                  (((symbol-function 'make-process)
+                    (lambda (&rest keys)
+                      (set-process-filter proc (plist-get keys :filter))
+                      ;; Model output delivered synchronously by a TRAMP file
+                      ;; handler before its `make-process' call returns.
+                      (funcall (process-filter proc) proc packet)
+                      proc))
+                   ((symbol-function 'ghostel-exec)
+                    (lambda (target-buffer _program _args)
+                      (should (eq target-buffer buffer))
+                      (prog1
+                          (make-process
+                           :name "ghostel"
+                           :buffer target-buffer
+                           :command '("/bin/sh" "-c" "exec jj split -i")
+                           :connection-type 'pty
+                           :file-handler "/ssh:example:"
+                           :filter
+                           (lambda (&rest _)
+                             (setq seen-before-return (not spawn-returned)
+                                   seen-root
+                                   (majutsu-process-with-editor-file-root
+                                    (concat "/ssh:example:"
+                                            "/tmp/editor.jjdescription")))))
+                        (setq spawn-returned t)))))
                 (should (eq (majutsu-diff-editor--ghostel-exec
                              session buffer "jj" '("split"))
                             proc)))
-              (funcall (process-filter proc) proc
-                       (format "WITH-EDITOR: 123 OPEN /tmp/editor.jjdescription%c IN /repo\n"
-                               ?\x1f))
-              (should called)
-              (should
-               (equal
-                (majutsu-process-with-editor-file-root
-                 "/ssh:example:/tmp/editor.jjdescription")
-                root)))
+              (should seen-before-return)
+              (should (equal seen-root root)))
           (delete-process proc))))))
 
 (ert-deftest majutsu-diff-editor-remote-with-editor-advice/composes-the-tracker ()
   "The real with-editor advice preserves Ghostel after Majutsu tracks output."
   (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal))
         (root "/ssh:example:/repo/")
+        (track-output-function
+         (symbol-function 'majutsu-process-track-with-editor-output))
         command order seen-root)
     (with-temp-buffer
       (let ((terminal (current-buffer))
@@ -276,7 +348,11 @@
                                  order)
                            (setq seen-root
                                  (majutsu-process-with-editor-file-root
-                                  "/ssh:example:/tmp/editor.jjdescription")))))
+                                  "/ssh:example:/tmp/editor.jjdescription"))))
+                        ((symbol-function 'majutsu-process-track-with-editor-output)
+                         (lambda (process output)
+                           (push 'tracker order)
+                           (funcall track-output-function process output))))
                 (majutsu-with-editor
                   (let ((process
                          (make-process@with-editor-process-filter
@@ -293,11 +369,13 @@
                     (majutsu-diff-editor--install-remote-with-editor-tracker
                      process root)
                     (funcall (process-filter process) process
-                             (format "WITH-EDITOR: 123 OPEN /tmp/editor.jjdescription%c IN /repo\n"
-                                     ?\x1f)))))
+                             (format (concat "WITH-EDITOR: 123 OPEN "
+                                             "/tmp/editor.jjdescription%c%c IN /repo\n")
+                                     ?\x1f ?\x1f)))))
               (should (equal (car command) "env"))
               (should (string-prefix-p "JJ_EDITOR=" (cadr command)))
-              (should (equal (nreverse order) '(ghostel with-editor)))
+              (should (equal (nreverse order)
+                             '(tracker ghostel with-editor)))
               (should (equal seen-root root)))
           (delete-process proc))))))
 
@@ -326,7 +404,7 @@
                        (setq-local ghostel-exit-functions nil)))
                     ((symbol-function 'majutsu-jj--executable)
                      (lambda () "jj"))
-                    ((symbol-function 'majutsu-diff-editor--operation-id)
+                    ((symbol-function 'majutsu-jj-operation-id)
                      (lambda (&rest _) "before"))
                     ((symbol-function 'majutsu-process-jj-arguments)
                      (lambda (args) (cons "--global" args)))
@@ -382,12 +460,12 @@
         (majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
         called host-directory process-directory)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-               (lambda (&optional _directory) "/repo/"))
+              (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-diff-editor-select-host)
-               (lambda (_args)
+               (lambda (_command _args)
                  (setq host-directory default-directory)
                  'process))
-              ((symbol-function 'majutsu-diff-editor--operation-id)
+              ((symbol-function 'majutsu-jj-operation-id)
                (lambda (&rest _) "before"))
               ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest args)
@@ -407,7 +485,7 @@
         (should (equal host-directory "/repo/"))
         (should (equal process-directory "/repo/"))))))
 
-(ert-deftest majutsu-diff-editor-start/allows-one-live-session-per-repository ()
+(ert-deftest majutsu-diff-editor-start/allows-one-live-session-per-workspace ()
   "Reject concurrent rewrite sessions, then release the slot at completion."
   (let ((majutsu-diff-editor-host 'process)
         (majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
@@ -416,11 +494,12 @@
                (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-diff-editor-select-host)
                (lambda (&rest _) 'process))
-              ((symbol-function 'majutsu-diff-editor--operation-id)
+              ((symbol-function 'majutsu-jj-operation-id)
                (lambda (&rest _) "before"))
               ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest _) 'fake-process))
-              ((symbol-function 'message) (lambda (&rest _) nil)))
+              ((symbol-function 'majutsu-interactive-complete-repository-operation)
+               (lambda (&rest _) 'unchanged)))
       (setq session
             (majutsu-diff-editor-start "split" '("--tool" "meld") nil))
       (should-error
@@ -431,13 +510,13 @@
        (majutsu-diff-editor-start "restore" '("--tool" "meld") nil)))))
 
 (ert-deftest majutsu-diff-editor-start/quit-releases-an-unstarted-session ()
-  "C-g during startup must not leave a repository session lock behind."
+  "C-g during startup must not leave a workspace session lock behind."
   (let ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal)))
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-diff-editor-select-host)
                (lambda (&rest _) 'ghostel))
-              ((symbol-function 'majutsu-diff-editor--operation-id)
+              ((symbol-function 'majutsu-jj-operation-id)
                (lambda (&rest _) "before"))
               ((symbol-function 'majutsu-diff-editor--start-ghostel)
                (lambda (&rest _) (signal 'quit nil))))
@@ -457,9 +536,8 @@
     (puthash "/repo/" session majutsu-diff-editor--live-sessions)
     (cl-letf (((symbol-function 'processp) (lambda (_process) t))
               ((symbol-function 'process-live-p) (lambda (_process) nil))
-              ((symbol-function 'process-get)
-               (lambda (_process property)
-                 (and (eq property 'finish-callback) #'ignore)))
+              ((symbol-function 'majutsu-process-completion-owned-p)
+               (lambda (_process) t))
               ((symbol-function 'run-at-time)
                (lambda (&rest args) (setq scheduled args))))
       (majutsu-diff-editor--abort-session-start session)
@@ -470,6 +548,71 @@
       (should-not (and scheduled
                        (eq (nth 2 scheduled)
                            #'majutsu-diff-editor--complete-session))))))
+
+(ert-deftest majutsu-diff-editor-start/process-setup-failures-release-slot ()
+  "Filter and sentinel setup failures cannot strand the workspace slot."
+  (dolist (phase '(filter sentinel))
+    (let ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+          (with-editor-emacsclient-executable nil)
+          (real-set-process-filter (symbol-function 'set-process-filter))
+          (real-set-process-sentinel (symbol-function 'set-process-sentinel))
+          (root (file-name-as-directory temporary-file-directory))
+          process invalidated scheduled)
+      (unwind-protect
+          (with-temp-buffer
+            (let ((process-buffer (current-buffer))
+                  (default-directory root))
+              (cl-letf (((symbol-function 'majutsu--toplevel-safe)
+                         (lambda (&optional _directory) root))
+                        ((symbol-function 'majutsu-diff-editor-select-host)
+                         (lambda (&rest _) 'process))
+                        ((symbol-function 'majutsu-jj-operation-id)
+                         (lambda (&rest _) "before"))
+                        ((symbol-function 'majutsu-jj--executable)
+                         (lambda () "jj"))
+                        ((symbol-function 'majutsu-process-jj-arguments)
+                         (lambda (args) args))
+                        ((symbol-function 'majutsu-process-buffer)
+                         (lambda (&optional _nodisplay) process-buffer))
+                        ((symbol-function 'majutsu--process-insert-section)
+                         (lambda (&rest _args)
+                           (insert "\n")
+                           'not-a-section))
+                        ((symbol-function 'start-file-process)
+                         (lambda (name buffer _program &rest _args)
+                           (setq process
+                                 (make-process
+                                  :name (format "%s-diff-editor-setup-test"
+                                                name)
+                                  :buffer buffer :command '("cat")
+                                  :noquery t))))
+                        ((symbol-function 'majutsu--process-install-filter)
+                         (lambda (child)
+                           (if (eq phase 'filter)
+                               (error "filter setup failed")
+                             (funcall real-set-process-filter child #'ignore))))
+                        ((symbol-function 'set-process-sentinel)
+                         (lambda (child sentinel)
+                           (if (eq phase 'sentinel)
+                               (error "sentinel setup failed")
+                             (funcall real-set-process-sentinel
+                                      child sentinel))))
+                        ((symbol-function 'majutsu-interactive-invalidate-repository)
+                         (lambda (root) (setq invalidated root)))
+                        ((symbol-function 'run-at-time)
+                         (lambda (&rest args) (setq scheduled args))))
+                (should-error
+                 (majutsu-diff-editor-start
+                  "restore" '("--tool" "meld") nil))
+                (should (process-get process 'finish-callback))
+                (should-not (majutsu-process-completion-owned-p process))
+                (should-not
+                 (gethash root majutsu-diff-editor--live-sessions))
+                (should (equal invalidated root))
+                (should (equal (nth 2 scheduled)
+                               #'majutsu-diff-editor--refresh-origin)))))
+        (when (and (processp process) (process-live-p process))
+          (delete-process process))))))
 
 (ert-deftest majutsu-diff-editor-finish-terminal-kill/waits-for-live-reaper ()
   "Do not compare operation ids until Ghostel's reaper has exited."
@@ -499,71 +642,93 @@
       (majutsu-diff-editor--finish-terminal-kill session)
       (should (eq completed session)))))
 
-(ert-deftest majutsu-diff-editor-complete-session/refreshes-only-after-operation-change ()
-  "Keep a cancelled editor's selection; clear stale selections after a change."
-  (let ((origin (generate-new-buffer " *majutsu-diff-editor-origin*"))
-        invalidated refreshed ids)
+(ert-deftest majutsu-diff-editor-ghostel-exit/defers-event-without-exit-status ()
+  "Ghostel completion uses its event and never interprets a process status."
+  (let* ((buffer (generate-new-buffer " *majutsu-ghostel-exit*"))
+         (session (majutsu-diff-editor-session-create
+                   :repository-root "/repo/"))
+         scheduled
+         completed)
     (unwind-protect
-        (with-current-buffer origin
-          (majutsu-diff-mode)
-          (cl-letf (((symbol-function 'majutsu-diff-editor--operation-id)
+        (progn
+          (with-current-buffer buffer
+            (setq-local majutsu-diff-editor--session session))
+          (cl-letf (((symbol-function 'run-at-time)
+                     (lambda (&rest args) (setq scheduled args))))
+            (majutsu-diff-editor--ghostel-exit buffer "finished\n"))
+          (should (equal scheduled
+                         (list 0 nil
+                               #'majutsu-diff-editor--finish-ghostel-session
+                               session "finished\n")))
+          (cl-letf (((symbol-function 'process-exit-status)
                      (lambda (&rest _)
-                       (pop ids)))
-                    ((symbol-function 'majutsu-interactive-invalidate)
-                     (lambda () (setq invalidated (1+ (or invalidated 0)))))
-                    ((symbol-function 'majutsu-refresh)
-                     (lambda () (setq refreshed (1+ (or refreshed 0)))))
-                    ((symbol-function 'message) (lambda (&rest _) nil)))
-            (setq ids '("before"))
-            (should
-             (eq (majutsu-diff-editor--complete-session
-                  (majutsu-diff-editor-session-create
-                   :origin-buffer origin :repository-root default-directory
-                   :operation-id-before "before"))
-                 'unchanged))
-            (should-not invalidated)
-            (should-not refreshed)
-            (setq ids '("after"))
-            (should
-             (eq (majutsu-diff-editor--complete-session
-                  (majutsu-diff-editor-session-create
-                   :origin-buffer origin :repository-root default-directory
-                   :operation-id-before "before"))
-                 'changed))
-            (should (= invalidated 1))
-            (should (= refreshed 1))
-            (setq ids '(nil))
-            (should
-             (eq (majutsu-diff-editor--complete-session
-                  (majutsu-diff-editor-session-create
-                   :origin-buffer origin :repository-root default-directory
-                   :operation-id-before "before"))
-                 'unknown))
-            (should (= invalidated 2))
-            (should (= refreshed 2))))
-      (when (buffer-live-p origin)
-        (kill-buffer origin)))))
+                       (ert-fail "Ghostel completion read process status")))
+                    ((symbol-function 'majutsu-diff-editor--complete-session)
+                     (lambda (&rest args) (setq completed args))))
+            (apply (nth 2 scheduled) (nthcdr 3 scheduled)))
+          (should (equal completed
+                         (list session "finished\n"
+                               "jj diff editor ended without a repository operation"))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
 
-(ert-deftest majutsu-diff-editor-complete-session/quit-releases-and-invalidates ()
-  "C-g during the operation probe leaves no lock or reusable patch selection."
+(ert-deftest majutsu-diff-editor-complete-session/delegates-repository-freshness ()
+  "Use the shared repository-wide completion contract."
+  (let* ((origin (generate-new-buffer " *majutsu-diff-editor-origin*"))
+         (session (majutsu-diff-editor-session-create
+                   :origin-buffer origin :repository-root "/repo/"
+                   :operation-id-before "before"))
+         called)
+    (unwind-protect
+        (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
+                   (lambda (&rest args)
+                     (setq called args)
+                     'changed)))
+          (should
+           (eq (majutsu-diff-editor--complete-session
+                session nil "unchanged message")
+               'changed))
+          (should (equal called
+                         (list "/repo/" origin "before"
+                               "unchanged message"))))
+      (kill-buffer origin))))
+
+(ert-deftest majutsu-diff-editor-finish-process-session/checks-every-exit-code ()
+  "Failures still probe freshness, but an unchanged failure stays quiet."
+  (dolist (case '((0 "jj diff editor ended without a repository operation")
+                  (1 nil)
+                  (nil nil)))
+    (let* ((session (majutsu-diff-editor-session-create
+                     :repository-root "/repo/"
+                     :operation-id-before "before"))
+           called)
+      (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
+                 (lambda (&rest args)
+                   (setq called args)
+                   'unchanged)))
+        (should (eq (majutsu-diff-editor--finish-process-session
+                     session (car case))
+                    'unchanged))
+        (should (equal called
+                       (list "/repo/" nil "before" (cadr case))))))))
+
+(ert-deftest majutsu-diff-editor-complete-session/quit-releases-slot ()
+  "C-g in shared completion leaves no workspace session lock."
   (let* ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
          (session (majutsu-diff-editor-session-create
                    :repository-root "/repo/" :operation-id-before "before"))
-         invalidated scheduled)
+         shared-completion-ran)
     (puthash "/repo/" session majutsu-diff-editor--live-sessions)
-    (cl-letf (((symbol-function 'majutsu-diff-editor--operation-id)
-               (lambda (&rest _) (signal 'quit nil)))
-              ((symbol-function 'majutsu-diff-editor--invalidate-origin-selection)
-               (lambda (_session) (setq invalidated t)))
-              ((symbol-function 'run-at-time)
-               (lambda (&rest args) (setq scheduled args))))
+    (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
+               (lambda (&rest _)
+                 (setq shared-completion-ran t)
+                 (signal 'quit nil))))
       (let (quit)
         (condition-case nil
             (majutsu-diff-editor--complete-session session)
           (quit (setq quit t)))
         (should quit))
-      (should invalidated)
-      (should scheduled)
+      (should shared-completion-ran)
       (should-not (gethash "/repo/" majutsu-diff-editor--live-sessions)))))
 
 (ert-deftest majutsu-diff-editor-complete-session/releases-before-exit-hook ()
@@ -577,9 +742,8 @@
            (list (lambda (&rest _)
                    (setq hook-saw-slot
                          (gethash "/repo/" majutsu-diff-editor--live-sessions))))))
-      (cl-letf (((symbol-function 'majutsu-diff-editor--operation-id)
-                 (lambda (&rest _) "before"))
-                ((symbol-function 'message) (lambda (&rest _) nil)))
+      (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
+                 (lambda (&rest _) 'unchanged)))
         (should (eq (majutsu-diff-editor--complete-session session "finished")
                     'unchanged))
         (should-not hook-saw-slot)))))

@@ -1444,7 +1444,7 @@ Choose jj's diff editor with @samp{--tool=NAME}.
 Undo changes introduced by a revision (@samp{--changes-in}).
 @item @kbd{-d}
 @kindex -d
-Restore descendants as well.
+Preserve descendant content while rebasing (@samp{--restore-descendants}).
 @item @kbd{--}
 @kindex --
 Limit restore to selected files or filesets.
@@ -1566,11 +1566,15 @@ When opening Split@comma{} Squash@comma{} or Restore from a Diff buffer@comma{} 
 Split inherits exactly one resolvable @samp{--revisions} source as @samp{--revision};
 it never passes a diff's arbitrary @samp{--from} / @samp{--to} range to @samp{jj split}.
 @item
-Squash turns @samp{--revisions} into @samp{--from} sources.  An arbitrary @samp{--from} /
-@samp{--to} tree diff is not treated as a Squash source.
+Squash turns @samp{--revisions} into @samp{--from} sources and retains those sources
+when you choose an explicit destination.  An arbitrary @samp{--from} / @samp{--to}
+tree diff is not treated as a Squash source.
 @item
-Restore turns @samp{--revisions} into @samp{--changes-in} and additionally inherits
-@samp{--from} / @samp{--to} parameters.
+Restore turns exactly one resolvable @samp{--revisions} source into
+@samp{--changes-in} and inherits explicit @samp{--from} / @samp{--to} endpoints.  An
+aggregate revision diff is not inferred as a Restore operation; choose an
+explicit Restore context before using either Majutsu patch selection or
+jj's own diff editor.
 @end itemize
 
 This means you can:
@@ -1606,18 +1610,24 @@ Squash and Restore@comma{} not a tool abbreviation.
 If an Emacs patch selection is active and you explicitly request a jj editor@comma{}
 the jj editor wins and the Emacs selection is retained.  With no explicit jj
 editor flag@comma{} @samp{RET} applies the active Majutsu patch selection as before.  A
-selection is retained when an editor is cancelled or fails@comma{} and is cleared
-before a successful repository refresh so raw buffer positions cannot apply to
-a different diff.
+selection is retained when an editor ends without changing the repository@comma{}
+including an unchanged failure.  Each selection is bound to the operation id@comma{}
+source context@comma{} and generation of the rendered diff.  A changed or unverifiable
+repository state invalidates selections in every diff buffer for that
+workspace before refresh@comma{} so raw positions cannot be applied to another tree.
+Patch execution also replaces validated dynamic source/default revsets with
+their canonical commit ids before jj starts@comma{} closing the gap between validation
+and command execution.
 
 The default jj editor@comma{} @samp{:builtin}@comma{} is a terminal TUI@.  Customize
 @samp{majutsu-diff-editor-host} to choose how Majutsu hosts it:
 
 @itemize
 @item
-@samp{auto} (the default) uses Ghostel when available.  Local sessions also need
-a working @samp{emacsclient}; Ghostel-supported TRAMP sessions use with-editor's
-remote sleeping-editor bridge instead.
+@samp{auto} (the default) uses Ghostel when available.  Local commands which may
+open a later description editor also need a working @samp{emacsclient}; Restore
+does not.  Ghostel-supported TRAMP sessions use with-editor's remote
+sleeping-editor bridge instead.
 @item
 @samp{ghostel} requires Ghostel and supports jj's built-in TUI and external
 terminal editors.
@@ -1626,14 +1636,15 @@ terminal editors.
 @samp{:builtin} rather than trying to render it in a process buffer.
 @end itemize
 
-Ghostel is optional.  A local Ghostel session requires a working
-@samp{emacsclient} for jj's later description-editor invocation.  On a
-Ghostel-supported POSIX TRAMP remote@comma{} Ghostel starts a remote PTY and
-with-editor uses its sleeping-editor protocol@comma{} so no local @samp{emacsclient} is
-needed.  Majutsu associates jj's remote temporary description file with its
-repository before it is visited@comma{} keeping description-buffer commands in the
-right repository.  A @samp{WITH-EDITOR} control line may remain visible in the
-Ghostel transcript.
+Ghostel is optional.  A local Split or Squash session needs a working
+@samp{emacsclient} only when its arguments can lead to a description editor;
+explicit message options avoid that phase unless @samp{--editor} is also set.
+Restore has no description-editing phase.  On a Ghostel-supported POSIX TRAMP
+remote@comma{} Ghostel starts a remote PTY and with-editor uses its sleeping-editor
+protocol@comma{} so no local @samp{emacsclient} is needed.  Majutsu associates jj's remote
+temporary description file with its workspace before it is visited@comma{} keeping
+description-buffer commands in the right workspace.  A @samp{WITH-EDITOR} control
+line may remain visible in the Ghostel transcript.
 
 Ghostel's remote PTY path needs a POSIX remote reachable by a supported TRAMP
 method; Windows remotes are not supported.  The ordinary external-editor
