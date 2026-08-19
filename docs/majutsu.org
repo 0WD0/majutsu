@@ -16,7 +16,10 @@ Majutsu is a Magit-inspired Emacs interface for the Jujutsu (jj) version control
 :DESCRIPTION: Understand Majutsu's purpose, Jujutsu model, and project origins.
 :END:
 ** About Majutsu
-Majutsu aims to bring the legendary workflow of Magit to the Jujutsu (jj) version control system. It is not merely a wrapper around the =jj= CLI, but a deeply integrated Emacs environment that leverages Magit's section management and transient menu systems. Majutsu provides visual tools for complex operations like rebasing, squashing, and conflict resolution, making the power of Jujutsu accessible and intuitive.
+Majutsu is a Magit-inspired Emacs interface for Jujutsu. It provides an
+interactive log viewer and commands for inspecting and rewriting revision
+history. It uses Magit's section and transient systems and provides visual
+workflows for operations such as rebasing, squashing, and conflict resolution.
 
 Originally started as a fork of =jj-mode.el=, Majutsu has been heavily refactored and expanded to include a new template DSL, asynchronous process handling, and a native Evil-mode integration.
 
@@ -1267,7 +1270,9 @@ Transient actions:
 - Key: i (majutsu-git-init-transient) :: Initialize a new Git-backed jj repository.
 
 ** Export and Import
-Jujutsu automatically exports/imports to the underlying Git repo, but you can trigger it manually:
+In a colocated Git-backed workspace, Jujutsu automatically imports from and
+exports to the underlying Git repository on each command. In other Git-backed
+layouts, use the commands below to synchronize the repositories explicitly:
 #+attr_reference: :kind command-binding :interface "Git transient"
 - Key: e (majutsu-git-export) :: Run =jj git export=.
 - Key: m (majutsu-git-import) :: Run =jj git import=.
