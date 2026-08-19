@@ -324,6 +324,7 @@ html[data-majutsu-docs-mode='evil'] [data-keymap-scope]:not([data-keymap-scope~=
 
 .org-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--mj-line); border-radius: .22rem; }
 .org-document table { width: 100%; border-collapse: collapse; font-size: .94rem; }
+.org-table-scroll table { margin-block: 0; }
 .org-document :is(td, th) { border: 0; border-bottom: 1px solid var(--mj-line); padding: .62rem .75rem; text-align: start; vertical-align: top; }
 .org-document tr:last-child :is(td, th) { border-bottom: 0; }
 .org-document thead tr {
