@@ -1,5 +1,3 @@
-#+title: Majutsu - Emacs Interface for Jujutsu
-
 #+html: <p align="center"><a href="https://majutsu.org"><img src="docs/site/public/og.png" alt="Majutsu — Shape history without leaving Emacs" width="720"></a></p>
 
 Majutsu provides a Magit-style interface for [[https://github.com/jj-vcs/jj][Jujutsu (jj)]], offering an
