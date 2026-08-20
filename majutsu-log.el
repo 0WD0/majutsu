@@ -210,12 +210,12 @@ Also registers a variable watcher to invalidate the template cache."
   (:returns Template :doc "Canonical log id.")
   [:if [:or [:hidden]
             [:divergent]]
-      [:commit_id :shortest 8]
-    [:change_id :shortest 8]])
+      [:commit_id]
+    [:change_id]])
 
 (majutsu-log-define-column id
   [:canonical-log-id]
-  "Template for the commit-id column.")
+  "Template for the canonical log id column.")
 
 (majutsu-log-define-column change-id
   [:label
@@ -693,12 +693,6 @@ Return non-nil when the section could be located."
   :group 'majutsu
   :type 'hook
   :options '(bug-reference-mode))
-
-;;;###autoload(autoload 'majutsu-log-copy-transient "majutsu-log" nil t)
-(majutsu-row-define-copy-transient
- majutsu-log-copy-transient
- "Transient for semantic copy commands in `majutsu-log-mode'."
- ("h" "Commit hash" majutsu-row-copy-commit-id))
 
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."

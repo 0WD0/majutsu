@@ -557,23 +557,17 @@ indentation are display-only, so ordinary copy operations only capture semantic
 content rather than the visible graph gutter.
 
 *** Copying From Structured Row Buffers
-Majutsu now provides both default copy filtering and explicit semantic copy
-commands for structured row buffers such as ~majutsu-log-mode~ and
-~majutsu-evolog-mode~. These commands are available through the dispatcher copy
-submenu and via ~M-x~.
+~majutsu-log-mode~, ~majutsu-evolog-mode~, and ~majutsu-op-log-mode~ share
+these copy commands through ~majutsu-row-copy-transient~.
 
 #+attr_reference: :kind command-binding :interface "Copy dispatcher"
-- Key: ? w s (majutsu-copy-section-value) :: Copy the current section's stable
-  value (for ~jj-commit~, this is the revision id at point; for evolog entries,
-  this is the commit id). If the region is active, it falls back to ordinary
-  region copy.
+- Key: ? w s (majutsu-copy-section-value) :: Copy the current section value.
+  An active region uses ordinary region copy.
 - Key: ? w f (majutsu-row-copy-field) :: Copy the rendered field value at point.
 - Key: ? w F (majutsu-row-copy-entry-field) :: Choose any canonical field stored
   on the current entry, including hidden metadata that is not visible in the
   current layout. Completion keeps the field name as the candidate and displays
   a one-line value preview as its annotation.
-- Key: ? w h (majutsu-row-copy-commit-id) :: Copy the current entry's commit
-  hash from hidden metadata.
 - Key: ? w m (majutsu-row-copy-module) :: Copy the rendered visible module at
   point (~heading~, ~tail~, or ~body~), without graph-prefix or tail-spacer
   decoration.

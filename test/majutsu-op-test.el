@@ -279,6 +279,7 @@
           (should-not (string-match-p "Id: full-id" content)))
         (goto-char (point-min))
         (search-forward "short-id")
+        (should (equal (magit-section-value-if 'jj-op) "full-id"))
         (should (equal (substring-no-properties
                         (get-text-property (line-beginning-position)
                                            'line-prefix))

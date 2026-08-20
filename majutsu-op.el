@@ -613,18 +613,6 @@ switch, and graph switch are allowed."
       (majutsu-op-revert op-id)
     (user-error "No operation at point")))
 
-;;;###autoload
-(defun majutsu-op-log-copy-operation-id ()
-  "Copy the current operation log entry id."
-  (interactive)
-  (majutsu-row-copy-entry-field-at-point 'op-id "No operation at point"))
-
-;;;###autoload(autoload 'majutsu-op-log-copy-transient "majutsu-op" nil t)
-(majutsu-row-define-copy-transient
- majutsu-op-log-copy-transient
- "Transient for semantic copy commands in `majutsu-op-log-mode'."
- ("o" "Operation id" majutsu-op-log-copy-operation-id))
-
 (defvar-keymap majutsu-op-log-mode-map
   :doc "Keymap for `majutsu-op-log-mode'."
   :parent majutsu-mode-map

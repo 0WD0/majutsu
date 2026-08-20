@@ -236,10 +236,6 @@ interactive log viewer and commands for inspecting and rewriting revision
 history. It uses Magit's section and transient systems and provides visual
 workflows for operations such as rebasing@comma{} squashing@comma{} and conflict resolution.
 
-Originally started as a fork of @samp{jj-mode.el}@comma{} Majutsu has been heavily
-refactored and expanded to include a new template DSL@comma{} asynchronous process
-handling@comma{} and a native Evil-mode integration.
-
 @node About Jujutsu
 @section About Jujutsu
 
@@ -974,19 +970,15 @@ content rather than the visible graph gutter.
 @node Copying From Structured Row Buffers
 @subsection Copying From Structured Row Buffers
 
-Majutsu now provides both default copy filtering and explicit semantic copy
-commands for structured row buffers such as @code{majutsu-log-mode} and
-@code{majutsu-evolog-mode}. These commands are available through the dispatcher copy
-submenu and via @code{M-x}.
+@code{majutsu-log-mode}@comma{} @code{majutsu-evolog-mode}@comma{} and @code{majutsu-op-log-mode} share
+these copy commands through @code{majutsu-row-copy-transient}.
 
 @table @asis
 @item @kbd{? w s} (@code{majutsu-copy-section-value})
 @kindex ? w s
 @findex majutsu-copy-section-value
-Copy the current section's stable
-  value (for @code{jj-commit}@comma{} this is the revision id at point; for evolog entries@comma{}
-  this is the commit id). If the region is active@comma{} it falls back to ordinary
-  region copy.
+Copy the current section value.
+  An active region uses ordinary region copy.
 @item @kbd{? w f} (@code{majutsu-row-copy-field})
 @kindex ? w f
 @findex majutsu-row-copy-field
@@ -998,11 +990,6 @@ Choose any canonical field stored
   on the current entry@comma{} including hidden metadata that is not visible in the
   current layout. Completion keeps the field name as the candidate and displays
   a one-line value preview as its annotation.
-@item @kbd{? w h} (@code{majutsu-row-copy-commit-id})
-@kindex ? w h
-@findex majutsu-row-copy-commit-id
-Copy the current entry's commit
-  hash from hidden metadata.
 @item @kbd{? w m} (@code{majutsu-row-copy-module})
 @kindex ? w m
 @findex majutsu-row-copy-module

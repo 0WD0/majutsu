@@ -175,14 +175,6 @@
       (should (equal (magit-section-value-if 'jj-evolog-entry)
                      "commit-full")))))
 
-(ert-deftest majutsu-evolog-copy-transient-has-copy-actions ()
-  "Evolog copy transient should expose shared row copy actions."
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-evolog-copy-transient "m")))
-
 (ert-deftest majutsu-evolog-transient/has-safe-list-options ()
   (let ((limit (get 'majutsu-evolog:--limit 'transient--suffix)))
     (should limit)

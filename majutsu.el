@@ -76,15 +76,9 @@ Instead of invoking this alias for `majutsu-log' using
    [("?" "Help"              transient-help)
     ("$" "Process buffer"    majutsu-process-buffer)]
    [("C-x m"    "Show all key bindings"    describe-mode)]]
-  ["Log commands"
-   :if-derived majutsu-log-mode
-   [("w" "Copy…"             majutsu-log-copy-transient)]]
-  ["Evolution log commands"
-   :if-derived majutsu-evolog-mode
-   [("w" "Copy…"             majutsu-evolog-copy-transient)]]
-  ["Operation log commands"
-   :if-derived majutsu-op-log-mode
-   [("w" "Copy…"             majutsu-op-log-copy-transient)]])
+  ["Copy commands"
+   :if-derived (majutsu-log-mode majutsu-evolog-mode majutsu-op-log-mode)
+   [("w" "Copy…"             majutsu-row-copy-transient)]])
 
 (provide 'majutsu)
 

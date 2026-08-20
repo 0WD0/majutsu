@@ -1493,31 +1493,15 @@ When the region is active, copy it literally using `copy-region-as-kill'."
       (majutsu-row-current-entry no-entry-message)
       field))))
 
-;;;###autoload
-(defun majutsu-row-copy-commit-id ()
-  "Copy the current structured entry's commit hash.
-
-When the region is active, copy it literally using `copy-region-as-kill'."
-  (interactive)
-  (majutsu-row-copy-entry-field-at-point 'commit-id))
-
-;;; Copy transient macro
-
-(defmacro majutsu-row-define-copy-transient (name doc &rest suffixes)
-  "Define NAME as a copy transient with DOC and extra SUFFIXES."
-  `(transient-define-prefix ,name ()
-     ,doc
-     [[("s" "Section value" majutsu-copy-section-value)
-       ("f" "Visible field at point" majutsu-row-copy-field)
-       ("F" "Entry field…" majutsu-row-copy-entry-field)
-       ("m" "Visible module at point" majutsu-row-copy-module)
-       ,@suffixes]]))
+;;; Copy transient
 
 ;;;###autoload(autoload 'majutsu-row-copy-transient "majutsu-row" nil t)
-(majutsu-row-define-copy-transient
- majutsu-row-copy-transient
- "Transient for semantic copy commands in structured row buffers."
- ("h" "Commit hash" majutsu-row-copy-commit-id))
+(transient-define-prefix majutsu-row-copy-transient ()
+  "Transient for semantic copy commands in structured row buffers."
+  [[("s" "Section value" majutsu-copy-section-value)
+    ("f" "Visible field at point" majutsu-row-copy-field)
+    ("F" "Entry field…" majutsu-row-copy-entry-field)
+    ("m" "Visible module at point" majutsu-row-copy-module)]])
 
 (provide 'majutsu-row)
 ;;; majutsu-row.el ends here

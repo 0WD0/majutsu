@@ -237,12 +237,6 @@ protocol.  Only one limit, reverse-order switch, and graph switch are allowed."
   (magit-insert-section (evologbuf)
     (majutsu-evolog--insert-entries)))
 
-;;;###autoload(autoload 'majutsu-evolog-copy-transient "majutsu-evolog" nil t)
-(majutsu-row-define-copy-transient
- majutsu-evolog-copy-transient
- "Transient for semantic copy commands in `majutsu-evolog-mode'."
- ("h" "Commit hash" majutsu-row-copy-commit-id))
-
 (defclass majutsu-evolog-prefix (transient-prefix) ())
 
 (cl-defmethod transient-init-value ((obj majutsu-evolog-prefix))

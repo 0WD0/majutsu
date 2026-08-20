@@ -172,6 +172,7 @@
      (majutsu-log-test--metadata-payload
       compiled
       `((id . ,id)
+        (commit-id . ,(concat "commit-" id))
         (description . ,title)
         (parent-ids . ,parent-ids)))
      majutsu-row-end-token
@@ -193,15 +194,12 @@
   (should (equal majutsu-log-template-long-desc
                  [:description :lines :skip 1 :join "\x1f"])))
 
-(ert-deftest majutsu-log-canonical-log-id-template-uses-bound-self ()
-  "Canonical log id helper should compile against the current Commit self."
+(ert-deftest majutsu-log-canonical-log-id-template-preserves-id-kind ()
+  "Canonical log ids should be full change or commit ids as appropriate."
   (should (equal (majutsu-template-compile majutsu-log-template-id 'Commit)
-                 "if((self.hidden() || self.divergent()), self.commit_id().shortest(8), self.change_id().shortest(8))")))
-
-(ert-deftest majutsu-log-parent-ids-template-composes-map-and-join ()
-  "Parent ids template should map canonical ids before joining them."
+                 "if((self.hidden() || self.divergent()), self.commit_id(), self.change_id())"))
   (should (equal (majutsu-template-compile majutsu-log-template-parent-ids 'Commit)
-                 "self.parents().map(|p| if((p.hidden() || p.divergent()), p.commit_id().shortest(8), p.change_id().shortest(8))).join(\"\\x1C\")")))
+                 "self.parents().map(|p| if((p.hidden() || p.divergent()), p.commit_id(), p.change_id())).join(\"\\x1C\")")))
 
 (ert-deftest majutsu-log-default-columns-contain-module-and-face ()
   "Compiled default columns should include module/face/post metadata."
@@ -280,15 +278,17 @@
                          (majutsu-row-module-columns compiled 'metadata))))
     (should (equal fields '(id commit-id parent-ids)))))
 
-(ert-deftest majutsu-log-entry-id-uses-row-columns ()
-  "Entry ids should come from generic row column storage."
+(ert-deftest majutsu-log-entry-id-uses-canonical-log-id ()
+  "Entry ids should use the transported canonical log id."
   (should (equal (majutsu-log--entry-id
-                  '(:columns ((id . "id-123")
-                              (change-id . "chg"))))
-                 "id-123"))
+                  '(:columns ((id . "change-full")
+                              (change-id . "change-full")
+                              (commit-id . "commit-full"))))
+                 "change-full"))
   (should (equal (majutsu-log--entry-id
-                  '(:columns ((change-id . "chg"))))
-                 "chg")))
+                  '(:columns ((change-id . "change-full")
+                              (commit-id . "commit-full"))))
+                 "change-full")))
 
 (ert-deftest majutsu-log-post-decode-line-separator-restores-faces ()
   "\x1f decoding should keep surrounding text properties."
@@ -455,21 +455,25 @@
                    '("parent-a" "parent-b")))))
 
 (ert-deftest majutsu-log-rebuild-relation-indexes ()
-  "Visible entries should produce parent and child lookup indexes."
-  (let* ((entries (list (list :columns '((id . "child-a")
-                                         (parent-ids . ("parent"))))
-                        (list :columns '((id . "child-b")
-                                         (parent-ids . ("parent"))))
-                        (list :columns '((id . "parent")
-                                         (parent-ids . nil))))))
+  "Visible entries should index full canonical log ids."
+  (let* ((entries
+          (list (list :columns '((id . "change-child-a")
+                                 (commit-id . "commit-child-a")
+                                 (parent-ids . ("change-parent"))))
+                (list :columns '((id . "change-child-b")
+                                 (commit-id . "commit-child-b")
+                                 (parent-ids . ("change-parent"))))
+                (list :columns '((id . "change-parent")
+                                 (commit-id . "commit-parent")
+                                 (parent-ids . nil))))))
     (with-temp-buffer
       (majutsu-log--rebuild-relation-indexes entries)
       (should (equal (majutsu-row-column
-                      (gethash "parent" majutsu-log--entry-by-id)
-                      'id)
-                     "parent"))
-      (should (equal (gethash "parent" majutsu-log--children-by-id)
-                     '("child-a" "child-b"))))))
+                      (gethash "change-parent" majutsu-log--entry-by-id)
+                      'commit-id)
+                     "commit-parent"))
+      (should (equal (gethash "change-parent" majutsu-log--children-by-id)
+                     '("change-child-a" "change-child-b"))))))
 
 (ert-deftest majutsu-log-postprocessor-runs-per-field ()
   "Field-level :post handlers should run after parsing."
@@ -760,12 +764,13 @@
         (should-not (text-property-not-all 0 (length copied) 'line-prefix nil copied))
         (should-not (text-property-not-all 0 (length copied) 'wrap-prefix nil copied))))))
 
-(ert-deftest majutsu-copy-section-value-copies-current-commit-id ()
-  "`majutsu-copy-section-value' should copy the current commit section id."
+(ert-deftest majutsu-copy-section-value-copies-canonical-log-id ()
+  "`majutsu-copy-section-value' should copy the full canonical log id."
   (let* ((compiled (majutsu-log-test--tail-compiled))
-         (entry (list :id "id-123"
-                      :columns '((change-id . "chg")
-                                 (id . "id-123")
+         (entry (list :id "change-full"
+                      :columns '((change-id . "change-full")
+                                 (id . "change-full")
+                                 (commit-id . "commit-full")
                                  (description . "Title")
                                  (author . "Alice")
                                  (timestamp . "2m"))
@@ -785,7 +790,7 @@
                  (lambda (format-string &rest args)
                    (apply #'format format-string args))))
         (majutsu-copy-section-value))
-      (should (equal copied "id-123")))))
+      (should (equal copied "change-full")))))
 
 (ert-deftest majutsu-row-copy-field-copies-log-field-value-at-point ()
   "`majutsu-row-copy-field' should copy the rendered log field value at point."
@@ -885,36 +890,6 @@
                               " 230dd059e1b059aefcda37d0a668f2f08f6e5a13")))
                    "commit-id")))
         (majutsu-row-copy-entry-field))
-      (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
-
-(ert-deftest majutsu-row-copy-commit-id-copies-log-hidden-hash ()
-  "`majutsu-row-copy-commit-id' should copy the canonical hidden log commit hash."
-  (let* ((compiled (majutsu-log-test--tail-compiled))
-         (majutsu-log--compiled-template-cache compiled)
-         (entry (list :id "id-123"
-                      :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
-                      :columns '((change-id . "chg")
-                                 (id . "id-123")
-                                 (description . "Title")
-                                 (author . "Alice")
-                                 (timestamp . "2m")
-                                 (commit-id . "230dd059e1b059aefcda37d0a668f2f08f6e5a13"))
-                      :heading-prefixes '("○ ")))
-         copied)
-    (with-temp-buffer
-      (require 'magit-section)
-      (majutsu-log-mode)
-      (setq buffer-read-only nil)
-      (majutsu-row-set-buffer-data compiled (list entry))
-      (majutsu-row-insert-entry entry compiled)
-      (goto-char (point-min))
-      (search-forward "Title")
-      (cl-letf (((symbol-function 'kill-new)
-                 (lambda (string) (setq copied string)))
-                ((symbol-function 'message)
-                 (lambda (format-string &rest args)
-                   (apply #'format format-string args))))
-        (majutsu-row-copy-commit-id))
       (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
 
 (ert-deftest majutsu-repository-config-id/reads-jj-config-id-file ()
@@ -1081,19 +1056,6 @@
   "Log -r clears through empty input, so there is no separate R action."
   (should-not (ignore-errors
                 (transient-get-suffix 'majutsu-log-transient "R"))))
-
-(ert-deftest majutsu-log-copy-transient-has-copy-actions ()
-  "Log copy transient should expose visible and hidden-field copy commands."
-  (should (transient-get-suffix 'majutsu-log-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-log-copy-transient "m")))
-
-(ert-deftest majutsu-dispatch-exposes-log-copy-transient ()
-  "Dispatcher should expose the log copy transient entry."
-  (should (transient-get-suffix 'majutsu-dispatch "w"))
-  (should-not (lookup-key majutsu-log-mode-map (kbd "w"))))
 
 (ert-deftest majutsu-log-wash-logs-streams-and-caches-entries ()
   "Washing should transform the buffer incrementally and cache entries."

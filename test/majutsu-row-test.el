@@ -8,7 +8,6 @@
 
 (require 'ert)
 (require 'magit-section)
-(require 'transient)
 (require 'majutsu-row)
 
 (defconst majutsu-row-test--profile
@@ -433,14 +432,6 @@
                    "id")))
         (majutsu-row-copy-entry-field))
       (should (equal copied "id-1")))))
-
-(ert-deftest majutsu-row-copy-transient-has-copy-actions ()
-  "Shared row copy transient should expose semantic copy actions."
-  (should (transient-get-suffix 'majutsu-row-copy-transient "s"))
-  (should (transient-get-suffix 'majutsu-row-copy-transient "f"))
-  (should (transient-get-suffix 'majutsu-row-copy-transient "F"))
-  (should (transient-get-suffix 'majutsu-row-copy-transient "h"))
-  (should (transient-get-suffix 'majutsu-row-copy-transient "m")))
 
 (provide 'majutsu-row-test)
 

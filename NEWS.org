@@ -51,9 +51,8 @@
   In log buffers, ~[~ jumps to a visible parent and ~]~ jumps to a visible
   child.
 
-- Semantic copy commands for log buffers ::
-  The log copy submenu can copy section values, rendered fields, hidden entry
-  fields, hashes, and visible modules.
+- Semantic copy for structured row buffers ::
+  Log, evolution-log, and operation-log buffers share one copy submenu.
 
 - Description-buffer message helpers ::
   JJ description buffers gain save, history, search, and diff commands.
