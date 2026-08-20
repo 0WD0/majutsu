@@ -73,19 +73,6 @@ body { color: var(--mj-ink); }
 }
 
 .org-content { color: var(--mj-ink); font-size: 1.03rem; }
-.version-banner {
-  max-width: 74ch;
-  margin-block: 0 1.25rem;
-  border: 1px solid var(--mj-line);
-  border-inline-start: .22rem solid var(--mj-amber);
-  border-radius: .22rem;
-  padding: .65rem .85rem;
-  color: var(--mj-muted);
-  background: var(--mj-panel);
-  font-size: .9rem;
-  font-style: italic;
-}
-.version-banner code { font-style: normal; }
 
 .org-document { max-width: 74ch; min-width: 0; }
 h1#_top {

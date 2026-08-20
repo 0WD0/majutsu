@@ -1,13 +1,7 @@
 ---
 // Loam owns the semantic HTML contract; Starlight owns the surrounding shell.
-const docsCommit = __MAJUTSU_DOCS_COMMIT__;
 ---
 
-<div class="version-banner">
-  {docsCommit
-    ? <span>Unreleased development manual at <code>{docsCommit.slice(0, 12)}</code>; interfaces may change.</span>
-    : <span>Local development manual; interfaces may change.</span>}
-</div>
 <section class="keymap-switcher docs-mode-switcher" aria-label="Documentation mode" hidden>
   <div class="keymap-switcher-copy">
     <span class="keymap-switcher-label">Documentation mode</span>
