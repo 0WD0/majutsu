@@ -19,9 +19,6 @@
 (require 'majutsu)
 (require 'majutsu-selection)
 
-(defclass majutsu-rebase-option (majutsu-selection-option)
-  ())
-
 ;;; majutsu-rebase
 
 ;;;###autoload(autoload 'majutsu-rebase-execute "majutsu-rebase" nil t)
@@ -47,7 +44,7 @@ ARGS are passed from the transient."
 
 (transient-define-argument majutsu-rebase:--source ()
   :description "Source"
-  :class 'majutsu-rebase-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "s"
@@ -58,7 +55,7 @@ ARGS are passed from the transient."
 
 (transient-define-argument majutsu-rebase:--branch ()
   :description "Branch"
-  :class 'majutsu-rebase-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[BRANCH]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "b"
@@ -69,7 +66,7 @@ ARGS are passed from the transient."
 
 (transient-define-argument majutsu-rebase:--revision ()
   :description "Revisions"
-  :class 'majutsu-rebase-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REVS]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "r"
@@ -80,7 +77,7 @@ ARGS are passed from the transient."
 
 (transient-define-argument majutsu-rebase:--onto ()
   :description "Onto"
-  :class 'majutsu-rebase-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
   :selection-toggle-key "o"
@@ -91,7 +88,7 @@ ARGS are passed from the transient."
 
 (transient-define-argument majutsu-rebase:--after ()
   :description "After"
-  :class 'majutsu-rebase-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
@@ -102,7 +99,7 @@ ARGS are passed from the transient."
 
 (transient-define-argument majutsu-rebase:--before ()
   :description "Before"
-  :class 'majutsu-rebase-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "B"

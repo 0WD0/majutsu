@@ -17,18 +17,9 @@
 
 (require 'majutsu)
 
-(defclass majutsu-metaedit-option (majutsu-selection-option)
-  ())
-
-(defun majutsu-metaedit--selection-targets ()
-  "Return revisions selected by the region or point."
-  (or (magit-region-values 'jj-commit t)
-      (when-let* ((revision (magit-section-value-if 'jj-commit)))
-        (list revision))))
-
 (defun majutsu-metaedit--default-revisions ()
   "Return default revisions for `jj metaedit'."
-  (or (majutsu-metaedit--selection-targets)
+  (or (majutsu-revisions-at-point)
       '("@")))
 
 (defun majutsu-metaedit--default-args ()
@@ -61,11 +52,9 @@ arguments are present.  Outside the transient, return defaults."
 
 (transient-define-argument majutsu-metaedit:-r ()
   :description "Revisions"
-  :class 'majutsu-metaedit-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :targets-fn #'majutsu-metaedit--selection-targets
   :selection-toggle-key "r"
   :shortarg "-r"
   :argument "-r="

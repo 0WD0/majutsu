@@ -23,19 +23,10 @@
 (declare-function magit-read-gpg-secret-key "magit"
                   (prompt &optional initial-input history predicate default))
 
-(defclass majutsu-sign-option (majutsu-selection-option)
-  ())
-
-(defun majutsu-sign--selection-targets ()
-  "Return revisions selected by the region or point."
-  (or (magit-region-values 'jj-commit t)
-      (when-let* ((revision (magit-section-value-if 'jj-commit)))
-        (list revision))))
-
 (defun majutsu-sign--default-args ()
   "Return default revision arguments for signing commands."
   (mapcar (lambda (revision) (concat "--revision=" revision))
-          (or (majutsu-sign--selection-targets) '("@"))))
+          (or (majutsu-revisions-at-point) '("@"))))
 
 (defun majutsu-sign--gpg-signing-key-p (certificate)
   "Return non-nil when CERTIFICATE contains a signing-capable key."
@@ -108,11 +99,9 @@ INITIAL-INPUT and HISTORY follow a transient option reader."
 
 (transient-define-argument majutsu-sign:--revision ()
   :description "Revisions"
-  :class 'majutsu-sign-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
-  :targets-fn #'majutsu-sign--selection-targets
   :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revision="

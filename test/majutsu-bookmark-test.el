@@ -484,6 +484,15 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
                (and (eq type 'jj-bookmark) "main"))))
     (should (equal (majutsu-bookmark-at-point) "main"))))
 
+(ert-deftest majutsu-bookmark-at-point/uses-structured-bookmark-field ()
+  (with-temp-buffer
+    (insert (propertize "main" 'majutsu-row-field 'bookmarks))
+    (goto-char 2)
+    (cl-letf (((symbol-function 'magit-section-value-if) #'ignore)
+              ((symbol-function 'majutsu-jj-revision-p)
+               (lambda (revision) (equal revision "main"))))
+      (should (equal (majutsu-bookmark-at-point) "main")))))
+
 (ert-deftest majutsu-read-bookmark-name/defaults-to-exact-bookmark-at-point ()
   (let (seen-default)
     (cl-letf (((symbol-function 'majutsu-bookmark-at-point)

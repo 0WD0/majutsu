@@ -435,9 +435,7 @@ edit actions inherited from ordinary diff buffers are intentionally disabled."
   "Show the evolution history for REVSET.
 Optional ARGS may contain safe list-formatting options for `jj evolog`."
   (interactive
-   (list (majutsu-read-single-revset
-          "Evolution log for revision"
-          (or (majutsu-revision-at-point) "@"))))
+   (list (majutsu-read-revision "Evolution log for revision")))
   (setq args (majutsu-evolog--validate-args args))
   (let ((root (majutsu--toplevel-safe)))
     (majutsu-setup-buffer #'majutsu-evolog-mode nil

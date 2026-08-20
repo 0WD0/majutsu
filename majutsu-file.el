@@ -463,6 +463,21 @@ LIST-FN defaults to `majutsu-file-list'."
      (or history 'majutsu-file-path-history)
      nil nil nil root)))
 
+(defun majutsu-read-file-items (prompt initial-input history items)
+  "Read multiple files from completion ITEMS.
+PROMPT, INITIAL-INPUT, and HISTORY are standard reader arguments.
+ITEMS contains strings or (PATH . ANNOTATION) pairs."
+  (let* ((root (majutsu-file--root))
+         (default-directory root)
+         (initial-input (or initial-input
+                            (majutsu-file--path-at-point root))))
+    (majutsu-completing-read-multiple
+     prompt
+     (majutsu-completion-table items 'majutsu-file)
+     nil nil initial-input
+     (or history 'majutsu-file-path-history)
+     nil 'majutsu-file)))
+
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."
   (format "%s@~%s~" path revset))
@@ -524,7 +539,8 @@ DEFAULT is the initial file choice when present in REVSET file list."
 (defun majutsu-find-file-read-args (prompt)
   "Read revset and file path for PROMPT."
   (let* ((root (majutsu-file--root))
-         (revset (majutsu-read-revset prompt (majutsu-file--default-revset)))
+         (revset (majutsu-read-revset
+                  prompt :default (majutsu-file--default-revset)))
          (default-path (majutsu-file--path-at-point root))
          (path (majutsu-file--read-path revset root default-path)))
     (list revset path)))

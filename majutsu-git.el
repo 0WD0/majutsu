@@ -258,14 +258,22 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 
 (defun majutsu-git-push--read-revset (prompt initial-input history)
   "Read revset for `jj git push --revision='."
-  (when-let* ((value (majutsu-read-optional-revset
-                      prompt nil initial-input history '("git" "push" "-r"))))
+  (when-let* ((value (majutsu-read-revset
+                      prompt
+                      :allow-empty t
+                      :initial-input initial-input
+                      :history history
+                      :completion-args '("git" "push" "-r"))))
     (split-string value crm-separator t)))
 
 (defun majutsu-git-push--read-change (prompt initial-input history)
   "Read change id for `jj git push --change='."
-  (majutsu-read-optional-single-revset
-   prompt nil initial-input history '("git" "push" "-c")))
+  (majutsu-read-revision
+   prompt
+   :allow-empty t
+   :initial-input initial-input
+   :history history
+   :completion-args '("git" "push" "-c")))
 
 (transient-define-argument majutsu-git-push:--revision ()
   :description "Revisions"

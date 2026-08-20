@@ -16,26 +16,19 @@
 
 (ert-deftest majutsu-sign-default-args/use-region-revisions ()
   "Initialize signing commands with every revision in the active region."
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) '("a" "b")))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _)
-               (ert-fail "point fallback should not be read"))))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () '("a" "b"))))
     (should (equal (majutsu-sign--default-args)
                    '("--revision=a" "--revision=b")))))
 
 (ert-deftest majutsu-sign-default-args/use-point-or-at ()
   "Fall back from region to the revision at point, then to @."
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) nil))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _) "point")))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () '("point"))))
     (should (equal (majutsu-sign--default-args)
                    '("--revision=point"))))
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) nil))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _) nil)))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () nil)))
     (should (equal (majutsu-sign--default-args)
                    '("--revision=@")))))
 
@@ -70,8 +63,8 @@
   (dolist (command '(majutsu-sign majutsu-unsign))
     (with-temp-buffer
       (let (setup-prefix setup-args)
-        (cl-letf (((symbol-function 'magit-region-values)
-                   (lambda (&rest _) '("a" "b")))
+        (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+                   (lambda () '("a" "b")))
                   ((symbol-function 'transient-setup)
                    (lambda (prefix &rest args)
                      (setq setup-prefix prefix
@@ -88,7 +81,7 @@
 (ert-deftest majutsu-sign-revision-option/supports-visual-selection ()
   "Expose repeatable visual revision selection to both commands."
   (let ((obj (get 'majutsu-sign:--revision 'transient--suffix)))
-    (should (cl-typep obj 'majutsu-sign-option))
+    (should (cl-typep obj 'majutsu-revision-selection-option))
     (should (equal (oref obj argument) "--revision="))
     (should (eq (oref obj multi-value) 'repeat))
     (should (equal (oref obj selection-label) "[REVS]"))

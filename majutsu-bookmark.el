@@ -626,7 +626,7 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   (interactive
    (let* ((at (or (magit-section-value-if 'jj-commit) "@"))
           (names (majutsu-read-bookmark-names "Set bookmark(s)"))
-          (rev (majutsu-read-revset "Target revision" at)))
+          (rev (majutsu-read-revset "Target revision" :default at)))
      (list names rev)))
   (when (and names (zerop (majutsu-run-jj "bookmark" "set" names (list "-r" commit))))
     (message "Set bookmark(s) to %s: %s" commit (string-join names ", "))))

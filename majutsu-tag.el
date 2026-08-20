@@ -162,7 +162,8 @@ When ALLOW-MOVE is non-nil, pass `--allow-move'."
   (interactive
    (let* ((default-revision (or (magit-section-value-if 'jj-commit) "@"))
           (names (majutsu-tag--read-exact-names "Set tag(s)"))
-          (revision (majutsu-read-revset "Target revision" default-revision))
+          (revision (majutsu-read-revset
+                     "Target revision" :default default-revision))
           (allow-move current-prefix-arg))
      (list names revision allow-move)))
   (when names
@@ -195,7 +196,8 @@ This is a convenience wrapper around `jj tag set --allow-move'."
   (interactive
    (let* ((default-revision (or (magit-section-value-if 'jj-commit) "@"))
           (names (majutsu-tag--read-exact-names "Move tag(s)" t))
-          (revision (majutsu-read-revset "Target revision" default-revision)))
+          (revision (majutsu-read-revset
+                     "Target revision" :default default-revision)))
      (list names revision)))
   (majutsu-tag-set names revision t))
 

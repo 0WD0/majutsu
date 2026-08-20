@@ -374,13 +374,18 @@ Useful transient entries include:
 
 *** Revision Selection
 Majutsu's transient selection system chooses revision / change values; it is
-not a general revset builder.  For repeatable arguments, the toggle key can add
-the revision at point or each revision in an active log region.  A
-single-value argument accepts only one selected value.  Majutsu does not turn a
-region into an expression such as =A..B=, and it does not synthesize revset
-operators or functions.  Enter those expressions with the normal revset reader
-(for example, the log transient's =-r= entry).  Each command documents its own
-fallback when no explicit value is selected.
+not a general revset builder.  For repeatable arguments, an active log region
+adds each selected commit.  Otherwise, when point is in a semantic revision
+section, the section's value is used.  Only outside such a section does the
+toggle fall back to literal revision syntax under point and then the surrounding
+buffer context.
+
+For arguments that accept a single value, only one selected revision is used.
+Majutsu does not convert a region into an expression such as =A..B= or
+synthesize revset operators and functions.  Enter such expressions directly
+with the normal revset reader, for example, the log transient's =-r= entry.
+When no explicit value is selected, each command applies its own documented
+fallback.
 
 *** Log Output Protocol (Sequential Markers)
 Majutsu's log parser uses an ordered marker protocol embedded in jj template
@@ -597,6 +602,11 @@ Useful transient entries include:
   revisions or a revset like =B::D=.
 - Key: f / t :: Select the =--from= and =--to= revisions.
 - Key: -- :: Limit diff to selected files/filesets.
+  Completion shows full repository-relative paths changed by the active
+  =--revisions= or =--from=/=--to= selection. Without an explicit selection it
+  uses revisions in the active log region, then the revision at point, and
+  finally =@=. Fileset expressions remain free-form and can still be entered
+  directly.
 - Key: -g :: Toggle Git-style diff output.
 - Key: -W :: Toggle color-words diff output.
 - Key: -S :: Toggle stat output.

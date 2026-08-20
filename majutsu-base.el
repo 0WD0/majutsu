@@ -110,16 +110,23 @@ for a class of actions that would normally ask for confirmation."
 
 ;;; Section Classes
 
-(defclass majutsu-commit-section (magit-section)
+(defclass majutsu-revision-section (magit-section)
+  ()
+  :abstract t)
+
+(defclass majutsu-commit-section (majutsu-revision-section)
   ((overlay :initform nil
             :documentation "Selection overlay used by transient UIs.")
    (keymap :initform 'majutsu-commit-section-map)))
 
-(defclass majutsu-bookmark-section (magit-section)
+(defclass majutsu-bookmark-section (majutsu-revision-section)
   ((keymap :initform 'majutsu-bookmark-section-map)))
 
-(defclass majutsu-tag-section (magit-section)
+(defclass majutsu-tag-section (majutsu-revision-section)
   ((keymap :initform 'majutsu-tag-section-map)))
+
+(defclass majutsu-evolog-entry-section (majutsu-revision-section)
+  ())
 
 (defclass majutsu-diff-section (magit-section)
   ((keymap :initform 'majutsu-diff-section-map))
@@ -145,22 +152,28 @@ for a class of actions that would normally ask for confirmation."
 (defclass majutsu-git-remote-section (magit-section)
   ((keymap :initform 'majutsu-git-remote-section-map)))
 
-(setf (alist-get 'jj-commit   magit--section-type-alist) 'majutsu-commit-section)
-(setf (alist-get 'jj-bookmark magit--section-type-alist) 'majutsu-bookmark-section)
-(setf (alist-get 'jj-tag      magit--section-type-alist) 'majutsu-tag-section)
-(setf (alist-get 'jj-file     magit--section-type-alist) 'majutsu-file-section)
-(setf (alist-get 'jj-hunk     magit--section-type-alist) 'majutsu-hunk-section)
-
-(setf (alist-get 'jj-git-remote magit--section-type-alist) 'majutsu-git-remote-section)
-
-;; Workspace sections (`jj workspace list`)
-
 (defclass majutsu-workspace-section (magit-section)
   ((keymap :initform 'majutsu-workspace-section-map)))
 
-(setf (alist-get 'jj-workspace magit--section-type-alist) 'majutsu-workspace-section)
+(setf (alist-get 'jj-commit       magit--section-type-alist) 'majutsu-commit-section)
+(setf (alist-get 'jj-bookmark     magit--section-type-alist) 'majutsu-bookmark-section)
+(setf (alist-get 'jj-tag          magit--section-type-alist) 'majutsu-tag-section)
+(setf (alist-get 'jj-evolog-entry magit--section-type-alist) 'majutsu-evolog-entry-section)
+(setf (alist-get 'jj-file         magit--section-type-alist) 'majutsu-file-section)
+(setf (alist-get 'jj-hunk         magit--section-type-alist) 'majutsu-hunk-section)
+(setf (alist-get 'jj-git-remote   magit--section-type-alist) 'majutsu-git-remote-section)
+(setf (alist-get 'jj-workspace    magit--section-type-alist) 'majutsu-workspace-section)
 
 ;;; Utilities
+
+(defun majutsu-text-property-near-point (property &optional pos)
+  "Return PROPERTY near POS, preferring the previous character.
+POS defaults to `magit-point', so context-menu invocations inspect the
+clicked position."
+  (let ((pos (or pos (magit-point))))
+    (or (and (> pos (point-min))
+             (get-text-property (1- pos) property))
+        (get-text-property pos property))))
 
 (defun majutsu--split-fields (value separator &optional max-fields)
   "Split VALUE at one-character SEPARATOR, preserving empty fields.

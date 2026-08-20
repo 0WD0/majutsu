@@ -588,7 +588,7 @@ This mirrors Magit's behavior."
     (should (equal completion-at-point-functions
                    '(majutsu-jj-revset-completion-at-point)))))
 
-(ert-deftest majutsu-read-single-revset/uses-completing-read ()
+(ert-deftest majutsu-read-revision/uses-completing-read ()
   "Single-revision reader should use ordinary `completing-read'."
   (let (seen-history seen-default)
     (let ((annotations (make-hash-table :test #'equal)))
@@ -612,13 +612,16 @@ This mirrors Magit's behavior."
                    (setq seen-history hist
                          seen-default def)
                    "main")))
-        (should (equal (majutsu-read-single-revset "Rev" "@" '("diff" "--from"))
+        (should (equal (majutsu-read-revision
+                        "Rev"
+                        :default "@"
+                        :completion-args '("diff" "--from"))
                        "main"))
         (should (eq seen-history 'majutsu-read-revset-history))
         (should (equal seen-default "@"))))))
 
-(ert-deftest majutsu-read-single-revset/completion-args-do-not-prefetch-payload ()
-  "Selection-style rev readers should defer jj completion until completion runs."
+(ert-deftest majutsu-read-revision/completion-args-do-not-prefetch-payload ()
+  "Single-revision completion should stay lazy."
   (let (payload-called)
     (cl-letf (((symbol-function 'majutsu-jj--completion-payload)
                (lambda (&rest _args)
@@ -626,9 +629,28 @@ This mirrors Magit's behavior."
                  (ert-fail "Should not prefetch completion payload")))
               ((symbol-function 'completing-read)
                (lambda (&rest _args) "main")))
-      (should (equal (majutsu-read-single-revset "Rev" "@" '("diff" "--from"))
+      (should (equal (majutsu-read-revision
+                      "Rev"
+                      :default "@"
+                      :completion-args '("diff" "--from"))
                      "main"))
       (should-not payload-called))))
+
+(ert-deftest majutsu-read-revision/allow-empty-does-not-inject-default ()
+  "Optional revision input should show DEFAULT without returning it on empty."
+  (let (seen-reader-default)
+    (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
+               (lambda ()
+                 (list :category 'majutsu-revision :candidates '("main"))))
+              ((symbol-function 'completing-read)
+               (lambda (prompt _table _predicate _require-match
+                               _initial _history default)
+                 (should (string-match-p "main" prompt))
+                 (setq seen-reader-default default)
+                 "")))
+      (should-not
+       (majutsu-read-revision "Rev" :default "main" :allow-empty t))
+      (should-not seen-reader-default))))
 
 (ert-deftest majutsu-read-revset/uses-read-from-minibuffer-and-allows-free-form ()
   "Revset reader should use plain minibuffer input and allow free-form text."
@@ -643,7 +665,7 @@ This mirrors Magit's behavior."
                        seen-history hist
                        seen-default default)
                  "main")))
-      (should (equal (majutsu-read-revset "Rev" "@") "main"))
+      (should (equal (majutsu-read-revset "Rev" :default "@") "main"))
       (should (eq seen-keymap majutsu-read-revset-map))
       (should (eq seen-history 'majutsu-read-revset-history))
       (should (equal seen-default "@")))))
@@ -655,10 +677,10 @@ This mirrors Magit's behavior."
                (list :category 'majutsu-revision :candidates '("@"))))
             ((symbol-function 'read-from-minibuffer)
              (lambda (&rest _args) "")))
-    (should (equal (majutsu-read-revset "Rev" "@") "@"))))
+    (should (equal (majutsu-read-revset "Rev" :default "@") "@"))))
 
-(ert-deftest majutsu-read-optional-revset/uses-read-from-minibuffer-and-allows-empty ()
-  "Optional revset reader should use minibuffer input and accept empty input."
+(ert-deftest majutsu-read-revset/allow-empty-uses-shared-keyword-contract ()
+  "Revset readers should make optional input explicit with `:allow-empty'."
   (let (seen-initial seen-history seen-default seen-keymap)
     (cl-letf (((symbol-function 'majutsu-jj-revset-candidate-data)
                (lambda ()
@@ -671,7 +693,8 @@ This mirrors Magit's behavior."
                        seen-history hist
                        seen-default default)
                  "")))
-      (should-not (majutsu-read-optional-revset "Rev" nil "current"))
+      (should-not (majutsu-read-revset
+                   "Rev" :allow-empty t :initial-input "current"))
       (should (equal seen-initial "current"))
       (should (eq seen-keymap majutsu-read-revset-map))
       (should (eq seen-history 'majutsu-read-revset-history))
@@ -684,28 +707,32 @@ This mirrors Magit's behavior."
                (lambda (rev)
                  (equal rev "main@origin"))))
       (goto-char 2)
-      (should (equal (majutsu-thing-at-point 'jj-revision t) "main@origin"))
+      (should (equal (magit-thing-at-point 'jj-revision t) "main@origin"))
       (goto-char 8)
-      (should (equal (majutsu-thing-at-point 'jj-revision t) "main@origin")))))
+      (should (equal (magit-thing-at-point 'jj-revision t) "main@origin")))))
 
-(ert-deftest majutsu-thingatpt-jj-revision/rejects-plain-bookmark-without-face ()
+(ert-deftest majutsu-thingatpt-jj-revision/rejects-untyped-bookmark ()
   (with-temp-buffer
     (insert "main")
     (goto-char 2)
     (cl-letf (((symbol-function 'majutsu-jj-revision-p)
                (lambda (rev)
                  (equal rev "main"))))
-      (should-not (majutsu-thing-at-point 'jj-revision t)))))
+      (should-not (magit-thing-at-point 'jj-revision t)))))
 
-(ert-deftest majutsu-thingatpt-jj-revision/accepts-font-lock-faced-bookmark ()
+(ert-deftest majutsu-thingatpt-jj-revision/uses-structured-field-not-face ()
   (with-temp-buffer
-    (insert (propertize "main"
-                        'font-lock-face 'majutsu-log-bookmark-face))
-    (goto-char 2)
     (cl-letf (((symbol-function 'majutsu-jj-revision-p)
                (lambda (rev)
                  (equal rev "main"))))
-      (should (equal (majutsu-thing-at-point 'jj-revision t) "main")))))
+      (insert (propertize "main"
+                          'font-lock-face 'majutsu-log-bookmark-face))
+      (goto-char 2)
+      (should-not (magit-thing-at-point 'jj-revision t))
+      (erase-buffer)
+      (insert (propertize "main" 'majutsu-row-field 'bookmarks))
+      (goto-char 2)
+      (should (equal (magit-thing-at-point 'jj-revision t) "main")))))
 
 (ert-deftest majutsu-revision-at-point/uses-diff-revisions-range ()
   (with-temp-buffer
@@ -716,21 +743,43 @@ This mirrors Magit's behavior."
         (should (equal (majutsu-revision-at-point)
                        "main@origin"))))))
 
-(ert-deftest majutsu-revision-at-point/prefers-section-value-over-literal-thing ()
-  (cl-letf (((symbol-function 'majutsu--section-revision-at-point)
-             (lambda () "section-rev"))
-            ((symbol-function 'majutsu-thing-at-point)
-             (lambda (_thing &optional _no-properties)
-               "literal-rev")))
-    (should (equal (majutsu-revision-at-point) "section-rev"))))
+(ert-deftest majutsu-revision-at-point/prefers-section-over-literal ()
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t))
+      (magit-insert-section (jj-commit "section-rev")
+        (magit-insert-heading "commit")))
+    (goto-char 2)
+    (cl-letf (((symbol-function 'magit-thing-at-point)
+               (lambda (&rest _args)
+                 (ert-fail "Literal text should not override the section")))
+              ((symbol-function 'majutsu--buffer-revision-at-point)
+               (lambda () (ert-fail "Buffer fallback should not run"))))
+      (should (equal (majutsu-revision-at-point) "section-rev")))))
 
-(ert-deftest majutsu-read-single-revset/defaults-to-literal-thing-before-context ()
+(ert-deftest majutsu-revisions-at-point/prefers-region ()
+  (cl-letf (((symbol-function 'magit-region-values)
+             (lambda (condition multiple)
+               (should (eq condition 'jj-commit))
+               (should multiple)
+               (list (propertize "left" 'face 'bold) "right")))
+            ((symbol-function 'majutsu-revision-at-point)
+             (lambda () (ert-fail "Point fallback should not run"))))
+    (let ((revisions (majutsu-revisions-at-point)))
+      (should (equal revisions '("left" "right")))
+      (should-not (text-properties-at 0 (car revisions))))))
+
+(ert-deftest majutsu-revisions-at-point/falls-back-to-point ()
+  (cl-letf (((symbol-function 'magit-region-values) #'ignore)
+            ((symbol-function 'magit-section-value-if) #'ignore)
+            ((symbol-function 'majutsu-revision-at-point)
+             (lambda () "point")))
+    (should (equal (majutsu-revisions-at-point) '("point")))))
+
+(ert-deftest majutsu-read-revision/defaults-to-revision-at-point ()
   (let (seen-default)
-    (cl-letf (((symbol-function 'majutsu-thing-at-point)
-               (lambda (_thing &optional _no-properties)
-                 "main@origin"))
-              ((symbol-function 'majutsu-revision-at-point)
-               (lambda () "context"))
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
+               (lambda () "main@origin"))
               ((symbol-function 'majutsu-jj-revset-candidate-data)
                (lambda ()
                  (list :category 'majutsu-revision
@@ -739,18 +788,14 @@ This mirrors Magit's behavior."
                (lambda (_prompt _table _predicate _require-match _initial hist default)
                  (setq seen-default (list hist default))
                  default)))
-      (should (equal (majutsu-read-single-revset "Rev") "main@origin"))
+      (should (equal (majutsu-read-revision "Rev") "main@origin"))
       (should (equal seen-default
                      '(majutsu-read-revset-history "main@origin"))))))
 
-
-(ert-deftest majutsu-read-revset/defaults-to-literal-thing-before-context ()
+(ert-deftest majutsu-read-revset/defaults-to-revision-at-point ()
   (let (seen-default)
-    (cl-letf (((symbol-function 'majutsu-thing-at-point)
-               (lambda (_thing &optional _no-properties)
-                 "main@origin"))
-              ((symbol-function 'majutsu-revision-at-point)
-               (lambda () "context"))
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
+               (lambda () "main@origin"))
               ((symbol-function 'majutsu-jj-revset-candidate-data)
                (lambda ()
                  (list :category 'majutsu-revision

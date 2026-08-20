@@ -773,9 +773,10 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
                       nil 'majutsu-workspace)
                      "")))
           (destination (majutsu-workspace--read-add-destination root name))
-          (revision (or (majutsu-read-optional-revset
+          (revision (or (majutsu-read-revset
                          "Parent revset (-r, empty = default)"
-                         nil nil 'majutsu-read-revset-history)
+                         :allow-empty t
+                         :history 'majutsu-read-revset-history)
                         ""))
           (sparse (majutsu-completing-read "Sparse patterns"
                                            '("copy" "full" "empty") nil t nil nil "copy")))

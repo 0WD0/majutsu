@@ -19,9 +19,6 @@
 (require 'majutsu)
 (require 'majutsu-selection)
 
-(defclass majutsu-duplicate-option (majutsu-selection-option)
-  ())
-
 ;;; Duplicate
 
 (defun majutsu-duplicate-arguments ()
@@ -32,10 +29,7 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
                   (transient-args 'majutsu-duplicate)
                 '())))
     (unless (transient-arg-value "-r=" args)
-      (let ((revsets (or (magit-region-values nil t)
-                         (and (magit-section-value-if 'jj-commit)
-                              (list (magit-section-value-if 'jj-commit)))
-                         (list "@"))))
+      (let ((revsets (or (majutsu-revisions-at-point) '("@"))))
         (dolist (rev revsets)
           (push (concat "-r=" rev) args))))
     args))
@@ -51,7 +45,7 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
 ;;; Duplicate Transient
 (transient-define-argument majutsu-duplicate:-r ()
   :description "Source"
-  :class 'majutsu-duplicate-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "r"
@@ -62,7 +56,7 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
 
 (transient-define-argument majutsu-duplicate:--onto ()
   :description "Onto"
-  :class 'majutsu-duplicate-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
   :selection-toggle-key "o"
@@ -73,7 +67,7 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
 
 (transient-define-argument majutsu-duplicate:--after ()
   :description "After"
-  :class 'majutsu-duplicate-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
@@ -84,7 +78,7 @@ Otherwise, if no -r is set, add -r from point (or region values, or @)."
 
 (transient-define-argument majutsu-duplicate:--before ()
   :description "Before"
-  :class 'majutsu-duplicate-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "b"

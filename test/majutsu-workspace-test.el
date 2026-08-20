@@ -501,7 +501,7 @@
                  (should (equal directory "/tmp/"))
                  (should (equal initial "majutsu_FEATURE_B"))
                  "/tmp/majutsu_FEATURE_B"))
-              ((symbol-function 'majutsu-read-optional-revset)
+              ((symbol-function 'majutsu-read-revset)
                (lambda (&rest _args) nil))
               ((symbol-function 'majutsu-run-jj)
                (lambda (&rest args)

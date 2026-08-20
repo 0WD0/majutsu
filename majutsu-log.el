@@ -819,8 +819,12 @@ offer to create one using `jj git init`."
 INITIAL-INPUT is the current revision filter and is inserted into the
 minibuffer for editing.  Empty input clears the filter."
   (unless current-prefix-arg
-    (majutsu-read-optional-revset
-     prompt nil initial-input history '("log" "-r"))))
+    (majutsu-read-revset
+     prompt
+     :allow-empty t
+     :initial-input initial-input
+     :history history
+     :completion-args '("log" "-r"))))
 
 (defun majutsu-log-transient-reset ()
   "Reset log options to defaults."

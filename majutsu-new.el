@@ -22,9 +22,6 @@
 (defvar majutsu-buffer-blob-root)
 (defvar majutsu-buffer-blob-path)
 
-(defclass majutsu-new-option (majutsu-selection-option)
-  ())
-
 ;;; majutsu-new
 
 ;;;###autoload
@@ -35,8 +32,7 @@ With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
       (call-interactively #'majutsu-new)
-    (let ((parent (or (majutsu-thing-at-point 'jj-revision t)
-                      (majutsu-revision-at-point))))
+    (let ((parent (majutsu-revision-at-point)))
       (majutsu-new--run-command (if parent
                                     (list "new" parent)
                                   (list "new"))))))
@@ -45,8 +41,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-after ()
   "Create a new changeset with the commit at point as --after."
   (interactive)
-  (if-let* ((after (or (majutsu-thing-at-point 'jj-revision t)
-                       (majutsu-revision-at-point))))
+  (if-let* ((after (majutsu-revision-at-point)))
       (majutsu-new--run-command (list "new" "--insert-after" after))
     (user-error "No revision at point")))
 
@@ -54,8 +49,7 @@ With prefix ARG, open the new transient for interactive selection."
 (defun majutsu-new-with-before ()
   "Create a new changeset with the commit at point as --before."
   (interactive)
-  (if-let* ((before (or (majutsu-thing-at-point 'jj-revision t)
-                        (majutsu-revision-at-point))))
+  (if-let* ((before (majutsu-revision-at-point)))
       (majutsu-new--run-command (list "new" "--insert-before" before))
     (user-error "No revision at point")))
 
@@ -75,7 +69,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 (transient-define-argument majutsu-new:-r ()
   :description "Parent"
-  :class 'majutsu-new-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[PARENT]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "r"
@@ -86,7 +80,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 (transient-define-argument majutsu-new:--after ()
   :description "After"
-  :class 'majutsu-new-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
@@ -97,7 +91,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 (transient-define-argument majutsu-new:--before ()
   :description "Before"
-  :class 'majutsu-new-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "b"

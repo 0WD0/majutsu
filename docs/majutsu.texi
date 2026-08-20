@@ -706,13 +706,18 @@ Save the current log arguments as defaults for this jj repository.
 @subsection Revision Selection
 
 Majutsu's transient selection system chooses revision / change values; it is
-not a general revset builder.  For repeatable arguments@comma{} the toggle key can add
-the revision at point or each revision in an active log region.  A
-single-value argument accepts only one selected value.  Majutsu does not turn a
-region into an expression such as @samp{A..B}@comma{} and it does not synthesize revset
-operators or functions.  Enter those expressions with the normal revset reader
-(for example@comma{} the log transient's @samp{-r} entry).  Each command documents its own
-fallback when no explicit value is selected.
+not a general revset builder.  For repeatable arguments@comma{} an active log region
+adds each selected commit.  Otherwise@comma{} when point is in a semantic revision
+section@comma{} the section's value is used.  Only outside such a section does the
+toggle fall back to literal revision syntax under point and then the surrounding
+buffer context.
+
+For arguments that accept a single value@comma{} only one selected revision is used.
+Majutsu does not convert a region into an expression such as @samp{A..B} or
+synthesize revset operators and functions.  Enter such expressions directly
+with the normal revset reader@comma{} for example@comma{} the log transient's @samp{-r} entry.
+When no explicit value is selected@comma{} each command applies its own documented
+fallback.
 
 @node Log Output Protocol (Sequential Markers)
 @subsection Log Output Protocol (Sequential Markers)
@@ -1044,6 +1049,11 @@ Select the @samp{--from} and @samp{--to} revisions.
 @item @kbd{--}
 @kindex --
 Limit diff to selected files/filesets.
+  Completion shows full repository-relative paths changed by the active
+  @samp{--revisions} or @samp{--from=/}--to= selection. Without an explicit selection it
+  uses revisions in the active log region@comma{} then the revision at point@comma{} and
+  finally @samp{@@}. Fileset expressions remain free-form and can still be entered
+  directly.
 @item @kbd{-g}
 @kindex -g
 Toggle Git-style diff output.

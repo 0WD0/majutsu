@@ -213,8 +213,8 @@ visit FILE as a blob buffer at REV."
   "Compare FILE between FROM and TO revisions using Ediff.
 If FILE is nil, prompt for one."
   (interactive
-   (let* ((from (majutsu-read-revset "Compare from" "@-"))
-          (to (majutsu-read-revset "Compare to" "@")))
+   (let* ((from (majutsu-read-revset "Compare from" :default "@-"))
+          (to (majutsu-read-revset "Compare to" :default "@")))
      (list from to nil)))
   (let ((file (or file (majutsu-jj-read-diff-file from to))))
     (majutsu-ediff-buffers
@@ -228,7 +228,7 @@ If FILE is nil, prompt for one."
   "Show changes in REV using Ediff (parent vs rev).
 If FILE is nil, prompt for one."
   (interactive
-   (list (majutsu-read-revset "Show revision" "@")))
+   (list (majutsu-read-revset "Show revision" :default "@")))
   (let* ((parent (concat rev "-"))
          (file (or file (majutsu-jj-read-diff-file parent rev))))
     (majutsu-ediff-compare parent rev file)))

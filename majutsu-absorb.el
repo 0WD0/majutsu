@@ -18,9 +18,6 @@
 
 (require 'majutsu)
 
-(defclass majutsu-absorb-option (majutsu-selection-option)
-  ())
-
 (defun majutsu-absorb--default-args ()
   "Return default args from diff buffer context."
   (when (derived-mode-p 'majutsu-diff-mode)
@@ -63,7 +60,7 @@ jj-commit section, add --from from that section."
 
 (transient-define-argument majutsu-absorb:--from ()
   :description "From"
-  :class 'majutsu-absorb-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "f"
@@ -74,7 +71,7 @@ jj-commit section, add --from from that section."
 
 (transient-define-argument majutsu-absorb:--into ()
   :description "Into"
-  :class 'majutsu-absorb-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[INTO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :selection-toggle-key "t"

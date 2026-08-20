@@ -757,6 +757,88 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
     (should (equal majutsu-buffer-diff-filesets '("a" "b")))
     (should (equal majutsu-buffer-diff-args '("--summary")))))
 
+(ert-deftest majutsu-diff-file-completion-items/uses-full-changed-paths ()
+  "Diff completion should expose full paths and structured statuses."
+  (let (seen)
+    (cl-letf (((symbol-function 'majutsu-diff--query-file-metadata)
+               (lambda (range filesets)
+                 (push (list range filesets) seen)
+                 '((:status "modified" :source "src/a.el"
+                    :target "src/a.el")
+                   (:status "renamed" :source "old.el"
+                    :target "new.el")
+                   (:status "removed" :source "gone.el"
+                    :target "gone.el")
+                   (:status "copied" :source "source.el"
+                    :target "copy.el")))))
+      (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+                 (lambda () (ert-fail "Explicit ranges should win"))))
+        (should
+         (equal
+          (majutsu-diff--file-completion-items
+           '("--from=base" "--to=tip"))
+          '(("src/a.el" . "modified")
+            ("new.el" . "renamed")
+            ("old.el" . "renamed")
+            ("gone.el" . "removed")
+            ("copy.el" . "copied")))))
+      (should (equal seen '((("--from=base" "--to=tip") nil))))
+      (setq seen nil)
+      (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+                 (lambda () '("left" "right"))))
+        (majutsu-diff--file-completion-items nil))
+      (should
+       (equal seen
+              '((("--revisions=left" "--revisions=right") nil))))
+      (setq seen nil)
+      (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+                 (lambda () '("point"))))
+        (majutsu-diff--file-completion-items nil))
+      (should (equal seen '((("--revisions=point") nil))))
+      (setq seen nil)
+      (cl-letf (((symbol-function 'majutsu-revisions-at-point) #'ignore))
+        (majutsu-diff--file-completion-items nil))
+      (should (equal seen '((("--revisions=@") nil)))))))
+
+(ert-deftest majutsu-diff-read-files/uses-extant-range-without-existing-filesets ()
+  "The diff file reader should use live infixes but omit file filters."
+  (let* ((transient--suffixes (transient-suffixes 'majutsu-diff))
+         (to (seq-find (lambda (obj)
+                         (eq (oref obj command) 'majutsu-diff:--to))
+                       transient--suffixes))
+         (files (seq-find (lambda (obj)
+                            (eq (oref obj command) 'majutsu-diff:--))
+                          transient--suffixes))
+         (transient-current-command nil)
+         (transient-current-suffixes nil)
+         seen-range
+         seen-reader)
+    (dolist (obj transient--suffixes)
+      (when (memq (oref obj command)
+                  '(majutsu-diff:-r
+                    majutsu-diff:--from
+                    majutsu-diff:--to
+                    majutsu-diff:--))
+        (oset obj value nil)))
+    (oset to value "tip")
+    (oset files value '("old.txt"))
+    (cl-letf (((symbol-function 'majutsu-diff--file-completion-items)
+               (lambda (range)
+                 (setq seen-range range)
+                 '(("new.txt" . "Modified"))))
+              ((symbol-function 'majutsu-read-file-items)
+               (lambda (prompt initial-input history items)
+                 (setq seen-reader
+                       (list prompt initial-input history items))
+                 '("new.txt"))))
+      (should (equal (majutsu-diff--read-files "Files" "src/" 'file-history)
+                     '("new.txt")))
+      (should (equal seen-range '("--to=tip")))
+      (should
+       (equal seen-reader
+              '("Files" "src/" file-history
+                (("new.txt" . "Modified"))))))))
+
 (ert-deftest majutsu-diff-transient-revset-completion-args/uses-transient-objects ()
   "Transient revset readers should complete in the matching jj context."
   (majutsu-diff-test--with-transient-context
@@ -810,51 +892,28 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
 
 (ert-deftest majutsu-diff-transient-read-revset/uses-native-completion-context ()
   "Transient revset readers should pass native jj completion context."
-  (let (current-prefix-arg seen-default seen-completion-args seen-initial-input)
+  (let (current-prefix-arg seen)
     (majutsu-diff-test--with-transient-context
         'majutsu-restore 'majutsu-restore:--changes-in
-      (cl-letf (((symbol-function 'majutsu-read-optional-revset)
-                 (lambda (_prompt default initial-input _history completion-args)
-                   (setq seen-default default
-                         seen-completion-args completion-args
-                         seen-initial-input initial-input)
+      (cl-letf (((symbol-function 'majutsu-read-revset)
+                 (lambda (_prompt &rest keys)
+                   (setq seen keys)
                    "main")))
-        (should (equal (majutsu-transient-read-revset "Changes in: " "old" nil)
+        (should (equal (majutsu-transient-read-revset
+                        "Changes in: " "old" 'history)
                        "main"))
-        (should (null seen-default))
-        (should (equal seen-completion-args '("restore" "--changes-in")))
-        (should (equal seen-initial-input "old"))))))
-
-(ert-deftest majutsu-diff-transient-read-revset/uses-expression-reader-for-revsets ()
-  "Revset expression infixes should keep using the expression reader."
-  (dolist (case '((majutsu-diff majutsu-diff:-r ("diff" "--revisions"))
-                  (majutsu-simplify-parents-transient
-                   majutsu-simplify-parents:--source
-                   ("simplify-parents" "--source"))
-                  (majutsu-rebase
-                   majutsu-rebase:--branch
-                   ("rebase" "--branch"))))
-    (pcase-let ((`(,prefix ,suffix ,expected-completion-args) case)
-                (current-prefix-arg nil)
-                (seen nil))
-      (majutsu-diff-test--with-transient-context prefix suffix
-        (cl-letf (((symbol-function 'majutsu-read-optional-revset)
-                   (lambda (_prompt default initial-input _history completion-args)
-                     (setq seen (list default initial-input completion-args))
-                     "main | dev"))
-                  ((symbol-function 'majutsu-read-optional-single-revset)
-                   (lambda (&rest _args)
-                     (ert-fail "Should not use single-revision reader for transient revsets"))))
-          (should (equal (majutsu-transient-read-revset "Revset: " "old" nil)
-                         "main | dev"))
-          (should (equal seen (list nil "old" expected-completion-args))))))))
+        (should (plist-get seen :allow-empty))
+        (should (equal (plist-get seen :initial-input) "old"))
+        (should (eq (plist-get seen :history) 'history))
+        (should (equal (plist-get seen :completion-args)
+                       '("restore" "--changes-in")))))))
 
 (ert-deftest majutsu-diff-transient-read-revset/empty-input-clears ()
   "Empty transient revset input should not fall back to context revision."
   (let (current-prefix-arg)
     (majutsu-diff-test--with-transient-context
         'majutsu-diff 'majutsu-diff:-r
-      (cl-letf (((symbol-function 'majutsu-read-optional-revset) #'ignore))
+      (cl-letf (((symbol-function 'majutsu-read-revset) #'ignore))
         (should-not (majutsu-transient-read-revset "Revset: " nil nil))))))
 
 (ert-deftest majutsu-diff-repo-default-action/is-available ()
@@ -903,7 +962,7 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
   (let ((obj (seq-find (lambda (suffix)
                          (equal (oref suffix key) "-r"))
                        (transient-suffixes 'majutsu-diff))))
-    (should (equal (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+    (should (equal (cl-letf (((symbol-function 'majutsu-read-revset)
                               (lambda (&rest _args) "a, b"))
                              ((symbol-function 'transient--show) #'ignore))
                      (majutsu-diff-test--with-transient-context
@@ -1002,11 +1061,8 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
           (kill-buffer diff-buf))))))
 
 (ert-deftest majutsu-diff-dwim/prefers-literal-revision-at-point ()
-  (cl-letf (((symbol-function 'majutsu-thing-at-point)
-             (lambda (_thing &optional _no-properties)
-               "main@origin"))
-            ((symbol-function 'majutsu-revision-at-point)
-             (lambda () "context")))
+  (cl-letf (((symbol-function 'majutsu-revision-at-point)
+             (lambda () "main@origin")))
     (should (equal (majutsu-diff--dwim)
                    '(revision . "main@origin")))))
 

@@ -48,16 +48,20 @@
 (declare-function majutsu-gerrit-read-accounts "majutsu-gerrit")
 (declare-function majutsu-gerrit-remote-branch-candidate-data "majutsu-gerrit")
 (declare-function majutsu-gerrit-topic-candidate-data "majutsu-gerrit")
-(declare-function majutsu-read-revset "majutsu-completion")
+(declare-function majutsu-read-revset "majutsu-jj" (prompt &rest keys))
 (declare-function majutsu-read-string "majutsu-completion")
 (declare-function majutsu-selection-clear "majutsu-selection")
-(declare-function majutsu-selection-find-section "majutsu-selection")
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
 (declare-function majutsu-transient-save-repository-defaults "majutsu-core")
 
-(defun majutsu-gerrit-upload--read-revset (prompt initial-input _history)
+(defun majutsu-gerrit-upload--read-revset (prompt initial-input history)
   "Read revset for `jj gerrit upload --revision='."
-  (majutsu-read-revset prompt initial-input '("gerrit" "upload" "-r")))
+  (majutsu-read-revset
+   prompt
+   :allow-empty t
+   :initial-input initial-input
+   :history history
+   :completion-args '("gerrit" "upload" "-r")))
 
 (defun majutsu-gerrit-upload--read-remote-branch (prompt initial-input _history)
   "Read target remote branch for `jj gerrit upload' with completion."
@@ -145,14 +149,11 @@ its own @/@- default."
                     (member arg '("--ignore-attention-set"))))
               args))
 
-(defclass majutsu-gerrit-upload-option (majutsu-selection-option) ())
-
 (transient-define-argument majutsu-gerrit-upload:--revision ()
   :description "Revision"
-  :class 'majutsu-gerrit-upload-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REV]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revision="

@@ -188,6 +188,12 @@
 
 ** Fixed
 
+- Diff file completion follows the selected range ::
+  The Diff transient's =--= reader suggests full paths changed by the active
+  =--revisions= or =--from=/=--to= selection instead of listing the complete
+  working-copy tree. Without an explicit selection it uses the active log region
+  or the revision at point.
+
 - Split inherits only single-change diff sources ::
   Split resolves the displayed diff and inherits its change ID only when it
   represents exactly one change.  Ranges and multi-change revsets are not

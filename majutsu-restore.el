@@ -21,18 +21,13 @@
 (declare-function majutsu-diff--revision-metadata "majutsu-diff" ())
 (defvar majutsu-buffer-diff-range)
 
-(defclass majutsu-restore-option (majutsu-selection-option)
-  ())
-
 ;;; Abandon
 
 ;;;###autoload
 (defun majutsu-abandon ()
   "Abandon the changeset at point or in region."
   (interactive)
-  (let ((revsets (or (magit-region-values 'jj-commit t)
-                     (when-let* ((rev (magit-section-value-if 'jj-commit)))
-                       (list rev)))))
+  (let ((revsets (majutsu-revisions-at-point)))
     (if (not revsets)
         (message "No changeset at point to abandon")
       (let ((prompt (if (= (length revsets) 1)
@@ -167,7 +162,7 @@ In diff buffer on a file section, restore only that file."
 
 (transient-define-argument majutsu-restore:--from ()
   :description "From"
-  :class 'majutsu-restore-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "f"
@@ -178,7 +173,7 @@ In diff buffer on a file section, restore only that file."
 
 (transient-define-argument majutsu-restore:--to ()
   :description "To"
-  :class 'majutsu-restore-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :selection-toggle-key "t"
@@ -189,7 +184,7 @@ In diff buffer on a file section, restore only that file."
 
 (transient-define-argument majutsu-restore:--changes-in ()
   :description "Changes in"
-  :class 'majutsu-restore-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[CHANGES-IN]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "c"

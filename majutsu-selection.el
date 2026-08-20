@@ -36,6 +36,10 @@
                             :documentation "Disable the toggle key when this predicate is non-nil."))
   "Base class for options that control majutsu selection categories.")
 
+(defclass majutsu-revision-selection-option (majutsu-selection-option)
+  ((locate-fn :initform (##majutsu-selection-find-section %))
+   (targets-fn :initform #'majutsu-revisions-at-point))
+  "Selection option for JJ revisions and their visible revision sections.")
 (cl-defstruct (majutsu-selection-session
                (:constructor majutsu-selection-session-create))
   buffer

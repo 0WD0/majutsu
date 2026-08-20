@@ -18,17 +18,10 @@
 (require 'majutsu)
 (require 'majutsu-selection)
 
-(defclass majutsu-simplify-parents-option (majutsu-selection-option)
-  ())
-
 (defun majutsu-simplify-parents--dwim-args ()
   "Return DWIM target args for simplify-parents execution."
-  (mapcar (lambda (rev) (concat "--revision=" rev))
-          (or (magit-region-values 'jj-commit t)
-              (when-let* ((rev (or (majutsu-thing-at-point 'jj-revision t)
-                                   (majutsu-revision-at-point))))
-                (list rev))
-              '("@"))))
+  (mapcar (lambda (revision) (concat "--revision=" revision))
+          (or (majutsu-revisions-at-point) '("@"))))
 
 (transient-define-suffix majutsu-simplify-parents-execute (args)
   "Execute jj simplify-parents with ARGS from transient."
@@ -45,7 +38,7 @@
 
 (transient-define-argument majutsu-simplify-parents:--source ()
   :description "Source"
-  :class 'majutsu-simplify-parents-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[SRC]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "s"
@@ -56,7 +49,7 @@
 
 (transient-define-argument majutsu-simplify-parents:--revision ()
   :description "Revision"
-  :class 'majutsu-simplify-parents-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REV]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "r"

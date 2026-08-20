@@ -109,6 +109,15 @@
                (and (eq type 'jj-tag) "v1.0"))))
     (should (equal (majutsu-tag-at-point) "v1.0"))))
 
+(ert-deftest majutsu-tag-at-point/uses-structured-tag-field ()
+  (with-temp-buffer
+    (insert (propertize "v1.0" 'majutsu-row-field 'tags))
+    (goto-char 2)
+    (cl-letf (((symbol-function 'magit-section-value-if) #'ignore)
+              ((symbol-function 'majutsu-jj-revision-p)
+               (lambda (revision) (equal revision "v1.0"))))
+      (should (equal (majutsu-tag-at-point) "v1.0")))))
+
 (ert-deftest majutsu-tag-read-exact-names/defaults-to-tag-at-point ()
   (let* ((payload (list :candidates '("v1.0")
                         :entries (make-hash-table :test #'equal)))

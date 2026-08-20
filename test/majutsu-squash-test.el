@@ -38,19 +38,15 @@
 
 (ert-deftest majutsu-squash-default-args/from-log-region ()
   "Use selected log commits as default sources."
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) '("B" "C")))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _) "ignored")))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () '("B" "C"))))
     (should (equal (majutsu-squash--default-args)
                    '("--from=B" "--from=C")))))
 
 (ert-deftest majutsu-squash-default-args/from-log-point ()
   "Use commit at point as default source."
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) nil))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _) "B")))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () '("B"))))
     (should (equal (majutsu-squash--default-args)
                    '("--from=B")))))
 

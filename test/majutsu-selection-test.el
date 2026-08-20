@@ -19,6 +19,42 @@
 (defclass majutsu-test-reading-option (majutsu-selection-option)
   ())
 
+(ert-deftest majutsu-revision-selection-option/locates-manual-prefix ()
+  "A manually entered revision prefix should mark its visible commit."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          target
+          source)
+      (magit-insert-section (selection-root)
+        (setq target
+              (magit-insert-section
+                  (jj-commit "target-short-long-canonical-id")
+                (magit-insert-heading "target-short")))
+        (setq source
+              (magit-insert-section (jj-commit "source-canonical-id")
+                (magit-insert-heading "source"))))
+      (goto-char (oref source start))
+      (let* ((session (majutsu-selection-session-begin))
+             (obj (make-instance 'majutsu-revision-selection-option
+                                 :command 'ignore
+                                 :key "-r"
+                                 :argument "--revision="
+                                 :multi-value 'repeat
+                                 :selection-label "[REV]"))
+             (transient--suffixes (list obj)))
+        (oset obj value '("target-short"))
+        (majutsu-selection-render session)
+        (let ((overlay
+               (seq-find
+                (lambda (candidate)
+                  (overlay-get candidate 'majutsu-selection))
+                (overlays-at (oref target start)))))
+          (should overlay)
+          (should (string-match-p
+                   (regexp-quote "[REV]")
+                   (overlay-get overlay 'before-string))))))))
+
 (defvar-local majutsu-selection-test--source-marker nil)
 
 (cl-defmethod transient-infix-read ((_obj majutsu-test-reading-option))

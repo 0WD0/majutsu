@@ -111,7 +111,9 @@
               ((symbol-function 'majutsu-file--default-revset)
                (lambda () "@"))
               ((symbol-function 'majutsu-read-revset)
-               (lambda (_prompt _default) "chosen-rev"))
+               (lambda (_prompt &rest keys)
+                 (should (equal (plist-get keys :default) "@"))
+                 "chosen-rev"))
               ((symbol-function 'majutsu-file--path-at-point)
                (lambda (_root) "src/at-point.el"))
               ((symbol-function 'majutsu-file--read-path)
@@ -199,6 +201,38 @@
                      '("src/b.el")))
       (should (eq seen-history 'majutsu-file-path-history))
       (should (eq seen-category 'majutsu-file)))))
+
+(ert-deftest majutsu-read-file-items/uses-file-category-and-defaults ()
+  "File item readers should preserve prompt defaults and metadata."
+  (let (seen-items seen-category seen-history seen-initial seen-directory)
+    (cl-letf (((symbol-function 'majutsu-file--root)
+               (lambda () "/tmp/repo/"))
+              ((symbol-function 'majutsu-file--path-at-point)
+               (lambda (_root) "src/current.el"))
+              ((symbol-function 'majutsu-completion-table)
+               (lambda (items category)
+                 (setq seen-items items
+                       seen-category category)
+                 'file-table))
+              ((symbol-function 'majutsu-completing-read-multiple)
+               (lambda (_prompt collection _predicate _require-match
+                        initial-input history _default category)
+                 (should (eq collection 'file-table))
+                 (setq seen-initial initial-input
+                       seen-history history
+                       seen-directory default-directory)
+                 (should (eq category 'majutsu-file))
+                 '("src/changed.el"))))
+      (should
+       (equal
+        (majutsu-read-file-items
+         "Files" nil nil '(("src/changed.el" . "Modified")))
+        '("src/changed.el")))
+      (should (equal seen-items '(("src/changed.el" . "Modified"))))
+      (should (eq seen-category 'majutsu-file))
+      (should (eq seen-history 'majutsu-file-path-history))
+      (should (equal seen-initial "src/current.el"))
+      (should (equal seen-directory "/tmp/repo/")))))
 
 (ert-deftest majutsu-file-revert-buffer/noop-when-revision-unchanged ()
   "Revert should be a no-op when change-id and commit-id are unchanged."

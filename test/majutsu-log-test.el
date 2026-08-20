@@ -1003,15 +1003,20 @@
   "Log -r should prefill the current value and let empty input clear it."
   (let (seen-reader
         current-prefix-arg)
-    (cl-letf (((symbol-function 'majutsu-read-optional-revset)
-               (lambda (prompt default initial-input history completion-args)
-                 (setq seen-reader (list prompt default initial-input history completion-args))
+    (cl-letf (((symbol-function 'majutsu-read-revset)
+               (lambda (prompt &rest keys)
+                 (setq seen-reader
+                       (list prompt
+                             (plist-get keys :allow-empty)
+                             (plist-get keys :initial-input)
+                             (plist-get keys :history)
+                             (plist-get keys :completion-args)))
                  "new() | mine()")))
       (should (equal (majutsu-log--transient-read-revset
                       "Revisions: " "old()" 'history)
                      "new() | mine()"))
       (should (equal seen-reader
-                     '("Revisions: " nil "old()" history ("log" "-r")))))))
+                     '("Revisions: " t "old()" history ("log" "-r")))))))
 
 (ert-deftest majutsu-log--r-argument/uses-standard-revset-reader ()
   "The log -r infix should be a normal transient argument."
@@ -1040,7 +1045,7 @@
 (ert-deftest majutsu-log-transient-read-revset/empty-input-clears ()
   "Empty log -r input should clear the ordinary revision argument."
   (let (current-prefix-arg)
-    (cl-letf (((symbol-function 'majutsu-read-optional-revset)
+    (cl-letf (((symbol-function 'majutsu-read-revset)
                (lambda (&rest _args) nil)))
       (should-not (majutsu-log--transient-read-revset
                    "Revisions: " "old()" 'history)))))

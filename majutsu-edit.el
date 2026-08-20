@@ -28,8 +28,7 @@ When called from a blob buffer, also visit the workspace file."
   (let ((in-blob (and (bound-and-true-p majutsu-blob-mode)
                       majutsu-buffer-blob-root
                       majutsu-buffer-blob-path)))
-    (if-let* ((revset (or (majutsu-thing-at-point 'jj-revision t)
-                          (majutsu-revision-at-point)))
+    (if-let* ((revset (majutsu-revision-at-point))
               (args (append (list "edit" revset)
                             (when arg (list "--ignore-immutable")))))
         (when (zerop (apply #'majutsu-run-jj args))

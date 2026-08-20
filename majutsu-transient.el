@@ -46,9 +46,12 @@ completion context for revset readers.")
 (defun majutsu-transient-read-revset (prompt initial-input history)
   "Read an optional revset expression for transient infix options."
   (unless current-prefix-arg
-    (majutsu-read-optional-revset
-     prompt nil initial-input history
-     (majutsu-transient-revset-completion-args))))
+    (majutsu-read-revset
+     prompt
+     :allow-empty t
+     :initial-input initial-input
+     :history history
+     :completion-args (majutsu-transient-revset-completion-args))))
 
 (transient-define-argument majutsu-transient-arg-ignore-immutable ()
   :description "Ignore immutable"

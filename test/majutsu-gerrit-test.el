@@ -70,25 +70,27 @@
 
 (ert-deftest majutsu-gerrit-upload-read-revset/uses-native-completion-context ()
   "The upload revision reader should complete in jj gerrit upload context."
-  (let (seen-prompt seen-default seen-context)
+  (let (seen-prompt seen-options)
     (cl-letf (((symbol-function 'majutsu-read-revset)
-               (lambda (prompt default completion-args)
-                 (setq seen-prompt prompt)
-                 (setq seen-default default)
-                 (setq seen-context completion-args)
+               (lambda (prompt &rest options)
+                 (setq seen-prompt prompt
+                       seen-options options)
                  "@-")))
       (should (equal (majutsu-gerrit-upload--read-revset
-                      "Revision: " "@" nil)
+                      "Revision: " "@" 'history)
                      "@-"))
       (should (equal seen-prompt "Revision: "))
-      (should (equal seen-default "@"))
-      (should (equal seen-context '("gerrit" "upload" "-r"))))))
+      (should (plist-get seen-options :allow-empty))
+      (should (equal (plist-get seen-options :initial-input) "@"))
+      (should (eq (plist-get seen-options :history) 'history))
+      (should (equal (plist-get seen-options :completion-args)
+                     '("gerrit" "upload" "-r"))))))
 
 (ert-deftest majutsu-gerrit-upload-transient/uses-toggle-at-point-revision-selection ()
   "Upload revisions should use Majutsu's selection/toggle UI."
   (let* ((option (transient-get-suffix 'majutsu-gerrit-upload-transient "-r"))
          (option-prototype (majutsu-gerrit-test--suffix-prototype option)))
-    (should (cl-typep option-prototype 'majutsu-gerrit-upload-option))
+    (should (cl-typep option-prototype 'majutsu-revision-selection-option))
     (should (equal (oref option-prototype argument) "--revision="))
     (should (eq (oref option-prototype multi-value) 'repeat))
     (should (equal (oref option-prototype selection-label) "[REV]"))

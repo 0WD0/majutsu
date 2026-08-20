@@ -35,10 +35,10 @@
 (require 'diff-mode)
 (require 'smerge-mode)
 
-(declare-function majutsu-read-revset "majutsu-jj" (prompt &optional default completion-args))
+(declare-function majutsu-read-revset "majutsu-jj" (prompt &rest keys))
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-find-file-noselect "majutsu-file" (rev file &optional revert))
-(declare-function majutsu-read-files "majutsu-file" (prompt initial-input history &optional list-fn))
+(declare-function majutsu-read-file-items "majutsu-file" (prompt initial-input history items))
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
 (declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
 (declare-function majutsu-color-words-column-at-point "majutsu-color-words" (goto-from &optional pos info))
@@ -295,6 +295,43 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
                     (transient-arg-value "--to=" (list arg))))
               args))
 
+(defun majutsu-diff--file-completion-items (range)
+  "Return full changed-path completion items for diff RANGE."
+  (let* ((range
+          (or range
+              (mapcar (lambda (revision)
+                        (concat "--revisions=" revision))
+                      (or (majutsu-revisions-at-point) '("@")))))
+         (seen (make-hash-table :test #'equal))
+         items)
+    (cl-labels ((add (path status)
+                  (when (and (stringp path)
+                             (not (string-empty-p path))
+                             (not (gethash path seen)))
+                    (puthash path t seen)
+                    (push (cons path status) items))))
+      (dolist (entry (majutsu-diff--query-file-metadata range nil))
+        (let ((status (plist-get entry :status))
+              (source (plist-get entry :source))
+              (target (plist-get entry :target)))
+          (add target status)
+          (when (equal status "renamed")
+            (add source status)))))
+    (nreverse items)))
+
+(defun majutsu-diff--read-files (prompt initial-input history)
+  "Read diff file filters using the active revision or range."
+  ;; Infix commands stay in the prefix without exporting
+  ;; `transient-current-suffixes', so `transient-args' would fall back to
+  ;; saved/default values instead of reading the live menu.
+  (pcase-let* ((`(,args ,_filesets)
+                (majutsu-filesets-split-transient-value
+                 (transient-get-value)))
+               (range (majutsu-diff--extract-range-args args)))
+    (majutsu-read-file-items
+     prompt initial-input history
+     (majutsu-diff--file-completion-items range))))
+
 ;;; Arguments
 ;;;; Prefix Classes
 
@@ -303,8 +340,6 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
    (major-mode :initform 'majutsu-diff-mode)))
 
 ;;;; Infix Classes
-
-(defclass majutsu-diff-range-option (majutsu-selection-option) ())
 
 (cl-defmethod transient-init-value ((obj majutsu-diff-prefix))
   (pcase-let ((`(,args ,range ,filesets)
@@ -1398,7 +1433,7 @@ When SECTION is nil, walk all hunk sections."
 (defun majutsu-diff--color-words--span-stream-offset (pos spans)
   "Return POS offset in SPANS stream.
 Counts only SPANS before POS.  If POS is inside a span, include the
-partial offset.  Return nil when SPANS is nil." 
+partial offset.  Return nil when SPANS is nil."
   (when spans
     (let ((offset 0))
       (cl-block nil
@@ -1416,7 +1451,7 @@ partial offset.  Return nil when SPANS is nil."
         offset))))
 
 (defun majutsu-diff--color-words--span-stream-pos (offset spans)
-  "Return buffer position for OFFSET into SPANS stream." 
+  "Return buffer position for OFFSET into SPANS stream."
   (let* ((total (majutsu-diff--color-words--span-stream-length spans))
          (remaining (max 0 (min offset (max 0 (1- total))))))
     (or
@@ -1454,7 +1489,7 @@ Return buffer position, or nil if no mapping is possible.
 
 Map using non-token offsets to align shared context.  When CURSOR sits
 inside a token span, prefer a token span anchored at the same offset on
-the other side; otherwise fall back to the non-token stream." 
+the other side; otherwise fall back to the non-token stream."
   (let ((region-ov (majutsu-diff--color-words--region-overlay-at cursor)))
     (when region-ov
       (let* ((region-other (overlay-get region-ov 'majutsu-color-words-region-other))
@@ -2024,8 +2059,7 @@ REVSET is passed to jj diff using `--revisions='."
 ;; TODO: implement more DWIM cases
 (defun majutsu-diff--dwim ()
   "Return information for performing DWIM diff."
-  (when-let* ((rev (or (majutsu-thing-at-point 'jj-revision t)
-                       (majutsu-revision-at-point))))
+  (when-let* ((rev (majutsu-revision-at-point)))
     (cons 'revision rev)))
 
 (defun majutsu-diff-setup-buffer (args range filesets &optional locked)
@@ -2118,15 +2152,14 @@ REVSET is passed to jj diff using `--revisions='."
   :key "--"
   :argument "--"
   :prompt "Limit to file,s: "
-  :reader #'majutsu-read-files
+  :reader #'majutsu-diff--read-files
   :multi-value t)
 
 (transient-define-argument majutsu-diff:-r ()
   :description "Revisions"
-  :class 'majutsu-diff-range-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revisions="
@@ -2136,10 +2169,9 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:--from ()
   :description "From"
-  :class 'majutsu-diff-range-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :selection-toggle-key "f"
   :shortarg "-f"
   :argument "--from="
@@ -2147,10 +2179,9 @@ REVSET is passed to jj diff using `--revisions='."
 
 (transient-define-argument majutsu-diff:--to ()
   :description "To"
-  :class 'majutsu-diff-range-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[TO]"
   :selection-face '(:background "dark cyan" :foreground "white")
-  :locate-fn (##majutsu-selection-find-section % 'jj-commit)
   :selection-toggle-key "t"
   :shortarg "-t"
   :argument "--to="

@@ -14,25 +14,18 @@
 
 (ert-deftest majutsu-metaedit-default-args/use-region-revisions ()
   "Initialize Metaedit with every revision in the active region."
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) '("a" "b")))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _)
-               (ert-fail "point fallback should not be read"))))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () '("a" "b"))))
     (should (equal (majutsu-metaedit--default-args)
                    '("-r=a" "-r=b")))))
 
 (ert-deftest majutsu-metaedit-default-args/use-point-or-at ()
   "Fall back from region to the revision at point, then to @."
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) nil))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _) "point")))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () '("point"))))
     (should (equal (majutsu-metaedit--default-args) '("-r=point"))))
-  (cl-letf (((symbol-function 'magit-region-values)
-             (lambda (&rest _) nil))
-            ((symbol-function 'magit-section-value-if)
-             (lambda (&rest _) nil)))
+  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+             (lambda () nil)))
     (should (equal (majutsu-metaedit--default-args) '("-r=@")))))
 
 (ert-deftest majutsu-metaedit-arguments/accept-multiple-revisions ()
@@ -48,8 +41,8 @@
   "Open Metaedit with a source-buffer session and region selections."
   (with-temp-buffer
     (let (setup-prefix setup-args)
-      (cl-letf (((symbol-function 'magit-region-values)
-                 (lambda (&rest _) '("a" "b")))
+      (cl-letf (((symbol-function 'majutsu-revisions-at-point)
+                 (lambda () '("a" "b")))
                 ((symbol-function 'transient-setup)
                  (lambda (prefix &rest args)
                    (setq setup-prefix prefix
@@ -66,14 +59,14 @@
 (ert-deftest majutsu-metaedit-revision-option/supports-selection ()
   "Expose revisions as a repeatable visual selection category."
   (let ((obj (get 'majutsu-metaedit:-r 'transient--suffix)))
-    (should (cl-typep obj 'majutsu-metaedit-option))
+    (should (cl-typep obj 'majutsu-revision-selection-option))
     (should (equal (oref obj argument) "-r="))
     (should (eq (oref obj multi-value) 'repeat))
     (should (equal (oref obj selection-label) "[REVS]"))
     (should (equal (oref obj selection-toggle-key) "r"))
     (should (eq (oref obj targets-fn)
-                #'majutsu-metaedit--selection-targets)))
-  (let ((obj (make-instance 'majutsu-metaedit-option
+                #'majutsu-revisions-at-point)))
+  (let ((obj (make-instance 'majutsu-revision-selection-option
                             :command 'ignore
                             :key "-r"
                             :argument "-r="

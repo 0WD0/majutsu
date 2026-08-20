@@ -19,9 +19,6 @@
 (require 'majutsu)
 (require 'majutsu-selection)
 
-(defclass majutsu-revert-option (majutsu-selection-option)
-  ())
-
 (defun majutsu-revert-arguments ()
   "Return the current revert arguments.
 If inside the transient, return transient args unchanged.
@@ -63,7 +60,7 @@ destination, fill with --revision and --insert-after defaults."
 
 (transient-define-argument majutsu-revert:--revision ()
   :description "Revisions"
-  :class 'majutsu-revert-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[REVS]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "r"
@@ -74,7 +71,7 @@ destination, fill with --revision and --insert-after defaults."
 
 (transient-define-argument majutsu-revert:--onto ()
   :description "Onto"
-  :class 'majutsu-revert-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
   :selection-toggle-key "o"
@@ -85,7 +82,7 @@ destination, fill with --revision and --insert-after defaults."
 
 (transient-define-argument majutsu-revert:--insert-after ()
   :description "Insert after"
-  :class 'majutsu-revert-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
@@ -96,7 +93,7 @@ destination, fill with --revision and --insert-after defaults."
 
 (transient-define-argument majutsu-revert:--insert-before ()
   :description "Insert before"
-  :class 'majutsu-revert-option
+  :class 'majutsu-revision-selection-option
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "b"
