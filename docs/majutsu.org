@@ -356,10 +356,8 @@ while displaying its description as an annotation.
 
 *** Log Options Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
-- Key: l (Vanilla) (majutsu-log-transient) ::
-  Open the log options transient.
-- Key: L (Evil) (majutsu-log-transient) ::
-  Open the log options transient.
+- Key: l (Vanilla) (majutsu-log-transient) :: Open the log options transient.
+- Key: L (Evil) (majutsu-log-transient) :: Open the log options transient.
 
 Useful transient entries include:
 #+attr_reference: :kind transient-argument :interface "Log options transient"
@@ -547,20 +545,6 @@ after the field's default postprocessors.
          majutsu-log-commit-columns))
 #+end_src
 
-*** Migration Notes
-The old ~majutsu-log-commit-layout~, its top-level ~:schema~ / ~:columns~
-tree, compact ~(FIELD TEMPLATE)~ entries, and keys such as ~:align~ and
-~:visible~ have been replaced by flat column plists in
-~majutsu-log-commit-columns~.
-The historical ~right-margin~ placement has been replaced by the ~tail~ module,
-which renders real text on the anchor line with right alignment.
-Move fields between visual areas by changing ~:module~ on the corresponding
-column plist, and adjust display behavior with ~:face~ and ~:post~. In log
-buffers, copying a mixed heading+tail selection strips the tail text by default,
-while copying the tail itself preserves it. Graph prefixes and graph-related
-indentation are display-only, so ordinary copy operations only capture semantic
-content rather than the visible graph gutter.
-
 *** Copying From Structured Row Buffers
 ~majutsu-log-mode~, ~majutsu-evolog-mode~, and ~majutsu-op-log-mode~ share
 these copy commands through ~majutsu-row-copy-transient~.
@@ -593,8 +577,7 @@ some editing and recovery actions are explicitly identified below.
 *** Diffing
 **** Diff Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
-- Key: d (majutsu-diff) ::
-  Open the Diff transient.
+- Key: d (majutsu-diff) :: Open the Diff transient.
 
 Useful transient entries include:
 #+attr_reference: :kind transient-argument :interface "Diff transient"
@@ -603,7 +586,7 @@ Useful transient entries include:
 - Key: f / t :: Select the =--from= and =--to= revisions.
 - Key: -- :: Limit diff to selected files/filesets.
   Completion shows full repository-relative paths changed by the active
-  =--revisions= or =--from=/=--to= selection. Without an explicit selection it
+  =--revisions= or =--from= / =--to= selection. Without an explicit selection it
   uses revisions in the active log region, then the revision at point, and
   finally =@=. Fileset expressions remain free-form and can still be entered
   directly.
