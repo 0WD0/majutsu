@@ -940,6 +940,10 @@ Transient arguments:
 - Key: -k :: Keep commits that become empty after squashing.
 - Key: -u :: Use the destination revision's description and discard source
   descriptions (=--use-destination-message=).
+When opened from a log buffer, the source defaults to the selected revision(s)
+at point or in the active region.  This default is retained when =-i= or
+=--tool= starts jj's diff editor.
+
 Runs: =jj squash --from SRC --into DEST [FILESETS...]=
 
 ** Absorbing
@@ -1018,6 +1022,9 @@ Transient arguments:
 - Key: -m :: Set a message for the first part.
 - Key: -p :: Parallel split mode.
 - Key: -- :: Limit split to selected files or filesets.
+When opened from a log buffer, =-r= defaults to the revision at point before
+the jj diff editor is started.
+
 Runs: =jj split -r REV [FILESETS...]=
 
 ** Restoring
@@ -1033,6 +1040,9 @@ Transient arguments:
 - Key: -c :: Undo changes introduced by a revision (=--changes-in=).
 - Key: -d :: Preserve descendant content while rebasing (=--restore-descendants=).
 - Key: -- :: Limit restore to selected files or filesets.
+When opened from a log buffer, =-c= defaults to the revision at point before
+the jj diff editor is started.
+
 Runs: =jj restore --from REV [FILESETS...]= or
 =jj restore --changes-in REV [FILESETS...]=
 

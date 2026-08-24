@@ -92,6 +92,14 @@
       (should (equal (majutsu-split--default-args)
                      '("--revision=abc123"))))))
 
+(ert-deftest majutsu-split-default-args/from-log-point ()
+  "A log revision at point seeds interactive split."
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
+               (lambda () "commit-id")))
+      (should (equal (majutsu-split--default-args)
+                     '("--revision=commit-id"))))))
+
 (ert-deftest majutsu-split-default-args/accepts-supported-revision-spellings ()
   "Resolve each supported spelling, including short attached equals."
   (dolist (range '(("--revisions" "mine()")

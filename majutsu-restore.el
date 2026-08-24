@@ -170,13 +170,20 @@ not guessed into a different Restore operation and instead carries `:error'."
   (and (majutsu-interactive-selection-available-p)
        (plist-get (majutsu-restore--diff-context) :patch-context)))
 
+(defun majutsu-restore--log-default-args ()
+  "Return a revision default from log context."
+  (when-let* ((revision (majutsu-revision-at-point)))
+    (list (concat "--changes-in=" revision))))
+
 (defun majutsu-restore--default-args ()
-  "Return default args from diff buffer context."
+  "Return defaults from the current diff or log context."
   (setq-local majutsu-restore--unsafe-diff-context nil)
-  (when-let* ((context (majutsu-restore--diff-context)))
-    (setq-local majutsu-restore--unsafe-diff-context
-                (plist-get context :error))
-    (plist-get context :args)))
+  (if (derived-mode-p 'majutsu-diff-mode)
+      (when-let* ((context (majutsu-restore--diff-context)))
+        (setq-local majutsu-restore--unsafe-diff-context
+                    (plist-get context :error))
+        (plist-get context :args))
+    (majutsu-restore--log-default-args)))
 
 ;;;###autoload
 (defun majutsu-restore-dwim ()

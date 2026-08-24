@@ -39,6 +39,14 @@
                        '("--changes-in=commit-id")))
         (should (equal called "mine()"))))))
 
+(ert-deftest majutsu-restore-default-args/from-log-point ()
+  "A log revision at point seeds interactive Restore."
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'majutsu-revision-at-point)
+               (lambda () "commit-id")))
+      (should (equal (majutsu-restore--default-args)
+                     '("--changes-in=commit-id"))))))
+
 (ert-deftest majutsu-restore-default-args/rejects-aggregate-revision-diff ()
   "Do not invent Restore endpoints for a revision-range diff."
   (with-temp-buffer

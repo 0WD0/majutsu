@@ -1701,6 +1701,10 @@ Keep commits that become empty after squashing.
 Use the destination revision's description and discard source
   descriptions (@samp{--use-destination-message}).
 @end table
+When opened from a log buffer@comma{} the source defaults to the selected revision(s)
+at point or in the active region.  This default is retained when @samp{-i} or
+@samp{--tool} starts jj's diff editor.
+
 Runs: @samp{jj squash --from SRC --into DEST [FILESETS...]}
 
 @node Absorbing
@@ -1865,6 +1869,9 @@ Parallel split mode.
 @kindex --
 Limit split to selected files or filesets.
 @end table
+When opened from a log buffer@comma{} @samp{-r} defaults to the revision at point before
+the jj diff editor is started.
+
 Runs: @samp{jj split -r REV [FILESETS...]}
 
 @node Restoring
@@ -1901,6 +1908,9 @@ Preserve descendant content while rebasing (@samp{--restore-descendants}).
 @kindex --
 Limit restore to selected files or filesets.
 @end table
+When opened from a log buffer@comma{} @samp{-c} defaults to the revision at point before
+the jj diff editor is started.
+
 Runs: @samp{jj restore --from REV [FILESETS...]} or
 @samp{jj restore --changes-in REV [FILESETS...]}
 

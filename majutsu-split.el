@@ -68,12 +68,18 @@ The default diff range denotes @.  Explicit ranges must use exactly one
       (unless (and source (equal source patch-source))
         (user-error "Patch selection for split requires the rendered diff source")))))
 
+(defun majutsu-split--log-default-args ()
+  "Return a single revision default from log context."
+  (when-let* ((revision (majutsu-revision-at-point)))
+    (list (concat "--revision=" revision))))
+
 (defun majutsu-split--default-args ()
-  "Return a resolved single-revision default from the diff buffer context."
-  (when (derived-mode-p 'majutsu-diff-mode)
-    (when-let* ((range majutsu-buffer-diff-range)
-                (commit (majutsu-split--patch-source-commit)))
-      (list (concat "--revision=" commit)))))
+  "Return a revision default from the current diff or log context."
+  (if (derived-mode-p 'majutsu-diff-mode)
+      (when-let* ((range majutsu-buffer-diff-range)
+                  (commit (majutsu-split--patch-source-commit)))
+        (list (concat "--revision=" commit)))
+    (majutsu-split--log-default-args)))
 
 (transient-define-suffix majutsu-split-execute (args)
   "Execute split with selections recorded in the transient."

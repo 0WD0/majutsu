@@ -217,9 +217,10 @@
 ** Fixed
 
 - Split, Squash, and Restore defaults ::
-  Split inherits only single-change diff sources.  Squash keeps every
-  =--revisions= source from the displayed diff when given an explicit
-  destination; arbitrary =--from= / =--to= comparisons do not imply a Squash source.
+  Split and Restore use the log revision at point when no source is supplied.
+  Split inherits only single-change diff sources.  Squash retains its diff
+  =--revisions= or log point/region source when only a destination is supplied;
+  arbitrary =--from= / =--to= comparisons do not imply a Squash source.
 
 - Transient command context ::
   Revision and file prompts, selection toggles, and point-sensitive actions
