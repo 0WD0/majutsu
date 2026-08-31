@@ -2530,7 +2530,9 @@ Keep the conflict base (the merge
 @item @kbd{a} (@code{majutsu-conflict-keep-all})
 @kindex a
 @findex majutsu-conflict-keep-all
-Keep every side@comma{} in side order.
+Concatenate every complete side
+  snapshot in side order. Shared context is duplicated; conflicts with a
+  nonempty base require confirmation.
 @item @kbd{s} (@code{majutsu-conflict-restyle})
 @kindex s
 @findex majutsu-conflict-restyle
@@ -2576,7 +2578,8 @@ Keep the term at point.
 @item @kbd{gr a} (@code{majutsu-conflict-keep-all})
 @kindex gr a
 @findex majutsu-conflict-keep-all
-Keep every side.
+Concatenate all complete side
+  snapshots@comma{} confirming when the base is nonempty.
 @item @kbd{gr s} (@code{majutsu-conflict-restyle})
 @kindex gr s
 @findex majutsu-conflict-restyle

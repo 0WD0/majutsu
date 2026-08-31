@@ -1412,7 +1412,9 @@ Emacs bindings use the prefix ~C-c ^~:
   base.
 - Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (the merge
   ancestor: jj's first =-------= / "diff from" term).
-- Key: a (majutsu-conflict-keep-all) :: Keep every side, in side order.
+- Key: a (majutsu-conflict-keep-all) :: Concatenate every complete side
+  snapshot in side order. Shared context is duplicated; conflicts with a
+  nonempty base require confirmation.
 - Key: s (majutsu-conflict-restyle) :: Re-render the conflict with different
   markers (diff -> snapshot, and snapshot <-> git for 2-sided conflicts). jj
   detects the marker style per conflict when parsing, so this only changes the
@@ -1432,7 +1434,8 @@ Evil bindings are available in normal state:
 - Key: [[ / gk (majutsu-conflict-prev) :: Jump to the previous conflict.
 - Key: gb (majutsu-conflict-keep-base) :: Keep the base (the merge ancestor).
 - Key: gr RET (majutsu-conflict-keep-current) :: Keep the term at point.
-- Key: gr a (majutsu-conflict-keep-all) :: Keep every side.
+- Key: gr a (majutsu-conflict-keep-all) :: Concatenate all complete side
+  snapshots, confirming when the base is nonempty.
 - Key: gr s (majutsu-conflict-restyle) :: Re-render with different markers.
 - Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
 - Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
