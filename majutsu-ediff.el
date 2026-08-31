@@ -628,8 +628,8 @@ section) or the working copy."
 ;;;###autoload(autoload 'majutsu-ediff-resolve-with-conflict "majutsu-ediff" nil t)
 (transient-define-suffix majutsu-ediff-resolve-with-conflict ()
   "Resolve conflicts using `majutsu-conflict-mode'.
-When resolving a non-working-copy revision, open the matching blob buffer
-at that revision before enabling conflict mode."
+When resolving a non-working-copy revision, open its blob in editable
+mode so saving applies the resolution to that revision."
   :advice* #'majutsu--transient-with-selection-buffer
   (interactive)
   (let* ((rev (or (majutsu-revision-at-point) "@"))
@@ -637,6 +637,8 @@ at that revision before enabling conflict mode."
          (buffer (majutsu-ediff--resolve-target-buffer rev file)))
     (pop-to-buffer buffer)
     (with-current-buffer buffer
+      (when majutsu-buffer-blob-path
+        (majutsu-blob-edit-start))
       (majutsu-conflict-ensure-mode)
       (majutsu-conflict-goto-nearest))))
 

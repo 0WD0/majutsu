@@ -255,10 +255,17 @@
   Quitting Ediff without edits keeps a conflict unresolved.  Saving edited
   merge results requires confirmation and preserves unresolved conflict markers.
 
+- Historical conflict editing ::
+  The conflict-mode resolve workflow opens non-working-copy files as editable
+  blobs, so saving applies the resolution to the selected revision, including
+  conflicts inherited by multi-parent merges without changing their parents.
+
 - Divergent revision files ::
   Blob editing, history navigation, and annotation use unambiguous commit IDs.
-  Saving follows the rewritten revision, so repeated edits do not create
-  additional divergence.
+  Saving follows the rewrite produced by that save, not a moving revset or
+  another divergent sibling; semantic no-ops retain the original pin.
+  Unverifiable saves keep edits in the buffer and require an explicit abort
+  and revert before saving again.
 
 - Paths and filesets ::
   Conflict discovery and diffedit handle file names containing spaces or

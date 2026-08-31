@@ -2480,9 +2480,10 @@ Use the automatic
 @kindex M in the Ediff transient
 @findex majutsu-ediff-resolve-with-conflict
 Force
-  the conflict workflow. This opens the working-copy file (or a revision blob
-  buffer for non-working-copy revisions)@comma{} enables @samp{majutsu-conflict-mode}@comma{} and
-  jumps to the first conflict.
+  the conflict workflow. This opens the working-copy file@comma{} or an editable
+  revision blob for a non-working-copy revision@comma{} enables
+  @samp{majutsu-conflict-mode}@comma{} and jumps to the first conflict. Saving an editable
+  blob applies the resolution to that revision.
 @end table
 
 @deffn Command majutsu-conflict-ensure-mode

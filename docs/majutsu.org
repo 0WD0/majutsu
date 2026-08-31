@@ -1384,9 +1384,10 @@ You can enter conflict handling from multiple places:
 - Key: m in the Ediff transient (majutsu-ediff-resolve) :: Use the automatic
   resolve strategy.
 - Key: M in the Ediff transient (majutsu-ediff-resolve-with-conflict) :: Force
-  the conflict workflow. This opens the working-copy file (or a revision blob
-  buffer for non-working-copy revisions), enables =majutsu-conflict-mode=, and
-  jumps to the first conflict.
+  the conflict workflow. This opens the working-copy file, or an editable
+  revision blob for a non-working-copy revision, enables
+  =majutsu-conflict-mode=, and jumps to the first conflict. Saving an editable
+  blob applies the resolution to that revision.
 - Command: majutsu-conflict-ensure-mode :: Enable conflict handling in a file
   with conflict markers.
 

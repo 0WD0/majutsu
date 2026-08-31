@@ -773,8 +773,8 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
         (should gotoed)))))
 
 (ert-deftest majutsu-ediff-test-resolve-with-conflict-uses-blob-buffer-for-non-wc ()
-  "Resolve-with-conflict should open blob buffer when rev is not working copy."
-  (let (seen-rev seen-file)
+  "Resolve-with-conflict should make a non-working-copy blob editable."
+  (let (seen-rev seen-file edit-started ensured gotoed)
     (cl-letf (((symbol-function 'majutsu-revision-at-point)
                (lambda () "abc123"))
               ((symbol-function 'majutsu-ediff--resolve-file-dwim)
@@ -786,20 +786,30 @@ This mirrors with-editor's kill guard so cleanup cannot abort quit hooks."
                  (ert-fail "should not open filesystem file for non-working-copy rev")))
               ((symbol-function 'majutsu-find-file-noselect)
                (lambda (rev file &optional _revert)
-                 (setq seen-rev rev)
-                 (setq seen-file file)
+                 (setq seen-rev rev
+                       seen-file file
+                       majutsu-buffer-blob-path file)
                  (current-buffer)))
               ((symbol-function 'pop-to-buffer)
                (lambda (buffer-or-name &rest _)
                  buffer-or-name))
+              ((symbol-function 'majutsu-blob-edit-start)
+               (lambda ()
+                 (setq edit-started t)))
               ((symbol-function 'majutsu-conflict-ensure-mode)
-               (lambda ()))
+               (lambda ()
+                 (should edit-started)
+                 (setq ensured t)))
               ((symbol-function 'majutsu-conflict-goto-nearest)
-               (lambda ())))
+               (lambda ()
+                 (setq gotoed t))))
       (with-temp-buffer
         (majutsu-ediff-resolve-with-conflict)
         (should (equal seen-rev "abc123"))
-        (should (equal seen-file "conflicted.txt"))))))
+        (should (equal seen-file "conflicted.txt"))
+        (should edit-started)
+        (should ensured)
+        (should gotoed)))))
 
 (ert-deftest majutsu-ediff-test-resolve-runs-jj-resolve ()
   "Resolve command should invoke jj resolve with built args."
