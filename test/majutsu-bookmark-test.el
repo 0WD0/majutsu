@@ -13,6 +13,7 @@
 (require 'seq)
 (require 'majutsu-bookmark)
 (require 'majutsu-jj-integration)
+(require 'majutsu-bookmark-test-utils)
 
 (defun majutsu-bookmark-test--sections (&optional section)
   "Return SECTION and all descendants, defaulting to `magit-root-section'."
@@ -21,36 +22,6 @@
           (apply #'append
                  (mapcar #'majutsu-bookmark-test--sections
                          (oref section children))))))
-
-(cl-defun majutsu-bookmark-test--row
-    (heading name remote tracked conflict-details removed-ids added-ids &optional
-             (newline t newline-supplied-p))
-  "Return one raw bookmark-list row record.
-When NEWLINE is non-nil or omitted, append a trailing newline."
-  (concat majutsu-row-start-token
-          heading
-          majutsu-row-tail-token
-          majutsu-row-body-token
-          (replace-regexp-in-string
-           "\n" majutsu-row-field-line-separator (or conflict-details "") t t)
-          majutsu-row-meta-token
-          (string-join (list name (or remote "")
-                             (if tracked "t" "")
-                             (string-join (or removed-ids nil)
-                                          majutsu-row-field-line-separator)
-                             (string-join (or added-ids nil)
-                                          majutsu-row-field-line-separator))
-                       majutsu-row-field-separator)
-          majutsu-row-end-token
-          (if (or (not newline-supplied-p) newline) "\n" "")))
-
-(cl-defun majutsu-bookmark-test--ref
-    (name remote tracked heading &optional conflict-details removed-ids added-ids
-          (newline t newline-supplied-p))
-  "Return one bookmark-list ref row record."
-  (majutsu-bookmark-test--row
-   heading name remote tracked conflict-details removed-ids added-ids
-   (if newline-supplied-p newline t)))
 
 (ert-deftest majutsu-bookmark-wash-list/includes-configured-empty-remotes ()
   (with-temp-buffer

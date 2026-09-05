@@ -20,11 +20,14 @@
 (require 'majutsu-bookmark)
 (require 'majutsu-diff)
 (require 'majutsu-edit)
+(require 'majutsu-git)
 (require 'majutsu-evolog)
 (require 'majutsu-workspace)
 
 (defvar embark-general-map)
 (defvar embark-keymap-alist)
+(defvar embark-target-finders)
+(defvar embark-default-action-overrides)
 
 (defvar-keymap majutsu-embark-workspace-map
   :doc "Embark actions for Majutsu workspace candidates.")
@@ -41,7 +44,7 @@
 
 ;; Keep Embark's general bindings (notably `w' for copying) available through
 ;; the parent map.  These keys mirror Majutsu's bookmark and revision commands.
-(keymap-set majutsu-embark-bookmark-map "RET" #'majutsu-edit-revision)
+(keymap-set majutsu-embark-bookmark-map "RET" #'majutsu-diff-revset)
 (keymap-set majutsu-embark-bookmark-map "e" #'majutsu-edit-revision)
 (keymap-set majutsu-embark-bookmark-map "D" #'majutsu-diff-revset)
 (keymap-set majutsu-embark-bookmark-map "v" #'majutsu-evolog)
@@ -53,14 +56,59 @@
 (keymap-set majutsu-embark-bookmark-map "d" #'majutsu-bookmark-delete)
 (keymap-set majutsu-embark-bookmark-map "f" #'majutsu-bookmark-forget)
 
+(defvar-keymap majutsu-embark-revision-map
+  :doc "Inspect a revision without exposing local bookmark mutations."
+  "RET" #'majutsu-diff-revset
+  "D" #'majutsu-diff-revset
+  "e" #'majutsu-edit-revision
+  "v" #'majutsu-evolog)
+
+(defvar-keymap majutsu-embark-tracked-bookmark-map
+  :parent majutsu-embark-revision-map
+  "u" #'majutsu-bookmark-untrack-ref)
+
+(defvar-keymap majutsu-embark-untracked-bookmark-map
+  :parent majutsu-embark-revision-map
+  "t" #'majutsu-bookmark-track-ref)
+
+(defvar-keymap majutsu-embark-remote-map
+  :doc "Actions on one configured Git remote."
+  "f" #'majutsu-git-fetch-from
+  "r" #'majutsu-git-remote-rename
+  "d" #'majutsu-git-remote-remove)
+
+(defun majutsu-embark-target-section ()
+  "Return an Embark target for the current Majutsu section."
+  (magit-section-case
+    (jj-bookmark
+     (with-slots (value remote tracked) it
+       (cons (cond ((null remote) 'majutsu-bookmark)
+                   ((equal remote "git") 'majutsu-git-bookmark)
+                   (tracked 'majutsu-tracked-bookmark)
+                   (t 'majutsu-untracked-bookmark))
+             value)))
+    (majutsu-revision-section (cons 'majutsu-revision (oref it value)))
+    (jj-git-remote (cons 'majutsu-remote (oref it value)))))
+
 (defun majutsu-embark--register ()
-  "Register Majutsu completion categories and action maps with Embark."
-  (set-keymap-parent majutsu-embark-workspace-map embark-general-map)
-  (set-keymap-parent majutsu-embark-bookmark-map embark-general-map)
-  (add-to-list 'embark-keymap-alist
-               '(majutsu-workspace . majutsu-embark-workspace-map))
-  (add-to-list 'embark-keymap-alist
-               '(majutsu-bookmark . majutsu-embark-bookmark-map)))
+  "Register optional actions and structured section targets with Embark."
+  (dolist (map (list majutsu-embark-workspace-map majutsu-embark-bookmark-map
+                     majutsu-embark-revision-map majutsu-embark-remote-map))
+    (set-keymap-parent map embark-general-map))
+  (dolist (entry '((majutsu-workspace . majutsu-embark-workspace-map)
+                   (majutsu-bookmark . majutsu-embark-bookmark-map)
+                   (majutsu-revision . majutsu-embark-revision-map)
+                   (majutsu-git-bookmark . majutsu-embark-revision-map)
+                   (majutsu-tracked-bookmark . majutsu-embark-tracked-bookmark-map)
+                   (majutsu-untracked-bookmark . majutsu-embark-untracked-bookmark-map)
+                   (majutsu-remote . majutsu-embark-remote-map)))
+    (setf (alist-get (car entry) embark-keymap-alist) (cdr entry)))
+  (dolist (type '(majutsu-bookmark majutsu-revision majutsu-git-bookmark
+                  majutsu-tracked-bookmark majutsu-untracked-bookmark))
+    (setf (alist-get type embark-default-action-overrides) #'majutsu-diff-revset))
+  (setf (alist-get 'majutsu-workspace embark-default-action-overrides)
+        #'majutsu-workspace-visit-name)
+  (add-hook 'embark-target-finders #'majutsu-embark-target-section))
 
 (if (featurep 'embark)
     (majutsu-embark--register)

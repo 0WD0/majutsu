@@ -76,8 +76,10 @@
   primarily for colocated jj/Git repositories.
 
 - Optional Embark actions ::
-  Bookmark and workspace completion candidates offer Embark actions,
-  including visiting a workspace, opening Dired, and copying its root.
+  Embark acts on bookmark and workspace completion candidates, bookmark
+  and revision sections, and remote headings.  Actions include inspecting
+  revisions, tracking remote bookmarks, visiting workspaces, and opening Dired.
+  Revision inspection defaults to a diff; editing remains an explicit action.
 
 - Gerrit uploads ::
   The Git dispatcher provides =jj gerrit upload= with revision and remote

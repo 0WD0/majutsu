@@ -106,12 +106,16 @@
     (magit-section-show section)
     (goto-char (oref section start))))
 
+(defun majutsu-git-fetch-from (remote)
+  "Fetch from exactly one named REMOTE."
+  (interactive (list (majutsu-read-remote-name "Fetch remote" t)))
+  (majutsu-git-fetch (list "--remote" (concat "exact:" remote))))
+
 (defun majutsu-git-fetch-remote ()
   "Fetch only the Git remote at point."
   (interactive)
-  (let ((remote (or (majutsu-remote-at-point)
-                    (user-error "No Git remote at point"))))
-    (majutsu-git-fetch (list "--remote" (concat "exact:" remote)))))
+  (majutsu-git-fetch-from (or (majutsu-remote-at-point)
+                             (user-error "No Git remote at point"))))
 
 (defun majutsu-git-remote-add (args)
   "Add a Git remote. Prompts for name and URL; respects ARGS from transient."

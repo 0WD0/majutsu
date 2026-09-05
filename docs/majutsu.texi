@@ -176,6 +176,7 @@ Git Integration
 Workspaces
 
 * Understanding Workspaces::
+* Embark Actions: Embark Actions (1). 
 * Workspace Transient::
 
 Customizing
@@ -2471,9 +2472,23 @@ Sections initially open and retain their folding state on refresh.
 @node Embark Actions
 @section Embark Actions
 
-When Embark is loaded@comma{} bookmark completion candidates offer actions to inspect@comma{}
-edit@comma{} move@comma{} rename@comma{} delete and forget the selected bookmark.  Embark remains
-optional; the ordinary bookmark transient is available independently.
+When Embark is loaded@comma{} @samp{embark-act} recognizes bookmark list sections and
+completion candidates.  No additional Majutsu key binding is installed;
+use your configured Embark key in either Emacs or Evil.
+
+Local bookmarks offer inspect@comma{} edit@comma{} move@comma{} rename@comma{} delete and forget actions.
+Remote bookmarks offer inspection and exactly scoped tracking actions: @samp{t}
+tracks an untracked reference and @samp{u} untracks a tracked reference.  The
+special @samp{@@git} records offer revision inspection without local bookmark
+mutation actions.  Conflict children target their own commit@comma{} not their
+parent bookmark.  Remote headings offer fetch@comma{} rename and remove@comma{} including
+remotes with no bookmarks.  Copying remains available through Embark's
+standard actions.
+
+The default bookmark/revision action shows its diff; @samp{e} explicitly edits the
+working copy.  Commands such as move may still prompt for their remaining
+arguments.  The ordinary bookmark@comma{} fetch and push transients retain their
+parameter controls and remain available without Embark.
 
 @node Bookmark Transient
 @section Bookmark Transient
@@ -2871,6 +2886,7 @@ Show the Git directory path (@samp{jj git root}).
 
 @menu
 * Understanding Workspaces::
+* Embark Actions: Embark Actions (1). 
 * Workspace Transient::
 @end menu
 
@@ -2879,6 +2895,13 @@ Show the Git directory path (@samp{jj git root}).
 
 Jujutsu supports multiple workspaces sharing the same repository storage. This
 is similar to Git worktrees but more integrated.
+
+@node Embark Actions (1)
+@section Embark Actions
+
+When Embark is loaded@comma{} workspace completion candidates offer @samp{RET} / @samp{v} to
+visit the workspace@comma{} @samp{d} to open its root in Dired@comma{} and @samp{W} to copy its root.
+Actions run in the repository directory associated with the completion.
 
 @node Workspace Transient
 @section Workspace Transient

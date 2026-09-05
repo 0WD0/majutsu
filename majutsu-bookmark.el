@@ -248,6 +248,25 @@ bookmark(s) at point."
                      (format " (remote(s): %s)" (string-join remote-patterns ", "))
                    ""))))))
 
+(defun majutsu-bookmark--track-ref (ref untrack)
+  "Track REF, or untrack it when UNTRACK is non-nil.
+REF is one exact NAME@REMOTE, not a bookmark or remote pattern."
+  (pcase-let ((`(,name . ,remote) (majutsu--bookmark-split-remote-ref ref)))
+    (unless (and remote (not (equal remote "git")))
+      (user-error "Expected a network remote bookmark"))
+    (majutsu-start-jj (list "bookmark" (if untrack "untrack" "track")
+                            (concat "exact:" name) "--remote" (concat "exact:" remote)))))
+
+(defun majutsu-bookmark-track-ref (ref)
+  "Track one exact remote bookmark REF."
+  (interactive (list (majutsu-read-string "Remote bookmark")))
+  (majutsu-bookmark--track-ref ref nil))
+
+(defun majutsu-bookmark-untrack-ref (ref)
+  "Untrack one exact remote bookmark REF."
+  (interactive (list (majutsu-read-string "Remote bookmark")))
+  (majutsu-bookmark--track-ref ref t))
+
 (defvar-local majutsu-bookmark--list-remotes nil
   "Remote metadata for the current bookmark list refresh.")
 
@@ -465,7 +484,10 @@ Return nil when ENTRY has no conflict target data."
           (and valid-targets
                (lambda ()
                  (mapc #'majutsu-bookmark--insert-conflict-target valid-targets)))))
-    (majutsu-row-insert-entry entry compiled body-inserter valid-targets)))
+    (let ((section (majutsu-row-insert-entry entry compiled body-inserter valid-targets)))
+      (oset section remote (majutsu-row-column entry 'remote))
+      (oset section tracked (majutsu-row-column entry 'tracked))
+      section)))
 
 ;;;###autoload
 (defun majutsu-bookmark-list ()

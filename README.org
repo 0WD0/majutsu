@@ -48,7 +48,7 @@ by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffer
 
 ** Optional Embark Integration
 
-When [[https://github.com/oantolin/embark][Embark]] is installed, Majutsu automatically adds actions for workspace
+When [[https://github.com/oantolin/embark][Embark]] is loaded, Majutsu automatically adds actions for workspace
 and bookmark completion candidates.  Workspace actions can visit, open in
 Dired, or copy the root.  Bookmark actions can edit, diff, inspect evolution,
 move, rename, delete, or forget the selected bookmark.

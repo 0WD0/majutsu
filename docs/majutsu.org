@@ -1353,9 +1353,23 @@ Deleted local bookmarks remain visible, and their tracked remote rows say
 Sections initially open and retain their folding state on refresh.
 
 ** Embark Actions
-When Embark is loaded, bookmark completion candidates offer actions to inspect,
-edit, move, rename, delete and forget the selected bookmark.  Embark remains
-optional; the ordinary bookmark transient is available independently.
+When Embark is loaded, =embark-act= recognizes bookmark list sections and
+completion candidates.  No additional Majutsu key binding is installed;
+use your configured Embark key in either Emacs or Evil.
+
+Local bookmarks offer inspect, edit, move, rename, delete and forget actions.
+Remote bookmarks offer inspection and exactly scoped tracking actions: =t=
+tracks an untracked reference and =u= untracks a tracked reference.  The
+special =@git= records offer revision inspection without local bookmark
+mutation actions.  Conflict children target their own commit, not their
+parent bookmark.  Remote headings offer fetch, rename and remove, including
+remotes with no bookmarks.  Copying remains available through Embark's
+standard actions.
+
+The default bookmark/revision action shows its diff; =e= explicitly edits the
+working copy.  Commands such as move may still prompt for their remaining
+arguments.  The ordinary bookmark, fetch and push transients retain their
+parameter controls and remain available without Embark.
 
 ** Bookmark Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
@@ -1567,6 +1581,11 @@ layouts, use the commands below to synchronize the repositories explicitly:
 ** Understanding Workspaces
 Jujutsu supports multiple workspaces sharing the same repository storage. This
 is similar to Git worktrees but more integrated.
+
+** Embark Actions
+When Embark is loaded, workspace completion candidates offer =RET= / =v= to
+visit the workspace, =d= to open its root in Dired, and =W= to copy its root.
+Actions run in the repository directory associated with the completion.
 
 ** Workspace Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode

@@ -120,7 +120,9 @@ for a class of actions that would normally ask for confirmation."
    (keymap :initform 'majutsu-commit-section-map)))
 
 (defclass majutsu-bookmark-section (majutsu-revision-section)
-  ((keymap :initform 'majutsu-bookmark-section-map)))
+  ((keymap :initform 'majutsu-bookmark-section-map)
+   (remote :initform nil :initarg :remote)
+   (tracked :initform nil :initarg :tracked)))
 
 (defclass majutsu-tag-section (majutsu-revision-section)
   ((keymap :initform 'majutsu-tag-section-map)))
