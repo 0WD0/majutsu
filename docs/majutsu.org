@@ -1483,11 +1483,19 @@ show =No bookmarks=.  On a remote heading, =r= opens remote management,
 when empty.  Git's special =@git= references appear separately under
 =Git tracking bookmarks= when present.
 
-Remote rows show their tracking state.  For tracked bookmarks, =synced=
-means there are no commits ahead or behind the local bookmark; =+N/-N=
-counts are relative to the local bookmark, from the remote's perspective.
-Deleted local bookmarks remain visible, and their tracked remote rows say
-=local deleted=.  Conflict targets appear beneath their own bookmark.
+Remote rows show their relationship immediately after the bookmark name,
+before revision descriptions:
+- =≡= means the tracked reference is synchronized with the local bookmark.
+- =○= means the reference is not tracked.
+- =↑N= counts commits only in the local bookmark; =↓N= counts commits only
+  in the remote reference.  Zero counts are omitted.  A lower bound is
+  shown as =↑≥N= or =↓≥N= rather than an exact count.
+- =× local= means the tracked local bookmark has been deleted while the
+  remote reference remains.  The deleted local bookmark stays visible too.
+
+Synchronized and untracked states use a muted color; local-only and
+remote-only counts use distinct colors.  Hover over a remote row for the
+symbol legend.  Conflict targets appear beneath their own bookmark.
 Sections initially open and retain their folding state on refresh.
 
 ** Embark Actions

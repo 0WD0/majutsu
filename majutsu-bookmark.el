@@ -300,15 +300,10 @@ REF is one exact NAME@REMOTE, not a bookmark or remote pattern."
 (majutsu-bookmark-define-template heading
   [:separate " "
              [:majutsu-bookmark-list-name]
+             [:majutsu-bookmark-list-tracking]
              [:if [:present]
                  [:majutsu-bookmark-list-target-summary]
-               [:if [:remote] "(not created yet)" "(deleted)"]]
-             [:if [:remote]
-                 [:if [:tracked]
-                     [:if [:tracking_present]
-                         ["[tracked" [:majutsu-bookmark-list-tracking] "]"]
-                       "[tracked, local deleted]"]
-                   "[untracked]"]]]
+               [:if [:remote] "(not created yet)" "(deleted)"]]]
   "Template used for bookmark-list headings.")
 
 (majutsu-template-defkeyword majutsu-bookmark-list-commit-summary Commit
@@ -324,19 +319,25 @@ REF is one exact NAME@REMOTE, not a bookmark or remote pattern."
   (:returns Template :doc "One compact tracked-distance fragment.")
   `[:if [:not [:zero]]
        [,prefix
-        [:if [:exact] [:exact] [[:lower] "+"]]]])
+        [:if [:exact] [:exact] ["≥" [:lower]]]]])
 
 (majutsu-template-defkeyword majutsu-bookmark-list-tracking CommitRef
-  (:returns Template :doc "Compact tracked-remote distance summary.")
-  [:if [:tracking_present]
-      [:if [:and [:method [:tracking_ahead_count] :zero]
-                 [:method [:tracking_behind_count] :zero]]
-          ", synced"
-        [", " [:separate "/"
-                        [:method [:tracking_ahead_count]
-                         :majutsu-bookmark-list-distance-part "+"]
-                        [:method [:tracking_behind_count]
-                         :majutsu-bookmark-list-distance-part "-"]]]]])
+  (:returns Template :doc "Tracking state and distances from the local perspective.")
+  [:if [:remote]
+      [:if [:tracked]
+          [:if [:tracking_present]
+              [:if [:and [:method [:tracking_ahead_count] :zero]
+                         [:method [:tracking_behind_count] :zero]]
+                  [:label "elided" "≡"]
+                [:separate " "
+                           [:label "diff added"
+                                   [:method [:tracking_behind_count]
+                                    :majutsu-bookmark-list-distance-part "↑"]]
+                           [:label "diff modified"
+                                   [:method [:tracking_ahead_count]
+                                    :majutsu-bookmark-list-distance-part "↓"]]]]
+            [:label "warning heading" "× local"]]
+        [:label "elided" "○"]]])
 
 (majutsu-template-defkeyword majutsu-bookmark-list-target-summary CommitRef
   (:returns Template :doc "Default bookmark-list target summary.")
@@ -487,6 +488,13 @@ Return nil when ENTRY has no conflict target data."
     (let ((section (majutsu-row-insert-entry entry compiled body-inserter valid-targets)))
       (oset section remote (majutsu-row-column entry 'remote))
       (oset section tracked (majutsu-row-column entry 'tracked))
+      (when (majutsu-row-column entry 'remote)
+        (save-excursion
+          (goto-char (oref section start))
+          (put-text-property
+           (point) (line-end-position) 'help-echo
+           (concat "≡ synced; ○ untracked; ↑ local-only commits; ↓ remote-only commits; "
+                   "× local: local bookmark deleted; ≥: at least this many commits"))))
       section)))
 
 ;;;###autoload

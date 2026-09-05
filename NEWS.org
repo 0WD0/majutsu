@@ -144,11 +144,12 @@
 ** Changed
 
 - Bookmark and remote lists ::
-  Local bookmarks and remote bookmarks now have separate sections, with
-  remote references grouped by remote and =@git= references in their own
-  section.  Conflicted targets remain expandable children of each bookmark.
-  The remote list command opens this view, including remotes before their
-  first fetch; remote headings offer management and fetch actions.
+  Local bookmarks and remote bookmarks have separate sections, with remote
+  references grouped by remote and =@git= references in their own section.
+  Conflicted targets are expandable.  Remote rows show sync state and
+  local-only/remote-only commit counts between the name and revision description.
+  The remote list command opens this view; remote headings show URLs and offer
+  management and fetch actions, even before the first fetch.
 
 - Repository-local defaults and revision prompts ::
   Log, Diff, Fetch, and Push can save defaults for the current repository

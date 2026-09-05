@@ -2662,11 +2662,25 @@ show @samp{No bookmarks}.  On a remote heading@comma{} @samp{r} opens remote man
 when empty.  Git's special @samp{@@git} references appear separately under
 @samp{Git tracking bookmarks} when present.
 
-Remote rows show their tracking state.  For tracked bookmarks@comma{} @samp{synced}
-means there are no commits ahead or behind the local bookmark; @samp{+N/-N}
-counts are relative to the local bookmark@comma{} from the remote's perspective.
-Deleted local bookmarks remain visible@comma{} and their tracked remote rows say
-@samp{local deleted}.  Conflict targets appear beneath their own bookmark.
+Remote rows show their relationship immediately after the bookmark name@comma{}
+before the commit summary:
+@itemize
+@item
+@samp{≡} means the tracked reference is synchronized with the local bookmark.
+@item
+@samp{○} means the reference is not tracked.
+@item
+@samp{↑N} counts commits only in the local bookmark; @samp{↓N} counts commits only
+in the remote reference.  Zero counts are omitted.  A lower bound is
+shown as @samp{↑≥N} or @samp{↓≥N} rather than an exact count.
+@item
+@samp{× local} means the tracked local bookmark has been deleted while the
+remote reference remains.  The deleted local bookmark stays visible too.
+@end itemize
+
+Synchronized and untracked states use a muted color; local-only and
+remote-only counts use distinct colors.  Hover over a remote row for the
+symbol legend.  Conflict targets appear beneath their own bookmark.
 Sections initially open and retain their folding state on refresh.
 
 @node Embark Actions
