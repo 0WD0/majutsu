@@ -121,6 +121,13 @@
 
 ** Changed
 
+- Bookmark and remote lists ::
+  Local bookmarks and remote bookmarks now have separate sections, with
+  remote references grouped by remote and =@git= references in their own
+  section.  Conflicted targets remain expandable children of each bookmark.
+  The remote list command opens this view, including remotes before their
+  first fetch; remote headings offer management and fetch actions.
+
 - Repository-local defaults and revision prompts ::
   Log, Diff, Fetch, and Push can save defaults for the current repository
   with ~W~.  The log revset filter is an ordinary =-r= argument and empty

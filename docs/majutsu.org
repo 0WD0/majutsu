@@ -1333,6 +1333,25 @@ In Jujutsu, bookmarks are named references similar to Git branches. A local
 bookmark normally targets one revision and may explicitly track a remote
 bookmark; concurrent moves can also leave a bookmark with conflicted targets.
 
+** Bookmark List
+The bookmark list always includes local and remote bookmarks, including
+synchronized and untracked remote bookmarks.  No prefix argument is needed.
+
+=Local bookmarks= and =Remote bookmarks= are separate sections;
+remote bookmarks are grouped by remote name, with fetch URLs and distinct
+push URLs shown in the remote headings.  Configured remotes without bookmarks
+show =No bookmarks=.  On a remote heading, =r= opens remote management,
+=f= fetches only that remote, and the delete action removes the remote.  Both sections remain visible
+when empty.  Git's special =@git= references appear separately under
+=Git tracking bookmarks= when present.
+
+Remote rows show their tracking state.  For tracked bookmarks, =synced=
+means there are no commits ahead or behind the local bookmark; =+N/-N=
+counts are relative to the local bookmark, from the remote's perspective.
+Deleted local bookmarks remain visible, and their tracked remote rows say
+=local deleted=.  Conflict targets appear beneath their own bookmark.
+Sections initially open and retain their folding state on refresh.
+
 ** Bookmark Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: b (majutsu-bookmark) ::
@@ -1505,17 +1524,18 @@ completion.
 
 Transient actions:
 #+attr_reference: :kind command-binding :interface "Remote Management transient"
-- Key: l (majutsu-git-remote-list) :: List remotes.
+- Key: l (majutsu-git-remote-list) :: Open the bookmark list at its Remote
+  bookmarks section. Configured remotes with no bookmarks are included.
 - Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote as
   =jj git remote add [OPTIONS] REMOTE URL=. Majutsu prompts for a new remote
   name, rejects names that already exist, prompts for the URL/path positional,
   and exposes =--fetch-tags= and =--push-url=.
 - Key: d (majutsu-git-remote-remove) :: Remove an existing remote. In the
-  remote list buffer, the remote at point is used as the default.
+  bookmark list buffer, the remote at point is used as the default.
 - Key: r (majutsu-git-remote-rename) :: Rename a remote.
 - Key: u (majutsu-git-remote-set-url-transient) :: Set remote URLs. With no
   option, Majutsu prompts for the fetch URL/path positional; use =--fetch=
-  and/or =--push= to set them explicitly. In the remote list buffer, the remote
+  and/or =--push= to set them explicitly. In the bookmark list buffer, the remote
   at point is used as the default.
 
 ** Clone and Init

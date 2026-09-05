@@ -154,6 +154,7 @@ Conflict Resolution
 Bookmarks
 
 * Understanding Bookmarks::
+* Bookmark List::
 * Bookmark Transient::
 
 Tags
@@ -2433,6 +2434,7 @@ Refine the conflict.
 
 @menu
 * Understanding Bookmarks::
+* Bookmark List::
 * Bookmark Transient::
 @end menu
 
@@ -2442,6 +2444,27 @@ Refine the conflict.
 In Jujutsu@comma{} bookmarks are named references similar to Git branches. A local
 bookmark normally targets one revision and may explicitly track a remote
 bookmark; concurrent moves can also leave a bookmark with conflicted targets.
+
+@node Bookmark List
+@section Bookmark List
+
+The bookmark list always includes local and remote bookmarks@comma{} including
+synchronized and untracked remote bookmarks.  No prefix argument is needed.
+
+@samp{Local bookmarks} and @samp{Remote bookmarks} are separate sections;
+remote bookmarks are grouped by remote name@comma{} with fetch URLs and distinct
+push URLs shown in the remote headings.  Configured remotes without bookmarks
+show @samp{No bookmarks}.  On a remote heading@comma{} @samp{r} opens remote management@comma{}
+@samp{f} fetches only that remote@comma{} and the delete action removes the remote.  Both sections remain visible
+when empty.  Git's special @samp{@@git} references appear separately under
+@samp{Git tracking bookmarks} when present.
+
+Remote rows show their tracking state.  For tracked bookmarks@comma{} @samp{synced}
+means there are no commits ahead or behind the local bookmark; @samp{+N/-N}
+counts are relative to the local bookmark@comma{} from the remote's perspective.
+Deleted local bookmarks remain visible@comma{} and their tracked remote rows say
+@samp{local deleted}.  Conflict targets appear beneath their own bookmark.
+Sections initially open and retain their folding state on refresh.
 
 @node Bookmark Transient
 @section Bookmark Transient
@@ -2771,7 +2794,8 @@ Transient actions:
 @item @kbd{l} (@code{majutsu-git-remote-list})
 @kindex l
 @findex majutsu-git-remote-list
-List remotes.
+Open the bookmark list at its Remote
+  bookmarks section. Configured remotes with no bookmarks are included.
 @item @kbd{a} (@code{majutsu-git-remote-add-transient})
 @kindex a
 @findex majutsu-git-remote-add-transient
@@ -2783,7 +2807,7 @@ Add a new Git remote as
 @kindex d
 @findex majutsu-git-remote-remove
 Remove an existing remote. In the
-  remote list buffer@comma{} the remote at point is used as the default.
+  bookmark list buffer@comma{} the remote at point is used as the default.
 @item @kbd{r} (@code{majutsu-git-remote-rename})
 @kindex r
 @findex majutsu-git-remote-rename
@@ -2793,7 +2817,7 @@ Rename a remote.
 @findex majutsu-git-remote-set-url-transient
 Set remote URLs. With no
   option@comma{} Majutsu prompts for the fetch URL/path positional; use @samp{--fetch}
-  and/or @samp{--push} to set them explicitly. In the remote list buffer@comma{} the remote
+  and/or @samp{--push} to set them explicitly. In the bookmark list buffer@comma{} the remote
   at point is used as the default.
 @end table
 

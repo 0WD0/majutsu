@@ -28,6 +28,16 @@
 (defvar majutsu-remote-pattern-history nil
   "Minibuffer history for remote name-pattern input.")
 
+(autoload 'majutsu-git-remote-remove "majutsu-git" nil t)
+(autoload 'majutsu-git-remote-transient "majutsu-git" nil t)
+(autoload 'majutsu-git-fetch-remote "majutsu-git" nil t)
+
+(defvar-keymap majutsu-git-remote-section-map
+  :doc "Keymap for Git remote headings in the bookmark list."
+  "<remap> <majutsu-delete-thing>" #'majutsu-git-remote-remove
+  "r" #'majutsu-git-remote-transient
+  "f" #'majutsu-git-fetch-remote)
+
 (defun majutsu-remote--validate-new-name (remote)
   "Signal a user error if REMOTE is not a valid new jj Git remote name."
   (cond

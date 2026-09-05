@@ -14,6 +14,35 @@
 (require 'cl-lib)
 (require 'majutsu-git)
 
+(ert-deftest majutsu-git-remote-list/reuses-bookmark-buffer ()
+  (require 'majutsu-bookmark)
+  (save-window-excursion
+    (with-temp-buffer
+      (majutsu-bookmark-list-mode)
+      (let ((buffer (current-buffer))
+            (inhibit-read-only t))
+        (magit-insert-section (bookmark-list)
+          (magit-insert-section (bookmark-group 'local)
+            (magit-insert-heading "Local bookmarks"))
+          (magit-insert-section (bookmark-group 'remote)
+            (magit-insert-heading "Remote bookmarks")
+            (insert "body\n")))
+        (magit-section-hide (cadr (oref magit-root-section children)))
+        (cl-letf (((symbol-function 'majutsu-bookmark-list) (lambda () buffer)))
+          (majutsu-git-remote-list))
+        (should (eq (current-buffer) buffer))
+        (should (eq (oref (magit-current-section) value) 'remote))
+        (should-not (oref (magit-current-section) hidden))))))
+
+(ert-deftest majutsu-git-fetch-remote/selects-only-current-remote ()
+  (let (args)
+    (cl-letf (((symbol-function 'majutsu-remote-at-point) (lambda () "fork*"))
+              ((symbol-function 'majutsu-git-fetch) (lambda (value) (setq args value))))
+      (majutsu-git-fetch-remote)
+      (should (equal args '("--remote" "exact:fork*")))))
+  (cl-letf (((symbol-function 'majutsu-remote-at-point) (lambda () nil)))
+    (should-error (majutsu-git-fetch-remote) :type 'user-error)))
+
 (ert-deftest majutsu-git--expand-option-arg/strips-tramp-prefix ()
   "--git-repo option paths should be converted to host-local paths."
   (cl-letf (((symbol-function 'majutsu-convert-filename-for-jj)
