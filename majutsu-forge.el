@@ -14,9 +14,9 @@
 ;; Optional integration between Majutsu and Forge.
 ;;
 ;; This library reuses Forge's topic database, commands, and section
-;; renderers in Majutsu log buffers.  The first implementation targets
-;; colocated jj/Git repositories, where Forge's Magit-backed repository
-;; detection can still see a Git repository and Git remotes.
+;; renderers in Majutsu log buffers.  In a colocated jj workspace, Forge is
+;; initialized from the underlying Git worktree so sibling JJ workspaces need
+;; not contain a `.git' directory.
 
 ;;; Code:
 
@@ -140,6 +140,20 @@ default.  The pull-request section itself remains visitable."
 
 ;;; Buffer setup
 
+(defun majutsu-forge--git-worktree ()
+  "Return the Git worktree paired with the current JJ workspace, if any."
+  (when-let* ((git-dir (car (ignore-errors (majutsu-jj-lines "git" "root"))))
+              (git-dir (majutsu-jj-expand-directory-from-jj git-dir default-directory))
+              ((file-directory-p git-dir)))
+    (file-name-directory (directory-file-name git-dir))))
+
+(defmacro majutsu-forge--with-git-worktree (&rest body)
+  "Evaluate BODY from the current workspace's underlying Git worktree."
+  (declare (indent 0) (debug (body)))
+  `(let ((default-directory (or (majutsu-forge--git-worktree)
+                                default-directory)))
+     ,@body))
+
 (defun majutsu-forge--connect-database-once ()
   "Connect the Forge database the first time a Majutsu log buffer is used."
   (remove-hook 'majutsu-log-mode-hook #'majutsu-forge--connect-database-once)
@@ -167,10 +181,11 @@ default.  The pull-request section itself remains visitable."
   "Initialize Forge buffer-local state for the current Majutsu buffer."
   (when (featurep 'forge)
     (setq-local magit--right-margin-config (majutsu-forge--margin-config))
-    (when (fboundp 'forge--init-buffer-topics-spec)
-      (ignore-errors (forge--init-buffer-topics-spec)))
-    (when (fboundp 'forge-set-buffer-repository)
-      (ignore-errors (forge-set-buffer-repository)))))
+    (majutsu-forge--with-git-worktree
+      (when (fboundp 'forge--init-buffer-topics-spec)
+        (ignore-errors (forge--init-buffer-topics-spec)))
+      (when (fboundp 'forge-set-buffer-repository)
+        (ignore-errors (forge-set-buffer-repository))))))
 
 (defun majutsu-forge--ensure-buffer ()
   "Initialize Forge state needed by topic section insertion."
@@ -386,7 +401,8 @@ default.  The pull-request section itself remains visitable."
   "Dispatch a Forge command from Majutsu."
   (interactive)
   (majutsu-forge--require)
-  (call-interactively #'forge-dispatch))
+  (majutsu-forge--with-git-worktree
+    (call-interactively #'forge-dispatch)))
 
 (defun majutsu-forge--add-mode-bindings ()
   "Add Forge bindings to `majutsu-mode-map'."
