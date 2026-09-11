@@ -1,6 +1,6 @@
 #+title: Majutsu User Manual
 #+author: 0WD0
-#+email: wd.1105848296@gmail.com
+#+email: me@0wd0.com
 #+texinfo_dir_category: Emacs
 #+texinfo_dir_title: Majutsu: (majutsu).
 #+texinfo_dir_desc: Using Jujutsu from Emacs with Majutsu.

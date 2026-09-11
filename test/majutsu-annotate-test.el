@@ -2,8 +2,8 @@
 
 ;; Copyright (C) 2026 0WD0
 
-;; Author: 0WD0 <wd.1105848296@gmail.com>
-;; Maintainer: 0WD0 <wd.1105848296@gmail.com>
+;; Author: 0WD0 <me@0wd0.com>
+;; Maintainer: 0WD0 <me@0wd0.com>
 ;; Keywords: tools, vc
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
