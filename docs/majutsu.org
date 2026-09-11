@@ -1504,13 +1504,14 @@ completion candidates.  No additional Majutsu key binding is installed;
 use your configured Embark key in either Emacs or Evil.
 
 Local bookmarks offer inspect, edit, move, rename, delete and forget actions.
-Remote bookmarks offer inspection and exactly scoped tracking actions: =t=
-tracks an untracked reference and =u= untracks a tracked reference.  The
-special =@git= records offer revision inspection without local bookmark
-mutation actions.  Conflict children target their own commit, not their
-parent bookmark.  Remote headings offer fetch, rename and remove, including
-remotes with no bookmarks.  Copying remains available through Embark's
-standard actions.
+Remote bookmarks offer inspection, exactly scoped tracking, and forget: =t=
+tracks an untracked reference, =u= untracks a tracked reference, and =f=
+forgets that remote bookmark until the next fetch.  The special =@git=
+records offer revision inspection and forget, without local bookmark mutation
+actions such as rename or delete.  Conflict children target their own commit,
+not their parent bookmark.  Remote headings offer fetch, rename and remove,
+including remotes with no bookmarks.  Copying remains available through
+Embark's standard actions.
 
 The default bookmark/revision action shows its diff; =e= explicitly edits the
 working copy.  Commands such as move may still prompt for their remaining
@@ -1541,8 +1542,10 @@ Transient actions:
 - Key: d (majutsu-bookmark-delete) :: Delete a bookmark locally and record the
   deletion for propagation on a later push; this command does not contact a
   remote itself.
-- Key: f (majutsu-bookmark-forget) :: Forget a bookmark locally without
-  affecting remotes.
+- Key: f (majutsu-bookmark-forget) :: Forget a bookmark without recording a
+  deletion to push.  A local name untracks corresponding remotes; an exact
+  =NAME@REMOTE= (including =@git=) forgets that remote bookmark until the next
+  fetch.
 - Key: t (majutsu-bookmark-track) :: Track a remote bookmark to create a local one.
 - Key: u (majutsu-bookmark-untrack) :: Untrack a remote bookmark.
 

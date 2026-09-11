@@ -2663,7 +2663,7 @@ when empty.  Git's special @samp{@@git} references appear separately under
 @samp{Git tracking bookmarks} when present.
 
 Remote rows show their relationship immediately after the bookmark name@comma{}
-before the commit summary:
+before revision descriptions:
 @itemize
 @item
 @samp{≡} means the tracked reference is synchronized with the local bookmark.
@@ -2691,13 +2691,14 @@ completion candidates.  No additional Majutsu key binding is installed;
 use your configured Embark key in either Emacs or Evil.
 
 Local bookmarks offer inspect@comma{} edit@comma{} move@comma{} rename@comma{} delete and forget actions.
-Remote bookmarks offer inspection and exactly scoped tracking actions: @samp{t}
-tracks an untracked reference and @samp{u} untracks a tracked reference.  The
-special @samp{@@git} records offer revision inspection without local bookmark
-mutation actions.  Conflict children target their own commit@comma{} not their
-parent bookmark.  Remote headings offer fetch@comma{} rename and remove@comma{} including
-remotes with no bookmarks.  Copying remains available through Embark's
-standard actions.
+Remote bookmarks offer inspection@comma{} exactly scoped tracking@comma{} and forget: @samp{t}
+tracks an untracked reference@comma{} @samp{u} untracks a tracked reference@comma{} and @samp{f}
+forgets that remote bookmark until the next fetch.  The special @samp{@@git}
+records offer revision inspection and forget@comma{} without local bookmark mutation
+actions such as rename or delete.  Conflict children target their own commit@comma{}
+not their parent bookmark.  Remote headings offer fetch@comma{} rename and remove@comma{}
+including remotes with no bookmarks.  Copying remains available through
+Embark's standard actions.
 
 The default bookmark/revision action shows its diff; @samp{e} explicitly edits the
 working copy.  Commands such as move may still prompt for their remaining
@@ -2766,8 +2767,10 @@ Delete a bookmark locally and record the
 @item @kbd{f} (@code{majutsu-bookmark-forget})
 @kindex f
 @findex majutsu-bookmark-forget
-Forget a bookmark locally without
-  affecting remotes.
+Forget a bookmark without recording a
+  deletion to push.  A local name untracks corresponding remotes; an exact
+  @samp{NAME@@REMOTE} (including @samp{@@git}) forgets that remote bookmark until the next
+  fetch.
 @item @kbd{t} (@code{majutsu-bookmark-track})
 @kindex t
 @findex majutsu-bookmark-track

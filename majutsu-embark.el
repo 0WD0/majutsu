@@ -65,11 +65,17 @@
 
 (defvar-keymap majutsu-embark-tracked-bookmark-map
   :parent majutsu-embark-revision-map
-  "u" #'majutsu-bookmark-untrack-ref)
+  "u" #'majutsu-bookmark-untrack-ref
+  "f" #'majutsu-bookmark-forget-ref)
 
 (defvar-keymap majutsu-embark-untracked-bookmark-map
   :parent majutsu-embark-revision-map
-  "t" #'majutsu-bookmark-track-ref)
+  "t" #'majutsu-bookmark-track-ref
+  "f" #'majutsu-bookmark-forget-ref)
+
+(defvar-keymap majutsu-embark-git-bookmark-map
+  :parent majutsu-embark-revision-map
+  "f" #'majutsu-bookmark-forget-ref)
 
 (defvar-keymap majutsu-embark-remote-map
   :doc "Actions on one configured Git remote."
@@ -98,7 +104,7 @@
   (dolist (entry '((majutsu-workspace . majutsu-embark-workspace-map)
                    (majutsu-bookmark . majutsu-embark-bookmark-map)
                    (majutsu-revision . majutsu-embark-revision-map)
-                   (majutsu-git-bookmark . majutsu-embark-revision-map)
+                   (majutsu-git-bookmark . majutsu-embark-git-bookmark-map)
                    (majutsu-tracked-bookmark . majutsu-embark-tracked-bookmark-map)
                    (majutsu-untracked-bookmark . majutsu-embark-untracked-bookmark-map)
                    (majutsu-remote . majutsu-embark-remote-map)))

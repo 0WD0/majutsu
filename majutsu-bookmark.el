@@ -102,10 +102,11 @@ SCOPE should be one of the scopes accepted by
            (majutsu--get-bookmark-names scope))))
 
 (defun majutsu--bookmark-forget-name-candidates ()
-  "Return bookmark name candidates for `jj bookmark forget'."
+  "Return bookmark name candidates for `jj bookmark forget'.
+Includes local names and remote refs such as NAME@REMOTE."
   (delete-dups
    (append (majutsu--get-bookmark-names 'local)
-           (majutsu--bookmark-base-names-from-scope 'remote))))
+           (majutsu--get-bookmark-names 'remote))))
 
 (defun majutsu--bookmark-track-name-candidates ()
   "Return bookmark name candidates for `jj bookmark track'."
@@ -214,7 +215,11 @@ bookmark(s) at point."
 
 ;;;###autoload
 (defun majutsu-bookmark-forget (names)
-  "Forget bookmarks or bookmark patterns NAMES locally only."
+  "Forget bookmarks or bookmark patterns NAMES without recording a deletion.
+Each NAME may be a local name pattern or an exact remote bookmark
+`NAME@REMOTE'.  Forgetting a local bookmark untracks corresponding
+remotes; forgetting `NAME@REMOTE' drops that remote bookmark until the
+next fetch."
   (interactive (list (majutsu-read-bookmark-patterns
                       "Forget bookmark(s)/pattern(s)"
                       nil nil
@@ -266,6 +271,15 @@ REF is one exact NAME@REMOTE, not a bookmark or remote pattern."
   "Untrack one exact remote bookmark REF."
   (interactive (list (majutsu-read-string "Remote bookmark")))
   (majutsu-bookmark--track-ref ref t))
+
+(defun majutsu-bookmark-forget-ref (ref)
+  "Forget one exact remote bookmark REF.
+REF is one exact NAME@REMOTE, including Git-tracking NAME@git."
+  (interactive (list (majutsu-read-string "Remote bookmark")))
+  (pcase-let ((`(,name . ,remote) (majutsu--bookmark-split-remote-ref ref)))
+    (unless remote
+      (user-error "Expected a remote bookmark"))
+    (majutsu-start-jj (list "bookmark" "forget" (concat name "@" remote)))))
 
 (defvar-local majutsu-bookmark--list-remotes nil
   "Remote metadata for the current bookmark list refresh.")
@@ -723,7 +737,7 @@ REMOTES are remote name patterns passed via repeated `--remote`."
    [("d" "Delete bookmark" majutsu-bookmark-delete
      :description "Delete (propagate)")
     ("f" "Forget bookmark" majutsu-bookmark-forget
-     :description "Forget (local)")]])
+     :description "Forget (no push)")]])
 
 ;;; _
 (provide 'majutsu-bookmark)
