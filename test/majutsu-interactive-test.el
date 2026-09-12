@@ -45,8 +45,9 @@
       (insert-file-contents path))
     (buffer-string)))
 
-(defun majutsu-interactive-test--select-replacement (file removed added)
-  "Select the REMOVED/ADDED replacement in FILE's current washed diff."
+(defun majutsu-interactive-test--select-replacement
+    (file removed added command)
+  "Select REMOVED/ADDED in FILE for transient COMMAND."
   (let* ((file-section
           (majutsu-interactive--file-section-for-file file))
          (hunk (and file-section
@@ -65,9 +66,12 @@
     (should hunk)
     (should removed-line)
     (should added-line)
-    (majutsu-interactive--set-selection
-     (majutsu-interactive--hunk-id hunk)
-     (list (cons (nth 2 removed-line) (nth 3 added-line))))))
+    (let ((transient-current-command command)
+          (transient-mark-mode t))
+      (goto-char (nth 2 removed-line))
+      (set-mark (nth 3 added-line))
+      (setq mark-active t)
+      (majutsu-interactive-toggle-region))))
 
 (defun majutsu-interactive-test--toggle-whole-file (file command)
   "Toggle hunkless FILE for transient COMMAND in the current washed diff."
@@ -84,7 +88,9 @@
   (majutsu-jj-integration-with-washed-diff
    repo
    (lambda ()
-     (majutsu-interactive-test--select-replacement file removed added)
+     (majutsu-interactive-test--select-replacement
+      file removed added
+      (if (eq mode 'complement) 'majutsu-restore 'majutsu-split))
      (majutsu-interactive-build-replay-plan-if-selected nil mode))))
 
 (defun majutsu-interactive-test--prepare-mixed-changes (repo)
@@ -117,10 +123,63 @@ COMMAND identifies the transient whose whole-file selections are toggled."
    repo
    (lambda ()
      (majutsu-interactive-test--select-replacement
-      "text.txt" "old one" "new one")
+      "text.txt" "old one" "new one" command)
      (majutsu-interactive-test--toggle-whole-file "selected.bin" command)
      (majutsu-interactive-test--toggle-whole-file "executable.sh" command)
      (majutsu-interactive-build-replay-plan-if-selected nil mode))))
+
+(ert-deftest majutsu-interactive-invalidate/clears-ranges-and-overlays ()
+  "A diff rebuild must not leave position-based selections behind."
+  (with-temp-buffer
+    (insert "old diff\n")
+    (let ((overlay (make-overlay (point-min) (point-max))))
+      (setq-local majutsu-interactive--selections
+                  (let ((table (make-hash-table :test 'equal)))
+                    (puthash 'hunk :all table)
+                    table))
+      (setq-local majutsu-interactive--overlays (list overlay))
+      (setq-local majutsu-interactive--selection-operation 'majutsu-split)
+      (majutsu-interactive-invalidate)
+      (should-not majutsu-interactive--selections)
+      (should-not majutsu-interactive--selection-operation)
+      (should-not majutsu-interactive--overlays)
+      (should-not (overlay-buffer overlay)))))
+
+(ert-deftest majutsu-interactive-selection-context/rejects-a-different-command ()
+  "A patch selection cannot silently change Split/Squash/Restore meaning."
+  (with-temp-buffer
+    (let ((table (make-hash-table :test 'equal)))
+      (puthash 'hunk :all table)
+      (setq-local majutsu-interactive--selections table)
+      (setq-local majutsu-interactive--selection-operation 'majutsu-split)
+      (should-error
+       (majutsu-interactive-build-patch-if-selected
+        nil nil nil 'majutsu-restore)
+       :type 'user-error))))
+
+(ert-deftest majutsu-interactive-complete-patch-operation/retains-cancelled-selection ()
+  "Only a changed or unknown repository operation invalidates a patch selection."
+  (with-temp-buffer
+    (let ((table (make-hash-table :test 'equal))
+          ids refreshed)
+      (puthash 'hunk :all table)
+      (setq-local majutsu-interactive--selections table)
+      (cl-letf (((symbol-function 'majutsu-interactive--operation-id)
+                 (lambda (&rest _)
+                   (pop ids)))
+                ((symbol-function 'majutsu--toplevel-safe)
+                 (lambda (&optional _directory) default-directory))
+                ((symbol-function 'majutsu-refresh)
+                 (lambda () (setq refreshed (1+ (or refreshed 0)))))
+                ((symbol-function 'message) (lambda (&rest _) nil)))
+        (setq ids '("before"))
+        (majutsu-interactive--complete-patch-operation (current-buffer) "before")
+        (should (eq (gethash 'hunk table) :all))
+        (should-not refreshed)
+        (setq ids '("after"))
+        (majutsu-interactive--complete-patch-operation (current-buffer) "before")
+        (should-not majutsu-interactive--selections)
+        (should (= refreshed 1))))))
 
 (ert-deftest majutsu-interactive-run-replay-plan/inserts-tool-before-filesets ()
   "Replay plan should keep jj options before filesets."
@@ -130,17 +189,20 @@ COMMAND identifies the transient whose whole-file selections are toggled."
               ((symbol-function 'majutsu-interactive--build-tool-config)
                (lambda (_patch-file _plan _directory)
                  '("--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch")))
-              ((symbol-function 'majutsu-run-jj-with-editor)
+              ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest args)
-                 (setq called (flatten-tree args)))))
+                 (setq called args))))
       (majutsu-interactive-run-replay-plan
        "restore" '("--from=A" "--to=B") '("src/a.el")
        '(:base left :payload-root right :patch "PATCH" :file-ops nil))
-      (should (equal called
+      (should (equal (car called)
                      '("restore" "--from=A" "--to=B"
                        "-i" "--tool" "majutsu-applypatch"
                        "--config" "merge-tools.majutsu-applypatch.program=/tmp/applypatch"
-                       "--" "src/a.el"))))))
+                       "--" "src/a.el")))
+      (should-not (nth 1 called))
+      (should (functionp (nth 2 called)))
+      (should (eq (nth 3 called) t)))))
 
 (ert-deftest majutsu-interactive-run-replay-plan/normalizes-structured-filesets ()
   "Replay plan should also normalize structured filesets."
@@ -150,17 +212,19 @@ COMMAND identifies the transient whose whole-file selections are toggled."
               ((symbol-function 'majutsu-interactive--build-tool-config)
                (lambda (_patch-file _plan _directory)
                  '("--config" "tool=config")))
-              ((symbol-function 'majutsu-run-jj-with-editor)
+              ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest args)
-                 (setq called (flatten-tree args)))))
+                 (setq called args))))
       (majutsu-interactive-run-replay-plan
        "split" '("--revision=@") '("src/a.el")
        '(:base left :payload-root right :patch "PATCH" :file-ops nil))
-      (should (equal called
+      (should (equal (car called)
                      '("split" "--revision=@"
                        "-i" "--tool" "majutsu-applypatch"
                        "--config" "tool=config"
-                       "--" "src/a.el"))))))
+                       "--" "src/a.el")))
+      (should (functionp (nth 2 called)))
+      (should (eq (nth 3 called) t)))))
 
 (ert-deftest majutsu-interactive--build-tool-config/strips-tramp-prefix ()
   "Tool config should pass local remote paths to jj merge-tool args."
@@ -212,7 +276,7 @@ COMMAND identifies the transient whose whole-file selections are toggled."
                (lambda (_patch _plan _directory)
                  (push _directory configs)
                  nil))
-              ((symbol-function 'majutsu-run-jj-with-editor)
+              ((symbol-function 'majutsu-start-jj-with-editor)
                (lambda (&rest _args) nil))
               ((symbol-function 'majutsu-interactive--delete-operation-temp-dir)
                (lambda (directory) (push directory cleaned))))
@@ -357,6 +421,7 @@ COMMAND identifies the transient whose whole-file selections are toggled."
              (transient-current-command command))
         (goto-char (oref section start))
         (majutsu-interactive-toggle-file)
+        (should (eq majutsu-interactive--selection-operation command))
         (should (equal (majutsu-interactive-build-replay-plan-if-selected)
                        '(:base left :payload-root right
                          :patch nil
