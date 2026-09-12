@@ -24,6 +24,8 @@
 (declare-function ghostel-mode "ghostel" ())
 (declare-function majutsu-start-jj-with-editor "majutsu-process"
                   (args &optional success-msg finish-callback inhibit-refresh))
+(declare-function majutsu-process-track-with-editor-output "majutsu-process"
+                  (process output))
 
 (defvar ghostel-exit-functions)
 (defvar ghostel-kill-buffer-on-exit)
@@ -38,10 +40,12 @@
 (defcustom majutsu-diff-editor-host 'auto
   "How Majutsu hosts jj diff-editor sessions.
 
-`auto' uses Ghostel when it is available, otherwise it permits an
-ordinary process only for a known external editor.  `ghostel' requires
-Ghostel.  `process' always uses an ordinary process, which cannot host
-jj's built-in terminal editor."
+`auto' uses Ghostel when it is available.  Local sessions also need a
+working `emacsclient' for jj's later description-editor invocation;
+remote Ghostel sessions use with-editor's TRAMP sleeping-editor bridge.
+Without a suitable terminal host, `auto' permits an ordinary process only
+for a known external editor.  `ghostel' requires Ghostel.  `process' always
+uses an ordinary process, which cannot host jj's built-in terminal editor."
   :type '(choice (const :tag "Automatic" auto)
                  (const :tag "Ghostel terminal" ghostel)
                  (const :tag "Ordinary process (external editor only)" process))
@@ -216,25 +220,25 @@ The return value is either `ghostel' or `process'."
          'ghostel
        (user-error "Ghostel is required for the selected diff-editor host")))
     ('auto
-     (let ((tool (majutsu-diff-editor--effective-tool args)))
+     (let ((tool (majutsu-diff-editor--effective-tool args))
+           (remote-p (file-remote-p default-directory))
+           (ghostel-p (majutsu-diff-editor-ghostel-available-p)))
        (cond
-        ;; Ghostel cannot bridge with-editor's sleeping-editor protocol over
-        ;; TRAMP.  An external tool can still use Majutsu's ordinary remote
-        ;; process path; the built-in recorder cannot.
-        ((file-remote-p default-directory)
-         (if (majutsu-diff-editor--builtin-tool-p tool)
-             (user-error (concat "jj's :builtin diff editor needs a terminal host; "
-                                 "Ghostel sessions over TRAMP are unsupported, so "
-                                 "configure an external editor"))
-           (majutsu-diff-editor--note-process-fallback)
-           'process))
-        ((and (majutsu-diff-editor-ghostel-available-p)
-              with-editor-emacsclient-executable)
+        ;; Remote Ghostel runs through Emacs `make-process' with a TRAMP file
+        ;; handler.  with-editor observes that path and installs its sleeping
+        ;; editor filter, so unlike the local native PTY path it needs no
+        ;; emacsclient.
+        ((and ghostel-p (or remote-p with-editor-emacsclient-executable))
          'ghostel)
         ((majutsu-diff-editor--builtin-tool-p tool)
-         (user-error (concat "jj's :builtin diff editor requires Ghostel and a "
-                             "working emacsclient; configure an external editor "
-                             "or set `with-editor-emacsclient-executable'")))
+         (user-error
+          (if remote-p
+              (concat "jj's :builtin diff editor requires Ghostel for this "
+                      "TRAMP repository; install Ghostel or configure an "
+                      "external editor")
+            (concat "jj's :builtin diff editor requires Ghostel and a working "
+                    "emacsclient; configure an external editor or set "
+                    "`with-editor-emacsclient-executable'"))))
         (t
          (majutsu-diff-editor--note-process-fallback)
          'process))))
@@ -500,15 +504,55 @@ not compare operation ids until that lifecycle process has exited."
 (defun majutsu-diff-editor--assert-ghostel-editor-support (root)
   "Signal unless Ghostel can support jj's later `JJ_EDITOR' invocation.
 
-Ghostel's public execution API has no with-editor sleeping-editor filter.  A
-remote session, or a local Emacs without emacsclient, would render the control
-packet but leave jj waiting forever."
-  (when (file-remote-p root)
-    (user-error (concat "Ghostel jj diff-editor sessions over TRAMP are not yet "
-                        "supported; use an external terminal instead")))
-  (unless with-editor-emacsclient-executable
+Remote Ghostel sessions use Emacs `make-process' with a TRAMP file handler.
+with-editor observes that path and supplies its sleeping-editor protocol.
+Local native Ghostel PTYs do not pass through that path, so they require
+emacsclient."
+  (unless (or (file-remote-p root) with-editor-emacsclient-executable)
     (user-error (concat "Ghostel jj diff-editor sessions require emacsclient for "
                         "JJ_EDITOR; configure `with-editor-emacsclient-executable'"))))
+
+(defun majutsu-diff-editor--install-remote-with-editor-tracker (process root)
+  "Track remote with-editor packets from PROCESS for repository ROOT.
+
+Ghostel's filter must continue to receive every byte.  The wrapper records a
+sleeping-editor OPEN packet before with-editor visits jj's temporary
+description file, then delegates unchanged to Ghostel's existing composite
+filter."
+  (when (processp process)
+    ;; with-editor sets this itself for a remote `make-process', but it is the
+    ;; protocol's authoritative repository context, so retain it explicitly.
+    (process-put process 'default-dir root)
+    (when-let* ((filter (process-filter process)))
+      (set-process-filter
+       process
+       (lambda (proc output)
+         (majutsu-process-track-with-editor-output proc output)
+         (funcall filter proc output))))))
+
+(defun majutsu-diff-editor--ghostel-exec (session buffer program args)
+  "Run Ghostel for SESSION and install its remote editor tracker atomically.
+
+The tracker has to be installed before `make-process' returns: a later wrapper
+could miss a fast `WITH-EDITOR' OPEN packet and leave the description buffer
+without its repository association."
+  (let ((root (majutsu-diff-editor-session-repository-root session)))
+    (if (not (file-remote-p root))
+        (ghostel-exec buffer program args)
+      (let ((make-process-function (symbol-function 'make-process))
+            (installed nil))
+        (cl-letf
+            (((symbol-function 'make-process)
+              (lambda (&rest keys)
+                (let ((process (apply make-process-function keys)))
+                  (when (and (not installed)
+                             (eq (plist-get keys :buffer) buffer)
+                             (plist-get keys :file-handler))
+                    (setq installed t)
+                    (majutsu-diff-editor--install-remote-with-editor-tracker
+                     process root))
+                  process))))
+          (ghostel-exec buffer program args))))))
 
 (defun majutsu-diff-editor--start-ghostel (session)
   "Start SESSION through Ghostel's public API and return SESSION."
@@ -551,7 +595,8 @@ packet but leave jj waiting forever."
                   ;; that, so Ghostel inherits both JJ_EDITOR and user overrides.
                   (let ((process-environment (majutsu-process-environment args)))
                     (setf (majutsu-diff-editor-session-process session)
-                          (ghostel-exec buffer program args))))
+                          (majutsu-diff-editor--ghostel-exec
+                           session buffer program args))))
                 (setq started t)
                 session))
           (unless started
