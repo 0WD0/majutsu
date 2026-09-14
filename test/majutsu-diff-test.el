@@ -27,6 +27,28 @@
   (should (equal (majutsu--diff-file-status '("copy from source.txt" "copy to dest.txt")) "copied"))
   (should (equal (majutsu--diff-file-status '("index 832...912 100644")) "modified")))
 
+(ert-deftest majutsu-diff-wash-diffs/renders-mode-only-change ()
+  "A mode-only Git diff should expose its old and new modes."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let ((inhibit-read-only t)
+          (magit-section-inhibit-markers t))
+      (magit-insert-section (diffbuf)
+        (insert "diff --git a/script b/script\n"
+                "old mode 100644\n"
+                "new mode 100755\n")
+        (save-restriction
+          (narrow-to-region (point-min) (point-max))
+          (majutsu-diff-wash-diffs '("--git"))))
+      (let* ((file (car (oref magit-root-section children)))
+             (mode-change (car (oref file children))))
+        (should (equal (oref file value) "script"))
+        (should (eq (oref mode-change type) 'jj-mode-change))
+        (should (equal (oref mode-change value) '("script" chmod)))
+        (should (string-match-p
+                 "old mode 100644\nnew mode 100755"
+                 (buffer-string)))))))
+
 (defmacro majutsu-diff-test--with-transient-context (prefix suffix &rest body)
   "Run BODY as if transient PREFIX were reading infix SUFFIX."
   (declare (indent 2) (debug (form form body)))

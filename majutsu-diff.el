@@ -1203,6 +1203,12 @@ Assumes point is at the start of the diff output."
           (forward-line 1))))
     (unless (bolp) (insert "\n"))))
 
+(defun majutsu-diff--mode-change-header (headers)
+  "Return the old/new mode pair from Git extended HEADERS, or nil."
+  (let ((text (string-join headers "")))
+    (when (string-match "^old mode [^\n]+\nnew mode [^\n]+\n" text)
+      (match-string 0 text))))
+
 (defun majutsu-diff-wash-file ()
   "Parse a single file section at point and wrap it in Magit sections."
   (when (looking-at "^diff --git ")
@@ -1236,6 +1242,10 @@ Assumes point is at the start of the diff output."
         (magit-insert-heading
           (propertize (majutsu-diff--file-heading file headers)
                       'font-lock-face 'magit-diff-file-heading))
+        (when-let* ((modes (majutsu-diff--mode-change-header headers)))
+          (magit-insert-section (jj-mode-change (cons file '(chmod)))
+            (magit-insert-heading
+              (propertize modes 'font-lock-face 'default))))
         ;; Hunk bodies remain in the buffer; just wrap them.
         (while (and (not (eobp)) (looking-at "^@@ "))
           (majutsu-diff-wash-hunk file))

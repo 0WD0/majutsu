@@ -81,11 +81,10 @@
       (majutsu-interactive-toggle-region))))
 
 (defun majutsu-interactive-test--toggle-whole-file (file command)
-  "Toggle hunkless FILE for transient COMMAND in the current washed diff."
+  "Toggle all changes to FILE for transient COMMAND in the current diff."
   (let ((section (majutsu-interactive--file-section-for-file file))
         (transient-current-command command))
     (should section)
-    (should-not (majutsu-interactive--file-section-hunks section))
     (goto-char (oref section start))
     (majutsu-interactive-toggle-file)))
 
@@ -452,6 +451,47 @@ COMMAND identifies the transient whose whole-file selections are toggled."
                        '(:base left :payload-root right
                          :patch nil
                          :file-ops ((:action add :path "bin.dat")))))))))
+
+(ert-deftest majutsu-interactive-mode-change/selects-independently-from-text ()
+  "Mode and content changes should be independently selectable patch units."
+  (with-temp-buffer
+    (let* ((diff (concat
+                  "diff --git a/script b/script\n"
+                  "old mode 100644\n"
+                  "new mode 100755\n"
+                  "index 1111111..2222222\n"
+                  "--- a/script\n"
+                  "+++ b/script\n"
+                  "@@ -1 +1 @@\n"
+                  "-old\n"
+                  "+new\n"))
+           (file (majutsu-interactive-test--insert-diff diff "script"))
+           (mode-change (seq-find
+                         (lambda (section)
+                           (magit-section-match 'jj-mode-change section))
+                         (oref file children)))
+           (text-hunk (seq-find
+                       (lambda (section)
+                         (magit-section-match 'jj-hunk section))
+                       (oref file children)))
+           (transient-current-command 'majutsu-split))
+      (goto-char (oref mode-change start))
+      (majutsu-interactive-toggle-hunk)
+      (let ((patch (majutsu-interactive--build-patch)))
+        (should (string-match-p "old mode 100644\nnew mode 100755" patch))
+        (should-not (string-match-p "^@@" patch)))
+      (majutsu-interactive-clear)
+      (goto-char (oref text-hunk start))
+      (majutsu-interactive-toggle-hunk)
+      (let ((patch (majutsu-interactive--build-patch)))
+        (should-not (string-match-p "^old mode " patch))
+        (should (string-match-p "^@@ " patch)))
+      (majutsu-interactive-clear)
+      (goto-char (oref file start))
+      (majutsu-interactive-toggle-file)
+      (let ((patch (majutsu-interactive--build-patch)))
+        (should (string-match-p "old mode 100644\nnew mode 100755" patch))
+        (should (string-match-p "^@@ " patch))))))
 
 (ert-deftest majutsu-interactive-operation/mixed-does-not-include-unselected-hunks ()
   "A mixed text/binary operation must not carry an unselected text hunk."
@@ -842,11 +882,11 @@ Selecting only the first added line leaves the unselected line in place."
            (plan (majutsu-interactive-test--mixed-plan
                   repo 'majutsu-split)))
       (should (eq (plist-get plan :base) 'left))
-      (should (= (length (plist-get plan :file-ops)) 2))
-      (should (member '(:action modify :path "executable.sh")
-                      (plist-get plan :file-ops)))
-      (should (member '(:action modify :path "selected.bin")
-                      (plist-get plan :file-ops)))
+      (should (equal (plist-get plan :file-ops)
+                     '((:action modify :path "selected.bin"))))
+      (should (string-match-p
+               "old mode 100644\nnew mode 100755"
+               (or (plist-get plan :patch) "")))
       (majutsu-jj-integration-run-replay
        repo "split" '("--revision=@" "--message=selected") plan)
       (should (equal (majutsu-jj-integration-output

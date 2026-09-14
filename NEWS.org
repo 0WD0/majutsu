@@ -277,9 +277,10 @@
   for file paths.
 
 - Diff display and window behavior ::
-  Disabling refinement also clears hidden hunks.  Evolution inter-diffs honor
-  diff window policies, and custom jj wrapping or presentation no longer breaks
-  history rows.  Patch-like text in a revision description stays ordinary text.
+  File permission changes display their old and new modes.  Disabling
+  refinement also clears hidden hunks.  Evolution inter-diffs honor diff window
+  policies, and custom jj wrapping or presentation no longer breaks history
+  rows.  Patch-like text in a revision description stays ordinary text.
 
 - Section folding and refresh ::
   Collapsed sections no longer leave invisible remnants that join adjacent

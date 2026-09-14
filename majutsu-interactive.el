@@ -285,29 +285,37 @@ OPERATION, when non-nil, must own BUFFER's patch selection."
 
 ;;; Selection Functions
 
+(defun majutsu-interactive--patch-section-p (section)
+  "Return non-nil when SECTION is an independently selectable patch unit."
+  (or (magit-section-match 'jj-hunk section)
+      (magit-section-match 'jj-mode-change section)))
+
 (defun majutsu-interactive-toggle-hunk ()
-  "Toggle selection of the hunk at point."
+  "Toggle selection of the patch unit at point."
   (interactive)
   (when-let* ((section (magit-current-section)))
-    (when (cl-typep section 'majutsu-hunk-section)
+    (when (majutsu-interactive--patch-section-p section)
       (let* ((hunk-id (majutsu-interactive--hunk-id section))
              (current (majutsu-interactive--get-selection hunk-id)))
         (majutsu-interactive--ensure-selection-context)
         (majutsu-interactive--set-selection
          hunk-id (if current nil :all))
         (majutsu-interactive--render-overlays)
-        (message "%s hunk" (if current "Deselected" "Selected"))))))
+        (message "%s %s"
+                 (if current "Deselected" "Selected")
+                 (if (magit-section-match 'jj-mode-change section)
+                     "mode change"
+                   "hunk"))))))
 
 (defun majutsu-interactive--file-section-with-hunks (file)
-  "Find a jj-file section for FILE that contains hunks."
+  "Find a jj-file section for FILE that contains selectable changes."
   (let (result)
     (when (and file magit-root-section)
       (magit-map-sections
        (lambda (section)
          (when (and (magit-section-match 'jj-file section)
                     (equal (oref section value) file)
-                    (seq-some (lambda (child)
-                                (magit-section-match 'jj-hunk child))
+                    (seq-some #'majutsu-interactive--patch-section-p
                               (oref section children)))
            (setq result section)))
        magit-root-section))
@@ -328,8 +336,8 @@ OPERATION, when non-nil, must own BUFFER's patch selection."
     (or result fallback)))
 
 (defun majutsu-interactive--file-section-hunks (file-section)
-  "Return the hunk children of FILE-SECTION."
-  (seq-filter (lambda (child) (magit-section-match 'jj-hunk child))
+  "Return independently selectable patch children of FILE-SECTION."
+  (seq-filter #'majutsu-interactive--patch-section-p
               (oref file-section children)))
 
 (defun majutsu-interactive--whole-file-selection-allowed-p ()
@@ -353,11 +361,11 @@ OPERATION, when non-nil, must own BUFFER's patch selection."
     (message "%s whole-file change" (if current "Deselected" "Selected"))))
 
 (defun majutsu-interactive-toggle-file ()
-  "Toggle all hunks, or a whole-file change with no text hunks, at point."
+  "Toggle all selectable changes, or a hunkless whole-file change, at point."
   (interactive)
   (let (file-section)
     (magit-section-case
-      (jj-hunk (setq file-section (oref it parent)))
+      ((jj-hunk jj-mode-change) (setq file-section (oref it parent)))
       (jj-file (setq file-section it)))
     (let ((file (and file-section (oref file-section value))))
       (when (and file-section (magit-section-match 'jj-file file-section))
@@ -383,7 +391,7 @@ OPERATION, when non-nil, must own BUFFER's patch selection."
                    (majutsu-interactive--hunk-id hunk)
                    (unless all-selected :all)))
                 (majutsu-interactive--render-overlays)
-                (message "%s all hunks in file"
+                (message "%s all changes in file"
                          (if all-selected "Deselected" "Selected"))))))))))
 
 (defun majutsu-interactive--normalize-line-range (start end limit-start limit-end)
@@ -518,7 +526,7 @@ The range is clamped to LIMIT-START and LIMIT-END."
   (let ((result nil))
     (when magit-root-section
       (cl-labels ((walk (section)
-                    (when (and (cl-typep section 'majutsu-hunk-section)
+                    (when (and (majutsu-interactive--patch-section-p section)
                                (equal (majutsu-interactive--hunk-id section) hunk-id))
                       (setq result section))
                     (dolist (child (oref section children))
@@ -534,8 +542,8 @@ The range is clamped to LIMIT-START and LIMIT-END."
 ;;; Patch Generation
 
 (defun majutsu-interactive--collect-selected-hunks ()
-  "Collect all selected hunks with their selection specs.
-Returns list of (FILE-SECTION HUNK-SECTION SPEC)."
+  "Collect all selected patch units with their selection specs.
+Returns list of (FILE-SECTION PATCH-SECTION SPEC)."
   (let ((result nil))
     (when majutsu-interactive--selections
       (maphash
@@ -622,12 +630,12 @@ Never infer filesystem paths from rendered Git patch headers."
           file-sections))
 
 (defun majutsu-interactive--collect-hunks-by-file ()
-  "Return hash table of FILE-SECTION to list of HUNK-SECTIONS."
+  "Return hash table of FILE-SECTION to selectable patch sections."
   (let ((by-file (make-hash-table :test 'eq)))
     (when magit-root-section
       (magit-map-sections
        (lambda (section)
-         (when (magit-section-match 'jj-hunk section)
+         (when (majutsu-interactive--patch-section-p section)
            (let ((file (oref section parent)))
              (push section (gethash file by-file)))))
        magit-root-section))
@@ -796,22 +804,32 @@ Return a hunk string or nil when no change lines remain."
                 header)))
         (concat hunk-header body)))))
 
+(defun majutsu-interactive--without-mode-change (header)
+  "Return Git file HEADER without an old/new mode pair."
+  (replace-regexp-in-string
+   "^old mode [^\n]+\nnew mode [^\n]+\n" "" header))
+
 (defun majutsu-interactive--build-file-patch (file-section hunks-with-specs &optional invert)
   "Build patch string for FILE-SECTION with HUNKS-WITH-SPECS.
 HUNKS-WITH-SPECS is list of (HUNK-SECTION SPEC [INVERT]).
 When INVERT is non-nil, invert selected hunks by default."
   (let ((header (oref file-section header))
+        (mode-change nil)
         (hunk-patches nil))
     (dolist (hs hunks-with-specs)
       (let* ((hunk (nth 0 hs))
              (spec (nth 1 hs))
-             (hunk-invert (if (> (length hs) 2) (nth 2 hs) invert))
-             (hunk-patch (majutsu-interactive--build-hunk-patch
-                          hunk spec hunk-invert)))
-        (when hunk-patch
-          (push hunk-patch hunk-patches))))
-    (when hunk-patches
-      (concat header
+             (hunk-invert (if (> (length hs) 2) (nth 2 hs) invert)))
+        (if (magit-section-match 'jj-mode-change hunk)
+            (when (and spec (not hunk-invert))
+              (setq mode-change t))
+          (when-let* ((hunk-patch (majutsu-interactive--build-hunk-patch
+                                   hunk spec hunk-invert)))
+            (push hunk-patch hunk-patches)))))
+    (when (or mode-change hunk-patches)
+      (concat (if mode-change
+                  header
+                (majutsu-interactive--without-mode-change header))
               (mapconcat #'identity (nreverse hunk-patches) "")))))
 
 
