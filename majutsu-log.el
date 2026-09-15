@@ -159,6 +159,8 @@ decoded back to literal newlines after field splitting.")
      :template majutsu-log-template-empty :face t)
     (:field git-head :module heading
      :template majutsu-log-template-git-head :face t)
+    (:field touched-projects :module heading
+     :template majutsu-log-template-touched-projects :face font-lock-type-face)
     (:field description :module heading
      :template majutsu-log-template-description :face t)
     (:field commit-id :module tail
@@ -181,7 +183,9 @@ decoded back to literal newlines after field splitting.")
      :template majutsu-log--canonical-description-template :face nil))
   "Flat row columns controlling log transport and rendering.
 Only metadata occurrences become semantic entry fields; visible occurrences
-remain available through point-local row copy commands."
+remain available through point-local row copy commands.
+The touched-projects field is omitted unless jj supports the jjosh
+`touched_projects()' commit method.  Remove that column to disable it."
   :type 'sexp
   :group 'majutsu
   :set (lambda (symbol value)
@@ -248,6 +252,16 @@ Also registers a variable watcher to invalidate the template cache."
 (majutsu-log-define-column tags
   [:tags]
   "Template for the tags column.")
+
+;; An optional native method, not an alias inferred from the binary's name.
+(majutsu-template-defkeyword touched_projects Commit
+  (:returns (:list String) :doc "Subprojects touched by this commit (jjosh)."))
+
+(majutsu-log-define-column touched-projects
+  [:surround "[" "]" [:touched_projects :join ", "]]
+  "Template for the optional jjosh project summary column.
+Names come from the loaded operation's project layout, not bookmark names.
+Empty summaries produce no brackets.  Ordinary jj omits this column.")
 
 (majutsu-log-define-column working-copies
   [:working_copies]
@@ -368,15 +382,76 @@ transport logical newlines safely through single-line payload segments."
    :section-value-function 'majutsu-log--entry-id
    :tail-align t))
 
-(defun majutsu-log--compile-columns ()
-  "Compile `majutsu-log-commit-columns' into row metadata."
-  (majutsu-row-compile (majutsu-log--row-profile)))
+(defvar majutsu-log--touched-projects-support-cache
+  (make-hash-table :test #'equal)
+  "Template capability results keyed by repository and executable identity.
+Only cache a rejection if a baseline template parses successfully.")
+
+(defun majutsu-log--template-program-key ()
+  "Identify the configured jj program in this directory and host.
+Include the target binary's timestamp and size so an in-place jjosh upgrade
+is detected without restarting Emacs.  Resolve remote executables on their
+own host, not against the local PATH."
+  (when-let* ((program (executable-find (majutsu-jj--executable) t))
+              (path (file-truename
+                     (majutsu-jj-expand-filename-from-jj program)))
+              (attrs (file-attributes path)))
+    (list default-directory (majutsu-jj--executable) path
+          (file-attribute-modification-time attrs)
+          (file-attribute-size attrs)
+          (copy-sequence majutsu-jj-global-arguments))))
+
+(defun majutsu-log--touched-projects-supported-p ()
+  "Whether the active jj accepts the `touched_projects()' commit method.
+Probe an empty revset without snapshotting, merging operations, or reading
+commit trees.  Do not turn repository/process failures into cached absence;
+the actual log command remains responsible for reporting those failures."
+  (condition-case nil
+      (when-let* ((key (majutsu-log--template-program-key)))
+        (let ((cached (gethash key majutsu-log--touched-projects-support-cache
+                               'unknown)))
+          (when (eq cached 'unknown)
+            (let ((args '("--ignore-working-copy" "--at-op=@"
+                          "log" "--no-graph" "-r" "none()" "-T")))
+              (setq cached
+                    (cond
+                     ((eq 0 (majutsu-process-jj
+                             nil args "self.touched_projects()"))
+                      'supported)
+                     ((eq 0 (majutsu-process-jj nil args "\"\""))
+                      'unsupported)
+                     (t 'unknown)))
+              (unless (eq cached 'unknown)
+                (puthash key cached majutsu-log--touched-projects-support-cache))))
+          (eq cached 'supported)))
+    (error nil)))
+
+(defun majutsu-log--compile-columns (&optional touched-projects)
+  "Compile log columns, including the optional project field if TOUCHED-PROJECTS.
+Filter unsupported columns before building both the template and parser
+metadata so field offsets and canonical entry ids always stay in sync."
+  (let ((majutsu-log-commit-columns
+         (if touched-projects
+             majutsu-log-commit-columns
+           (seq-remove (lambda (column)
+                         (eq (plist-get column :field) 'touched-projects))
+                       majutsu-log-commit-columns))))
+    (plist-put (majutsu-row-compile (majutsu-log--row-profile))
+               :touched-projects touched-projects)))
 
 (defun majutsu-log--ensure-template ()
-  "Return cached compiled template structure, recomputing if necessary."
-  (or majutsu-log--compiled-template-cache
+  "Return a compiled template appropriate for the active jj capabilities."
+  (let ((touched-projects
+         (and (seq-some (lambda (column)
+                          (eq (plist-get column :field) 'touched-projects))
+                        majutsu-log-commit-columns)
+              (majutsu-log--touched-projects-supported-p))))
+    (if (and majutsu-log--compiled-template-cache
+             (eq (plist-get majutsu-log--compiled-template-cache :touched-projects)
+                 touched-projects))
+        majutsu-log--compiled-template-cache
       (setq majutsu-log--compiled-template-cache
-            (majutsu-log--compile-columns))))
+            (majutsu-log--compile-columns touched-projects)))))
 
 (defun majutsu-log--build-args ()
   "Build argument list for `jj log' using current log variables."

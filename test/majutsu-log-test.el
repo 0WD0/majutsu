@@ -795,6 +795,7 @@
 (ert-deftest majutsu-row-copy-field-copies-log-field-value-at-point ()
   "`majutsu-row-copy-field' should copy the rendered log field value at point."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log-commit-columns nil)
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
@@ -824,6 +825,7 @@
 (ert-deftest majutsu-row-copy-module-copies-log-heading-content-without-decoration ()
   "`majutsu-row-copy-module' should copy log heading content without graph/tail decoration."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log-commit-columns nil)
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :columns '((change-id . "chg")
@@ -852,6 +854,7 @@
 (ert-deftest majutsu-row-copy-entry-field-copies-log-hidden-metadata ()
   "`majutsu-row-copy-entry-field' should copy hidden log canonical metadata fields."
   (let* ((compiled (majutsu-log-test--tail-compiled))
+         (majutsu-log-commit-columns nil)
          (majutsu-log--compiled-template-cache compiled)
          (entry (list :id "id-123"
                       :commit-id "230dd059e1b059aefcda37d0a668f2f08f6e5a13"
@@ -1020,7 +1023,8 @@
 
 (ert-deftest majutsu-log-build-args/uses-revision-argument-directly ()
   "Log -r should live in ARGS, with filesets after --."
-  (let ((majutsu-log--compiled-template-cache '(:template "TPL")))
+  (let ((majutsu-log-commit-columns nil)
+        (majutsu-log--compiled-template-cache '(:template "TPL")))
     (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore)
               ((symbol-plist 'majutsu-log-mode)
                (copy-tree (symbol-plist 'majutsu-log-mode))))
@@ -1065,6 +1069,7 @@
                 '((id . "id-2")))
                majutsu-row-end-token "\n"))
          (majutsu--default-directory "/tmp/test-repo/")
+         (majutsu-log-commit-columns nil)
          (majutsu-log--compiled-template-cache compiled))
     (with-temp-buffer
       (require 'magit-section)
@@ -1087,6 +1092,7 @@
                       (majutsu-log-test--raw-entry "parent-a" "Parent A")
                       (majutsu-log-test--raw-entry "parent-b" "Parent B")))
          (majutsu--default-directory "/tmp/test-repo/")
+         (majutsu-log-commit-columns nil)
          (majutsu-log--compiled-template-cache compiled))
     (with-temp-buffer
       (require 'magit-section)
@@ -1120,6 +1126,7 @@
                       (majutsu-log-test--raw-entry "child-b" "Child B" '("parent"))
                       (majutsu-log-test--raw-entry "parent" "Parent")))
          (majutsu--default-directory "/tmp/test-repo/")
+         (majutsu-log-commit-columns nil)
          (majutsu-log--compiled-template-cache compiled))
     (with-temp-buffer
       (require 'magit-section)

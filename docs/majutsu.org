@@ -352,6 +352,16 @@ description), that content forms the foldable section body; its current
 visibility follows the section state instead of being forced closed on every
 refresh.
 
+With a jjosh version supporting ~touched_projects()~, the default heading
+includes a separate ~touched-projects~ column, for example =[appkit, chidu]=.
+It summarizes changed paths using the loaded operation's project layout;
+it does not change the revision ID or description. Empty summaries show no
+brackets. Ordinary jj and older jjosh versions omit the column automatically.
+Customize ~majutsu-log-template-touched-projects~ to change its template, or
+remove the column from ~majutsu-log-commit-columns~ to disable it. Custom
+column lists can add ~(:field touched-projects :module heading :template
+majutsu-log-template-touched-projects :face font-lock-type-face)~.
+
 Press =[= to jump to a visible parent and =]= to jump to a visible child. When
 more than one target is visible, completion returns the canonical revision id
 while displaying its description as an annotation.
