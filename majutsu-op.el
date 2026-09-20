@@ -520,10 +520,12 @@ transported separately, with complete encoded attributes as the last field."
             (majutsu-op-log--compile-columns))))
 
 (defun majutsu-op-log-arguments ()
-  "Return operation log arguments from the active transient, if any."
+  "Return active transient arguments or scoped operation log defaults."
   (if (eq transient-current-command 'majutsu-op-log-transient)
       (transient-args 'majutsu-op-log-transient)
-    '()))
+    (majutsu-transient-default-value
+     'majutsu-op-log 'majutsu-op-log-mode
+     'majutsu-op-log-default-arguments)))
 
 (defun majutsu-op-log--validate-args (args)
   "Return normalized safe operation log ARGS or signal `user-error'.
@@ -632,39 +634,22 @@ switch, and graph switch are allowed."
 (put 'majutsu-op-log-mode 'majutsu-op-log-default-arguments
      '("--limit=64"))
 
-(defclass majutsu-op-log-prefix (transient-prefix)
-  ((major-mode :initform 'majutsu-op-log-mode)))
+(defclass majutsu-op-log-prefix (majutsu-defaults-prefix)
+  ((defaults-namespace :initform 'majutsu-op-log)
+   (defaults-filter :initform #'majutsu-op-log--validate-args)
+   (major-mode :initform 'majutsu-op-log-mode)))
 
 (cl-defmethod transient-init-value ((obj majutsu-op-log-prefix))
   (oset obj value
         (majutsu-transient-default-value
          'majutsu-op-log
          (oref obj major-mode)
-         'majutsu-op-log-current-arguments
          'majutsu-op-log-default-arguments)))
 
-(cl-defmethod transient-set-value ((obj majutsu-op-log-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (args (transient-args (oref obj command))))
-    (put mode 'majutsu-op-log-current-arguments args)
-    (transient--history-push obj)
-    (when (eq major-mode mode)
-      (setq-local majutsu-op-log--args args))))
-
-(cl-defmethod transient-save-value ((obj majutsu-op-log-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode))
-         (args (transient-args (oref obj command))))
-    (put mode 'majutsu-op-log-current-arguments args)
-    (setf (alist-get (majutsu-transient-global-default-key
-                      'majutsu-op-log mode)
-                     transient-values)
-          args)
-    (transient-save-values)
-    (transient--history-push obj)
-    (when (eq major-mode mode)
-      (setq-local majutsu-op-log--args args))))
+(cl-defmethod majutsu-transient-apply-value
+  ((obj majutsu-op-log-prefix) value)
+  (when (eq major-mode (oref obj major-mode))
+    (setq-local majutsu-op-log--args value)))
 
 (transient-define-argument majutsu-op-log:--limit ()
   :description "Limit"
@@ -700,17 +685,16 @@ switch, and graph switch are allowed."
    ["Actions"
     ("l" "Open log" majutsu-op-log)
     ("RET" "Open log" majutsu-op-log)
-    ("s" "Save as default" transient-save-and-exit)]])
+    ("s" "Set workspace defaults" transient-set-and-exit)
+    ("w" "Save defaults..." majutsu-transient-defaults-menu)]])
 
 ;;;###autoload
-(defun majutsu-op-log (&optional args)
-  "Open the Majutsu operation log with ARGS."
-  (interactive (list (or (majutsu-op-log-arguments)
-                         (get 'majutsu-op-log-mode
-                              'majutsu-op-log-default-arguments))))
-  (let* ((args (majutsu-op-log--validate-args
-                (or args (get 'majutsu-op-log-mode
-                              'majutsu-op-log-default-arguments))))
+(cl-defun majutsu-op-log (&optional (args (majutsu-op-log-arguments)))
+  "Open the Majutsu operation log with ARGS.
+When ARGS is omitted, use the active transient or scoped defaults.
+An explicitly nil ARGS means no options."
+  (interactive (list (majutsu-op-log-arguments)))
+  (let* ((args (majutsu-op-log--validate-args args))
          (root (majutsu--toplevel-safe))
          (repo (file-name-nondirectory (directory-file-name root))))
     (majutsu-setup-buffer #'majutsu-op-log-mode nil

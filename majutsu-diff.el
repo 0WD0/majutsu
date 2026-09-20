@@ -335,8 +335,10 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
 ;;; Arguments
 ;;;; Prefix Classes
 
-(defclass majutsu-diff-prefix (majutsu-jj-transient-prefix)
+(defclass majutsu-diff-prefix (majutsu-defaults-prefix)
   ((history-key :initform 'majutsu-diff)
+   (defaults-namespace :initform 'majutsu-diff)
+   (defaults-filter :initform #'majutsu-diff--remembered-args)
    (major-mode :initform 'majutsu-diff-mode)))
 
 ;;;; Infix Classes
@@ -362,29 +364,13 @@ list of filesets (path filters)."
                (range (majutsu-diff--extract-range-args raw)))
     (list args range filesets)))
 
-(cl-defmethod transient-set-value ((obj majutsu-diff-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,range ,filesets) (transient-args (oref obj command))))
-      (majutsu-diff--set-value mode args range filesets)
-      (transient--history-push obj))))
 
-(cl-defmethod transient-save-value ((obj majutsu-diff-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,range ,filesets) (transient-args (oref obj command))))
-      (majutsu-diff--set-value mode args range filesets t)
-      (transient--history-push obj))))
+(cl-defmethod majutsu-transient-apply-value ((obj majutsu-diff-prefix) value)
+  (when (eq major-mode (oref obj major-mode))
+    (pcase-let ((`(,args ,range ,filesets) value))
+      (majutsu-diff--set-value (oref obj major-mode) args range filesets))
+    (majutsu-refresh-buffer)))
 
-(cl-defmethod majutsu-transient--save-repository-defaults ((obj majutsu-diff-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,range ,filesets) (transient-args (oref obj command))))
-      (majutsu-transient-save-repository-value 'majutsu-diff mode args)
-      (when (eq major-mode mode)
-        (majutsu-diff--set-value mode args range filesets))
-      (transient--history-push obj)
-      (message "Saved diff arguments as repository defaults"))))
 
 ;;;; Argument Access
 
@@ -402,40 +388,25 @@ list of filesets (path filters)."
           ((or 'always 'selected 'current 'never)
            use-buffer-args)))
   (let* ((use-current (and (memq use-buffer-args '(always selected current))
-                           (eq major-mode mode)))
-         (args (cond
-                (use-current
-                 majutsu-buffer-diff-args)
-                ((and (memq use-buffer-args '(always selected))
-                      (when-let* ((buf (majutsu--get-mode-buffer
-                                        mode (eq use-buffer-args 'selected))))
-                        (buffer-local-value 'majutsu-buffer-diff-args buf))))
-                (t
+                          (eq major-mode mode)))
+         (buffer (cond
+                  (use-current (current-buffer))
+                  ((memq use-buffer-args '(always selected))
+                   (majutsu--get-mode-buffer
+                    mode (eq use-buffer-args 'selected)
+                    (or (majutsu--buffer-root) (majutsu-toplevel))))))
+         (args (if buffer
+                   (buffer-local-value 'majutsu-buffer-diff-args buffer)
                  (majutsu-transient-default-value
-                  'majutsu-diff mode
-                  'majutsu-diff-current-arguments
-                  'majutsu-diff-default-arguments))))
+                  'majutsu-diff mode 'majutsu-diff-default-arguments)))
          (range (and use-current majutsu-buffer-diff-range))
          (filesets (and use-current majutsu-buffer-diff-filesets)))
     (list args range filesets)))
 
-(defun majutsu-diff--set-value (mode args range filesets &optional save)
-  "Set current diff values for MODE.
-
-When SAVE is non-nil, also persist ARGS using `transient-values'."
-  (setq args (or (majutsu-diff--remembered-args args)
-                 (get mode 'majutsu-diff-default-arguments)))
-  (if-let* ((config-id (majutsu-repository-config-id)))
-      (majutsu-transient-put-repository-current-value
-       'majutsu-diff mode args config-id)
-    (put mode 'majutsu-diff-current-arguments args))
-  (when save
-    (setf (alist-get (majutsu-transient-global-default-key 'majutsu-diff mode)
-                     transient-values)
-          args)
-    (transient-save-values))
+(defun majutsu-diff--set-value (mode args range filesets)
+  "Apply ARGS, RANGE and FILESETS only to the current buffer using MODE."
   (when (eq major-mode mode)
-    (setq-local majutsu-buffer-diff-args args)
+    (setq-local majutsu-buffer-diff-args (majutsu-diff--remembered-args args))
     (setq-local majutsu-buffer-diff-range range)
     (setq-local majutsu-buffer-diff-filesets filesets)
     (majutsu-diff--sync-backend majutsu-buffer-diff-args))
@@ -2018,31 +1989,30 @@ With prefix STYLE, cycle between `all' and `t'."
 (defun majutsu-diff-refresh-buffer ()
   "Refresh the current diff buffer."
   (interactive)
-  (when majutsu-buffer-diff-args
-    ;; Metadata is refreshed once per buffer refresh, then shared by the
-    ;; header and message inserters through the argument-keyed cache.
-    (setq majutsu-diff--revision-metadata-cache nil)
-    (let* ((backend (majutsu-diff--sync-backend))
-           (majutsu-jj-global-arguments
-            (cons (if (eq backend 'color-words) "--color=debug" "--color=never")
-                  (seq-remove (lambda (arg) (string-prefix-p "--color" arg))
-                              majutsu-jj-global-arguments)))
-           ;; Diff buffers are used as patch source by interactive commands.
-           ;; For the regular git backend we force `--color=never', so applying
-           ;; `ansi-color' here is unnecessary and corrupts file contents that
-           ;; contain literal ANSI escape sequences.  Color-words handles its
-           ;; own ANSI/debug output in its washer.
-           (majutsu-process-apply-ansi-colors nil))
-      ;; Refresh JIT Lock so it renders the faces attached by the washer.
-      (font-lock-mode 1)
-      (unless (eq backend 'color-words)
-        (majutsu-diff--set-left-margin 0))
-      (magit-insert-section (diffbuf)
-        (magit-run-section-hook 'majutsu-diff-sections-hook))
-      (when (eq majutsu-diff-fontify-hunk 'all)
-        (majutsu-diff--update-hunk-syntax))
-      (when (eq majutsu-diff-refine-hunk 'all)
-        (majutsu-diff--update-hunk-refinement)))))
+  ;; Metadata is refreshed once per buffer refresh, then shared by the
+  ;; header and message inserters through the argument-keyed cache.
+  (setq majutsu-diff--revision-metadata-cache nil)
+  (let* ((backend (majutsu-diff--sync-backend))
+         (majutsu-jj-global-arguments
+          (cons (if (eq backend 'color-words) "--color=debug" "--color=never")
+                (seq-remove (lambda (arg) (string-prefix-p "--color" arg))
+                            majutsu-jj-global-arguments)))
+         ;; Diff buffers are used as patch source by interactive commands.
+         ;; For the regular git backend we force `--color=never', so applying
+         ;; `ansi-color' here is unnecessary and corrupts file contents that
+         ;; contain literal ANSI escape sequences.  Color-words handles its
+         ;; own ANSI/debug output in its washer.
+         (majutsu-process-apply-ansi-colors nil))
+    ;; Refresh JIT Lock so it renders the faces attached by the washer.
+    (font-lock-mode 1)
+    (unless (eq backend 'color-words)
+      (majutsu-diff--set-left-margin 0))
+    (magit-insert-section (diffbuf)
+      (magit-run-section-hook 'majutsu-diff-sections-hook))
+    (when (eq majutsu-diff-fontify-hunk 'all)
+      (majutsu-diff--update-hunk-syntax))
+    (when (eq majutsu-diff-refine-hunk 'all)
+      (majutsu-diff--update-hunk-refinement))))
 
 ;;;###autoload(autoload 'majutsu-diff-dwim "majutsu-diff" nil t)
 (transient-define-suffix majutsu-diff-dwim (&optional args range filesets)
@@ -2074,8 +2044,7 @@ REVSET is passed to jj diff using `--revisions='."
 
 (defun majutsu-diff-setup-buffer (args range filesets &optional locked)
   "Display a diff buffer configured by ARGS, RANGE and FILESETS."
-  (let* ((args (or (majutsu-diff--remembered-args args)
-                   (get 'majutsu-diff-mode 'majutsu-diff-default-arguments)))
+  (let* ((args (majutsu-diff--remembered-args args))
          (buffer (majutsu-setup-buffer #'majutsu-diff-mode locked
                    (majutsu-buffer-diff-args args)
                    (majutsu-buffer-diff-range range)
@@ -2116,8 +2085,8 @@ REVSET is passed to jj diff using `--revisions='."
     (majutsu-diff:-b)]
    ["Actions"
     ("d" "Execute" majutsu-diff-dwim)
-    ("s" "Save as default" majutsu-diff-save-arguments)
-    ("W" "Save as repo default" majutsu-transient-save-repository-defaults)]]
+    ("s" "Set workspace session" transient-set-and-exit)
+    ("w" "Save defaults..." majutsu-transient-defaults-menu)]]
   (interactive)
   (transient-setup
    'majutsu-diff nil nil
@@ -2161,6 +2130,7 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'transient-files
   :key "--"
   :argument "--"
+  :unsavable t
   :prompt "Limit to file,s: "
   :reader #'majutsu-diff--read-files
   :multi-value t)
@@ -2173,6 +2143,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-toggle-key "r"
   :shortarg "-r"
   :argument "--revisions="
+  :unsavable t
   :multi-value 'repeat
   :prompt "Revisions"
   :reader #'majutsu-transient-read-revset)
@@ -2185,6 +2156,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-toggle-key "f"
   :shortarg "-f"
   :argument "--from="
+  :unsavable t
   :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-diff:--to ()
@@ -2195,6 +2167,7 @@ REVSET is passed to jj diff using `--revisions='."
   :selection-toggle-key "t"
   :shortarg "-t"
   :argument "--to="
+  :unsavable t
   :reader #'majutsu-transient-read-revset)
 
 (transient-define-argument majutsu-diff:-b ()
@@ -2208,16 +2181,6 @@ REVSET is passed to jj diff using `--revisions='."
   :class 'transient-switch
   :shortarg "-w"
   :argument "--ignore-all-space")
-
-(transient-define-suffix majutsu-diff-save-arguments ()
-  "Save current transient arguments as global defaults."
-  :transient t
-  (interactive)
-  (unless (and transient--prefix
-               (object-of-class-p transient--prefix 'majutsu-diff-prefix))
-    (user-error "Not in a Majutsu diff transient"))
-  (transient-save-value transient--prefix)
-  (message "Saved diff arguments as global defaults"))
 
 ;;; _
 (provide 'majutsu-diff)

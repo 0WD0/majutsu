@@ -952,13 +952,12 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
     (majutsu-diff-mode)
     (setq-local majutsu-buffer-diff-args '("--git" "--stat"))
     (setq-local majutsu-buffer-diff-range '("--revisions=abc123"))
-    (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))
-      (let* ((transient--prefix (transient--init-prefix 'majutsu-diff))
-             (transient--suffixes (transient--flatten-suffixes
-                                   (transient--init-suffixes 'majutsu-diff))))
-        (let ((value (transient-get-value)))
-          (should (member "--revisions=abc123" value))
-          (should-not (member "--revisions=--revisions=abc123" value)))))))
+    (let* ((transient--prefix (transient--init-prefix 'majutsu-diff))
+           (transient--suffixes (transient--flatten-suffixes
+                                 (transient--init-suffixes 'majutsu-diff))))
+      (let ((value (transient-get-value)))
+        (should (member "--revisions=abc123" value))
+        (should-not (member "--revisions=--revisions=abc123" value))))))
 
 (ert-deftest majutsu-diff-repeat-revset-reader/splits-comma-values ()
   "Custom repeat revset readers should preserve CRM comma splitting."
@@ -973,8 +972,8 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
                        (transient-infix-read obj)))
                    '("a" "b")))))
 
-(ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
-  "`majutsu-diff-revset' should use default formatting args when ARGS is nil."
+(ert-deftest majutsu-diff-revset-preserves-empty-args ()
+  "Explicitly empty formatting args must not be replaced by builtins."
   (let (captured-args
         captured-range)
     (cl-letf (((symbol-function 'majutsu-setup-buffer-internal)
@@ -988,10 +987,34 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
       (let ((buffer (majutsu-diff-revset "abc123")))
         (unwind-protect
             (progn
-              (should (equal captured-args '("--git" "--stat")))
+              (should-not captured-args)
               (should (equal captured-range '("--revisions=abc123"))))
           (when (buffer-live-p buffer)
             (kill-buffer buffer)))))))
+
+(ert-deftest majutsu-diff-empty-args/render-diff ()
+  "An explicitly empty options list must still render the diff."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (let ((inhibit-read-only t)
+          (majutsu-diff-sections-hook
+           (list (lambda () (insert "diff contents\n")))))
+      (majutsu-diff--set-value 'majutsu-diff-mode nil nil nil)
+      (should-not majutsu-buffer-diff-args)
+      (majutsu-diff-refresh-buffer)
+      (should (equal (buffer-string) "diff contents\n")))))
+
+(ert-deftest majutsu-diff-empty-args/inherit-from-selected-buffer ()
+  "Empty buffer options must not fall through to stored defaults."
+  (with-temp-buffer
+    (majutsu-diff-mode)
+    (setq-local majutsu-buffer-diff-args nil)
+    (let ((source (current-buffer)))
+      (with-temp-buffer
+        (cl-letf (((symbol-function 'majutsu--get-mode-buffer)
+                   (lambda (&rest _) source)))
+          (should (equal (majutsu-diff--get-value 'majutsu-diff-mode 'always)
+                         '(nil nil nil))))))))
 
 (ert-deftest majutsu-diff-dwim-uses-transient-args-when-active ()
   "When called from the transient, DWIM should use current transient args."

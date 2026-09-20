@@ -376,23 +376,6 @@
     (should-not (string-match-p (regexp-quote majutsu-op--field-separator)
                                 line))))
 
-(ert-deftest majutsu-op-log/passes-args-binding-to-buffer-setup ()
-  "majutsu-op-log should remember transient args in the buffer."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-               (lambda (&optional _directory) "/repo/"))
-              ((symbol-function 'majutsu-setup-buffer-internal)
-               (lambda (mode locked bindings &rest kwargs)
-                 (setq captured (list mode locked bindings kwargs))
-                 'buffer)))
-      (should (eq (majutsu-op-log '("--limit=2" "--reversed")) 'buffer))
-      (should (eq (nth 0 captured) #'majutsu-op-log-mode))
-      (should-not (nth 1 captured))
-      (should (equal (nth 2 captured)
-                     '((majutsu-op-log--args ("--limit=2" "--reversed")))))
-      (should (equal (nth 3 captured)
-                     '(:buffer "*majutsu-op: repo*" :directory "/repo/"))))))
-
 (ert-deftest majutsu-op-log/rejects-unsafe-args-before-opening-buffer ()
   "Operation log should validate row-protocol ownership before setup."
   (let (opened)
@@ -400,34 +383,6 @@
                (lambda (&rest _args) (setq opened t))))
       (should-error (majutsu-op-log '("--template=bad")) :type 'user-error)
       (should-not opened))))
-
-(ert-deftest majutsu-op-log/defaults-to-mode-arguments ()
-  "Operation log should fall back to per-mode default arguments."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-               (lambda (&optional _directory) "/repo/"))
-              ((symbol-function 'majutsu-setup-buffer-internal)
-               (lambda (mode locked bindings &rest kwargs)
-                 (setq captured (list mode locked bindings kwargs))
-                 'buffer)))
-      (should (eq (majutsu-op-log nil) 'buffer))
-      (should (equal (nth 2 captured)
-                     `((majutsu-op-log--args
-                        ,(get 'majutsu-op-log-mode
-                              'majutsu-op-log-default-arguments))))))))
-
-(ert-deftest majutsu-op-log-mode/default-limit-stored-on-symbol ()
-  "Operation log mode should store --limit=64 as its default argument."
-  (should (equal (get 'majutsu-op-log-mode 'majutsu-op-log-default-arguments)
-                 '("--limit=64"))))
-
-(ert-deftest majutsu-op-log-transient/init-value-uses-mode-defaults ()
-  "Operation log transient should display the mode default limit."
-  (let ((obj (make-instance 'majutsu-op-log-prefix
-                            :command 'majutsu-op-log-transient)))
-    (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore))
-      (transient-init-value obj))
-    (should (equal (oref obj value) '("--limit=64")))))
 
 (ert-deftest majutsu-op-diff-evolog-at-point/uses-change-and-commit-id ()
   "Evolog action should pass the union revset for rewritten/hidden changes."

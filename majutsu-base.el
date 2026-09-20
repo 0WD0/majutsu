@@ -507,17 +507,18 @@ This is used to match buffers to repositories when refreshing."
   (with-current-buffer (or buffer (current-buffer))
     (and (boundp 'majutsu--default-directory) majutsu--default-directory)))
 
-(defun majutsu--get-mode-buffer (mode &optional selected)
-  "Get a buffer in MODE.
-
-If SELECTED is non-nil, then only consider buffers displayed in a window
+(defun majutsu--get-mode-buffer (mode &optional selected root)
+  "Get a buffer in MODE, optionally restricted to workspace ROOT.
+If SELECTED is non-nil, only consider buffers displayed in a window
 of the selected frame."
-  (let ((pred (if selected
-                  (lambda (buf)
-                    (and (eq (buffer-local-value 'major-mode buf) mode)
-                         (get-buffer-window buf)))
-                (lambda (buf)
-                  (eq (buffer-local-value 'major-mode buf) mode)))))
+  (let* ((root (and root (file-truename (file-name-as-directory root))))
+         (pred (lambda (buf)
+                 (and (eq (buffer-local-value 'major-mode buf) mode)
+                      (or (not selected) (get-buffer-window buf))
+                      (or (not root)
+                          (when-let* ((other (majutsu--buffer-root buf)))
+                            (equal root (file-truename
+                                         (file-name-as-directory other)))))))))
     (or (and (not selected)
              (seq-find (lambda (buf)
                          (and (funcall pred buf)

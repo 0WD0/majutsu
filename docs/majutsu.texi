@@ -292,7 +292,7 @@ Jujutsu (jj) v0.41.0 or later installed and in your @samp{PATH}.
 @samp{consult} 1.0 or later and @samp{plz} 0.9.1 or later (for native Gerrit
 completion).
 @item
-@samp{transient} 0.8.7 or later (popup menus).
+@samp{transient} 0.13.0 or later (popup menus).
 @item
 @samp{with-editor} (for descriptive message editing).
 @item
@@ -2022,7 +2022,7 @@ Interactive selection is integrated into the Split (@code{S})@comma{} Squash (@c
 Restore (@code{R}) transients. When you open one of these transients from a Diff
 buffer@comma{} a "Patch Selection" group appears with the following commands:
 
-@multitable {aaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Key
 @tab Command
 @tab Description

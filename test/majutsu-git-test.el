@@ -173,9 +173,9 @@
                          #'ignore))
                 (majutsu-git-push--read-revset "Revisions: " nil nil))))
 
-(ert-deftest majutsu-git-push-repo-args/keeps-stable-sync-policy ()
-  "Push repo defaults should omit target-specific arguments."
-  (should (equal (majutsu-git-push--repo-args
+(ert-deftest majutsu-git-push-remembered-args/keeps-stable-sync-policy ()
+  "Push defaults should omit target-specific arguments."
+  (should (equal (majutsu-git-push--remembered-args
                   '("--remote=upstream" "--bookmark=main" "--tag=v1" "--all"
                     "--tracked" "--deleted" "--allow-private"
                     "--allow-empty-description" "--revisions=mine()"
@@ -184,9 +184,9 @@
                  '("--remote=upstream" "--all" "--tracked" "--deleted"
                    "--allow-private" "--allow-empty-description"))))
 
-(ert-deftest majutsu-git-fetch-repo-args/keeps-stable-sync-policy ()
-  "Fetch repo defaults should omit branch/tag-specific arguments."
-  (should (equal (majutsu-git-fetch--repo-args
+(ert-deftest majutsu-git-fetch-remembered-args/keeps-stable-sync-policy ()
+  "Fetch defaults should omit branch/tag-specific arguments."
+  (should (equal (majutsu-git-fetch--remembered-args
                   '("--remote=upstream" "--branch=main" "--tag=v1"
                     "--tracked" "--all-remotes"))
                  '("--remote=upstream" "--tracked" "--all-remotes"))))
@@ -360,64 +360,6 @@
       (should (string-match-p "origin" seen-new-prompt))
       (should (equal seen-args
                      '("git" ("remote" "rename" "origin" "upstream")))))))
-
-(ert-deftest majutsu-git-push-transient/uses-repository-defaults ()
-  "Git sync transients should read defaults via the generic repo layer."
-  (let ((transient-values nil)
-        (config-id "0123456789abcdefabcd"))
-    (cl-letf (((symbol-function 'majutsu-repository-config-id)
-               (lambda (&optional _create) config-id)))
-      (setf (alist-get (majutsu-transient-repository-default-key
-                        'majutsu-git 'majutsu-git-push)
-                       transient-values)
-            '("--remote=upstream" "--tracked"))
-      (let ((obj (make-instance 'majutsu-repository-transient-prefix
-                                :command 'majutsu-git-push-transient
-                                :repo-namespace 'majutsu-git
-                                :repo-key 'majutsu-git-push)))
-        (transient-init-value obj)
-        (should (equal (oref obj value)
-                       '("--remote=upstream" "--tracked")))))))
-
-(ert-deftest majutsu-transient-save-repository-defaults/saves-filtered-args ()
-  "The generic repo-default action should save remembered arguments only."
-  (let* ((transient-values nil)
-         (config-id "0123456789abcdefabcd")
-         (original-plist (symbol-plist 'majutsu-git-push))
-         (prototype (make-instance
-                     'majutsu-repository-transient-prefix
-                     :command 'majutsu-git-push-transient
-                     :repo-namespace 'majutsu-git
-                     :repo-key 'majutsu-git-push
-                     :repo-filter #'majutsu-git-push--repo-args))
-         (transient--prefix (make-instance
-                             'majutsu-repository-transient-prefix
-                             :command 'majutsu-git-push-transient
-                             :prototype prototype))
-         saved)
-    (setplist 'majutsu-git-push (copy-tree original-plist))
-    (unwind-protect
-        (cl-letf (((symbol-function 'majutsu-repository-config-id)
-                   (lambda (&optional _create) config-id))
-                  ((symbol-function 'transient-args)
-                   (lambda (_command)
-                     '("--remote=upstream" "--change=abc" "--tracked")))
-                  ((symbol-function 'transient-save-values)
-                   (lambda () (setq saved t)))
-                  ((symbol-function 'transient--history-push)
-                   (lambda (&rest _args) nil))
-                  ((symbol-function 'message)
-                   (lambda (&rest _args) nil)))
-          (majutsu-transient-save-repository-defaults)
-          (let ((key (majutsu-transient-repository-default-key
-                      'majutsu-git 'majutsu-git-push)))
-            (should (equal (cdr (assq key transient-values))
-                           '("--remote=upstream" "--tracked")))
-            (should (equal (majutsu-transient-repository-current-value
-                            'majutsu-git 'majutsu-git-push config-id)
-                           '("--remote=upstream" "--tracked")))))
-      (setplist 'majutsu-git-push original-plist))
-    (should saved)))
 
 (provide 'majutsu-git-test)
 ;;; majutsu-git-test.el ends here
