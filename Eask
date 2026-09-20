@@ -21,7 +21,7 @@
 (depends-on "compat" "31.0.0.1")
 (depends-on "magit" "4.4.0")
 (depends-on "consult" "1.0")
-(depends-on "transient" "0.8.7")
+(depends-on "transient" "0.13.0")
 (depends-on "plz" "0.9.1")
 
 (source 'melpa)

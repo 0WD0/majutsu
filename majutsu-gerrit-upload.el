@@ -52,7 +52,7 @@
 (declare-function majutsu-read-string "majutsu-completion")
 (declare-function majutsu-selection-clear "majutsu-selection")
 (declare-function majutsu-transient-read-remote-name "majutsu-remote")
-(declare-function majutsu-transient-save-repository-defaults "majutsu-core")
+(declare-function majutsu-transient-defaults-menu "majutsu-transient")
 
 (defun majutsu-gerrit-upload--read-revset (prompt initial-input history)
   "Read revset for `jj gerrit upload --revision='."
@@ -140,8 +140,8 @@ its own @/@- default."
        "Gerrit upload dry run completed"
      "Uploaded to Gerrit")))
 
-(defun majutsu-gerrit-upload--repo-args (args)
-  "Keep only stable `jj gerrit upload' ARGS for repository defaults."
+(defun majutsu-gerrit-upload--remembered-args (args)
+  "Keep only stable `jj gerrit upload' ARGS for remembered defaults."
   (seq-filter (lambda (arg)
                 (or (transient-arg-value "--remote=" (list arg))
                     (transient-arg-value "--remote-branch=" (list arg))
@@ -262,10 +262,10 @@ its own @/@- default."
 (transient-define-prefix majutsu-gerrit-upload-transient ()
   "Transient for jj gerrit upload."
   :man-page "jj-gerrit-upload"
-  :class 'majutsu-repository-transient-prefix
-  :repo-namespace 'majutsu-gerrit
-  :repo-key 'majutsu-gerrit-upload
-  :repo-filter #'majutsu-gerrit-upload--repo-args
+  :class 'majutsu-defaults-prefix
+  :defaults-namespace 'majutsu-gerrit
+  :defaults-key 'majutsu-gerrit-upload
+  :defaults-filter #'majutsu-gerrit-upload--remembered-args
   :incompatible '(("--wip" "--ready")
                   ("--private" "--remove-private")
                   ("--publish-comments" "--no-publish-comments"))
@@ -306,7 +306,7 @@ its own @/@- default."
     (majutsu-gerrit-upload:--trace)]
    ["Actions"
     ("u" "Upload" majutsu-gerrit-upload)
-    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults)]]
+    ("w" "Save defaults..." majutsu-transient-defaults-menu)]]
   (interactive)
   (transient-setup
    'majutsu-gerrit-upload-transient nil nil

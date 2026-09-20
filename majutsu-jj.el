@@ -33,6 +33,11 @@
 (require 'majutsu-template)
 
 (autoload 'majutsu-process-jj "majutsu-process" nil nil)
+(defun majutsu-jj-append-filesets (args filesets)
+  "Return jj ARGS followed by -- and FILESETS."
+  (if filesets
+      (append args (cons "--" filesets))
+    args))
 
 (defvar corfu-margin-formatters)
 

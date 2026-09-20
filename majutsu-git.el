@@ -28,7 +28,7 @@
 
 (declare-function majutsu-bookmark-list "majutsu-bookmark" ())
 
-(declare-function majutsu-repository-transient-prefix "majutsu-core")
+(declare-function majutsu-defaults-prefix "majutsu-transient")
 (declare-function majutsu-transient-read-remote-patterns "majutsu-remote")
 
 ;;; majutsu-git
@@ -356,16 +356,16 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :prompt "Remote: "
   :reader #'majutsu-transient-read-remote-name)
 
-(defun majutsu-git-push--repo-args (args)
-  "Keep only stable `jj git push' ARGS for repository defaults."
+(defun majutsu-git-push--remembered-args (args)
+  "Keep only stable `jj git push' ARGS for remembered defaults."
   (seq-filter (lambda (arg)
                 (or (transient-arg-value "--remote=" (list arg))
                     (member arg '("--all" "--tracked" "--deleted"
                                   "--allow-empty-description" "--allow-private"))))
               args))
 
-(defun majutsu-git-fetch--repo-args (args)
-  "Keep only stable `jj git fetch' ARGS for repository defaults."
+(defun majutsu-git-fetch--remembered-args (args)
+  "Keep only stable `jj git fetch' ARGS for remembered defaults."
   (seq-filter (lambda (arg)
                 (or (transient-arg-value "--remote=" (list arg))
                     (member arg '("--tracked" "--all-remotes"))))
@@ -395,10 +395,10 @@ Prompts for SOURCE and optional DEST; uses ARGS."
 (transient-define-prefix majutsu-git-push-transient ()
   "Transient for jj git push."
   :man-page "jj-git-push"
-  :class 'majutsu-repository-transient-prefix
-  :repo-namespace 'majutsu-git
-  :repo-key 'majutsu-git-push
-  :repo-filter #'majutsu-git-push--repo-args
+  :class 'majutsu-defaults-prefix
+  :defaults-namespace 'majutsu-git
+  :defaults-key 'majutsu-git-push
+  :defaults-filter #'majutsu-git-push--remembered-args
   :description "JJ Git Push"
   [["Arguments"
     (majutsu-git-push:--remote)
@@ -415,15 +415,15 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     (majutsu-git-push:--option)
     ("-y" "Dry run" "--dry-run")]
    [("p" "Push" majutsu-git-push)
-    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults)]])
+    ("w" "Save defaults..." majutsu-transient-defaults-menu)]])
 
 (transient-define-prefix majutsu-git-fetch-transient ()
   "Transient for jj git fetch."
   :man-page "jj-git-fetch"
-  :class 'majutsu-repository-transient-prefix
-  :repo-namespace 'majutsu-git
-  :repo-key 'majutsu-git-fetch
-  :repo-filter #'majutsu-git-fetch--repo-args
+  :class 'majutsu-defaults-prefix
+  :defaults-namespace 'majutsu-git
+  :defaults-key 'majutsu-git-fetch
+  :defaults-filter #'majutsu-git-fetch--remembered-args
   :description "JJ Git Fetch"
   [["Arguments"
     (majutsu-git-fetch:--remote)
@@ -432,7 +432,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-t" "Tracked only" "--tracked")
     ("-A" "All remotes" "--all-remotes")]
    [("f" "Fetch" majutsu-git-fetch)
-    ("W" "Save repo defaults" majutsu-transient-save-repository-defaults)]])
+    ("w" "Save defaults..." majutsu-transient-defaults-menu)]])
 
 (transient-define-prefix majutsu-git-remote-add-transient ()
   "Transient for adding a Git remote."

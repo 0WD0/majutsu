@@ -75,9 +75,9 @@
       (should (equal (plist-get seen-options :completion-args)
                      '("gerrit" "upload" "-r"))))))
 
-(ert-deftest majutsu-gerrit-upload-repo-args/keeps-stable-policy-only ()
-  "Repository defaults should omit change-specific and dangerous options."
-  (should (equal (majutsu-gerrit-upload--repo-args
+(ert-deftest majutsu-gerrit-upload-remembered-args/keeps-stable-policy-only ()
+  "Defaults should omit change-specific and dangerous options."
+  (should (equal (majutsu-gerrit-upload--remembered-args
                   '("--remote=gerrit"
                     "--remote-branch=main"
                     "--notify=owner"

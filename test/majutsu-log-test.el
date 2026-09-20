@@ -895,38 +895,6 @@
         (majutsu-row-copy-entry-field))
       (should (equal copied "230dd059e1b059aefcda37d0a668f2f08f6e5a13")))))
 
-(ert-deftest majutsu-repository-config-id/reads-jj-config-id-file ()
-  "Repository identity should use jj's secure repo config id."
-  (let* ((root (file-name-as-directory (make-temp-file "majutsu-repo" t)))
-         (config-id "0123456789abcdefabcd")
-         (config-file (expand-file-name ".jj/repo/config-id" root)))
-    (unwind-protect
-        (progn
-          (make-directory (file-name-directory config-file) t)
-          (write-region config-id nil config-file nil 'silent)
-          (cl-letf (((symbol-function 'majutsu-toplevel)
-                     (lambda (&optional _directory) root)))
-            (should (equal (majutsu-repository-config-id) config-id))))
-      (delete-directory root t))))
-
-(ert-deftest majutsu-repository-config-id/create-delegates-to-jj ()
-  "Creating repository identity should ask jj, then read config-id."
-  (let* ((dir (file-name-as-directory (make-temp-file "majutsu-repo" t)))
-         (file (expand-file-name "config-id" dir))
-         (config-id "fedcba9876543210abcd")
-         seen-command)
-    (unwind-protect
-        (cl-letf (((symbol-function 'majutsu-repository-config-id-file)
-                   (lambda (&optional _root) file))
-                  ((symbol-function 'majutsu-jj-string)
-                   (lambda (&rest args)
-                     (setq seen-command args)
-                     (write-region config-id nil file nil 'silent)
-                     "/tmp/unused/config.toml")))
-          (should (equal (majutsu-repository-config-id t) config-id))
-          (should (equal seen-command '("config" "path" "--repo"))))
-      (delete-directory dir t))))
-
 (ert-deftest majutsu-filesets-split-transient-value/splits-structured-args ()
   "Transient fileset helpers should keep args and filesets separate."
   (dolist (case '(((("--" "src/a.el") "--from=A" "--to=B")
@@ -947,60 +915,6 @@
   (should (equal (majutsu-jj-append-filesets
                   '("--from=A" "--to=B") '("src/a.el"))
                  '("--from=A" "--to=B" "--" "src/a.el"))))
-
-(ert-deftest majutsu-transient-default-value/prefers-repository-defaults ()
-  "Generic transient defaults should prefer repo-local values."
-  (let ((transient-values nil)
-        (config-id "0123456789abcdefabcd")
-        (mode (make-symbol "majutsu-test-mode")))
-    (unwind-protect
-        (cl-letf (((symbol-function 'majutsu-repository-config-id)
-                   (lambda (&optional _create) config-id)))
-          (put mode 'majutsu-test-default-arguments '("default"))
-          (put mode 'majutsu-test-current-arguments '("global-session"))
-          (setf (alist-get (majutsu-transient-global-default-key 'majutsu-test mode)
-                           transient-values)
-                '("global-saved"))
-          (setf (alist-get (majutsu-transient-repository-default-key 'majutsu-test mode)
-                           transient-values)
-                '("repo-saved"))
-          (should (equal (majutsu-transient-default-value
-                          'majutsu-test mode
-                          'majutsu-test-current-arguments
-                          'majutsu-test-default-arguments)
-                         '("repo-saved")))
-          (majutsu-transient-put-repository-current-value
-           'majutsu-test mode '("repo-session") config-id)
-          (should (equal (majutsu-transient-default-value
-                          'majutsu-test mode
-                          'majutsu-test-current-arguments
-                          'majutsu-test-default-arguments)
-                         '("repo-session"))))
-      (put mode 'majutsu-test-current-repository-values nil)
-      (put mode 'majutsu-test-current-arguments nil)
-      (put mode 'majutsu-test-default-arguments nil))))
-
-(ert-deftest majutsu-transient-save-repository-value/persists-under-repo-key ()
-  "Repository-local transient saves should use the generic repo key."
-  (let ((transient-values nil)
-        (config-id "0123456789abcdefabcd")
-        (mode (make-symbol "majutsu-test-mode"))
-        saved)
-    (unwind-protect
-        (cl-letf (((symbol-function 'majutsu-repository-config-id)
-                   (lambda (&optional _create) config-id))
-                  ((symbol-function 'transient-save-values)
-                   (lambda () (setq saved t))))
-          (majutsu-transient-save-repository-value
-           'majutsu-test mode '("--revision=mine()"))
-          (let ((key (majutsu-transient-repository-default-key 'majutsu-test mode)))
-            (should (equal (cdr (assq key transient-values))
-                           '("--revision=mine()")))
-            (should (equal (majutsu-transient-repository-current-value
-                            'majutsu-test mode config-id)
-                           '("--revision=mine()")))))
-      (put mode 'majutsu-test-current-repository-values nil))
-    (should saved)))
 
 (ert-deftest majutsu-log-transient-read-revset/prefills-current-value ()
   "Log -r should prefill the current value and let empty input clear it."
@@ -1025,16 +939,58 @@
   "Log -r should live in ARGS, with filesets after --."
   (let ((majutsu-log-commit-columns nil)
         (majutsu-log--compiled-template-cache '(:template "TPL")))
-    (cl-letf (((symbol-function 'majutsu-repository-config-id) #'ignore)
-              ((symbol-plist 'majutsu-log-mode)
-               (copy-tree (symbol-plist 'majutsu-log-mode))))
+    (with-temp-buffer
+      (majutsu-log-mode)
+      (majutsu-log--set-value
+       'majutsu-log-mode '("--revision=mine()" "--no-graph") '("src"))
+      (should (equal (majutsu-log--build-args)
+                     '("--config=ui.log-word-wrap=false"
+                       "log" "--revision=mine()" "--no-graph"
+                       "-T" "TPL" "--" "src"))))))
+
+(ert-deftest majutsu-log-filesets/stay-in-originating-buffer ()
+  "Reusing log options must not copy another buffer's one-off file filter."
+  (with-temp-buffer
+    (majutsu-log-mode)
+    (majutsu-log--set-value
+     'majutsu-log-mode '("--no-graph") '("src/one.el"))
+    (should (equal (majutsu-log--get-value 'majutsu-log-mode 'current)
+                   '(("--no-graph") ("src/one.el"))))
+    (let ((source (current-buffer)))
       (with-temp-buffer
-        (majutsu-log--set-value
-         'majutsu-log-mode '("--revision=mine()" "--no-graph") '("src"))
-        (should (equal (majutsu-log--build-args)
-                       '("--config=ui.log-word-wrap=false"
-                         "log" "--revision=mine()" "--no-graph"
-                         "-T" "TPL" "--" "src")))))))
+        (cl-letf (((symbol-function 'majutsu--get-mode-buffer)
+                   (lambda (&rest _) source)))
+          (should (equal (majutsu-log--get-value 'majutsu-log-mode 'always)
+                         '(("--no-graph") nil))))))))
+
+(ert-deftest majutsu-log-reset/leaves-saved-defaults-alone ()
+  "The real reset key clears buffer and popup, not stored defaults."
+  (let ((transient-values '((majutsu-log:majutsu-log-mode "--no-graph")))
+        (transient-history nil)
+        (majutsu-prefix-use-buffer-arguments 'current))
+    (save-window-excursion
+      (with-temp-buffer
+        (majutsu-log-mode)
+        (let ((inhibit-read-only t))
+          (magit-insert-section (root)
+            (insert "Log\n")))
+        (setq-local majutsu-buffer-log-args '("--no-graph"))
+        (setq-local majutsu-buffer-log-filesets '("src/one.el"))
+        (switch-to-buffer (current-buffer))
+        (cl-letf (((symbol-function 'transient-save-values)
+                   (lambda () (ert-fail "Reset tried to save defaults")))
+                  ((symbol-function 'majutsu-refresh-buffer) #'ignore))
+          (unwind-protect
+              (progn
+                (call-interactively #'majutsu-log-transient)
+                (execute-kbd-macro "0")
+                (should-not (transient-get-value))
+                (should-not majutsu-buffer-log-args)
+                (should-not majutsu-buffer-log-filesets)
+                (should (equal transient-values
+                               '((majutsu-log:majutsu-log-mode "--no-graph")))))
+            (when transient--prefix
+              (execute-kbd-macro (kbd "C-g")))))))))
 
 (ert-deftest majutsu-log-transient-read-revset/empty-input-clears ()
   "Empty log -r input should clear the ordinary revision argument."

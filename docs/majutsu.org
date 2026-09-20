@@ -51,7 +51,7 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 - =magit= 4.4.0 or later (for section management).
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit
   completion).
-- =transient= 0.8.7 or later (popup menus).
+- =transient= 0.13.0 or later (popup menus).
 - =with-editor= (for descriptive message editing).
 - =ghostel= (optional, but required for terminal TUIs such as =jj arrange=
   and jj's built-in diff editor).

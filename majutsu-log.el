@@ -44,47 +44,31 @@ Returns an (ARGS FILESETS) pair.  USE-BUFFER-ARGS follows
           ('nil majutsu-direct-use-buffer-arguments)
           ((or 'always 'selected 'current 'never)
            use-buffer-args)))
-  (cond
-   ((and (memq use-buffer-args '(always selected current))
-         (eq major-mode mode))
-    (list majutsu-buffer-log-args
-          majutsu-buffer-log-filesets))
-   ((and (memq use-buffer-args '(always selected))
-         (when-let* ((buf (majutsu--get-mode-buffer mode (eq use-buffer-args 'selected))))
-           (list (buffer-local-value 'majutsu-buffer-log-args buf)
-                 (buffer-local-value 'majutsu-buffer-log-filesets buf)))))
-   (t
-    (list (majutsu-transient-default-value
-           'majutsu-log mode
-           'majutsu-log-current-arguments
-           'majutsu-log-default-arguments)
-          (or (get mode 'majutsu-log-current-filesets)
-              (get mode 'majutsu-log-default-filesets))))))
+  (let ((buffer (cond
+                 ((and (memq use-buffer-args '(always selected current))
+                       (eq major-mode mode))
+                  (current-buffer))
+                 ((memq use-buffer-args '(always selected))
+                  (majutsu--get-mode-buffer
+                   mode (eq use-buffer-args 'selected)
+                   (or (majutsu--buffer-root) (majutsu-toplevel)))))))
+    (list (if buffer
+              (buffer-local-value 'majutsu-buffer-log-args buffer)
+            (majutsu-transient-default-value
+             'majutsu-log mode 'majutsu-log-default-arguments))
+          (and (eq buffer (current-buffer))
+               majutsu-buffer-log-filesets))))
 
-(defun majutsu-log--set-value (mode args filesets &optional save)
-  "Set current log values for MODE.
-
-When SAVE is non-nil, also persist ARGS using `transient-values'."
-  (setq args (seq-remove #'null (flatten-tree args)))
-  (setq filesets
-        (and filesets
-             (seq-remove (lambda (s)
-                           (or (null s)
-                               (and (stringp s) (string-empty-p s))))
-                         (flatten-tree filesets))))
-  (if-let* ((config-id (majutsu-repository-config-id)))
-      (majutsu-transient-put-repository-current-value
-       'majutsu-log mode args config-id)
-    (put mode 'majutsu-log-current-arguments args))
-  (put mode 'majutsu-log-current-filesets filesets)
-  (when save
-    (setf (alist-get (majutsu-transient-global-default-key 'majutsu-log mode)
-                     transient-values)
-          args)
-    (transient-save-values))
+(defun majutsu-log--set-value (mode args filesets)
+  "Apply ARGS and FILESETS only to the current buffer when it uses MODE."
   (when (eq major-mode mode)
-    (setq-local majutsu-buffer-log-args args)
-    (setq-local majutsu-buffer-log-filesets filesets))
+    (setq-local majutsu-buffer-log-args
+                (seq-remove #'null (flatten-tree args)))
+    (setq-local majutsu-buffer-log-filesets
+                (seq-remove (lambda (s)
+                              (or (null s)
+                                  (and (stringp s) (string-empty-p s))))
+                            (flatten-tree filesets))))
   nil)
 
 (defvar-local majutsu-log--this-error nil
@@ -860,8 +844,13 @@ offer to create one using `jj git init`."
          (topdir (majutsu-toplevel default-directory)))
     (cond
      (topdir
-      (let ((default-directory topdir))
-        (majutsu-log-setup-buffer)))
+      (if (equal topdir (majutsu--buffer-root))
+          (let ((default-directory topdir))
+            (majutsu-log-setup-buffer))
+        ;; Opening another workspace must not reuse the caller's buffer args.
+        (with-temp-buffer
+          (setq default-directory topdir)
+          (majutsu-log-setup-buffer))))
      ((y-or-n-p (format "Create jj repository in %s? "
                         (abbreviate-file-name default-directory)))
       (let* ((dest (file-name-as-directory (expand-file-name default-directory)))
@@ -877,7 +866,8 @@ offer to create one using `jj git init`."
                         (majutsu-convert-filename-for-jj dest))))
           (setq out (string-trim (buffer-string))))
         (if (zerop exit)
-            (let ((default-directory dest))
+            (with-temp-buffer
+              (setq default-directory dest)
               (majutsu-log-setup-buffer))
           (user-error "jj git init failed: %s"
                       (if (string-empty-p out)
@@ -902,17 +892,19 @@ minibuffer for editing.  Empty input clears the filter."
      :completion-args '("log" "-r"))))
 
 (defun majutsu-log-transient-reset ()
-  "Reset log options to defaults."
+  "Clear current log options and the popup, without changing defaults."
   (interactive)
   (majutsu-log--set-value 'majutsu-log-mode nil nil)
-  (transient-reset))
-
+  (transient-prefix-set nil)
+  (when (eq major-mode 'majutsu-log-mode)
+    (majutsu-refresh-buffer)))
 
 ;;; Arguments
 ;;;; Prefix Classes
 
-(defclass majutsu-log-prefix (transient-prefix)
+(defclass majutsu-log-prefix (majutsu-defaults-prefix)
   ((history-key :initform 'majutsu-log)
+   (defaults-namespace :initform 'majutsu-log)
    (major-mode :initform 'majutsu-log-mode)))
 
 ;;;; Prefix Methods
@@ -926,34 +918,11 @@ minibuffer for editing.  Empty input clears the filter."
                (majutsu-log--get-value (oref obj major-mode) 'prefix)))
     (oset obj value (majutsu-filesets-build-transient-value args filesets))))
 
-(cl-defmethod transient-set-value ((obj majutsu-log-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
-      (majutsu-log--set-value mode args files)
-      (transient--history-push obj)
-      (majutsu-refresh))))
-
-(cl-defmethod transient-save-value ((obj majutsu-log-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
-      (majutsu-log--set-value mode args files t)
-      (transient--history-push obj)
-      (majutsu-refresh))))
-
-(cl-defmethod majutsu-transient--save-repository-defaults ((obj majutsu-log-prefix))
-  (let* ((obj (oref obj prototype))
-         (mode (or (oref obj major-mode) major-mode)))
-    (pcase-let ((`(,args ,files) (transient-args (oref obj command))))
-      (majutsu-transient-save-repository-value 'majutsu-log mode args)
-      (put mode 'majutsu-log-current-filesets files)
-      (transient--history-push obj)
-      (when (eq major-mode mode)
-        (setq-local majutsu-buffer-log-args args)
-        (setq-local majutsu-buffer-log-filesets files))
-      (majutsu-refresh)
-      (message "Saved log arguments as repository defaults"))))
+(cl-defmethod majutsu-transient-apply-value ((obj majutsu-log-prefix) value)
+  (when (eq major-mode (oref obj major-mode))
+    (pcase-let ((`(,args ,filesets) value))
+      (majutsu-log--set-value (oref obj major-mode) args filesets))
+    (majutsu-refresh-buffer)))
 
 (transient-define-argument majutsu-log:-r ()
   :description "Revisions"
@@ -988,6 +957,7 @@ minibuffer for editing.  Empty input clears the filter."
   :class 'transient-files
   :key "--"
   :argument "--"
+  :unsavable t
   :prompt "Limit to filesets"
   :reader #'majutsu-read-files
   :multi-value t)
@@ -1009,9 +979,8 @@ minibuffer for editing.  Empty input clears the filter."
     (majutsu-log:--)]
    ["Actions"
     ("g" "buffer" majutsu-log-transient)
-    ("s" "buffer and set defaults" transient-set-and-exit)
-    ("w" "buffer and save defaults" transient-save-and-exit)
-    ("W" "buffer and save repo defaults" majutsu-transient-save-repository-defaults)
+    ("s" "buffer and set workspace session" transient-set-and-exit)
+    ("w" "Save defaults..." majutsu-transient-defaults-menu)
     ("0" "Reset options" majutsu-log-transient-reset :transient t)]]
   (interactive)
   (cond

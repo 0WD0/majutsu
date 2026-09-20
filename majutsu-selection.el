@@ -44,6 +44,22 @@
                (:constructor majutsu-selection-session-create))
   buffer
   overlays)
+(defun majutsu--transient-with-selection-buffer (fn &rest args)
+  "Call FN with ARGS in the active selection session buffer.
+
+Majutsu transients store their originating buffer in `transient-scope'.
+Running default action suffixes in that buffer keeps repository context,
+`default-directory', and buffer-local selection state consistent even if the
+transient UI or another callback changes the current buffer.  If no Majutsu
+  selection session is active, call FN in the current buffer."
+  (let ((scope (transient-scope)))
+    (if (majutsu-selection-session-p scope)
+        (let ((buffer (majutsu-selection-session-buffer scope)))
+          (unless (buffer-live-p buffer)
+            (user-error "Selection buffer is no longer live"))
+          (with-current-buffer buffer
+            (apply fn args)))
+      (apply fn args))))
 
 (defvar majutsu-selection--overlay-buffers
   (make-hash-table :test 'eq :weakness 'key)
