@@ -169,29 +169,44 @@
                        "configured-key"))))))
 
 (ert-deftest majutsu-sign-integration/signs-and-unsigns-working-copy ()
-  "Exercise jj's test signing backend through Sign and Unsign arguments."
-  (majutsu-jj-integration-with-repo repo
-    (majutsu-jj-integration-call
-     repo "sign" "--revision=@"
-     "--config=signing.backend=test"
-     "--config=signing.behavior=keep")
-    (should (string-match-p
-             "good test-display"
-             (majutsu-jj-integration-output
-              repo "show" "-r=@" "--no-patch"
-              "-T=if(signature, signature.status() ++ \" \" ++ signature.display())"
-              "--config=signing.backend=test"
-              "--config=signing.behavior=keep")))
-    (majutsu-jj-integration-call
-     repo "unsign" "--revision=@" "--config=signing.behavior=keep")
-    (should-not
-     (string-match-p
-      "good test-display"
-      (majutsu-jj-integration-output
-       repo "show" "-r=@" "--no-patch"
-       "-T=if(signature, signature.status() ++ \" \" ++ signature.display())"
-       "--config=signing.backend=test"
-       "--config=signing.behavior=keep")))))
+  "Sign and verify with a temporary SSH key, then remove the signature."
+  (let ((ssh-keygen (executable-find "ssh-keygen")))
+    (skip-unless ssh-keygen)
+    (majutsu-jj-integration-with-sandbox sandbox
+      (let* ((repo (majutsu-jj-integration-init sandbox))
+             ;; Keep signing material outside the working copy.
+             (key (expand-file-name "signing-key" sandbox))
+             (allowed-signers (expand-file-name "allowed-signers" sandbox))
+             (config (expand-file-name "signing.toml" sandbox)))
+        (with-temp-buffer
+          (let ((status (call-process ssh-keygen nil (current-buffer) nil
+                                      "-q" "-t" "ed25519" "-N" ""
+                                      "-C" "majutsu@example.invalid" "-f" key)))
+            (unless (eq status 0)
+              (ert-fail (format "ssh-keygen failed (%s): %s"
+                                status (buffer-string))))))
+        (with-temp-file allowed-signers
+          (insert "majutsu@example.invalid ")
+          (insert-file-contents (concat key ".pub")))
+        (with-temp-file config
+          (insert (format
+                   (concat "[signing]\nbackend = \"ssh\"\nbehavior = \"keep\"\n"
+                           "key = %S\n[signing.backends.ssh]\n"
+                           "program = %S\nallowed-signers = %S\n")
+                   key ssh-keygen allowed-signers)))
+        (cl-labels ((signature-status ()
+                      (string-trim
+                       (majutsu-jj-integration-output
+                        repo "--config-file" config
+                        "show" "-r=@" "--no-patch"
+                        "-T=if(signature, signature.status(), \"unsigned\")"))))
+          (should (equal (signature-status) "unsigned"))
+          (majutsu-jj-integration-call
+           repo "--config-file" config "sign" "--revision=@")
+          (should (equal (signature-status) "good"))
+          (majutsu-jj-integration-call
+           repo "--config-file" config "unsign" "--revision=@")
+          (should (equal (signature-status) "unsigned")))))))
 
 (provide 'majutsu-sign-test)
 ;;; majutsu-sign-test.el ends here
