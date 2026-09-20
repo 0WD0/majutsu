@@ -639,17 +639,11 @@ switch, and graph switch are allowed."
    (defaults-filter :initform #'majutsu-op-log--validate-args)
    (major-mode :initform 'majutsu-op-log-mode)))
 
-(cl-defmethod transient-init-value ((obj majutsu-op-log-prefix))
-  (oset obj value
-        (majutsu-transient-default-value
-         'majutsu-op-log
-         (oref obj major-mode)
-         'majutsu-op-log-default-arguments)))
-
 (cl-defmethod majutsu-transient-apply-value
   ((obj majutsu-op-log-prefix) value)
   (when (eq major-mode (oref obj major-mode))
-    (setq-local majutsu-op-log--args value)))
+    (setq-local majutsu-op-log--args value)
+    (majutsu-refresh-buffer)))
 
 (transient-define-argument majutsu-op-log:--limit ()
   :description "Limit"

@@ -21,7 +21,7 @@
 (require 'subr-x)
 (require 'transient)
 
-(declare-function majutsu--transient-with-selection-buffer "majutsu-selection")
+(autoload 'majutsu--transient-with-selection-buffer "majutsu-selection")
 
 (defclass majutsu-jj-transient-prefix (transient-prefix)
   ((jj-command :initarg :jj-command :initform nil))
@@ -323,18 +323,22 @@ An entry with a nil cdr is an explicit empty value, not an absent entry."
   (seq-some
    (lambda (scope)
      (when-let* ((saved-key (majutsu-transient-default-key
-                            namespace key scope nil root)))
+                             namespace key scope nil root)))
        (assq saved-key transient-values)))
    (if root '(workspace repo user) '(user))))
+
+(defun majutsu-transient--default-entry (namespace key)
+  "Return NAMESPACE/KEY's session or saved entry, including explicit nil."
+  (let ((root (majutsu-transient--workspace-root)))
+    (or (assoc (majutsu-transient--session-key (or root default-directory))
+               (get key (majutsu-transient--session-property namespace)))
+        (majutsu-transient--saved-entry namespace key root))))
 
 (defun majutsu-transient-default-value (namespace key default-property)
   "Return NAMESPACE/KEY's defaults, falling back to DEFAULT-PROPERTY.
 Precedence is workspace session, workspace saved, repo saved, user saved,
 then DEFAULT-PROPERTY on KEY.  Each layer replaces the entire argument list."
-  (let* ((root (majutsu-transient--workspace-root))
-         (entry (or (assoc (majutsu-transient--session-key (or root default-directory))
-                           (get key (majutsu-transient--session-property namespace)))
-                    (majutsu-transient--saved-entry namespace key root))))
+  (let ((entry (majutsu-transient--default-entry namespace key)))
     (if entry (cdr entry) (get key default-property))))
 
 (defun majutsu-transient--write-default-value (namespace key value scope remove)
@@ -387,11 +391,18 @@ instead, while Transient still owns infix values, history and menu lifetime.")
       (oset copy value (plist-get params :value)))
     copy))
 
+(cl-defmethod transient-default-value ((obj majutsu-defaults-prefix))
+  (pcase-let* ((`(,namespace . ,key) (majutsu-transient--defaults-key obj))
+               (entry (majutsu-transient--default-entry namespace key))
+               (property (intern (format "%s-default-arguments"
+                                         (if (slot-exists-p obj 'major-mode)
+                                             namespace key)))))
+    (cond (entry (cdr entry))
+          ((plist-member (symbol-plist key) property) (get key property))
+          (t (cl-call-next-method)))))
+
 (cl-defmethod transient-init-value ((obj majutsu-defaults-prefix))
-  (pcase-let ((`(,namespace . ,key) (majutsu-transient--defaults-key obj)))
-    (oset obj value
-          (majutsu-transient-default-value
-           namespace key (intern (format "%s-default-arguments" key))))))
+  (oset obj value (transient-default-value obj)))
 
 (defun majutsu-transient--savable-value (obj)
   "Collect OBJ's raw savable infix value, including native `unsavable' handling.
@@ -461,11 +472,7 @@ remove those.  Buffer-only resets should use `transient-prefix-set'."
    (lambda ()
      (pcase-let* ((`(,namespace . ,key) (majutsu-transient--defaults-key obj)))
        (majutsu-transient-clear-default-value namespace key 'user)
-       (let ((value (majutsu-transient-default-value
-                     namespace key
-                     (intern (format "%s-default-arguments"
-                                     (if (slot-exists-p obj 'major-mode)
-                                         namespace key))))))
+       (let ((value (transient-default-value obj)))
          (transient-prefix-set value)
          (transient--history-push obj value))
        (message "Cleared user and workspace session defaults; local saved overrides retained")))))
