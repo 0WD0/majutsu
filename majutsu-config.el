@@ -46,9 +46,9 @@ configuration.  Return nil when the identity does not exist."
     (when (and create (not (file-readable-p file)))
       (let ((default-directory (file-name-as-directory root)))
         (majutsu-jj-string "config" "path"
-                          (pcase-exhaustive scope
-                            ('repo "--repo")
-                            ('workspace "--workspace")))))
+                           (pcase-exhaustive scope
+                             ('repo "--repo")
+                             ('workspace "--workspace")))))
     (if (file-readable-p file)
         (with-temp-buffer
           (insert-file-contents file)

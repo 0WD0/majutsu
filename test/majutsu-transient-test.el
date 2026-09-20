@@ -22,9 +22,9 @@
       (majutsu-jj-integration-call a "workspace" "add" "--name" "b" b)
       (put mode 'builtin '("builtin"))
       (cl-labels ((value (root)
-                   (with-temp-buffer
-                     (setq-local majutsu--default-directory root)
-                     (majutsu-transient-default-value 'test mode 'builtin)))
+                    (with-temp-buffer
+                      (setq-local majutsu--default-directory root)
+                      (majutsu-transient-default-value 'test mode 'builtin)))
                   (save (root scope args)
                     (with-temp-buffer
                       (setq-local majutsu--default-directory root)

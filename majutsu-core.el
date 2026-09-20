@@ -21,21 +21,12 @@
 (require 'majutsu-process)
 (require 'majutsu-selection)
 (require 'majutsu-transient)
-(require 'cl-lib)
-(require 'transient)
-
-
-
 
 ;;; Custom groups
 
 (defgroup majutsu-essentials nil
   "Options that most Majutsu users should consider."
   :group 'majutsu)
-
-
-
-
 
 (defgroup majutsu-modes nil
   "Modes used or provided by Majutsu."

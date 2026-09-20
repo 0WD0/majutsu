@@ -583,12 +583,38 @@ also use @code{majutsu-transient-default-action} (default @code{RET}). When a pr
 action has its own command-specific key@comma{} the transient displays the command key
 and the default action key on the same row and either key invokes the action.
 
-Some transients support saved defaults. Global defaults follow Transient's
-normal storage; repository-local defaults use jj's secure repo @samp{config-id} as
-the stable project key@comma{} so they survive moving the workspace. Where available@comma{}
-@code{W} saves the current transient arguments as defaults for the current jj
-repository only. This is intended for project-shaped UI policy such as log
-filters@comma{} diff format@comma{} and Git sync remotes@comma{} not for one-off destructive targets.
+Log@comma{} Diff@comma{} operation log@comma{} Git Fetch/Push@comma{} and Gerrit Upload support scoped
+defaults. Press @code{w} to open the defaults menu@comma{} then @code{u} (user)@comma{} @code{r}
+(repository)@comma{} or @code{w} (workspace) to save. The corresponding uppercase keys
+@code{U}@comma{} @code{R}@comma{} and @code{W} clear that layer's override@comma{} restoring inheritance.
+@code{C-g} returns to the parent menu with its unsaved options intact.
+
+Defaults are resolved as workspace session@comma{} workspace saved@comma{} repository
+saved@comma{} user saved@comma{} then built-in defaults. Each layer replaces the entire
+argument list; an explicitly empty list overrides less-specific defaults.
+Existing view arguments may take precedence according to
+@code{majutsu-prefix-use-buffer-arguments} and @code{majutsu-direct-use-buffer-arguments}@comma{}
+but only within the same workspace.
+
+@code{s} in view menus (or Transient's @code{C-x s}) sets workspace-local defaults for
+the current Emacs session. @code{C-x C-s} saves user defaults; @code{C-x C-k} clears user
+defaults and the current workspace's session override@comma{} retaining repository
+and workspace saved overrides. The defaults menu can clear those separately.
+The log menu's @code{0} only clears its current options and buffer@comma{} not defaults.
+
+Saving updates the originating view@comma{} without executing Push@comma{} Fetch@comma{} or Upload.
+A more-specific saved override is not deleted when saving a broader layer;
+the save message reports that it still takes precedence. Clearing an override
+also clears the current workspace's session value but leaves existing buffer
+options unchanged. One-off diff ranges@comma{} filesets@comma{} and command-specific targets
+are not saved.
+
+These are Majutsu UI preferences stored in @code{transient-values-file}@comma{} not jj
+TOML settings. Repository and workspace keys use jj's secure @samp{config-id} and
+@samp{workspace-config-id} respectively. Additional workspaces share repository
+defaults but have independent workspace defaults. Existing user and repository
+records remain valid. Reading defaults never creates a jj identity; explicitly
+saving a local layer creates one when necessary.
 
 @node Visual Selection System
 @section Visual Selection System
@@ -669,6 +695,16 @@ revision has @code{body} module content (for example@comma{} continuation lines 
 description)@comma{} that content forms the foldable section body; its current
 visibility follows the section state instead of being forced closed on every
 refresh.
+
+With a jjosh version supporting @code{touched_projects()}@comma{} the default heading
+includes a separate @code{touched-projects} column@comma{} for example @samp{[appkit@comma{} chidu]}.
+It summarizes changed paths using the loaded operation's project layout;
+it does not change the revision ID or description. Empty summaries show no
+brackets. Ordinary jj and older jjosh versions omit the column automatically.
+Customize @code{majutsu-log-template-touched-projects} to change its template@comma{} or
+remove the column from @code{majutsu-log-commit-columns} to disable it. Custom
+column lists can add @code{(:field touched-projects :module heading :template
+majutsu-log-template-touched-projects :face font-lock-type-face)}.
 
 Press @samp{[} to jump to a visible parent and @samp{]} to jump to a visible child. When
 more than one target is visible@comma{} completion returns the canonical revision id

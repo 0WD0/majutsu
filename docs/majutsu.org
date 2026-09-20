@@ -284,12 +284,38 @@ also use ~majutsu-transient-default-action~ (default ~RET~). When a primary
 action has its own command-specific key, the transient displays the command key
 and the default action key on the same row and either key invokes the action.
 
-Some transients support saved defaults. Global defaults follow Transient's
-normal storage; repository-local defaults use jj's secure repo =config-id= as
-the stable project key, so they survive moving the workspace. Where available,
-~W~ saves the current transient arguments as defaults for the current jj
-repository only. This is intended for project-shaped UI policy such as log
-filters, diff format, and Git sync remotes, not for one-off destructive targets.
+Log, Diff, operation log, Git Fetch/Push, and Gerrit Upload support scoped
+defaults. Press ~w~ to open the defaults menu, then ~u~ (user), ~r~
+(repository), or ~w~ (workspace) to save. The corresponding uppercase keys
+~U~, ~R~, and ~W~ clear that layer's override, restoring inheritance.
+~C-g~ returns to the parent menu with its unsaved options intact.
+
+Defaults are resolved as workspace session, workspace saved, repository
+saved, user saved, then built-in defaults. Each layer replaces the entire
+argument list; an explicitly empty list overrides less-specific defaults.
+Existing view arguments may take precedence according to
+~majutsu-prefix-use-buffer-arguments~ and ~majutsu-direct-use-buffer-arguments~,
+but only within the same workspace.
+
+~s~ in view menus (or Transient's ~C-x s~) sets workspace-local defaults for
+the current Emacs session. ~C-x C-s~ saves user defaults; ~C-x C-k~ clears user
+defaults and the current workspace's session override, retaining repository
+and workspace saved overrides. The defaults menu can clear those separately.
+The log menu's ~0~ only clears its current options and buffer, not defaults.
+
+Saving updates the originating view, without executing Push, Fetch, or Upload.
+A more-specific saved override is not deleted when saving a broader layer;
+the save message reports that it still takes precedence. Clearing an override
+also clears the current workspace's session value but leaves existing buffer
+options unchanged. One-off diff ranges, filesets, and command-specific targets
+are not saved.
+
+These are Majutsu UI preferences stored in ~transient-values-file~, not jj
+TOML settings. Repository and workspace keys use jj's secure =config-id= and
+=workspace-config-id= respectively. Additional workspaces share repository
+defaults but have independent workspace defaults. Existing user and repository
+records remain valid. Reading defaults never creates a jj identity; explicitly
+saving a local layer creates one when necessary.
 
 ** Visual Selection System
 For commands like Rebase, Squash, or Absorb, Majutsu uses a visual selection

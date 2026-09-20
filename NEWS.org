@@ -5,6 +5,14 @@
 
 ** Breaking changes
 
+- Scoped transient defaults ::
+  ~w~ now opens a menu: ~w u~ saves user defaults, ~w r~ repository defaults,
+  and ~w w~ workspace defaults, replacing the old standalone ~w~/~W~ actions.
+  Uppercase scope keys in that menu clear overrides. Session defaults are
+  workspace-local; existing user/repository saved values remain readable.
+  Buffer option reuse no longer crosses workspace boundaries. Log ~0~ resets
+  only current options, without deleting saved defaults.
+
 - Updated dependencies ::
   Majutsu requires Jujutsu 0.41.0, Magit 4.4.0, and Transient 0.13.0 or later.
   New package dependencies are Compat 31.0.0.1, Consult 1.0, and plz 0.9.1.
@@ -157,9 +165,8 @@
   The remote list command opens this view; remote headings show URLs and offer
   management and fetch actions, even before the first fetch.
 
-- Repository-local defaults and revision prompts ::
-  Log, Diff, Fetch, and Push can save defaults for the current repository
-  with ~W~.  The log revset filter is an ordinary =-r= argument and empty
+- Revision prompts ::
+  The log revset filter is an ordinary =-r= argument and empty
   input clears it.  Revision prompts prefer references at point, and diff
   file completion follows the selected revisions.
 
