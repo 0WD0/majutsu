@@ -56,7 +56,7 @@
         #'majutsu-insert-diff-revision-message
         #'majutsu-insert-diff
         ;; #'majutsu-insert-xref-buttons
-        )
+  )
   "Hook run to insert sections into a `majutsu-diff-mode' buffer."
   :group 'majutsu-diff
   :type 'hook)
@@ -71,8 +71,8 @@
        for performance reasons."
   :group 'majutsu
   :type '(choice (const :tag "No refinement" nil)
-          (const :tag "Immediately refine all hunks" all)
-          (const :tag "Refine currently selected hunk" t)))
+                 (const :tag "Immediately refine all hunks" all)
+                 (const :tag "Refine currently selected hunk" t)))
 
 (put 'majutsu-diff-refine-hunk 'permanent-local t)
 
@@ -88,8 +88,8 @@
 This is experimental and can be slow because fontification is synchronous."
   :group 'majutsu
   :type '(choice (const :tag "No syntax highlighting" nil)
-          (const :tag "Immediately highlight all hunks" all)
-          (const :tag "Highlight currently selected hunk" t)))
+                 (const :tag "Immediately highlight all hunks" all)
+                 (const :tag "Highlight currently selected hunk" t)))
 
 (put 'majutsu-diff-fontify-hunk 'permanent-local t)
 
@@ -114,7 +114,7 @@ When non-nil, try to read `tab-width' from a live buffer visiting the file;
 otherwise fall back to the current buffer's `tab-width'."
   :group 'majutsu
   :type '(choice (const :tag "Never adjust" nil)
-          (const :tag "Use live file buffer value" t)))
+                 (const :tag "Use live file buffer value" t)))
 
 ;;; Faces
 
@@ -254,7 +254,7 @@ uses side-affine accumulation from related lines instead of raw
 Set to nil to always paint whitespace inside hunks."
   :group 'majutsu
   :type '(choice (const :tag "No limit" nil)
-          (integer :tag "Max characters")))
+                 (integer :tag "Max characters")))
 
 (put 'majutsu-diff-mode 'majutsu-diff-default-arguments
      '("--git" "--stat"))
@@ -364,13 +364,11 @@ list of filesets (path filters)."
                (range (majutsu-diff--extract-range-args raw)))
     (list args range filesets)))
 
-
 (cl-defmethod majutsu-transient-apply-value ((obj majutsu-diff-prefix) value)
   (when (eq major-mode (oref obj major-mode))
     (pcase-let ((`(,args ,range ,filesets) value))
       (majutsu-diff--set-value (oref obj major-mode) args range filesets))
     (majutsu-refresh-buffer)))
-
 
 ;;;; Argument Access
 
@@ -388,7 +386,7 @@ list of filesets (path filters)."
           ((or 'always 'selected 'current 'never)
            use-buffer-args)))
   (let* ((use-current (and (memq use-buffer-args '(always selected current))
-                          (eq major-mode mode)))
+                           (eq major-mode mode)))
          (buffer (cond
                   (use-current (current-buffer))
                   ((memq use-buffer-args '(always selected))
@@ -442,10 +440,18 @@ The returned value is a (ARGS RANGE FILESETS) triple."
   "Regexp matching `jj diff --stat` entries, modeled after Magit's statline.")
 
 (cl-defstruct majutsu-diff--stat-entry
-  path label count added removed opaque)
+  path
+  label
+  count
+  added
+  removed
+  opaque)
 
 (cl-defstruct majutsu-diff--stat-node
-  name path children entry)
+  name
+  path
+  children
+  entry)
 
 (defun majutsu-diff--stat-tree (entries)
   "Group ENTRIES by their complete paths, preserving their input order."
@@ -463,12 +469,14 @@ The returned value is a (ARGS RANGE FILESETS) triple."
             (setq parent
                   (or (gethash path directories)
                       (let ((node (make-majutsu-diff--stat-node
-                                   :name name :path path)))
+                                   :name name
+                                   :path path)))
                         (puthash path node directories)
                         (push node (majutsu-diff--stat-node-children parent))
                         node)))))
         (push (make-majutsu-diff--stat-node
-               :name (car parts) :entry entry)
+               :name (car parts)
+               :entry entry)
               (majutsu-diff--stat-node-children parent))))
     root))
 
@@ -544,9 +552,9 @@ DISPLAY is JJ's original label; OPAQUE means it is not a complete path."
             (concat label
                     (propertize
                      (concat " ← " (if (equal (file-name-directory source)
-                                             (file-name-directory path))
-                                        (file-name-nondirectory source)
-                                      source))
+                                              (file-name-directory path))
+                                       (file-name-nondirectory source)
+                                     source))
                      'font-lock-face 'shadow))))
     ;; Exact paths can contain newlines or tabs even though JJ's display is
     ;; single-line.  Keep those characters out of the section layout.
@@ -1290,7 +1298,8 @@ first \"diff --git\" header."
                                         'magit-diffstat-added))
                           " bytes")))))
               (push (make-majutsu-diff--stat-entry
-                     :path path :opaque opaque
+                     :path path
+                     :opaque opaque
                      :label (majutsu-diff--stat-label
                              path file source
                              (or opaque
@@ -1298,7 +1307,8 @@ first \"diff --git\" header."
                                       (null majutsu-diff--active-file-metadata)
                                       (string-match-p " => " file))))
                      :count (concat (substring sep (+ 2 (string-match "|" sep))) cnt)
-                     :added add :removed del)
+                     :added add
+                     :removed del)
                     entries)))
           (let ((tree (majutsu-diff--stat-tree (nreverse entries))))
             (majutsu-diff--insert-stat-tree

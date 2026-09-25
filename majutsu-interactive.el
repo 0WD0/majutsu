@@ -76,7 +76,12 @@ region within a hunk.")
 (cl-defstruct (majutsu-interactive-context
                (:constructor majutsu-interactive-context-create))
   "Repository and buffer generation that a patch selection belongs to."
-  operation root operation-id buffer-tick diff-range diff-filesets)
+  operation
+  root
+  operation-id
+  buffer-tick
+  diff-range
+  diff-filesets)
 
 (defvar-local majutsu-interactive--render-context nil
   "Repository state represented by the current rendered diff.
@@ -169,8 +174,6 @@ the command's source semantics differ."
                 (or majutsu-interactive--selection-operation "another context")
                 operation)))
 
-
-
 (defun majutsu-interactive--ensure-selection-context ()
   "Bind a new selection to the current transient operation, or validate it."
   (when (eq majutsu-interactive--render-context 'stale)
@@ -204,7 +207,6 @@ the command's source semantics differ."
                majutsu-interactive--selection-context)
               operation)))))
 
-
 (defun majutsu-interactive-invalidate (&optional forget-render-context)
   "Discard selections whose rendered diff is about to be rebuilt.
 
@@ -226,8 +228,6 @@ current diff rendering as stale."
     (with-current-buffer buffer
       (when (derived-mode-p 'majutsu-diff-mode)
         (majutsu-interactive-invalidate t)))))
-
-
 
 (defun majutsu-interactive--hunk-id (section)
   "Return unique identifier for hunk SECTION."
@@ -892,7 +892,6 @@ When INVERT is non-nil, invert selected hunks by default."
                              (majutsu-diff--mode-change-header (list header)))))
               (mapconcat #'identity (nreverse hunk-patches) "")))))
 
-
 (defun majutsu-interactive--build-patch (&optional invert include-all-files)
   "Build complete patch from current selections.
 When INVERT is non-nil, select non-matching change lines.
@@ -994,7 +993,6 @@ BUFFER's patch selection."
                (majutsu-interactive--build-file-operations
                 (majutsu-interactive--collect-unselected-files))))
         (_ (error "Unknown replay plan mode: %S" mode))))))
-
 
 (defun majutsu-interactive--fixup-patch (patch)
   "Fix hunk header line counts in PATCH using diff-mode."
@@ -1164,8 +1162,6 @@ Remove its temporary directory when PROCESS exits or is signaled."
         t)
     nil))
 
-
-
 (defun majutsu-interactive--refresh-operation-origin (buffer root)
   "Refresh live Majutsu BUFFER using repository ROOT."
   (when (buffer-live-p buffer)
@@ -1273,7 +1269,6 @@ selection would apply the same patch twice and diverge the change."
       (unless retained
         (majutsu-interactive--release-replay root)
         (majutsu-interactive--delete-operation-temp-dir directory)))))
-
 
 ;;; _
 (provide 'majutsu-interactive)
