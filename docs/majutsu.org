@@ -1135,9 +1135,16 @@ buffer, a "Patch Selection" group appears with the following commands:
 | Key | Command                           | Description                                                     |
 |-----+-----------------------------------+-----------------------------------------------------------------|
 | ~H~   | majutsu-interactive-toggle-hunk   | Toggle selection of hunk at point                               |
-| ~F~   | majutsu-interactive-toggle-file   | Toggle all file hunks or a whole-file change with no text hunks |
+| ~F~   | majutsu-interactive-toggle-file   | Toggle all changes in a file or diffstat directory              |
 | ~R~   | majutsu-interactive-toggle-region | Toggle selection of active region                               |
 | ~C~   | majutsu-interactive-clear         | Clear all patch selections                                      |
+
+The diffstat is a collapsible directory tree.  Single-directory chains are
+compacted, while file sections retain their complete paths for navigation.
+Renames appear under the destination directory, with the source shown after
+=←=.  On a directory, ~F~ selects all descendant file changes, including hidden
+files.  A partially selected directory becomes fully selected; a fully selected
+one is cleared.  Files outside that directory are unaffected.
 
 The =-i= argument is a separate, jj-native workflow.  When no H/F/R patch
 selection is active, Majutsu forwards =--interactive= (and Split/Squash's
@@ -1175,6 +1182,10 @@ face (green background by default). Selected regions within hunks use the
 =majutsu-interactive-selected-region= face (purple background). Selected file
 changes with no text hunks use the
 =majutsu-interactive-selected-file= face.
+The diffstat mirrors these selections: fully selected files and directory
+headings use =majutsu-interactive-selected-file=; partial selections use
+=majutsu-interactive-partially-selected-file=.  Directory state is derived from
+its descendant files, not stored separately.
 
 *** jj Diff Editors and Terminal Hosts
 Majutsu patch selection and jj's own diff-editor selection are separate
@@ -1345,7 +1356,7 @@ so the selected file change is restored as a unit.
 *** Workflow Example
 1. Open a diff with ~D~ or ~d~
 2. Open Split (~S~), Squash (~s~), or Restore (~R~) transient
-3. Use ~H~ to select individual hunks, or ~F~ to select all hunks in a file
+3. Use ~H~ to select individual hunks, or ~F~ to select a file or diffstat directory
 4. For fine-grained control, mark a region and press ~R~ to select only those lines
 5. Press ~C~ to clear selections if needed
 6. Execute the operation - only selected changes will be affected
@@ -1353,7 +1364,8 @@ so the selected file change is restored as a unit.
 *** Customization
 - Face: majutsu-interactive-selected-hunk :: Face for selected hunks.
 - Face: majutsu-interactive-selected-region :: Face for selected regions.
-- Face: majutsu-interactive-selected-file :: Face for selected file changes with no text hunks.
+- Face: majutsu-interactive-selected-file :: Face for whole-file changes and fully selected diffstat entries.
+- Face: majutsu-interactive-partially-selected-file :: Face for partially selected diffstat files and directories.
 
 ** Metaediting
 #+attr_reference: :kind command-binding :interface "Majutsu dispatcher"

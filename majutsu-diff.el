@@ -441,6 +441,119 @@ The returned value is a (ARGS RANGE FILESETS) triple."
           "\\(?: +\\(\\+*\\)\\(-*\\)\\)?$") ; add/del graph (optional)
   "Regexp matching `jj diff --stat` entries, modeled after Magit's statline.")
 
+(cl-defstruct majutsu-diff--stat-entry
+  path label count added removed opaque)
+
+(cl-defstruct majutsu-diff--stat-node
+  name path children entry)
+
+(defun majutsu-diff--stat-tree (entries)
+  "Group ENTRIES by their complete paths, preserving their input order."
+  (let ((root (make-majutsu-diff--stat-node))
+        (directories (make-hash-table :test #'equal)))
+    (dolist (entry entries)
+      (let ((parts (if (majutsu-diff--stat-entry-opaque entry)
+                       (list (majutsu-diff--stat-entry-path entry))
+                     (split-string (majutsu-diff--stat-entry-path entry) "/")))
+            (parent root)
+            (path ""))
+        (while (cdr parts)
+          (let ((name (pop parts)))
+            (setq path (concat path name "/"))
+            (setq parent
+                  (or (gethash path directories)
+                      (let ((node (make-majutsu-diff--stat-node
+                                   :name name :path path)))
+                        (puthash path node directories)
+                        (push node (majutsu-diff--stat-node-children parent))
+                        node)))))
+        (push (make-majutsu-diff--stat-node
+               :name (car parts) :entry entry)
+              (majutsu-diff--stat-node-children parent))))
+    root))
+
+(defun majutsu-diff--stat-directory-label (node)
+  "Return (LABEL . NODE), collapsing single-child directory chains."
+  (let ((label (majutsu-diff--stat-node-name node)))
+    (while (and (= (length (majutsu-diff--stat-node-children node)) 1)
+                (let ((child (car (majutsu-diff--stat-node-children node))))
+                  (not (majutsu-diff--stat-node-entry child))))
+      (setq node (car (majutsu-diff--stat-node-children node))
+            label (concat label "/" (majutsu-diff--stat-node-name node))))
+    (cons (concat label "/") node)))
+
+(defun majutsu-diff--stat-column (node &optional depth)
+  "Return the file-label column width for the tree under NODE.
+DEPTH is the number of visible ancestor directories."
+  (let ((width 0))
+    (dolist (child (majutsu-diff--stat-node-children node))
+      (setq width
+            (max width
+                 (if-let* ((entry (majutsu-diff--stat-node-entry child)))
+                     (+ (* 4 (or depth 0)) 4
+                        (string-width (majutsu-diff--stat-entry-label entry)))
+                   (majutsu-diff--stat-column
+                    (cdr (majutsu-diff--stat-directory-label child))
+                    (1+ (or depth 0)))))))
+    width))
+
+(defun majutsu-diff--insert-stat-tree (node prefix column)
+  "Insert NODE's children with tree PREFIX and file counts at COLUMN."
+  (let ((children (nreverse (majutsu-diff--stat-node-children node))))
+    (while children
+      (let* ((child (pop children))
+             (last (null children))
+             (branch (if last "└── " "├── "))
+             (line-prefix (concat prefix branch)))
+        (if-let* ((entry (majutsu-diff--stat-node-entry child)))
+            (magit-insert-section (jj-file (majutsu-diff--stat-entry-path entry))
+              (let ((label (majutsu-diff--stat-entry-label entry)))
+                (insert line-prefix label
+                        (make-string
+                         (max 1 (- column
+                                   (string-width line-prefix)
+                                   (string-width label)))
+                         ?\s)
+                        "| " (majutsu-diff--stat-entry-count entry) " ")
+                (when-let* ((added (majutsu-diff--stat-entry-added entry)))
+                  (insert (propertize added 'font-lock-face
+                                      'magit-diffstat-added)))
+                (when-let* ((removed (majutsu-diff--stat-entry-removed entry)))
+                  (insert (propertize removed 'font-lock-face
+                                      'magit-diffstat-removed)))
+                (insert "\n")))
+          (pcase-let ((`(,label . ,directory)
+                       (majutsu-diff--stat-directory-label child)))
+            (magit-insert-section
+                (jj-directory (majutsu-diff--stat-node-path directory))
+              (magit-insert-heading
+                (propertize (concat line-prefix label "\n")
+                            'font-lock-face 'magit-diff-file-heading))
+              (majutsu-diff--insert-stat-tree
+               directory (concat prefix (if last "    " "│   ")) column))))))))
+
+(defun majutsu-diff--stat-label (path display source opaque)
+  "Format PATH for a stat row, retaining rename SOURCE when known.
+DISPLAY is JJ's original label; OPAQUE means it is not a complete path."
+  (let ((label
+         (magit-format-file
+          'stat (if opaque display (file-name-nondirectory path))
+          'magit-filename)))
+    (when source
+      (setq label
+            (concat label
+                    (propertize
+                     (concat " ← " (if (equal (file-name-directory source)
+                                             (file-name-directory path))
+                                        (file-name-nondirectory source)
+                                      source))
+                     'font-lock-face 'shadow))))
+    ;; Exact paths can contain newlines or tabs even though JJ's display is
+    ;; single-line.  Keep those characters out of the section layout.
+    (dolist (escape '(("\n" . "\\n") ("\r" . "\\r") ("\t" . "\\t")))
+      (setq label (string-replace (car escape) (cdr escape) label)))
+    (propertize label 'help-echo path)))
+
 (defconst majutsu-diff--file-metadata-template
   (majutsu-template-compile
    ["[" [:json [:status]]
@@ -664,17 +777,15 @@ agree with the structured metadata."
   (setq majutsu-diff--file-metadata-by-section (make-hash-table :test #'eq))
   (let ((root (or (bound-and-true-p magit-insert-section--current)
                   magit-root-section))
-        real-files stat-files)
+        real-files)
     (when root
       (magit-map-sections
        (lambda (section)
-         (when (magit-section-match 'jj-file section)
-           (if (oref section header)
-               (push section real-files)
-             (push section stat-files))))
+         (when (and (magit-section-match 'jj-file section)
+                    (oref section header))
+           (push section real-files)))
        root))
-    (setq real-files (nreverse real-files)
-          stat-files (nreverse stat-files))
+    (setq real-files (nreverse real-files))
     (when (and metadata
                (= (length real-files) (length metadata))
                (cl-every #'identity
@@ -684,11 +795,7 @@ agree with the structured metadata."
        (lambda (section entry)
          (majutsu-diff--set-section-path section (plist-get entry :target))
          (puthash section entry majutsu-diff--file-metadata-by-section))
-       real-files metadata)
-      (when (= (length stat-files) (length metadata))
-        (cl-mapc (lambda (section entry)
-                   (oset section value (plist-get entry :target)))
-                 stat-files metadata)))))
+       real-files metadata))))
 
 (defun majutsu-diff-file-metadata (section)
   "Return structured metadata attached to file SECTION, or nil."
@@ -708,28 +815,59 @@ unquoted `diff --git' headers."
             (push (match-string-no-properties 2) files))
           (nreverse files)))))
 
+(defun majutsu-diff--stat-file-section (path)
+  "Find PATH's file section inside the diffstat directory tree."
+  (when-let* ((stat (magit-get-section
+                     (append '((diffstat) (diff-root))
+                             (magit-section-ident magit-root-section)))))
+    (let (found)
+      (magit-map-sections
+       (lambda (section)
+         (when (and (magit-section-match 'jj-file section)
+                    (equal (oref section value) path))
+           (setq found section)))
+       stat)
+      found)))
+
+(defun majutsu-diff--stat-ancestor (section)
+  "Return SECTION's diffstat ancestor, if any."
+  (while (and section (not (magit-section-match 'diffstat section)))
+    (setq section (oref section parent)))
+  section)
+
 (defun majutsu-jump-to-diffstat-or-diff (&optional expand)
-  "Jump to the diffstat or diff.
-When point is on a file inside the diffstat section, then jump
-to the respective diff section, otherwise jump to the diffstat
-section or a child thereof."
+  "Jump between a diffstat file and its diff, or to the diffstat heading.
+With EXPAND, show the destination section's body too."
   (interactive "P")
-  (cond-let
-    ([section
-      (magit-get-section
-       (append
-        (magit-section-case
-          ([jj-file diffstat] `((jj-file . ,(oref it value)) (diff-root)))
-          (jj-file `((jj-file . ,(oref it value)) (diffstat) (diff-root)))
-          (jj-hunk `((jj-file . ,(magit-section-parent-value it))
-                     (diffstat) (diff-root)))
-          (t '((diffstat) (diff-root))))
-        (magit-section-ident magit-root-section)))]
-     (goto-char (oref section start))
-     (when expand
-       (with-local-quit (majutsu-section-show section))
-       (recenter 0)))
-    ((user-error "No diffstat in this buffer"))))
+  (let* ((current (magit-current-section))
+         (path (magit-section-case
+                 (jj-file (oref it value))
+                 (jj-hunk (magit-section-parent-value it))))
+         (section
+          (if (and path
+                   (magit-section-match 'jj-file current)
+                   (majutsu-diff--stat-ancestor current))
+              (magit-get-section
+               (append `((jj-file . ,path) (diff-root))
+                       (magit-section-ident magit-root-section)))
+            (or (and path (majutsu-diff--stat-file-section path))
+                (magit-get-section
+                 (append '((diffstat) (diff-root))
+                         (magit-section-ident magit-root-section)))))))
+    (unless section
+      (user-error "No diffstat in this buffer"))
+    (let ((ancestor (oref section parent))
+          hidden)
+      (while ancestor
+        (when (oref ancestor hidden)
+          (push ancestor hidden))
+        (setq ancestor (oref ancestor parent)))
+      (dolist (parent hidden)
+        (majutsu-section-show parent)))
+    (goto-char (oref section start))
+    (when expand
+      (with-local-quit (majutsu-section-show section))
+      (recenter 0))))
 
 (defun majutsu-diff--tab-width (file)
   "Return the tab width to use for FILE, with simple caching."
@@ -1106,8 +1244,14 @@ Assumes point is at the start of the diff output and that the output was
 generated using `--git --stat', meaning the diffstat appears before the
 first \"diff --git\" header."
   (let ((files (majutsu-diff--collect-diff-files))
+        (renames (when majutsu-diff--active-file-metadata
+                   (make-hash-table :test #'equal)))
         heading
         (beg (point)))
+    (dolist (entry majutsu-diff--active-file-metadata)
+      (when (equal (plist-get entry :status) "renamed")
+        (puthash (plist-get entry :target)
+                 (plist-get entry :source) renames)))
     ;; Like `magit-diff-wash-diffstat': find the summary line first, delete it,
     ;; then rewrite each stat line as a `diffstat' section.
     (when (re-search-forward "^ ?\\([0-9]+ +files? change[^\n]*\n\\)" nil t)
@@ -1117,41 +1261,48 @@ first \"diff --git\" header."
       (magit-insert-section (diffstat)
         (magit-insert-heading
           (propertize heading 'font-lock-face 'magit-diff-file-heading))
-        (while (looking-at majutsu-diff-statline-re)
-          (let* ((file (match-string-no-properties 1))
-                 (sep  (match-string 2))
-                 (cnt  (match-string 3))
-                 (add  (match-string 4))
-                 (del  (match-string 5)))
-            (majutsu-diff--delete-line)
-            (when (string-match " +$" file)
-              (setq sep (concat (match-string 0 file) sep))
-              (setq file (substring file 0 (match-beginning 0))))
-            (setq file (string-trim-right file))
-            (magit-insert-section (jj-file (or (pop files) file))
-              (insert (magit-format-file 'stat file 'magit-filename))
-              (insert sep)
-              (cond
-               ((string-match "\\`(binary)\\(?: +\\([+-][0-9]+\\) bytes\\)?\\'" cnt)
-                (insert (propertize "(binary)" 'font-lock-face
-                                    'majutsu-diffstat-binary))
-                (when-let* ((delta (match-string 1 cnt)))
-                  (insert " "
+        (let (entries)
+          (while (looking-at majutsu-diff-statline-re)
+            (let* ((file (string-trim-right (match-string-no-properties 1)))
+                   (sep (match-string-no-properties 2))
+                   (cnt (match-string-no-properties 3))
+                   (add (match-string-no-properties 4))
+                   (del (match-string-no-properties 5))
+                   (exact (pop files))
+                   (path (or exact file))
+                   (source (and renames (gethash path renames)))
+                   (opaque (and (null exact)
+                                (or (string-prefix-p "..." file)
+                                    (string-match-p " => " file)))))
+              (majutsu-diff--delete-line)
+              (when (string-match
+                     "\\`(binary)\\(?: +\\([+-][0-9]+\\) bytes\\)?\\'" cnt)
+                (setq cnt
+                      (concat
+                       (propertize "(binary)" 'font-lock-face
+                                   'majutsu-diffstat-binary)
+                       (when-let* ((delta (match-string 1 cnt)))
+                         (concat
+                          " "
                           (propertize delta 'font-lock-face
                                       (if (string-prefix-p "-" delta)
                                           'magit-diffstat-removed
                                         'magit-diffstat-added))
-                          " bytes")))
-               (t
-                (insert cnt)))
-              (insert " ")
-              (when add
-                (insert (propertize add 'font-lock-face
-                                    'magit-diffstat-added)))
-              (when del
-                (insert (propertize del 'font-lock-face
-                                    'magit-diffstat-removed)))
-              (insert "\n"))))
+                          " bytes")))))
+              (push (make-majutsu-diff--stat-entry
+                     :path path :opaque opaque
+                     :label (majutsu-diff--stat-label
+                             path file source
+                             (or opaque
+                                 (and (null source)
+                                      (null majutsu-diff--active-file-metadata)
+                                      (string-match-p " => " file))))
+                     :count (concat (substring sep (+ 2 (string-match "|" sep))) cnt)
+                     :added add :removed del)
+                    entries)))
+          (let ((tree (majutsu-diff--stat-tree (nreverse entries))))
+            (majutsu-diff--insert-stat-tree
+             tree "" (1+ (majutsu-diff--stat-column tree)))))
         (if (looking-at "^$") (forward-line) (insert "\n"))))))
 
 (defun majutsu-diff-wash-diffs (args)

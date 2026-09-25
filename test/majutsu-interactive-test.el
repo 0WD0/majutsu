@@ -424,6 +424,87 @@ COMMAND identifies the transient whose whole-file selections are toggled."
                        :patch nil
                        :file-ops ((:action add :path "drop.bin"))))))))
 
+(defun majutsu-interactive-test--insert-stat-tree (&optional without-metadata)
+  "Insert a diffstat with text, rename, and unrelated file changes."
+  (majutsu-diff-mode)
+  (let* ((inhibit-read-only t)
+         (magit-section-inhibit-markers t)
+         (metadata
+          (unless without-metadata
+            '((:status "modified" :source "src/a.rs" :target "src/a.rs")
+              (:status "renamed" :source "old/source.bin" :target "src/new.bin")
+              (:status "modified" :source "outside.txt" :target "outside.txt"))))
+         (majutsu-diff--active-file-metadata metadata)
+         (majutsu-diff--file-metadata-queue (copy-sequence metadata)))
+    (magit-insert-section (diffbuf)
+      (magit-insert-section (diff-root)
+        (insert
+         "src/a.rs | 4 ++--\n"
+         "{old/source.bin => src/new.bin} | 0\n"
+         "outside.txt | 2 +-\n"
+         "3 files changed, 3 insertions(+), 3 deletions(-)\n"
+         "diff --git a/src/a.rs b/src/a.rs\n"
+         "index 1111111..2222222 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n"
+         "@@ -1 +1 @@\n-old one\n+new one\n"
+         "@@ -10 +10 @@\n-old two\n+new two\n"
+         "diff --git a/old/source.bin b/src/new.bin\n"
+         "rename from old/source.bin\nrename to src/new.bin\n"
+         "diff --git a/outside.txt b/outside.txt\n"
+         "index 1111111..2222222 100644\n--- a/outside.txt\n+++ b/outside.txt\n"
+         "@@ -1 +1 @@\n-old\n+new\n")
+        (majutsu-diff-wash-diffs '("--stat"))
+        (majutsu-diff--attach-file-metadata metadata)))))
+
+(ert-deftest majutsu-interactive-directory-selection/mirrors-partial-and-full-state ()
+  "Directory selection includes hidden files and renames, but not siblings."
+  (with-temp-buffer
+    (majutsu-interactive-test--insert-stat-tree)
+    (let* ((transient-current-command 'majutsu-split)
+           (stat (majutsu-diff--stat-file-section "src/a.rs"))
+           (directory (oref stat parent))
+           (rename (majutsu-diff--stat-file-section "src/new.bin"))
+           (outside (majutsu-diff--stat-file-section "outside.txt"))
+           (file (majutsu-interactive--file-section-for-file "src/a.rs"))
+           (hunks (majutsu-interactive--file-section-hunks file)))
+      (cl-labels ((face-p
+                   (section face)
+                   (seq-some (lambda (ov) (eq (overlay-get ov 'face) face))
+                             (overlays-at (oref section start)))))
+        (goto-char (oref (car hunks) start))
+        (majutsu-interactive-toggle-hunk)
+        (should (face-p stat 'majutsu-interactive-partially-selected-file))
+        (should (face-p directory 'majutsu-interactive-partially-selected-file))
+        (should-not (face-p rename 'majutsu-interactive-selected-file))
+        (goto-char (oref directory start))
+        (majutsu-section-hide directory)
+        (majutsu-interactive-toggle-file)
+        (should (oref directory hidden))
+        (should (face-p directory 'majutsu-interactive-selected-file))
+        (should (face-p stat 'majutsu-interactive-selected-file))
+        (should (face-p rename 'majutsu-interactive-selected-file))
+        (should-not (face-p outside 'majutsu-interactive-selected-file))
+        (let ((plan (majutsu-interactive-build-replay-plan-if-selected)))
+          (should (equal (plist-get plan :file-ops)
+                         '((:action rename :source "old/source.bin"
+                            :path "src/new.bin"))))
+          (should (string-match-p "new one" (plist-get plan :patch)))
+          (should (string-match-p "new two" (plist-get plan :patch)))
+          (should-not (string-match-p "outside.txt" (plist-get plan :patch))))
+        (majutsu-interactive-toggle-file)
+        (should-not (majutsu-interactive-has-selections-p))
+        (should-not majutsu-interactive--overlays)))))
+
+(ert-deftest majutsu-interactive-directory-selection/validates-before-selecting ()
+  "An unverifiable rename must not leave other files in its directory selected."
+  (with-temp-buffer
+    (majutsu-interactive-test--insert-stat-tree t)
+    (let ((transient-current-command 'majutsu-split)
+          (directory (oref (majutsu-diff--stat-file-section "src/a.rs") parent)))
+      (goto-char (oref directory start))
+      (should-error (majutsu-interactive-toggle-file) :type 'user-error)
+      (should-not (majutsu-interactive-has-selections-p))
+      (should-not majutsu-interactive--overlays))))
+
 (ert-deftest majutsu-interactive-toggle-file/fails-closed-without-machine-metadata ()
   "Rendered Git headers alone must never authorize a whole-file operation."
   (with-temp-buffer
@@ -748,6 +829,116 @@ Covers restore modify/add/delete/rename and squash modify."
                    repo "diff" "--git" "--from=@-" "--to=@")))
         (should-not (string-match-p "selected\\.bin" diff))
         (should (string-match-p "kept\\.bin" diff))))))
+
+(ert-deftest majutsu-interactive/integration-binary-and-mode-selections ()
+  "Replay binary bytes and chmod independently, together, and by directory."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (dolist (command '(majutsu-restore majutsu-split majutsu-squash))
+      (dolist (selection '(mode content file directory neither))
+        (dolist (old-mode '(#o644 #o755))
+          (let* ((repo (majutsu-jj-integration-init
+                        sandbox (format "%s-%s-%o" command selection old-mode)))
+                 (path "dir/change.bin")
+                 (file (majutsu-jj-integration-file repo path))
+                 (other (majutsu-jj-integration-file repo "outside.txt"))
+                 (old-bytes (unibyte-string 0 1 2 3))
+                 (new-bytes (unibyte-string 0 4 5 6))
+                 (new-mode (if (= old-mode #o644) #o755 #o644))
+                 (restore (eq command 'majutsu-restore))
+                 (content-selected (memq selection '(content file directory)))
+                 (mode-selected (memq selection '(mode file directory)))
+                 plan)
+            (make-directory (file-name-directory file) t)
+            (majutsu-jj-integration-write-bytes file old-bytes)
+            (set-file-modes file old-mode)
+            (majutsu-jj-integration-write-text other "old\n")
+            (majutsu-jj-integration-commit repo "base")
+            (majutsu-jj-integration-write-bytes file new-bytes)
+            (set-file-modes file new-mode)
+            ;; Keep the child nonempty even when moving this entire file.
+            (majutsu-jj-integration-write-text other "new\n")
+            (setq plan
+                  (majutsu-jj-integration-with-washed-diff
+                   repo
+                   (lambda ()
+                     (when (eq selection 'directory)
+                       ;; Render the real diffstat too, so F is exercised on
+                       ;; its directory rather than on the patch file.
+                       (let ((inhibit-read-only t)
+                             (magit-section-inhibit-markers t)
+                             (metadata (majutsu-diff--query-file-metadata nil nil))
+                             (output (majutsu-jj-buffer-string
+                                      "diff" "--git" "--stat")))
+                         (erase-buffer)
+                         (let ((majutsu-diff--active-file-metadata metadata)
+                               (majutsu-diff--file-metadata-queue
+                                (copy-sequence metadata)))
+                           (magit-insert-section (diffbuf)
+                             (magit-insert-section (diff-root)
+                               (insert output)
+                               (majutsu-diff-wash-diffs '("--git" "--stat")))))
+                         (majutsu-diff--attach-file-metadata metadata)))
+                     (let* ((transient-current-command command)
+                            (section (majutsu-interactive--file-section-for-file
+                                      path))
+                            (mode (seq-find
+                                   (lambda (child)
+                                     (magit-section-match 'jj-mode-change child))
+                                   (oref section children))))
+                       (should mode)
+                       (pcase selection
+                         ('directory
+                          (goto-char
+                           (oref (oref (majutsu-diff--stat-file-section path)
+                                       parent)
+                                 start))
+                          (majutsu-interactive-toggle-file))
+                         ((or 'file 'content)
+                          (majutsu-interactive-test--toggle-whole-file path command)
+                          (when (eq selection 'content)
+                            (goto-char (oref mode start))
+                            (majutsu-interactive-toggle-hunk)))
+                         ('neither
+                          (majutsu-interactive-test--toggle-whole-file
+                           "outside.txt" command))
+                         ('mode
+                          (goto-char (oref mode start))
+                          (majutsu-interactive-toggle-hunk)))
+                       (should (eq (majutsu-interactive--file-selection-state section)
+                                   (pcase selection
+                                     ((or 'file 'directory) 'all)
+                                     ('neither nil)
+                                     (_ 'partial))))
+                       (majutsu-interactive-build-replay-plan-if-selected
+                        nil (if restore 'complement 'selected))))))
+            (majutsu-jj-integration-run-replay
+             repo (pcase command
+                    ('majutsu-restore "restore")
+                    ('majutsu-split "split")
+                    ('majutsu-squash "squash"))
+             (pcase command
+               ('majutsu-restore '("--changes-in=@"))
+               ('majutsu-split '("--revision=@" "--message=selected"))
+               ('majutsu-squash '("--from=@" "--into=@-")))
+             plan)
+            (should (equal (majutsu-jj-integration-read-bytes file)
+                           (if (and restore content-selected) old-bytes new-bytes)))
+            (should (= (logand (file-modes file) #o777)
+                       (if (and restore mode-selected) old-mode new-mode)))
+            (should (equal (majutsu-interactive-test--file-contents other)
+                           (if (and restore (eq selection 'neither))
+                               "old\n" "new\n")))
+            (unless restore
+              ;; Materialize the revision receiving the selection to inspect
+              ;; its actual bytes and executable bit, not generated patches.
+              (majutsu-jj-integration-call repo "new" "@-")
+              (should (equal (majutsu-jj-integration-read-bytes file)
+                             (if content-selected new-bytes old-bytes)))
+              (should (= (logand (file-modes file) #o777)
+                         (if mode-selected new-mode old-mode)))
+              (should (equal (majutsu-interactive-test--file-contents other)
+                             (if (eq selection 'neither)
+                                 "new\n" "old\n"))))))))))
 
 (ert-deftest majutsu-interactive/integration-restore-partial-new-file-text ()
   "Partial restore of a new text file must not reverse-apply the new-file patch.
