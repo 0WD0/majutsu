@@ -192,6 +192,117 @@
         (should-not (text-properties-at 0 (oref diffstat-file value)))
         (should-not (text-properties-at 0 (oref diff-file value)))))))
 
+(ert-deftest majutsu-diff-wash-diffstat-groups-full-paths-and-keeps-navigation ()
+  "Clipped JJ stat names should render as collapsible, navigable file trees."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let* ((inhibit-read-only t)
+           (magit-section-inhibit-markers t)
+           (nested "fixtures/sample-project/packages/module-a/src/components/nested/item.rs")
+           (sibling "fixtures/sample-project/packages/module-a/src/components/nested.rs")
+           (peer "fixtures/sample-project/packages/module-b/src/lib.rs")
+           (binary "assets/logo.bin")
+           (output
+            (concat
+             (string-join
+              '("assets/logo.bin | (binary) +3 bytes"
+                ".../src/components/nested/item.rs | 123 +++--"
+                ".../src/components/nested.rs | 2 +-"
+                ".../module-b/src/lib.rs | 0"
+                "4 files changed, 75 insertions(+), 50 deletions(-)")
+              "\n")
+             "\n"
+             (mapconcat
+              (lambda (path)
+                (format
+                 "diff --git a/%s b/%s\nindex 1234567..89abcde 100644\n--- a/%s\n+++ b/%s\n@@ -1 +1 @@\n-old\n+new\n"
+                 path path path path))
+              (list binary nested sibling peer)
+              ""))))
+      (magit-insert-section (diffbuf)
+        (magit-insert-section (diff-root)
+          (insert output)
+          (save-restriction
+            (narrow-to-region (point-min) (point-max))
+            (majutsu-diff-wash-diffs '("--stat")))))
+      (let* ((diff-root (car (oref magit-root-section children)))
+             (diffstat (car (oref diff-root children)))
+             (stat-file (majutsu-diff--stat-file-section nested))
+             (patch (seq-find (lambda (section)
+                                (and (eq (oref section type) 'jj-file)
+                                     (equal (oref section value) nested)))
+                              (oref diff-root children)))
+             (directory (oref stat-file parent))
+             (text (buffer-substring-no-properties
+                    (oref diffstat start) (oref diffstat end))))
+        (should (equal (oref diffstat type) 'diffstat))
+        (should (equal (oref directory type) 'jj-directory))
+        (should (equal (oref directory value)
+                       "fixtures/sample-project/packages/module-a/src/components/nested/"))
+        (should (string-match-p "└── fixtures/sample-project/packages/" text))
+        (should (string-match-p "item.rs +| 123 \\+\\+\\+--" text))
+        (should (string-match-p "nested.rs +| 2 \\+-" text))
+        (should (string-match-p "lib.rs +| 0 " text))
+        (should-not (string-match-p "\\.\\.\\./src/components" text))
+        (goto-char (oref diffstat start))
+        (search-forward "(binary)")
+        (should (eq (get-text-property (- (point) (length "(binary)"))
+                                       'font-lock-face)
+                    'majutsu-diffstat-binary))
+        (should patch)
+        (goto-char (oref stat-file start))
+        (majutsu-jump-to-diffstat-or-diff)
+        (should (eq (magit-current-section) patch))
+        (majutsu-section-hide directory)
+        (should (get-char-property (oref stat-file start) 'invisible))
+        (majutsu-jump-to-diffstat-or-diff)
+        (should (eq (magit-current-section) stat-file))
+        (should-not (get-char-property (oref stat-file start) 'invisible))))))
+
+(ert-deftest majutsu-diff-wash-diffstat-renames-follow-target-paths ()
+  "Same-directory and cross-directory renames keep their source and identity."
+  (with-temp-buffer
+    (magit-section-mode)
+    (let* ((inhibit-read-only t)
+           (magit-section-inhibit-markers t)
+           (metadata '((:status "renamed" :source "src/old.rs" :target "src/new.rs")
+                       (:status "renamed" :source "old/moved.rs" :target "dst/new.rs")
+                       (:status "modified" :source "src/changed.rs" :target "src/changed.rs")))
+           (majutsu-diff--active-file-metadata metadata)
+           (majutsu-diff--file-metadata-queue (copy-sequence metadata)))
+      (magit-insert-section (diffbuf)
+        (magit-insert-section (diff-root)
+          (insert "src/{old.rs => new.rs} | 0\n"
+                  "{old/moved.rs => dst/new.rs} | 0\n"
+                  "src/changed.rs | 2 +-\n"
+                  "3 files changed, 1 insertion(+), 1 deletion(-)\n"
+                  "diff --git a/src/old.rs b/src/new.rs\n"
+                  "rename from src/old.rs\nrename to src/new.rs\n"
+                  "diff --git a/old/moved.rs b/dst/new.rs\n"
+                  "rename from old/moved.rs\nrename to dst/new.rs\n"
+                  "diff --git a/src/changed.rs b/src/changed.rs\n"
+                  "--- a/src/changed.rs\n+++ b/src/changed.rs\n"
+                  "@@ -1 +1 @@\n-old\n+new\n")
+          (majutsu-diff-wash-diffs '("--stat"))
+          (majutsu-diff--attach-file-metadata metadata)))
+      (dolist (path '("src/new.rs" "dst/new.rs" "src/changed.rs"))
+        (let ((stat (majutsu-diff--stat-file-section path)))
+          (should (equal (oref (oref stat parent) value)
+                         (file-name-directory path)))
+          (goto-char (oref stat start))
+          (when (string-suffix-p "/new.rs" path)
+            (should (search-forward
+                     (if (string-prefix-p "src/" path)
+                         "new.rs ← old.rs"
+                       "new.rs ← old/moved.rs")
+                     (oref stat end) t)))
+          (majutsu-jump-to-diffstat-or-diff)
+          (should (equal (plist-get (majutsu-diff-file-metadata
+                                     (magit-current-section)) :target)
+                         path))
+          (majutsu-jump-to-diffstat-or-diff)
+          (should (eq (magit-current-section) stat)))))))
+
 (ert-deftest majutsu-jj-wash/failed-diff-keeps-stderr-outside-parser ()
   "Failed `--git --stat' output should keep its tree and append stderr safely."
   (with-temp-buffer

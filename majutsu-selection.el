@@ -272,6 +272,35 @@ Exact matches are preferred; otherwise choose the nearest prefix match."
                       session id (car data) locate-fn)))
                  active-ids)))))
 
+(defun majutsu-selection-highlight-tree (root state-function selected-face partial-face)
+  "Highlight selected headings under ROOT and return the created overlays.
+STATE-FUNCTION returns `all', `partial', or nil for each leaf section.
+Parent state is derived from its children, including hidden children.
+The caller owns the overlays and must remove them when selection changes."
+  (let (overlays)
+    (cl-labels
+        ((visit
+           (section)
+           (let* ((children (oref section children))
+                  (states (mapcar #'visit children))
+                  (state (if children
+                             (cond ((cl-every (lambda (s) (eq s 'all)) states)
+                                    'all)
+                                   ((seq-some #'identity states) 'partial))
+                           (funcall state-function section))))
+             (when state
+               (let ((overlay (make-overlay
+                               (oref section start)
+                               (or (oref section content) (oref section end)))))
+                 (overlay-put overlay 'face
+                              (if (eq state 'all) selected-face partial-face))
+                 (overlay-put overlay 'priority '(nil . 50))
+                 (overlay-put overlay 'evaporate t)
+                 (push overlay overlays)))
+             state)))
+      (visit root))
+    overlays))
+
 (defun majutsu-selection-clear (&optional id)
   "Clear selections.
 If ID is non-nil, clear only that selection category."

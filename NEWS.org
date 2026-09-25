@@ -246,6 +246,9 @@
   Patch operations reject stale selections or a source different from the
   displayed diff, and pin execution to the validated revisions.  Restore
   requires an explicit operation for ambiguous multi-revision diffs.
+  Binary contents and executable-bit changes are independently selectable.
+  File and directory selections include both; restoring only permissions
+  preserves unselected binary contents.
 
 - Cancelled editor sessions preserve selections ::
   When a jj editor exits without changing the repository, the Emacs patch
