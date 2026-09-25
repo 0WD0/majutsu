@@ -40,10 +40,12 @@
   ((locate-fn :initform (##majutsu-selection-find-section %))
    (targets-fn :initform #'majutsu-revisions-at-point))
   "Selection option for JJ revisions and their visible revision sections.")
+
 (cl-defstruct (majutsu-selection-session
                (:constructor majutsu-selection-session-create))
   buffer
   overlays)
+
 (defun majutsu--transient-with-selection-buffer (fn &rest args)
   "Call FN with ARGS in the active selection session buffer.
 
