@@ -260,48 +260,71 @@
         (should-not (get-char-property (oref stat-file start) 'invisible))))))
 
 (ert-deftest majutsu-diff-wash-diffstat-renames-follow-target-paths ()
-  "Same-directory and cross-directory renames keep their source and identity."
+  "Renames keep target identity and hide their full source in a foldable body."
   (with-temp-buffer
     (magit-section-mode)
     (let* ((inhibit-read-only t)
            (magit-section-inhibit-markers t)
-           (metadata '((:status "renamed" :source "src/old.rs" :target "src/new.rs")
-                       (:status "renamed" :source "old/moved.rs" :target "dst/new.rs")
-                       (:status "modified" :source "src/changed.rs" :target "src/changed.rs")))
+           (source-path "fixtures/sample-project/packages/legacy-module/src/components/nested/moved.rs")
+           (metadata
+            (list '(:status "renamed" :source "src/old.rs" :target "src/new.rs")
+                  (list :status "renamed" :source source-path :target "dst/new.rs")
+                  '(:status "modified" :source "src/changed.rs" :target "src/changed.rs")))
            (majutsu-diff--active-file-metadata metadata)
            (majutsu-diff--file-metadata-queue (copy-sequence metadata)))
       (magit-insert-section (diffbuf)
         (magit-insert-section (diff-root)
           (insert "src/{old.rs => new.rs} | 0\n"
-                  "{old/moved.rs => dst/new.rs} | 0\n"
+                  "{.../nested/moved.rs => dst/new.rs} | 0\n"
                   "src/changed.rs | 2 +-\n"
                   "3 files changed, 1 insertion(+), 1 deletion(-)\n"
                   "diff --git a/src/old.rs b/src/new.rs\n"
                   "rename from src/old.rs\nrename to src/new.rs\n"
-                  "diff --git a/old/moved.rs b/dst/new.rs\n"
-                  "rename from old/moved.rs\nrename to dst/new.rs\n"
+                  (format "diff --git a/%s b/dst/new.rs\nrename from %s\nrename to dst/new.rs\n"
+                          source-path source-path)
                   "diff --git a/src/changed.rs b/src/changed.rs\n"
                   "--- a/src/changed.rs\n+++ b/src/changed.rs\n"
                   "@@ -1 +1 @@\n-old\n+new\n")
           (majutsu-diff-wash-diffs '("--stat"))
           (majutsu-diff--attach-file-metadata metadata)))
-      (dolist (path '("src/new.rs" "dst/new.rs" "src/changed.rs"))
-        (let ((stat (majutsu-diff--stat-file-section path)))
+      (majutsu-section-show magit-root-section)
+      (dolist (entry metadata)
+        (let* ((path (plist-get entry :target))
+               (source (and (equal (plist-get entry :status) "renamed")
+                            (plist-get entry :source)))
+               (stat (majutsu-diff--stat-file-section path)))
           (should (equal (oref (oref stat parent) value)
                          (file-name-directory path)))
           (goto-char (oref stat start))
-          (when (string-suffix-p "/new.rs" path)
-            (should (search-forward
-                     (if (string-prefix-p "src/" path)
-                         "new.rs ← old.rs"
-                       "new.rs ← old/moved.rs")
-                     (oref stat end) t)))
+          (when source
+            (should (oref stat hidden))
+            (should (invisible-p (oref stat content)))
+            (should-not
+             (string-match-p (regexp-quote (file-name-nondirectory source))
+                             (buffer-substring-no-properties
+                              (oref stat start) (oref stat content))))
+            (should
+             (string-match-p (regexp-quote source)
+                             (buffer-substring-no-properties
+                              (oref stat content) (oref stat end))))
+            (majutsu-section-toggle stat)
+            (should-not (invisible-p (oref stat content)))
+            ;; Commands on the expanded detail still act on the target file.
+            (goto-char (oref stat content)))
           (majutsu-jump-to-diffstat-or-diff)
           (should (equal (plist-get (majutsu-diff-file-metadata
                                      (magit-current-section)) :target)
                          path))
           (majutsu-jump-to-diffstat-or-diff)
-          (should (eq (magit-current-section) stat)))))))
+          (should (eq (magit-current-section) stat))
+          (when source
+            (majutsu-section-toggle stat)
+            (should (oref stat hidden))
+            (should (invisible-p (oref stat content))))))
+      (goto-char (oref (majutsu-diff--stat-file-section "dst/new.rs") start))
+      (search-forward "|" (line-end-position))
+      ;; Even a long source path must not push the count column to the right.
+      (should (< (current-column) (string-width source-path))))))
 
 (ert-deftest majutsu-jj-wash/failed-diff-keeps-stderr-outside-parser ()
   "Failed `--git --stat' output should keep its tree and append stderr safely."
