@@ -453,7 +453,8 @@ COMMAND identifies the transient whose whole-file selections are toggled."
          "index 1111111..2222222 100644\n--- a/outside.txt\n+++ b/outside.txt\n"
          "@@ -1 +1 @@\n-old\n+new\n")
         (majutsu-diff-wash-diffs '("--stat"))
-        (majutsu-diff--attach-file-metadata metadata)))))
+        (majutsu-diff--attach-file-metadata metadata)))
+    (majutsu-section-show magit-root-section)))
 
 (ert-deftest majutsu-interactive-directory-selection/mirrors-partial-and-full-state ()
   "Directory selection includes hidden files and renames, but not siblings."
@@ -470,6 +471,7 @@ COMMAND identifies the transient whose whole-file selections are toggled."
                    (section face)
                    (seq-some (lambda (ov) (eq (overlay-get ov 'face) face))
                              (overlays-at (oref section start)))))
+        (should (oref rename hidden))
         (goto-char (oref (car hunks) start))
         (majutsu-interactive-toggle-hunk)
         (should (face-p stat 'majutsu-interactive-partially-selected-file))
@@ -490,6 +492,20 @@ COMMAND identifies the transient whose whole-file selections are toggled."
           (should (string-match-p "new one" (plist-get plan :patch)))
           (should (string-match-p "new two" (plist-get plan :patch)))
           (should-not (string-match-p "outside.txt" (plist-get plan :patch))))
+        (majutsu-section-show directory)
+        (should (oref rename hidden))
+        (majutsu-section-show rename)
+        (should-not
+         (seq-some (lambda (ov)
+                     (eq (overlay-get ov 'face)
+                         'majutsu-interactive-selected-file))
+                   (overlays-at (oref rename content))))
+        (goto-char (oref rename content))
+        (majutsu-interactive-toggle-file)
+        (should-not (face-p rename 'majutsu-interactive-selected-file))
+        (should (face-p directory 'majutsu-interactive-partially-selected-file))
+        (goto-char (oref directory start))
+        (majutsu-interactive-toggle-file)
         (majutsu-interactive-toggle-file)
         (should-not (majutsu-interactive-has-selections-p))
         (should-not majutsu-interactive--overlays)))))

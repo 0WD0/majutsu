@@ -441,6 +441,7 @@ The returned value is a (ARGS RANGE FILESETS) triple."
 
 (cl-defstruct majutsu-diff--stat-entry
   path
+  source
   label
   count
   added
@@ -514,7 +515,9 @@ DEPTH is the number of visible ancestor directories."
              (branch (if last "└── " "├── "))
              (line-prefix (concat prefix branch)))
         (if-let* ((entry (majutsu-diff--stat-node-entry child)))
-            (magit-insert-section (jj-file (majutsu-diff--stat-entry-path entry))
+            (magit-insert-section
+                (jj-file (majutsu-diff--stat-entry-path entry)
+                         (and (majutsu-diff--stat-entry-source entry) t))
               (let ((label (majutsu-diff--stat-entry-label entry)))
                 (insert line-prefix label
                         (make-string
@@ -529,7 +532,15 @@ DEPTH is the number of visible ancestor directories."
                 (when-let* ((removed (majutsu-diff--stat-entry-removed entry)))
                   (insert (propertize removed 'font-lock-face
                                       'magit-diffstat-removed)))
-                (insert "\n")))
+                (insert "\n")
+                (when-let* ((source (majutsu-diff--stat-entry-source entry)))
+                  (magit-insert-heading)
+                  (insert prefix (if last "    " "│   ") "    "
+                          (propertize
+                           (concat "Renamed from: "
+                                   (majutsu-diff--stat-escape-path source))
+                           'font-lock-face 'shadow)
+                          "\n"))))
           (pcase-let ((`(,label . ,directory)
                        (majutsu-diff--stat-directory-label child)))
             (magit-insert-section
@@ -540,27 +551,20 @@ DEPTH is the number of visible ancestor directories."
               (majutsu-diff--insert-stat-tree
                directory (concat prefix (if last "    " "│   ")) column))))))))
 
-(defun majutsu-diff--stat-label (path display source opaque)
-  "Format PATH for a stat row, retaining rename SOURCE when known.
+(defun majutsu-diff--stat-escape-path (path)
+  "Escape control characters in PATH to keep stat sections single-line."
+  (dolist (escape '(("\n" . "\\n") ("\r" . "\\r") ("\t" . "\\t")))
+    (setq path (string-replace (car escape) (cdr escape) path)))
+  path)
+
+(defun majutsu-diff--stat-label (path display opaque)
+  "Format the destination PATH for a stat row.
 DISPLAY is JJ's original label; OPAQUE means it is not a complete path."
   (let ((label
          (magit-format-file
           'stat (if opaque display (file-name-nondirectory path))
           'magit-filename)))
-    (when source
-      (setq label
-            (concat label
-                    (propertize
-                     (concat " ← " (if (equal (file-name-directory source)
-                                              (file-name-directory path))
-                                       (file-name-nondirectory source)
-                                     source))
-                     'font-lock-face 'shadow))))
-    ;; Exact paths can contain newlines or tabs even though JJ's display is
-    ;; single-line.  Keep those characters out of the section layout.
-    (dolist (escape '(("\n" . "\\n") ("\r" . "\\r") ("\t" . "\\t")))
-      (setq label (string-replace (car escape) (cdr escape) label)))
-    (propertize label 'help-echo path)))
+    (propertize (majutsu-diff--stat-escape-path label) 'help-echo path)))
 
 (defconst majutsu-diff--file-metadata-template
   (majutsu-template-compile
@@ -1299,9 +1303,10 @@ first \"diff --git\" header."
                           " bytes")))))
               (push (make-majutsu-diff--stat-entry
                      :path path
+                     :source source
                      :opaque opaque
                      :label (majutsu-diff--stat-label
-                             path file source
+                             path file
                              (or opaque
                                  (and (null source)
                                       (null majutsu-diff--active-file-metadata)
