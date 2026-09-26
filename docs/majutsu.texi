@@ -2078,10 +2078,12 @@ buffer@comma{} a "Patch Selection" group appears with the following commands:
 
 The diffstat is a collapsible directory tree.  Single-directory chains are
 compacted@comma{} while file sections retain their complete paths for navigation.
-Renames appear under the destination directory@comma{} with the source shown after
-@samp{←}.  On a directory@comma{} @code{F} selects all descendant file changes@comma{} including hidden
-files.  A partially selected directory becomes fully selected; a fully selected
-one is cleared.  Files outside that directory are unaffected.
+Renames appear under the destination directory.  The source path is in the
+file section's body@comma{} collapsed by default.  @code{TAB} toggles these details without
+widening the statistics column.  On a directory@comma{} @code{F} selects all descendant
+file changes@comma{} including hidden files.  A partially selected directory becomes
+fully selected; a fully selected one is cleared.  Files outside that directory
+are unaffected.
 
 The @samp{-i} argument is a separate@comma{} jj-native workflow.  When no H/F/R patch
 selection is active@comma{} Majutsu forwards @samp{--interactive} (and Split/Squash's

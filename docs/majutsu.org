@@ -1141,10 +1141,12 @@ buffer, a "Patch Selection" group appears with the following commands:
 
 The diffstat is a collapsible directory tree.  Single-directory chains are
 compacted, while file sections retain their complete paths for navigation.
-Renames appear under the destination directory, with the source shown after
-=←=.  On a directory, ~F~ selects all descendant file changes, including hidden
-files.  A partially selected directory becomes fully selected; a fully selected
-one is cleared.  Files outside that directory are unaffected.
+Renames appear under the destination directory.  The source path is in the
+file section's body, collapsed by default.  ~TAB~ toggles these details without
+widening the statistics column.  On a directory, ~F~ selects all descendant
+file changes, including hidden files.  A partially selected directory becomes
+fully selected; a fully selected one is cleared.  Files outside that directory
+are unaffected.
 
 The =-i= argument is a separate, jj-native workflow.  When no H/F/R patch
 selection is active, Majutsu forwards =--interactive= (and Split/Squash's
