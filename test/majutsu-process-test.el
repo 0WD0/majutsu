@@ -741,6 +741,23 @@ is not silently reported as passed."
         (should (= 0 exit))
         (should (equal (buffer-string) "prefix:hello\nworld\n"))))))
 
+(ert-deftest majutsu-process-test-file-preserves-explicit-raw-output ()
+  "Raw reads preserve UTF-8, invalid bytes, NUL, and line endings exactly."
+  (majutsu-process-test--with-sh
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (let ((coding-system-for-read 'no-conversion)
+            (coding-system-for-write nil))
+        (should
+         (= 0 (majutsu-process-file
+               "sh" nil t nil "-c"
+               (concat "printf '\\342\\227\\206 \\342\\227\\213 "
+                       "\\344\\275\\240\\345\\245\\275 caf\\303\\251"
+                       "\\000\\377\\r\\n'"))))
+        (should (equal (buffer-string)
+                       (concat (encode-coding-string "◆ ○ 你好 café" 'utf-8-unix)
+                               (unibyte-string 0 255 13 10))))))))
+
 (ert-deftest majutsu-process-test-file-responsive-returns-exit-code ()
   "Responsive runner should return the subprocess exit status."
   (majutsu-process-test--with-sh
