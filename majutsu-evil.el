@@ -186,6 +186,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "X") #'majutsu-op-transient
     (kbd "*") #'majutsu-workspace
     (kbd "E") #'majutsu-ediff
+    (kbd "M") #'majutsu-resolve
     (kbd "?") #'majutsu-dispatch
     (kbd ">") #'majutsu-sparse
     (kbd "RET") #'majutsu-visit-thing)
@@ -196,6 +197,9 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "~") #'majutsu-diff-default-context
     (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
     (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
+
+  (majutsu-evil--define-keys '(normal visual motion) 'majutsu-resolve-mode-map
+    (kbd "RET") #'majutsu-resolve-visit-file)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-evolog-mode-map
     [remap majutsu-visit-thing] #'majutsu-evolog-diff-at-point)

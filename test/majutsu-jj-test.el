@@ -180,44 +180,47 @@
 
 (ert-deftest majutsu-jj-conflicted-files/parses-structured-records ()
   "Conflicted files should retain exact paths and conflict side counts."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu-jj-items)
-               (lambda (&rest args)
-                 (setq captured args)
-                 (list (concat "2" (string 31) "dir with spaces/file name.txt")
-                       (concat "3" (string 31) "other.txt")))))
-      (should (equal (majutsu-jj-conflicted-files)
-                     '((:path "dir with spaces/file name.txt" :sides 2)
-                       (:path "other.txt" :sides 3))))
-      (should (equal (seq-take captured 4)
-                     '("file" "list" "-r" "@")))
-      (should (equal (nth 4 captured) "-T"))
-      (should (equal (nth 5 captured)
-                     majutsu-jj--conflicted-files-template)))))
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert (concat "2" (string 31) "dir with spaces/file name.txt\0"
+                               "3" (string 31) "other.txt\0"))
+               0)))
+    (should (equal (majutsu-jj-conflicted-files)
+                   '((:path "dir with spaces/file name.txt" :sides 2)
+                     (:path "other.txt" :sides 3))))))
 
-(ert-deftest majutsu-jj-conflicted-files/appends-filesets-and-drops-malformed ()
-  "Structured conflict queries should accept filesets and ignore bad records."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu-jj-items)
-               (lambda (&rest args)
-                 (setq captured args)
-                 (list (concat "4" (string 31) "good.txt")
-                       (concat (string 31) "missing-sides")
-                       (concat "2" (string 31))))))
-      (should (equal (majutsu-jj-conflicted-files
-                      "abc" '("file:\"a b.txt\"" "glob:src/**"))
-                     '((:path "good.txt" :sides 4))))
-      (should (equal (seq-drop captured 6)
-                     '("--" "file:\"a b.txt\"" "glob:src/**"))))))
+(ert-deftest majutsu-jj-conflicted-files/drops-malformed-records ()
+  "Malformed records must not invent conflicted repository paths."
+  (cl-letf (((symbol-function 'majutsu--jj-insert)
+             (lambda (_return-error &rest _args)
+               (insert (concat "4" (string 31) "good.txt\0"
+                               (string 31) "missing-sides\0"
+                               "2" (string 31) "\0"))
+               0)))
+    (should (equal (majutsu-jj-conflicted-files
+                    "abc" '("file:\"a b.txt\"" "glob:src/**"))
+                   '((:path "good.txt" :sides 4))))))
 
 (ert-deftest majutsu-jj-conflicted-files/preserves-field-separator-in-path ()
   "The machine-field separator should remain valid inside repository paths."
   (let ((path (concat "dir" (string 31) "name.txt")))
-    (cl-letf (((symbol-function 'majutsu-jj-items)
-               (lambda (&rest _args)
-                 (list (concat "2" (string 31) path)))))
+    (cl-letf (((symbol-function 'majutsu--jj-insert)
+               (lambda (_return-error &rest _args)
+                 (insert (concat "2" (string 31) path "\0"))
+                 0)))
       (should (equal (majutsu-jj-conflicted-files)
                      `((:path ,path :sides 2)))))))
+
+(ert-deftest majutsu-jj-conflicted-files/rejects-failed-and-partial-queries ()
+  "Neither missing nor partial stdout can establish the conflict state."
+  (dolist (result '(1 "Error: revision does not exist"))
+    (dolist (stdout (list "" (concat "2" (string 31) "partial.txt\0")))
+      (cl-letf (((symbol-function 'majutsu--jj-insert)
+                 (lambda (_return-error &rest _args)
+                   (insert stdout)
+                   result)))
+        (should-error (majutsu-jj-conflicted-files "missing")
+                      :type 'user-error)))))
 
 ;; Tests for majutsu-jj-insert
 

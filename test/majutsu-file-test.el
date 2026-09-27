@@ -875,4 +875,20 @@ Leave the working copy on an unrelated revision."
             (set-buffer-modified-p nil))
           (kill-buffer buffer))))))
 
+(ert-deftest majutsu-file-apply-contents/integration-preserves-executable-bit ()
+  "A private non-executable staging file must not remove the target's mode."
+  (majutsu-jj-integration-with-repo repo
+    (let ((path (majutsu-jj-integration-file repo "tool.sh")))
+      (majutsu-jj-integration-write-text path "#!/bin/sh\nexit 1\n")
+      (set-file-modes path #o755)
+      (let* ((info (majutsu-file--resolve-single-rev-info "@"))
+             (result (majutsu-file-apply-contents
+                      (plist-get info :commit-id)
+                      (plist-get info :change-id)
+                      '(("tool.sh" . "#!/bin/sh\nexit 0\n")))))
+        (should (equal (majutsu-jj-integration-output
+                        repo "file" "show" "-r" result "tool.sh")
+                       "#!/bin/sh\nexit 0\n"))
+        (should (= (logand (file-modes path) #o111) #o111))))))
+
 (provide 'majutsu-file-test)
