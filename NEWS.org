@@ -157,6 +157,12 @@
 
 ** Changed
 
+- Conflict file trees ::
+  The log's unresolved conflicts are grouped into collapsible directories,
+  sharing the diffstat tree layout. File targets and conflict side counts are
+  retained, including conflicts inherited by merges with no changes-in diff.
+  Directory and file labels escape control characters without altering paths.
+
 - Bookmark and remote lists ::
   Local bookmarks and remote bookmarks have separate sections, with remote
   references grouped by remote and =@git= references in their own section.

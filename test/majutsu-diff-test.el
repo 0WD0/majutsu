@@ -316,6 +316,22 @@
         (should (eq (magit-current-section) stat-file))
         (should-not (get-char-property (oref stat-file start) 'invisible))))))
 
+(ert-deftest majutsu-diff-wash-diffstat/keeps-unresolved-paths-flat ()
+  "Truncated and compact rename labels must not invent directory targets."
+  (dolist (label '(".../nested/file.el" "src/{old.el => new.el}"))
+    (with-temp-buffer
+      (magit-section-mode)
+      (let ((inhibit-read-only t))
+        (magit-insert-section (diffbuf)
+          (insert label " | 0\n1 file changed, 0 insertions(+), 0 deletions(-)\n")
+          (goto-char (point-min))
+          (majutsu-diff-wash-diffstat)))
+      (let* ((stat (car (oref magit-root-section children)))
+             (file (car (oref stat children))))
+        (should (magit-section-match 'jj-file file))
+        (goto-char (oref file start))
+        (should (equal (majutsu-file-at-point) label))))))
+
 (ert-deftest majutsu-diff-wash-diffstat-renames-follow-target-paths ()
   "Renames keep target identity and hide their full source in a foldable body."
   (with-temp-buffer

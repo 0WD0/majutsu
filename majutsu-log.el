@@ -21,6 +21,7 @@
 (require 'majutsu)
 (require 'majutsu-jj)
 (require 'majutsu-row)
+(require 'majutsu-file-tree)
 
 ;;; Section Keymaps
 
@@ -620,22 +621,27 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 
 ;;; Log insert conflicts
 
+(defun majutsu-log--insert-conflicted-file (entry heading-prefix _body-prefix)
+  "Insert conflicted-file ENTRY with its tree HEADING-PREFIX."
+  (let* ((file (plist-get entry :path))
+         (sides (plist-get entry :sides))
+         (name (majutsu-file-tree-escape-label (file-name-nondirectory file))))
+    (magit-insert-section (jj-file file)
+      (magit-insert-heading
+        (propertize
+         (concat heading-prefix name
+                 (and sides (format " (%d-sided conflict)" sides)))
+         'face 'error 'help-echo file)))))
+
 (defun majutsu-log-insert-conflicts ()
-  "Insert conflicted files section."
-  (let ((entries (majutsu-jj-conflicted-files)))
-    (when entries
-      (magit-insert-section (conflict)
-        (magit-insert-heading "Unresolved Conflicts")
-        (dolist (entry entries)
-          (let* ((file (plist-get entry :path))
-                 (sides (plist-get entry :sides))
-                 (heading (if sides
-                              (format "%s (%d-sided conflict)" file sides)
-                            file)))
-            (magit-insert-section (jj-file file)
-              (magit-insert-heading (propertize heading 'face 'error))
-              (insert "\n"))))
-        (insert "\n")))))
+  "Insert the working copy's conflicted files as a collapsible path tree."
+  (when-let* ((entries (majutsu-jj-conflicted-files)))
+    (magit-insert-section (conflict)
+      (magit-insert-heading "Unresolved Conflicts")
+      (majutsu-file-tree-insert
+       (majutsu-file-tree-build entries (lambda (entry) (plist-get entry :path)))
+       #'majutsu-log--insert-conflicted-file)
+      (insert "\n"))))
 
 ;;; Log Navigation
 

@@ -29,6 +29,7 @@
 (require 'majutsu-process)
 (require 'majutsu-config)
 (require 'majutsu-selection)
+(require 'majutsu-file-tree)
 (require 'majutsu-template)
 (require 'json)
 (require 'magit-diff)      ; for faces/font-lock keywords
@@ -477,102 +478,20 @@ The returned value is a (ARGS RANGE FILESETS) triple."
   body
   opaque)
 
-(cl-defstruct majutsu-diff--stat-node
-  name
-  path
-  children
-  entry)
-
-(defun majutsu-diff--stat-tree (entries)
-  "Group ENTRIES by their complete paths, preserving their input order."
-  (let ((root (make-majutsu-diff--stat-node))
-        (directories (make-hash-table :test #'equal)))
-    (dolist (entry entries)
-      (let ((parts (if (majutsu-diff--stat-entry-opaque entry)
-                       (list (majutsu-diff--stat-entry-path entry))
-                     (split-string (majutsu-diff--stat-entry-path entry) "/")))
-            (parent root)
-            (path ""))
-        (while (cdr parts)
-          (let ((name (pop parts)))
-            (setq path (concat path name "/"))
-            (setq parent
-                  (or (gethash path directories)
-                      (let ((node (make-majutsu-diff--stat-node
-                                   :name name
-                                   :path path)))
-                        (puthash path node directories)
-                        (push node (majutsu-diff--stat-node-children parent))
-                        node)))))
-        (push (make-majutsu-diff--stat-node
-               :name (car parts)
-               :entry entry)
-              (majutsu-diff--stat-node-children parent))))
-    (setf (majutsu-diff--stat-node-children root)
-          (nreverse (majutsu-diff--stat-node-children root)))
-    (maphash (lambda (_path node)
-               (setf (majutsu-diff--stat-node-children node)
-                     (nreverse (majutsu-diff--stat-node-children node))))
-             directories)
-    root))
-
-(defun majutsu-diff--stat-directory-label (node)
-  "Return (LABEL . NODE), collapsing single-child directory chains."
-  (let ((label (majutsu-diff--stat-node-name node)))
-    (while (and (= (length (majutsu-diff--stat-node-children node)) 1)
-                (let ((child (car (majutsu-diff--stat-node-children node))))
-                  (not (majutsu-diff--stat-node-entry child))))
-      (setq node (car (majutsu-diff--stat-node-children node))
-            label (concat label "/" (majutsu-diff--stat-node-name node))))
-    (cons (concat label "/") node)))
-
-(defun majutsu-diff--stat-column (node &optional depth)
-  "Return the file-label column width for the tree under NODE.
-DEPTH is the number of visible ancestor directories."
-  (let ((width 0))
-    (dolist (child (majutsu-diff--stat-node-children node))
-      (setq width
-            (max width
-                 (if-let* ((entry (majutsu-diff--stat-node-entry child)))
-                     (+ (* 4 (or depth 0)) 4
-                        (string-width (majutsu-diff--stat-entry-label entry)))
-                   (majutsu-diff--stat-column
-                    (cdr (majutsu-diff--stat-directory-label child))
-                    (1+ (or depth 0)))))))
-    width))
-
-(defun majutsu-diff--insert-stat-tree (node prefix column)
-  "Insert NODE's children with tree PREFIX and file counts at COLUMN."
-  (let ((children (majutsu-diff--stat-node-children node)))
-    (while children
-      (let* ((child (pop children))
-             (last (null children))
-             (line-prefix (concat prefix (if last "└── " "├── ")))
-             (body-prefix (concat prefix (if last "    " "│   "))))
-        (if-let* ((entry (majutsu-diff--stat-node-entry child)))
-            (let ((label (majutsu-diff--stat-entry-label entry))
-                  (body (majutsu-diff--stat-entry-body entry)))
-              (magit-insert-section
-                  (jj-file (majutsu-diff--stat-entry-path entry) (and body t))
-                (insert line-prefix label
-                        (make-string
-                         (max 1 (- column
-                                   (string-width line-prefix)
-                                   (string-width label)))
-                         ?\s)
-                        "| " (majutsu-diff--stat-entry-stats entry) "\n")
-                (when body
-                  (magit-insert-heading)
-                  (insert body-prefix "    " body "\n"))))
-          (pcase-let ((`(,label . ,directory)
-                       (majutsu-diff--stat-directory-label child)))
-            (magit-insert-section
-                (jj-directory (majutsu-diff--stat-node-path directory))
-              (magit-insert-heading
-                (propertize (concat line-prefix label "\n")
-                            'font-lock-face 'magit-diff-file-heading))
-              (majutsu-diff--insert-stat-tree
-               directory body-prefix column))))))))
+(defun majutsu-diff--insert-stat-entry (entry heading-prefix body-prefix column)
+  "Insert diffstat ENTRY with tree prefixes and its statistics at COLUMN."
+  (let ((label (majutsu-diff--stat-entry-label entry))
+        (body (majutsu-diff--stat-entry-body entry)))
+    (magit-insert-section
+        (jj-file (majutsu-diff--stat-entry-path entry) (and body t))
+      (insert heading-prefix label
+              (make-string
+               (max 1 (- column (string-width heading-prefix) (string-width label)))
+               ?\s)
+              "| " (majutsu-diff--stat-entry-stats entry) "\n")
+      (when body
+        (magit-insert-heading)
+        (insert body-prefix "    " body "\n")))))
 
 (defconst majutsu-diff--file-metadata-template
   (majutsu-template-compile
@@ -1306,10 +1225,8 @@ first \"diff --git\" header."
                      'magit-filename))
                    (body (and source (concat "Renamed from: " source))))
               (majutsu-diff--delete-line)
-              ;; Keep display text single-line without changing path identity.
-              (dolist (escape '(("\n" . "\\n") ("\r" . "\\r") ("\t" . "\\t")))
-                (setq label (string-replace (car escape) (cdr escape) label)
-                      body (and body (string-replace (car escape) (cdr escape) body))))
+              (setq label (majutsu-file-tree-escape-label label)
+                    body (and body (majutsu-file-tree-escape-label body)))
               (when (string-match
                      "\\`(binary)\\(?: +\\([+-][0-9]+\\) bytes\\)?\\'" cnt)
                 (setq cnt
@@ -1336,9 +1253,19 @@ first \"diff --git\" header."
                                     (and del (propertize del 'font-lock-face
                                                          'magit-diffstat-removed))))
                     entries)))
-          (let ((tree (majutsu-diff--stat-tree (nreverse entries))))
-            (majutsu-diff--insert-stat-tree
-             tree "" (1+ (majutsu-diff--stat-column tree)))))
+          (let* ((tree (majutsu-file-tree-build
+                        (nreverse entries)
+                        (lambda (entry)
+                          (unless (majutsu-diff--stat-entry-opaque entry)
+                            (majutsu-diff--stat-entry-path entry)))))
+                 (column (1+ (majutsu-file-tree-label-width
+                              tree #'majutsu-diff--stat-entry-label))))
+            (majutsu-file-tree-insert
+             tree
+             (lambda (entry heading-prefix body-prefix)
+               (majutsu-diff--insert-stat-entry
+                entry heading-prefix body-prefix column))
+             'magit-diff-file-heading)))
         (if (looking-at "^$") (forward-line) (insert "\n"))))))
 
 (defun majutsu-diff-wash-diffs (args)
