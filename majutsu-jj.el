@@ -837,7 +837,8 @@ Empty items are omitted from the result."
   "Return conflicted file entries at REV using `jj file list -T'.
 REV defaults to \"@\".  FILESETS, when non-nil, is a string or list of jj
 fileset expressions used to restrict the query.  Each returned entry is a
-plist with `:path' and `:sides'."
+plist with `:path' and `:sides'.  Signal a user error if the query fails;
+failure must not be mistaken for a revision without conflicts."
   (let* ((filesets (cond
                     ((null filesets) nil)
                     ((listp filesets) filesets)
@@ -845,9 +846,15 @@ plist with `:path' and `:sides'."
          (args (append (list "file" "list" "-r" (or rev "@")
                              "-T" majutsu-jj--conflicted-files-template)
                        (and filesets (cons "--" filesets)))))
-    (delq nil
-          (mapcar #'majutsu-jj--parse-conflicted-file-record
-                  (apply #'majutsu-jj-items args)))))
+    (majutsu--with-no-color
+      (with-temp-buffer
+        (let ((result (apply #'majutsu--jj-insert t args)))
+          (unless (and (integerp result) (zerop result))
+            (user-error "Cannot query conflicted files at %s: %s"
+                        (or rev "@") result)))
+        (delq nil
+              (mapcar #'majutsu-jj--parse-conflicted-file-record
+                      (split-string (buffer-string) "\0" t)))))))
 
 (defun majutsu-jj-string (&rest args)
   "Run jj command with ARGS and return the first line of output.

@@ -151,6 +151,7 @@ Interactive Patching
 Conflict Resolution
 
 * Detecting Conflicts::
+* Text Conflict Workbench::
 * Entering Conflict Mode::
 * majutsu-conflict-mode Commands::
 
@@ -2521,6 +2522,7 @@ Runs: @samp{jj simplify-parents [--source REVSET] [--revision REVSET]}
 
 @menu
 * Detecting Conflicts::
+* Text Conflict Workbench::
 * Entering Conflict Mode::
 * majutsu-conflict-mode Commands::
 @end menu
@@ -2530,6 +2532,64 @@ Runs: @samp{jj simplify-parents [--source REVSET] [--revision REVSET]}
 
 JJ marks conflicts in the log with a "conflict" label. Expanding the revision
 shows each exact conflicted path together with its conflict side count.
+
+@node Text Conflict Workbench
+@section Text Conflict Workbench
+
+@table @asis
+@item @kbd{? M} (@code{majutsu-resolve})
+@kindex ? M
+@findex majutsu-resolve
+Open a directory-tree workbench for the revision
+  at point@comma{} or @samp{@@}. Evil users can press @code{M} directly. With a prefix argument@comma{}
+  choose a revision explicitly.
+@end table
+
+The workbench pins an exact commit@comma{} including historical revisions and
+inherited multi-sided conflicts with no changes-in diff. Its tree distinguishes
+jj's conflict state from private draft changes. Refresh never redirects the
+pin or overwrites drafts.
+
+@table @asis
+@item @kbd{@key{RET}} (@code{majutsu-resolve-visit-file})
+@kindex RET
+@findex majutsu-resolve-visit-file
+Open the file's private UTF-8 draft
+  in its usual major mode with @samp{majutsu-conflict-mode} enabled.
+@item @kbd{C-c C-c} (@code{majutsu-resolve-apply})
+@kindex C-c C-c
+@findex majutsu-resolve-apply
+Apply pending drafts in the current
+  file or directory@comma{} including folded descendants. In a draft editor@comma{} apply
+  that file. A prefix argument applies all pending drafts in the workbench.
+@item @kbd{C-c C-k} (@code{majutsu-resolve-discard})
+@kindex C-c C-k
+@findex majutsu-resolve-discard
+Discard pending drafts in scope;
+  a prefix argument discards all. This never undoes an existing jj operation.
+@item @kbd{C-c C-n} (@code{majutsu-resolve-next-file})
+@kindex C-c C-n
+@findex majutsu-resolve-next-file
+Visit the next file that jj still
+  reports as conflicted.
+@end table
+
+In a draft editor@comma{} @code{C-x C-s} saves only the private draft@comma{} not the repository.
+@code{C-c C-o} returns to the workbench. Closing a draft editor retains its text
+while the workbench lives; killing the workbench with @code{C-x k} confirms pending
+changes and removes its private files. This is not a persistent session store.
+
+Applying rewrites the fixed commit once and verifies the resulting revision@comma{}
+file contents@comma{} and remaining conflicts. A hidden target@comma{} unsaved real workspace
+buffer@comma{} or unverified result prevents further unsafe writes. After an unverified
+apply@comma{} inspect jj's result@comma{} preserve any wanted draft text@comma{} then kill the
+workbench and open the desired revision again; @code{q} only buries the buffer.
+
+Only existing UTF-8 text-marker files are editable here. Binary/invalid UTF-8
+and non-text structural conflicts are refused. Empty text creates an empty
+file@comma{} not a deletion. Whole-side selection@comma{} deletion@comma{} renaming@comma{} and new paths
+are not supported. Marker-only changes that jj does not store are conservatively
+reported as unverified. Existing Ediff and direct-file workflows remain available.
 
 @node Entering Conflict Mode
 @section Entering Conflict Mode

@@ -33,6 +33,13 @@
 
 ** Added
 
+- Text conflict workbench ::
+  ~? M~ (Evil ~M~) opens a pinned directory tree with private UTF-8 drafts.
+  Saving a draft leaves jj untouched; explicit apply writes a file or folded
+  directory in one operation, including inherited multi-sided conflicts.
+  Failed or unverified writes retain drafts and block blind retries. Existing
+  Ediff commands remain available; structural and cross-path edits are not supported.
+
 - jjosh project summaries in log headings ::
   The optional ~touched-projects~ column shows the subprojects changed by a
   revision. It is enabled only when the configured jj supports the template

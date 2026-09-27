@@ -48,7 +48,8 @@ Instead of invoking this alias for `majutsu-log' using
     ("v" "Evolution log"     majutsu-evolog)
     ("D" "Diff (dwim)"       majutsu-diff-dwim)
     ("e" "Edit change"       majutsu-edit-changeset)
-    ("E" "Ediff"             majutsu-ediff)]
+    ("E" "Ediff"             majutsu-ediff)
+    ("M" "Resolve conflicts" majutsu-resolve)]
    [("G" "Git"               majutsu-git-transient)
     ("!" "Run"               majutsu-command)
     ("l" "Log options"       majutsu-log-transient)
@@ -119,6 +120,7 @@ Instead of invoking this alias for `majutsu-log' using
   (require 'majutsu-evolog)
   (require 'majutsu-workspace)
   (require 'majutsu-conflict)
+  (require 'majutsu-resolve)
   (require 'majutsu-gerrit))
 
 (with-eval-after-load 'evil
