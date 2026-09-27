@@ -129,6 +129,7 @@ Manipulating
 * Restoring::
 * Reverting::
 * Sparse Working Copy::
+* File Trees::
 * Interactive Patching::
 * Metaediting::
 * Signing and Unsigning::
@@ -1602,6 +1603,7 @@ or revert an individual operation after confirmation.
 * Restoring::
 * Reverting::
 * Sparse Working Copy::
+* File Trees::
 * Interactive Patching::
 * Metaediting::
 * Signing and Unsigning::
@@ -2029,6 +2031,20 @@ Pattern completion includes current directories/files from @samp{@@}.
 Default "all files" state is represented by single pattern @samp{.}.
 @end itemize
 
+@node File Trees
+@section File Trees
+
+Diffstats and the log buffer's @samp{Unresolved Conflicts} section use collapsible
+directory trees. Single-directory chains are compacted; @code{TAB} folds or unfolds
+a directory. File sections retain their complete repository-relative paths
+for navigation and actions@comma{} independently of their displayed names.
+
+The conflict tree lists the working copy's actual conflicts and their side
+counts@comma{} including conflicts inherited by merges with an empty changes-in diff.
+Directory headings group files; they do not choose a conflict resolution.
+Control characters in directory and file labels are escaped to keep headings
+on one line without changing the underlying paths.
+
 @node Interactive Patching
 @section Interactive Patching
 
@@ -2076,8 +2092,6 @@ buffer@comma{} a "Patch Selection" group appears with the following commands:
 @tab Clear all patch selections
 @end multitable
 
-The diffstat is a collapsible directory tree.  Single-directory chains are
-compacted@comma{} while file sections retain their complete paths for navigation.
 Renames appear under the destination directory.  The source path is in the
 file section's body@comma{} collapsed by default.  @code{TAB} toggles these details without
 widening the statistics column.  On a directory@comma{} @code{F} selects all descendant

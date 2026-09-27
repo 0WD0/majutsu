@@ -19,6 +19,7 @@
 
 (require 'majutsu-base)
 (require 'majutsu-diff)
+(require 'majutsu-file-tree)
 (require 'majutsu-process)
 
 (require 'cl-lib)
@@ -372,13 +373,8 @@ A fully selected one becomes unselected, including its hidden descendants."
        (setq files (list (oref (oref it parent) value))))
       (jj-file (setq files (list (oref it value))))
       (jj-directory
-       (setq directory t)
-       (magit-map-sections
-        (lambda (section)
-          (when (magit-section-match 'jj-file section)
-            (push (oref section value) files)))
-        it)
-       (setq files (nreverse files))))
+       (setq directory t
+             files (majutsu-file-tree-files it))))
     (unless files
       (user-error "No file or directory change at point"))
     ;; Resolve and validate every file before mutating any selection.  A

@@ -1117,6 +1117,21 @@ Notes:
 - Pattern completion includes current directories/files from =@=.
 - Default "all files" state is represented by single pattern =.=.
 
+** File Trees
+:PROPERTIES:
+:CUSTOM_ID: file-trees
+:END:
+Diffstats and the log buffer's =Unresolved Conflicts= section use collapsible
+directory trees. Single-directory chains are compacted; ~TAB~ folds or unfolds
+a directory. File sections retain their complete repository-relative paths
+for navigation and actions, independently of their displayed names.
+
+The conflict tree lists the working copy's actual conflicts and their side
+counts, including conflicts inherited by merges with an empty changes-in diff.
+Directory headings group files; they do not choose a conflict resolution.
+Control characters in directory and file labels are escaped to keep headings
+on one line without changing the underlying paths.
+
 ** Interactive Patching
 :PROPERTIES:
 :CUSTOM_ID: interactive-patching
@@ -1139,8 +1154,6 @@ buffer, a "Patch Selection" group appears with the following commands:
 | ~R~   | majutsu-interactive-toggle-region | Toggle selection of active region                               |
 | ~C~   | majutsu-interactive-clear         | Clear all patch selections                                      |
 
-The diffstat is a collapsible directory tree.  Single-directory chains are
-compacted, while file sections retain their complete paths for navigation.
 Renames appear under the destination directory.  The source path is in the
 file section's body, collapsed by default.  ~TAB~ toggles these details without
 widening the statistics column.  On a directory, ~F~ selects all descendant
