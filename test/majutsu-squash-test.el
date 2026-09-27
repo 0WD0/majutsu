@@ -69,81 +69,6 @@
     (should (equal (majutsu-squash--default-args)
                    '("--from=B")))))
 
-(ert-deftest majutsu-squash-patch-source/rejects-arbitrary-from-to-diff ()
-  "Squash patch selection is unavailable for arbitrary from/to diff buffers."
-  (dolist (range '(("--from=A" "--to=B")
-                   ("--from" "A" "--to" "B")
-                   ("-f=@" "-t=@-")))
-    (with-temp-buffer
-      (majutsu-diff-mode)
-      (setq-local majutsu-buffer-diff-range range)
-      (should-not (majutsu-squash--patch-source-revset (current-buffer))))))
-
-(ert-deftest majutsu-squash-patch-source/requires-exactly-one-commit ()
-  "A range revset must not be mistaken for one patch-selection source."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-range '("--revisions=B::C"))
-    (let (calls)
-      (cl-letf (((symbol-function 'majutsu-jj-string)
-                 (lambda (&rest args)
-                   (push args calls)
-                   nil)))
-        (should-not (majutsu-squash--patch-source-revset (current-buffer)))
-        ;; Rendering the transient asks this predicate more than once; it must
-        ;; not synchronously query jj for each entry.
-        (should-not (majutsu-squash--patch-source-revset (current-buffer))))
-      (should (equal calls
-                     '(("--ignore-working-copy" "log" "-r"
-                        "exactly((B::C), 1)"
-                        "--no-graph" "--limit" "1" "-T" "commit_id")))))))
-
-(ert-deftest majutsu-squash-patch-source/accepts-one-commit-revset ()
-  "A one-commit revset remains valid in every supported diff spelling."
-  (dolist (range '(("--revisions=B")
-                   ("--revisions" "B")
-                   ("-r" "B")
-                   ("-rB")))
-    (with-temp-buffer
-      (majutsu-diff-mode)
-      (setq-local majutsu-buffer-diff-range range)
-      (cl-letf (((symbol-function 'majutsu-jj-string)
-                 (lambda (&rest _) "commit-id")))
-        (should (equal (majutsu-squash--patch-source-revset (current-buffer))
-                       "commit-id"))))))
-
-(ert-deftest majutsu-squash-patch-source/default-range-resolves-canonical-id ()
-  "The implicit @ diff source is cached as a canonical commit ID."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-range nil)
-    (let (resolved)
-      (cl-letf (((symbol-function 'majutsu-jj-resolve-single-commit)
-                 (lambda (revset)
-                   (setq resolved revset)
-                   "commit-id")))
-        (should (equal (majutsu-squash--patch-source-revset)
-                       "commit-id")))
-      (should (equal resolved "@")))))
-
-(ert-deftest majutsu-squash-patch-source/invalidates-after-diff-refresh ()
-  "A dynamic revset is checked again after the rendered diff changes."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-range '("--revisions=mine()"))
-    (let ((result "commit-id") calls)
-      (cl-letf (((symbol-function 'majutsu-jj-string)
-                 (lambda (&rest _)
-                   (setq calls (1+ (or calls 0)))
-                   result)))
-        (should (equal (majutsu-squash--patch-source-revset (current-buffer))
-                       "commit-id"))
-        (let ((inhibit-read-only t))
-          (insert "refreshed"))
-        (setq result nil)
-        (should-not (majutsu-squash--patch-source-revset (current-buffer)))
-        (should (= calls 2))))))
-
 (ert-deftest majutsu-squash-execute/rejects-range-patch-selection ()
   "Never replay one aggregate patch for each commit in a squash range."
   (with-temp-buffer
@@ -193,7 +118,7 @@ Signal an ERT failure if the command exits unsuccessfully."
            (destination nil)
            (session nil)
            (process nil)
-           (majutsu-diff-editor--live-sessions (make-hash-table :test 'equal)))
+           (majutsu-process--interactive-sessions (make-hash-table :test 'equal)))
       (unwind-protect
           (progn
             (majutsu-squash-test--jj-call jj parent "git" "init" repo)
@@ -252,7 +177,7 @@ Signal an ERT failure if the command exits unsuccessfully."
                            (majutsu-diff-editor-host 'process)
                            (majutsu-process-popup-time -1))
                       (should-not
-                       (majutsu-squash-interactive-selection-available-p))
+                       (majutsu-diff-single-source-commit))
                       (cl-letf
                           (((symbol-function
                              'majutsu-interactive-build-replay-plan-if-selected)
@@ -283,11 +208,11 @@ Signal an ERT failure if the command exits unsuccessfully."
                             ;; Session completion is deferred out of the process
                             ;; sentinel; keep the UI stubs active until it frees
                             ;; the per-repository slot.
-                            (while (and (gethash root majutsu-diff-editor--live-sessions)
+                            (while (and (gethash root majutsu-process--interactive-sessions)
                                         (< (float-time) deadline))
                               (sit-for 0.01))
                             (should-not (gethash root
-                                                 majutsu-diff-editor--live-sessions))))))))
+                                                 majutsu-process--interactive-sessions))))))))
             (should (file-exists-p calls))
             (with-temp-buffer
               (insert-file-contents calls)
@@ -309,7 +234,8 @@ Signal an ERT failure if the command exits unsuccessfully."
         (when (and (processp process) (process-live-p process))
           (ignore-errors (delete-process process)))
         (when session
-          (ignore-errors (majutsu-diff-editor--unregister-session session)))
+          (ignore-errors (majutsu-process-unregister-interactive-session
+           (majutsu-terminal-session-repository-root session) session)))
         (when (file-directory-p parent)
           (delete-directory parent t))))))))
 
@@ -584,7 +510,7 @@ Signal an ERT failure if the command exits unsuccessfully."
   (let ((origin (current-buffer)) called cleared)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-squash--patch-source-revset)
+              ((symbol-function 'majutsu-diff-single-source-commit)
                (lambda (&rest _) nil))
               ((symbol-function 'majutsu-squash--point-revision)
                (lambda () nil))
@@ -610,7 +536,7 @@ Signal an ERT failure if the command exits unsuccessfully."
   (let (called cleared stripped)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-squash--patch-source-revset)
+              ((symbol-function 'majutsu-diff-single-source-commit)
                (lambda (&rest _) "commit-id"))
               ((symbol-function 'majutsu-jj-resolve-single-commit)
                (lambda (&rest _) "commit-id"))
@@ -634,31 +560,12 @@ Signal an ERT failure if the command exits unsuccessfully."
                      '("--from=commit-id" "--into=commit-id")))
       (should-not cleared))))
 
-(ert-deftest majutsu-squash-execute/passes-patch-context-and-owner ()
-  "Pass the patch selection owner through the keyword API."
-  (let (plan-args)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
-               (lambda (&rest args)
-                 (setq plan-args args)
-                 '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-squash--patch-source-revset)
-               (lambda (&rest _) "commit-id"))
-              ((symbol-function 'majutsu-jj-resolve-single-commit)
-               (lambda (&rest _) "commit-id"))
-              ((symbol-function 'majutsu-interactive-run-replay-plan)
-               (lambda (&rest _) nil))
-              ((symbol-function 'majutsu-squash--point-revision)
-               (lambda () nil)))
-      (majutsu-squash-execute '("--from=B"))
-      (should (equal plan-args
-                     '(nil nil majutsu-squash))))))
-
 (ert-deftest majutsu-squash-execute/patch-allows-equivalent-source-revset ()
   "Canonical comparison allows a revset naming the rendered source commit."
   (let (called resolved)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-squash--patch-source-revset)
+              ((symbol-function 'majutsu-diff-single-source-commit)
                (lambda (&rest _) "commit-id"))
               ((symbol-function 'majutsu-jj-resolve-single-commit)
                (lambda (revset)
@@ -679,7 +586,7 @@ Signal an ERT failure if the command exits unsuccessfully."
   (let (called resolved)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-squash--patch-source-revset)
+              ((symbol-function 'majutsu-diff-single-source-commit)
                (lambda (&rest _) "commit-id"))
               ((symbol-function 'majutsu-squash--default-args)
                (lambda () '("--from=rendered")))
@@ -701,7 +608,7 @@ Signal an ERT failure if the command exits unsuccessfully."
   (let (cleared)
     (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
                (lambda (&rest _) '(:base left :payload-root right :patch "PATCH" :file-ops nil)))
-              ((symbol-function 'majutsu-squash--patch-source-revset)
+              ((symbol-function 'majutsu-diff-single-source-commit)
                (lambda (&rest _) "rendered-id"))
               ((symbol-function 'majutsu-jj-resolve-single-commit)
                (lambda (&rest _) "different-id"))

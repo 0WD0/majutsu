@@ -19,43 +19,6 @@
 (require 'majutsu)
 (require 'majutsu-diff-editor)
 
-(defvar-local majutsu-split--patch-source-cache-key :uncomputed
-  "Diff range and rendered-text tick for the cached split source.")
-
-(defvar-local majutsu-split--patch-source-cache-value nil
-  "Cached canonical commit ID for the rendered split source.")
-
-(defun majutsu-split--diff-source-revset ()
-  "Return the safe single-source revset described by the current diff.
-The default diff range denotes @.  Explicit ranges must use exactly one
--r/--revisions option; arbitrary from/to ranges are never split sources."
-  (let* ((range majutsu-buffer-diff-range)
-         (from (majutsu-jj-option-values range "--from" "-f"))
-         (to (majutsu-jj-option-values range "--to" "-t"))
-         (revisions (majutsu-jj-option-values range "--revisions" "-r")))
-    (cond
-     ((or from to) nil)
-     ((null range) "@")
-     ((= (length revisions) 1) (car revisions)))))
-
-(defun majutsu-split--patch-source-commit (&optional buffer)
-  "Return BUFFER's canonical commit ID when it is safe for patch split."
-  (with-current-buffer (or buffer (current-buffer))
-    (when (derived-mode-p 'majutsu-diff-mode)
-      (let* ((range (copy-tree majutsu-buffer-diff-range))
-             (cache-key (list range (buffer-chars-modified-tick))))
-        (unless (equal cache-key majutsu-split--patch-source-cache-key)
-          (setq-local majutsu-split--patch-source-cache-key cache-key)
-          (setq-local majutsu-split--patch-source-cache-value
-                      (when-let* ((revset (majutsu-split--diff-source-revset)))
-                        (majutsu-jj-resolve-single-commit revset))))
-        majutsu-split--patch-source-cache-value))))
-
-(defun majutsu-split-interactive-selection-available-p ()
-  "Return non-nil when split patch selection is safe in the current diff."
-  (and (majutsu-interactive-selection-available-p)
-       (majutsu-split--patch-source-commit)))
-
 (defun majutsu-split--check-patch-source (args patch-source)
   "Signal when ARGS would split a commit other than PATCH-SOURCE."
   (unless patch-source
@@ -77,7 +40,7 @@ The default diff range denotes @.  Explicit ranges must use exactly one
   "Return a revision default from the current diff or log context."
   (if (derived-mode-p 'majutsu-diff-mode)
       (when-let* ((range majutsu-buffer-diff-range)
-                  (commit (majutsu-split--patch-source-commit)))
+                  (commit (majutsu-diff-single-source-commit)))
         (list (concat "--revision=" commit)))
     (majutsu-split--log-default-args)))
 
@@ -98,7 +61,7 @@ The default diff range denotes @.  Explicit ranges must use exactly one
              (plan (majutsu-interactive-build-replay-plan-if-selected
                     nil nil 'majutsu-split))
              (patch-source (and plan
-                                (majutsu-split--patch-source-commit))))
+                                (majutsu-diff-single-source-commit))))
         (when plan
           (majutsu-split--check-patch-source args patch-source)
           ;; Execute against the immutable commit which was just validated;
@@ -129,7 +92,7 @@ The default diff range denotes @.  Explicit ranges must use exactly one
   :selection-label "[REV]"
   :selection-face '(:background "goldenrod" :foreground "black")
   :selection-toggle-key "r"
-  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-r"
   :argument "--revision="
   :reader #'majutsu-transient-read-revset)
@@ -140,7 +103,7 @@ The default diff range denotes @.  Explicit ranges must use exactly one
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
   :selection-toggle-key "o"
-  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -152,7 +115,7 @@ The default diff range denotes @.  Explicit ranges must use exactly one
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
-  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -164,7 +127,7 @@ The default diff range denotes @.  Explicit ranges must use exactly one
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "b"
-  :selection-toggle-if-not #'majutsu-split-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
@@ -201,12 +164,12 @@ The default diff range denotes @.  Explicit ranges must use exactly one
     (majutsu-split:--insert-after)
     (majutsu-split:--insert-before)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
-   ["Patch Selection" :if majutsu-split-interactive-selection-available-p
+   ["Patch Selection" :if majutsu-diff-single-source-commit
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
-   ["Paths" :if-not majutsu-split-interactive-selection-available-p
+   ["Paths" :if-not majutsu-diff-single-source-commit
     (majutsu-split:--)]
    ["Options"
     ("-i" "Interactive" ("-i" "--interactive"))

@@ -18,7 +18,8 @@
 ;;; Commentary:
 
 ;; This library runs jj commands synchronously and asynchronously,
-;; integrating with with-editor and handling ANSI coloring.
+;; integrates with with-editor, handles ANSI coloring, and coordinates
+;; exclusive interactive sessions within each workspace.
 
 ;;; Code:
 
@@ -46,6 +47,27 @@
   "When non-nil, convert ANSI escapes in jj output to text properties."
   :type 'boolean
   :group 'majutsu-process)
+
+;;; Interactive workspace ownership
+
+(defvar majutsu-process--interactive-sessions (make-hash-table :test 'equal)
+  "Exclusive interactive session owners indexed by workspace root.
+Owners are opaque identity tokens, independent of process or terminal hosts.
+Only sessions that explicitly register participate in workspace exclusion.")
+
+(defun majutsu-process-register-interactive-session (root owner)
+  "Reserve workspace ROOT for non-nil OWNER, or signal if already occupied.
+ROOT is the normalized workspace directory.  OWNER is compared by identity
+and need not be a process or terminal session."
+  (when (gethash root majutsu-process--interactive-sessions)
+    (user-error "An interactive jj session is already active for this workspace"))
+  (puthash root owner majutsu-process--interactive-sessions))
+
+(defun majutsu-process-unregister-interactive-session (root owner)
+  "Release workspace ROOT only if OWNER still owns its interactive slot.
+A late callback from a previous owner must not release a newer session."
+  (when (eq (gethash root majutsu-process--interactive-sessions) owner)
+    (remhash root majutsu-process--interactive-sessions)))
 
 ;;; Process buffer (Magit-style)
 

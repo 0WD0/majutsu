@@ -12,6 +12,30 @@
 (require 'cl-lib)
 (require 'majutsu-process)
 
+(ert-deftest majutsu-process-interactive-session/workspace-owner-exclusion ()
+  "Opaque owners exclude peers, not other workspaces or newer sessions."
+  (let ((majutsu-process--interactive-sessions
+         (make-hash-table :test 'equal))
+        (first (list 'first))
+        (second (list 'second)))
+    (majutsu-process-register-interactive-session "/repo/" first)
+    (majutsu-process-register-interactive-session "/other/" second)
+    (should-error
+     (majutsu-process-register-interactive-session "/repo/" second)
+     :type 'user-error)
+    (majutsu-process-unregister-interactive-session "/repo/" second)
+    (should (eq (gethash "/repo/" majutsu-process--interactive-sessions)
+                first))
+    (majutsu-process-unregister-interactive-session "/repo/" first)
+    (majutsu-process-register-interactive-session "/repo/" second)
+    (majutsu-process-unregister-interactive-session "/repo/" first)
+    (should (eq (gethash "/repo/" majutsu-process--interactive-sessions)
+                second))
+    (majutsu-process-unregister-interactive-session "/repo/" second)
+    (should-not (gethash "/repo/" majutsu-process--interactive-sessions))
+    (should (eq (gethash "/other/" majutsu-process--interactive-sessions)
+                second))))
+
 (defun majutsu-process-test--setup-failure-result (phase condition)
   "Return startup state after PHASE signals CONDITION.
 PHASE is either `filter' or `sentinel'."

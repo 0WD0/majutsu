@@ -208,6 +208,10 @@ The value is (KEY . METADATA).  A nil METADATA value is cached too, so
 zero-match, multi-match, and failed queries are not repeated by section
 inserters during the same refresh.")
 
+(defvar-local majutsu-diff--source-commit-cache nil
+  "Cached single source as ((RANGE . TEXT-TICK) . COMMIT).
+A nil COMMIT is cached too.  Split and Squash share this per-rendering value.")
+
 (defun majutsu-diff--backend-from-args (args)
   "Return diff backend inferred from ARGS."
   (if (member "--color-words" args)
@@ -294,6 +298,33 @@ This intentionally keeps only jj diff \"Diff Formatting Options\"."
                     (transient-arg-value "--from=" (list arg))
                     (transient-arg-value "--to=" (list arg))))
               args))
+
+(defun majutsu-diff-single-source-commit (&optional buffer)
+  "Return BUFFER's canonical source commit for single-revision patch commands.
+BUFFER defaults to the current buffer and must be a `majutsu-diff-mode' buffer.
+The implicit range denotes @; explicit ranges must use exactly one
+-r/--revisions option resolving to one commit, without --from or --to.
+
+Cache the result, including nil, until the range or rendered text changes.
+Transient predicates share the query without re-resolving moving revsets."
+  (with-current-buffer (or buffer (current-buffer))
+    (when (derived-mode-p 'majutsu-diff-mode)
+      (let* ((range majutsu-buffer-diff-range)
+             (tick (buffer-chars-modified-tick))
+             (key (car majutsu-diff--source-commit-cache)))
+        (unless (and key (eql tick (cdr key)) (equal range (car key)))
+          (let* ((range (copy-tree range))
+                 (from (majutsu-jj-option-values range "--from" "-f"))
+                 (to (majutsu-jj-option-values range "--to" "-t"))
+                 (revisions (majutsu-jj-option-values range "--revisions" "-r"))
+                 (revset (cond ((or from to) nil)
+                               ((null range) "@")
+                               ((= (length revisions) 1) (car revisions)))))
+            (setq majutsu-diff--source-commit-cache
+                  (cons (cons range tick)
+                        (and revset
+                             (majutsu-jj-resolve-single-commit revset))))))
+        (cdr majutsu-diff--source-commit-cache)))))
 
 (defun majutsu-diff--file-completion-items (range)
   "Return full changed-path completion items for diff RANGE."
