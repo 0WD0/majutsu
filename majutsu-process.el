@@ -819,7 +819,11 @@ private stderr process and requested attributes identify it uniquely."
                      :buffer stdout-buffer
                      :command command
                      :connection-type 'pipe
-                     :coding default-process-coding-system
+                     ;; Honor explicit overrides, as `process-file' does.
+                     :coding (cons (or coding-system-for-read
+                                       (car default-process-coding-system))
+                                   (or coding-system-for-write
+                                       (cdr default-process-coding-system)))
                      :noquery t
                      :filter stdout-filter
                      :sentinel #'ignore
@@ -870,6 +874,8 @@ private stderr process and requested attributes identify it uniquely."
   "Run PROGRAM synchronously like `process-file' with Majutsu process defaults.
 
 This centralizes subprocess environment and coding behavior for jj invocations.
+Explicit `coding-system-for-read' and `coding-system-for-write' take
+precedence over the UTF-8 defaults.
 Unlike `process-file', this implementation waits via
 `accept-process-output', so Emacs can service subprocesses such as an
 Emacs-based GPG pinentry while jj is running."

@@ -80,7 +80,12 @@ repository, relative path, and one-based side number."
   "Saved drafts stay private; collapsed directory apply preserves other conflicts."
   (majutsu-resolve-test--with-repo repo
     (let* ((paths '("docs/first$right\nname.el" "docs/second.txt" "outside.txt"))
-           (pin (majutsu-resolve-test--conflict repo paths 3))
+           (pin (majutsu-resolve-test--conflict
+                 repo paths 3
+                 (lambda (directory path side)
+                   (majutsu-jj-integration-write-text
+                    (majutsu-jj-integration-file directory path)
+                    (format ";; ◆ ○ 你好 café\n(message \"side %d\")\n" side)))))
            (workbench (majutsu-resolve-setup-buffer "@"))
            (drafts (mapcar (lambda (path)
                              (with-current-buffer workbench
@@ -98,11 +103,20 @@ repository, relative path, and one-based side number."
       (dolist (path paths)
         (should (equal (majutsu-jj-conflicted-files pin (majutsu-jj-fileset-quote path))
                        (list (list :path path :sides 3)))))
+      ;; Compare the whole draft against native jj output: some Unicode
+      ;; truncations become valid ASCII and would evade an encoding check.
+      (cl-mapc
+       (lambda (path draft)
+         (should (equal (with-current-buffer draft (buffer-string))
+                        (majutsu-jj-integration-output
+                         repo "file" "show" "-T" "" "-r" pin "--"
+                         (majutsu-jj-fileset-quote path)))))
+       paths drafts)
       (with-current-buffer first
         (should (derived-mode-p 'emacs-lisp-mode))
         (should majutsu-conflict-mode))
       (cl-mapc #'majutsu-resolve-test--replace
-               drafts '("(message \"resolved\")\n" "discard this\n" "outside resolved\n"))
+               drafts '("(message \"◆ ○ 你好 café\")\n" "discard this\n" "outside resolved\n"))
       (dolist (draft drafts)
         (with-current-buffer draft
           (save-buffer)
@@ -143,7 +157,7 @@ repository, relative path, and one-based side number."
         (should (equal (majutsu-jj-integration-output
                         repo "file" "show" "-r" new-pin "--"
                         (majutsu-jj-fileset-quote "docs/first$right\nname.el"))
-                       "(message \"resolved\")\n"))
+                       "(message \"◆ ○ 你好 café\")\n"))
         ;; Empty draft means an existing empty file, not a deletion.
         (should (equal (majutsu-jj-integration-output
                         repo "file" "show" "-r" new-pin "docs/second.txt") ""))
