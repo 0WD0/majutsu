@@ -384,7 +384,7 @@
   (let ((majutsu-diff-editor-host 'ghostel)
         (with-editor-emacsclient-executable "emacsclient")
         (majutsu-jj-environment '("MAJUTSU_DIFF_EDITOR_TEST=enabled"))
-        (majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+        (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
         terminal
         seen)
     (save-window-excursion
@@ -459,7 +459,7 @@
 (ert-deftest majutsu-diff-editor-start/process-uses-session-aware-runner ()
   "Use the process worker's session-aware API when it is available."
   (let ((majutsu-diff-editor-host 'process)
-        (majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+        (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
         called host-directory process-directory)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
               (lambda (&optional _directory) "/repo/"))
@@ -490,7 +490,7 @@
 (ert-deftest majutsu-diff-editor-start/allows-one-live-session-per-workspace ()
   "Reject concurrent rewrite sessions, then release the slot at completion."
   (let ((majutsu-diff-editor-host 'process)
-        (majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+        (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
         session)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _directory) "/repo/"))
@@ -513,7 +513,7 @@
 
 (ert-deftest majutsu-diff-editor-start/quit-releases-an-unstarted-session ()
   "C-g during startup must not leave a workspace session lock behind."
-  (let ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal)))
+  (let ((majutsu-process--interactive-sessions (make-hash-table :test 'equal)))
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-diff-editor-select-host)
@@ -527,15 +527,15 @@
             (majutsu-diff-editor-start "split" '("--tool=:builtin") nil)
           (quit (setq quit t)))
         (should quit))
-      (should-not (gethash "/repo/" majutsu-diff-editor--live-sessions)))))
+      (should-not (gethash "/repo/" majutsu-process--interactive-sessions)))))
 
 (ert-deftest majutsu-diff-editor-abort-session-start/waits-for-process-callback ()
   "A dead ordinary child still owns its slot until its exit callback runs."
-  (let* ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+  (let* ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
          (session (majutsu-diff-editor-session-create
                    :repository-root "/repo/" :host 'process :process 'child))
          scheduled)
-    (puthash "/repo/" session majutsu-diff-editor--live-sessions)
+    (puthash "/repo/" session majutsu-process--interactive-sessions)
     (cl-letf (((symbol-function 'processp) (lambda (_process) t))
               ((symbol-function 'process-live-p) (lambda (_process) nil))
               ((symbol-function 'majutsu-process-completion-owned-p)
@@ -543,7 +543,7 @@
               ((symbol-function 'run-at-time)
                (lambda (&rest args) (push args scheduled))))
       (majutsu-diff-editor--abort-session-start session)
-      (should (eq (gethash "/repo/" majutsu-diff-editor--live-sessions)
+      (should (eq (gethash "/repo/" majutsu-process--interactive-sessions)
                   session))
       ;; ERT itself may schedule an undo-boundary timer while this dynamic
       ;; mock is active; only a session-completion timer would be a regression.
@@ -555,7 +555,7 @@
 (ert-deftest majutsu-diff-editor-start/process-setup-failures-release-slot ()
   "Filter and sentinel setup failures cannot strand the workspace slot."
   (dolist (phase '(filter sentinel))
-    (let ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+    (let ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
           (with-editor-emacsclient-executable nil)
           (real-set-process-filter (symbol-function 'set-process-filter))
           (real-set-process-sentinel (symbol-function 'set-process-sentinel))
@@ -610,33 +610,12 @@
                 (should (process-get process 'finish-callback))
                 (should-not (majutsu-process-completion-owned-p process))
                 (should-not
-                 (gethash root majutsu-diff-editor--live-sessions))
+                 (gethash root majutsu-process--interactive-sessions))
                 (should (equal invalidated root))
                 (should (equal (nth 2 scheduled)
                                #'majutsu-terminal-session--refresh-origin)))))
         (when (and (processp process) (process-live-p process))
           (delete-process process))))))
-
-(ert-deftest majutsu-diff-editor-complete-session/delegates-repository-freshness ()
-  "Use the shared repository-wide completion contract."
-  (let* ((origin (generate-new-buffer " *majutsu-diff-editor-origin*"))
-         (session (majutsu-diff-editor-session-create
-                   :origin-buffer origin :repository-root "/repo/"
-                   :operation-id-before "before"))
-         called)
-    (unwind-protect
-        (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
-                   (lambda (&rest args)
-                     (setq called args)
-                     'changed)))
-          (should
-           (eq (majutsu-diff-editor--complete-session
-                session nil "unchanged message")
-               'changed))
-          (should (equal called
-                         (list "/repo/" origin "before"
-                               "unchanged message"))))
-      (kill-buffer origin))))
 
 (ert-deftest majutsu-diff-editor-finish-process-session/checks-every-exit-code ()
   "Failures still probe freshness, but an unchanged failure stays quiet."
@@ -659,11 +638,11 @@
 
 (ert-deftest majutsu-diff-editor-complete-session/quit-releases-slot ()
   "C-g in shared completion leaves no workspace session lock."
-  (let* ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+  (let* ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
          (session (majutsu-diff-editor-session-create
                    :repository-root "/repo/" :operation-id-before "before"))
          shared-completion-ran)
-    (puthash "/repo/" session majutsu-diff-editor--live-sessions)
+    (puthash "/repo/" session majutsu-process--interactive-sessions)
     (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
                (lambda (&rest _)
                  (setq shared-completion-ran t)
@@ -674,19 +653,19 @@
           (quit (setq quit t)))
         (should quit))
       (should shared-completion-ran)
-      (should-not (gethash "/repo/" majutsu-diff-editor--live-sessions)))))
+      (should-not (gethash "/repo/" majutsu-process--interactive-sessions)))))
 
 (ert-deftest majutsu-diff-editor-complete-session/releases-before-exit-hook ()
   "An observer may start another session after the prior slot is released."
-  (let* ((majutsu-diff-editor--live-sessions (make-hash-table :test 'equal))
+  (let* ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
          (session (majutsu-diff-editor-session-create
                    :repository-root "/repo/" :operation-id-before "before"))
          hook-saw-slot)
-    (puthash "/repo/" session majutsu-diff-editor--live-sessions)
+    (puthash "/repo/" session majutsu-process--interactive-sessions)
     (let ((majutsu-diff-editor-session-exit-hook
            (list (lambda (&rest _)
                    (setq hook-saw-slot
-                         (gethash "/repo/" majutsu-diff-editor--live-sessions))))))
+                         (gethash "/repo/" majutsu-process--interactive-sessions))))))
       (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
                  (lambda (&rest _) 'unchanged)))
         (should (eq (majutsu-diff-editor--complete-session session "finished")

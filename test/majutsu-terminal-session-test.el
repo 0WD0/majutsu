@@ -50,7 +50,7 @@
 (ert-deftest majutsu-terminal-session-start-jj/preserves-tramp-root-and-argv ()
   "Remote roots stay remote and jj arguments remain separate tokens."
   (let ((root "/ssh:guix:/tmp/majutsu-arrange/")
-        (majutsu-terminal-session--live-sessions
+        (majutsu-process--interactive-sessions
          (make-hash-table :test 'equal))
         terminal session seen)
     (unwind-protect
@@ -66,7 +66,7 @@
                   (lambda (directory &optional _snapshot)
                     (should (equal directory root))
                     (should
-                     (gethash root majutsu-terminal-session--live-sessions))
+                     (gethash root majutsu-process--interactive-sessions))
                     "before"))
                  ((symbol-function 'majutsu-jj--executable)
                   (lambda () "jj"))
@@ -113,7 +113,8 @@
               (should (eq (majutsu-terminal-session-process session)
                           'ghostel-process)))))
       (when session
-        (majutsu-terminal-session-unregister root session))
+        (majutsu-process-unregister-interactive-session
+         (majutsu-terminal-session-repository-root session) session))
       (when (buffer-live-p terminal)
         (with-current-buffer terminal
           (setq-local majutsu-terminal-session--session nil)
@@ -147,7 +148,7 @@
 
 (ert-deftest majutsu-terminal-session-start-jj/default-path-does-not-install-jj-editor ()
   "The public generic start path does not opt into the editor protocol."
-  (let ((majutsu-terminal-session--live-sessions
+  (let ((majutsu-process--interactive-sessions
          (make-hash-table :test 'equal))
         terminal session seen-environment)
     (unwind-protect
@@ -191,7 +192,8 @@
                 (lambda (entry) (string-prefix-p "JJ_EDITOR=" entry))
                 seen-environment)))))
       (when session
-        (majutsu-terminal-session-unregister "/repo/" session))
+        (majutsu-process-unregister-interactive-session
+         (majutsu-terminal-session-repository-root session) session))
       (when (buffer-live-p terminal)
         (with-current-buffer terminal
           (setq-local majutsu-terminal-session--session nil)
@@ -199,51 +201,9 @@
           (setq-local ghostel-exit-functions nil))
         (kill-buffer terminal)))))
 
-(ert-deftest majutsu-terminal-session-register/is-an-owner-aware-workspace-mutex ()
-  "Only the current owner can release a workspace's shared terminal slot."
-  (let ((majutsu-terminal-session--live-sessions
-         (make-hash-table :test 'equal))
-        (first (list 'first))
-        (second (list 'second)))
-    (majutsu-terminal-session-register "/repo/" first)
-    (should-error
-     (majutsu-terminal-session-register "/repo/" second)
-     :type 'user-error)
-    (majutsu-terminal-session-unregister "/repo/" second)
-    (should (eq (gethash "/repo/"
-                         majutsu-terminal-session--live-sessions)
-                first))
-    (majutsu-terminal-session-unregister "/repo/" first)
-    (should-not (gethash "/repo/"
-                         majutsu-terminal-session--live-sessions))))
-
-(ert-deftest majutsu-terminal-session-register/is-shared-with-diff-editor ()
-  "Arrange and diff-editor sessions contend for the same workspace slot."
-  (let ((majutsu-terminal-session--live-sessions
-         (make-hash-table :test 'equal))
-        ;; If the legacy table still exists, isolate it so this test cannot
-        ;; accidentally pass due to state left by another test.
-        (majutsu-diff-editor--live-sessions
-         (make-hash-table :test 'equal))
-        (terminal-owner (list 'arrange))
-        (diff-owner
-         (majutsu-diff-editor-session-create :repository-root "/repo/")))
-    (majutsu-terminal-session-register "/repo/" terminal-owner)
-    (should-error
-     (majutsu-diff-editor--register-session diff-owner)
-     :type 'user-error)
-    (majutsu-terminal-session-unregister "/repo/" terminal-owner)
-    (majutsu-diff-editor--register-session diff-owner)
-    (should (eq (gethash "/repo/"
-                         majutsu-terminal-session--live-sessions)
-                diff-owner))
-    (majutsu-diff-editor--unregister-session diff-owner)
-    (should-not (gethash "/repo/"
-                         majutsu-terminal-session--live-sessions))))
-
 (ert-deftest majutsu-terminal-session-complete/is-atomic-and-releases-before-observers ()
   "Freshness is checked once and observers run after mutex release."
-  (let* ((majutsu-terminal-session--live-sessions
+  (let* ((majutsu-process--interactive-sessions
           (make-hash-table :test 'equal))
          (completion-count 0)
          (exit-count 0)
@@ -258,8 +218,9 @@
              (setq exit-count (1+ exit-count)
                    observer-owner
                    (gethash "/repo/"
-                            majutsu-terminal-session--live-sessions))))))
-    (majutsu-terminal-session-register "/repo/" session)
+                            majutsu-process--interactive-sessions))))))
+    (majutsu-process-register-interactive-session
+     (majutsu-terminal-session-repository-root session) session)
     (cl-letf (((symbol-function
                 'majutsu-interactive-complete-repository-operation)
                (lambda (&rest args)
@@ -275,11 +236,11 @@
     (should-not observer-owner)
     (should (majutsu-terminal-session-completed-p session))
     (should-not (gethash "/repo/"
-                         majutsu-terminal-session--live-sessions))))
+                         majutsu-process--interactive-sessions))))
 
 (ert-deftest majutsu-terminal-session-complete/notifies-terminal-kill-once ()
   "Terminal observers run once even when completion has no Ghostel event."
-  (let* ((majutsu-terminal-session--live-sessions
+  (let* ((majutsu-process--interactive-sessions
           (make-hash-table :test 'equal))
          exit-events hook-events
          (session
@@ -288,7 +249,8 @@
            :terminal-p t
            :exit-function
            (lambda (_session event) (push event exit-events)))))
-    (majutsu-terminal-session-register "/repo/" session)
+    (majutsu-process-register-interactive-session
+     (majutsu-terminal-session-repository-root session) session)
     (let ((majutsu-terminal-session-exit-hook
            (list (lambda (_session event) (push event hook-events)))))
       (cl-letf (((symbol-function
@@ -302,7 +264,7 @@
 
 (ert-deftest majutsu-terminal-session-start-jj/rejects-missing-lifecycle-process ()
   "A broken exec adapter cannot strand its buffer or workspace mutex."
-  (let ((majutsu-terminal-session--live-sessions
+  (let ((majutsu-process--interactive-sessions
          (make-hash-table :test 'equal))
         terminal)
     (with-temp-buffer
@@ -328,7 +290,7 @@
             '("arrange") :origin-buffer origin
             :exec-function (lambda (&rest _) nil)))
           (should-not (gethash "/repo/"
-                               majutsu-terminal-session--live-sessions))
+                               majutsu-process--interactive-sessions))
           (should-not (buffer-live-p terminal)))))))
 
 (ert-deftest majutsu-terminal-session-finish-after-kill/waits-for-live-reaper ()
@@ -401,8 +363,8 @@
           (lambda (_session _event) (cl-incf exit-calls)))
     (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
                (lambda (&rest _) (error "probe failed")))
-              ((symbol-function 'majutsu-terminal-session--unregister)
-               (lambda (_) (setq unregistered t))))
+              ((symbol-function 'majutsu-process-unregister-interactive-session)
+               (lambda (_root _owner) (setq unregistered t))))
       (let ((majutsu-terminal-session-exit-hook
              (list (lambda (_session _event) (cl-incf hook-calls)))))
         (should-error (majutsu-terminal-session--complete session nil))

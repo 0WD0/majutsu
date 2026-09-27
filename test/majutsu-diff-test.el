@@ -18,6 +18,63 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu)
+(require 'majutsu-jj-integration)
+
+(ert-deftest majutsu-diff-single-source-commit/rejects-non-single-revision-ranges ()
+  "Only a single changes-in commit is a valid Split/Squash patch source."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-write-text
+     (majutsu-jj-integration-file repo "file") "base\n")
+    (majutsu-jj-integration-commit repo "base")
+    (let ((current (string-trim
+                    (majutsu-jj-integration-output
+                     repo "log" "--no-graph" "-r" "@" "-T" "commit_id")))
+          (parent (string-trim
+                   (majutsu-jj-integration-output
+                    repo "log" "--no-graph" "-r" "@-" "-T" "commit_id"))))
+      (with-temp-buffer
+        (should-not (majutsu-diff-single-source-commit))
+        (majutsu-diff-mode)
+        (dolist (case (list (cons nil current)
+                           (cons '("--revisions=@-") parent)
+                           (cons '("-r" "@") current)
+                           (cons '("--revisions=@|@-") nil)
+                           (cons '("--revisions=@" "-r=@-") nil)
+                           (cons '("--from=@-" "--to=@") nil)
+                           (cons '("-f=@" "-t=@-") nil)
+                           (cons '("--revisions=none()") nil)))
+          (setq-local majutsu-buffer-diff-range (car case))
+          (should (equal (majutsu-diff-single-source-commit)
+                         (cdr case))))))))
+
+(ert-deftest majutsu-diff-single-source-commit/follows-render-and-range-not-moving-at ()
+  "Keep the rendered source until refresh, independently in each diff buffer."
+  (majutsu-jj-integration-with-repo repo
+    (let ((file (majutsu-jj-integration-file repo "file")))
+      (majutsu-jj-integration-write-text file "base\n")
+      (majutsu-jj-integration-commit repo "base")
+      (majutsu-jj-integration-write-text file "first\n")
+      (with-temp-buffer
+        (majutsu-diff-mode)
+        (setq-local majutsu-buffer-diff-range (list "--revisions=@"))
+        (majutsu-refresh-buffer)
+        (let ((rendered (majutsu-diff-single-source-commit)))
+          (majutsu-jj-integration-write-text file "second\n")
+          (let ((current (string-trim
+                          (majutsu-jj-integration-output
+                           repo "log" "--no-graph" "-r" "@" "-T" "commit_id"))))
+            (should-not (equal rendered current))
+            (with-temp-buffer
+              (majutsu-diff-mode)
+              (should (equal (majutsu-diff-single-source-commit) current)))
+            (should (equal (majutsu-diff-single-source-commit) rendered))
+            (majutsu-refresh-buffer)
+            (should (equal (majutsu-diff-single-source-commit) current))
+            ;; A range can change without changing the rendered-text tick.
+            (setcar majutsu-buffer-diff-range "--revisions=none()")
+            (should-not (majutsu-diff-single-source-commit))
+            (setcar majutsu-buffer-diff-range "--revisions=@")
+            (should (equal (majutsu-diff-single-source-commit) current))))))))
 
 (ert-deftest majutsu-diff-file-status/from-header-lines ()
   "Test file status inference from diff lines."

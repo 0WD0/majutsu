@@ -41,9 +41,6 @@
 (defvar-local majutsu-terminal-session--session nil
   "The `majutsu-terminal-session' associated with this terminal buffer.")
 
-(defvar majutsu-terminal-session--live-sessions (make-hash-table :test 'equal)
-  "Majutsu-owned interactive sessions indexed by workspace root.")
-
 (defvar majutsu-terminal-session-exit-hook nil
   "Functions called after a Ghostel terminal session completes.
 
@@ -56,22 +53,6 @@ runs via a zero-delay timer, outside Ghostel's process sentinel.")
   (and (require 'ghostel nil t)
        (fboundp 'ghostel-exec)
        (fboundp 'ghostel-mode)))
-
-(defun majutsu-terminal-session-register (root owner)
-  "Reserve ROOT for OWNER, or signal when another session owns it."
-  (when (gethash root majutsu-terminal-session--live-sessions)
-    (user-error "An interactive jj session is already active for this workspace"))
-  (puthash root owner majutsu-terminal-session--live-sessions))
-
-(defun majutsu-terminal-session-unregister (root owner)
-  "Release ROOT when OWNER still owns its interactive-session slot."
-  (when (eq (gethash root majutsu-terminal-session--live-sessions) owner)
-    (remhash root majutsu-terminal-session--live-sessions)))
-
-(defun majutsu-terminal-session--unregister (session)
-  "Release SESSION's workspace slot if SESSION still owns it."
-  (majutsu-terminal-session-unregister
-   (majutsu-terminal-session-repository-root session) session))
 
 (defun majutsu-terminal-session--lifecycle-process (session)
   "Return SESSION's known lifecycle process, if one has been created."
@@ -122,7 +103,8 @@ finished because it may already have changed the repository."
      ((not process)
       (let ((inhibit-quit t))
         (majutsu-terminal-session--cleanup-unstarted-buffer session)
-        (majutsu-terminal-session--unregister session)))
+        (majutsu-process-unregister-interactive-session
+         (majutsu-terminal-session-repository-root session) session)))
      ((and (processp process) (process-live-p process)))
      (t
       ;; The Ghostel exit hook may already be queued.  This duplicate-safe
@@ -141,7 +123,8 @@ finished because it may already have changed the repository."
                  (majutsu-terminal-session-origin-buffer session)
                  (majutsu-terminal-session-operation-id-before session)
                  (majutsu-terminal-session-unchanged-message session)))
-        (majutsu-terminal-session--unregister session)
+        (majutsu-process-unregister-interactive-session
+         (majutsu-terminal-session-repository-root session) session)
         ;; Completion observers run after releasing the slot, so they may
         ;; start the next session immediately.  They stay in the cleanup:
         ;; the completion probe can fail (a TRAMP refresh error, say), the
@@ -276,7 +259,7 @@ be nil when no exit event is available."
            :exec-function exec-function
            :exit-function exit-function
            :terminal-p t)))
-    (majutsu-terminal-session-register root session)
+    (majutsu-process-register-interactive-session root session)
     (let ((started nil))
       (unwind-protect
           (progn

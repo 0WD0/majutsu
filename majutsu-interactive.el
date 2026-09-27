@@ -346,12 +346,6 @@ by a separately selectable mode change."
            (member (plist-get (majutsu-diff-file-metadata file-section) :status)
                    '("renamed" "copied")))))
 
-(defun majutsu-interactive--whole-file-selection-allowed-p ()
-  "Return non-nil when the active transient supports whole-file selections."
-  (and (boundp 'transient-current-command)
-       (memq transient-current-command
-             '(majutsu-split majutsu-squash majutsu-restore))))
-
 (defun majutsu-interactive--selection-units (file-section &optional validate)
   "Return content, text and mode selection IDs for FILE-SECTION.
 When VALIDATE is non-nil, reject unsupported or unverified whole-file content."
@@ -359,7 +353,7 @@ When VALIDATE is non-nil, reject unsupported or unverified whole-file content."
                      (majutsu-interactive--file-section-patches file-section))))
     (when (majutsu-interactive--file-content-p file-section)
       (when validate
-        (unless (majutsu-interactive--whole-file-selection-allowed-p)
+        (unless (majutsu-interactive--current-operation)
           (user-error "Whole-file selections are supported by Split, Squash, and Restore"))
         (unless (majutsu-diff-file-metadata file-section)
           (user-error

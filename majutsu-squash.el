@@ -83,43 +83,6 @@ return the same context defaults that execution would use."
 
 ;;; Patch selection safety
 
-(defvar-local majutsu-squash--patch-source-cache-key :uncomputed
-  "Diff range and rendered-text tick for the cached patch source.")
-
-(defvar-local majutsu-squash--patch-source-cache-value nil
-  "Cached canonical commit ID for the current diff range.")
-
-(defun majutsu-squash--patch-source-revset (&optional buffer)
-  "Return the canonical source commit for a safe patch-selection BUFFER."
-  (with-current-buffer (or buffer (current-buffer))
-    (when (derived-mode-p 'majutsu-diff-mode)
-      (let* ((range (copy-tree majutsu-buffer-diff-range))
-             (cache-key (list range (buffer-chars-modified-tick))))
-        ;; Transient predicates are evaluated repeatedly while rendering.  A
-        ;; range cardinality probe is synchronous, so cache it for this
-        ;; rendered diff.  A refresh changes the text tick even when a dynamic
-        ;; revset expression itself remains unchanged.
-        (unless (equal cache-key majutsu-squash--patch-source-cache-key)
-          (setq-local majutsu-squash--patch-source-cache-key cache-key)
-          (setq-local majutsu-squash--patch-source-cache-value
-                      (let* ((from (majutsu-jj-option-values range "--from" "-f"))
-                             (to (majutsu-jj-option-values range "--to" "-t"))
-                             (revisions (majutsu-jj-option-values
-                                         range "--revisions" "-r")))
-                        (cond
-                         ((or from to) nil)
-                         ((null range)
-                          (majutsu-jj-resolve-single-commit "@"))
-                         ((= (length revisions) 1)
-                          (majutsu-jj-resolve-single-commit
-                           (car revisions)))))))
-        majutsu-squash--patch-source-cache-value))))
-
-(defun majutsu-squash-interactive-selection-available-p ()
-  "Return non-nil when squash patch selection is available."
-  (and (majutsu-interactive-selection-available-p)
-       (majutsu-squash--patch-source-revset)))
-
 (defun majutsu-squash--check-patch-source (args patch-source)
   "Signal if ARGS select a source incompatible with PATCH-SOURCE."
   (let ((sources (majutsu-squash--source-values args)))
@@ -146,7 +109,7 @@ return the same context defaults that execution would use."
            (plan (and (not jj-editor-p)
                       (majutsu-interactive-build-replay-plan-if-selected
                        nil nil 'majutsu-squash)))
-           (patch-source (and plan (majutsu-squash--patch-source-revset)))
+           (patch-source (and plan (majutsu-diff-single-source-commit)))
            inferred-destination)
       (let* ((explicit-sources (majutsu-squash--source-values args))
              (explicit-destination
@@ -204,7 +167,7 @@ return the same context defaults that execution would use."
   :selection-label "[FROM]"
   :selection-face '(:background "dark orange" :foreground "black")
   :selection-toggle-key "f"
-  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-f"
   :argument "--from="
   :multi-value 'repeat
@@ -216,7 +179,7 @@ return the same context defaults that execution would use."
   :selection-label "[INTO]"
   :selection-face '(:background "dark cyan" :foreground "white")
   :selection-toggle-key "t"
-  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-t"
   :argument "--into="
   :reader #'majutsu-transient-read-revset)
@@ -227,7 +190,7 @@ return the same context defaults that execution would use."
   :selection-label "[ONTO]"
   :selection-face '(:background "dark green" :foreground "white")
   :selection-toggle-key "o"
-  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-o"
   :argument "--onto="
   :multi-value 'repeat
@@ -239,7 +202,7 @@ return the same context defaults that execution would use."
   :selection-label "[AFTER]"
   :selection-face '(:background "dark blue" :foreground "white")
   :selection-toggle-key "a"
-  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-A"
   :argument "--insert-after="
   :multi-value 'repeat
@@ -251,7 +214,7 @@ return the same context defaults that execution would use."
   :selection-label "[BEFORE]"
   :selection-face '(:background "dark magenta" :foreground "white")
   :selection-toggle-key "b"
-  :selection-toggle-if-not #'majutsu-squash-interactive-selection-available-p
+  :selection-toggle-if-not #'majutsu-diff-single-source-commit
   :shortarg "-B"
   :argument "--insert-before="
   :multi-value 'repeat
@@ -288,12 +251,12 @@ return the same context defaults that execution would use."
     (majutsu-squash:--insert-after)
     (majutsu-squash:--insert-before)
     ("c" "Clear selections" majutsu-selection-clear :transient t)]
-   ["Patch Selection" :if majutsu-squash-interactive-selection-available-p
+   ["Patch Selection" :if majutsu-diff-single-source-commit
     (majutsu-interactive:select-hunk)
     (majutsu-interactive:select-file)
     (majutsu-interactive:select-region)
     ("C" "Clear patch selections" majutsu-interactive-clear :transient t)]
-   ["Paths" :if-not majutsu-squash-interactive-selection-available-p
+   ["Paths" :if-not majutsu-diff-single-source-commit
     (majutsu-squash:--)]
    ["Options"
     ("-i" "Interactive" ("-i" "--interactive"))
