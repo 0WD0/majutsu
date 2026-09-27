@@ -295,6 +295,36 @@ ORANGE
       (should (equal (mapcar #'car adds)
                      '("side-1-rev" "side-2-rev" "side-3-rev"))))))
 
+(ert-deftest majutsu-conflict-test-display-parts-preserve-pairing ()
+  "A snapshot in any position must not shift the wrong base onto a side."
+  (dolist (case `((,majutsu-conflict-test--jj-diff
+                  ((change 0 0) (snapshot add 1)))
+                 (,majutsu-conflict-test--jj-diff-snapshot-first
+                  ((snapshot add 0) (change 0 1) (change 1 2)))
+                 (,majutsu-conflict-test--jj-diff-snapshot-middle
+                  ((change 0 0) (snapshot add 1) (change 1 2)))
+                 (,majutsu-conflict-test--jj-snapshot
+                  ((snapshot add 0) (change 0 1)))
+                 (,majutsu-conflict-test--git
+                  ((snapshot add 0) (change 0 1)))))
+    (with-temp-buffer
+      (insert (car case))
+      (let* ((conflict (car (majutsu-conflict-parse-buffer)))
+             (parts (majutsu-conflict-display-parts conflict)))
+        (should
+         (equal
+          (mapcar (lambda (part)
+                    (if (eq (plist-get part :kind) 'change)
+                        (list 'change
+                              (plist-get (plist-get part :before) :index)
+                              (plist-get (plist-get part :after) :index))
+                      (list 'snapshot
+                            (plist-get (plist-get part :term) :kind)
+                            (plist-get (plist-get part :term) :index))))
+                  parts)
+          (cadr case)))))))
+
+
 (ert-deftest majutsu-conflict-test-parse-no-terminating-newline ()
   "Test parsing jj conflict with end marker missing terminating newline."
   (with-temp-buffer

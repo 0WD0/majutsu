@@ -37,6 +37,9 @@
   ~? M~ (Evil ~M~) opens a pinned directory tree with private UTF-8 drafts.
   Saving a draft leaves jj untouched; explicit apply writes a file or folded
   directory in one operation, including inherited multi-sided conflicts.
+  Files expand into conflict blocks with jj's snapshot/change grouping,
+  native diff previews, and paired Before/After snapshots. RET jumps to the
+  corresponding draft term; child-node apply/discard remains file-scoped.
   Failed or unverified writes retain drafts and block blind retries. Existing
   Ediff commands remain available; structural and cross-path edits are not supported.
 

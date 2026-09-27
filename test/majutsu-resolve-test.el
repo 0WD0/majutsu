@@ -33,14 +33,15 @@
    (majutsu-jj-integration-output
     repo "log" "-r" "@" "--no-graph" "-T" "commit_id")))
 
-(defun majutsu-resolve-test--conflict (repo paths &optional sides writer)
+(defun majutsu-resolve-test--conflict (repo paths &optional sides writer base-text)
   "Create inherited conflicts in REPO at PATHS, returning the child ID.
 SIDES defaults to two.  WRITER, when supplied, writes a side given the
-repository, relative path, and one-based side number."
+repository, relative path, and one-based side number.  BASE-TEXT defaults
+to a single base line."
   (dolist (path paths)
     (let ((file (majutsu-jj-integration-file repo path)))
       (make-directory (file-name-directory file) t)
-      (majutsu-jj-integration-write-text file "base\n")))
+      (majutsu-jj-integration-write-text file (or base-text "base\n"))))
   (majutsu-jj-integration-call repo "describe" "-m" "base")
   (let ((base (majutsu-resolve-test--id repo))
         parents)
@@ -70,11 +71,111 @@ repository, relative path, and one-based side number."
 
 (defun majutsu-resolve-test--section (section type value)
   "Find the descendant of SECTION having TYPE and VALUE."
-  (if (and (eq (oref section type) type)
+  (magit-section--opportunistic-wash section)
+  (if (and (magit-section-match type section)
            (equal (oref section value) value))
       section
     (cl-loop for child in (oref section children)
              thereis (majutsu-resolve-test--section child type value))))
+
+(defun majutsu-resolve-test--select-side (workbench path conflict kind index)
+  "Select a KIND term at zero-based INDEX under numbered CONFLICT in PATH."
+  (with-current-buffer workbench
+    (let* ((file (should (majutsu-resolve-test--section
+                         magit-root-section 'jj-file path)))
+           (block (should (majutsu-resolve-test--section
+                          file 'majutsu-resolve-conflict-section conflict)))
+           (side (should (majutsu-resolve-test--section
+                         block 'majutsu-resolve-side-section
+                         (list :kind kind :index index)))))
+      (goto-char (oref side start))
+      side)))
+
+(ert-deftest majutsu-resolve/integration-conflict-tree-navigation-and-scope ()
+  "Nested entries navigate safely after edits and apply only their own file."
+  (majutsu-resolve-test--with-repo repo
+    (let* ((path "src/你好.txt")
+           (context (concat (mapconcat (lambda (index) (format "context %d" index))
+                                       (number-sequence 1 12) "\n") "\n"))
+           (pin (majutsu-resolve-test--conflict
+                 repo (list path "outside.txt") 3
+                 (lambda (directory relative side)
+                   (majutsu-jj-integration-write-text
+                    (majutsu-jj-integration-file directory relative)
+                    (concat (unless (= side 2) (format "first ◆ 你好 %d\n" side))
+                            context (format "second café %d\n" side))))
+                 (concat "first base\n" context "second base\n")))
+           (operation (majutsu-jj-operation-id))
+           (workbench (majutsu-resolve-setup-buffer pin))
+           (outside-native (majutsu-jj-integration-output
+                            repo "file" "show" "-T" "" "-r" pin "outside.txt"))
+           draft baseline outside)
+      ;; Inspecting the tree neither creates editor drafts nor writes to jj.
+      (with-current-buffer workbench
+        (dolist (entry majutsu-resolve--records)
+          (should-not (majutsu-resolve--file-temporary (cdr entry)))
+          (should-not (buffer-live-p (majutsu-resolve--file-buffer (cdr entry)))))
+        (should (= 2 (length (oref (majutsu-resolve-test--section
+                                   magit-root-section 'jj-file path) children)))))
+      (should (equal operation (majutsu-jj-operation-id)))
+      ;; The deleted first region is an empty side, not a deleted file.
+      (majutsu-resolve-test--select-side workbench path 1 'add 1)
+      (with-current-buffer workbench
+        (let ((conflict (oref (majutsu-resolve--ancestor
+                              'majutsu-resolve-conflict-section) conflict)))
+          (should (equal "" (cdr (nth 1 (majutsu-conflict-adds conflict)))))))
+      (majutsu-resolve-test--select-side workbench path 1 'add 2)
+      (setq draft (with-current-buffer workbench
+                    (call-interactively #'majutsu-resolve-visit-file))
+            baseline (with-current-buffer draft (buffer-string)))
+      (with-current-buffer draft
+        (should (equal (majutsu-conflict--term-at-point (majutsu-conflict-at-point))
+                       '(:kind add :index 2)))
+        (majutsu-conflict-keep-side 3))
+      ;; Resolving an earlier block invalidates every later source position.
+      ;; Refuse the stale entry and refresh, rather than jumping to a new block.
+      (majutsu-resolve-test--select-side workbench path 2 'add 1)
+      (with-current-buffer workbench
+        (should-error (majutsu-resolve-visit-file) :type 'user-error)
+        (should (= 1 (length (oref (majutsu-resolve-test--section
+                                   magit-root-section 'jj-file path) children)))))
+      (majutsu-resolve-test--select-side workbench path 1 'add 1)
+      (with-current-buffer workbench (majutsu-resolve-visit-file))
+      (with-current-buffer draft
+        (let ((conflict (majutsu-conflict-at-point)))
+          (should (equal (majutsu-conflict--term-at-point conflict)
+                         '(:kind add :index 1)))
+          (should (equal (cdr (nth 1 (majutsu-conflict-adds conflict)))
+                         "second café 2\n"))))
+      (setq outside (with-current-buffer workbench
+                      (majutsu-resolve-visit-file "outside.txt")))
+      (majutsu-resolve-test--replace outside "outside resolution\n")
+      (majutsu-resolve-test--select-side workbench path 1 'remove 0)
+      (with-current-buffer workbench (majutsu-resolve-discard))
+      (should (equal baseline (with-current-buffer draft (buffer-string))))
+      (should (equal "outside resolution\n" (with-current-buffer outside (buffer-string))))
+      ;; Applying from a side means applying the enclosing file's draft,
+      ;; not choosing that side or including a neighboring pending draft.
+      (majutsu-resolve-test--select-side workbench path 1 'add 2)
+      (with-current-buffer workbench (majutsu-resolve-visit-file))
+      (with-current-buffer draft (majutsu-conflict-keep-side 3))
+      (with-current-buffer workbench (majutsu-refresh-buffer))
+      (majutsu-resolve-test--select-side workbench path 1 'add 0)
+      (let* ((result (with-current-buffer workbench (majutsu-resolve-apply)))
+             (actual (majutsu-jj-integration-output
+                      repo "file" "show" "-T" "" "-r" result "--"
+                      (majutsu-jj-fileset-quote path))))
+        (should-not (equal pin result))
+        (should (string-prefix-p "first ◆ 你好 3\n" actual))
+        (with-temp-buffer
+          (insert actual)
+          (should (= 1 (length (majutsu-conflict-parse-buffer)))))
+        (should (equal outside-native
+                       (majutsu-jj-integration-output
+                        repo "file" "show" "-T" "" "-r" result "outside.txt"))))
+      (majutsu-resolve-test--select-side workbench path 1 'add 0)
+      (should (eq outside (with-current-buffer workbench
+                            (majutsu-resolve-next-file)))))))
 
 (ert-deftest majutsu-resolve/integration-inherited-multiside-directory-drafts ()
   "Saved drafts stay private; collapsed directory apply preserves other conflicts."
