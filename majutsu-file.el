@@ -111,19 +111,19 @@ When Evil is active, also update `evil-normal-state-cursor'."
 
 (add-hook 'majutsu-find-file-hook #'majutsu-blob-mode)
 
-(defun majutsu-blob-edit--jj-output (&rest args)
+(defun majutsu-file--jj-output (&rest args)
   "Return plain jj output for ARGS, refusing failed provenance queries."
   (with-temp-buffer
     (unless (zerop (apply #'majutsu-jj-insert "--color=never" args))
-      (user-error "Cannot verify blob save revision; abort and revert the blob"))
+      (user-error "Cannot verify file write revision"))
     (string-trim (buffer-string))))
 
-(defun majutsu-blob-edit--saved-commit (before commit change marker)
+(defun majutsu-file--saved-commit (before commit change marker)
   "Find this save's rewrite of COMMIT, or COMMIT for a semantic no-op.
 BEFORE is the operation before diffedit, CHANGE is the pinned change id,
 and MARKER uniquely identifies this invocation in jj's operation arguments."
   (let* ((state (split-string
-                 (majutsu-blob-edit--jj-output
+                 (majutsu-file--jj-output
                   "--ignore-working-copy" "--at-op" "@"
                   "op" "log" "--no-graph" "-n" "1" "-T"
                   (concat "id ++ \"\\n\" ++ "
@@ -140,7 +140,7 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
                            (mapconcat #'identity (cddr state) "\n")))
       (let* ((candidates
               (split-string
-               (majutsu-blob-edit--jj-output
+               (majutsu-file--jj-output
                 "--at-op" after "log" "--no-graph" "-r"
                 (format
                  "change_id(%s) ~ at_operation(%s, change_id(%s))"
@@ -151,7 +151,7 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
               (seq-filter
                (lambda (candidate)
                  (equal
-                  (majutsu-blob-edit--jj-output
+                  (majutsu-file--jj-output
                    "--at-op" after "evolog" "-r" candidate
                    "--no-graph" "-n" "1" "-T"
                    (concat "operation.id() ++ \"\\n\" ++ "
@@ -160,9 +160,58 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
                candidates)))
         (if (length= successors 1)
             (car successors)
-          (user-error "Cannot identify blob save rewrite; abort and revert the blob"))))
+          (user-error "Cannot identify file write successor"))))
      (t
-      (user-error "Repository operation changed during blob save; abort and revert the blob")))))
+      (user-error "Repository operation changed during file write")))))
+
+(defun majutsu-file-apply-contents (commit change contents)
+  "Write CONTENTS to pinned COMMIT and return its verified successor.
+CHANGE is COMMIT's full change id.  CONTENTS is an alist of existing
+repository-relative paths and their new text.  All paths are written by one
+`jj diffedit' operation in `default-directory'; unmatched paths are preserved.
+This does not add, remove, rename, or select typed conflict values.
+
+The caller owns workspace exclusion, refresh, and recovery after a failed or
+unverifiable write.  A semantic no-op returns COMMIT, not a divergent sibling."
+  (unless (and commit change contents)
+    (user-error "Missing pinned revision or file contents"))
+  (let ((directory (make-nearby-temp-file "majutsu-file-save-" t)))
+    (unwind-protect
+        (progn
+          (dolist (entry contents)
+            (let* ((path (car entry))
+                   (target (expand-file-name path directory)))
+              (unless (and (not (string-empty-p path))
+                           (not (file-name-absolute-p path))
+                           (file-in-directory-p target directory))
+                (user-error "Not a repository-relative file path: %s" path))
+              (make-directory (file-name-directory target) t)
+              (with-temp-file target
+                (insert (cdr entry)))))
+          ;; Keep user paths out of jj's $variable interpolation.  Copying the
+          ;; staged tree also preserves existing destination executable bits.
+          (let* ((editor-config
+                  (majutsu-jj--editor-command-config
+                   "ui.diff-editor" "$right"
+                   (list "cp" "-R"
+                         (concat (majutsu-convert-filename-for-jj directory)
+                                 "/."))))
+                 ;; Snapshot before capturing operation provenance.
+                 (before (majutsu-file--jj-output
+                          "op" "log" "--no-graph" "-n" "1" "-T" "id"))
+                 ;; An inherited conflict has no changes-in diff.  Comparing
+                 ;; with the empty tree materializes every selected file.
+                 (exit (apply #'majutsu-call-jj
+                              "diffedit" "--config" editor-config
+                              "--from" "root()" "--to" commit "--"
+                              (mapcar (lambda (entry)
+                                        (majutsu-jj-fileset-quote (car entry)))
+                                      contents))))
+            (unless (zerop exit)
+              (user-error "Failed to apply file contents (exit %s)" exit))
+            (majutsu-file--saved-commit
+             before commit change (file-name-nondirectory directory))))
+      (ignore-errors (delete-directory directory t)))))
 
 (defun majutsu-blob-edit--apply-diffedit (content)
   "Apply CONTENT with `jj diffedit' and return the verified resulting commit.
@@ -172,40 +221,12 @@ saves until the user explicitly reverts the blob."
     (user-error "Previous blob save is unverified; abort and revert the blob"))
   (unless (and majutsu-buffer-blob-commit-id majutsu-buffer-blob-change-id)
     (user-error "Missing pinned blob revision; revert the blob before saving"))
-  (let* ((default-directory majutsu-buffer-blob-root)
-         (file majutsu-buffer-blob-path)
-         (commit majutsu-buffer-blob-commit-id)
-         (change majutsu-buffer-blob-change-id)
-         ;; Snapshot before the save so external working-copy edits cannot be
-         ;; mistaken for the rewrite produced by diffedit.
-         (before (majutsu-blob-edit--jj-output
-                  "op" "log" "--no-graph" "-n" "1" "-T" "id"))
-         (temp-file (make-nearby-temp-file "majutsu-blob-edit-"))
-         (editor-config (majutsu-jj--editor-command-config
-                         "ui.diff-editor"
-                         (concat "$right/" file)
-                         (list "cp" (majutsu-convert-filename-for-jj temp-file)))))
-    (unwind-protect
-        (progn
-          (with-temp-file temp-file
-            (insert content))
-          (setq majutsu-blob-edit--save-unverified t)
-          ;; Refresh only after recording the result: refresh commands may
-          ;; snapshot the working copy and advance the operation themselves.
-          ;; External diff editors snapshot only paths changed from the base.
-          ;; A merge's inherited conflict is unchanged from its merged parents,
-          ;; so use the empty tree to materialize this one blob even there.
-          (let ((exit (majutsu-call-jj
-                       "diffedit" "--config" editor-config
-                       "--from" "root()" "--to" commit
-                       "--" (majutsu-jj-fileset-quote file))))
-            (unless (zerop exit)
-              (user-error "Failed to apply blob edits (exit %s); abort and revert the blob"
-                          exit)))
-          (prog1 (majutsu-blob-edit--saved-commit
-                  before commit change (file-name-nondirectory temp-file))
-            (setq majutsu-blob-edit--save-unverified nil)))
-      (ignore-errors (delete-file temp-file)))))
+  (let ((default-directory majutsu-buffer-blob-root))
+    (setq majutsu-blob-edit--save-unverified t)
+    (prog1 (majutsu-file-apply-contents
+            majutsu-buffer-blob-commit-id majutsu-buffer-blob-change-id
+            (list (cons majutsu-buffer-blob-path content)))
+      (setq majutsu-blob-edit--save-unverified nil))))
 
 (defvar-keymap majutsu-blob-edit-mode-map
   :doc "Keymap for `majutsu-blob-edit-mode'."
