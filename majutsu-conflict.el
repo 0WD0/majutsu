@@ -349,6 +349,46 @@ begin marker."
              (majutsu-conflict-removes conflict)
            (majutsu-conflict-adds conflict)))))
 
+(defun majutsu-conflict-display-parts (conflict)
+  "Return ordered snapshots and before/after changes encoded by CONFLICT.
+Keep the actual pairing of jj diff markers, including a snapshot in any
+position.  Adjacent negative and positive snapshots form a change too.
+Term references use the plists accepted by `majutsu-conflict-term-cell'.
+Native diff bodies retain their source bounds; no merge is recomputed."
+  (let ((next-add 0) parts)
+    (cl-labels
+        ((reference (term)
+           (list :kind (car term) :index (cdr term)))
+         (snapshot (term)
+           (when term
+             (let ((ref (reference term)))
+               (if (and (eq (car term) 'add)
+                        (eq (plist-get (car parts) :kind) 'snapshot)
+                        (eq (plist-get (plist-get (car parts) :term) :kind) 'remove))
+                   (setcar parts (list :kind 'change
+                                       :before (plist-get (car parts) :term)
+                                       :after ref))
+                 (push (list :kind 'snapshot :term ref) parts))
+               (when (eq (car term) 'add)
+                 (setq next-add (1+ (cdr term))))))))
+      (majutsu-conflict--scan-terms
+       conflict
+       (lambda (term kind line-beg line-end)
+         (pcase kind
+           ('diff
+            (push (list :kind 'change :before (reference term)
+                        :after (list :kind 'add :index next-add) :diff t)
+                  parts)
+            (setq next-add (1+ next-add)))
+           ((or 'begin 'add 'remove 'git-ancestor 'git-separator)
+            (snapshot term))
+           ('nil
+            (when (plist-get (car parts) :diff)
+              (unless (plist-get (car parts) :diff-begin)
+                (setcar parts (plist-put (car parts) :diff-begin line-beg)))
+              (setcar parts (plist-put (car parts) :diff-end (1+ line-end)))))))))
+    (nreverse parts)))
+
 (defun majutsu-conflict-revision-at-point ()
   "Return conflict metadata at point as a plist.
 Returns a plist with :change-id, :commit-id, and :side, or nil when

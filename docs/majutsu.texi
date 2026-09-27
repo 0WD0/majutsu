@@ -2550,23 +2550,36 @@ inherited multi-sided conflicts with no changes-in diff. Its tree distinguishes
 jj's conflict state from private draft changes. Refresh never redirects the
 pin or overwrites drafts.
 
+Each file expands into its parsed conflict blocks. Within a block@comma{} the tree
+preserves jj's snapshot/change grouping rather than listing positive and
+negative terms as independent versions. A Change contains Before (-) and
+After (+) snapshots; jj diff markers also supply the native diff. Snapshot
+and Change previews start folded; @code{TAB} expands them. Side numbers match
+conflict-mode side selection@comma{} not necessarily commit parents. Inspecting
+the tree does not create a draft.
+
 @table @asis
 @item @kbd{@key{RET}} (@code{majutsu-resolve-visit-file})
 @kindex RET
 @findex majutsu-resolve-visit-file
 Open the file's private UTF-8 draft
-  in its usual major mode with @samp{majutsu-conflict-mode} enabled.
+  in its usual major mode with @samp{majutsu-conflict-mode} enabled. On a conflict
+  or term@comma{} jump to its marker; a Change jumps to its After term. If the draft
+  changed since parsing@comma{} refresh the tree and ask for a new selection instead
+  of following stale positions.
 @item @kbd{C-c C-c} (@code{majutsu-resolve-apply})
 @kindex C-c C-c
 @findex majutsu-resolve-apply
 Apply pending drafts in the current
   file or directory@comma{} including folded descendants. In a draft editor@comma{} apply
-  that file. A prefix argument applies all pending drafts in the workbench.
+  that file. On a conflict or term@comma{} the scope is the entire containing file@comma{}
+  not a single side or block. A prefix argument applies all pending drafts.
 @item @kbd{C-c C-k} (@code{majutsu-resolve-discard})
 @kindex C-c C-k
 @findex majutsu-resolve-discard
 Discard pending drafts in scope;
-  a prefix argument discards all. This never undoes an existing jj operation.
+  a prefix argument discards all. A conflict or term selects its containing
+  file. This never undoes an existing jj operation.
 @item @kbd{C-c C-n} (@code{majutsu-resolve-next-file})
 @kindex C-c C-n
 @findex majutsu-resolve-next-file
@@ -2575,9 +2588,11 @@ Visit the next file that jj still
 @end table
 
 In a draft editor@comma{} @code{C-x C-s} saves only the private draft@comma{} not the repository.
-@code{C-c C-o} returns to the workbench. Closing a draft editor retains its text
-while the workbench lives; killing the workbench with @code{C-x k} confirms pending
-changes and removes its private files. This is not a persistent session store.
+@code{C-c C-o} returns to the workbench and refreshes its tree@comma{} including unsaved
+edits. Ordinary workbench refresh also reparses drafts. Closing a draft editor
+retains its text while the workbench lives; killing the workbench with @code{C-x k}
+confirms pending changes and removes its private files. This is not a persistent
+session store.
 
 Applying rewrites the fixed commit once and verifies the resulting revision@comma{}
 file contents@comma{} and remaining conflicts. A hidden target@comma{} unsaved real workspace
@@ -2587,9 +2602,10 @@ workbench and open the desired revision again; @code{q} only buries the buffer.
 
 Only existing UTF-8 text-marker files are editable here. Binary/invalid UTF-8
 and non-text structural conflicts are refused. Empty text creates an empty
-file@comma{} not a deletion. Whole-side selection@comma{} deletion@comma{} renaming@comma{} and new paths
-are not supported. Marker-only changes that jj does not store are conservatively
-reported as unverified. Existing Ediff and direct-file workflows remain available.
+file@comma{} not a deletion. Choosing an entire file side@comma{} deletion@comma{} renaming@comma{} and
+new paths are not supported. Marker-only changes that jj does not store are
+conservatively reported as unverified. Existing Ediff and direct-file workflows
+remain available.
 
 @node Entering Conflict Mode
 @section Entering Conflict Mode
