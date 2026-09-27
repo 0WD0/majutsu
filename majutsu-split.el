@@ -92,7 +92,8 @@ The default diff range denotes @.  Explicit ranges must use exactly one
     ;; the selection, so it remains available for the originating command.
     (if (majutsu-diff-editor-interactive-arguments-p args)
         (majutsu-diff-editor-start
-         "split" args filesets :origin-buffer (current-buffer))
+         "split" args filesets
+         :origin-buffer (current-buffer))
       (let* (;; Text hunks and hunkless files coexist in one operation.
              (plan (majutsu-interactive-build-replay-plan-if-selected
                     nil nil 'majutsu-split))
@@ -113,8 +114,9 @@ The default diff range denotes @.  Explicit ranges must use exactly one
            filesets plan))
          ;; `jj split' selects interactively by default when no fileset is given.
          ((null filesets)
-         (majutsu-diff-editor-start
-           "split" args filesets :origin-buffer (current-buffer)))
+          (majutsu-diff-editor-start
+           "split" args filesets
+           :origin-buffer (current-buffer)))
          (t
           (majutsu-run-jj-with-editor
            (cons "split" (majutsu-jj-append-filesets args filesets)))))))))
