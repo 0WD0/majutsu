@@ -7,7 +7,7 @@
 
 - Scoped transient defaults ::
   ~w~ now opens a menu: ~w u~ saves user defaults, ~w r~ repository defaults,
-  and ~w w~ workspace defaults, replacing the old standalone ~w~/~W~ actions.
+  and ~w w~ workspace defaults, replacing the old standalone ~w~ / ~W~ actions.
   Uppercase scope keys in that menu clear overrides. Session defaults are
   workspace-local; existing user/repository saved values remain readable.
   Buffer option reuse no longer crosses workspace boundaries. Log ~0~ resets
