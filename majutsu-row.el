@@ -917,19 +917,13 @@ When PLAIN is non-nil, omit faces and text properties."
         selected
       (get-buffer-window (current-buffer) 0))))
 
-(defun majutsu-row-tail-align-to-width (width &optional window)
-  "Return a display target that right-aligns content of WIDTH."
-  (cond
-   ((and (display-graphic-p) window)
-    (list (max 0 (- (window-body-width window t) width))))
-   ((display-graphic-p)
-    `(- right (,width)))
-   (window
-    (max 0 (- (window-body-width window)
-              width
-              majutsu-row--tail-terminal-padding)))
-   (t
-    `(- right ,(+ width majutsu-row--tail-terminal-padding)))))
+(defun majutsu-row-tail-align-to-width (width &optional _window)
+  "Return a window-relative display target right-aligning content of WIDTH.
+The target is shared buffer text, so leave the right edge symbolic for
+redisplay to resolve separately in each window."
+  (if (display-graphic-p)
+      `(- right (,width))
+    `(- right ,(+ width majutsu-row--tail-terminal-padding))))
 
 (defun majutsu-row-tail-spacer-display (tail &optional window)
   "Return the spacer display spec used to right-align TAIL."
