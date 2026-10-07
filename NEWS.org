@@ -114,8 +114,13 @@
   Use ~F~ to select whole-file changes, including binary and other hunkless
   changes, for Split, Squash, and Restore.
 
+- Absorb patch selections ::
+  Absorb supports ~H~/~F~/~R~ selections from a single-revision diff through
+  the =majutsu-applypatch= tool.  jj assigns selected changes to eligible
+  ancestors; unselected and unassignable changes remain in the source.
+
 - Configured jj diff editors ::
-  Split, Squash, and Restore honor =--interactive= and =--tool= using jj's
+  Split, Squash, Absorb, and Restore honor =--interactive= and =--tool= using jj's
   configured diff editor.  An explicit editor request takes precedence over
   an Emacs patch selection.  Split also opens the editor when neither a patch
   selection nor a fileset is supplied.

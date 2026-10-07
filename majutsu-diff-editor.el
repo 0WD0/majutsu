@@ -220,12 +220,13 @@ has jj's documented `:builtin' default."
 (defun majutsu-diff-editor--description-editor-required-p (command args)
   "Return non-nil when jj COMMAND with ARGS may invoke a text editor.
 
-Restore cannot edit a description.  Split with an explicit message and Squash
-with an explicit message policy avoid that phase unless `--editor' is set."
+Absorb and Restore cannot edit a description.  Split with an explicit message
+and Squash with an explicit message policy avoid that phase unless `--editor'
+is set."
   (let ((editor (majutsu-diff-editor--argument-present-p
                  args '("--editor"))))
     (pcase command
-      ("restore" nil)
+      ((or "absorb" "restore") nil)
       ("split"
        (or editor
            (null (majutsu-jj-option-values args "--message" "-m"))))

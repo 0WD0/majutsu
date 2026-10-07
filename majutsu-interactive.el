@@ -95,7 +95,7 @@ Nil means no context has been recorded; `stale' requires a fresh render.")
   "Return the patch-selection operation active in the current transient."
   (and (boundp 'transient-current-command)
        (memq transient-current-command
-             '(majutsu-split majutsu-squash majutsu-restore))
+             '(majutsu-split majutsu-squash majutsu-absorb majutsu-restore))
        transient-current-command))
 
 (defun majutsu-interactive--repository-root ()
@@ -355,7 +355,7 @@ When VALIDATE is non-nil, reject unsupported or unverified whole-file content."
     (when (majutsu-interactive--file-content-p file-section)
       (when validate
         (unless (majutsu-interactive--current-operation)
-          (user-error "Whole-file selections are supported by Split, Squash, and Restore"))
+          (user-error "Whole-file selections are supported by Split, Squash, Absorb, and Restore"))
         (unless (majutsu-diff-file-metadata file-section)
           (user-error
            "Cannot verify this whole-file selection against structured metadata from jj; refresh the diff and try again")))
@@ -954,11 +954,12 @@ Returns patch string or nil if no selections."
 (defun majutsu-interactive-build-replay-plan-if-selected
     (&optional buffer mode operation)
   "Return a plan that reconstructs the editor's right tree from selections.
-MODE is `selected' for Split and Squash, or `complement' for Restore.  A
-selected plan starts from the editor's left tree and replays selected changes
-from its initial right tree.  A complement plan starts from the initial right
-tree and replays unselected changes from the left tree.  Both plans apply
-their text patches forward; this keeps new-file and copy patches valid.
+MODE is `selected' for Split, Squash, and Absorb, or `complement' for Restore.
+A selected plan starts from the editor's left tree and replays selected
+changes from its initial right tree.  A complement plan starts from the
+initial right tree and replays unselected changes from the left tree.
+Both plans apply their text patches forward; this keeps new-file and copy
+patches valid.
 
 The returned plist contains :base, :payload-root, :patch, and :file-ops, or
 nil when BUFFER has no selections.  OPERATION, when non-nil, must own

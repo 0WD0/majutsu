@@ -113,17 +113,18 @@
        (majutsu-diff-editor-select-host "split" '("--interactive"))
        :type 'user-error))))
 
-(ert-deftest majutsu-diff-editor-select-host/auto-restores-without-emacsclient ()
-  "Restore uses Ghostel because it cannot invoke a description editor."
+(ert-deftest majutsu-diff-editor-select-host/description-free-needs-no-emacsclient ()
+  "Absorb and Restore can use Ghostel without a description-editor bridge."
   (let ((majutsu-diff-editor-host 'auto)
         (with-editor-emacsclient-executable nil))
     (cl-letf (((symbol-function 'majutsu-diff-editor-ghostel-available-p)
                (lambda () t))
               ((symbol-function 'majutsu-diff-editor--effective-tool)
                (lambda (_args) ":builtin")))
-      (should (eq (majutsu-diff-editor-select-host
-                   "restore" '("--interactive"))
-                  'ghostel)))))
+      (dolist (command '("absorb" "restore"))
+        (should (eq (majutsu-diff-editor-select-host
+                     command '("--interactive"))
+                    'ghostel))))))
 
 (ert-deftest majutsu-diff-editor-select-host/explicit-message-needs-no-emacsclient ()
   "Description-free Split and Squash paths can use a local Ghostel TUI."
