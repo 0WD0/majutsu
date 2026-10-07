@@ -744,17 +744,17 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
             (progn
               (with-current-buffer buffer
                 (when (and (or revert (not existing))
-                           (or (not (eq revert 'ask-revert))
+                           (or (not existing)
+                               (not (eq revert 'ask-revert))
                                (y-or-n-p (format "%s already exists; revert it? "
                                                  (buffer-name)))))
-                  (setq majutsu-buffer-blob-root root)
+                  (unless existing
+                    (setq majutsu-buffer-blob-root root)
+                    (setq majutsu-buffer-blob-path file-rel)
+                    (setq default-directory (if (file-exists-p defdir) defdir root))
+                    (setq-local revert-buffer-function #'majutsu-file-revert-buffer))
+                  (majutsu-file-revert-buffer nil t rev-info)
                   (setq majutsu-buffer-blob-revset rev)
-                  (setq majutsu-buffer-blob-change-id resolved)
-                  (setq majutsu-buffer-blob-commit-id commit-id)
-                  (setq majutsu-buffer-blob-path file-rel)
-                  (setq default-directory (if (file-exists-p defdir) defdir root))
-                  (setq-local revert-buffer-function #'majutsu-file-revert-buffer)
-                  (majutsu-file-revert-buffer nil t)
                   (run-hooks 'majutsu-find-file-hook)))
               (setq ready t)
               buffer)
@@ -774,8 +774,10 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
       (unless (equal (buffer-name) expected)
         (rename-buffer expected t)))))
 
-(defun majutsu-file-revert-buffer (_ignore-auto noconfirm)
+(defun majutsu-file-revert-buffer (_ignore-auto noconfirm &optional rev-info)
   "Revert the current blob buffer content.
+REV-INFO, when provided by the file visitor, is its already resolved snapshot.
+Otherwise resolve the buffer's input revset.
 If revision metadata moved, preserve location heuristically:
 - same change-id + same commit-id: keep current location
 - same change-id + different commit-id: offset line across revisions
@@ -798,35 +800,26 @@ If revision metadata moved, preserve location heuristically:
              (col (current-column))
              (old-change majutsu-buffer-blob-change-id)
              (old-commit majutsu-buffer-blob-commit-id)
-             (rev-info (or (majutsu-file--resolve-blob-rev-info majutsu-buffer-blob-revset)
+             (rev-info (or rev-info
+                           (majutsu-file--resolve-blob-rev-info majutsu-buffer-blob-revset)
                            (user-error "Revset no longer resolves to a single revision")))
              (new-change (plist-get rev-info :change-id))
-             (new-commit (plist-get rev-info :commit-id))
-             (target-line line)
-             (target-col col)
-             (reload-needed t))
-        (cond
-         ((and (equal old-change new-change)
-               majutsu-buffer-blob-content-hash
-               (equal old-commit new-commit)
-               (not modified))
-          ;; Nothing changed remotely and nothing changed locally.
-          (setq reload-needed nil))
-         ((and old-change old-commit
-               (equal old-change new-change)
-               new-commit)
-          (setq target-line
-                (or (condition-case nil
-                        (majutsu-diff-visit--offset
-                         majutsu-buffer-blob-root path old-commit new-commit line)
-                      (error line))
-                    line)))
-         ((not (equal old-change new-change))
-          (setq target-line 1
-                target-col 0)))
-        (if (not reload-needed)
-            nil
+             (new-commit (plist-get rev-info :commit-id)))
+        (unless (and (equal old-commit new-commit)
+                     majutsu-buffer-blob-content-hash
+                     (not modified))
+          ;; Read before changing either the displayed snapshot or its pin.
           (let ((contents (majutsu-file--read-contents new-commit path)))
+            (cond
+             ((not (equal old-change new-change))
+              (setq line 1 col 0))
+             ((and old-commit (not (equal old-commit new-commit)))
+              (setq line
+                    (or (condition-case nil
+                            (majutsu-diff-visit--offset
+                             majutsu-buffer-blob-root path old-commit new-commit line)
+                          (error line))
+                        line))))
             (erase-buffer)
             (insert contents))
           (let ((buffer-file-name (expand-file-name path default-directory))
@@ -843,7 +836,7 @@ If revision metadata moved, preserve location heuristically:
           (set-buffer-modified-p nil)
           (setq-local majutsu-buffer-blob-content-hash (majutsu-file--current-content-hash))
           (majutsu-blob-mode 1)
-          (majutsu-file--goto-line-col (or target-line 1) (or target-col 0)))
+          (majutsu-file--goto-line-col line col))
         (setq majutsu-blob-edit--save-unverified nil)))))
 
 ;;;###autoload
