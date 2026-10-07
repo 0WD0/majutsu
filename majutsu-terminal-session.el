@@ -75,14 +75,10 @@ runs via a zero-delay timer, outside Ghostel's process sentinel.")
       (ignore-errors (kill-buffer buffer)))))
 
 (defun majutsu-terminal-session--refresh-origin (session)
-  "Refresh SESSION's live origin buffer after a repository state change."
-  (when-let* ((buffer (majutsu-terminal-session-origin-buffer session))
-              ((buffer-live-p buffer)))
-    (with-current-buffer buffer
-      (let ((default-directory
-             (majutsu-terminal-session-repository-root session)))
-        (when (derived-mode-p 'majutsu-mode)
-          (majutsu-refresh))))))
+  "Refresh SESSION's origin or its live workspace log after a state change."
+  (majutsu-interactive--refresh-operation-origin
+   (majutsu-terminal-session-origin-buffer session)
+   (majutsu-terminal-session-repository-root session)))
 
 (defun majutsu-terminal-session--invalidate-unowned (session)
   "Conservatively invalidate SESSION after an unowned child setup failure."

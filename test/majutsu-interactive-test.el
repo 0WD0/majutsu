@@ -1496,7 +1496,8 @@ SELECT is `:all' or a list of hunk body line texts to select."
 
 (ert-deftest majutsu-interactive-run-replay-plan/rejects-concurrent-replay ()
   "A second patch replay for the same repository is refused while one runs."
-  (let (callback)
+  (let ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
+        callback)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
                (lambda (&optional _) "/tmp/replay-repo/"))
               ((symbol-function 'majutsu-jj-operation-id)
@@ -1529,7 +1530,330 @@ SELECT is `:all' or a list of hunk body line texts to select."
               (funcall callback 'fake-process 0))
             (should (majutsu-interactive-run-replay-plan
                      "split" nil nil '(:patch "P"))))
-        (majutsu-interactive--release-replay "/tmp/replay-repo/")))))
+        (clrhash majutsu-process--interactive-sessions)))))
+
+(ert-deftest majutsu-interactive/integration-renames-and-copies-preserve-mode-selection ()
+  "Pathname operations and executable bits remain independently selectable."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (dolist (action '(rename copy))
+      (dolist (restore '(nil t))
+        (dolist (selection '(content mode file neither))
+          (dolist (old-mode '(#o644 #o755))
+            (ert-info ((format "action=%s replay=%s selection=%s mode=%o->%o"
+                               action (if restore 'complement 'selected)
+                               selection old-mode
+                               (if (= old-mode #o644) #o755 #o644)))
+              (let* ((repo (majutsu-jj-integration-init
+                            sandbox (format "%s-%s-%s-%o"
+                                            action restore selection old-mode)))
+                     (old (expand-file-name "old.txt" repo))
+                     (new (expand-file-name "new.txt" repo))
+                     (other (expand-file-name "other.txt" repo))
+                     (new-mode (if (= old-mode #o644) #o755 #o644))
+                     (content-selected (memq selection '(content file)))
+                     (mode-selected (memq selection '(mode file)))
+                     (keep-content (if restore
+                                       (not content-selected) content-selected))
+                     (keep-mode (if restore (not mode-selected) mode-selected))
+                     (unsupported (and (eq action 'copy)
+                                       keep-mode (not keep-content)))
+                     plan)
+                (majutsu-jj-integration-write-text old "same\n")
+                (set-file-modes old old-mode)
+                (majutsu-jj-integration-write-text other "old\n")
+                (majutsu-jj-integration-commit repo "base")
+                (if (eq action 'rename) (rename-file old new) (copy-file old new))
+                (set-file-modes new new-mode)
+                (majutsu-jj-integration-write-text other "new\n")
+                (setq plan
+                      (majutsu-jj-integration-with-washed-diff
+                       repo
+                       (lambda ()
+                         ;; jj detects identical renames.  A copy can be rendered
+                         ;; as an add by a backend; exercise its structured copy
+                         ;; consumer with the equivalent explicit diff metadata.
+                         (when (eq action 'copy)
+                           (let ((inhibit-read-only t))
+                             (erase-buffer))
+                           (majutsu-interactive-test--insert-diff
+                            (format
+                             (concat "diff --git a/old.txt b/new.txt\n"
+                                     "copy from old.txt\ncopy to new.txt\n"
+                                     "old mode 100%o\nnew mode 100%o\n"
+                                     "diff --git a/other.txt b/other.txt\n"
+                                     "--- a/other.txt\n+++ b/other.txt\n"
+                                     "@@ -1 +1 @@\n-old\n+new\n")
+                             old-mode new-mode)
+                            "new.txt"
+                            '((:status "copied" :source "old.txt" :target "new.txt")
+                              (:status "modified" :source "other.txt"
+                               :target "other.txt"))))
+                         (let* ((transient-current-command
+                                 (if restore 'majutsu-restore 'majutsu-split))
+                                (file (majutsu-interactive--file-section-for-file
+                                       "new.txt"))
+                                (mode (seq-find
+                                       (lambda (unit)
+                                         (magit-section-match 'jj-mode-change unit))
+                                       (oref file children))))
+                           (should mode)
+                           (should (equal
+                                    (plist-get (majutsu-diff-file-metadata file) :status)
+                                    (if (eq action 'rename) "renamed" "copied")))
+                           (pcase selection
+                             ((or 'content 'file)
+                              (goto-char (oref file start))
+                              (majutsu-interactive-toggle-file)
+                              (when (eq selection 'content)
+                                (goto-char (oref mode start))
+                                (majutsu-interactive-toggle-hunk)))
+                             ('mode
+                              (goto-char (oref mode start))
+                              (majutsu-interactive-toggle-hunk))
+                             ('neither
+                              (majutsu-interactive-test--toggle-whole-file
+                               "other.txt" transient-current-command)))
+                           (if unsupported
+                               (let ((before (majutsu-jj-operation-id repo)))
+                                 (should before)
+                                 (should-error
+                                  (majutsu-interactive-build-replay-plan-if-selected
+                                   nil (if restore 'complement 'selected))
+                                  :type 'user-error)
+                                 (should (equal (majutsu-jj-operation-id repo)
+                                                before))
+                                 nil)
+                             (majutsu-interactive-build-replay-plan-if-selected
+                              nil (if restore 'complement 'selected)))))))
+                (if unsupported
+                    (progn
+                      (should-not plan)
+                      (should (file-exists-p new))
+                      (should (equal (majutsu-jj-integration-read-bytes new) "same\n"))
+                      (should (= (logand (file-modes new) #o777) new-mode))
+                      (should (equal (majutsu-jj-integration-read-bytes other) "new\n")))
+                  (should plan)
+                  (majutsu-jj-integration-run-replay
+                   repo (if restore "restore" "split")
+                   (if restore '("--changes-in=@")
+                     '("--revision=@" "--message=selected"))
+                   plan)
+                  (unless restore
+                    (majutsu-jj-integration-call repo "new" "@-"))
+                  (let ((path (if keep-content new old)))
+                    (ert-info ((format "result=%s keep-content=%s keep-mode=%s"
+                                       (file-name-nondirectory path)
+                                       keep-content keep-mode))
+                      (should (file-exists-p path))
+                      (should (equal (majutsu-jj-integration-read-bytes path) "same\n"))
+                      (should (= (logand (file-modes path) #o777)
+                                 (if keep-mode new-mode old-mode)))
+                      (should (eq (file-exists-p new) (and keep-content t)))
+                      (when (eq action 'rename)
+                        (should (eq (file-exists-p old) (not keep-content)))))))
+                ;; A copy never transfers its destination mode to its source,
+                ;; including when an unrepresentable selection is rejected.
+                (when (eq action 'copy)
+                  (should (file-exists-p old))
+                  (should (equal (majutsu-jj-integration-read-bytes old) "same\n"))
+                  (should (= (logand (file-modes old) #o777) old-mode)))))))))))
+
+(ert-deftest majutsu-interactive/integration-completion-refreshes-workspace-log ()
+  "Dead or repurposed origins still refresh the actual repository log."
+  (require 'majutsu-log)
+  (majutsu-jj-integration-with-repo repo
+    (dolist (dead '(nil t))
+      (let ((origin (generate-new-buffer " *replay-origin*"))
+            (log (generate-new-buffer " *replay-log*"))
+            (root (file-name-as-directory repo)))
+        (unwind-protect
+            (progn
+              (with-current-buffer log
+                (majutsu-log-mode)
+                (setq-local default-directory root
+                            majutsu--default-directory root
+                            majutsu-buffer-log-args '("-r" "@"))
+                (majutsu-log-refresh))
+              (let ((before (majutsu-jj-operation-id root))
+                    (description (if dead "dead-origin-result" "repurposed-origin-result")))
+                (when dead (kill-buffer origin))
+                (majutsu-jj-integration-call repo "describe" "-m" description)
+                (should (eq (majutsu-interactive-complete-repository-operation
+                             root origin before)
+                            'changed))
+                (with-current-buffer log
+                  (should (string-match-p description (buffer-string))))))
+          (when (buffer-live-p origin) (kill-buffer origin))
+          (when (buffer-live-p log) (kill-buffer log)))))))
+
+(ert-deftest majutsu-interactive-replay/exclusion-precedes-temporary-files ()
+  "An opaque writer blocks replay without allocating a temporary directory."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((root (file-name-as-directory repo))
+           (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
+           (owner (list 'blob-write))
+           (temporary-file-directory (file-name-as-directory
+                                      (make-temp-file "majutsu-no-temp-" t))))
+      (unwind-protect
+          (progn
+            (majutsu-process-register-interactive-session root owner)
+            (should-error
+             (majutsu-interactive-run-replay-plan
+              "split" nil nil '(:base left :payload-root right))
+             :type 'user-error)
+            (should (eq (gethash root majutsu-process--interactive-sessions) owner))
+            (should-not (directory-files temporary-file-directory nil
+                                         directory-files-no-dot-files-regexp))
+            ;; Read-only probes remain available while the writer owns ROOT.
+            (should (majutsu-jj-operation-id root)))
+        (delete-directory temporary-file-directory t)))))
+
+(ert-deftest majutsu-interactive-replay/launch-failure-cleans-slot-and-files ()
+  "Failure and quit during launch remove replay files and release only its owner."
+  (majutsu-jj-integration-with-repo repo
+    (dolist (condition '(error quit))
+      (let ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
+            directory caught)
+        (cl-letf (((symbol-function 'majutsu-start-jj-with-editor)
+                   (lambda (&rest _)
+                     (signal condition '("launch interrupted"))))
+                  ((symbol-function 'majutsu-interactive--make-operation-temp-dir)
+                   (lambda ()
+                     (setq directory (make-temp-file "majutsu-launch-" t)))))
+          (condition-case problem
+              (majutsu-interactive-run-replay-plan
+               "split" nil nil '(:base left :payload-root right))
+            ((error quit) (setq caught (car problem)))))
+        (should (eq caught condition))
+        (should directory)
+        (should-not (file-exists-p directory))
+        (should (= (hash-table-count majutsu-process--interactive-sessions) 0))))))
+
+(ert-deftest majutsu-interactive-replay/cancel-releases-owner-and-late-callback-is-safe ()
+  "A real child cancellation cleans files without releasing a later writer."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((root (file-name-as-directory repo))
+           (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
+           (next-owner (list 'next-writer))
+           child callback directory)
+      (unwind-protect
+          (cl-letf (((symbol-function 'majutsu-start-jj-with-editor)
+                     (lambda (_args _message finish &optional _inhibit)
+                       (setq callback finish
+                             child
+                             (make-process
+                              :name "majutsu-replay-cancellation"
+                              :command '("cat")
+                              :connection-type 'pipe
+                              :noquery t
+                              :sentinel
+                              (lambda (process _event)
+                                (when (memq (process-status process) '(exit signal))
+                                  (funcall finish process 1))))))))
+            (majutsu-interactive-run-replay-plan
+             "split" nil nil '(:base left :payload-root right))
+            (setq directory (process-get child 'majutsu-interactive-temp-dir))
+            (should (file-directory-p directory))
+            (should-error
+             (majutsu-process-register-interactive-session root next-owner)
+             :type 'user-error)
+            (delete-process child)
+            (should-not (gethash root majutsu-process--interactive-sessions))
+            (should-not (file-exists-p directory))
+            (majutsu-process-register-interactive-session root next-owner)
+            (funcall callback child 1)
+            (should (eq (gethash root majutsu-process--interactive-sessions)
+                        next-owner)))
+        (when (and child (process-live-p child)) (delete-process child))
+        (when (and directory (file-exists-p directory))
+          (delete-directory directory t))))))
+
+(ert-deftest majutsu-interactive-replay/preserves-link-and-binary-payloads ()
+  "Rename/copy preserve links and binary bytes on either replay baseline."
+  (dolist (base '(left right))
+    (dolist (action '(rename copy))
+      (let* ((directory (make-temp-file "majutsu-replay-payload-" t))
+             (left (expand-file-name "left" directory))
+             (right (expand-file-name "right" directory))
+             (payload (if (eq base 'left) right left))
+             (baseline (if (eq base 'left) left right))
+             (bytes (unibyte-string 0 1 2 255)))
+        (unwind-protect
+            (progn
+              (make-directory left)
+              (make-directory right)
+              (make-symbolic-link "missing-target"
+                                  (expand-file-name "old.link" baseline))
+              (make-symbolic-link "missing-target"
+                                  (expand-file-name "new.link" payload))
+              (majutsu-jj-integration-write-bytes
+               (expand-file-name "old.bin" baseline) bytes)
+              (set-file-modes (expand-file-name "old.bin" baseline) #o644)
+              (majutsu-jj-integration-write-bytes
+               (expand-file-name "new.bin" payload) bytes)
+              (set-file-modes (expand-file-name "new.bin" payload) #o755)
+              (let* ((plan (list :base base
+                                 :payload-root (if (eq base 'left) 'right 'left)
+                                 :file-ops
+                                 (list (list :action action :source "old.link"
+                                             :path "new.link")
+                                       (list :action action :source "old.bin"
+                                             :path "new.bin"))))
+                     (patch (majutsu-interactive--write-patch "" directory))
+                     (script (majutsu-interactive--write-applypatch-script
+                              plan directory)))
+                (should (zerop (call-process script nil nil nil left right patch))))
+              (should (equal (file-symlink-p (expand-file-name "new.link" right))
+                             "missing-target"))
+              (should (equal (majutsu-jj-integration-read-bytes
+                              (expand-file-name "new.bin" right))
+                             bytes))
+              (should (= (logand (file-modes (expand-file-name "new.bin" right))
+                                 #o111)
+                         0))
+              (should (eq (and (file-symlink-p
+                                (expand-file-name "old.link" right)) t)
+                          (eq action 'copy))))
+          (delete-directory directory t))))))
+
+(ert-deftest majutsu-interactive-replay/interrupted-owned-start-retains-files ()
+  "A quit after sentinel ownership keeps the slot and files until child exit."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((root (file-name-as-directory repo))
+           (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
+           child directory caught)
+      (unwind-protect
+          (cl-letf (((symbol-function 'majutsu-start-jj-with-editor)
+                     (lambda (_args _message finish &optional _inhibit)
+                       (setq child
+                             (make-process
+                              :name "majutsu-replay-interrupted-start"
+                              :command '("cat") :connection-type 'pipe :noquery t
+                              :sentinel
+                              (lambda (process _event)
+                                (when (memq (process-status process) '(exit signal))
+                                  (funcall finish process 1)))))
+                       (funcall majutsu-process--start-created-callback child)
+                       (process-put child 'majutsu-completion-owned t)
+                       (signal 'quit nil))))
+            (condition-case nil
+                (majutsu-interactive-run-replay-plan
+                 "split" nil nil '(:base left :payload-root right))
+              (quit (setq caught t)))
+            (should caught)
+            (setq directory (process-get child 'majutsu-interactive-temp-dir))
+            (should (file-directory-p directory))
+            (should (gethash root majutsu-process--interactive-sessions))
+            ;; This test transport owns no repository operation to refresh.
+            (process-put child 'majutsu-completion-owned nil)
+            (delete-process child)
+            (should-not (gethash root majutsu-process--interactive-sessions))
+            (should-not (file-exists-p directory)))
+        (when (and child (process-live-p child))
+          (process-put child 'majutsu-completion-owned nil)
+          (delete-process child))
+        (when (and directory (file-exists-p directory))
+          (delete-directory directory t))))))
 
 (provide 'majutsu-interactive-test)
 ;;; majutsu-interactive-test.el ends here
