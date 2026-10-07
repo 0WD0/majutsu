@@ -235,10 +235,11 @@ marks the remainder of the buffer as comment. You can customize
 ~global-majutsu-jjdescription-mode~. Jujutsu currently does not support
 changing the comment prefix; the option exists for future compatibility.
 
-Descriptions are also stored in a ring that lives for the duration of the
-Emacs session. Majutsu saves the current description when an edit session
-starts, and again when it finishes or is canceled, so older descriptions can
-be recovered easily.
+Majutsu keeps single-commit descriptions in an in-session ring, recording the
+text when editing starts and when it finishes or is canceled. Recalling a
+message replaces all editable description text, including text separated by
+JJ comments, while preserving comment blocks and the ignored diff preview.
+Single-message history commands are unavailable in bulk-description buffers.
 
 #+attr_reference: :kind command-binding :interface "JJ description buffer" :mode majutsu-jjdescription-mode
 - Key: C-c M-s (majutsu-jjdescription-save-message) ::
@@ -737,6 +738,16 @@ Commands:
   display the blob in another window.
 - Command: majutsu-find-file-other-frame :: Like ~majutsu-find-file~, but
   display the blob in another frame.
+
+Each blob buffer identifies an exact workspace, full commit ID, and file path.
+Different versions of one change have separate buffers. Revision actions,
+including Restore and Ediff, use the displayed commit rather than a newer
+version with the same change ID.
+
+Blob inspection supports regular files and text file conflicts, not symlinks,
+submodules, or structural conflicts. A failed or warning-only read leaves the
+previous buffer contents and commit pin intact; an empty regular file remains
+a valid snapshot.
 
 Blob buffers are read-only snapshots with history-aware navigation:
 #+attr_reference: :kind command-binding :interface "Blob buffer" :mode majutsu-blob-mode
@@ -1344,6 +1355,10 @@ operation with selections:
    Each operation stores its patch file and helper script in a separate
    temporary directory, so overlapping asynchronous operations do not share
    input files.
+   Patch replay, terminal editor sessions, and blob saves reserve the same
+   workspace writer slot. A second managed writer is rejected until the
+   current session completes or is cancelled; read-only commands are not
+   locked.
 
 3. *Patch Application*:
   - For *Split/Squash/Absorb*: The tool resets =$right= (current state) to =$left=
@@ -1379,9 +1394,15 @@ hunkless whole-file selection, which handles file changes that have no text
 hunks.
 
 **** Renamed/Copied Files
-Renamed and copied files are handled correctly:
-- Text-hunk patches preserve rename/copy information
-- You can select specific hunks within renamed files just like regular modifications
+Text-hunk patches preserve rename/copy information, and hunks within renamed
+files can be selected like regular modifications. Executable-bit changes are
+independent of content when the resulting file exists.
+
+For a rename, a mode-only selection applies to the surviving original path.
+For a copy, the target's mode change must not be applied to the source file.
+Majutsu therefore rejects a replay that would keep the copy's mode change
+without its destination. Select the copy itself when moving its mode change;
+when restoring the copy's creation, include its mode change as well.
 
 **** Changes Without Text Hunks
 In a Git-format diff buffer, Split, Squash, and Restore can select a file

@@ -521,10 +521,11 @@ marks the remainder of the buffer as comment. You can customize
 @code{global-majutsu-jjdescription-mode}. Jujutsu currently does not support
 changing the comment prefix; the option exists for future compatibility.
 
-Descriptions are also stored in a ring that lives for the duration of the
-Emacs session. Majutsu saves the current description when an edit session
-starts@comma{} and again when it finishes or is canceled@comma{} so older descriptions can
-be recovered easily.
+Majutsu keeps single-commit descriptions in an in-session ring@comma{} recording the
+text when editing starts and when it finishes or is canceled. Recalling a
+message replaces all editable description text@comma{} including text separated by
+JJ comments@comma{} while preserving comment blocks and the ignored diff preview.
+Single-message history commands are unavailable in bulk-description buffers.
 
 @table @asis
 @item @kbd{C-c M-s} (@code{majutsu-jjdescription-save-message})
@@ -1265,6 +1266,16 @@ Like @code{majutsu-find-file}@comma{} but
 Like @code{majutsu-find-file}@comma{} but
   display the blob in another frame.
 @end deffn
+
+Each blob buffer identifies an exact workspace@comma{} full commit ID@comma{} and file path.
+Different versions of one change have separate buffers. Revision actions@comma{}
+including Restore and Ediff@comma{} use the displayed commit rather than a newer
+version with the same change ID@.
+
+Blob inspection supports regular files and text file conflicts@comma{} not symlinks@comma{}
+submodules@comma{} or structural conflicts. A failed or warning-only read leaves the
+previous buffer contents and commit pin intact; an empty regular file remains
+a valid snapshot.
 
 Blob buffers are read-only snapshots with history-aware navigation:
 @table @asis
@@ -2344,6 +2355,10 @@ described above.
 Each operation stores its patch file and helper script in a separate
 temporary directory@comma{} so overlapping asynchronous operations do not share
 input files.
+Patch replay@comma{} terminal editor sessions@comma{} and blob saves reserve the same
+workspace writer slot. A second managed writer is rejected until the
+current session completes or is cancelled; read-only commands are not
+locked.
 
 @item
 @strong{Patch Application}:
@@ -2403,13 +2418,15 @@ hunks.
 @anchor{Renamed/Copied Files}Renamed/Copied Files
 
 
-Renamed and copied files are handled correctly:
-@itemize
-@item
-Text-hunk patches preserve rename/copy information
-@item
-You can select specific hunks within renamed files just like regular modifications
-@end itemize
+Text-hunk patches preserve rename/copy information@comma{} and hunks within renamed
+files can be selected like regular modifications. Executable-bit changes are
+independent of content when the resulting file exists.
+
+For a rename@comma{} a mode-only selection applies to the surviving original path.
+For a copy@comma{} the target's mode change must not be applied to the source file.
+Majutsu therefore rejects a replay that would keep the copy's mode change
+without its destination. Select the copy itself when moving its mode change;
+when restoring the copy's creation@comma{} include its mode change as well.
 
 @item
 @anchor{Changes Without Text Hunks}Changes Without Text Hunks
