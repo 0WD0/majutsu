@@ -146,6 +146,23 @@ instead of propagating a raw error, so callers get a uniform plist."
                  '(:host "example.com" :scheme "https" :path "/review"
                    :prefix "/a" :user nil))))
 
+(ert-deftest majutsu-gerrit-rest-missing-scheme-request-urls ()
+  "Host-only and SSL specs produce usable HTTP(S) request URLs."
+  (dolist (case '(((:host "example.com") . "https")
+                  ((:host "example.com" :ssl t) . "https")
+                  ((:host "example.com" :ssl nil) . "http")
+                  ((:host "example.com" :scheme nil :ssl nil) . "http")
+                  ((:host "example.com" :scheme http :ssl t) . "http")))
+    (let (seen-url)
+      (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil))
+                ((symbol-function 'plz)
+                 (lambda (_method url &rest _)
+                   (setq seen-url url)
+                   (majutsu-gerrit-rest-test--mock-plz-response 200 "text"))))
+        (should (equal (majutsu-gerrit-rest-text "GET" "/plain" nil (car case))
+                       "text"))
+        (should (equal seen-url (concat (cdr case) "://example.com/a/plain")))))))
+
 (provide 'majutsu-gerrit-rest-test)
 
 ;;; majutsu-gerrit-rest-test.el ends here

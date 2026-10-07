@@ -558,6 +558,7 @@
         (majutsu-gerrit--account-avatar-image-cache (make-hash-table :test #'equal))
         (majutsu-gerrit--account-avatar-fetching (make-hash-table :test #'equal)))
     (cl-letf (((symbol-function 'display-images-p) (lambda () t))
+              ((symbol-function 'image-type-available-p) (lambda (type) (eq type 'svg)))
               ((symbol-function 'plz) (lambda (&rest _args) nil))
               ((symbol-function 'svg-create)
                (lambda (w h) `(svg ((width . ,w) (height . ,h)))))
@@ -635,6 +636,49 @@
         (should (stringp annotation))
         (should (string-match-p "Alice Example" annotation))
         (should-not (consp annotation))))))
+
+(ert-deftest majutsu-gerrit-account-annotation-without-svg ()
+  "An image-capable display without SVG still gets a text annotation."
+  (let ((majutsu-gerrit-account-show-avatars t)
+        (candidate (propertize "alice@example.com" 'majutsu-gerrit-account
+                               '((name . "Alice Example")
+                                 (email . "alice@example.com")))))
+    (cl-letf (((symbol-function 'display-images-p) (lambda () t))
+              ((symbol-function 'image-type-available-p) (lambda (_) nil))
+              ((symbol-function 'create-image)
+               (lambda (&rest _) (ert-fail "Unsupported SVG image creation"))))
+      (let ((annotation (majutsu-gerrit--account-annotate-candidate candidate)))
+        (should (stringp annotation))
+        (should (string-match-p "Alice Example" annotation))))))
+
+(ert-deftest majutsu-gerrit-project-path-with-web-context ()
+  "Web context is stripped only at an HTTP(S) path component boundary."
+  (dolist (case '(("https://review.example/gerrit/team/project.git" . "team/project")
+                  ("https://review.example/team/project.git" . "team/project")
+                  ("https://review.example/gerrit-other/project.git" . "gerrit-other/project")
+                  ("ssh://user@review.example:29418/gerrit/project.git" . "gerrit/project")
+                  ("user@review.example:team/project.git" . "team/project")))
+    (should (equal (majutsu-gerrit--project-from-remote-url
+                    (car case) "https://review.example/gerrit/")
+                   (cdr case)))))
+
+(ert-deftest majutsu-gerrit-topic-query-strips-web-context ()
+  "Topic requests query the Gerrit project rather than the web context."
+  (let (seen-url)
+    (cl-letf (((symbol-function 'majutsu-gerrit--remote-url)
+               (lambda (&rest _) "https://review.example/gerrit/team/project.git"))
+              ((symbol-function 'majutsu-gerrit--config-get)
+               (lambda (_) "https://review.example/gerrit"))
+              ((symbol-function 'auth-source-search) (lambda (&rest _) nil))
+              ((symbol-function 'plz)
+               (lambda (_method url &rest _)
+                 (setq seen-url url)
+                 (make-plz-response :version "1.1" :status 200
+                                    :headers nil :body ")]}'\n[]"))))
+      (majutsu-gerrit-topic-candidate-data)
+      (should (string-prefix-p "https://review.example/gerrit/a/changes/?" seen-url))
+      (should (string-match-p "project%3Ateam%2Fproject" seen-url))
+      (should-not (string-match-p "project%3Agerrit" seen-url)))))
 
 (provide 'majutsu-gerrit-test)
 ;;; majutsu-gerrit-test.el ends here
