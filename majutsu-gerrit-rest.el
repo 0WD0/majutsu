@@ -68,7 +68,7 @@ returned by `majutsu-gerrit--shared-spec'."
    ((plist-get spec :host)
     (list :host (plist-get spec :host)
           :scheme (let ((scheme (plist-get spec :scheme)))
-                    (cond ((symbolp scheme) (symbol-name scheme))
+                    (cond ((and scheme (symbolp scheme)) (symbol-name scheme))
                           ((stringp scheme) scheme)
                           ((plist-member spec :ssl)
                            (majutsu-gerrit-rest--bool-scheme (plist-get spec :ssl)))

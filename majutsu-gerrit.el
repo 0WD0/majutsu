@@ -161,19 +161,26 @@ ARGS defaults to current transient arguments.  DIRECTORY controls repo lookup."
      ((string-match "^\\([^@]+\\)@[^:]+:" remote-url)
       (match-string 1 remote-url)))))
 
-(defun majutsu-gerrit--project-from-remote-url (remote-url)
-  "Extract Gerrit project path from REMOTE-URL."
-  (cond
-   ((not (stringp remote-url))
-    nil)
-   ((let* ((parsed (url-generic-parse-url remote-url))
-           (scheme (url-type parsed)))
-      (and scheme (not (string-empty-p scheme))))
-    (replace-regexp-in-string
-     "^/?\\(.*?\\)\\(?:\\.git/?\\)?$" "\\1"
-     (or (url-filename (url-generic-parse-url remote-url)) "")))
-   ((string-match "^\\(?:[^@]+@\\)?[^:]+:\\(.*?\\)\\(?:\\.git/?\\)?$" remote-url)
-    (match-string 1 remote-url))))
+(defun majutsu-gerrit--project-from-remote-url (remote-url &optional review-url)
+  "Extract Gerrit project path from REMOTE-URL.
+Strip REVIEW-URL's web context from HTTP(S) remote paths only."
+  (when (stringp remote-url)
+    (let* ((parsed (url-generic-parse-url remote-url))
+           (scheme (url-type parsed))
+           (path (if (and scheme (not (string-empty-p scheme)))
+                     (url-filename parsed)
+                   (when (string-match "^\\(?:[^@]+@\\)?[^:]+:\\(.*\\)$" remote-url)
+                     (match-string 1 remote-url))))
+           (context (and review-url
+                         (majutsu-gerrit--trim-trailing-slashes
+                          (url-filename (url-generic-parse-url review-url))))))
+      (when path
+        (when (and (member scheme '("http" "https"))
+                   context (not (string-empty-p context))
+                   (string-prefix-p (concat context "/") path))
+          (setq path (substring path (length context))))
+        (replace-regexp-in-string
+         "^/?\\(.*?\\)\\(?:\\.git/?\\)?$" "\\1" path)))))
 
 (defun majutsu-gerrit--base-url-from-review-url (review-url)
   "Normalize REVIEW-URL as a Gerrit web/API base URL."
@@ -385,8 +392,9 @@ fetch and return nil so the caller can fall back to a generated avatar."
   "Return prefix string displaying ACCOUNT's avatar, or nil."
   (when (and majutsu-gerrit-account-show-avatars
              (display-images-p))
-    (let ((image (or (majutsu-gerrit--account-avatar-image account)
-                     (majutsu-gerrit--account-avatar-svg account))))
+    (when-let* ((image (or (majutsu-gerrit--account-avatar-image account)
+                          (and (image-type-available-p 'svg)
+                               (majutsu-gerrit--account-avatar-svg account)))))
       (concat (propertize " " 'display image 'rear-nonsticky '(display))
               " "))))
 
@@ -566,7 +574,8 @@ CATEGORY names the completion category and LABEL is shown in annotations."
 (defun majutsu-gerrit-topic-candidate-data (&optional remote)
   "Return Gerrit topic completion payload for open changes."
   (let* ((project (majutsu-gerrit--project-from-remote-url
-                   (majutsu-gerrit--remote-url remote)))
+                   (majutsu-gerrit--remote-url remote)
+                   (majutsu-gerrit--config-get "gerrit.review-url")))
          (query (string-join (delq nil (list "is:open"
                                              (and project
                                                   (concat "project:" project))))
