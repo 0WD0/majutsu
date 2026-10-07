@@ -585,13 +585,15 @@ place similarly to Magit's `magit-process-environment'."
 
 The runner only handles the call shapes Majutsu actually uses: no input
 file, a single stdout destination, or a (STDOUT STDERR) pair whose stderr
-is discarded (nil), mixed with stdout (t), or written to a file (string)."
+is discarded (nil), mixed with stdout (t), written to a file (string),
+or captured in a caller-owned buffer (a Majutsu extension)."
   (and (null infile)
        (let ((stdout (if (consp destination) (car destination) destination))
              (stderr (and (consp destination) (cadr destination))))
          (and (or (null stdout) (eq stdout t)
                   (bufferp stdout) (stringp stdout))
-              (or (null stderr) (eq stderr t) (stringp stderr))))))
+              (or (null stderr) (eq stderr t) (stringp stderr)
+                  (bufferp stderr))))))
 
 (defun majutsu--process-file-insert-filter (marker)
   "Return a process filter that inserts output at MARKER."
@@ -607,7 +609,7 @@ is discarded (nil), mixed with stdout (t), or written to a file (string)."
     (before stderr-buffer stderr-process stdout-buffer stdout-filter command name)
   "Return a reliably identified main process created after BEFORE.
 
-STDERR-PROCESS must be the new process attached to Majutsu's private
+STDERR-PROCESS must be the new process attached to the capture
 STDERR-BUFFER.  The returned process must also be new, have the corresponding
 Emacs-generated NAME, and retain the exact STDOUT-BUFFER, STDOUT-FILTER, and
 COMMAND passed to `make-process'.  Main and stderr process suffixes are checked
@@ -644,7 +646,9 @@ the standard error process spawned by `make-process' has its sentinel
 silenced so the captured stderr is verbatim, and is drained explicitly
 before the file is written so its output cannot lag behind.  If a non-atomic
 wrapper signals after creating a process, reclaim that process only when its
-private stderr process and requested attributes identify it uniquely."
+stderr process and requested attributes identify it uniquely.
+A buffer stderr destination is caller-owned and is never killed here.
+It must not already have an associated process."
   (let* ((stdout-dest (if (consp destination) (car destination) destination))
          (stderr-dest (and (consp destination) (cadr destination)))
          (stderr-discard (and (consp destination) (null stderr-dest)))
@@ -655,8 +659,11 @@ private stderr process and requested attributes identify it uniquely."
                                           t)))
          (stdout-filter (and stdout-marker
                              (majutsu--process-file-insert-filter stdout-marker)))
-         (stderr-buffer (and (or (stringp stderr-dest) stderr-discard)
-                             (generate-new-buffer " *majutsu-stderr*")))
+         (stderr-owned-p (not (bufferp stderr-dest)))
+         (stderr-buffer (if (bufferp stderr-dest)
+                            stderr-dest
+                          (and (or (stringp stderr-dest) stderr-discard)
+                               (generate-new-buffer " *majutsu-stderr*"))))
          (process-name (file-name-nondirectory program))
          (command (cons program args))
          (processes-before (process-list))
@@ -665,6 +672,10 @@ private stderr process and requested attributes identify it uniquely."
          exit)
     (unwind-protect
         (progn
+          ;; Sharing a live process buffer makes stderr ownership ambiguous.
+          (when (and (not stderr-owned-p)
+                     (get-buffer-process stderr-buffer))
+            (error "Stderr buffer already has a process"))
           ;; Create the process inside the protected region.  In particular,
           ;; a file-handler or invalid executable can make `make-process'
           ;; signal after the temporary stderr buffer has been allocated.
@@ -684,11 +695,13 @@ private stderr process and requested attributes identify it uniquely."
             (error
              ;; A file handler or wrapper can create the real process and
              ;; signal before returning it.  Recover that process only when
-             ;; its private stderr process and all requested attributes make
+             ;; its newly created stderr process and requested attributes make
              ;; the association unambiguous; otherwise leave PROCESS nil so
              ;; cleanup cannot kill an unrelated process.
              (setq stderr-process
                    (and stderr-buffer (get-buffer-process stderr-buffer)))
+             (when (memq stderr-process processes-before)
+               (setq stderr-process nil))
              (setq process
                    (majutsu--process-file-created-main-process
                     processes-before stderr-buffer stderr-process
@@ -696,6 +709,8 @@ private stderr process and requested attributes identify it uniquely."
              (signal (car err) (cdr err))))
           (setq stderr-process
                 (and stderr-buffer (get-buffer-process stderr-buffer)))
+          (when (memq stderr-process processes-before)
+            (setq stderr-process nil))
           ;; Emacs' default sentinel on the standard error process appends a
           ;; "Process ... finished" line to the stderr buffer; silence it so
           ;; captured stderr is verbatim.
@@ -719,13 +734,15 @@ private stderr process and requested attributes identify it uniquely."
         (delete-process stderr-process))
       (when stdout-marker
         (set-marker stdout-marker nil))
-      (when (buffer-live-p stderr-buffer)
+      (when (and stderr-owned-p (buffer-live-p stderr-buffer))
         (kill-buffer stderr-buffer)))))
 
 (defun majutsu-process-file (program &optional infile destination display &rest args)
   "Run PROGRAM synchronously like `process-file' with Majutsu process defaults.
 
 This centralizes subprocess environment and coding behavior for jj invocations.
+As a Majutsu extension, DESTINATION can be (STDOUT STDERR-BUFFER); the
+caller owns STDERR-BUFFER and its captured output is drained before returning.
 Unlike `process-file', this implementation waits via
 `accept-process-output', so Emacs can service subprocesses such as an
 Emacs-based GPG pinentry while jj is running."

@@ -195,8 +195,8 @@
       (cl-letf (((symbol-function 'majutsu-process-file)
                  (lambda (_program _infile destination _display &rest _args)
                    (insert stdout)
-                   (write-region "\e[31mdiff --git malformed diagnostic\e[0m\n"
-                                 nil (cadr destination) nil 'silent)
+                   (with-current-buffer (cadr destination)
+                     (insert "\e[31mdiff --git malformed diagnostic\e[0m\n"))
                    1))
                 ((symbol-function 'majutsu-diff-wash-file)
                  (lambda ()

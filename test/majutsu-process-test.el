@@ -568,15 +568,51 @@ the separate standard error process."
 
 (ert-deftest majutsu-process-test-file-supported-p-narrow-contract ()
   "Only the call shapes Majutsu uses are routed through the runner."
-  ;; Supported: no infile; stdout as t/buffer/string/nil; stderr nil/t/string.
+  ;; Supported: no infile; stdout as t/buffer/string/nil; stderr nil/t/string/buffer.
   (should (majutsu--process-file-supported-p nil t))
   (should (majutsu--process-file-supported-p nil (list t "/tmp/err")))
   (should (majutsu--process-file-supported-p nil (list t t)))
   (should (majutsu--process-file-supported-p nil nil))
-  ;; Unsupported: input files and stderr-to-buffer require `process-file'.
+  ;; Input files still require `process-file'.
   (should-not (majutsu--process-file-supported-p "/tmp/in" t))
   (with-temp-buffer
-    (should-not (majutsu--process-file-supported-p
-                 nil (list t (current-buffer))))))
+    (should (majutsu--process-file-supported-p
+             nil (list t (current-buffer))))))
+
+(ert-deftest majutsu-process-test-file-responsive-captures-stderr-buffer ()
+  "Capture and drain stderr without killing the caller's buffer or using files."
+  (majutsu-process-test--with-sh
+    (with-temp-buffer
+      (let ((stderr (current-buffer)))
+        (with-temp-buffer
+          (cl-letf (((symbol-function 'write-region)
+                     (lambda (&rest _) (ert-fail "Unexpected file write"))))
+            (should (= 7 (majutsu-process-file
+                          "sh" nil (list t stderr) nil "-c"
+                          "printf 'OUT\\n'; printf 'ERR\\n' >&2; exit 7")))
+            (should (equal (buffer-string) "OUT\n"))))
+        (should (buffer-live-p stderr))
+        (should (equal (buffer-string) "ERR\n"))))))
+
+(ert-deftest majutsu-process-test-file-responsive-preserves-occupied-stderr-buffer ()
+  "Reject an occupied stderr buffer without touching its process on errors."
+  (with-temp-buffer
+    (let* ((stderr (current-buffer))
+           (existing (make-pipe-process :name "majutsu-existing-stderr"
+                                        :buffer stderr :noquery t
+                                        :sentinel #'ignore))
+           (sentinel (process-sentinel existing)))
+      (unwind-protect
+          (with-temp-buffer
+            (let ((default-directory
+                   (file-name-as-directory
+                    (make-temp-name (expand-file-name "majutsu-missing-"
+                                                     temporary-file-directory)))))
+              (should-error (majutsu-process-file "missing-jj" nil (list t stderr)))
+              (should (buffer-live-p stderr))
+              (should (process-live-p existing))
+              (should (eq (process-sentinel existing) sentinel))))
+        (when (process-live-p existing)
+          (delete-process existing))))))
 
 ;;; majutsu-process-test.el ends here

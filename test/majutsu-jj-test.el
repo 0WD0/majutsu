@@ -220,8 +220,8 @@
   (cl-letf (((symbol-function 'majutsu-process-file)
              (lambda (_program _infile destination _display &rest _args)
                (insert "diff output\n")
-               (write-region "Warning: refused to snapshot\n" nil
-                             (cadr destination) nil 'silent)
+               (with-current-buffer (cadr destination)
+                 (insert "Warning: refused to snapshot\n"))
                0)))
     (with-temp-buffer
       (should (= 0 (majutsu-jj-wash (lambda (&rest _) (goto-char (point-max)))
@@ -235,8 +235,8 @@
     (cl-letf (((symbol-function 'majutsu-process-file)
                (lambda (_program _infile destination _display &rest _args)
                  (insert "diff output\n")
-                 (write-region "\e[31mError: partial diff\e[0m\n" nil
-                               (cadr destination) nil 'silent)
+                 (with-current-buffer (cadr destination)
+                   (insert "\e[31mError: partial diff\e[0m\n"))
                  1)))
       (with-temp-buffer
         (should (= 1 (majutsu-jj-wash
@@ -257,8 +257,8 @@
   "Requested failure stderr should be preserved without ANSI escapes."
   (cl-letf (((symbol-function 'majutsu-process-file)
              (lambda (_program _infile destination _display &rest _args)
-               (write-region "\e[31mError: invalid revset\e[0m\n" nil
-                             (cadr destination) nil 'silent)
+               (with-current-buffer (cadr destination)
+                 (insert "\e[31mError: invalid revset\e[0m\n"))
                1)))
     (with-temp-buffer
       (should (= 1 (majutsu-jj-wash #'ignore t "log" "-r" "bad")))
@@ -266,29 +266,29 @@
       (should (string-match-p "Error: invalid revset" (buffer-string)))
       (should-not (string-match-p (regexp-quote "\e[") (buffer-string))))))
 
-(ert-deftest majutsu-jj-wash/deletes-stderr-file-when-colorizer-signals ()
-  "The stderr temp file should be deleted if stdout colorization signals."
+(ert-deftest majutsu-jj-wash/kills-stderr-buffer-when-colorizer-signals ()
+  "The stderr buffer should be killed if stdout colorization signals."
   (let ((majutsu-process-apply-ansi-colors t)
-        err-file)
+        err-buffer)
     (cl-letf (((symbol-function 'majutsu-process-file)
                (lambda (_program _infile destination _display &rest _args)
-                 (setq err-file (cadr destination))
+                 (setq err-buffer (cadr destination))
                  (insert "output\n")
                  0))
               ((symbol-function 'ansi-color-apply-on-region)
                (lambda (&rest _) (signal 'arith-error nil))))
       (with-temp-buffer
         (should-error (majutsu-jj-wash #'ignore nil "diff") :type 'arith-error)))
-    (should err-file)
-    (should-not (file-exists-p err-file))))
+    (should (bufferp err-buffer))
+    (should-not (buffer-live-p err-buffer))))
 
-(ert-deftest majutsu-jj-wash/deletes-stderr-file-when-washer-signals ()
-  "The stderr temp file should be deleted if the washer signals."
+(ert-deftest majutsu-jj-wash/kills-stderr-buffer-when-washer-signals ()
+  "The stderr buffer should be killed if the washer signals."
   (let ((majutsu-process-apply-ansi-colors nil)
-        err-file)
+        err-buffer)
     (cl-letf (((symbol-function 'majutsu-process-file)
                (lambda (_program _infile destination _display &rest _args)
-                 (setq err-file (cadr destination))
+                 (setq err-buffer (cadr destination))
                  (insert "output\n")
                  0)))
       (with-temp-buffer
@@ -296,16 +296,15 @@
          (majutsu-jj-wash (lambda (&rest _) (signal 'arith-error nil)) nil
            "diff")
          :type 'arith-error)))
-    (should err-file)
-    (should-not (file-exists-p err-file))))
+    (should (bufferp err-buffer))
+    (should-not (buffer-live-p err-buffer))))
 
 (ert-deftest majutsu--jj-insert/returns-error-message-on-failure ()
   "majutsu--jj-insert should return error message when return-error is t and command fails."
   (cl-letf (((symbol-function 'majutsu-process-file)
              (lambda (_program _infile destination &rest _args)
-               (write-region "Error: something went wrong" nil
-                             (if (consp destination) (cadr destination) destination)
-                             nil 'silent)
+               (with-current-buffer (cadr destination)
+                 (insert "Error: something went wrong"))
                1)))
     (with-temp-buffer
       (let ((result (majutsu--jj-insert t "log" "-r" "invalid")))

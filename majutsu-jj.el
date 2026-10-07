@@ -689,26 +689,28 @@ This is the low-level worker for `majutsu-jj-insert' and similar
 functions."
   (setq args (flatten-tree args))
   (let* ((start-time (current-time))
-         (err-file (and return-error
-                        (make-nearby-temp-file "majutsu-jj-err")))
+         (err-buffer (and return-error
+                          (generate-new-buffer " *majutsu-jj-err*")))
          exit-code)
-    (majutsu--debug "Running command: %s %s" (majutsu-jj--executable) (string-join args " "))
-    (setq exit-code (majutsu-process-jj (list t err-file) args))
-    (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
-                    (float-time (time-subtract (current-time) start-time))
-                    exit-code)
-    (when (and majutsu-show-command-output (> (point-max) (point-min)))
-      (majutsu--debug "Command output: %s"
-                      (string-trim (buffer-substring (point-min) (point-max)))))
-    (prog1 (if (and err-file (not (zerop exit-code)))
-               (with-temp-buffer
-                 (insert-file-contents err-file)
-                 (if (eq return-error 'full)
-                     (buffer-string)
-                   (let ((line (car (split-string (buffer-string) "\n" t))))
-                     (or line exit-code))))
-             exit-code)
-      (when err-file (ignore-errors (delete-file err-file))))))
+    (unwind-protect
+        (progn
+          (majutsu--debug "Running command: %s %s" (majutsu-jj--executable) (string-join args " "))
+          (setq exit-code (majutsu-process-jj (list t err-buffer) args))
+          (majutsu--debug "Command completed in %.3f seconds, exit code: %d"
+                          (float-time (time-subtract (current-time) start-time))
+                          exit-code)
+          (when (and majutsu-show-command-output (> (point-max) (point-min)))
+            (majutsu--debug "Command output: %s"
+                            (string-trim (buffer-substring (point-min) (point-max)))))
+          (if (and err-buffer (not (zerop exit-code)))
+              (with-current-buffer err-buffer
+                (if (eq return-error 'full)
+                    (buffer-string)
+                  (let ((line (car (split-string (buffer-string) "\n" t))))
+                    (or line exit-code))))
+            exit-code))
+      (when (buffer-live-p err-buffer)
+        (kill-buffer err-buffer)))))
 
 (defun majutsu-jj-insert (&rest args)
   "Run jj with ARGS and insert output at point.
@@ -839,20 +841,19 @@ optionally colorized based on `majutsu-process-apply-ansi-colors'."
   (declare (indent 2))
   (setq args (flatten-tree args))
   (let* ((beg (point))
-         (err-file (make-nearby-temp-file "majutsu-jj-err")))
+         (err-buffer (generate-new-buffer " *majutsu-jj-err*")))
     (unwind-protect
         (let* ((exit
                 ;; jj log's structured row protocol is temporarily inserted
                 ;; as raw subprocess output.  Do not let it be redisplayed
                 ;; before the washer replaces it with sections.
                 (let ((inhibit-redisplay t))
-                  (majutsu-process-jj (list t err-file) args)))
+                  (majutsu-process-jj (list t err-buffer) args)))
                (error-text
                 (when (and keep-error (not (= exit 0)))
                   (let ((text
                          (ansi-color-filter-apply
-                          (with-temp-buffer
-                            (insert-file-contents err-file)
+                          (with-current-buffer err-buffer
                             (buffer-string)))))
                     (unless (string-empty-p text)
                       text)))))
@@ -904,7 +905,8 @@ optionally colorized based on `majutsu-process-apply-ansi-colors'."
                             (magit-cancel-section)))))
                   (set-marker stdout-end nil))))))
           exit)
-      (ignore-errors (delete-file err-file)))))
+      (when (buffer-live-p err-buffer)
+        (kill-buffer err-buffer)))))
 
 ;;; _
 (provide 'majutsu-jj)
