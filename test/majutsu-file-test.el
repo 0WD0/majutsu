@@ -618,6 +618,37 @@ Leave the working copy on an unrelated revision."
                        "#!/bin/sh\nexit 0\n"))
         (should (= (logand (file-modes path) #o111) #o111))))))
 
+(ert-deftest majutsu-find-file-noselect/integration-resolves-snapshot-once ()
+  "Opening reads the selected commit even if @ moves after resolution."
+  (majutsu-jj-integration-with-repo repo
+    (let ((path (majutsu-jj-integration-file repo "f.txt"))
+          (resolve (symbol-function 'majutsu-file--resolve-blob-rev-info))
+          (resolutions 0)
+          pin buffer)
+      (majutsu-jj-integration-write-text path "selected\n")
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'majutsu-file--resolve-blob-rev-info)
+                       (lambda (rev)
+                         (cl-incf resolutions)
+                         (prog1 (let ((info (funcall resolve rev)))
+                                  (setq pin (plist-get info :commit-id))
+                                  info)
+                           (majutsu-jj-integration-write-text path "moved\n")
+                           (majutsu-jj-integration-call repo "describe" "-m" "moved")))))
+              (setq buffer (majutsu-find-file-noselect "@" "f.txt")))
+            (should (= resolutions 1))
+            (with-current-buffer buffer
+              (should (equal majutsu-buffer-blob-commit-id pin))
+              (should (equal (buffer-string) "selected\n"))
+              ;; Explicit refresh still follows the original input revset.
+              (should (equal majutsu-buffer-blob-revset "@"))
+              (majutsu-file-revert-buffer nil t)
+              (should-not (equal majutsu-buffer-blob-commit-id pin))
+              (should (equal (buffer-string) "moved\n"))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
 (ert-deftest majutsu-find-file-noselect/integration-snapshot-identity ()
   "Blob reuse and Ediff distinguish full commits and workspace roots."
   (require 'majutsu-ediff)
@@ -721,6 +752,43 @@ Leave the working copy on an unrelated revision."
                           repo "op" "log" "-n" "1" "--no-graph" "-T" "id")
                          operation)))))))
 
+(ert-deftest majutsu-file/integration-refuses-structural-conflict ()
+  "A file/symlink conflict cannot enter the pinned text-write path."
+  (skip-unless (not (eq system-type 'windows-nt)))
+  (majutsu-jj-integration-with-repo repo
+    (let ((path (majutsu-jj-integration-file repo "f.txt")))
+      (majutsu-jj-integration-write-text path "base\n")
+      (majutsu-jj-integration-write-text
+       (majutsu-jj-integration-file repo "target.txt") "must survive\n")
+      (majutsu-jj-integration-commit repo "base")
+      (let ((base (majutsu-jj-integration-output
+                   repo "log" "-r" "@-" "--no-graph" "-T" "commit_id")))
+        (majutsu-jj-integration-write-text path "left\n")
+        (majutsu-jj-integration-call repo "describe" "-m" "left")
+        (let ((left (majutsu-jj-integration-output
+                     repo "log" "-r" "@" "--no-graph" "-T" "commit_id")))
+          (majutsu-jj-integration-call repo "new" base)
+          (delete-file path)
+          (make-symbolic-link "target.txt" path)
+          (majutsu-jj-integration-call repo "describe" "-m" "right")
+          (majutsu-jj-integration-call repo "new" left "@" "-m" "merge")))
+      (let* ((info (majutsu-file--resolve-single-rev-info "@"))
+             (commit (plist-get info :commit-id))
+             (change (plist-get info :change-id))
+             (operation (majutsu-jj-operation-id)))
+        (should (equal (majutsu-jj-integration-output
+                        repo "file" "list" "-r" commit "-T" "file_type" "f.txt")
+                       "conflict"))
+        (should-error (majutsu-find-file-noselect commit "f.txt")
+                      :type 'user-error)
+        (should-error (majutsu-file-apply-contents
+                       commit change '(("f.txt" . "overwrite\n")))
+                      :type 'user-error)
+        (should (equal (majutsu-jj-operation-id) operation))
+        (should (equal (majutsu-jj-integration-output
+                        repo "file" "show" "-r" commit "target.txt")
+                       "must survive\n"))))))
+
 (ert-deftest majutsu-file-revert-buffer/integration-read-failure-is-atomic ()
   "Missing paths preserve the old view and pin; empty files remain valid."
   (majutsu-jj-integration-with-repo repo
@@ -778,7 +846,17 @@ Leave the working copy on an unrelated revision."
               (should (equal (buffer-string) "preserve me\n"))
               (should (equal majutsu-buffer-blob-commit-id pin))
               (should (equal majutsu-buffer-blob-content-hash hash))
-              (should-not (buffer-modified-p))))
+              (should-not (buffer-modified-p))
+              ;; A failed forced revisit must not retarget later refreshes.
+              (set-buffer-modified-p t)
+              (should-error (majutsu-find-file-noselect pin "secret.txt" t)
+                            :type 'user-error)
+              (should (equal majutsu-buffer-blob-revset "@"))
+              (should (equal majutsu-buffer-blob-commit-id pin))
+              (should (equal majutsu-buffer-blob-content-hash hash))
+              (should (equal (buffer-string) "preserve me\n"))
+              (should (buffer-modified-p))
+              (set-buffer-modified-p nil)))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
