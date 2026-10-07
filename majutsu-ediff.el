@@ -149,8 +149,14 @@ If FILE is non-nil, perform a merge with result written to FILE."
 ;;; Helpers
 
 (defun majutsu-ediff--get-revision-buffer (rev file)
-  "Return existing buffer for REV:FILE or nil."
-  (get-buffer (majutsu-file--buffer-name rev file)))
+  "Return an existing buffer for the exact repository snapshot REV:FILE."
+  (let* ((root (majutsu-file--root))
+         (default-directory root)
+         (info (majutsu-file--resolve-blob-rev-info rev)))
+    (when info
+      (majutsu-file--find-blob-buffer
+       root (plist-get info :commit-id)
+       (majutsu-file--relative-path root file)))))
 
 (defun majutsu-ediff--find-file-noselect (rev file)
   "Return buffer visiting FILE from REV."
@@ -189,13 +195,13 @@ revision; otherwise prompt from working copy conflicts."
        (majutsu-revision-at-point))))
 
 (defun majutsu-ediff--working-copy-revision-p (rev)
-  "Return non-nil when REV resolves to the working copy change.
+  "Return non-nil when REV resolves to the exact working-copy commit.
 REV may be any revset accepted by jj."
   (let* ((working (majutsu-file--resolve-single-rev-info "@"))
          (target (majutsu-file--resolve-single-rev-info (or rev "@"))))
     (and working target
-         (equal (plist-get working :change-id)
-                (plist-get target :change-id)))))
+         (equal (plist-get working :commit-id)
+                (plist-get target :commit-id)))))
 
 (defun majutsu-ediff--resolve-target-buffer (rev file)
   "Return the conflict target buffer for REV and FILE.
