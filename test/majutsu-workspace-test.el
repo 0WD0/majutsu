@@ -889,8 +889,8 @@ The Emacs-facing path remains unchanged for visiting the new workspace."
       (when (file-directory-p feature)
         (delete-directory feature t)))))
 
-(ert-deftest majutsu-workspace/integration-control-root-with-minimum-jj ()
-  "Exercise NUL-framed root transport against MAJUTSU_TEST_JJ."
+(ert-deftest majutsu-workspace/integration-control-root-transport ()
+  "Workspace roots containing controls never corrupt neighboring records."
   (majutsu-jj-integration-with-repo repo
     (let ((odd-root (concat (expand-file-name "line\nbreak"
                                               (file-name-directory
@@ -910,16 +910,21 @@ The Emacs-facing path remains unchanged for visiting the new workspace."
                        (file-name-as-directory odd-root))))
       (should (equal (majutsu-workspace--root-for-name "odd")
                      (file-name-as-directory odd-root)))
-      ;; A root() error includes the unresolved path verbatim.  Its newline
-      ;; and record-separator characters must not corrupt the surrounding
-      ;; NUL-framed workspace records.
+      ;; Depending on jj's version, a missing root is returned verbatim or
+      ;; through a template error.  Neither may corrupt neighboring records.
       (delete-directory odd-root t)
       (let ((entry (cl-find "odd" (majutsu-workspace-list-entries)
                             :key (lambda (item)
                                    (plist-get item :name))
                             :test #'equal)))
         (should entry)
-        (should-not (plist-get entry :root))))))
+        (should (member (plist-get entry :root)
+                        (list nil (file-name-as-directory odd-root)))))
+      (let ((current (cl-find-if
+                      (lambda (entry) (plist-get entry :current))
+                      (majutsu-workspace-list-entries))))
+        (should (equal (plist-get current :root)
+                       (file-name-as-directory repo)))))))
 
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here
