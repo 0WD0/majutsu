@@ -12,6 +12,7 @@
 
 (require 'cl-lib)
 (require 'seq)
+(require 'transient)
 (require 'majutsu-mode)
 (require 'majutsu-file)
 (require 'majutsu-file-tree)
@@ -47,6 +48,8 @@
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map majutsu-mode-map)
     (define-key map (kbd "RET") #'majutsu-resolve-visit-file)
+    (define-key map (kbd "?") #'majutsu-resolve-dispatch)
+    (define-key map (kbd "C-c ?") #'majutsu-resolve-dispatch)
     (define-key map (kbd "C-c C-c") #'majutsu-resolve-apply)
     (define-key map (kbd "C-c C-k") #'majutsu-resolve-discard)
     (define-key map (kbd "C-c C-n") #'majutsu-resolve-next-file)
@@ -54,7 +57,8 @@
 
 (define-derived-mode majutsu-resolve-mode majutsu-mode "Majutsu Resolve"
   "Review backend conflicts separately from private pending drafts.
-Only UTF-8 text content updates are supported, not structural choices."
+Only UTF-8 text content updates are supported, not structural choices.
+\\<majutsu-resolve-mode-map>Use \\[majutsu-resolve-dispatch] for workbench actions."
   :group 'majutsu
   (add-hook 'kill-buffer-query-functions #'majutsu-resolve--can-close nil t)
   (add-hook 'kill-buffer-hook #'majutsu-resolve--cleanup nil t))
@@ -68,12 +72,43 @@ Only UTF-8 text content updates are supported, not structural choices."
     (define-key map (kbd "C-c C-k") #'majutsu-resolve-discard)
     (define-key map (kbd "C-c C-o") #'majutsu-resolve-show)
     (define-key map (kbd "C-c C-n") #'majutsu-resolve-next-file)
+    (define-key map (kbd "C-c ?") #'majutsu-resolve-dispatch)
     map))
 
 (define-minor-mode majutsu-resolve-draft-mode
-  "Private conflict draft: save locally, apply explicitly with C-c C-c."
+  "Private conflict draft: save locally, apply explicitly with C-c C-c.
+\\<majutsu-resolve-draft-mode-map>Use \\[majutsu-resolve-dispatch] for workbench actions."
   :lighter " Resolve draft"
   :keymap majutsu-resolve-draft-mode-map)
+
+(transient-define-prefix majutsu-resolve-dispatch ()
+  "Actions for the text conflict workbench and its private drafts.
+Saving never changes jj.  Apply writes existing UTF-8 file contents;
+empty text means an empty file, not deletion.  Structural choices,
+renames, and new paths are not supported."
+  ["Private drafts: save locally, apply explicitly"
+   ["Navigate"
+    ("RET" "Edit / jump" majutsu-resolve-visit-file
+     :if-derived majutsu-resolve-mode)
+    ("TAB" "Fold / unfold" majutsu-section-toggle
+     :if-derived majutsu-resolve-mode)
+    ("n" "Next conflicted file" majutsu-resolve-next-file)
+    ("g" "Refresh workbench" majutsu-resolve-show)]
+   ["Apply"
+    ("a" "File / directory" majutsu-resolve-apply)
+    ("A" "All drafts"
+     (lambda () (interactive)
+       (let ((current-prefix-arg '(4)))
+         (call-interactively #'majutsu-resolve-apply))))]
+   ["Discard"
+    ("k" "File / directory" majutsu-resolve-discard)
+    ("K" "All drafts"
+     (lambda () (interactive)
+       (let ((current-prefix-arg '(4)))
+         (call-interactively #'majutsu-resolve-discard))))]]
+  ["Help"
+   ("?" "Command help" transient-help)
+   ("m" "Majutsu commands" majutsu-dispatch)])
 
 (defun majutsu-resolve--output (&rest args)
   "Return exact stdout bytes for ARGS, signaling on command failure."
@@ -252,9 +287,12 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
       (oset section conflict conflict)
       (oset section source text)
       (magit-insert-heading
-        (format "%s%sConflict %d (%d sides)\n"
-                prefix (if last "└── " "├── ") index
-                (length (majutsu-conflict-adds conflict))))
+        (propertize (concat prefix (if last "└── " "├── "))
+                    'font-lock-face 'shadow)
+        (format "Conflict %d" index)
+        (propertize (format "  %d sides\n"
+                            (length (majutsu-conflict-adds conflict)))
+                    'font-lock-face 'shadow))
       (cl-loop for tail on (cdr entry)
                do (majutsu-resolve--insert-part
                    conflict (car tail) text body-prefix (null (cdr tail)))))))
@@ -270,23 +308,28 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
          (conflicts (cdr data)))
     (magit-insert-section (jj-file path)
       (magit-insert-heading
-        (format "%s%s  [backend: %s; draft: %s]\n"
-                prefix
-                (majutsu-file-tree-escape-label (file-name-nondirectory path))
-                (if-let* ((conflict (majutsu-resolve--file-conflict record)))
-                    (format "%d-sided conflict" (plist-get conflict :sides))
-                  "resolved")
-                (cond ((majutsu-resolve--pending-p record text) "pending")
-                      ((majutsu-resolve--file-applied record) "applied")
-                      ((majutsu-resolve--file-baseline record) "unchanged")
-                      (t "not opened"))))
+        (propertize prefix 'font-lock-face 'shadow)
+        (propertize
+         (majutsu-file-tree-escape-label (file-name-nondirectory path))
+         'font-lock-face 'default)
+        "  "
+        (if-let* ((conflict (majutsu-resolve--file-conflict record)))
+            (propertize (format "%d-sided conflict" (plist-get conflict :sides))
+                        'font-lock-face 'warning)
+          (propertize "resolved" 'font-lock-face 'success))
+        (cond ((majutsu-resolve--pending-p record text)
+               (propertize "  ·  draft pending" 'font-lock-face 'font-lock-keyword-face))
+              ((majutsu-resolve--file-applied record)
+               (propertize "  ·  applied" 'font-lock-face 'shadow)))
+        "\n")
       (cond
        (problem
         (insert body-prefix "└── "
                 (propertize (majutsu-file-tree-escape-label problem) 'face 'warning)
                 "\n"))
        ((null conflicts)
-        (insert body-prefix "└── No parsed conflict blocks in current draft\n"))
+        (insert (propertize (concat body-prefix "└── No conflict markers\n")
+                            'font-lock-face 'shadow)))
        (t
         (cl-loop for tail on conflicts for index from 1
                  do (majutsu-resolve--insert-conflict
@@ -305,24 +348,23 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
    (majutsu-jj-conflicted-files majutsu-resolve--commit))
   (magit-insert-section (resolve)
     (magit-insert-heading "Text conflict workbench\n")
-    (insert (format "Commit: %s\nChange: %s\n"
-                    majutsu-resolve--commit majutsu-resolve--change))
-    (insert "RET edit/jump  TAB fold/unfold  C-c C-c apply file/directory\n"
-            "C-u C-c C-c apply all  C-c C-k discard drafts  C-c C-n next file\n"
-            "Tree: snapshots + changes; "
-            (substitute-command-keys "\\[majutsu-refresh]")
-            " / C-c C-o refresh after editing.\n"
-            "Save writes private drafts only. An empty draft means an empty file.\n"
-            "Text only: no deletion, rename, new paths, or structural choices.\n")
+    (insert (propertize "Commit: " 'font-lock-face 'shadow)
+            (propertize majutsu-resolve--commit 'font-lock-face 'font-lock-constant-face)
+            "\n"
+            (propertize "Change: " 'font-lock-face 'shadow)
+            (propertize majutsu-resolve--change 'font-lock-face 'font-lock-constant-face)
+            "\n")
     (when majutsu-resolve--unverified
       (insert (propertize
                "UNVERIFIED: drafts retained; discard/close and reopen before applying.\n"
                'face 'error)))
     (insert "\n")
-    (majutsu-file-tree-insert
-     (majutsu-file-tree-build (mapcar #'cdr majutsu-resolve--records)
-                              #'majutsu-resolve--file-path)
-     #'majutsu-resolve--insert-file)))
+    (if majutsu-resolve--records
+        (majutsu-file-tree-insert
+         (majutsu-file-tree-build (mapcar #'cdr majutsu-resolve--records)
+                                  #'majutsu-resolve--file-path)
+         #'majutsu-resolve--insert-file)
+      (insert (propertize "No conflicted files.\n" 'font-lock-face 'success)))))
 
 ;;;###autoload
 (defun majutsu-resolve-setup-buffer (revision)
@@ -447,7 +489,11 @@ materialized marker region; it does not select that side as a resolution."
                           make-backup-files nil
                           auto-save-default nil
                           revert-buffer-function #'majutsu-resolve--no-revert
-                          header-line-format "Private text draft: C-x C-s saves locally; C-c C-c applies; C-c C-k discards; C-c C-o returns")
+                          header-line-format
+                          (list " " '(:propertize "Private draft" face mode-line-emphasis)
+                                "  " (replace-regexp-in-string
+                                      "%" "%%"
+                                      (majutsu-file-tree-escape-label path))))
               (auto-save-mode -1)
               (add-hook 'write-contents-functions #'majutsu-resolve--save nil t)
               (add-hook 'kill-buffer-hook #'majutsu-resolve--remember-draft nil t)

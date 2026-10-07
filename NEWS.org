@@ -40,6 +40,10 @@
   Files expand into conflict blocks with jj's snapshot/change grouping,
   native diff previews, and paired Before/After snapshots. RET jumps to the
   corresponding draft term; child-node apply/discard remains file-scoped.
+  The main view shows only revision identity, concise file state, and the tree.
+  ~?~ opens workbench actions on demand (also in Evil); drafts use ~C-c ?~.
+  The menu includes scoped/all-draft apply and confirmed discard. Draft
+  headers show the private path instead of a permanent command legend.
   Failed or unverified writes retain drafts and block blind retries. Existing
   Ediff commands remain available; structural and cross-path edits are not supported.
 
