@@ -371,9 +371,6 @@ If ID is non-nil, clear only that selection category."
       (cond
        ((null value) nil)
        ((listp value) value)
-       ((and (eq (oref obj multi-value) 'repeat)
-             (stringp value))
-        (split-string value crm-separator t))
        (t (list value))))))
 
 (add-hook 'transient-setup-buffer-hook #'majutsu-selection--transient-setup-buffer)

@@ -95,7 +95,7 @@ shifting the invisible range one character earlier as well."
   (let* ((children (oref section children))
          (show (seq-some (lambda (child) (oref child hidden)) children)))
     (dolist (child children)
-      (oset child hidden show)))
+      (oset child hidden (not show))))
   (majutsu-section-show section))
 
 (defun majutsu-section-show-children (section &optional depth)

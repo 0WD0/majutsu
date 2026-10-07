@@ -193,5 +193,28 @@
     (oset obj selection-toggle-if-not (lambda () nil))
     (should (equal (majutsu-transient--suffix-key-aliases obj) '("a")))))
 
+(ert-deftest majutsu-selection-repeat/preserves-revset-and-toggle-values ()
+  "Free-form revsets are atomic; point toggling still yields multiple options."
+  (let ((obj (make-instance 'majutsu-test-reading-option
+                            :command 'ignore :key "-r"
+                            :argument "--revisions=" :multi-value 'repeat
+                            :selection-toggle-key "r"
+                            :targets-fn (lambda () '("@" "@-"))))
+        (majutsu-selection-test--source-marker "ancestors(@, 2)"))
+    (cl-letf (((symbol-function 'transient-scope) (lambda () nil))
+              ((symbol-function 'transient--show) #'ignore)
+              ((symbol-function 'this-command-keys-vector)
+               (lambda () (kbd "-r"))))
+      (oset obj value (transient-infix-read obj))
+      (should (equal (transient-infix-value obj)
+                     '("--revisions=ancestors(@, 2)"))))
+    (oset obj value nil)
+    (cl-letf (((symbol-function 'transient-scope) (lambda () nil))
+              ((symbol-function 'this-command-keys-vector)
+               (lambda () (kbd "r"))))
+      (oset obj value (transient-infix-read obj))
+      (should (equal (transient-infix-value obj)
+                     '("--revisions=@" "--revisions=@-"))))))
+
 (provide 'majutsu-selection-test)
 ;;; majutsu-selection-test.el ends here

@@ -126,5 +126,22 @@ one; the show cleanup has to cover both conventions."
         (majutsu-section-show first)
         (should-not (majutsu-section-test--invisible-overlays))))))
 
+(ert-deftest majutsu-section-toggle-children/transitions-and-mixed-state ()
+  "Toggling hides visible children, then shows hidden or mixed children."
+  (majutsu-section-test--with-two-sections
+    (let ((children (oref magit-root-section children)))
+      (majutsu-section-show magit-root-section)
+      (dolist (hidden '(t nil t nil))
+        (majutsu-section-toggle-children magit-root-section)
+        (dolist (child children)
+          (should (eq (oref child hidden) hidden))
+          (should (eq (not (null (get-char-property
+                                  (oref child content) 'invisible)))
+                      hidden))))
+      (majutsu-section-hide (car children))
+      (majutsu-section-toggle-children magit-root-section)
+      (should-not (seq-some (lambda (child) (oref child hidden)) children))
+      (should-not (majutsu-section-test--invisible-overlays)))))
+
 (provide 'majutsu-section-test)
 ;;; majutsu-section-test.el ends here

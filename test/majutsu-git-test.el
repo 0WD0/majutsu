@@ -13,6 +13,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu-git)
+(require 'majutsu-jj-integration)
 
 (ert-deftest majutsu-git-remote-list/reuses-bookmark-buffer ()
   (require 'majutsu-bookmark)
@@ -160,13 +161,6 @@
                     "git@example.invalid:repo.git")
                    "git@example.invalid:repo.git"))))
 
-(ert-deftest majutsu-git-push-read-revset/splits-comma-values ()
-  "Git push repeat revset reader should preserve CRM comma splitting."
-  (should (equal (cl-letf (((symbol-function 'majutsu-read-revset)
-                            (lambda (&rest _args) "a, b")))
-                   (majutsu-git-push--read-revset "Revisions: " nil nil))
-                 '("a" "b"))))
-
 (ert-deftest majutsu-git-push-read-revset/empty-input-clears ()
   "Git push repeat revset reader should keep empty input unset."
   (should-not (cl-letf (((symbol-function 'majutsu-read-revset)
@@ -218,6 +212,41 @@
         (should (equal value '("gerrit")))
         (should (equal (transient-infix-value obj)
                        '("--remote=gerrit")))))))
+
+(ert-deftest majutsu-git-push-revset/retains-function-arguments ()
+  "The push option consumer receives one whole free-form revset."
+  (cl-letf (((symbol-function 'majutsu-read-revset)
+             (lambda (&rest _) "ancestors(@, 2)")))
+    (let ((obj (make-instance 'transient-option
+                              :argument "--revisions=" :multi-value 'repeat)))
+      (oset obj value (majutsu-git-push--read-revset "Revisions: " nil nil))
+      (should (equal (transient-infix-value obj)
+                     '("--revisions=ancestors(@, 2)"))))))
+
+(ert-deftest majutsu-git-clone-remote/accepts-new-name-outside-repository ()
+  "Clone outside a repository creates the remote chosen in its transient."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (let* ((source (majutsu-jj-integration-init sandbox "source"))
+           (destination (expand-file-name "clone" sandbox))
+           (default-directory (file-name-as-directory sandbox))
+           (reader (majutsu-git-test--suffix-reader
+                    (transient-get-suffix 'majutsu-git-clone-transient "-R")))
+           (obj (make-instance 'transient-option :argument "--remote=")))
+      (majutsu-jj-integration-commit source "source commit")
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "fresh-origin")))
+        (oset obj value (funcall reader "Remote: " nil nil)))
+      (majutsu-jj-integration-call
+       sandbox "git" "clone" (transient-infix-value obj) source destination)
+      (should (equal (majutsu-remote-names destination)
+                     '("fresh-origin"))))))
+
+(ert-deftest majutsu-git-clone-remote/rejects-invalid-new-names ()
+  (dolist (name '("git" "bad/name"))
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) name)))
+      (should-error (majutsu-git-clone--read-remote "Remote: " nil nil)
+                    :type 'user-error))))
+
 
 (ert-deftest majutsu-git-remote-add/passes-add-arguments ()
   "Remote add should pass options followed by REMOTE and URL positionals."

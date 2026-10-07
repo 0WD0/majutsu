@@ -900,38 +900,23 @@ ARGS are the diff arguments used to produce DIFF-OUTPUT."
    'Commit)
   "Template for labelled, unambiguous revision metadata tokens.")
 
-(defun majutsu-diff--range-option (long &optional short)
-  "Return LONG (or SHORT) option value from the current diff range.
-Both `--option=VALUE' and the two-argument `--option VALUE' forms are
-accepted.  Return the symbol `missing' when the option is absent, and an
-empty string when it is present without a value."
-  (let ((args majutsu-buffer-diff-range)
-        (value 'missing))
-    (while (and args (eq value 'missing))
-      (let ((arg (pop args)))
-        (cond
-         ((or (equal arg long) (and short (equal arg short)))
-          (setq value (if (and args (stringp (car args)))
-                          (pop args)
-                        "")))
-         ((and (stringp arg)
-               (string-prefix-p (concat long "=") arg))
-          (setq value (substring arg (1+ (length long))))))))
-    value))
-
 (defun majutsu-diff--metadata-revision ()
   "Return the revision eligible for display metadata, or nil.
 Metadata is only appropriate for a single-revision change diff: the
 project default (working-copy revision `@') or an explicit `-r' /
 `--revisions' revset.  Explicit `--from' or `--to' ranges never qualify;
 the metadata query later rejects revsets resolving to zero or many changes."
-  (let ((from (majutsu-diff--range-option "--from"))
-        (to (majutsu-diff--range-option "--to"))
-        (revisions (majutsu-diff--range-option "--revisions" "-r")))
+  (let* ((range majutsu-buffer-diff-range)
+         (from (majutsu-jj-option-values range "--from" "-f"))
+         (to (majutsu-jj-option-values range "--to" "-t"))
+         (revisions (majutsu-jj-option-values range "--revisions" "-r")))
     (cond
-     ((or (not (eq from 'missing)) (not (eq to 'missing))) nil)
-     ((null majutsu-buffer-diff-range) "@")
-     ((and (stringp revisions) (not (string-empty-p revisions))) revisions)
+     ((or from to) nil)
+     ((null range) "@")
+     ((and revisions (not (member "" revisions)))
+      (if (null (cdr revisions))
+          (car revisions)
+        (mapconcat (lambda (rev) (concat "(" rev ")")) revisions " | ")))
      (t nil))))
 
 (defun majutsu-diff--presentation-properties (value)
