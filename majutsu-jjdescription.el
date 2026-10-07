@@ -433,17 +433,27 @@ Added to `font-lock-extend-region-functions'."
 
 ;;; History Support
 
-(defun majutsu-jjdescription--message-region-end ()
-  "Return the end of the replaceable description region."
-  (save-excursion
+(defun majutsu-jjdescription--replace-message (message)
+  "Replace editable text with MESSAGE, preserving JJ comments and diff text."
+  (let ((comment-re (majutsu-jjdescription--comment-line-re))
+        (ignore-rest-re (majutsu-jjdescription--ignore-rest-line-re))
+        end)
+    (save-excursion
+      (goto-char (point-min))
+      (while (and (not (eobp)) (not (looking-at ignore-rest-re)))
+        (unless (or (looking-at comment-re) (looking-at "[ \t]*$"))
+          (setq end (min (point-max) (1+ (line-end-position)))))
+        (forward-line 1))
+      (when end
+        (goto-char end)
+        (while (> (point) (point-min))
+          (let ((line-end (point)))
+            (goto-char (1- (point)))
+            (beginning-of-line)
+            (unless (looking-at comment-re)
+              (delete-region (point) line-end))))))
     (goto-char (point-min))
-    (if (re-search-forward (majutsu-jjdescription--comment-line-re) nil t)
-        (let ((beg (match-beginning 0)))
-          (if (and (> beg (point-min))
-                   (eq (char-before beg) ?\n))
-              (1- beg)
-            beg))
-      (point-max))))
+    (insert message)))
 
 (defun majutsu-jjdescription-buffer-message ()
   "Return the current description without JJ comments.
@@ -499,6 +509,10 @@ When QUIET is non-nil, do not report status in the echo area."
   "Cycle backward through description history, saving current text first.
 With a numeric prefix ARG, go back ARG descriptions."
   (interactive "*p")
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward (majutsu-jjdescription--describe-line-re) nil t)
+      (user-error "Description history replacement is not supported for bulk describe")))
   (let ((len (ring-length log-edit-comment-ring)))
     (if (<= len 0)
         (progn (message "Empty description ring") (ding))
@@ -507,10 +521,10 @@ With a numeric prefix ARG, go back ARG descriptions."
         (ring-insert log-edit-comment-ring message)
         (cl-incf arg)
         (setq len (ring-length log-edit-comment-ring)))
-      (delete-region (point-min) (majutsu-jjdescription--message-region-end))
       (setq log-edit-comment-ring-index (log-edit-new-comment-index arg len))
       (message "Description %d" (1+ log-edit-comment-ring-index))
-      (insert (ring-ref log-edit-comment-ring log-edit-comment-ring-index)))))
+      (majutsu-jjdescription--replace-message
+       (ring-ref log-edit-comment-ring log-edit-comment-ring-index)))))
 
 (defun majutsu-jjdescription-next-message (arg)
   "Cycle forward through description history, saving current text first.
@@ -560,12 +574,17 @@ This runs before `server-visit-files' visits files.  At that point
 Emacsclient has already recorded its working directory on PROC, but the
 visited buffer does not exist yet.  Remembering the root here makes it
 available to `majutsu-jjdescription-setup' in `find-file-hook'."
-  (when-let* ((dir (process-get proc 'server-client-directory))
+  (when-let* ((description-files
+               (cl-remove-if-not
+                (lambda (entry)
+                  (and (car entry)
+                       (string-match-p majutsu-jjdescription-regexp (car entry))))
+                files))
+              (dir (process-get proc 'server-client-directory))
               (root (let ((default-directory (file-name-as-directory dir)))
                       (ignore-errors (majutsu-toplevel default-directory)))))
-    (pcase-dolist (`(,file . ,_) files)
-      (when (and file (string-match-p majutsu-jjdescription-regexp file))
-        (majutsu-process-remember-with-editor-file-root file root)))))
+    (pcase-dolist (`(,file . ,_) description-files)
+      (majutsu-process-remember-with-editor-file-root file root))))
 
 (defun majutsu-jjdescription--repository-root ()
   "Return the repository root associated with this JJ description buffer."
