@@ -199,7 +199,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-resolve-mode-map
-    (kbd "RET") #'majutsu-resolve-visit-file)
+    (kbd "RET") #'majutsu-resolve-visit-file
+    (kbd "?") #'majutsu-resolve-dispatch)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-evolog-mode-map
     [remap majutsu-visit-thing] #'majutsu-evolog-diff-at-point)

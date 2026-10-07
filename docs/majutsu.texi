@@ -2578,8 +2578,10 @@ Open a directory-tree workbench for the revision
 @end table
 
 The workbench pins an exact commit@comma{} including historical revisions and
-inherited multi-sided conflicts with no changes-in diff. Its tree distinguishes
-jj's conflict state from private draft changes. Refresh never redirects the
+inherited multi-sided conflicts with no changes-in diff. The main view keeps
+the revision identity and conflict tree@comma{} without a permanent command legend.
+File headings distinguish jj's conflict state from pending or applied drafts;
+unopened and unchanged drafts need no extra label. Refresh never redirects the
 pin or overwrites drafts.
 
 Each file expands into its parsed conflict blocks. Within a block@comma{} the tree
@@ -2591,6 +2593,13 @@ conflict-mode side selection@comma{} not necessarily commit parents. Inspecting
 the tree does not create a draft.
 
 @table @asis
+@item @kbd{?} (@code{majutsu-resolve-dispatch})
+@kindex ?
+@findex majutsu-resolve-dispatch
+Show workbench actions on demand@comma{} in both
+  Emacs and Evil. @code{a} applies and @code{k} discards the current file or directory;
+  @code{A} and @code{K} act on all drafts. Discard still asks for confirmation.
+  @code{g} refreshes the workbench@comma{} and @code{m} opens the general Majutsu dispatcher.
 @item @kbd{@key{RET}} (@code{majutsu-resolve-visit-file})
 @kindex RET
 @findex majutsu-resolve-visit-file
@@ -2619,7 +2628,9 @@ Visit the next file that jj still
   reports as conflicted.
 @end table
 
-In a draft editor@comma{} @code{C-x C-s} saves only the private draft@comma{} not the repository.
+The draft editor's header identifies its private path. @code{C-c ?} opens the same
+action menu without taking over the @code{?} character in editable text.
+@code{C-x C-s} saves only the private draft@comma{} not the repository.
 @code{C-c C-o} returns to the workbench and refreshes its tree@comma{} including unsaved
 edits. Ordinary workbench refresh also reparses drafts. Closing a draft editor
 retains its text while the workbench lives; killing the workbench with @code{C-x k}
