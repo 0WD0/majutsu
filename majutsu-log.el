@@ -109,11 +109,6 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
 (defconst majutsu-log--field-list-separator "\x1c"
   "Separator character inserted between list items inside a single field value.")
 
-(defconst majutsu-log--field-line-separator
-  majutsu-row-field-line-separator
-  "Encoded newline separator used inside template field payloads.
-Log records are transported as single lines, then this separator is
-decoded back to literal newlines after field splitting.")
 
 (defconst majutsu-log--default-column-postprocessors nil
   "Default postprocessors appended to every column instance.")
@@ -303,10 +298,8 @@ Empty summaries produce no brackets.  Ordinary jj omits this column.")
   "Template for the timestamp column.")
 
 (majutsu-log-define-column long-desc
-  [:description :lines :skip 1 :join "\x1f"]
-  "Template for the long-desc column.
-Newlines are encoded as an internal separator so ANSI/label styling
-can survive transport through the single-line log format.")
+  [:description :lines :skip 1 :join "\n"]
+  "Template for the long-desc column.")
 
 (defvar majutsu-log--compiled-template-cache nil
   "Cached structure holding the compiled log template and column metadata.")
@@ -327,17 +320,6 @@ can survive transport through the single-line log format.")
   (add-variable-watcher 'majutsu-log-commit-columns
                         #'majutsu-log--invalidate-template-cache))
 
-(defun majutsu-log-post-decode-line-separator (value &optional _ctx)
-  "Decode `majutsu-log--field-line-separator' inside VALUE.
-
-This is the default postprocessor for log fields so all modules can
-transport logical newlines safely through single-line payload segments."
-  (if (stringp value)
-      (subst-char-in-string
-       (aref majutsu-log--field-line-separator 0)
-       ?\n
-       value t)
-    value))
 
 (defun majutsu-log-post-split-list-separator (value &optional _ctx)
   "Split VALUE by `majutsu-log--field-list-separator'."
@@ -361,7 +343,6 @@ transport logical newlines safely through single-line payload segments."
    :columns-var 'majutsu-log-commit-columns
    :default-postprocessors majutsu-log--default-column-postprocessors
    :field-postprocessors majutsu-log--field-default-postprocessors
-   :decode-function 'majutsu-log-post-decode-line-separator
    :entry-id-function 'majutsu-log--entry-id
    :section-class 'jj-commit
    :section-value-function 'majutsu-log--entry-id

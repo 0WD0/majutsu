@@ -382,15 +382,15 @@ REF is one exact NAME@REMOTE, including Git-tracking NAME@git."
     (:field conflict-details :module body
      :template
      [:if [:conflict]
-         [:separate "\x1f"
+         [:separate "\n"
                     [:method [:removed_targets]
                      :map [:lambda (target)
                                    [:concat "  - " [:majutsu-bookmark-list-commit-summary]]]
-                     :join "\x1f"]
+                     :join "\n"]
                     [:method [:added_targets]
                      :map [:lambda (target)
                                    [:concat "  + " [:majutsu-bookmark-list-commit-summary]]]
-                     :join "\x1f"]]
+                     :join "\n"]]
        ""]
      :face t)
     (:field name :module metadata :template [:name] :face nil)
@@ -402,12 +402,12 @@ REF is one exact NAME@REMOTE, including Git-tracking NAME@git."
     (:field removed-target-ids :module metadata
      :template [:method [:removed_targets]
                 :map [:lambda (target) [:commit_id]]
-                :join "\x1f"]
+                :join "\n"]
      :face nil :post majutsu-bookmark--row-lines)
     (:field added-target-ids :module metadata
      :template [:method [:added_targets]
                 :map [:lambda (target) [:commit_id]]
-                :join "\x1f"]
+                :join "\n"]
      :face nil :post majutsu-bookmark--row-lines))
   "Flat row columns emitted by `jj bookmark list'."
   :type 'sexp

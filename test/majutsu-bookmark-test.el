@@ -21,19 +21,17 @@
   "Return one raw bookmark-list row record.
 When NEWLINE is non-nil or omitted, append a trailing newline."
   (concat majutsu-row-start-token
-          heading
+          (json-serialize heading)
           majutsu-row-tail-token
           majutsu-row-body-token
-          (replace-regexp-in-string
-           "\n" majutsu-row-field-line-separator (or conflict-details "") t t)
+          (json-serialize (or conflict-details ""))
           majutsu-row-meta-token
-          (string-join (list name (or remote "")
-                             (if tracked "t" "")
-                             (string-join (or removed-ids nil)
-                                          majutsu-row-field-line-separator)
-                             (string-join (or added-ids nil)
-                                          majutsu-row-field-line-separator))
-                       majutsu-row-field-separator)
+          (mapconcat #'json-serialize
+                     (list name (or remote "")
+                           (if tracked "t" "")
+                           (string-join (or removed-ids nil) "\n")
+                           (string-join (or added-ids nil) "\n"))
+                     majutsu-row-field-separator)
           majutsu-row-end-token
           (if (or (not newline-supplied-p) newline) "\n" "")))
 
@@ -594,7 +592,7 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
           (replace-regexp-in-string
            (regexp-quote (concat majutsu-row-tail-token
                                  majutsu-row-body-token))
-           (concat majutsu-row-tail-token "TAIL" majutsu-row-body-token)
+           (concat majutsu-row-tail-token "\"TAIL\"" majutsu-row-body-token)
            (majutsu-bookmark-test--ref
             "dev" "" nil "dev: rymwrkkn b052a92d summary")
            t t)))

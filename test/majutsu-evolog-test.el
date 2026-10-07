@@ -14,17 +14,22 @@
   "Return one row encoded evolog test entry with HEADING."
   (concat "○  "
           majutsu-row-start-token
-          (or heading
-              (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
-                      "│  feat(op): phase1\n"
-                      "│  -- operation 86978b4db954 describe commit 8794efe3"))
-          "\n│  "
+          (replace-regexp-in-string
+           (regexp-quote "\\n") "\\n\n│  "
+           (json-serialize
+            (concat
+             (or heading
+                 (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
+                         "feat(op): phase1\n"
+                         "-- operation 86978b4db954 describe commit 8794efe3"))
+             "\n"))
+           t t)
           majutsu-row-tail-token
           majutsu-row-body-token
           majutsu-row-meta-token
-          "change-full" majutsu-row-field-separator
-          "commit-full" majutsu-row-field-separator
-          "op-full"
+          "\"change-full\"" majutsu-row-field-separator
+          "\"commit-full\"" majutsu-row-field-separator
+          "\"op-full\""
           majutsu-row-end-token
           "\n"))
 

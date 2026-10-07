@@ -219,69 +219,6 @@
                     :value (append base summary))
             (list :type 'raw-line :text colored-line)))))))
 
-(defun majutsu-op--parse-diff-output (output)
-  "Parse colored jj op diff OUTPUT into renderable nodes."
-  (let (nodes group-title group-text group-kind group-children ref-name ref-text ref-children)
-    (cl-labels
-        ((finish-ref
-           ()
-           (when ref-name
-             (push (list :type 'ref
-                         :name ref-name
-                         :text ref-text
-                         :children (nreverse ref-children))
-                   group-children)
-             (setq ref-name nil
-                   ref-text nil
-                   ref-children nil)))
-         (finish-group
-           ()
-           (finish-ref)
-           (when group-title
-             (push (list :type 'group
-                         :title group-title
-                         :text group-text
-                         :kind group-kind
-                         :children (nreverse group-children))
-                   nodes)
-             (setq group-title nil
-                   group-text nil
-                   group-kind nil
-                   group-children nil)))
-         (add-node
-           (node)
-           (cond
-            (ref-name (push node ref-children))
-            (group-title (push node group-children))
-            (t (push node nodes)))))
-      (dolist (colored-line (split-string (or output "") "\n"))
-        (let* ((plain-line (substring-no-properties colored-line))
-               (trimmed (string-trim plain-line)))
-          (cond
-           ((string-empty-p trimmed))
-           ((majutsu-op--diff-operation-header-p plain-line))
-           ((majutsu-op--diff-group-kind plain-line)
-            (finish-group)
-            (setq group-title trimmed
-                  group-text colored-line
-                  group-kind (majutsu-op--diff-group-kind plain-line)))
-           ((majutsu-op--diff-warning-line-p plain-line)
-            (add-node (list :type 'warning :text colored-line)))
-           ((majutsu-op--diff-elision-line-p plain-line)
-            (add-node (list :type 'elision :text colored-line)))
-           ((majutsu-op--diff-ref-header-p plain-line group-kind)
-            (finish-ref)
-            (setq ref-name (string-remove-suffix ":" trimmed)
-                  ref-text colored-line))
-           ((majutsu-op--parse-diff-marker-line
-             plain-line colored-line group-kind ref-name)
-            (add-node (majutsu-op--parse-diff-marker-line
-                       plain-line colored-line group-kind ref-name)))
-           (t
-            (add-node (list :type 'raw-line :text colored-line))))))
-      (finish-group)
-      (nreverse nodes))))
-
 (defun majutsu-op--commit-summary-config-arg ()
   "Return a jj --config argument for operation commit summaries."
   (concat "templates.commit_summary=" majutsu-op--commit-summary-template))
@@ -443,8 +380,7 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
     (:field attributes :module body
      :template [:if [:root]
                    ""
-                 [:label "attributes"
-                         [:method [:attributes] :replace "\n" "\x1f"]]]
+                 [:label "attributes" [:attributes]]]
      :face t)
     (:field op-id :module metadata :template [:id]
      :face nil :post majutsu-op--row-machine-field)
@@ -470,7 +406,7 @@ PROMPT, INITIAL-INPUT, and HISTORY follow transient reader conventions."
     (:field description :module metadata
      :template [:method [:description] :first_line] :face nil)
     (:field attributes :module metadata
-     :template [:method [:attributes] :replace "\n" "\x1f"] :face nil))
+     :template [:attributes] :face nil))
   "Flat columns for a native compact operation row.
 The visible modules mirror jj's compact formatter.  Canonical metadata is
 transported separately, with complete encoded attributes as the last field."
@@ -846,17 +782,6 @@ An explicitly nil ARGS means no options."
 (defun majutsu-op--insert-diff-node (node)
   "Insert one parsed operation diff NODE."
   (pcase (plist-get node :type)
-    ('group
-     (magit-insert-section (jj-op-group (list :kind (plist-get node :kind)
-                                              :title (plist-get node :title)))
-       (magit-insert-heading (majutsu-op--node-display-text node))
-       (dolist (child (plist-get node :children))
-         (majutsu-op--insert-diff-node child))))
-    ('ref
-     (magit-insert-section (jj-op-ref (plist-get node :name))
-       (magit-insert-heading (majutsu-op--node-display-text node))
-       (dolist (child (plist-get node :children))
-         (majutsu-op--insert-diff-node child))))
     ('commit-line
      (let ((value (plist-get node :value)))
        (magit-insert-section (jj-op-commit-line value)

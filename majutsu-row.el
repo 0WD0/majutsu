@@ -12,6 +12,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
+(require 'json)
 (require 'transient)
 (require 'magit-section)
 (require 'majutsu-base)
@@ -22,9 +23,6 @@
 
 (defconst majutsu-row-field-separator "\x1e"
   "Separator inserted between fields inside one module payload.")
-
-(defconst majutsu-row-field-line-separator "\x1f"
-  "Encoded newline separator used inside template field payloads.")
 
 (defconst majutsu-row-protocol-global-args
   '("--config=ui.log-word-wrap=false")
@@ -106,21 +104,63 @@
 
 ;;; Post-decode
 
-(defun majutsu-row-post-decode-line-separator (value &optional _ctx)
-  "Decode field line separators inside VALUE."
-  (if (stringp value)
-      (subst-char-in-string
-       (aref majutsu-row-field-line-separator 0)
-       ?\n
-       value t)
-    value))
+(define-error 'majutsu-row-invalid-record "Invalid row record")
+
+(defun majutsu-row--decode-json-field (value)
+  "Decode a JSON field VALUE, preserving its presentation properties.
+Physical newlines are graph carriers inside heading fields; logical
+newlines are represented by JSON escapes."
+  (condition-case nil
+      (let ((start 0))
+        ;; Only an encoded logical newline may introduce a physical graph
+        ;; continuation.  Do not turn malformed, unescaped JSON into valid data.
+        (while (string-match "\n" value start)
+          (let* ((newline (match-beginning 0))
+                 (pos (- newline 2))
+                 (slashes 0))
+            (while (and (>= pos 0) (= (aref value pos) ?\\))
+              (cl-incf slashes)
+              (cl-decf pos))
+            (unless (and (> newline 0)
+                         (= (aref value (1- newline)) ?n)
+                         (cl-oddp slashes))
+              (signal 'majutsu-row-invalid-record nil))
+            (setq start (1+ newline))))
+        (let* ((token (replace-regexp-in-string "\n" "" value t t))
+               (decoded (json-parse-string (substring-no-properties token))))
+          (unless (and (>= (length token) 2)
+                       (= (aref token 0) ?\")
+                       (= (aref token (1- (length token))) ?\")
+                       (stringp decoded))
+            (signal 'majutsu-row-invalid-record nil))
+          ;; Validate the complete token before preserving properties from its
+          ;; individual spans.  JSON parsing alone discards those properties.
+          (let ((pos 1)
+                (end (1- (length token)))
+                parts)
+            (while (< pos end)
+              (let ((next (or (string-match "[\\\\\"]" token pos) end)))
+                (when (> next pos)
+                  (push (substring token pos next) parts))
+                (setq pos next)
+                (when (< pos end)
+                  (let* ((escape-end (+ pos (if (= (aref token (1+ pos)) ?u)
+                                               6 2)))
+                         (text (json-parse-string
+                                (concat "\"" (substring token pos escape-end) "\""))))
+                    (set-text-properties 0 (length text)
+                                         (text-properties-at pos token) text)
+                    (push text parts)
+                    (setq pos escape-end)))))
+            (apply #'concat (nreverse parts)))))
+    (error (signal 'majutsu-row-invalid-record nil))))
 
 ;;; Profile helpers
 
 (defconst majutsu-row-base-profile
   '(:default-postprocessors nil
     :field-postprocessors nil
-    :decode-function majutsu-row-post-decode-line-separator
+    :decode-function nil
     :entry-id-function nil
     :section-class nil
     :section-class-function nil
@@ -249,10 +289,26 @@ INSTANCE is a compiler-assigned column occurrence id, not a layout key."
                           templates))))))
 
 (defun majutsu-row-module-template-form (compiled module)
-  "Return template form for COMPILED MODULE."
+  "Return an independently JSON-framed template for each COMPILED MODULE field.
+Use jj's template replacement rather than stringifying the field, so labels
+on arbitrary custom templates survive.  Heading newlines also emit a physical
+newline to let jj draw the correct continuation graph."
   (majutsu-row-build-module-template-form
-   (mapcar #'majutsu-row--column-template
-           (majutsu-row-module-columns compiled module))))
+   (mapcar
+    (lambda (column)
+      (let ((template (majutsu-template-compile
+                       (majutsu-row--column-template column)
+                       (plist-get (majutsu-row--profile compiled) :self-type))))
+        `[:raw
+          ,(format
+            (concat "concat(\"\\\"\", replace(regex:'[\"\\\\\\x00-\\x1f]', "
+                    "%s, |c| json(stringify(c.get(0))).substr(1, -1)%s), \"\\\"\")")
+            template
+            (if (eq module 'heading)
+                " ++ if(c.get(0) == \"\\n\", \"\\n\")"
+              ""))
+          :Template]))
+    (majutsu-row-module-columns compiled module))))
 
 (defun majutsu-row-template-form (compiled)
   "Return one row template form for COMPILED.
@@ -366,32 +422,30 @@ the row is well-formed."
                  (end-pos (and meta-end
                                (majutsu-row-line-token-position
                                 majutsu-row-end-token meta-end eol meta-end))))
-            (when (and meta-pos end-pos)
+            (when (and meta-pos end-pos
+                       (= (+ end-pos (length majutsu-row-end-token)) eol))
               (list :tail (buffer-substring tail-start body-pos)
                     :body (buffer-substring body-start meta-pos)
                     :metadata (buffer-substring meta-end end-pos)
                     :record-end (+ end-pos (length majutsu-row-end-token))))))))))
 
 (defun majutsu-row-split-module-values (payload count)
-  "Split PAYLOAD into COUNT field values."
-  (if (<= count 0)
-      nil
-    (let ((values (majutsu-row-split-by-separator
-                   (or payload "")
-                   majutsu-row-field-separator
-                   count)))
-      (cond
-       ((< (length values) count)
-        (append values (make-list (- count (length values)) "")))
-       (t values)))))
+  "Split PAYLOAD into exactly COUNT JSON fields, or reject the record."
+  (let ((values (unless (and (zerop count) (string-empty-p payload))
+                  (majutsu-row-split-by-separator
+                   payload majutsu-row-field-separator))))
+    (unless (= (length values) count)
+      (signal 'majutsu-row-invalid-record nil))
+    values))
 
 ;;; Record helpers
 
 (defun majutsu-row--decode-transport-value (profile value)
-  "Decode transport-level escapes in VALUE using PROFILE."
-  (let ((fn (or (plist-get profile :decode-function)
-                #'majutsu-row-post-decode-line-separator)))
-    (funcall fn value)))
+  "Decode JSON VALUE, then apply PROFILE's optional value decoder."
+  (let ((decoded (majutsu-row--decode-json-field value)))
+    (if-let* ((fn (plist-get profile :decode-function)))
+        (funcall fn decoded)
+      decoded)))
 
 (defun majutsu-row-apply-postprocessor (fn value ctx)
   "Apply postprocessor FN to VALUE with CTX."
@@ -552,14 +606,9 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                                   bol eol content-start)))
                 (if segment-pos
                     (progn
-                      ;; A visible template may end with a newline.  jj then
-                      ;; puts the trailing protocol on a graph-only carrier
-                      ;; line; that carrier is not an empty heading line.
-                      (unless (and (not first-line)
-                                   (= content-start segment-pos))
-                        (push prefix heading-prefixes)
-                        (push (buffer-substring content-start segment-pos)
-                              heading-segments))
+                      (push prefix heading-prefixes)
+                      (push (buffer-substring content-start segment-pos)
+                            heading-segments)
                       (if-let* ((payloads (majutsu-row-parse-trailing-payloads
                                            compiled segment-pos eol)))
                           (setq record-end (plist-get payloads :record-end)
@@ -588,15 +637,18 @@ Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
                  (heading-payload
                   (majutsu-row-join-lines
                    (nreverse heading-segments))))
-            (setq entry (majutsu-row-record-module-fields
-                         entry 'heading heading-payload compiled))
-            (setq entry (majutsu-row-record-module-fields
-                         entry 'tail (plist-get done :tail) compiled))
-            (setq entry (majutsu-row-record-module-fields
-                         entry 'body (plist-get done :body) compiled))
-            (setq entry (majutsu-row-record-module-fields
-                         entry 'metadata (plist-get done :metadata) compiled))
-            (cons entry record-end)))))))
+            (condition-case nil
+                (progn
+                  (setq entry (majutsu-row-record-module-fields
+                               entry 'heading heading-payload compiled))
+                  (setq entry (majutsu-row-record-module-fields
+                               entry 'tail (plist-get done :tail) compiled))
+                  (setq entry (majutsu-row-record-module-fields
+                               entry 'body (plist-get done :body) compiled))
+                  (setq entry (majutsu-row-record-module-fields
+                               entry 'metadata (plist-get done :metadata) compiled))
+                  (cons entry record-end))
+              (majutsu-row-invalid-record nil))))))))
 
 (defun majutsu-row-read-region (compiled beg end &optional _options)
   "Read row protocol events between BEG and END using COMPILED.

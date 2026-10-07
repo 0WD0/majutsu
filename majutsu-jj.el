@@ -606,10 +606,12 @@ in the revision identifier (used for recursive refinement)."
 
 (defun majutsu-tag-at-point ()
   "Return the tag name at point, or nil when none is found."
-  (or (magit-section-value-if 'jj-tag)
-      (and (eq (majutsu-text-property-near-point 'majutsu-row-field)
-               'tags)
-           (magit-thing-at-point 'jj-revision t))))
+  (let ((section (magit-current-section)))
+    (while (and section (not (magit-section-match 'jj-tag section)))
+      (setq section (oref section parent)))
+    (or (and section (oref section value))
+        (and (eq (majutsu-text-property-near-point 'majutsu-row-field) 'tags)
+             (magit-thing-at-point 'jj-revision t)))))
 
 ;;; Errors
 

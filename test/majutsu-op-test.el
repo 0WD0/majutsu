@@ -46,7 +46,13 @@
 
 (defun majutsu-op-test--log-payload (&rest fields)
   "Join operation log row FIELDS."
-  (string-join fields majutsu-row-field-separator))
+  (mapconcat (lambda (field)
+               (let ((wire (json-serialize field)))
+                 (when (> (length field) 0)
+                   (set-text-properties 0 (length wire)
+                                        (text-properties-at 0 field) wire))
+                 wire))
+             fields majutsu-row-field-separator))
 
 (defun majutsu-op-test--log-raw-entry (&rest kvs)
   "Return one row encoded operation log entry from KVS."
@@ -64,21 +70,18 @@
          (kind (or (plist-get kvs :kind) "op"))
          (current (or (plist-get kvs :current) ""))
          (desc (or (plist-get kvs :desc) "description"))
-         (attributes (or (plist-get kvs :attributes) "args: jj op"))
-         (attributes-wire
-          (subst-char-in-string
-           ?\n (aref majutsu-row-field-line-separator 0) attributes)))
+         (attributes (or (plist-get kvs :attributes) "args: jj op")))
     (concat graph-prefix
             majutsu-row-start-token
             (majutsu-op-test--log-payload
              op-id-short root-marker user workspace time-range)
             majutsu-row-tail-token
             majutsu-row-body-token
-            (majutsu-op-test--log-payload desc attributes-wire)
+            (majutsu-op-test--log-payload desc attributes)
             majutsu-row-meta-token
             (majutsu-op-test--log-payload
              op-id op-id-short kind current user workspace
-             time time-ago duration desc attributes-wire)
+             time time-ago duration desc attributes)
             majutsu-row-end-token
             "\n")))
 
@@ -101,7 +104,7 @@
     (should (string-match-p "self.time().end().ago()" template))
     (should (string-match-p "self.time().duration()" template))
     (should (string-match-p "self.description().first_line()" template))
-    (should (string-match-p "self.attributes().replace" template))
+    (should (string-match-p "self.attributes()" template))
     (should-not (string-match-p "self.tags()" template))
     (should-not (string-match-p "separate(" template))))
 
@@ -319,25 +322,35 @@
                      (list "op" "show" "abc" "--no-op-diff" "-T"
                            majutsu-op--metadata-template))))))
 
-(ert-deftest majutsu-op-parse-diff-output/parses-colored-commit-line ()
-  "Operation diff parser should use plain marker detection and colored fields."
-  (let* ((line (concat (propertize "+" 'font-lock-face 'diff-added)
-                       " "
-                       (majutsu-op-test--colored-summary)))
-         (nodes (majutsu-op--parse-diff-output
-                 (concat "From operation: from\n  To operation: to\n\n"
-                         "Changed commits:\n" line "\n")))
-         (group (car nodes))
-         (entry (car (plist-get group :children)))
-         (value (plist-get entry :value)))
-    (should (equal (plist-get group :kind) 'commits))
-    (should (equal (plist-get entry :type) 'commit-line))
-    (should (equal (plist-get value :marker) "+"))
-    (should (equal (plist-get value :change-id) "change-full"))
-    (should (equal (plist-get value :commit-id) "commit-full"))
-    (should (plist-get value :empty))
-    (should (get-text-property 0 'font-lock-face
-                               (plist-get value :change-id-short-display)))))
+(ert-deftest majutsu-op-wash-diff-output/parses-colored-commit-line ()
+  "The production washer preserves colors and actionable commit identity."
+  (with-temp-buffer
+    (majutsu-op-diff-mode)
+    (let ((inhibit-read-only t))
+      (magit-insert-section (root)
+        (insert "From operation: from\n  To operation: to\n\n"
+                "Changed commits:\n"
+                (propertize "+" 'font-lock-face 'diff-added)
+                " " (majutsu-op-test--colored-summary) "\n")
+        (majutsu-op--wash-diff-output nil)))
+    (let* ((group (car (oref magit-root-section children)))
+           (entry (car (oref group children)))
+           (value (oref entry value)))
+      (should (eq (plist-get (oref group value) :kind) 'commits))
+      (should (eq (oref entry type) 'jj-op-commit-line))
+      (should (equal (plist-get value :marker) "+"))
+      (should (equal (plist-get value :change-id) "change-full"))
+      (should (equal (plist-get value :commit-id) "commit-full"))
+      (should (plist-get value :empty))
+      (goto-char (point-min))
+      (forward-line 1)
+      (should (equal (majutsu-revision-at-point) "commit-full"))
+      (search-forward "change-short")
+      (should (eq (get-text-property (1- (point)) 'font-lock-face)
+                  'font-lock-variable-name-face))
+      (should-not (string-match-p "From operation:" (buffer-string)))
+      (should-not (string-match-p (regexp-quote majutsu-op--field-separator)
+                                  (buffer-string))))))
 
 (ert-deftest majutsu-op-parse-commit-summary/preserves-description-separators ()
   "The final description field should retain embedded record separators."
@@ -347,24 +360,43 @@
                  (majutsu-op-test--summary nil nil nil nil nil description))))
     (should (equal (plist-get entry :description) description))))
 
-(ert-deftest majutsu-op-parse-diff-output/parses-ref-prefixes-and-absent ()
-  "Operation diff parser should parse ref target prefixes and absent values."
-  (let* ((nodes (majutsu-op--parse-diff-output
-                 (concat "Changed remote bookmarks:\n"
-                         "main@origin:\n"
-                         "+ tracked " (majutsu-op-test--summary) "\n"
-                         "- untracked (absent)\n")))
-         (group (car nodes))
-         (ref (car (plist-get group :children)))
-         (entries (plist-get ref :children))
-         (added (plist-get (nth 0 entries) :value))
-         (removed (plist-get (nth 1 entries) :value)))
-    (should (equal (plist-get group :kind) 'remote-bookmarks))
-    (should (equal (plist-get ref :name) "main@origin"))
-    (should (equal (plist-get added :prefix) "tracked"))
-    (should (equal (plist-get added :commit-id) "commit-full"))
-    (should (equal (plist-get removed :prefix) "untracked"))
-    (should (plist-get removed :absent))))
+(ert-deftest majutsu-op-wash-diff-output/parses-ref-prefixes-and-absent ()
+  "The production washer creates ref groups, target rows and absent rows."
+  (with-temp-buffer
+    (majutsu-op-diff-mode)
+    (let ((inhibit-read-only t))
+      (magit-insert-section (root)
+        (insert "Changed remote bookmarks:\n"
+                "main@origin:\n"
+                "+ tracked " (majutsu-op-test--summary) "\n"
+                "- untracked (absent)\n"
+                "other@origin:\n"
+                "+ tracked " (majutsu-op-test--summary
+                               nil nil "other-commit" "other-short") "\n"
+                "\nChanged local tags:\n"
+                "v1.0:\n+ (added) " (majutsu-op-test--summary) "\n")
+        (majutsu-op--wash-diff-output nil)))
+    (let* ((groups (oref magit-root-section children))
+           (group (car groups))
+           (refs (oref group children))
+           (ref (car refs))
+           (entries (oref ref children))
+           (added (oref (nth 0 entries) value))
+           (removed (oref (nth 1 entries) value)))
+      (should (equal (length groups) 2))
+      (should (eq (plist-get (oref group value) :kind) 'remote-bookmarks))
+      (should (equal (mapcar (lambda (section) (oref section value)) refs)
+                     '("main@origin" "other@origin")))
+      (should (equal (plist-get added :ref-name) "main@origin"))
+      (should (equal (plist-get added :prefix) "tracked"))
+      (should (equal (plist-get added :commit-id) "commit-full"))
+      (should (equal (plist-get removed :prefix) "untracked"))
+      (should (plist-get removed :absent))
+      (should-not (oref (nth 1 entries) children))
+      (goto-char (oref (nth 0 entries) start))
+      (should (equal (majutsu-revision-at-point) "commit-full"))
+      (goto-char (oref (car (oref (nth 1 refs) children)) start))
+      (should (equal (majutsu-revision-at-point) "other-commit")))))
 
 (ert-deftest majutsu-op-format-diff-line/hides-machine-separators ()
   "Formatted operation diff lines should not expose machine separators."

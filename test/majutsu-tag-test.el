@@ -11,6 +11,18 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu-tag)
+(require 'majutsu-jj-integration)
+
+(defun majutsu-tag-test--row (name remote display)
+  "Encode a native tag DISPLAY with structured NAME and REMOTE."
+  (concat majutsu-row-start-token
+          (json-serialize display)
+          majutsu-row-tail-token
+          majutsu-row-body-token
+          majutsu-row-meta-token
+          (json-serialize name) majutsu-row-field-separator
+          (json-serialize remote)
+          majutsu-row-end-token "\n"))
 
 (ert-deftest majutsu-tag-wash-list/uses-plain-section-values ()
   (with-temp-buffer
@@ -18,7 +30,7 @@
     (let ((inhibit-read-only t)
           (magit-section-inhibit-markers t))
       (magit-insert-section (tag-list)
-        (insert "v1.0: qpvuntsm\n")
+        (insert (majutsu-tag-test--row "v1.0" "" "v1.0: qpvuntsm"))
         (majutsu-tag--wash-list nil))
       (let* ((sections (cons magit-root-section
                              (append (oref magit-root-section children)
@@ -98,12 +110,6 @@
       (should (eq seen-history 'majutsu-tag-name-history))
       (should (eq seen-category 'majutsu-tag)))))
 
-(ert-deftest majutsu-tag-at-point/uses-tag-section-value ()
-  (cl-letf (((symbol-function 'magit-section-value-if)
-             (lambda (type)
-               (and (eq type 'jj-tag) "v1.0"))))
-    (should (equal (majutsu-tag-at-point) "v1.0"))))
-
 (ert-deftest majutsu-tag-at-point/uses-structured-tag-field ()
   (with-temp-buffer
     (insert (propertize "v1.0" 'majutsu-row-field 'tags))
@@ -141,18 +147,92 @@
       (should (equal (majutsu-tag--read-patterns "Delete tag(s)") '("v1.*")))
       (should (eq seen-history 'majutsu-tag-pattern-history)))))
 
-(ert-deftest majutsu-tag-parse-list-output/conflicted-block ()
-  (let* ((output (concat "conflicted_tag (conflicted):\n"
-                         "  - old target\n"
-                         "  + new target\n"
-                         "v1.0: abcdef\n"
-                         "  @git: abcdef\n"))
-         (entries (majutsu-tag-parse-list-output output)))
-    (should (equal (length entries) 2))
-    (should (equal (plist-get (nth 0 entries) :name) "conflicted_tag"))
-    (should (equal (length (plist-get (nth 0 entries) :lines)) 3))
-    (should (equal (plist-get (nth 1 entries) :name) "v1.0"))
-    (should (equal (length (plist-get (nth 1 entries) :lines)) 2))))
+(ert-deftest majutsu-tag-wash-list/deleted-and-remote-rows ()
+  "Deleted headers remain distinct and remote rows select their own revision."
+  (with-temp-buffer
+    (majutsu-tag-list-mode)
+    (let ((inhibit-read-only t))
+      (magit-insert-section (tag-list)
+        (insert
+         (majutsu-tag-test--row "before" "" "before: local target")
+         (majutsu-tag-test--row "deleted" "" "deleted (deleted)")
+         (majutsu-tag-test--row "deleted" "origin" "  @origin: remote target")
+         (majutsu-tag-test--row "moved" "" "moved: local target")
+         (majutsu-tag-test--row "moved" "origin"
+                               "  @origin (ahead by 1 commits): remote target"))
+        (majutsu-tag--wash-list nil)))
+    (should (equal (mapcar (lambda (section) (oref section value))
+                          (oref magit-root-section children))
+                   '("before" "deleted" "moved")))
+    (goto-char (point-min))
+    (dolist (expected '(("before" "before")
+                        ("deleted" "deleted")
+                        ("deleted@origin" "deleted")
+                        ("moved" "moved")
+                        ("moved@origin" "moved")))
+      (should (equal (majutsu-revision-at-point) (car expected)))
+      (should (equal (majutsu-tag-at-point) (cadr expected)))
+      (forward-line 1))))
+
+(ert-deftest majutsu-tag-wash-list/preserves-conflict-display ()
+  "Conflict display lines stay with their own structured tag entry."
+  (let ((display "conflicted_tag (conflicted):\n  - old target\n  + new target"))
+    (with-temp-buffer
+      (majutsu-tag-list-mode)
+      (let ((inhibit-read-only t))
+        (magit-insert-section (tag-list)
+          (insert (majutsu-tag-test--row "conflicted_tag" "" display)
+                  (majutsu-tag-test--row "v1.0" "" "v1.0: abcdef"))
+          (majutsu-tag--wash-list nil)))
+      (should (equal (buffer-string) (concat display "\nv1.0: abcdef\n\n")))
+      (goto-char (point-min))
+      (forward-line 2)
+      (should (equal (majutsu-tag-at-point) "conflicted_tag"))
+      (forward-line 1)
+      (should (equal (majutsu-revision-at-point) "v1.0")))))
+
+(ert-deftest majutsu-tag-wash-list/native-tracked-remotes ()
+  "Native jj output preserves deleted tags and divergent remote targets."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (let* ((remote (majutsu-jj-integration-init sandbox "remote"))
+           (repo (expand-file-name "local" sandbox))
+           (majutsu-jj-executable majutsu-jj-integration--jj))
+      (majutsu-jj-integration-commit remote "remote target")
+      (majutsu-jj-integration-call remote "tag" "set" "deleted" "moved" "-r" "@-")
+      (majutsu-jj-integration-call sandbox "git" "clone" remote repo)
+      (majutsu-jj-integration-call repo "tag" "delete" "deleted")
+      (majutsu-jj-integration-call repo "describe" "-m" "local target")
+      (majutsu-jj-integration-call repo "tag" "set" "--allow-move" "moved" "-r" "@")
+      (let* ((default-directory (file-name-as-directory repo))
+             (native (majutsu-jj-integration-output
+                      repo "--color=never" "tag" "list" "--quiet" "--all-remotes"))
+             (local-id (majutsu-jj-integration-output
+                        repo "log" "--no-graph" "-r" "moved" "-T" "commit_id"))
+             (remote-id (majutsu-jj-integration-output
+                         repo "log" "--no-graph" "-r" "moved@origin" "-T" "commit_id")))
+        (should-not (equal local-id remote-id))
+        (with-temp-buffer
+          (majutsu-tag-list-mode)
+          (setq-local majutsu-tag--list-all-remotes t)
+          (let ((inhibit-read-only t))
+            (majutsu-tag-list-refresh-buffer))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                         (concat native "\n")))
+          (goto-char (point-min))
+          (should (looking-at "deleted (deleted)"))
+          (should (equal (majutsu-tag-at-point) "deleted"))
+          (should (equal (majutsu-revision-at-point) "deleted"))
+          (forward-line 1)
+          (should (equal (majutsu-revision-at-point) "deleted@origin"))
+          (re-search-forward "^moved:")
+          (should (equal (majutsu-revision-at-point) "moved"))
+          (re-search-forward "^  @origin")
+          (should (equal (majutsu-tag-at-point) "moved"))
+          (should (equal (majutsu-revision-at-point) "moved@origin"))
+          (should (equal (majutsu-jj-integration-output
+                          repo "log" "--no-graph" "-r"
+                          (majutsu-revision-at-point) "-T" "commit_id")
+                         remote-id)))))))
 
 (ert-deftest majutsu-tag-set/allow-move-dispatches-correctly ()
   (let (called)
