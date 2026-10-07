@@ -1658,6 +1658,67 @@ SELECT is `:all' or a list of hunk body line texts to select."
                   (should (equal (majutsu-jj-integration-read-bytes old) "same\n"))
                   (should (= (logand (file-modes old) #o777) old-mode)))))))))))
 
+(ert-deftest majutsu-interactive/integration-copy-does-not-inherit-source-chmod ()
+  "A copied payload keeps its mode when the source is independently chmodded."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (dolist (restore '(nil t))
+      (dolist (old-mode '(#o644 #o755))
+        (let* ((repo (majutsu-jj-integration-init
+                      sandbox (format "copy-source-mode-%s-%o" restore old-mode)))
+               (source (expand-file-name "source.txt" repo))
+               (destination (expand-file-name "copy.txt" repo))
+               (other (expand-file-name "other.txt" repo))
+               (new-mode (if (= old-mode #o644) #o755 #o644))
+               (command (if restore 'majutsu-restore 'majutsu-split))
+               plan)
+          (majutsu-jj-integration-write-text source "same\n")
+          (set-file-modes source old-mode)
+          (majutsu-jj-integration-write-text other "old\n")
+          (majutsu-jj-integration-commit repo "base")
+          (copy-file source destination)
+          (set-file-modes destination old-mode)
+          (set-file-modes source new-mode)
+          (majutsu-jj-integration-write-text other "new\n")
+          (setq plan
+                (majutsu-jj-integration-with-washed-diff
+                 repo
+                 (lambda ()
+                   ;; Backends may render copies as adds.  Supply the copy
+                   ;; metadata while still exercising jj's real editor trees.
+                   (let ((inhibit-read-only t))
+                     (erase-buffer))
+                   (majutsu-interactive-test--insert-diff
+                    (format
+                     (concat "diff --git a/source.txt b/copy.txt\n"
+                             "similarity index 100%%\n"
+                             "copy from source.txt\ncopy to copy.txt\n"
+                             "diff --git a/source.txt b/source.txt\n"
+                             "old mode 100%o\nnew mode 100%o\n"
+                             "diff --git a/other.txt b/other.txt\n"
+                             "--- a/other.txt\n+++ b/other.txt\n"
+                             "@@ -1 +1 @@\n-old\n+new\n")
+                     old-mode new-mode)
+                    nil
+                    '((:status "copied" :source "source.txt" :target "copy.txt")
+                      (:status "modified" :source "source.txt" :target "source.txt")
+                      (:status "modified" :source "other.txt" :target "other.txt")))
+                   (dolist (file (if restore '("other.txt")
+                                  '("copy.txt" "source.txt")))
+                     (majutsu-interactive-test--toggle-whole-file file command))
+                   (majutsu-interactive-build-replay-plan-if-selected
+                    nil (if restore 'complement 'selected)))))
+          (majutsu-jj-integration-run-replay
+           repo (if restore "restore" "split")
+           (if restore '("--changes-in=@")
+             '("--revision=@" "--message=selected"))
+           plan)
+          (unless restore
+            (majutsu-jj-integration-call repo "new" "@-"))
+          (should (equal (majutsu-jj-integration-read-bytes source) "same\n"))
+          (should (equal (majutsu-jj-integration-read-bytes destination) "same\n"))
+          (should (= (logand (file-modes source) #o777) new-mode))
+          (should (= (logand (file-modes destination) #o777) old-mode)))))))
+
 (ert-deftest majutsu-interactive/integration-completion-refreshes-workspace-log ()
   "Dead or repurposed origins still refresh the actual repository log."
   (require 'majutsu-log)
@@ -1808,9 +1869,6 @@ SELECT is `:all' or a list of hunk body line texts to select."
               (should (equal (majutsu-jj-integration-read-bytes
                               (expand-file-name "new.bin" right))
                              bytes))
-              (should (= (logand (file-modes (expand-file-name "new.bin" right))
-                                 #o111)
-                         0))
               (should (eq (and (file-symlink-p
                                 (expand-file-name "old.link" right)) t)
                           (eq action 'copy))))

@@ -1132,26 +1132,16 @@ root before the right tree is rebuilt.  Write the script in DIRECTORY."
             ('delete
              (insert (format "majutsu_remove %s || exit $?\n" destination)))
             ((or 'rename 'copy)
-             (let ((source (majutsu-interactive--script-path
-                            "RIGHT" (plist-get op :source))))
-               ;; Payload bytes may carry an unselected chmod.  Remember the
-               ;; baseline executable bit before removing the rename source.
-               ;; Never chmod a symlink or replace its link payload with bytes.
-               (insert "EXECUTABLE=\n")
-               (insert (format
-                        "if [ -f %s ] && [ ! -L %s ] && [ -f %s ] && [ ! -L %s ]; then\n"
-                        source source preserved preserved))
-               (insert (format
-                        "  if [ -x %s ]; then EXECUTABLE=a+x; else EXECUTABLE=a-x; fi\nfi\n"
-                        source))
-               (when (eq action 'rename)
-                 (insert (format "majutsu_remove %s || exit $?\n" source)))
-               (insert (format "majutsu_remove %s || exit $?\n" destination))
-               (insert (format "majutsu_copy %s %s || exit $?\n"
-                               preserved destination))
-               (insert (format
-                        "if [ -n \"$EXECUTABLE\" ]; then chmod \"$EXECUTABLE\" -- %s || exit $?; fi\n"
-                        destination))))
+             ;; Preserve the payload's own mode.  Independently selected
+             ;; permissions are explicit chmod operations, never inherited
+             ;; from a source that may be absent or separately modified.
+             (when (eq action 'rename)
+               (insert (format "majutsu_remove %s || exit $?\n"
+                               (majutsu-interactive--script-path
+                                "RIGHT" (plist-get op :source)))))
+             (insert (format "majutsu_remove %s || exit $?\n" destination))
+             (insert (format "majutsu_copy %s %s || exit $?\n"
+                             preserved destination)))
             ('chmod
              (insert (format "chmod %o -- %s || exit $?\n"
                              (plist-get op :mode) destination)))
