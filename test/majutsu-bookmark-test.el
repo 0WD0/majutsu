@@ -21,10 +21,10 @@
   "Return one raw bookmark-list row record.
 When NEWLINE is non-nil or omitted, append a trailing newline."
   (concat majutsu-row-start-token
-          (json-serialize heading)
+          heading
           majutsu-row-tail-token
           majutsu-row-body-token
-          (json-serialize (or conflict-details ""))
+          (subst-char-in-string ?\n ?\x1f (or conflict-details ""))
           majutsu-row-meta-token
           (mapconcat #'json-serialize
                      (list name (or remote "")

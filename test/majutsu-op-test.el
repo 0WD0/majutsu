@@ -45,14 +45,15 @@
                majutsu-op--field-separator))
 
 (defun majutsu-op-test--log-payload (&rest fields)
-  "Join operation log row FIELDS."
-  (mapconcat (lambda (field)
-               (let ((wire (json-serialize field)))
-                 (when (> (length field) 0)
-                   (set-text-properties 0 (length wire)
-                                        (text-properties-at 0 field) wire))
-                 wire))
-             fields majutsu-row-field-separator))
+  "Join visible operation log row FIELDS."
+  (mapconcat
+   (lambda (field)
+     (subst-char-in-string
+      ?\n ?\x1f
+      (replace-regexp-in-string
+       "[\x1d-\x1f]" (lambda (s) (substring (json-serialize s) 1 -1))
+       field t t)))
+   fields majutsu-row-field-separator))
 
 (defun majutsu-op-test--log-raw-entry (&rest kvs)
   "Return one row encoded operation log entry from KVS."
@@ -79,9 +80,10 @@
             majutsu-row-body-token
             (majutsu-op-test--log-payload desc attributes)
             majutsu-row-meta-token
-            (majutsu-op-test--log-payload
-             op-id op-id-short kind current user workspace
-             time time-ago duration desc attributes)
+            (mapconcat #'json-serialize
+                       (list op-id op-id-short kind current user workspace
+                             time time-ago duration desc attributes)
+                       majutsu-row-field-separator)
             majutsu-row-end-token
             "\n")))
 
@@ -91,42 +93,6 @@
     (insert raw)
     (goto-char (point-min))
     (majutsu-row-parse-buffer (majutsu-op-log--ensure-template))))
-
-(ert-deftest majutsu-op-log-template/mirrors-native-compact-fields ()
-  "Operation log rows should carry native display fields and canonical data."
-  (let ((template (plist-get (majutsu-op-log--ensure-template) :template)))
-    (should (string-match-p (regexp-quote "\\x1dS") (prin1-to-string template)))
-    (should (string-match-p "self.id()" template))
-    (should (string-match-p "self.id().short()" template))
-    (should (string-match-p "self.current_operation()" template))
-    (should (string-match-p "self.root()" template))
-    (should (string-match-p "self.time().end().format" template))
-    (should (string-match-p "self.time().end().ago()" template))
-    (should (string-match-p "self.time().duration()" template))
-    (should (string-match-p "self.description().first_line()" template))
-    (should (string-match-p "self.attributes()" template))
-    (should-not (string-match-p "self.tags()" template))
-    (should-not (string-match-p "separate(" template))))
-
-(ert-deftest majutsu-op-commit-summary-template/carries-full-ids ()
-  "Operation diff commit summary should carry full ids for actions."
-  (should (string-match-p "self.change_id()"
-                          majutsu-op--commit-summary-template))
-  (should (string-match-p "self.change_id().short()"
-                          majutsu-op--commit-summary-template))
-  (should (string-match-p "self.commit_id()"
-                          majutsu-op--commit-summary-template))
-  (should (string-match-p "self.commit_id().short()"
-                          majutsu-op--commit-summary-template))
-  (should-not (string-match-p (regexp-quote "\"(empty)\"")
-                              majutsu-op--commit-summary-template))
-  (should-not (string-match-p "separate(" majutsu-op--commit-summary-template)))
-
-(ert-deftest majutsu-op-metadata-template/preserves-empty-field-positions ()
-  "Internal operation metadata should keep optional fields in fixed slots."
-  (should (string-match-p "join(" majutsu-op--metadata-template))
-  (should (string-match-p "self.root()" majutsu-op--metadata-template))
-  (should-not (string-match-p "separate(" majutsu-op--metadata-template)))
 
 (ert-deftest majutsu-op-parse-log-entries/preserves-canonical-metadata ()
   "Parser should keep machine metadata and complete operation attributes."

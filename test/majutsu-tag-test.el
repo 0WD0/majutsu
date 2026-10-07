@@ -16,7 +16,7 @@
 (defun majutsu-tag-test--row (name remote display)
   "Encode a native tag DISPLAY with structured NAME and REMOTE."
   (concat majutsu-row-start-token
-          (json-serialize display)
+          display
           majutsu-row-tail-token
           majutsu-row-body-token
           majutsu-row-meta-token

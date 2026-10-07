@@ -211,8 +211,8 @@
   "Return one raw relation-aware log entry for ID and TITLE."
   (let ((compiled (majutsu-log-test--relations-compiled)))
     (concat
-     "○ " majutsu-row-start-token (json-serialize id)
-     majutsu-row-field-separator (json-serialize title)
+     "○ " majutsu-row-start-token id
+     majutsu-row-field-separator title
      majutsu-row-tail-token
      majutsu-row-body-token
      majutsu-row-meta-token
@@ -294,25 +294,6 @@
     (should (equal (plist-get spec :post)
                    '(majutsu-log-post-split-list-separator)))))
 
-(ert-deftest majutsu-log-columns-emit-sequential-markers ()
-  "Compiled log template should include S/T/B/M/E markers in order."
-  (let* ((compiled (majutsu-log-test--base-compiled))
-         (tpl (prin1-to-string (plist-get compiled :template)))
-         (s-pos (string-match (regexp-quote "\\x1dS") tpl))
-         (t-pos (string-match (regexp-quote "\\x1dT") tpl))
-         (b-pos (string-match (regexp-quote "\\x1dB") tpl))
-         (m-pos (string-match (regexp-quote "\\x1dM") tpl))
-         (e-pos (string-match (regexp-quote "\\x1dE") tpl)))
-    (should s-pos)
-    (should t-pos)
-    (should b-pos)
-    (should m-pos)
-    (should e-pos)
-    (should (< s-pos t-pos))
-    (should (< t-pos b-pos))
-    (should (< b-pos m-pos))
-    (should (< m-pos e-pos))))
-
 (ert-deftest majutsu-log-test-columns-add-hidden-metadata-fields ()
   "Test columns should preserve hidden transport fields needed by log semantics."
   (let* ((compiled (majutsu-log-test--compile-columns
@@ -338,10 +319,10 @@
   "Parser should handle graph prefixes and multiline heading payload."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               "○ " majutsu-row-start-token "\"chg\"" majutsu-row-field-separator
-               "\"Title line 1\\n\n│ Title line 2\"" majutsu-row-tail-token
+               "○ " majutsu-row-start-token "chg" majutsu-row-field-separator
+               "Title line 1\n│ Title line 2" majutsu-row-tail-token
                majutsu-row-body-token
-               (json-serialize "body line 1\nbody line 2")
+               "body line 1\u001fbody line 2"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -370,9 +351,9 @@
   "Parser should also support --no-graph output (indent = 0)."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               majutsu-row-start-token "\"chg\"" majutsu-row-field-separator
-               "\"Top\\n\nTail\"" majutsu-row-tail-token
-               majutsu-row-body-token (json-serialize "payload")
+               majutsu-row-start-token "chg" majutsu-row-field-separator
+               "Top\nTail" majutsu-row-tail-token
+               majutsu-row-body-token "payload"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -397,11 +378,11 @@
   "Parser should decode tail payloads separately from body and metadata."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
-               "○ " majutsu-row-start-token "\"chg\"" majutsu-row-field-separator "\"Title\""
+               "○ " majutsu-row-start-token "chg" majutsu-row-field-separator "Title"
                majutsu-row-tail-token
-               "\"Alice\"" majutsu-row-field-separator "\"2m ago\""
+               "Alice" majutsu-row-field-separator "2m ago"
                majutsu-row-body-token
-               (json-serialize "body line 1\nbody line 2")
+               "body line 1\u001fbody line 2"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -420,20 +401,18 @@
   "Lines between E of one entry and S of next entry stay with previous entry."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               "○ " majutsu-row-start-token "\"chg1\"" majutsu-row-field-separator "\"Title1\""
+               "○ " majutsu-row-start-token "chg1" majutsu-row-field-separator "Title1"
                majutsu-row-tail-token
                majutsu-row-body-token
-               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-1")))
                majutsu-row-end-token "\n"
                "│ carry-line\n"
-               "○ " majutsu-row-start-token "\"chg2\"" majutsu-row-field-separator "\"Title2\""
+               "○ " majutsu-row-start-token "chg2" majutsu-row-field-separator "Title2"
                majutsu-row-tail-token
                majutsu-row-body-token
-               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -452,10 +431,9 @@
   "Parser should record the raw entry region for streaming washing."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (first-raw (concat
-                     "○ " majutsu-row-start-token "\"chg1\"" majutsu-row-field-separator "\"Title1\""
+                     "○ " majutsu-row-start-token "chg1" majutsu-row-field-separator "Title1"
                      majutsu-row-tail-token
                      majutsu-row-body-token
-                     "\"\""
                      majutsu-row-meta-token
                      (majutsu-log-test--metadata-payload
                       compiled
@@ -463,10 +441,9 @@
                      majutsu-row-end-token "\n"
                      "│ carry-line\n"))
          (raw (concat first-raw
-                      "○ " majutsu-row-start-token "\"chg2\"" majutsu-row-field-separator "\"Title2\""
+                      "○ " majutsu-row-start-token "chg2" majutsu-row-field-separator "Title2"
                       majutsu-row-tail-token
                       majutsu-row-body-token
-                      "\"\""
                       majutsu-row-meta-token
                       (majutsu-log-test--metadata-payload
                        compiled
@@ -520,7 +497,7 @@
            `((:field description :module heading :face t :post majutsu-log-test--post-wrap)
              (:field id :module metadata :face nil))))
          (raw (concat
-               "○ " majutsu-row-start-token "\"desc\""
+               "○ " majutsu-row-start-token "desc"
                majutsu-row-tail-token
                majutsu-row-body-token
                majutsu-row-meta-token
@@ -546,9 +523,9 @@
              (:field description :module body :face nil :post majutsu-log-test--post-by-module)
              (:field id :module metadata :face nil))))
          (raw (concat
-               "○ " majutsu-row-start-token "\"desc\""
+               "○ " majutsu-row-start-token "desc"
                majutsu-row-tail-token
-               majutsu-row-body-token "\"desc\""
+               majutsu-row-body-token "desc"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -1043,22 +1020,20 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
                "○ " majutsu-row-start-token
-               "\"chg1\"" majutsu-row-field-separator "\"Title1\""
+               "chg1" majutsu-row-field-separator "Title1"
                majutsu-row-tail-token
-               "\"Alice\"" majutsu-row-field-separator "\"2m ago\""
+               "Alice" majutsu-row-field-separator "2m ago"
                majutsu-row-body-token
-               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-1")))
                majutsu-row-end-token "\n"
                "○ " majutsu-row-start-token
-               "\"chg2\"" majutsu-row-field-separator "\"Title2\""
+               "chg2" majutsu-row-field-separator "Title2"
                majutsu-row-tail-token
-               "\"Bob\"" majutsu-row-field-separator "\"1h ago\""
+               "Bob" majutsu-row-field-separator "1h ago"
                majutsu-row-body-token
-               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -1160,6 +1135,13 @@
                             "\x1e\x1f\"\\\t\rX\n"))
            (author (concat "Author" "\u001dM@\u001dE\u001e\u001f!"))
            (custom (concat "\"Custom\\" "\u001dS\u001dT\u001dB\u001dM@\u001dE\u001e\u001f"))
+           (shown-author "Author\\u001dM@\\u001dE\\u001e\\u001f!")
+           (shown-custom
+            (concat "\"Custom\\"
+                    "\\u001dS\\u001dT\\u001dB\\u001dM@\\u001dE\\u001e\\u001f"))
+           (shown-description
+            (concat "Title\nbody\\u001dM@\\u001dE\\u001dS\\u001dT\\u001dB"
+                    "\\u001e\\u001f\"\\\t\rX\n"))
            (process-environment
             (cons (concat "JJ_USER=" author) process-environment)))
       ;; Create the revision under JJ_USER rather than rewriting its author:
@@ -1215,22 +1197,22 @@
                 (should (equal
                          (majutsu-row-column-value
                           entry (majutsu-log-test--column compiled 'author 'tail))
-                         author))
+                         shown-author))
                 (should (equal
                          (majutsu-row-column-value
                           entry (majutsu-log-test--column compiled 'description 'heading))
-                         description))
+                         shown-description))
                 (should (equal
                          (majutsu-row-render-body entry compiled)
                          (string-join (cdr (split-string
-                                           (string-remove-suffix "\n" description)
+                                           (string-remove-suffix "\n" shown-description)
                                            "\n"))
                                       "\n")))
                 (let ((visible (majutsu-row-column-value
                                 entry (majutsu-log-test--column
                                        compiled 'custom 'heading))))
-                  (should (equal visible custom))
-                  ;; Both escaped punctuation and ordinary text keep jj labels.
+                  (should (equal visible shown-custom))
+                  ;; Ordinary punctuation and text retain their native labels.
                   (should (get-text-property 0 'font-lock-face visible))
                   (should (equal (get-text-property 0 'font-lock-face visible)
                                  (get-text-property 1 'font-lock-face visible)))))

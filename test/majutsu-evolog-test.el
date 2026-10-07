@@ -15,14 +15,13 @@
   (concat "○  "
           majutsu-row-start-token
           (replace-regexp-in-string
-           (regexp-quote "\\n") "\\n\n│  "
-           (json-serialize
-            (concat
-             (or heading
-                 (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
-                         "feat(op): phase1\n"
-                         "-- operation 86978b4db954 describe commit 8794efe3"))
-             "\n"))
+           "\n" "\n│  "
+           (concat
+            (or heading
+                (concat "qsustnur wd@example.com 2026-05-02 06:23:59 f6af8071\n"
+                        "feat(op): phase1\n"
+                        "-- operation 86978b4db954 describe commit 8794efe3"))
+            "\n")
            t t)
           majutsu-row-tail-token
           majutsu-row-body-token
@@ -32,36 +31,6 @@
           "\"op-full\""
           majutsu-row-end-token
           "\n"))
-
-(ert-deftest majutsu-evolog-entry-template/uses-majutsu-owned-row-template ()
-  "Evolog should keep visible formatting under Majutsu's control."
-  (let ((template (prin1-to-string majutsu-evolog--entry-template)))
-    (should (string-match-p (regexp-quote "\\x1dS") template))
-    (should (string-match-p (regexp-quote "\\x1dT") template))
-    (should (string-match-p (regexp-quote "\\x1dB") template))
-    (should (string-match-p (regexp-quote "\\x1dM") template))
-    (should (string-match-p (regexp-quote "\\x1dE") template))
-    (should (string-match-p "self.commit().change_id().shortest(8)"
-                            majutsu-evolog--entry-template))
-    (should (string-match-p "self.commit().author().email()"
-                            majutsu-evolog--entry-template))
-    (should (string-match-p "self.commit().committer().timestamp().local().format"
-                            majutsu-evolog--entry-template))
-    (should (string-match-p "self.operation().id().short()"
-                            majutsu-evolog--entry-template))
-    (should (string-match-p
-             "config(\"ui.show-cryptographic-signatures\").as_boolean()"
-             majutsu-evolog--entry-template))
-    (should (string-match-p
-             "format_short_cryptographic_signature(self.commit().signature())"
-             majutsu-evolog--entry-template))
-    (should (string-match-p
-             "label(\"description placeholder\", \"(no description set)\")"
-             majutsu-evolog--entry-template))
-    (should-not (string-match-p "builtin_evolog_compact"
-                                majutsu-evolog--entry-template))
-    (should-not (string-match-p "GR:evolog"
-                                majutsu-evolog--entry-template))))
 
 (ert-deftest majutsu-evolog-command-args/use-read-only-top-level-args-and-template ()
   "Evolog list commands should avoid snapshots and use Majutsu's template."

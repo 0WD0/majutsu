@@ -24,6 +24,10 @@
 (defconst majutsu-row-field-separator "\x1e"
   "Separator inserted between fields inside one module payload.")
 
+(defconst majutsu-row-line-separator "\x1f"
+  "Transport newline for visible fields outside the graph heading.
+Literal occurrences in display text are escaped before newlines are encoded.")
+
 (defconst majutsu-row-protocol-global-args
   '("--config=ui.log-word-wrap=false")
   "Top-level jj arguments required to keep row records on protocol lines.")
@@ -102,58 +106,9 @@
   (or majutsu-row-buffer-compiled
       (user-error "No compiled row data in current buffer")))
 
-;;; Post-decode
+;;; Transport validation
 
 (define-error 'majutsu-row-invalid-record "Invalid row record")
-
-(defun majutsu-row--decode-json-field (value)
-  "Decode a JSON field VALUE, preserving its presentation properties.
-Physical newlines are graph carriers inside heading fields; logical
-newlines are represented by JSON escapes."
-  (condition-case nil
-      (let ((start 0))
-        ;; Only an encoded logical newline may introduce a physical graph
-        ;; continuation.  Do not turn malformed, unescaped JSON into valid data.
-        (while (string-match "\n" value start)
-          (let* ((newline (match-beginning 0))
-                 (pos (- newline 2))
-                 (slashes 0))
-            (while (and (>= pos 0) (= (aref value pos) ?\\))
-              (cl-incf slashes)
-              (cl-decf pos))
-            (unless (and (> newline 0)
-                         (= (aref value (1- newline)) ?n)
-                         (cl-oddp slashes))
-              (signal 'majutsu-row-invalid-record nil))
-            (setq start (1+ newline))))
-        (let* ((token (replace-regexp-in-string "\n" "" value t t))
-               (decoded (json-parse-string (substring-no-properties token))))
-          (unless (and (>= (length token) 2)
-                       (= (aref token 0) ?\")
-                       (= (aref token (1- (length token))) ?\")
-                       (stringp decoded))
-            (signal 'majutsu-row-invalid-record nil))
-          ;; Validate the complete token before preserving properties from its
-          ;; individual spans.  JSON parsing alone discards those properties.
-          (let ((pos 1)
-                (end (1- (length token)))
-                parts)
-            (while (< pos end)
-              (let ((next (or (string-match "[\\\\\"]" token pos) end)))
-                (when (> next pos)
-                  (push (substring token pos next) parts))
-                (setq pos next)
-                (when (< pos end)
-                  (let* ((escape-end (+ pos (if (= (aref token (1+ pos)) ?u)
-                                               6 2)))
-                         (text (json-parse-string
-                                (concat "\"" (substring token pos escape-end) "\""))))
-                    (set-text-properties 0 (length text)
-                                         (text-properties-at pos token) text)
-                    (push text parts)
-                    (setq pos escape-end)))))
-            (apply #'concat (nreverse parts)))))
-    (error (signal 'majutsu-row-invalid-record nil))))
 
 ;;; Profile helpers
 
@@ -289,25 +244,25 @@ INSTANCE is a compiler-assigned column occurrence id, not a layout key."
                           templates))))))
 
 (defun majutsu-row-module-template-form (compiled module)
-  "Return an independently JSON-framed template for each COMPILED MODULE field.
-Use jj's template replacement rather than stringifying the field, so labels
-on arbitrary custom templates survive.  Heading newlines also emit a physical
-newline to let jj draw the correct continuation graph."
+  "Return a transport template for the fields of COMPILED MODULE.
+Metadata uses JSON strings.  Visible fields keep jj's labels and escape
+protocol delimiters as printable text; only heading newlines reach the graph."
   (majutsu-row-build-module-template-form
    (mapcar
     (lambda (column)
-      (let ((template (majutsu-template-compile
-                       (majutsu-row--column-template column)
-                       (plist-get (majutsu-row--profile compiled) :self-type))))
-        `[:raw
-          ,(format
-            (concat "concat(\"\\\"\", replace(regex:'[\"\\\\\\x00-\\x1f]', "
-                    "%s, |c| json(stringify(c.get(0))).substr(1, -1)%s), \"\\\"\")")
-            template
-            (if (eq module 'heading)
-                " ++ if(c.get(0) == \"\\n\", \"\\n\")"
-              ""))
-          :Template]))
+      (let* ((template (majutsu-template-compile
+                        (majutsu-row--column-template column)
+                        (plist-get (majutsu-row--profile compiled) :self-type)))
+             (escaped
+              (if (eq module 'metadata)
+                  (format "json(stringify(%s))" template)
+                (format
+                 "replace(regex:'[\\x1d-\\x1f]', %s, |c| json(stringify(c.get(0))).substr(1, -1))"
+                 template))))
+        `[:raw ,(if (memq module '(tail body))
+                    (format "replace(\"\\n\", %s, |_| \"\\x1f\")" escaped)
+                  escaped)
+               :Template]))
     (majutsu-row-module-columns compiled module))))
 
 (defun majutsu-row-template-form (compiled)
@@ -430,7 +385,7 @@ the row is well-formed."
                     :record-end (+ end-pos (length majutsu-row-end-token))))))))))
 
 (defun majutsu-row-split-module-values (payload count)
-  "Split PAYLOAD into exactly COUNT JSON fields, or reject the record."
+  "Split PAYLOAD into exactly COUNT fields, or reject the record."
   (let ((values (unless (and (zerop count) (string-empty-p payload))
                   (majutsu-row-split-by-separator
                    payload majutsu-row-field-separator))))
@@ -440,9 +395,17 @@ the row is well-formed."
 
 ;;; Record helpers
 
-(defun majutsu-row--decode-transport-value (profile value)
-  "Decode JSON VALUE, then apply PROFILE's optional value decoder."
-  (let ((decoded (majutsu-row--decode-json-field value)))
+(defun majutsu-row--decode-transport-value (profile module value)
+  "Decode MODULE's VALUE, then apply PROFILE's optional value decoder."
+  (let ((decoded
+         (condition-case nil
+             (if (eq module 'metadata)
+                 (json-parse-string value)
+               (subst-char-in-string
+                (aref majutsu-row-line-separator 0) ?\n value))
+           (json-error (signal 'majutsu-row-invalid-record nil)))))
+    (unless (stringp decoded)
+      (signal 'majutsu-row-invalid-record nil))
     (if-let* ((fn (plist-get profile :decode-function)))
         (funcall fn decoded)
       decoded)))
@@ -490,7 +453,7 @@ the row is well-formed."
              for raw-value in values
              do (let* ((field (plist-get column :field))
                        (decoded (majutsu-row--decode-transport-value
-                                 profile raw-value))
+                                 profile module raw-value))
                        (base-ctx (list :field field
                                        :module module
                                        :column column
