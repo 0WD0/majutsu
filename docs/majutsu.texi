@@ -771,62 +771,35 @@ fallback.
 @node Log Output Protocol (Sequential Markers)
 @subsection Log Output Protocol (Sequential Markers)
 
-Majutsu's log parser uses an ordered marker protocol embedded in jj template
-output:
+Rows keep display formatting separate from the metadata used by revision
+actions. Templates supply ordinary field values; the compiler owns framing.
+
+Each record has ordered @samp{\x1dS} (heading)@comma{} @samp{\x1dT} (tail)@comma{} @samp{\x1dB} (body)@comma{}
+@samp{\x1dM} (metadata)@comma{} and @samp{\x1dE} (end) markers. Fields within a module are
+separated by @samp{\x1e}.
 
 @itemize
 @item
-Entry start: @samp{\x1dS}
+@strong{Heading fields} retain jj labels and physical newlines@comma{} so jj draws the
+continuation graph.
 @item
-Tail start: @samp{\x1dT}
+@strong{Tail and body fields} retain labels but carry logical newlines as @samp{\x1f};
+these become newlines again before column postprocessing.
 @item
-Body start: @samp{\x1dB}
-@item
-Metadata start: @samp{\x1dM}
-@item
-Entry end: @samp{\x1dE}
+@strong{Metadata fields} are JSON strings@comma{} decoded without display properties.
+Their declared template values remain lossless and are the only source of
+canonical entry fields.
 @end itemize
 
-Within each module payload@comma{} fields are separated by @samp{\x1e}.
+In display fields@comma{} literal @samp{\x1d}@comma{} @samp{\x1e}@comma{} and @samp{\x1f} are rendered as the
+printable escapes @samp{\u001d}@comma{} @samp{\u001e}@comma{} and @samp{\u001f}. This is intentional display
+normalization@comma{} not a lossless control-character round trip. Ordinary quotes@comma{}
+backslashes@comma{} colors@comma{} and multiline headings remain display text.
 
-Protocol control bytes are reserved:
-
-@itemize
-@item
-@samp{\x1d} for module markers
-@item
-@samp{\x1e} for field boundaries
-@item
-@samp{\x1f} for encoded logical newlines
-@end itemize
-
-Avoid emitting these bytes literally in user templates unless intentionally
-participating in the protocol.
-
-Newline rules:
-
-@itemize
-@item
-@strong{heading module}: may contain real physical newlines.
-@item
-@strong{tail/body/metadata modules}: stay in the trailing payload; encode logical
-newlines as @samp{\x1f} and decode them in postprocessing.
-@end itemize
-
-Parsing is strictly sequential and positional (not key/value based):
-
-@enumerate
-@item
-Detect @samp{\x1dS} and lock the entry indent column.
-@item
-Collect heading lines until @samp{\x1dT} is found.
-@item
-Parse @samp{T -> B -> M -> E} payload segments in order on the final heading line
-(no extra physical line breaks between these module markers).
-@item
-Keep lines between current entry @samp{E} and next entry @samp{S} attached to the
-current section heading area (graph continuation lines).
-@end enumerate
+Parsing requires the declared field counts@comma{} valid string metadata@comma{} and a
+complete record ending on its physical line. Invalid records do not create
+actionable sections. Graph lines between records remain attached to the
+preceding section.
 
 @node @code{majutsu-log-commit-columns}
 @subsection @code{majutsu-log-commit-columns}
@@ -1267,15 +1240,16 @@ Like @code{majutsu-find-file}@comma{} but
   display the blob in another frame.
 @end deffn
 
-Each blob buffer identifies an exact workspace@comma{} full commit ID@comma{} and file path.
-Different versions of one change have separate buffers. Revision actions@comma{}
-including Restore and Ediff@comma{} use the displayed commit rather than a newer
-version with the same change ID@.
+Opening a file resolves its revset once and identifies the blob by workspace@comma{}
+full commit ID@comma{} and path. Different versions of one change have separate
+buffers. Revision actions@comma{} including Restore and Ediff@comma{} use the displayed
+commit@comma{} not a newer version of the same change.
 
-Blob inspection supports regular files and text file conflicts@comma{} not symlinks@comma{}
-submodules@comma{} or structural conflicts. A failed or warning-only read leaves the
-previous buffer contents and commit pin intact; an empty regular file remains
-a valid snapshot.
+Explicit refresh resolves the original revset again. Missing files@comma{}
+unsupported tree values@comma{} and warning-only reads leave the previous contents@comma{}
+commit pin@comma{} and refresh target intact. Regular files and text file conflicts
+are supported@comma{} including empty files; symlinks@comma{} submodules@comma{} and structural
+conflicts are not blob-editing inputs.
 
 Blob buffers are read-only snapshots with history-aware navigation:
 @table @asis
