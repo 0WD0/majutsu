@@ -211,7 +211,7 @@ inserters during the same refresh.")
 
 (defvar-local majutsu-diff--source-commit-cache nil
   "Cached single source as ((RANGE . TEXT-TICK) . COMMIT).
-A nil COMMIT is cached too.  Split and Squash share this per-rendering value.")
+A nil COMMIT is cached too.  Patch-selection commands share this per-rendering value.")
 
 (defun majutsu-diff--backend-from-args (args)
   "Return diff backend inferred from ARGS."

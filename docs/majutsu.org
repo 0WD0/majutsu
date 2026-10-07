@@ -990,8 +990,22 @@ Transient arguments:
 #+attr_reference: :kind transient-argument :interface "Absorb transient"
 - Key: -f :: Source revision (=--from=, default =@=).
 - Key: -t :: Destination revset filters (=--into=, repeatable, default =mutable()=).
+- Key: -i :: Open jj's configured diff editor for partial selection.
+- Key: ~=t~ :: Choose jj's diff editor with =--tool=NAME= (implies interactive).
 - Key: -- :: Limit absorb to specific filesets.
 Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
+
+From a single-revision Diff buffer, use ~H~ to select a hunk, ~F~ for a file
+or directory, and ~R~ for a region within a hunk; ~C~ clears these selections.
+Press ~a~ or ~RET~ to absorb the selection using Majutsu's patch tool, without
+enabling =-i=.  The selection can span files; opening the transient at a file
+does not narrow it to that file.  Existing diff fileset limits still apply.
+
+Only selected changes are considered for absorption.  jj assigns them to the
+closest eligible ancestors, restricted by =--into=.  Unselected changes and
+changes jj cannot assign remain in the source revision.  Explicit =-i= or
+=--tool= requests instead use jj's diff editor, as described under
+[[#interactive-patching][Interactive Patching]].
 
 ** Rebasing
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
@@ -1138,14 +1152,15 @@ on one line without changing the underlying paths.
 :END:
 Majutsu provides transient-scoped partial patch selection for Jujutsu
 operations. This allows you to select specific hunks, files, or even regions
-within hunks to include in Split, Squash, or Restore operations.  The selection
-overlays belong to the current transient session and are cleared when that
-session ends; they are not a persistent staging area.
+within hunks to include in Split, Squash, Absorb, or Restore operations.  The
+selection overlays belong to the current transient session and are cleared
+when that session ends; they are not a persistent staging area.
 
 *** How It Works
-Interactive selection is integrated into the Split (~S~), Squash (~s~), and
-Restore (~R~) transients. When you open one of these transients from a Diff
-buffer, a "Patch Selection" group appears with the following commands:
+Interactive selection is integrated into the Split (~S~), Squash (~s~),
+Absorb (~a~), and Restore (~R~) transients. When you open one of these
+transients from a compatible Diff buffer, a "Patch Selection" group appears
+with the following commands:
 
 | Key | Command                           | Description                                                     |
 |-----+-----------------------------------+-----------------------------------------------------------------|
@@ -1161,29 +1176,32 @@ file changes, including hidden files.  A partially selected directory becomes
 fully selected; a fully selected one is cleared.  Files outside that directory
 are unaffected.
 
-The =-i= argument is a separate, jj-native workflow.  When no H/F/R patch
-selection is active, Majutsu forwards =--interactive= (and Split/Squash's
-=--tool= argument) to jj; =--interactive= therefore uses the user's configured
-=ui.diff-editor=.  Majutsu does not silently replace that editor with Ediff.
-The H/F/R workflow instead supplies Majutsu's own temporary patch tool when the
-operation is executed.
+The =-i= and =--tool= arguments are a separate, jj-native workflow.  Explicit
+editor requests take precedence over H/F/R selections and use jj's configured
+=ui.diff-editor= or the named tool.  Majutsu does not silently replace that
+editor with Ediff.  The H/F/R workflow instead supplies Majutsu's own temporary
+patch tool when the operation is executed without an explicit editor request.
 
 *** Diff Context Inheritance
-When opening Split, Squash, or Restore from a Diff buffer, each transient maps
-the compatible part of the diff context to its own command:
+When opening Split, Squash, Absorb, or Restore from a Diff buffer, each
+transient maps the compatible part of the diff context to its own command:
 - Split inherits exactly one resolvable =--revisions= source as =--revision=; it
   never passes a diff's arbitrary =--from= / =--to= range to =jj split=.
 - Squash turns =--revisions= into =--from= sources and retains those sources
   when you choose an explicit destination. An arbitrary =--from= / =--to= tree
   diff is not treated as a Squash source.
+- Absorb uses =--revisions= as =--from=.  Patch selection requires a single
+  source commit and refuses a different =--from= or an aggregate diff.
 - Restore turns exactly one resolvable =--revisions= source into
   =--changes-in= and inherits explicit =--from= / =--to= endpoints. An
   aggregate revision diff is not inferred as a Restore operation; choose an
   explicit Restore context before using either Majutsu patch selection or
   jj's own diff editor.
 
-Use a revision diff for Split or Squash. An arbitrary =--from= / =--to= range
-is meaningful as inherited context only for Restore.
+Use a single-revision diff for Split or Absorb patch selection. Squash also
+requires a single revision for patch selection, but can pass a source range
+to jj's editor. An arbitrary =--from= / =--to= range is a compatible patch
+context only for Restore.
 
 This means you can:
 1. View a diff with specific =--from= / =--to= revisions
@@ -1207,7 +1225,7 @@ Majutsu patch selection and jj's own diff-editor selection are separate
 workflows.  The =-i= / =--interactive= and =--tool=NAME= infixes start jj's
 configured diff editor without replacing it with Majutsu's patch helper.  This
 uses =--tool= exactly as jj defines it; =-t= remains a destination option for
-Squash and Restore, not a tool abbreviation.
+Squash, Absorb, and Restore, not a tool abbreviation.
 
 If an Emacs patch selection is active and you explicitly request a jj editor,
 the jj editor wins and the Emacs selection is retained.  With no explicit jj
@@ -1225,9 +1243,9 @@ The default jj editor, =:builtin=, is a terminal TUI.  Customize
 =majutsu-diff-editor-host= to choose how Majutsu hosts it:
 
 - =auto= (the default) uses Ghostel when available.  Local commands which may
-  open a later description editor also need a working =emacsclient=; Restore
-  does not.  Ghostel-supported TRAMP sessions use with-editor's remote
-  sleeping-editor bridge instead.
+  open a later description editor also need a working =emacsclient=; Absorb
+  and Restore do not.  Ghostel-supported TRAMP sessions use with-editor's
+  remote sleeping-editor bridge instead.
 - =ghostel= requires Ghostel and supports jj's built-in TUI and external
   terminal editors.
 - =process= is for external non-terminal tools only; Majutsu rejects
@@ -1236,8 +1254,8 @@ The default jj editor, =:builtin=, is a terminal TUI.  Customize
 Ghostel is optional.  A local Split or Squash session needs a working
 =emacsclient= only when its arguments can lead to a description editor;
 explicit message options avoid that phase unless =--editor= is also set.
-Restore has no description-editing phase.  On a Ghostel-supported POSIX TRAMP
-remote, Ghostel starts a remote PTY and with-editor uses its sleeping-editor
+Absorb and Restore have no description-editing phase.  On a Ghostel-supported
+POSIX TRAMP remote, Ghostel starts a remote PTY and with-editor uses its sleeping-editor
 protocol, so no local =emacsclient= is needed.  Majutsu associates jj's remote
 temporary description file with its workspace before it is visited, keeping
 description-buffer commands in the right workspace.  A =WITH-EDITOR= control
@@ -1276,8 +1294,8 @@ TUI exits.
 *** Selection Semantics
 The meaning of "selected" differs by operation:
 
-A Majutsu patch selection belongs to the Split, Squash, or Restore transient
-where it was first made.  It cannot silently be reused by a different command:
+A Majutsu patch selection belongs to the Split, Squash, Absorb, or Restore
+transient where it was first made.  It cannot silently be reused by a different command:
 clear it first.  Explicit jj editor requests are independent and do not inspect
 or consume that selection.
 
@@ -1295,6 +1313,12 @@ squash only the changes to file A into the parent:
 2. Open Squash transient (~s~)
 3. Press ~F~ on file A to select all its hunks
 4. Execute squash - file A's changes go to parent, B and C stay
+
+**** Absorb
+For Absorb, selected hunks/regions are candidates for jj's automatic
+assignment to ancestors.  Unlike Squash, =--into= filters eligible ancestors
+rather than choosing one destination for the entire patch.  Unselected
+changes and selected changes jj cannot absorb remain in the source revision.
 
 **** Restore
 For Restore, selected content is what gets *restored* (undone):
@@ -1322,7 +1346,7 @@ operation with selections:
    input files.
 
 3. *Patch Application*:
-  - For *Split/Squash*: The tool resets =$right= (current state) to =$left=
+  - For *Split/Squash/Absorb*: The tool resets =$right= (current state) to =$left=
     (parent state), then applies the patch forward. This results in =$right=
     containing only the selected changes.
    - For *Restore*: =$right= starts at the source state.  The tool applies the

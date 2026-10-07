@@ -532,8 +532,8 @@ COMMAND identifies the transient whose whole-file selections are toggled."
       (should-not (majutsu-interactive-has-selections-p)))))
 
 (ert-deftest majutsu-interactive-toggle-file/selects-hunkless-file-for-supported-operations ()
-  "Split, squash, and restore can select a binary file as one operation."
-  (dolist (command '(majutsu-split majutsu-squash majutsu-restore))
+  "Patch-selection commands can select a binary file as one operation."
+  (dolist (command '(majutsu-split majutsu-squash majutsu-absorb majutsu-restore))
     (with-temp-buffer
       (let* ((diff "diff --git a/bin.dat b/bin.dat\nnew file mode 100644\nBinary files /dev/null and b/bin.dat differ\n")
              (section (majutsu-interactive-test--insert-diff

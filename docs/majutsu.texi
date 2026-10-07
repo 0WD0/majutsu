@@ -1764,11 +1764,29 @@ Source revision (@samp{--from}@comma{} default @samp{@@}).
 @item @kbd{-t}
 @kindex -t
 Destination revset filters (@samp{--into}@comma{} repeatable@comma{} default @samp{mutable()}).
+@item @kbd{-i}
+@kindex -i
+Open jj's configured diff editor for partial selection.
+@item @kbd{@code{=t}}
+@kindex @code{=t}
+Choose jj's diff editor with @samp{--tool=NAME} (implies interactive).
 @item @kbd{--}
 @kindex --
 Limit absorb to specific filesets.
 @end table
 Runs: @samp{jj absorb --from REV --into REVSETS... [FILESETS...]}
+
+From a single-revision Diff buffer@comma{} use @code{H} to select a hunk@comma{} @code{F} for a file
+or directory@comma{} and @code{R} for a region within a hunk; @code{C} clears these selections.
+Press @code{a} or @code{RET} to absorb the selection using Majutsu's patch tool@comma{} without
+enabling @samp{-i}.  The selection can span files; opening the transient at a file
+does not narrow it to that file.  Existing diff fileset limits still apply.
+
+Only selected changes are considered for absorption.  jj assigns them to the
+closest eligible ancestors@comma{} restricted by @samp{--into}.  Unselected changes and
+changes jj cannot assign remain in the source revision.  Explicit @samp{-i} or
+@samp{--tool} requests instead use jj's diff editor@comma{} as described under
+@ref{Interactive Patching, , Interactive Patching}.
 
 @node Rebasing
 @section Rebasing
@@ -2051,9 +2069,9 @@ on one line without changing the underlying paths.
 
 Majutsu provides transient-scoped partial patch selection for Jujutsu
 operations. This allows you to select specific hunks@comma{} files@comma{} or even regions
-within hunks to include in Split@comma{} Squash@comma{} or Restore operations.  The selection
-overlays belong to the current transient session and are cleared when that
-session ends; they are not a persistent staging area.
+within hunks to include in Split@comma{} Squash@comma{} Absorb@comma{} or Restore operations.  The
+selection overlays belong to the current transient session and are cleared
+when that session ends; they are not a persistent staging area.
 
 @menu
 * How It Works::
@@ -2071,9 +2089,10 @@ session ends; they are not a persistent staging area.
 @node How It Works
 @subsection How It Works
 
-Interactive selection is integrated into the Split (@code{S})@comma{} Squash (@code{s})@comma{} and
-Restore (@code{R}) transients. When you open one of these transients from a Diff
-buffer@comma{} a "Patch Selection" group appears with the following commands:
+Interactive selection is integrated into the Split (@code{S})@comma{} Squash (@code{s})@comma{}
+Absorb (@code{a})@comma{} and Restore (@code{R}) transients. When you open one of these
+transients from a compatible Diff buffer@comma{} a "Patch Selection" group appears
+with the following commands:
 
 @multitable {aaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Key
@@ -2100,18 +2119,17 @@ file changes@comma{} including hidden files.  A partially selected directory bec
 fully selected; a fully selected one is cleared.  Files outside that directory
 are unaffected.
 
-The @samp{-i} argument is a separate@comma{} jj-native workflow.  When no H/F/R patch
-selection is active@comma{} Majutsu forwards @samp{--interactive} (and Split/Squash's
-@samp{--tool} argument) to jj; @samp{--interactive} therefore uses the user's configured
-@samp{ui.diff-editor}.  Majutsu does not silently replace that editor with Ediff.
-The H/F/R workflow instead supplies Majutsu's own temporary patch tool when the
-operation is executed.
+The @samp{-i} and @samp{--tool} arguments are a separate@comma{} jj-native workflow.  Explicit
+editor requests take precedence over H/F/R selections and use jj's configured
+@samp{ui.diff-editor} or the named tool.  Majutsu does not silently replace that
+editor with Ediff.  The H/F/R workflow instead supplies Majutsu's own temporary
+patch tool when the operation is executed without an explicit editor request.
 
 @node Diff Context Inheritance
 @subsection Diff Context Inheritance
 
-When opening Split@comma{} Squash@comma{} or Restore from a Diff buffer@comma{} each transient maps
-the compatible part of the diff context to its own command:
+When opening Split@comma{} Squash@comma{} Absorb@comma{} or Restore from a Diff buffer@comma{} each
+transient maps the compatible part of the diff context to its own command:
 @itemize
 @item
 Split inherits exactly one resolvable @samp{--revisions} source as @samp{--revision}; it
@@ -2121,6 +2139,9 @@ Squash turns @samp{--revisions} into @samp{--from} sources and retains those sou
 when you choose an explicit destination. An arbitrary @samp{--from} / @samp{--to} tree
 diff is not treated as a Squash source.
 @item
+Absorb uses @samp{--revisions} as @samp{--from}.  Patch selection requires a single
+source commit and refuses a different @samp{--from} or an aggregate diff.
+@item
 Restore turns exactly one resolvable @samp{--revisions} source into
 @samp{--changes-in} and inherits explicit @samp{--from} / @samp{--to} endpoints. An
 aggregate revision diff is not inferred as a Restore operation; choose an
@@ -2128,8 +2149,10 @@ explicit Restore context before using either Majutsu patch selection or
 jj's own diff editor.
 @end itemize
 
-Use a revision diff for Split or Squash. An arbitrary @samp{--from} / @samp{--to} range
-is meaningful as inherited context only for Restore.
+Use a single-revision diff for Split or Absorb patch selection. Squash also
+requires a single revision for patch selection@comma{} but can pass a source range
+to jj's editor. An arbitrary @samp{--from} / @samp{--to} range is a compatible patch
+context only for Restore.
 
 This means you can:
 @enumerate
@@ -2163,7 +2186,7 @@ Majutsu patch selection and jj's own diff-editor selection are separate
 workflows.  The @samp{-i} / @samp{--interactive} and @samp{--tool=NAME} infixes start jj's
 configured diff editor without replacing it with Majutsu's patch helper.  This
 uses @samp{--tool} exactly as jj defines it; @samp{-t} remains a destination option for
-Squash and Restore@comma{} not a tool abbreviation.
+Squash@comma{} Absorb@comma{} and Restore@comma{} not a tool abbreviation.
 
 If an Emacs patch selection is active and you explicitly request a jj editor@comma{}
 the jj editor wins and the Emacs selection is retained.  With no explicit jj
@@ -2183,9 +2206,9 @@ The default jj editor@comma{} @samp{:builtin}@comma{} is a terminal TUI@.  Custo
 @itemize
 @item
 @samp{auto} (the default) uses Ghostel when available.  Local commands which may
-open a later description editor also need a working @samp{emacsclient}; Restore
-does not.  Ghostel-supported TRAMP sessions use with-editor's remote
-sleeping-editor bridge instead.
+open a later description editor also need a working @samp{emacsclient}; Absorb
+and Restore do not.  Ghostel-supported TRAMP sessions use with-editor's
+remote sleeping-editor bridge instead.
 @item
 @samp{ghostel} requires Ghostel and supports jj's built-in TUI and external
 terminal editors.
@@ -2197,8 +2220,8 @@ terminal editors.
 Ghostel is optional.  A local Split or Squash session needs a working
 @samp{emacsclient} only when its arguments can lead to a description editor;
 explicit message options avoid that phase unless @samp{--editor} is also set.
-Restore has no description-editing phase.  On a Ghostel-supported POSIX TRAMP
-remote@comma{} Ghostel starts a remote PTY and with-editor uses its sleeping-editor
+Absorb and Restore have no description-editing phase.  On a Ghostel-supported
+POSIX TRAMP remote@comma{} Ghostel starts a remote PTY and with-editor uses its sleeping-editor
 protocol@comma{} so no local @samp{emacsclient} is needed.  Majutsu associates jj's remote
 temporary description file with its workspace before it is visited@comma{} keeping
 description-buffer commands in the right workspace.  A @samp{WITH-EDITOR} control
@@ -2241,8 +2264,8 @@ TUI exits.
 
 The meaning of "selected" differs by operation:
 
-A Majutsu patch selection belongs to the Split@comma{} Squash@comma{} or Restore transient
-where it was first made.  It cannot silently be reused by a different command:
+A Majutsu patch selection belongs to the Split@comma{} Squash@comma{} Absorb@comma{} or Restore
+transient where it was first made.  It cannot silently be reused by a different command:
 clear it first.  Explicit jj editor requests are independent and do not inspect
 or consume that selection.
 
@@ -2274,6 +2297,15 @@ Press @code{F} on file A to select all its hunks
 @item
 Execute squash - file A's changes go to parent@comma{} B and C stay
 @end enumerate
+
+@item
+@anchor{Absorb}Absorb
+
+
+For Absorb@comma{} selected hunks/regions are candidates for jj's automatic
+assignment to ancestors.  Unlike Squash@comma{} @samp{--into} filters eligible ancestors
+rather than choosing one destination for the entire patch.  Unselected
+changes and selected changes jj cannot absorb remain in the source revision.
 
 @item
 @anchor{Restore}Restore
@@ -2317,7 +2349,7 @@ input files.
 @strong{Patch Application}:
 @itemize
 @item
-For @strong{Split/Squash}: The tool resets @samp{$right} (current state) to @samp{$left}
+For @strong{Split/Squash/Absorb}: The tool resets @samp{$right} (current state) to @samp{$left}
 (parent state)@comma{} then applies the patch forward. This results in @samp{$right}
 containing only the selected changes.
 @itemize
