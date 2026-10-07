@@ -477,7 +477,7 @@ until an accessible directory is found.  Return nil if none is found."
 
 ;;; Change at Point
 
-(defvar majutsu-buffer-blob-revision)
+(defvar majutsu-buffer-blob-commit-id)
 (defvar majutsu-buffer-diff-range)
 
 (defun majutsu--regexp-char-class (chars)
@@ -502,8 +502,8 @@ until an accessible directory is found.  Return nil if none is found."
 
 (defun majutsu--buffer-revision-at-point ()
   "Return the revision implied by the surrounding Majutsu buffer."
-  (or (and (bound-and-true-p majutsu-buffer-blob-revision)
-           majutsu-buffer-blob-revision)
+  (or (and (bound-and-true-p majutsu-buffer-blob-commit-id)
+           majutsu-buffer-blob-commit-id)
       (majutsu--diff-revision-at-point)))
 
 (defun majutsu-revision-at-point ()

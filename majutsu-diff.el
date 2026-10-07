@@ -145,7 +145,7 @@ Assumes current buffer contains a unified diff."
     (goto-char (point-min))
     (catch 'found
       (while (re-search-forward
-              "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@.*\\n"
+              "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@.*\n"
               nil t)
         (let* ((from-beg (string-to-number (match-string 1)))
                (from-len (if (match-string 2)
@@ -154,11 +154,14 @@ Assumes current buffer contains a unified diff."
                (to-len (if (match-string 4)
                            (string-to-number (match-string 4))
                          1)))
+          (when (zerop from-len)
+            (setq from-beg (1+ from-beg)))
           (if (<= from-beg line)
               (if (<= (+ from-beg from-len) line)
                   (setq offset (+ offset (- to-len from-len)))
                 (let ((rest (- line from-beg)))
-                  (while (> rest 0)
+                  (while (and (not (eobp))
+                              (or (> rest 0) (eq (char-after) ?+)))
                     (pcase (char-after)
                       (?\s (setq rest (1- rest)))
                       (?- (setq offset (1- offset))
@@ -173,8 +176,9 @@ Assumes current buffer contains a unified diff."
 ROOT is the repository root.  Returns the adjusted line number."
   (let ((default-directory root))
     (with-temp-buffer
-      (majutsu-jj-insert "diff" "--from" from-rev "--to" to-rev "--"
-                         (majutsu-jj-fileset-quote file))
+      (majutsu--with-no-color
+        (majutsu-jj-insert "diff" "--git" "--from" from-rev "--to" to-rev "--"
+                           (majutsu-jj-fileset-quote file)))
       (if (= (point-min) (point-max))
           line
         (majutsu-diff--offset-in-buffer line)))))

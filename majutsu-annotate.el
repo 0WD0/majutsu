@@ -506,8 +506,6 @@ that has a parent revision, then recursively annotate the parent."
                   ;; change is divergent.
                   (and (bound-and-true-p majutsu-buffer-blob-commit-id)
                        majutsu-buffer-blob-commit-id)
-                  (and (bound-and-true-p majutsu-buffer-blob-revision)
-                       majutsu-buffer-blob-revision)
                   "@"))
          (default-directory root))
     (message "Annotating...")

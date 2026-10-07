@@ -22,6 +22,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'majutsu)
+(require 'majutsu-conflict)
 
 (declare-function magit-find-file "magit-files" (rev file))
 
@@ -33,8 +34,6 @@
 
 (defvar-local majutsu-buffer-blob-revset nil
   "Input revset string for this blob buffer.")
-(defvar-local majutsu-buffer-blob-revision nil
-  "Resolved single change-id for this blob buffer.")
 (defvar-local majutsu-buffer-blob-change-id nil
   "Resolved single change-id for this blob buffer.")
 (defvar-local majutsu-buffer-blob-commit-id nil
@@ -47,7 +46,6 @@
   "Hash of blob buffer content after last successful refresh.")
 
 (put 'majutsu-buffer-blob-revset 'permanent-local t)
-(put 'majutsu-buffer-blob-revision 'permanent-local t)
 (put 'majutsu-buffer-blob-change-id 'permanent-local t)
 (put 'majutsu-buffer-blob-commit-id 'permanent-local t)
 (put 'majutsu-buffer-blob-path 'permanent-local t)
@@ -164,6 +162,39 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
      (t
       (user-error "Repository operation changed during file write")))))
 
+(defun majutsu-file--read-contents (commit path)
+  "Read an existing regular file or text file conflict at COMMIT and PATH.
+Keep type metadata separate from content, including for an empty file.
+Signal before changing a blob buffer if the path cannot be read or edited."
+  (with-temp-buffer
+    (let ((result (majutsu--jj-insert
+                   'full "--ignore-working-copy" "--color=never"
+                   "file" "show" "-r" commit "-T" "file_type ++ \"\\0\""
+                   "--" (majutsu-jj-fileset-quote path))))
+      (unless (and (integerp result) (zerop result))
+        (user-error "Cannot read %s at %s: %s" path commit result)))
+    (goto-char (point-min))
+    (unless (search-forward "\0" nil t)
+      (user-error "No regular file at %s in %s" path commit))
+    (let ((type (buffer-substring-no-properties (point-min) (1- (point)))))
+      (unless (member type '("file" "conflict"))
+        (user-error "Cannot edit %s: not a regular file (%s)" path type))
+      (delete-region (point-min) (point))
+      (when (and (equal type "conflict")
+                 (not (majutsu-conflict-parse-buffer)))
+        (user-error "Cannot edit %s: not a supported text file conflict" path))
+      (buffer-string))))
+
+(defun majutsu-file--check-editable (commit path)
+  "Refuse writing unsupported tree values at COMMIT and PATH.
+Validate the pinned tree, not the current workspace's filesystem types."
+  (pcase (majutsu-file--jj-output
+          "--ignore-working-copy" "file" "list" "-r" commit
+          "-T" "file_type" "--" (majutsu-jj-fileset-quote path))
+    ("file" nil)
+    ("conflict" (majutsu-file--read-contents commit path))
+    (type (user-error "Cannot edit %s: not a regular file (%s)" path type))))
+
 (defun majutsu-file-apply-contents (commit change contents)
   "Write CONTENTS to pinned COMMIT and return its verified successor.
 CHANGE is COMMIT's full change id.  CONTENTS is an alist of existing
@@ -185,6 +216,7 @@ unverifiable write.  A semantic no-op returns COMMIT, not a divergent sibling."
                            (not (file-name-absolute-p path))
                            (file-in-directory-p target directory))
                 (user-error "Not a repository-relative file path: %s" path))
+              (majutsu-file--check-editable commit path)
               (make-directory (file-name-directory target) t)
               (with-temp-file target
                 (insert (cdr entry)))))
@@ -221,12 +253,17 @@ saves until the user explicitly reverts the blob."
     (user-error "Previous blob save is unverified; abort and revert the blob"))
   (unless (and majutsu-buffer-blob-commit-id majutsu-buffer-blob-change-id)
     (user-error "Missing pinned blob revision; revert the blob before saving"))
-  (let ((default-directory majutsu-buffer-blob-root))
-    (setq majutsu-blob-edit--save-unverified t)
-    (prog1 (majutsu-file-apply-contents
-            majutsu-buffer-blob-commit-id majutsu-buffer-blob-change-id
-            (list (cons majutsu-buffer-blob-path content)))
-      (setq majutsu-blob-edit--save-unverified nil))))
+  (let ((default-directory majutsu-buffer-blob-root)
+        (owner (current-buffer)))
+    (majutsu-process-register-interactive-session default-directory owner)
+    (unwind-protect
+        (progn
+          (setq majutsu-blob-edit--save-unverified t)
+          (prog1 (majutsu-file-apply-contents
+                  majutsu-buffer-blob-commit-id majutsu-buffer-blob-change-id
+                  (list (cons majutsu-buffer-blob-path content)))
+            (setq majutsu-blob-edit--save-unverified nil)))
+      (majutsu-process-unregister-interactive-session default-directory owner))))
 
 (defvar-keymap majutsu-blob-edit-mode-map
   :doc "Keymap for `majutsu-blob-edit-mode'."
@@ -241,7 +278,7 @@ This function is used from `write-contents-functions' in editable blob mode."
       nil
     (unless (and majutsu-buffer-blob-root
                  majutsu-buffer-blob-path
-                 majutsu-buffer-blob-revision)
+                 majutsu-buffer-blob-commit-id)
       (user-error "Missing blob context for editable save"))
     (let ((current (buffer-substring-no-properties (point-min) (point-max))))
       (if (equal current majutsu-blob-edit--original-content)
@@ -267,7 +304,7 @@ Edits are applied to the revision through jj diffedit when saving."
   (unless (and (bound-and-true-p majutsu-blob-mode)
                majutsu-buffer-blob-root
                majutsu-buffer-blob-path
-               majutsu-buffer-blob-revision)
+               majutsu-buffer-blob-commit-id)
     (user-error "Not in a blob buffer"))
   (unless majutsu-blob-edit-mode
     (majutsu-blob-edit-mode 1)))
@@ -391,11 +428,8 @@ the change's newest visible version and say so."
         info)))
 
 (defun majutsu-file--blob-target ()
-  "Return the revset jj commands should use for this blob's revision.
-Prefer the pinned commit id: a change id is ambiguous once the
-change is divergent, while the commit id always names exactly the
-version this buffer shows."
-  (or majutsu-buffer-blob-commit-id majutsu-buffer-blob-revision))
+  "Return the full commit id of the snapshot shown in this blob."
+  majutsu-buffer-blob-commit-id)
 
 (defun majutsu-file--resolve-single-rev (revset)
   "Resolve REVSET to a single revision string.
@@ -590,6 +624,16 @@ ITEMS contains strings or (PATH . ANNOTATION) pairs."
   "Return a blob buffer name for REVSET and PATH."
   (format "%s@~%s~" path revset))
 
+(defun majutsu-file--find-blob-buffer (root commit path)
+  "Find a blob buffer for the exact ROOT, COMMIT and PATH snapshot."
+  (seq-find
+   (lambda (buffer)
+     (with-current-buffer buffer
+       (and (equal majutsu-buffer-blob-root root)
+            (equal majutsu-buffer-blob-commit-id commit)
+            (equal majutsu-buffer-blob-path path))))
+   (buffer-list)))
+
 (defun majutsu-file--root ()
   "Return repo root for current buffer."
   (or (majutsu--buffer-root) (majutsu-toplevel default-directory)))
@@ -680,25 +724,29 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
              (commit-id (plist-get rev-info :commit-id))
              (short-rev (majutsu-file--short-id resolved))
              (buf-name (majutsu-file--buffer-name short-rev file-rel))
-             (buffer (get-buffer-create buf-name)))
-        (with-current-buffer buffer
-          (when (or revert
-                    (eq revert 'ask-revert)
-                    (not majutsu-buffer-blob-path))
-            (when (or (not (eq revert 'ask-revert))
-                      (y-or-n-p (format "%s already exists; revert it? "
-                                        (buffer-name))))
-              (setq majutsu-buffer-blob-root root)
-              (setq majutsu-buffer-blob-revset rev)
-              (setq majutsu-buffer-blob-revision resolved)
-              (setq majutsu-buffer-blob-change-id resolved)
-              (setq majutsu-buffer-blob-commit-id commit-id)
-              (setq majutsu-buffer-blob-path file-rel)
-              (setq default-directory (if (file-exists-p defdir) defdir root))
-              (setq-local revert-buffer-function #'majutsu-file-revert-buffer)
-              (majutsu-file-revert-buffer nil t)
-              (run-hooks 'majutsu-find-file-hook))))
-        buffer))))
+             (existing (majutsu-file--find-blob-buffer root commit-id file-rel))
+             (buffer (or existing (generate-new-buffer buf-name)))
+             ready)
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer
+                (when (and (or revert (not existing))
+                           (or (not (eq revert 'ask-revert))
+                               (y-or-n-p (format "%s already exists; revert it? "
+                                                 (buffer-name)))))
+                  (setq majutsu-buffer-blob-root root)
+                  (setq majutsu-buffer-blob-revset rev)
+                  (setq majutsu-buffer-blob-change-id resolved)
+                  (setq majutsu-buffer-blob-commit-id commit-id)
+                  (setq majutsu-buffer-blob-path file-rel)
+                  (setq default-directory (if (file-exists-p defdir) defdir root))
+                  (setq-local revert-buffer-function #'majutsu-file-revert-buffer)
+                  (majutsu-file-revert-buffer nil t)
+                  (run-hooks 'majutsu-find-file-hook)))
+              (setq ready t)
+              buffer)
+          (unless (or ready existing)
+            (kill-buffer buffer)))))))
 
 (defun majutsu-file--current-content-hash ()
   "Return the hash for current buffer text."
@@ -706,9 +754,9 @@ only after asking.  A non-nil value for REVERT is ignored if REV is nil."
 
 (defun majutsu-file--refresh-buffer-name ()
   "Refresh blob buffer name using current path and change-id."
-  (when (and majutsu-buffer-blob-path majutsu-buffer-blob-revision)
+  (when (and majutsu-buffer-blob-path majutsu-buffer-blob-change-id)
     (let ((expected (majutsu-file--buffer-name
-                     (majutsu-file--short-id majutsu-buffer-blob-revision)
+                     (majutsu-file--short-id majutsu-buffer-blob-change-id)
                      majutsu-buffer-blob-path)))
       (unless (equal (buffer-name) expected)
         (rename-buffer expected t)))))
@@ -735,7 +783,7 @@ If revision metadata moved, preserve location heuristically:
              (path majutsu-buffer-blob-path)
              (line (line-number-at-pos))
              (col (current-column))
-             (old-change (or majutsu-buffer-blob-change-id majutsu-buffer-blob-revision))
+             (old-change majutsu-buffer-blob-change-id)
              (old-commit majutsu-buffer-blob-commit-id)
              (rev-info (or (majutsu-file--resolve-blob-rev-info majutsu-buffer-blob-revset)
                            (user-error "Revset no longer resolves to a single revision")))
@@ -765,10 +813,9 @@ If revision metadata moved, preserve location heuristically:
                 target-col 0)))
         (if (not reload-needed)
             nil
-          (erase-buffer)
-          (majutsu-jj-insert "file" "show" "-r"
-                             (or new-commit (majutsu-file--normalize-revset majutsu-buffer-blob-revset))
-                             (majutsu-jj-fileset-quote path))
+          (let ((contents (majutsu-file--read-contents new-commit path)))
+            (erase-buffer)
+            (insert contents))
           (let ((buffer-file-name (expand-file-name path default-directory))
                 (after-change-major-mode-hook
                  (seq-difference after-change-major-mode-hook
@@ -776,7 +823,6 @@ If revision metadata moved, preserve location heuristically:
                                    global-diff-hl-mode-enable-in-buffers)
                                  #'eq)))
             (normal-mode (not enable-local-variables)))
-          (setq majutsu-buffer-blob-revision new-change)
           (setq majutsu-buffer-blob-change-id new-change)
           (setq majutsu-buffer-blob-commit-id new-commit)
           (majutsu-file--refresh-buffer-name)
@@ -861,19 +907,11 @@ Preserves line/column position from the blob buffer."
   (unless (and (bound-and-true-p majutsu-blob-mode)
                majutsu-buffer-blob-root
                majutsu-buffer-blob-path
-               majutsu-buffer-blob-revset)
+               majutsu-buffer-blob-commit-id)
     (user-error "Not in a blob buffer"))
   (let* ((line (line-number-at-pos))
          (col (current-column))
          (default-directory majutsu-buffer-blob-root))
-    (when (and (not majutsu-buffer-blob-commit-id)
-               majutsu-buffer-blob-revset)
-      (when-let* ((rev-info (majutsu-file--resolve-blob-rev-info majutsu-buffer-blob-revset))
-                  (new-change (plist-get rev-info :change-id)))
-        (setq majutsu-buffer-blob-revision new-change)
-        (setq majutsu-buffer-blob-change-id new-change)
-        (setq majutsu-buffer-blob-commit-id (plist-get rev-info :commit-id))
-        (majutsu-file--refresh-buffer-name)))
     (let ((commit majutsu-buffer-blob-commit-id))
       (unless (and commit (not (string-empty-p commit)))
         (user-error "Revset does not resolve to a single commit"))
@@ -932,7 +970,7 @@ DIRECTION should be either \='prev or \='next."
 (defun majutsu-blob-previous ()
   "Visit previous blob that modified current file."
   (interactive)
-  (unless (and majutsu-buffer-blob-revision majutsu-buffer-blob-path)
+  (unless (and majutsu-buffer-blob-commit-id majutsu-buffer-blob-path)
     (user-error "Not in a blob buffer"))
   (let* ((root majutsu-buffer-blob-root)
          (from-rev (majutsu-file--blob-target))
@@ -949,7 +987,7 @@ DIRECTION should be either \='prev or \='next."
 (defun majutsu-blob-next ()
   "Visit next blob that modified current file."
   (interactive)
-  (unless (and majutsu-buffer-blob-revision majutsu-buffer-blob-path)
+  (unless (and majutsu-buffer-blob-commit-id majutsu-buffer-blob-path)
     (user-error "Not in a blob buffer"))
   (let* ((root majutsu-buffer-blob-root)
          (from-rev (majutsu-file--blob-target))
