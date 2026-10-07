@@ -523,6 +523,52 @@
         (should (equal seen "zzzabcde"))
         (should (equal seen-default-directory "/tmp/test-repo/"))))))
 
+(ert-deftest majutsu-jjdescription-history-replaces-interleaved-drafts ()
+  "History replaces all message text, including text after JJ comments."
+  (dolist (draft '("JJ: Enter a description.\nold summary\n\nJJ: note\nold body\n\nJJ: ignore-rest\nuntouched diff\n"
+                   "JJ: Description from destination commit:\nold destination\nJJ: Description from source commit:\nold source\n\nJJ: ignore-rest\nuntouched diff\n"))
+    (majutsu-jjdescription-test--with-temp-buffer
+      (let ((log-edit-comment-ring-index nil))
+        (insert draft)
+        (ring-insert log-edit-comment-ring "replacement\n")
+        (majutsu-jjdescription-prev-message 1)
+        (should (equal (majutsu-jjdescription-buffer-message) "replacement\n"))
+        (should (string-suffix-p "JJ: ignore-rest\nuntouched diff\n" (buffer-string)))
+        (should-not (string-match-p "old " (buffer-string)))
+        (majutsu-jjdescription-next-message 1)
+        (should (string-match-p "old " (majutsu-jjdescription-buffer-message)))))))
+
+(ert-deftest majutsu-jjdescription-history-rejects-bulk-before-editing ()
+  "Bulk drafts are rejected without changing either buffer or history."
+  (majutsu-jjdescription-test--with-temp-buffer
+    (insert "JJ: describe abcdefgh -------\nfirst\nJJ: describe zzzzzzzz -------\nsecond\n")
+    (ring-insert log-edit-comment-ring "replacement\n")
+    (let ((before (buffer-string))
+          (log-edit-comment-ring-index nil))
+      (should-error (majutsu-jjdescription-prev-message 1) :type 'user-error)
+      (should (equal (buffer-string) before))
+      (should (= (ring-length log-edit-comment-ring) 1))
+      (should-not log-edit-comment-ring-index))))
+
+(ert-deftest majutsu-jjdescription-server-visit-ignores-unrelated-files ()
+  "Unrelated server visits must not inspect process or repository state."
+  (cl-letf (((symbol-function 'process-get)
+             (lambda (&rest _) (ert-fail "Unrelated visit inspected process")))
+            ((symbol-function 'majutsu-toplevel)
+             (lambda (&rest _) (ert-fail "Unrelated visit probed repository"))))
+    (majutsu-jjdescription--remember-server-visit-roots
+     '(("/tmp/ordinary.txt" (1 . 0))) nil)))
+
+(ert-deftest majutsu-jjdescription-history-replaces-unterminated-message ()
+  "A last message line without a newline is replaced as well."
+  (majutsu-jjdescription-test--with-temp-buffer
+    (let ((log-edit-comment-ring-index nil))
+      (insert "JJ: source\nold text")
+      (ring-insert log-edit-comment-ring "replacement\n")
+      (majutsu-jjdescription-prev-message 1)
+      (should (equal (majutsu-jjdescription-buffer-message) "replacement\n"))
+      (should-not (string-match-p "old text" (buffer-string))))))
+
 (provide 'majutsu-jjdescription-test)
 
 ;;; majutsu-jjdescription-test.el ends here
