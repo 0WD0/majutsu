@@ -232,7 +232,7 @@ Prompts for SOURCE and optional DEST; uses ARGS."
                       :initial-input initial-input
                       :history history
                       :completion-args '("git" "push" "-r"))))
-    (split-string value crm-separator t)))
+    (if (listp value) value (list value))))
 
 (defun majutsu-git-push--read-change (prompt initial-input history)
   "Read change id for `jj git push --change='."
@@ -292,13 +292,21 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :prompt "Remote: "
   :reader #'majutsu-transient-read-remote-name)
 
+(defun majutsu-git-clone--read-remote (prompt initial-input history)
+  "Read a new clone remote name without requiring an existing repository."
+  (let ((remote (read-string prompt initial-input
+                             (or history 'majutsu-remote-name-history))))
+    (unless (string-empty-p remote)
+      (majutsu-remote--validate-new-name remote)
+      remote)))
+
 (transient-define-argument majutsu-git-clone:--remote ()
   :description "Remote"
   :class 'transient-option
   :key "-R"
   :argument "--remote="
   :prompt "Remote: "
-  :reader #'majutsu-transient-read-remote-name)
+  :reader #'majutsu-git-clone--read-remote)
 
 (transient-define-argument majutsu-git:--branch ()
   :description "Branch"

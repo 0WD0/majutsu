@@ -640,6 +640,38 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
   (majutsu-diff--parse-revision-metadata
    (majutsu-diff-test--metadata-output description)))
 
+(ert-deftest majutsu-diff-metadata/uses-complete-selection ()
+  "Metadata describes the complete selection, never its first option only."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-write-text
+     (majutsu-jj-integration-file repo "file") "base\n")
+    (majutsu-jj-integration-commit repo "base")
+    (with-temp-buffer
+      (majutsu-diff-mode)
+      (dolist (range '(("--revisions=@") ("--revisions" "@")
+                       ("-r" "@") ("-r@") ("-r=@")
+                       ("--revisions=@" "-r=@")
+                       ("--revisions=none()" "-r@")))
+        (setq-local majutsu-buffer-diff-range range)
+        (should (majutsu-diff--revision-metadata)))
+      (dolist (range '(("--revisions=@" "--revisions=@-")
+                       ("--revisions" "@" "-r" "@-")
+                       ("-r@" "-r=@-")
+                       ("-r" "ancestors(@, 2)")
+                       ("--from=@-" "--to=@")
+                       ("--from" "@-" "--to" "@")
+                       ("-f@-" "-t=@")
+                       ("-f" "@-" "-t" "@")
+                       ("--revisions=@" "-t@")))
+        (setq-local majutsu-buffer-diff-range range)
+        (should-not (majutsu-diff--revision-metadata))
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (magit-insert-section (root)
+            (majutsu-insert-diff-revision-headers)
+            (majutsu-insert-diff-revision-message))
+          (should (string-empty-p (buffer-string))))))))
+
 (ert-deftest majutsu-diff-metadata-revision/default-and-explicit-single ()
   "Default diffs and explicit revision options select a metadata revset."
   (with-temp-buffer
@@ -1165,19 +1197,6 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
       (let ((value (transient-get-value)))
         (should (member "--revisions=abc123" value))
         (should-not (member "--revisions=--revisions=abc123" value))))))
-
-(ert-deftest majutsu-diff-repeat-revset-reader/splits-comma-values ()
-  "Custom repeat revset readers should preserve CRM comma splitting."
-  (let ((obj (seq-find (lambda (suffix)
-                         (equal (oref suffix key) "-r"))
-                       (transient-suffixes 'majutsu-diff))))
-    (should (equal (cl-letf (((symbol-function 'majutsu-read-revset)
-                              (lambda (&rest _args) "a, b"))
-                             ((symbol-function 'transient--show) #'ignore))
-                     (majutsu-diff-test--with-transient-context
-                         'majutsu-diff 'majutsu-diff:-r
-                       (transient-infix-read obj)))
-                   '("a" "b")))))
 
 (ert-deftest majutsu-diff-revset-preserves-empty-args ()
   "Explicitly empty formatting args must not be replaced by builtins."
