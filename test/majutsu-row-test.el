@@ -63,43 +63,64 @@
                   :columns-var 'majutsu-row-test--columns
                   :section-hide t
                   :tail-align t)))
-    (should (eq (plist-get profile :decode-function)
-                'majutsu-row-post-decode-line-separator))
+    (should-not (plist-get profile :decode-function))
     (should-not (plist-get profile :default-postprocessors))
     (should-not (plist-get profile :field-postprocessors))
     (should (eq (plist-get profile :show-child-count) :inherit))
     (should (eq (plist-get profile :section-hide) t))
     (should (eq (plist-get profile :tail-align) t))))
 
-(ert-deftest majutsu-row-split-module-values-preserves-last-field-separators ()
-  "A module's last field should retain any additional separator bytes."
-  (should (equal (majutsu-row-split-module-values
-                  (concat "first" majutsu-row-field-separator
-                          "last" majutsu-row-field-separator "value")
-                  2)
-                 (list "first"
-                       (concat "last" majutsu-row-field-separator "value")))))
+(ert-deftest majutsu-row-split-module-values-rejects-wrong-field-count ()
+  "Extra or missing fields invalidate the complete row."
+  (dolist (payload '("\"first\"\x1e\"last\"\x1e\"extra\"" "\"first\"" ""))
+    (should-error (majutsu-row-split-module-values payload 2)
+                  :type 'majutsu-row-invalid-record))
+  (should-error (majutsu-row-split-module-values "\"unexpected\"" 0)
+                :type 'majutsu-row-invalid-record))
 
-(ert-deftest majutsu-row-template-form-preserves-duplicate-column-templates ()
-  "Template construction should respect each compiled column instance."
-  (let* ((compiled
-          (majutsu-row-test--compiled
-           '((:field body :module heading :template "Heading body" :face nil)
-             (:field body :module body :template "Entry body" :face nil)
-             (:field id :module metadata :template "id" :face nil))))
-         (form (majutsu-row-template-form compiled)))
-    (should (equal form
-                   `[:concat
-                     ,majutsu-row-start-token
-                     "Heading body"
-                     ,majutsu-row-tail-token
-                     ""
-                     ,majutsu-row-body-token
-                     "Entry body"
-                     ,majutsu-row-meta-token
-                     "id"
-                     ,majutsu-row-end-token
-                     "\n"]))))
+(ert-deftest majutsu-row-decode-preserves-separators-and-faces ()
+  "Decode escapes without changing literal separator data or label spans."
+  (let* ((data "A\n\u001dM@\u001dE\u001e\u001f\"\\B")
+         (wire (concat "\""
+                       (propertize "A" 'font-lock-face 'error)
+                       "\\n\\u001dM@\\u001dE\\u001e\\u001f\\\"\\\\"
+                       (propertize "B" 'font-lock-face 'warning) "\""))
+         (decoded (majutsu-row--decode-json-field wire)))
+    (should (equal decoded data))
+    (should (eq (get-text-property 0 'font-lock-face decoded) 'error))
+    (should (eq (get-text-property (1- (length decoded))
+                                   'font-lock-face decoded)
+                'warning))))
+
+(ert-deftest majutsu-row-invalid-records-never-create-sections ()
+  "Reject complete but corrupt records instead of retaining partial metadata."
+  (let ((compiled (majutsu-row-test--compiled)))
+    (dolist (heading (list "unquoted" "null" "\"bad\\q\"" "\"raw\nnewline\""
+                          "\"extra\"\x1e\"field\""
+                          (concat "\"spoof" majutsu-row-meta-token "\"@\""
+                                  majutsu-row-end-token "\"")))
+      (with-temp-buffer
+        (magit-section-mode)
+        (let ((inhibit-read-only t))
+          (magit-insert-section (root)
+            (insert majutsu-row-start-token heading
+                    majutsu-row-tail-token "\"Alice\""
+                    majutsu-row-body-token "\"Body\""
+                    majutsu-row-meta-token "\"historical\""
+                    majutsu-row-end-token "\n")
+            (should-not (majutsu-row-wash-buffer compiled))))
+        (should-not majutsu-row-cached-entries)
+        (should-not (oref magit-root-section children))))))
+
+(ert-deftest majutsu-row-decode-hook-receives-decoded-data ()
+  "The profile hook runs after framing has been removed and validated."
+  (let ((data "line\n\x1f\x1e\x1dM@"))
+    (should
+     (equal (majutsu-row--decode-transport-value
+             (majutsu-row-make-profile
+              :decode-function (lambda (value) (concat "[" value "]")))
+             (json-serialize data))
+            (concat "[" data "]")))))
 
 (ert-deftest majutsu-row-compile-rejects-column-instance ()
   "Column declarations should not use compiler-internal :instance."
@@ -138,11 +159,11 @@
          (majutsu-row-test--columns columns)
          (compiled (majutsu-row-compile profile))
          (raw (concat majutsu-row-start-token
-                      "Detail"
+                      (json-serialize "Detail")
                       majutsu-row-tail-token
                       majutsu-row-body-token
                       majutsu-row-meta-token
-                      "detail-id"
+                      (json-serialize "detail-id")
                       majutsu-row-end-token))
          entry)
     (with-temp-buffer
@@ -164,13 +185,13 @@
   (let* ((compiled (majutsu-row-test--compiled))
          (raw (concat
                "○ " majutsu-row-start-token
-               "Title line 1\n"
-               "│ Title line 2" majutsu-row-tail-token
-               "Alice"
+               "\"Title line 1\\n\n"
+               "│ Title line 2\"" majutsu-row-tail-token
+               (json-serialize "Alice")
                majutsu-row-body-token
-               "Body 1" majutsu-row-field-line-separator "Body 2"
+               (json-serialize "Body 1\nBody 2")
                majutsu-row-meta-token
-               "id-1"
+               (json-serialize "id-1")
                majutsu-row-end-token "\n"
                "│\n"))
          entry)
@@ -196,11 +217,11 @@
            '((:field title :module heading :template "Visible" :face nil)
              (:field title :module metadata :template "machine" :face nil))))
          (raw (concat majutsu-row-start-token
-                      "Visible"
+                      (json-serialize "Visible")
                       majutsu-row-tail-token
                       majutsu-row-body-token
                       majutsu-row-meta-token
-                      "machine"
+                      (json-serialize "machine")
                       majutsu-row-end-token))
          entry)
     (with-temp-buffer
@@ -212,38 +233,16 @@
                     entry (car (majutsu-row-module-columns compiled 'heading)))
                    "Visible"))))
 
-(ert-deftest majutsu-row-parser-skips-token-only-graph-carrier ()
-  "A trailing template newline must not create an empty graph heading line."
-  (let* ((compiled
-          (majutsu-row-test--compiled
-           '((:field title :module heading :template "Title" :face nil)
-             (:field id :module metadata :template "id" :face nil))))
-         (raw (concat
-               "○ " majutsu-row-start-token "First\n"
-               "│ Second\n"
-               "│ " majutsu-row-tail-token majutsu-row-body-token
-               majutsu-row-meta-token "id-1" majutsu-row-end-token "\n"))
-         entry)
-    (with-temp-buffer
-      (insert raw)
-      (goto-char (point-min))
-      (setq entry (majutsu-row-parse-at-point compiled)))
-    (should (equal (plist-get entry :heading-prefixes) '("○ " "│ ")))
-    (should (equal (majutsu-row-column-value
-                    entry (car (majutsu-row-module-columns compiled 'heading)))
-                   "First\nSecond"))))
-
 (ert-deftest majutsu-row-parser-preserves-real-blank-heading-line ()
-  "Two trailing newlines should retain one visible blank graph line."
+  "An encoded trailing newline retains a visible blank graph line."
   (let* ((compiled
           (majutsu-row-test--compiled
            '((:field title :module heading :template "Title" :face nil)
              (:field id :module metadata :template "id" :face nil))))
          (raw (concat
-               "○ " majutsu-row-start-token "First\n"
-               "│ \n"
-               "│ " majutsu-row-tail-token majutsu-row-body-token
-               majutsu-row-meta-token "id-1" majutsu-row-end-token "\n"))
+               "○ " majutsu-row-start-token "\"First\\n\n"
+               "│ \"" majutsu-row-tail-token majutsu-row-body-token
+               majutsu-row-meta-token "\"id-1\"" majutsu-row-end-token "\n"))
          entry)
     (with-temp-buffer
       (insert raw)
@@ -261,12 +260,12 @@
            '((:field title :module heading :template "Title" :face nil)
              (:field id :module metadata :template "id" :face nil))))
          (raw (concat
-               majutsu-row-start-token "Broken"
+               majutsu-row-start-token "\"Broken\""
                majutsu-row-tail-token majutsu-row-body-token
-               majutsu-row-meta-token "broken\n"
-               majutsu-row-start-token "Good"
+               majutsu-row-meta-token "\"broken\"\n"
+               majutsu-row-start-token "\"Good\""
                majutsu-row-tail-token majutsu-row-body-token
-               majutsu-row-meta-token "good-id" majutsu-row-end-token "\n"))
+               majutsu-row-meta-token "\"good-id\"" majutsu-row-end-token "\n"))
          parsed)
     (with-temp-buffer
       (insert raw)

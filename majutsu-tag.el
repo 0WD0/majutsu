@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'majutsu)
+(require 'majutsu-row)
 
 (require 'seq)
 (require 'subr-x)
@@ -55,25 +56,20 @@ SCOPE controls what to return:
   "Return completion payload for local tags in DIRECTORY."
   (majutsu-ref-candidate-data 'tag nil directory))
 
-(defun majutsu-tag-parse-list-output (output)
-  "Parse `jj tag list` OUTPUT into grouped entries.
+(defconst majutsu-tag--list-columns
+  '((:field heading :module heading
+     :template [:raw "format_commit_ref(self, \"tag\")" :Template] :face t)
+    (:field name :module metadata :template [:name] :face nil)
+    (:field remote :module metadata :template [:remote] :face nil))
+  "Native tag display and structured CommitRef identity fields.")
 
-Return a list of plists with keys:
-- :name  tag name
-- :lines rendered lines belonging to the tag"
-  (let ((entries nil)
-        current)
-    (dolist (line (split-string (or output "") "\n" t))
-      (if (string-match "^\\([^[:space:]:]+\\)\\(?: (conflicted)\\)?:" line)
-          (progn
-            (when current
-              (push (list :name (car current) :lines (nreverse (cdr current))) entries))
-            (setq current (cons (match-string 1 line) (list line))))
-        (when current
-          (setcdr current (cons line (cdr current))))))
-    (when current
-      (push (list :name (car current) :lines (nreverse (cdr current))) entries))
-    (nreverse entries)))
+(defconst majutsu-tag--list-compiled
+  (majutsu-row-compile
+   (majutsu-row-make-profile
+    :name 'tag-list
+    :self-type 'CommitRef
+    :columns-var 'majutsu-tag--list-columns))
+  "Compiled transport for native tag rows.")
 
 (defvar majutsu-tag-name-history nil
   "Minibuffer history for exact tag-name input.")
@@ -111,22 +107,36 @@ If REQUIRE-MATCH is non-nil, require existing local tag names."
 (defun majutsu-tag--list-args ()
   "Return arguments for `jj tag list`."
   (append '("tag" "list" "--quiet")
-          (and majutsu-tag--list-all-remotes '("--all-remotes"))))
+          (and majutsu-tag--list-all-remotes '("--all-remotes"))
+          (list "-T" (plist-get majutsu-tag--list-compiled :template))))
 
 (defun majutsu-tag--wash-list (_args)
   "Wash `jj tag list` output into tag sections."
-  (let* ((entries (majutsu-tag-parse-list-output (buffer-string)))
-         (inhibit-read-only t))
+  (let ((entries (majutsu-row-parse-buffer majutsu-tag--list-compiled))
+        (inhibit-read-only t))
     (delete-region (point-min) (point-max))
     (if (null entries)
         (magit-cancel-section)
-      (dolist (entry entries)
-        (let ((name (plist-get entry :name))
-              (lines (plist-get entry :lines)))
+      (while entries
+        (let ((name (majutsu-row-column (car entries) 'name)))
           (magit-insert-section (jj-tag name t)
-            (magit-insert-heading (car lines))
-            (dolist (line (cdr lines))
-              (insert line "\n")))))
+            (while (and entries
+                        (equal name (majutsu-row-column (car entries) 'name)))
+              (let* ((entry (pop entries))
+                     (remote (majutsu-row-column entry 'remote))
+                     (lines (majutsu-row-render-heading-content-lines
+                             entry majutsu-tag--list-compiled)))
+                (if (string-empty-p remote)
+                    (progn
+                      (magit-insert-heading (car lines))
+                      (dolist (line (cdr lines))
+                        (insert line "\n")))
+                  (let ((section
+                         (magit-insert-section (jj-commit (concat name "@" remote))
+                           (magit-insert-heading (car lines))
+                           (dolist (line (cdr lines))
+                             (insert line "\n")))))
+                    (oset section keymap 'majutsu-tag-section-map))))))))
       (insert "\n"))))
 
 (defun majutsu-tag-list-refresh-buffer ()

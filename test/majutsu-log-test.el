@@ -112,11 +112,12 @@
 
 (defun majutsu-log-test--transport-value (value)
   "Return transport encoding for test VALUE."
-  (cond
-   ((null value) "")
-   ((stringp value) value)
-   ((listp value) (string-join value majutsu-log--field-list-separator))
-   (t (format "%s" value))))
+  (json-serialize
+   (cond
+    ((null value) "")
+    ((stringp value) value)
+    ((listp value) (string-join value majutsu-log--field-list-separator))
+    (t (format "%s" value)))))
 
 (ert-deftest majutsu-log-insert-conflicts/inherited-conflicts-remain-navigable ()
   "Group inherited conflicts even when the merge has no changes-in diff."
@@ -210,7 +211,8 @@
   "Return one raw relation-aware log entry for ID and TITLE."
   (let ((compiled (majutsu-log-test--relations-compiled)))
     (concat
-     "○ " majutsu-row-start-token id majutsu-row-field-separator title
+     "○ " majutsu-row-start-token (json-serialize id)
+     majutsu-row-field-separator (json-serialize title)
      majutsu-row-tail-token
      majutsu-row-body-token
      majutsu-row-meta-token
@@ -234,10 +236,6 @@
     ('body (upcase value))
     (_ value)))
 
-(ert-deftest majutsu-log-long-desc-template-uses-line-separator ()
-  "Default long-desc template should encode line breaks with \x1f."
-  (should (equal majutsu-log-template-long-desc
-                 [:description :lines :skip 1 :join "\x1f"])))
 
 (ert-deftest majutsu-log-canonical-log-id-template-preserves-id-kind ()
   "Canonical log ids should be full change or commit ids as appropriate."
@@ -335,25 +333,15 @@
                               (commit-id . "commit-full"))))
                  "change-full")))
 
-(ert-deftest majutsu-log-post-decode-line-separator-restores-faces ()
-  "\x1f decoding should keep surrounding text properties."
-  (let* ((sep (aref majutsu-log--field-line-separator 0))
-         (encoded (concat (propertize "A" 'font-lock-face 'error)
-                          (string sep)
-                          (propertize "B" 'font-lock-face 'warning)))
-         (decoded (majutsu-log-post-decode-line-separator encoded)))
-    (should (equal decoded "A\nB"))
-    (should (eq (get-text-property 0 'font-lock-face decoded) 'error))
-    (should (eq (get-text-property 2 'font-lock-face decoded) 'warning))))
 
 (ert-deftest majutsu-log-parse-entry-with-graph-and-multiline-heading ()
   "Parser should handle graph prefixes and multiline heading payload."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               "○ " majutsu-row-start-token "chg" majutsu-row-field-separator "Title line 1\n"
-               "│ Title line 2" majutsu-row-tail-token
+               "○ " majutsu-row-start-token "\"chg\"" majutsu-row-field-separator
+               "\"Title line 1\\n\n│ Title line 2\"" majutsu-row-tail-token
                majutsu-row-body-token
-               "body line 1" majutsu-log--field-line-separator "body line 2"
+               (json-serialize "body line 1\nbody line 2")
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -382,8 +370,9 @@
   "Parser should also support --no-graph output (indent = 0)."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               majutsu-row-start-token "chg" majutsu-row-field-separator "Top\n"
-               "Tail" majutsu-row-tail-token majutsu-row-body-token "payload"
+               majutsu-row-start-token "\"chg\"" majutsu-row-field-separator
+               "\"Top\\n\nTail\"" majutsu-row-tail-token
+               majutsu-row-body-token (json-serialize "payload")
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -408,11 +397,11 @@
   "Parser should decode tail payloads separately from body and metadata."
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
-               "○ " majutsu-row-start-token "chg" majutsu-row-field-separator "Title"
+               "○ " majutsu-row-start-token "\"chg\"" majutsu-row-field-separator "\"Title\""
                majutsu-row-tail-token
-               "Alice" majutsu-row-field-separator "2m ago"
+               "\"Alice\"" majutsu-row-field-separator "\"2m ago\""
                majutsu-row-body-token
-               "body line 1" majutsu-log--field-line-separator "body line 2"
+               (json-serialize "body line 1\nbody line 2")
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -431,18 +420,20 @@
   "Lines between E of one entry and S of next entry stay with previous entry."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
-               "○ " majutsu-row-start-token "chg1" majutsu-row-field-separator "Title1"
+               "○ " majutsu-row-start-token "\"chg1\"" majutsu-row-field-separator "\"Title1\""
                majutsu-row-tail-token
                majutsu-row-body-token
+               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-1")))
                majutsu-row-end-token "\n"
                "│ carry-line\n"
-               "○ " majutsu-row-start-token "chg2" majutsu-row-field-separator "Title2"
+               "○ " majutsu-row-start-token "\"chg2\"" majutsu-row-field-separator "\"Title2\""
                majutsu-row-tail-token
                majutsu-row-body-token
+               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -461,9 +452,10 @@
   "Parser should record the raw entry region for streaming washing."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (first-raw (concat
-                     "○ " majutsu-row-start-token "chg1" majutsu-row-field-separator "Title1"
+                     "○ " majutsu-row-start-token "\"chg1\"" majutsu-row-field-separator "\"Title1\""
                      majutsu-row-tail-token
                      majutsu-row-body-token
+                     "\"\""
                      majutsu-row-meta-token
                      (majutsu-log-test--metadata-payload
                       compiled
@@ -471,9 +463,10 @@
                      majutsu-row-end-token "\n"
                      "│ carry-line\n"))
          (raw (concat first-raw
-                      "○ " majutsu-row-start-token "chg2" majutsu-row-field-separator "Title2"
+                      "○ " majutsu-row-start-token "\"chg2\"" majutsu-row-field-separator "\"Title2\""
                       majutsu-row-tail-token
                       majutsu-row-body-token
+                      "\"\""
                       majutsu-row-meta-token
                       (majutsu-log-test--metadata-payload
                        compiled
@@ -527,7 +520,7 @@
            `((:field description :module heading :face t :post majutsu-log-test--post-wrap)
              (:field id :module metadata :face nil))))
          (raw (concat
-               "○ " majutsu-row-start-token "desc"
+               "○ " majutsu-row-start-token "\"desc\""
                majutsu-row-tail-token
                majutsu-row-body-token
                majutsu-row-meta-token
@@ -553,9 +546,9 @@
              (:field description :module body :face nil :post majutsu-log-test--post-by-module)
              (:field id :module metadata :face nil))))
          (raw (concat
-               "○ " majutsu-row-start-token "desc"
+               "○ " majutsu-row-start-token "\"desc\""
                majutsu-row-tail-token
-               majutsu-row-body-token "desc"
+               majutsu-row-body-token "\"desc\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -1050,20 +1043,22 @@
   (let* ((compiled (majutsu-log-test--tail-compiled))
          (raw (concat
                "○ " majutsu-row-start-token
-               "chg1" majutsu-row-field-separator "Title1"
+               "\"chg1\"" majutsu-row-field-separator "\"Title1\""
                majutsu-row-tail-token
-               "Alice" majutsu-row-field-separator "2m ago"
+               "\"Alice\"" majutsu-row-field-separator "\"2m ago\""
                majutsu-row-body-token
+               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
                 '((id . "id-1")))
                majutsu-row-end-token "\n"
                "○ " majutsu-row-start-token
-               "chg2" majutsu-row-field-separator "Title2"
+               "\"chg2\"" majutsu-row-field-separator "\"Title2\""
                majutsu-row-tail-token
-               "Bob" majutsu-row-field-separator "1h ago"
+               "\"Bob\"" majutsu-row-field-separator "\"1h ago\""
                majutsu-row-body-token
+               "\"\""
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -1153,5 +1148,94 @@
                    "child-b")))
         (majutsu-log-goto-child))
       (should (equal (magit-section-value-if 'jj-commit) "child-b")))))
+
+(ert-deftest majutsu-log/real-jj-reserved-bytes-cannot-retarget-rows ()
+  "Descriptions, names and custom columns cannot inject actionable row framing."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((payload (concat "Title\nbody" majutsu-row-meta-token "@"
+                            majutsu-row-end-token
+                            majutsu-row-start-token
+                            majutsu-row-tail-token
+                            majutsu-row-body-token
+                            "\x1e\x1f\"\\\t\rX\n"))
+           (author (concat "Author" "\u001dM@\u001dE\u001e\u001f!"))
+           (custom (concat "\"Custom\\" "\u001dS\u001dT\u001dB\u001dM@\u001dE\u001e\u001f"))
+           (process-environment
+            (cons (concat "JJ_USER=" author) process-environment)))
+      ;; Create the revision under JJ_USER rather than rewriting its author:
+      ;; describe's author flags are version-dependent.  Keep controls inside
+      ;; the name, with no NUL or newline and no trailing whitespace.
+      (majutsu-jj-integration-call repo "new")
+      (majutsu-jj-integration-commit repo payload)
+      (let* ((id (majutsu-jj-integration-output
+                  repo "log" "--no-graph" "-r" "@-" "-T" "change_id"))
+             (description (majutsu-jj-integration-output
+                           repo "log" "--no-graph" "-r" "@-" "-T" "description"))
+             (compiled
+              (majutsu-log-test--compile-columns
+               `((:field change-id :module heading :face t)
+                 (:field description :module heading :template [:description] :face t)
+                 (:field custom :module heading
+                  :template [:label "row-test" ,custom] :face t)
+                 (:field author :module tail :template [:author :name] :face nil)
+                 (:field long-desc :module body :face t)
+                 (:field description :module metadata
+                  :template [:description] :face nil)
+                 (:field author :module metadata
+                  :template [:author :name] :face nil)
+                 (:field custom :module metadata :template ,custom :face nil))))
+             (majutsu-log-commit-columns nil)
+             (majutsu-log--compiled-template-cache compiled))
+        (dolist (graph-args '(nil ("--no-graph")))
+          (let ((output (apply #'majutsu-jj-integration-output repo
+                               (append
+                                majutsu-row-protocol-global-args
+                                '("--color=always" "--config=colors.row-test=\"red\""
+                                  "log" "-r" "@ | @-")
+                                graph-args
+                                (list "-T" (plist-get compiled :template))))))
+            (with-temp-buffer
+              (majutsu-log-mode)
+              (let ((inhibit-read-only t))
+                (magit-insert-section (lograph)
+                  (insert output)
+                  (let ((ansi-color-apply-face-function
+                         #'ansi-color-apply-text-property-face))
+                    (ansi-color-apply-on-region (point-min) (point-max)))
+                  (goto-char (point-min))
+                  (majutsu-log--wash-logs nil)))
+              (should (= (length majutsu-row-cached-entries) 2))
+              (should (majutsu--goto-log-entry id))
+              (should (equal (majutsu-revision-at-point) id))
+              (should (equal (magit-section-value-if 'jj-commit) id))
+              (let ((entry (majutsu-row-entry-at-point)))
+                (should (equal (majutsu-row-column entry 'description) description))
+                (should (equal (majutsu-row-column entry 'author) author))
+                (should (equal (majutsu-row-column entry 'custom) custom))
+                (should (equal
+                         (majutsu-row-column-value
+                          entry (majutsu-log-test--column compiled 'author 'tail))
+                         author))
+                (should (equal
+                         (majutsu-row-column-value
+                          entry (majutsu-log-test--column compiled 'description 'heading))
+                         description))
+                (should (equal
+                         (majutsu-row-render-body entry compiled)
+                         (string-join (cdr (split-string
+                                           (string-remove-suffix "\n" description)
+                                           "\n"))
+                                      "\n")))
+                (let ((visible (majutsu-row-column-value
+                                entry (majutsu-log-test--column
+                                       compiled 'custom 'heading))))
+                  (should (equal visible custom))
+                  ;; Both escaped punctuation and ordinary text keep jj labels.
+                  (should (get-text-property 0 'font-lock-face visible))
+                  (should (equal (get-text-property 0 'font-lock-face visible)
+                                 (get-text-property 1 'font-lock-face visible)))))
+              (search-forward "Title")
+              (should (equal (majutsu-revision-at-point) id))
+              (should (equal (magit-section-value-if 'jj-commit) id)))))))))
 
 ;;; majutsu-log-test.el ends here
