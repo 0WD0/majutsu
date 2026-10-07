@@ -425,40 +425,30 @@ When no explicit value is selected, each command applies its own documented
 fallback.
 
 *** Log Output Protocol (Sequential Markers)
-Majutsu's log parser uses an ordered marker protocol embedded in jj template
-output:
+Rows keep display formatting separate from the metadata used by revision
+actions. Templates supply ordinary field values; the compiler owns framing.
 
-- Entry start: =\x1dS=
-- Tail start: =\x1dT=
-- Body start: =\x1dB=
-- Metadata start: =\x1dM=
-- Entry end: =\x1dE=
+Each record has ordered =\x1dS= (heading), =\x1dT= (tail), =\x1dB= (body),
+=\x1dM= (metadata), and =\x1dE= (end) markers. Fields within a module are
+separated by =\x1e=.
 
-Within each module payload, fields are separated by =\x1e=.
+- *Heading fields* retain jj labels and physical newlines, so jj draws the
+  continuation graph.
+- *Tail and body fields* retain labels but carry logical newlines as =\x1f=;
+  these become newlines again before column postprocessing.
+- *Metadata fields* are JSON strings, decoded without display properties.
+  Their declared template values remain lossless and are the only source of
+  canonical entry fields.
 
-Protocol control bytes are reserved:
+In display fields, literal =\x1d=, =\x1e=, and =\x1f= are rendered as the
+printable escapes =\u001d=, =\u001e=, and =\u001f=. This is intentional display
+normalization, not a lossless control-character round trip. Ordinary quotes,
+backslashes, colors, and multiline headings remain display text.
 
-- =\x1d= for module markers
-- =\x1e= for field boundaries
-- =\x1f= for encoded logical newlines
-
-Avoid emitting these bytes literally in user templates unless intentionally
-participating in the protocol.
-
-Newline rules:
-
-- *heading module*: may contain real physical newlines.
-- *tail/body/metadata modules*: stay in the trailing payload; encode logical
-  newlines as =\x1f= and decode them in postprocessing.
-
-Parsing is strictly sequential and positional (not key/value based):
-
-1. Detect =\x1dS= and lock the entry indent column.
-2. Collect heading lines until =\x1dT= is found.
-3. Parse =T -> B -> M -> E= payload segments in order on the final heading line
-   (no extra physical line breaks between these module markers).
-4. Keep lines between current entry =E= and next entry =S= attached to the
-   current section heading area (graph continuation lines).
+Parsing requires the declared field counts, valid string metadata, and a
+complete record ending on its physical line. Invalid records do not create
+actionable sections. Graph lines between records remain attached to the
+preceding section.
 
 *** ~majutsu-log-commit-columns~
 ~majutsu-log-commit-columns~ is a flat list of column plists.  Each plist
@@ -739,15 +729,16 @@ Commands:
 - Command: majutsu-find-file-other-frame :: Like ~majutsu-find-file~, but
   display the blob in another frame.
 
-Each blob buffer identifies an exact workspace, full commit ID, and file path.
-Different versions of one change have separate buffers. Revision actions,
-including Restore and Ediff, use the displayed commit rather than a newer
-version with the same change ID.
+Opening a file resolves its revset once and identifies the blob by workspace,
+full commit ID, and path. Different versions of one change have separate
+buffers. Revision actions, including Restore and Ediff, use the displayed
+commit, not a newer version of the same change.
 
-Blob inspection supports regular files and text file conflicts, not symlinks,
-submodules, or structural conflicts. A failed or warning-only read leaves the
-previous buffer contents and commit pin intact; an empty regular file remains
-a valid snapshot.
+Explicit refresh resolves the original revset again. Missing files,
+unsupported tree values, and warning-only reads leave the previous contents,
+commit pin, and refresh target intact. Regular files and text file conflicts
+are supported, including empty files; symlinks, submodules, and structural
+conflicts are not blob-editing inputs.
 
 Blob buffers are read-only snapshots with history-aware navigation:
 #+attr_reference: :kind command-binding :interface "Blob buffer" :mode majutsu-blob-mode
