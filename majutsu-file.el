@@ -167,12 +167,25 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
 Keep type metadata separate from content, including for an empty file.
 Signal before changing a blob buffer if the path cannot be read or edited."
   (with-temp-buffer
-    (let ((result (majutsu--jj-insert
-                   'full "--ignore-working-copy" "--color=never"
-                   "file" "show" "-r" commit "-T" "file_type ++ \"\\0\""
-                   "--" (majutsu-jj-fileset-quote path))))
-      (unless (and (integerp result) (zerop result))
-        (user-error "Cannot read %s at %s: %s" path commit result)))
+    (let ((stderr-file (make-nearby-temp-file "majutsu-blob-read-")))
+      (unwind-protect
+          (majutsu--with-no-color
+            (let* ((status (majutsu-process-jj
+                            (list t stderr-file)
+                            (list "--ignore-working-copy" "file" "show"
+                                  "-r" commit "-T" "file_type ++ \"\\0\""
+                                  "--" (majutsu-jj-fileset-quote path))))
+                   (diagnostic (with-temp-buffer
+                                 (insert-file-contents stderr-file)
+                                 (string-trim (buffer-string)))))
+              ;; jj can skip an unreadable file with a warning and exit zero.
+              ;; Do not mistake that for a successfully read empty file.
+              (unless (and (integerp status) (zerop status)
+                           (string-empty-p diagnostic))
+                (user-error "Cannot read %s at %s: %s"
+                            path commit
+                            (if (string-empty-p diagnostic) status diagnostic)))))
+        (ignore-errors (delete-file stderr-file))))
     (goto-char (point-min))
     (unless (search-forward "\0" nil t)
       (user-error "No regular file at %s in %s" path commit))

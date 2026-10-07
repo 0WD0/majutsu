@@ -747,6 +747,41 @@ Leave the working copy on an unrelated revision."
           (when (buffer-live-p buffer)
             (kill-buffer buffer)))))))
 
+(ert-deftest majutsu-file-revert-buffer/integration-denied-read-is-atomic ()
+  "A native jj warning with exit zero must not replace a blob with empty text."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-write-text
+     (majutsu-jj-integration-file repo "secret.txt") "preserve me\n")
+    (let ((buffer (majutsu-find-file-noselect "@" "secret.txt")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (let ((pin majutsu-buffer-blob-commit-id)
+                  (hash majutsu-buffer-blob-content-hash))
+              (majutsu-jj-integration-call repo "describe" "-m" "new version")
+              ;; Same fixture as jj's cli/tests/test_acls.rs.  The backend
+              ;; deliberately denies reads while keeping tree metadata valid.
+              (majutsu-jj-integration-write-text
+               (expand-file-name ".jj/repo/store/type" repo) "secret")
+              (with-temp-buffer
+                (let ((status
+                       (majutsu--with-no-color
+                         (majutsu-process-jj
+                          '(t t) '("--ignore-working-copy" "log" "--no-graph"
+                                   "-r" "@" "-T" "commit_id")))))
+                  (when (and (not (zerop status))
+                             (string-match-p
+                              "Unsupported commit backend type 'secret'"
+                              (buffer-string)))
+                    (ert-skip "jj was built without its testing backend"))
+                  (should (zerop status))))
+              (should-error (majutsu-file-revert-buffer nil t) :type 'user-error)
+              (should (equal (buffer-string) "preserve me\n"))
+              (should (equal majutsu-buffer-blob-commit-id pin))
+              (should (equal majutsu-buffer-blob-content-hash hash))
+              (should-not (buffer-modified-p))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
 (ert-deftest majutsu-file-revert-buffer/integration-preserves-logical-position ()
   "A rewritten version of the same change keeps the logical line and column."
   (majutsu-jj-integration-with-repo repo
