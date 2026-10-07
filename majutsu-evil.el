@@ -30,11 +30,8 @@
 (declare-function evil-normalize-keymaps "evil-core" (&optional state))
 (declare-function evil-insert-state "evil-states" (&optional count vcount skip-hook))
 
-(eval-when-compile
-  ;; Silence byte-compile when Evil isn't installed at build time.
-  (unless (require 'evil nil t)
-    (defun evil-define-key* (&rest _args) nil)
-    (defun evil-set-initial-state (&rest _args) nil)))
+(declare-function evil-define-key* "evil-core" (state keymap key def &rest bindings))
+(declare-function evil-set-initial-state "evil-core" (mode state))
 
 (defgroup majutsu-evil nil
   "Customization group for Majutsu's Evil integration."
@@ -102,7 +99,7 @@ STATES can be a symbol or list.  KEYMAP should be a symbol.
 If KEYMAP is not yet bound, defer binding until it becomes available."
   (declare (indent 2))
   (when (and (featurep 'evil) (fboundp 'evil-define-key*))
-    (let ((states (if (listp states) states (list states))))
+    (let ((states (if (and states (listp states)) states (list states))))
       (cond
        ;; Keymap already available - bind immediately
        ((and (symbolp keymap) (boundp keymap) (keymapp (symbol-value keymap)))
