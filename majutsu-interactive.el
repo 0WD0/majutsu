@@ -661,18 +661,54 @@ Never infer filesystem paths from rendered Git patch headers."
       ("copied" (list :action 'copy :source source :path path))
       (_ (user-error "Unsupported whole-file jj diff status: %S" status)))))
 
-(defun majutsu-interactive--build-file-operations (file-sections)
+(defun majutsu-interactive--build-file-operations (file-sections &optional invert)
   "Return forward whole-file operations for FILE-SECTIONS.
-When a modified file has independently selectable mode metadata, copy only
-its contents so the payload cannot overwrite the mode chosen by the patch."
-  (mapcar (lambda (section)
-            (let ((op (majutsu-interactive--file-operation
-                       (majutsu-interactive--file-change section))))
-              (when (and (eq (plist-get op :action) 'modify)
-                         (majutsu-interactive--file-section-patches section))
-                (setq op (plist-put op :action 'content)))
-              op))
-          file-sections))
+Keep independently selectable permissions separate from payload bytes.
+INVERT selects unselected mode changes for a complement replay.
+A copy's mode requires its destination; unlike a rename, a copy cannot
+retarget that mode change onto its unchanged source."
+  (let ((operations
+         (mapcar (lambda (section)
+                   (let ((op (majutsu-interactive--file-operation
+                              (majutsu-interactive--file-change section))))
+                     (when (and (eq (plist-get op :action) 'modify)
+                                (majutsu-interactive--file-section-patches section))
+                       (setq op (plist-put op :action 'content)))
+                     op))
+                 file-sections))
+        modes)
+    (dolist (section (majutsu-interactive--hunkless-file-sections))
+      (let ((metadata (majutsu-diff-file-metadata section)))
+        (when (member (plist-get metadata :status) '("renamed" "copied"))
+          (dolist (unit (majutsu-interactive--file-section-patches section))
+            (when (magit-section-match 'jj-mode-change unit)
+              (let* ((content (memq section file-sections))
+                     (mode (majutsu-interactive--get-selection
+                            (majutsu-interactive--hunk-id unit)))
+                     (keep-mode (if invert (not mode) mode)))
+                (when (and keep-mode (not content)
+                           (equal (plist-get metadata :status) "copied"))
+                  (user-error
+                   "Cannot keep the mode change for copied file %s without keeping the copy"
+                   (oref section value)))
+                (when (or content keep-mode)
+                  (let ((header (oref section header))
+                        (change (majutsu-interactive--file-change section))
+                        (side (if keep-mode "new" "old")))
+                    ;; Unchanged copy sources are absent from jj's sparse
+                    ;; editor checkout.  Read the baseline mode from the diff
+                    ;; instead of inheriting the payload's unselected mode.
+                    (unless (string-match
+                             (concat "^" side " mode \\([0-7]+\\)$") header)
+                      (error "Missing %s mode for %s" side (oref section value)))
+                    (push (list :action 'chmod
+                                :path (plist-get change
+                                                 (if content :target :source))
+                                :mode (logand (string-to-number
+                                               (match-string 1 header) 8)
+                                              #o777))
+                          modes)))))))))
+    (append operations (nreverse modes))))
 
 (defun majutsu-interactive--collect-hunks-by-file ()
   "Return hash table of FILE-SECTION to selectable patch sections."
@@ -871,7 +907,16 @@ When INVERT is non-nil, invert selected hunks by default."
           (when-let* ((hunk-patch (majutsu-interactive--build-hunk-patch
                                    hunk spec hunk-invert)))
             (push hunk-patch hunk-patches)))))
-    (when (or mode-change hunk-patches)
+    (when (or hunk-patches
+              (and mode-change
+                   ;; Cross-path mode-only Git patches cannot be applied.
+                   ;; Replay these modes separately from rename/copy payloads.
+                   (not (and
+                         (majutsu-interactive--file-content-p file-section)
+                         (member
+                          (plist-get (majutsu-diff-file-metadata file-section)
+                                     :status)
+                          '("renamed" "copied"))))))
       (concat (cond (hunk-patches
                      (if mode-change header
                        (majutsu-interactive--without-mode-change header)))
@@ -982,7 +1027,7 @@ BUFFER's patch selection."
                :patch (majutsu-interactive--build-patch t t)
                :file-ops
                (majutsu-interactive--build-file-operations
-                (majutsu-interactive--collect-unselected-files))))
+                (majutsu-interactive--collect-unselected-files) t)))
         (_ (error "Unknown replay plan mode: %S" mode))))))
 
 (defun majutsu-interactive--fixup-patch (patch)
@@ -1086,18 +1131,30 @@ root before the right tree is rebuilt.  Write the script in DIRECTORY."
                              preserved destination)))
             ('delete
              (insert (format "majutsu_remove %s || exit $?\n" destination)))
-            ('rename
-             (insert
-              (format "majutsu_remove %s || exit $?\n"
-                      (majutsu-interactive--script-path
-                       "RIGHT" (plist-get op :source))))
-             (insert (format "majutsu_remove %s || exit $?\n" destination))
-             (insert (format "majutsu_copy %s %s || exit $?\n"
-                             preserved destination)))
-            ('copy
-             (insert (format "majutsu_remove %s || exit $?\n" destination))
-             (insert (format "majutsu_copy %s %s || exit $?\n"
-                             preserved destination)))
+            ((or 'rename 'copy)
+             (let ((source (majutsu-interactive--script-path
+                            "RIGHT" (plist-get op :source))))
+               ;; Payload bytes may carry an unselected chmod.  Remember the
+               ;; baseline executable bit before removing the rename source.
+               ;; Never chmod a symlink or replace its link payload with bytes.
+               (insert "EXECUTABLE=\n")
+               (insert (format
+                        "if [ -f %s ] && [ ! -L %s ] && [ -f %s ] && [ ! -L %s ]; then\n"
+                        source source preserved preserved))
+               (insert (format
+                        "  if [ -x %s ]; then EXECUTABLE=a+x; else EXECUTABLE=a-x; fi\nfi\n"
+                        source))
+               (when (eq action 'rename)
+                 (insert (format "majutsu_remove %s || exit $?\n" source)))
+               (insert (format "majutsu_remove %s || exit $?\n" destination))
+               (insert (format "majutsu_copy %s %s || exit $?\n"
+                               preserved destination))
+               (insert (format
+                        "if [ -n \"$EXECUTABLE\" ]; then chmod \"$EXECUTABLE\" -- %s || exit $?; fi\n"
+                        destination))))
+            ('chmod
+             (insert (format "chmod %o -- %s || exit $?\n"
+                             (plist-get op :mode) destination)))
             (_ (error "Unknown whole-file operation: %S" action)))))
       (insert "exit 0\n"))
     (set-file-modes script #o755)
@@ -1154,12 +1211,15 @@ Remove its temporary directory when PROCESS exits or is signaled."
     nil))
 
 (defun majutsu-interactive--refresh-operation-origin (buffer root)
-  "Refresh live Majutsu BUFFER using repository ROOT."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (let ((default-directory root))
-        (when (derived-mode-p 'majutsu-mode)
-          (majutsu-refresh))))))
+  "Refresh Majutsu BUFFER, falling back to ROOT's live log buffer."
+  (if (and (buffer-live-p buffer)
+           (with-current-buffer buffer (derived-mode-p 'majutsu-mode)))
+      (with-current-buffer buffer
+        (let ((default-directory root))
+          (majutsu-refresh)))
+    (when-let* ((log (majutsu--find-mode-buffer 'majutsu-log-mode root)))
+      (with-current-buffer log
+        (majutsu-refresh)))))
 
 (defun majutsu-interactive-complete-repository-operation
     (root origin-buffer operation-before &optional unchanged-message)
@@ -1207,31 +1267,27 @@ UNCHANGED-MESSAGE.  Return `unchanged', `changed', or `unknown'."
         (zerop exit-code)
         "jj patch selection ended without a repository operation")))
 
-(defvar majutsu-interactive--replay-in-flight (make-hash-table :test 'equal)
-  "Repository roots whose patch replay is still running.")
-
-(defun majutsu-interactive--release-replay (root)
-  "Allow new patch replays for ROOT."
-  (remhash root majutsu-interactive--replay-in-flight))
-
 (defun majutsu-interactive-run-replay-plan (command args filesets plan)
   "Run jj COMMAND with ARGS and FILESETS using replay PLAN.
 PLAN reconstructs the merge editor's right tree from its selected or
-complemented text and whole-file changes.  Only one replay may run
-per repository at a time: the selection stays valid until the jj
-process commits its operation, so re-running the still-rendered
-selection would apply the same patch twice and diverge the change."
+complemented text and whole-file changes.  Reserve the workspace's shared
+interactive slot until completion so another writer cannot replay a stale
+selection while this operation is still running."
   (let* ((origin-buffer (current-buffer))
          (root (file-name-as-directory
                 (majutsu--toplevel-safe default-directory)))
-         (operation-before (majutsu-jj-operation-id root))
-         (directory (majutsu-interactive--make-operation-temp-dir))
-         retained)
-    (when (gethash root majutsu-interactive--replay-in-flight)
-      (user-error "A jj patch operation is already running in this repository"))
-    (puthash root t majutsu-interactive--replay-in-flight)
+         (owner (list 'patch-replay))
+         operation-before directory retained child
+         (created-callback majutsu-process--start-created-callback)
+         (majutsu-process--start-created-callback
+          (lambda (process)
+            (setq child process)
+            (when created-callback (funcall created-callback process)))))
+    (majutsu-process-register-interactive-session root owner)
     (unwind-protect
-        (let* ((patch-file (majutsu-interactive--write-patch
+        (let* ((_ (setq operation-before (majutsu-jj-operation-id root)
+                        directory (majutsu-interactive--make-operation-temp-dir)))
+               (patch-file (majutsu-interactive--write-patch
                             (or (plist-get plan :patch) "") directory))
                (tool-config (majutsu-interactive--build-tool-config
                              patch-file plan directory))
@@ -1244,7 +1300,7 @@ selection would apply the same patch twice and diverge the change."
                 (majutsu-start-jj-with-editor
                  full-args nil
                  (lambda (process exit-code)
-                   (majutsu-interactive--release-replay root)
+                   (majutsu-process-unregister-interactive-session root owner)
                    (when (and (fboundp 'majutsu-process-completion-owned-p)
                               (majutsu-process-completion-owned-p process))
                      (run-at-time 0 nil
@@ -1257,8 +1313,16 @@ selection would apply the same patch twice and diverge the change."
                  process directory))
           (message "Running jj %s with the patch selection..." command)
           process)
+      ;; Startup can quit after the child acquired its completion sentinel.
+      ;; It still owns the workspace and may still need its replay files.
+      (when (and (not retained) child
+                 (majutsu-process-completion-owned-p child))
+        (let ((inhibit-quit t))
+          (setq retained
+                (majutsu-interactive--retain-temp-dir-for-process
+                 child directory))))
       (unless retained
-        (majutsu-interactive--release-replay root)
+        (majutsu-process-unregister-interactive-session root owner)
         (majutsu-interactive--delete-operation-temp-dir directory)))))
 
 ;;; _
