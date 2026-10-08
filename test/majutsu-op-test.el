@@ -18,6 +18,8 @@
 (require 'ert)
 (require 'majutsu-op)
 (require 'transient)
+(require 'majutsu-evolog)
+(require 'majutsu-jj-integration)
 
 (defun majutsu-op-test--summary (&optional change-id change-short commit-id commit-short flags desc)
   "Return a structured op diff commit summary for tests."
@@ -164,34 +166,6 @@
   "Malformed records should be ignored instead of creating bad sections."
   (should-not (majutsu-op-test--parse-log-entries "only-one-field\n")))
 
-(ert-deftest majutsu-op-log-command-args/uses-read-only-top-level-args ()
-  "Operation log command args should avoid snapshotting the working copy."
-  (let ((args (majutsu-op--log-command-args '("--limit=2" "--reversed"))))
-    (should (member "--at-op=@" args))
-    (should (member "--ignore-working-copy" args))
-    (should (< (cl-position "--at-op=@" args :test #'equal)
-               (cl-position "op" args :test #'equal)))
-    (should (< (cl-position "--config=ui.log-word-wrap=false"
-                            args :test #'equal)
-               (cl-position "op" args :test #'equal)))
-    (should (member "--limit=2" args))
-    (should (member "--reversed" args))
-    (should-not (member "--no-graph" args))))
-
-(ert-deftest majutsu-op-log-command-args/overrides-user-word-wrap ()
-  "The row protocol should override an earlier user word-wrap setting."
-  (let* ((majutsu-jj-global-arguments
-          '("--no-pager" "--config=ui.log-word-wrap=true"))
-         (args (majutsu-process-jj-arguments
-                (majutsu-op--log-command-args '("--limit=1"))))
-         (enabled (cl-position "--config=ui.log-word-wrap=true"
-                               args :test #'equal))
-         (disabled (cl-position "--config=ui.log-word-wrap=false"
-                                args :test #'equal)))
-    (should enabled)
-    (should disabled)
-    (should (< enabled disabled))))
-
 (ert-deftest majutsu-op-log-validate-args/normalizes-native-list-options ()
   "Operation log should accept only its native list-formatting options."
   (should (equal (majutsu-op-log--validate-args
@@ -219,41 +193,6 @@
                   ("-G" "--no-graph")))
     (should-error (majutsu-op-log--validate-args args) :type 'user-error)))
 
-(ert-deftest majutsu-op-log-insert-entries/renders-native-compact-entry ()
-  "Operation rows should render compact headings, bodies, and graph prefixes."
-  (let (keep-error)
-    (cl-letf (((symbol-function 'majutsu-jj-wash)
-               (lambda (washer value &rest _args)
-                 (setq keep-error value)
-                 (insert (majutsu-op-test--log-raw-entry
-                          :graph-prefix "@  "
-                          :op-id "full-id"
-                          :op-id-short "short-id"
-                          :kind "snapshot"
-                          :current "t"
-                          :attributes "args: jj op\nclient: test"))
-                 (funcall washer nil)
-                 0)))
-      (with-temp-buffer
-        (majutsu-op-log-mode)
-        (let ((inhibit-read-only t))
-          (majutsu-op-log-insert-entries))
-        (should-not keep-error)
-        (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-          (should (string-match-p
-                   "short-id user workspace 2 minutes ago, lasted 3 milliseconds"
-                   content))
-          (should (string-match-p "description" content))
-          (should (string-match-p "args: jj op\nclient: test" content))
-          (should-not (string-match-p "Id: full-id" content)))
-        (goto-char (point-min))
-        (search-forward "short-id")
-        (should (equal (magit-section-value-if 'jj-op) "full-id"))
-        (should (equal (substring-no-properties
-                        (get-text-property (line-beginning-position)
-                                           'line-prefix))
-                       "@  "))))))
-
 (ert-deftest majutsu-op-parse-metadata-line/parses-record ()
   "The internal metadata parser should keep full operation ids."
   (let* ((line (string-join '("full-id" "short-id" "user" "workspace"
@@ -265,28 +204,19 @@
     (should (equal (plist-get entry :start-time) "start"))
     (should (equal (plist-get entry :desc) "desc"))))
 
-(ert-deftest majutsu-op-metadata/uses-read-only-internal-query ()
-  "Internal metadata queries should avoid working-copy snapshots."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu-jj-buffer-string)
-               (lambda (&rest args)
-                 (setq captured args)
-                 (concat "warning before metadata\n"
-                         (string-join
-                          '("full-id" "short-id" "user" ""
-                            "start" "end" "duration" "op" "desc")
-                          majutsu-op--field-separator)
-                         "\n"))))
-      (let ((metadata (majutsu-op--metadata "abc")))
-        (should (equal (plist-get metadata :op-id) "full-id"))
-        (should (equal (plist-get metadata :workspace) "")))
-      (should (member "--at-op=@" captured))
-      (should (member "--ignore-working-copy" captured))
-      (should (< (cl-position "--at-op=@" captured :test #'equal)
-                 (cl-position "op" captured :test #'equal)))
-      (should (equal (last captured 6)
-                     (list "op" "show" "abc" "--no-op-diff" "-T"
-                           majutsu-op--metadata-template))))))
+(ert-deftest majutsu-op-metadata/skips-diagnostics-before-record ()
+  "Warnings before metadata do not become the operation identity."
+  (cl-letf (((symbol-function 'majutsu-jj-buffer-string)
+             (lambda (&rest _args)
+               (concat "warning before metadata\n"
+                       (string-join
+                        '("full-id" "short-id" "user" ""
+                          "start" "end" "duration" "op" "desc")
+                        majutsu-op--field-separator)
+                       "\n"))))
+    (let ((metadata (majutsu-op--metadata "abc")))
+      (should (equal (plist-get metadata :op-id) "full-id"))
+      (should (equal (plist-get metadata :workspace) "")))))
 
 (ert-deftest majutsu-op-wash-diff-output/parses-colored-commit-line ()
   "The production washer preserves colors and actionable commit identity."
@@ -421,56 +351,6 @@
         (majutsu-op-diff-default-action)))
     (should (equal (nreverse actions) '(evolog visit)))))
 
-(ert-deftest majutsu-op-diff-command-args/uses-read-only-top-level-args ()
-  "Operation diff command args should avoid snapshotting the working copy."
-  (let ((args (majutsu-op--diff-command-args '("--operation=abc"))))
-    (should (member "--at-op=@" args))
-    (should (member "--ignore-working-copy" args))
-    (should (member "--config" args))
-    (should (< (cl-position "--at-op=@" args :test #'equal)
-               (cl-position "op" args :test #'equal)))
-    (should (member "--operation=abc" args))))
-
-(ert-deftest majutsu-op-diff/passes-args-binding-to-buffer-setup ()
-  "majutsu-op-diff should remember diff args in the buffer."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-               (lambda (&optional _directory) "/repo/"))
-              ((symbol-function 'majutsu-op-diff--buffer-name)
-               (lambda () "*op-diff*"))
-              ((symbol-function 'majutsu-setup-buffer-internal)
-               (lambda (mode locked bindings &rest kwargs)
-                 (setq captured (list mode locked bindings kwargs))
-                 'buffer)))
-      (should (eq (majutsu-op-diff '("--from=a" "--to=b")) 'buffer))
-      (should (eq (nth 0 captured) #'majutsu-op-diff-mode))
-      (should-not (nth 1 captured))
-      (should (equal (nth 2 captured)
-                     '((majutsu-op-diff--args ("--from=a" "--to=b")))))
-      (should (equal (nth 3 captured)
-                     '(:buffer "*op-diff*" :directory "/repo/"))))))
-
-(ert-deftest majutsu-op-diff-refresh-buffer/renders-parsed-diff ()
-  "Operation diff refresh should reuse the parsed operation diff sections."
-  (let (keep-error)
-    (cl-letf (((symbol-function 'majutsu-jj-wash)
-               (lambda (washer value &rest _args)
-                 (setq keep-error value)
-                 (insert (concat "Changed commits:\n+ "
-                                 (majutsu-op-test--summary)
-                                 "\n"))
-                 (funcall washer nil)
-                 0)))
-      (with-temp-buffer
-        (majutsu-op-diff-mode)
-        (setq majutsu-op-diff--args '("--operation=abc"))
-        (let ((inhibit-read-only t))
-          (majutsu-op-diff-refresh-buffer))
-        (should-not keep-error)
-        (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-          (should (string-match-p "Operation Diff abc" content))
-          (should (string-match-p "change-short commit-short" content)))))))
-
 (ert-deftest majutsu-op-diff-refresh-buffer/renders-explicit-endpoint-metadata ()
   "Explicit operation ranges should show metadata for both endpoints."
   (let (seen)
@@ -503,51 +383,91 @@
         (should (equal (majutsu-op--operation-at-point) "b-full"))))
     (should (equal (nreverse seen) '("a" "b")))))
 
-(ert-deftest majutsu-op-restore/runs-confirmed-command ()
-  "Operation restore should run jj op restore after confirmation."
-  (let (command refreshed)
-    (cl-letf (((symbol-function 'majutsu-confirm)
-               (lambda (&rest _) t))
-              ((symbol-function 'majutsu-call-jj)
-               (lambda (&rest args)
-                 (setq command args)
-                 0))
-              ((symbol-function 'majutsu-refresh)
-               (lambda ()
-                 (setq refreshed t))))
-      (majutsu-op-restore "abc")
-      (should (equal command '("op" "restore" "abc")))
-      (should refreshed))))
+(ert-deftest majutsu-history-views/integration-do-not-snapshot-working-copy ()
+  "History views render stored identities and patches without recording edits."
+  (majutsu-jj-integration-with-repo repo
+    (let* ((file (majutsu-jj-integration-file repo "f.txt"))
+           (before (majutsu-jj-operation-id repo)))
+      (majutsu-jj-integration-write-text file "recorded\n")
+      (majutsu-jj-integration-call repo "status")
+      (let ((commit (majutsu-jj-integration-output
+                     repo "log" "--no-graph" "-r" "@" "-T" "commit_id"))
+            (operation (majutsu-jj-operation-id repo))
+            (process-environment (cons "COLUMNS=40" process-environment))
+            (majutsu-jj-global-arguments
+             '("--no-pager" "--color=always" "--config=ui.log-word-wrap=true")))
+        (majutsu-jj-integration-write-text file "pending local edits\n")
+        (pcase-dolist
+            (`(,mode ,refresh ,type ,target)
+             `((majutsu-op-log-mode majutsu-op-log-refresh-buffer jj-op ,operation)
+               (majutsu-evolog-mode majutsu-evolog-refresh-buffer jj-evolog-entry ,commit)))
+          (with-temp-buffer
+            (funcall mode)
+            (if (eq mode 'majutsu-op-log-mode)
+                (setq-local majutsu-op-log--args '("--limit=1"))
+              (setq-local majutsu-evolog--revset "@"
+                          majutsu-evolog--args '("--limit=1")))
+            (let ((inhibit-read-only t)
+                  targets)
+              (funcall refresh)
+              (magit-map-sections
+               (lambda (section)
+                 (when (magit-section-match type section)
+                   (push (oref section value) targets)))
+               magit-root-section)
+              (should (equal targets (list target))))))
+        (with-temp-buffer
+          (majutsu-op-diff-mode)
+          (setq-local majutsu-op-diff--args
+                      (list (concat "--from=" before) (concat "--to=" operation)))
+          (let ((inhibit-read-only t)
+                commits endpoints)
+            (majutsu-op-diff-refresh-buffer)
+            (magit-map-sections
+             (lambda (section)
+               (pcase (oref section type)
+                 ('jj-op-commit-line
+                  (push (plist-get (oref section value) :commit-id) commits))
+                 ('jj-op-diff-endpoint
+                  (push (plist-get (oref section value) :op-id) endpoints))))
+             magit-root-section)
+            (should (member commit commits))
+            (should (equal (sort endpoints #'string-lessp)
+                           (sort (list before operation) #'string-lessp)))))
+        (with-temp-buffer
+          (majutsu-evolog-diff-mode)
+          (setq-local majutsu-evolog-diff--commit-id commit)
+          (let ((inhibit-read-only t))
+            (majutsu-evolog-diff-refresh-buffer))
+          (should (magit-get-section
+                   `((jj-file . "f.txt") (diff-root) (jj-evolog-diff . ,commit))))
+          (should (string-match-p "recorded" (buffer-string)))
+          (should-not (string-match-p "pending" (buffer-string))))
+        (should (equal
+                 (majutsu-jj-integration-output
+                  repo "--ignore-working-copy" "op" "log" "--no-graph" "-n" "1" "-T" "id")
+                 operation))))))
 
-(ert-deftest majutsu-op-revert/runs-confirmed-command ()
-  "Operation revert should run jj op revert after confirmation."
-  (let (command refreshed)
-    (cl-letf (((symbol-function 'majutsu-confirm)
-               (lambda (&rest _) t))
-              ((symbol-function 'majutsu-call-jj)
-               (lambda (&rest args)
-                 (setq command args)
-                 0))
-              ((symbol-function 'majutsu-refresh)
-               (lambda ()
-                 (setq refreshed t))))
-      (majutsu-op-revert "abc")
-      (should (equal command '("op" "revert" "abc")))
-      (should refreshed))))
-
-(ert-deftest majutsu-op-log-actions/use-full-operation-at-point ()
-  "Direct log actions should pass the enclosing full operation id."
-  (let (restored reverted)
-    (cl-letf (((symbol-function 'majutsu-op--operation-at-point)
-               (lambda () "full-operation-id"))
-              ((symbol-function 'majutsu-op-restore)
-               (lambda (operation) (setq restored operation)))
-              ((symbol-function 'majutsu-op-revert)
-               (lambda (operation) (setq reverted operation))))
-      (majutsu-op-log-restore-at-point)
-      (majutsu-op-log-revert-at-point))
-    (should (equal restored "full-operation-id"))
-    (should (equal reverted "full-operation-id"))))
+(ert-deftest majutsu-op/integration-confirmation-controls-mutations ()
+  "Declining preserves repository state; accepting actually restores/reverts it."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (dolist (function '(majutsu-op-restore majutsu-op-revert))
+      (let* ((repo (majutsu-jj-integration-init sandbox (symbol-name function)))
+             (default-directory (file-name-as-directory repo))
+             (majutsu-jj-executable majutsu-jj-integration--jj)
+             (before (majutsu-jj-operation-id repo)))
+        (majutsu-jj-integration-call repo "describe" "-m" "changed")
+        (let* ((after (majutsu-jj-operation-id repo))
+               (target (if (eq function 'majutsu-op-restore) before after)))
+          (cl-letf (((symbol-function 'majutsu-confirm) (lambda (&rest _) nil)))
+            (funcall function target))
+          (should (equal (majutsu-jj-operation-id repo) after))
+          (cl-letf (((symbol-function 'majutsu-confirm) (lambda (&rest _) t)))
+            (funcall function target))
+          (should (equal
+                   (majutsu-jj-integration-output
+                    repo "--ignore-working-copy" "log" "--no-graph" "-r" "@" "-T" "description")
+                   "")))))))
 
 ;;; _
 (provide 'majutsu-op-test)
