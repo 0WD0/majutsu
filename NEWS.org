@@ -5,6 +5,13 @@
 
 ** Breaking changes
 
+- Revision command names ::
+  The edit-at-point command is now ~majutsu-edit~. Sequential log navigation
+  uses ~majutsu-goto-next-revision~ and ~majutsu-goto-prev-revision~.
+  Update custom bindings; the old command names were removed without aliases.
+  Built-in keys are unchanged. Prompts and help now follow jj's terminology:
+  ~change~ for a new change, ~revision~ for a selected history node.
+
 - Scoped transient defaults ::
   ~w~ now opens a menu: ~w u~ saves user defaults, ~w r~ repository defaults,
   and ~w w~ workspace defaults, replacing the old standalone ~w~ / ~W~ actions.
@@ -378,7 +385,7 @@
   - ~D~ now runs ~majutsu-diff-dwim~ in log mode (was global).
   - ~Y~ now runs ~majutsu-duplicate-dwim~ in log mode (was global).
   - ~o~ now runs ~majutsu-new~ transient globally.
-- ~majutsu-abandon~ now respects active region selection to abandon multiple changesets at once.
+- ~majutsu-abandon~ now respects active region selection to abandon multiple revisions at once.
 - In ~majutsu-new~ transient:
   - Parent revision key changed from ~p~ to ~r~.
   - Action key changed from ~n~ to ~o~.

@@ -78,7 +78,7 @@ afterward."
   "S"   'majutsu-split
   "d"   'majutsu-diff
   "v"   'majutsu-evolog
-  "e"   'majutsu-edit-changeset
+  "e"   'majutsu-edit
   "r"   'majutsu-rebase
   "V"   'majutsu-revert
   "b"   'majutsu-bookmark

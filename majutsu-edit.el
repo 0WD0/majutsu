@@ -1,4 +1,4 @@
-;;; majutsu-edit.el --- Edit changesets with Majutsu  -*- lexical-binding: t; -*-
+;;; majutsu-edit.el --- Edit revisions with Majutsu  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025-2026 0WD0
 
@@ -31,8 +31,8 @@ With prefix ARG, pass --ignore-immutable.  Return non-nil on success."
     t))
 
 ;;;###autoload
-(defun majutsu-edit-changeset (&optional arg)
-  "Edit commit at point.
+(defun majutsu-edit (&optional arg)
+  "Edit the revision at point.
 
 With prefix ARG, pass --ignore-immutable.
 When called from a blob buffer, also visit the workspace file."

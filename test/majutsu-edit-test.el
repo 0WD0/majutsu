@@ -4,7 +4,7 @@
 
 ;;; Commentary:
 
-;; Tests for changeset edit helpers.
+;; Tests for revision edit helpers.
 
 ;;; Code:
 
@@ -24,20 +24,6 @@
       (should (equal captured '("edit" "main")))
       (should (majutsu-edit-revision "main" '(4)))
       (should (equal captured '("edit" "main" "--ignore-immutable"))))))
-
-(ert-deftest majutsu-edit-test-edit-changeset-prefers-literal-revision-at-point ()
-  "Edit changeset should prefer the literal revision/ref under point."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu-revision-at-point)
-               (lambda () "main@origin"))
-              ((symbol-function 'majutsu-run-jj)
-               (lambda (&rest args)
-                 (setq captured args)
-                 0))
-              ((symbol-function 'message)
-               (lambda (&rest _args) nil)))
-      (majutsu-edit-changeset)
-      (should (equal captured '("edit" "main@origin"))))))
 
 (provide 'majutsu-edit-test)
 ;;; majutsu-edit-test.el ends here

@@ -47,7 +47,7 @@ Instead of invoking this alias for `majutsu-log' using
     ("d" "Diff"              majutsu-diff)
     ("v" "Evolution log"     majutsu-evolog)
     ("D" "Diff (dwim)"       majutsu-diff-dwim)
-    ("e" "Edit change"       majutsu-edit-changeset)
+    ("e" "Edit revision"     majutsu-edit)
     ("E" "Ediff"             majutsu-ediff)
     ("M" "Resolve conflicts" majutsu-resolve)]
    [("G" "Git"               majutsu-git-transient)
