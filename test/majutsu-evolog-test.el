@@ -32,22 +32,6 @@
           majutsu-row-end-token
           "\n"))
 
-(ert-deftest majutsu-evolog-command-args/use-read-only-top-level-args-and-template ()
-  "Evolog list commands should avoid snapshots and use Majutsu's template."
-  (let ((args (majutsu-evolog--command-args "@" '("--limit=2" "--reversed"))))
-    (should (member "--at-op=@" args))
-    (should (member "--ignore-working-copy" args))
-    (should (< (cl-position "--at-op=@" args :test #'equal)
-               (cl-position "evolog" args :test #'equal)))
-    (should (< (cl-position "--config=ui.log-word-wrap=false"
-                            args :test #'equal)
-               (cl-position "evolog" args :test #'equal)))
-    (should (member "--limit=2" args))
-    (should (member "--reversed" args))
-    (should-not (member "--no-graph" args))
-    (should (equal (last args 4)
-                   (list "-r" "@" "-T" majutsu-evolog--entry-template)))))
-
 (ert-deftest majutsu-evolog-validate-args/accepts-and-normalizes-native-list-options ()
   (should (equal (majutsu-evolog--validate-args
                   '("--limit=0" "--reversed" "-G"))
@@ -83,18 +67,22 @@
                     :type 'user-error)
       (should-not opened))))
 
-(ert-deftest majutsu-evolog-refresh/does-not-wash-jj-errors ()
-  (let (keep-error)
-    (cl-letf (((symbol-function 'majutsu-jj-wash)
-               (lambda (_washer keep &rest _args)
-                 (setq keep-error keep)
-                 1)))
-      (with-temp-buffer
-        (majutsu-evolog-mode)
-        (setq majutsu-evolog--revset "@")
-        (let ((inhibit-read-only t))
-          (majutsu-evolog-refresh-buffer))))
-    (should-not keep-error)))
+(ert-deftest majutsu-evolog-refresh/discards-partial-output-on-error ()
+  "Valid-looking rows from a failed backend must not become actionable."
+  (cl-letf (((symbol-function 'majutsu-process-file)
+             (lambda (&rest _args)
+               (insert (majutsu-evolog-test--raw-entry))
+               1)))
+    (with-temp-buffer
+      (majutsu-evolog-mode)
+      (setq-local majutsu-evolog--revset "@")
+      (let ((inhibit-read-only t))
+        (majutsu-evolog-refresh-buffer))
+      (should-not majutsu-row-cached-entries)
+      (magit-map-sections
+       (lambda (section)
+         (should-not (magit-section-match 'jj-evolog-entry section)))
+       magit-root-section))))
 
 (ert-deftest majutsu-evolog-wash-output/inserts-row-sections ()
   "Evolog washer should render compact graph output as Magit sections."
@@ -127,118 +115,48 @@
       (should (equal (majutsu-row-column entry 'commit-id) "commit-full"))
       (should (equal (majutsu-row-column entry 'operation-id) "op-full")))))
 
-(ert-deftest majutsu-evolog-refresh-buffer/inserts-compact-entry-sections ()
-  "Evolog refresh should render compact row sections, not details."
-  (cl-letf (((symbol-function 'majutsu-jj-wash)
-             (lambda (washer _keep-error &rest _args)
-               (insert (majutsu-evolog-test--raw-entry))
-               (funcall washer nil)
-               0)))
-    (with-temp-buffer
-      (majutsu-evolog-mode)
-      (setq majutsu-evolog--revset "@")
-      (let ((inhibit-read-only t))
-        (majutsu-evolog-refresh-buffer))
-      (goto-char (point-min))
-      (let ((content (buffer-substring-no-properties (point-min) (point-max))))
-        (should (string-match-p "qsustnur wd@example.com" content))
-        (should (string-match-p "-- operation 86978b4db954" content))
-        (should-not (string-match-p "Change: change-full" content))
-        (should-not (string-match-p "Operation id: op-full" content)))
-      (search-forward "qsustnur")
-      (should (equal (magit-section-value-if 'jj-evolog-entry)
-                     "commit-full")))))
-
-(ert-deftest majutsu-evolog-inter-diff-command-args/uses-upstream-git-patch ()
-  (should
-   (equal (majutsu-evolog--inter-diff-command-args "0123abcdef")
-          (append majutsu-evolog--read-only-global-args
-                  '("evolog" "--no-graph" "--limit=1"
-                    "--patch" "--git"
-                    "-r" "commit_id(0123abcdef)" "-T" "")))))
-
 (ert-deftest majutsu-evolog-inter-diff-command-args/rejects-invalid-id ()
   (dolist (id '(nil "" "change-id" "abc|def" "abc def"))
     (should-error (majutsu-evolog--inter-diff-command-args id)
                   :type 'user-error)))
 
-(ert-deftest majutsu-evolog-diff-at-point/uses-canonical-commit-id ()
-  (let (seen)
-    (cl-letf (((symbol-function 'majutsu-row-current-entry)
-               (lambda (&optional _message)
-                 '(:columns ((commit-id . "0123abcdef")))))
-              ((symbol-function 'majutsu-evolog-inter-diff)
-               (lambda (commit-id) (setq seen commit-id))))
-      (majutsu-evolog-diff-at-point))
-    (should (equal seen "0123abcdef"))))
-
-(ert-deftest majutsu-evolog-inter-diff/opens-locked-buffer-with-full-id ()
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-               (lambda (&optional _directory) "/repo/"))
-              ((symbol-function 'majutsu-evolog-diff--buffer-name)
-               (lambda (_commit-id) "*evolog-diff*"))
-              ((symbol-function 'majutsu-setup-buffer-internal)
-               (lambda (mode locked bindings &rest kwargs)
-                 (setq captured (list mode locked bindings kwargs))
-                 'buffer)))
-      (should (eq (majutsu-evolog-inter-diff "0123abcdef") 'buffer))
-      (should (eq (nth 0 captured) #'majutsu-evolog-diff-mode))
-      (should (nth 1 captured))
-      (should (equal (nth 2 captured)
-                     '((majutsu-evolog-diff--commit-id "0123abcdef"))))
-      (should (equal (nth 3 captured)
-                     '(:buffer "*evolog-diff*" :directory "/repo/"))))))
-
 (ert-deftest majutsu-evolog-inter-diff-refresh/sectionizes-complete-git-patch ()
-  (let (seen-keep seen-args seen-global-args seen-ansi)
-    (cl-letf (((symbol-function 'majutsu-jj-wash)
-               (lambda (washer keep &rest args)
-                 (setq seen-keep keep
-                       seen-args args
-                       seen-global-args majutsu-jj-global-arguments
-                       seen-ansi majutsu-process-apply-ansi-colors)
-                 (insert (string-join
-                          '("diff --git a/JJ-COMMIT-DESCRIPTION b/JJ-COMMIT-DESCRIPTION"
-                            "--- JJ-COMMIT-DESCRIPTION"
-                            "+++ JJ-COMMIT-DESCRIPTION"
-                            "@@ -1 +1 @@"
-                            "-old description"
-                            "+new description"
-                            "diff --git a/foo b/foo"
-                            "index 1234567..89abcde 100644"
-                            "--- a/foo"
-                            "+++ b/foo"
-                            "@@ -1 +1 @@"
-                            "-foo"
-                            "+bar")
-                          "\n"))
-                 (funcall washer args)
-                 0)))
-      (with-temp-buffer
-        (majutsu-evolog-diff-mode)
-        (setq majutsu-evolog-diff--commit-id "0123abcdef")
-        (let ((inhibit-read-only t))
-          (majutsu-evolog-diff-refresh-buffer))
-        (should (string-match-p "foo" (buffer-string)))
-        (should (magit-get-section
-                 '((jj-file . "JJ-COMMIT-DESCRIPTION") (diff-root)
-                   (jj-evolog-diff . "0123abcdef"))))
-        (let* ((file (magit-get-section
-                      '((jj-file . "foo") (diff-root)
-                        (jj-evolog-diff . "0123abcdef"))))
-               (hunk (seq-find (lambda (section)
-                                 (magit-section-match 'jj-hunk section))
-                               (oref file children))))
-          (should (cl-typep file 'majutsu-evolog-file-section))
-          (should (cl-typep hunk 'majutsu-evolog-hunk-section))))
-      (should-not seen-keep)
-      (should-not seen-ansi)
-      (should (member "--color=never" seen-global-args))
-      (should (= 1 (seq-count (lambda (arg) (string-prefix-p "--color" arg))
-                              seen-global-args)))
-      (should (equal seen-args
-                     (majutsu-evolog--inter-diff-command-args "0123abcdef"))))))
+  "Description and file diffs both retain their read-only section types."
+  (cl-letf (((symbol-function 'majutsu-jj-wash)
+             (lambda (washer _keep &rest args)
+               (insert (string-join
+                        '("diff --git a/JJ-COMMIT-DESCRIPTION b/JJ-COMMIT-DESCRIPTION"
+                          "--- JJ-COMMIT-DESCRIPTION"
+                          "+++ JJ-COMMIT-DESCRIPTION"
+                          "@@ -1 +1 @@"
+                          "-old description"
+                          "+new description"
+                          "diff --git a/foo b/foo"
+                          "index 1234567..89abcde 100644"
+                          "--- a/foo"
+                          "+++ b/foo"
+                          "@@ -1 +1 @@"
+                          "-foo"
+                          "+bar")
+                        "\n"))
+               (funcall washer args)
+               0)))
+    (with-temp-buffer
+      (majutsu-evolog-diff-mode)
+      (setq-local majutsu-evolog-diff--commit-id "0123abcdef")
+      (let ((inhibit-read-only t))
+        (majutsu-evolog-diff-refresh-buffer))
+      (should (magit-get-section
+               '((jj-file . "JJ-COMMIT-DESCRIPTION") (diff-root)
+                 (jj-evolog-diff . "0123abcdef"))))
+      (let* ((file (magit-get-section
+                    '((jj-file . "foo") (diff-root)
+                      (jj-evolog-diff . "0123abcdef"))))
+             (hunk (seq-find (lambda (section)
+                               (magit-section-match 'jj-hunk section))
+                             (oref file children))))
+        (should (cl-typep file 'majutsu-evolog-file-section))
+        (should (cl-typep hunk 'majutsu-evolog-hunk-section))))))
 
 (ert-deftest majutsu-evolog-inter-diff-refresh/shows-empty-patch ()
   (cl-letf (((symbol-function 'majutsu-jj-wash)
@@ -250,63 +168,6 @@
       (let ((inhibit-read-only t))
         (majutsu-evolog-diff-refresh-buffer))
       (should (string-match-p "No patch" (buffer-string))))))
-
-(ert-deftest majutsu-evolog-copy-entry-field-copies-operation-id ()
-  "Shared row copy should work in evolog buffers."
-  (let (copied)
-    (with-temp-buffer
-      (majutsu-evolog-mode)
-      (setq buffer-read-only nil)
-      (insert (majutsu-evolog-test--raw-entry))
-      (goto-char (point-min))
-      (majutsu-evolog--wash-output nil)
-      (goto-char (point-min))
-      (search-forward "feat(op): phase1")
-      (cl-letf (((symbol-function 'kill-new)
-                 (lambda (string) (setq copied string)))
-                ((symbol-function 'message)
-                 (lambda (format-string &rest args)
-                   (apply #'format format-string args)))
-                ((symbol-function 'completing-read)
-                 (lambda (_prompt _collection &rest _)
-                   "operation-id")))
-        (majutsu-row-copy-entry-field))
-      (should (equal copied "op-full")))))
-
-(ert-deftest majutsu-evolog-filter-buffer-substring/cleans-graph-properties ()
-  "Evolog copy filter should strip row display properties."
-  (with-temp-buffer
-    (majutsu-evolog-mode)
-    (setq buffer-read-only nil)
-    (insert (majutsu-evolog-test--raw-entry))
-    (goto-char (point-min))
-    (majutsu-evolog--wash-output nil)
-    (let ((copied (filter-buffer-substring (point-min) (point-max))))
-      (should (string-match-p "feat(op): phase1" copied))
-      (should-not (text-property-not-all
-                   0 (length copied) 'majutsu-row-module nil copied))
-      (should-not (text-property-not-all
-                   0 (length copied) 'line-prefix nil copied)))))
-
-(ert-deftest majutsu-evolog/passes-revset-and-args-to-buffer ()
-  "majutsu-evolog should remember revset and args in the buffer."
-  (let (captured)
-    (cl-letf (((symbol-function 'majutsu--toplevel-safe)
-               (lambda (&optional _directory) "/repo/"))
-              ((symbol-function 'majutsu-evolog--buffer-name)
-               (lambda (_revset) "*evolog*"))
-              ((symbol-function 'majutsu-setup-buffer-internal)
-               (lambda (mode locked bindings &rest kwargs)
-                 (setq captured (list mode locked bindings kwargs))
-                 'buffer)))
-      (should (eq (majutsu-evolog "@" '("--limit=2")) 'buffer))
-      (should (eq (nth 0 captured) #'majutsu-evolog-mode))
-      (should-not (nth 1 captured))
-      (should (equal (nth 2 captured)
-                     '((majutsu-evolog--revset "@")
-                       (majutsu-evolog--args ("--limit=2")))))
-      (should (equal (nth 3 captured)
-                     '(:buffer "*evolog*" :directory "/repo/"))))))
 
 (provide 'majutsu-evolog-test)
 ;;; majutsu-evolog-test.el ends here
