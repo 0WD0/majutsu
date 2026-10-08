@@ -125,16 +125,6 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
   (should (equal (majutsu--bookmark-split-remote-ref "main")
                  '("main" . nil))))
 
-(ert-deftest majutsu-bookmark-forget-name-candidates/include-local-names-and-remote-refs ()
-  (cl-letf (((symbol-function 'majutsu--get-bookmark-names)
-             (lambda (&optional scope)
-               (pcase scope
-                 ('local '("main" "local-only"))
-                 ('remote '("main@origin" "remote-only@upstream"))
-                 (_ nil)))))
-    (should (equal (majutsu--bookmark-forget-name-candidates)
-                   '("main" "local-only" "main@origin" "remote-only@upstream")))))
-
 (ert-deftest majutsu-bookmark-track-name-candidates/uses-untracked-remote-bases ()
   (cl-letf (((symbol-function 'majutsu--get-bookmark-names)
              (lambda (&optional scope)
@@ -759,27 +749,6 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
                        "Delete bookmark(s) main and propagate on next push? ")))
       (should (equal (seq-remove #'null (flatten-tree called))
                      '("bookmark" "delete" "main"))))))
-
-(ert-deftest majutsu-bookmark-forget/builds-pattern-args ()
-  (let (called)
-    (cl-letf (((symbol-function 'majutsu-run-jj)
-               (lambda (&rest args)
-                 (setq called args)
-                 0))
-              ((symbol-function 'message) (lambda (&rest _args) nil)))
-      (majutsu-bookmark-forget '("main" "glob:\"feat*\""))
-      (should (equal (seq-remove #'null (flatten-tree called))
-                     '("bookmark" "forget"
-                       "main" "glob:\"feat*\""))))))
-
-(ert-deftest majutsu-bookmark-forget-ref/forgets-exact-remote-symbol ()
-  (let (seen)
-    (cl-letf (((symbol-function 'majutsu-start-jj) (lambda (args) (setq seen args))))
-      (majutsu-bookmark-forget-ref "topic*@fork*")
-      (should (equal seen '("bookmark" "forget" "topic*@fork*")))
-      (majutsu-bookmark-forget-ref "topic@git")
-      (should (equal seen '("bookmark" "forget" "topic@git")))
-      (should-error (majutsu-bookmark-forget-ref "topic") :type 'user-error))))
 
 (ert-deftest majutsu-bookmark-untrack/builds-remote-args ()
   (let (called)

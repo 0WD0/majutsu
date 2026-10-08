@@ -13,7 +13,6 @@
 *.tar
 packages/
 dist/
-.artifacts/
 archive/
 node_modules
 .astro/

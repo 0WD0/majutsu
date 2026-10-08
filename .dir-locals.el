@@ -20,6 +20,7 @@
          (majutsu-forge--with-section-errors . 1)
          (majutsu-evil--define-keys . 2)
          ;; definition macros
+         (majutsu-jjosh . 0)
          (majutsu-log-define-column . 1)
          (majutsu-bookmark-define-template . 1)
          (majutsu-template-defspecial . defun)

@@ -65,17 +65,19 @@
 
 (defvar-keymap majutsu-embark-tracked-bookmark-map
   :parent majutsu-embark-revision-map
-  "u" #'majutsu-bookmark-untrack-ref
-  "f" #'majutsu-bookmark-forget-ref)
+  "u" #'majutsu-bookmark-untrack-ref)
 
 (defvar-keymap majutsu-embark-untracked-bookmark-map
   :parent majutsu-embark-revision-map
-  "t" #'majutsu-bookmark-track-ref
-  "f" #'majutsu-bookmark-forget-ref)
+  "t" #'majutsu-bookmark-track-ref)
 
 (defvar-keymap majutsu-embark-git-bookmark-map
-  :parent majutsu-embark-revision-map
-  "f" #'majutsu-bookmark-forget-ref)
+  :parent majutsu-embark-revision-map)
+
+(majutsu-jjosh
+  (keymap-set majutsu-embark-tracked-bookmark-map "f" #'majutsu-bookmark-forget-ref)
+  (keymap-set majutsu-embark-untracked-bookmark-map "f" #'majutsu-bookmark-forget-ref)
+  (keymap-set majutsu-embark-git-bookmark-map "f" #'majutsu-bookmark-forget-ref))
 
 (defvar-keymap majutsu-embark-remote-map
   :doc "Actions on one configured Git remote."
