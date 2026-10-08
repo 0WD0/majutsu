@@ -898,8 +898,9 @@ commands:
   visit behavior.
 - Command: majutsu-op-diff-transient / majutsu-op-diff :: Compare repository
   changes by operation, =--from=, or =--to= in a sectionized changed commit/ref
-  view.
-  Explicit =--from= / =--to= ranges show lightweight metadata for both endpoint
+  view. The internal summary format disables =ui.log-word-wrap= so line breaks
+  cannot split changed-commit records. Explicit =--from= / =--to= ranges show
+  lightweight metadata for both endpoint
   operations, including their full ids, user, workspace, end time, and
   description. Changed lines keep full commit/change IDs internally. Press =RET=
   or =v= on a changed line to open its evolution log; elsewhere =RET= keeps

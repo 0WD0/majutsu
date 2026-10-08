@@ -1545,8 +1545,9 @@ View Jujutsu's operation history with its graph preserved by default.
 @deffn Command majutsu-op-diff-transient / majutsu-op-diff
 Compare repository
   changes by operation@comma{} @samp{--from}@comma{} or @samp{--to} in a sectionized changed commit/ref
-  view.
-  Explicit @samp{--from} / @samp{--to} ranges show lightweight metadata for both endpoint
+  view. The internal summary format disables @samp{ui.log-word-wrap} so line breaks
+  cannot split changed-commit records. Explicit @samp{--from} / @samp{--to} ranges show
+  lightweight metadata for both endpoint
   operations@comma{} including their full ids@comma{} user@comma{} workspace@comma{} end time@comma{} and
   description. Changed lines keep full commit/change IDs internally. Press @samp{RET}
   or @samp{v} on a changed line to open its evolution log; elsewhere @samp{RET} keeps

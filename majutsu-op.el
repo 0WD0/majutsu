@@ -740,8 +740,9 @@ An explicitly nil ARGS means no options."
         (user-error "Failed to parse operation metadata for %s" operation))))
 
 (defun majutsu-op--diff-command-args (args)
-  "Return jj arguments for operation diff ARGS."
+  "Return line-safe jj arguments for operation diff ARGS."
   (append majutsu-op--read-only-global-args
+          majutsu-row-protocol-global-args
           (list "--config" (majutsu-op--commit-summary-config-arg)
                 "op" "diff" "--no-graph")
           args))
