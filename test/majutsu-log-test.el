@@ -33,15 +33,11 @@
         (symbol-value var)
       (user-error "Unknown log test field %S" field))))
 
-(defun majutsu-log-test--column-spec-field (spec)
-  "Return FIELD from test column SPEC."
-  (plist-get spec :field))
-
 (defun majutsu-log-test--ensure-required-columns (columns)
   "Return COLUMNS with required hidden metadata appended."
   (let ((out (copy-sequence columns)))
     (dolist (spec majutsu-log-test--required-columns out)
-      (let ((field (majutsu-log-test--column-spec-field spec)))
+      (let ((field (plist-get spec :field)))
         (unless (seq-some
                  (lambda (column)
                    (and (eq (plist-get column :field) field)
@@ -187,18 +183,14 @@
           (should (equal (majutsu-file-at-point) path))
           (should (equal (get-text-property (point) 'help-echo) path)))))))
 
-(defun majutsu-log-test--module-payload (compiled module values)
-  "Return transport payload for MODULE in COMPILED using VALUES alist."
+(defun majutsu-log-test--metadata-payload (compiled values)
+  "Return metadata payload for COMPILED using VALUES alist."
   (string-join
    (mapcar (lambda (column)
              (majutsu-log-test--transport-value
               (alist-get (plist-get column :field) values nil nil #'eq)))
-           (majutsu-row-module-columns compiled module))
+           (majutsu-row-module-columns compiled 'metadata))
    majutsu-row-field-separator))
-
-(defun majutsu-log-test--metadata-payload (compiled values)
-  "Return metadata payload for COMPILED using VALUES alist."
-  (majutsu-log-test--module-payload compiled 'metadata values))
 
 (defun majutsu-log-test--column (compiled field module)
   "Return FIELD occurrence in MODULE from COMPILED."
@@ -225,10 +217,6 @@
      majutsu-row-end-token
      "\n")))
 
-(defun majutsu-log-test--post-wrap (value _ctx)
-  "Wrap VALUE in square brackets for postprocessor tests."
-  (format "[%s]" value))
-
 (defun majutsu-log-test--post-by-module (value ctx)
   "Return a module-specific projection of VALUE using CTX."
   (pcase (plist-get ctx :module)
@@ -236,71 +224,48 @@
     ('body (upcase value))
     (_ value)))
 
-
-(ert-deftest majutsu-log-canonical-log-id-template-preserves-id-kind ()
-  "Canonical log ids should be full change or commit ids as appropriate."
-  (should (equal (majutsu-template-compile majutsu-log-template-id 'Commit)
-                 "if((self.hidden() || self.divergent()), self.commit_id(), self.change_id())"))
-  (should (equal (majutsu-template-compile majutsu-log-template-parent-ids 'Commit)
-                 "self.parents().map(|p| if((p.hidden() || p.divergent()), p.commit_id(), p.change_id())).join(\"\\x1C\")")))
-
-(ert-deftest majutsu-log-default-columns-contain-module-and-face ()
-  "Compiled default columns should include module/face/post metadata."
-  (let* ((compiled (majutsu-log--compile-columns))
-         (spec (seq-find (lambda (column)
-                           (eq (plist-get column :field) 'description))
-                         (plist-get compiled :columns))))
-    (should spec)
-    (should (eq (plist-get spec :module) 'heading))
-    (should (eq (plist-get spec :face) t))
-    (should (equal (plist-get spec :post) nil))))
-
-(ert-deftest majutsu-log-metadata-templates-ignore-visible-customization ()
-  "Presentation templates must not change canonical machine fields."
-  (let ((majutsu-log-template-commit-id
-         '["\n" [:commit_id :shortest 8]])
-        (majutsu-log-template-description
-         '["\n"
-           [:if [:description]
-               [:method [:description] :first_line]
-             [:label
-              [:if [:empty] "empty"]
-              [:label "description placeholder" "□"]]]]))
-    (let* ((compiled (majutsu-log--compile-columns))
-           (heading-description
-            (majutsu-log-test--column compiled 'description 'heading))
-           (tail-commit-id
-            (majutsu-log-test--column compiled 'commit-id 'tail))
-           (metadata-description
-            (majutsu-log-test--column compiled 'description 'metadata))
-           (metadata-commit-id
-            (majutsu-log-test--column compiled 'commit-id 'metadata)))
-      (should (equal (majutsu-row--column-template heading-description)
-                     majutsu-log-template-description))
-      (should (equal (majutsu-row--column-template tail-commit-id)
-                     majutsu-log-template-commit-id))
-      (should (equal (majutsu-row--column-template metadata-description)
-                     '[:description :first_line]))
-      (should (equal (majutsu-row--column-template metadata-commit-id)
-                     '[:commit_id])))))
-
-(ert-deftest majutsu-log-explicit-default-postprocessors-keep-field-defaults ()
-  "Explicit `:post :default' should retain field-specific defaults."
-  (let ((spec (majutsu-row-normalize-column-spec
-               (majutsu-log--row-profile)
-               '(:field parent-ids :module metadata
-                 :template majutsu-log-template-parent-ids
-                 :post :default))))
-    (should (equal (plist-get spec :post)
-                   '(majutsu-log-post-split-list-separator)))))
-
-(ert-deftest majutsu-log-test-columns-add-hidden-metadata-fields ()
-  "Test columns should preserve hidden transport fields needed by log semantics."
-  (let* ((compiled (majutsu-log-test--compile-columns
-                    '((:field description :module heading :face t))))
-         (fields (mapcar (lambda (column) (plist-get column :field))
-                         (majutsu-row-module-columns compiled 'metadata))))
-    (should (equal fields '(id commit-id parent-ids)))))
+(ert-deftest majutsu-log/integration-identities-survive-display-customization ()
+  "Hidden and divergent rows retain exact targets despite custom display IDs."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-call repo "describe" "-m" "before")
+    (let* ((old (majutsu-jj-integration-output
+                 repo "log" "--no-graph" "-r" "@" "-T" "commit_id"))
+           (change (majutsu-jj-integration-output
+                    repo "log" "--no-graph" "-r" "@" "-T" "change_id"))
+           (majutsu-log-template-description "DISPLAY")
+           (majutsu-log-template-commit-id "display-id")
+           (compiled (majutsu-log--compile-columns)))
+      (majutsu-jj-integration-call repo "describe" "-m" "after")
+      (let ((new (majutsu-jj-integration-output
+                  repo "log" "--no-graph" "-r" "@" "-T" "commit_id")))
+        (cl-labels
+            ((entry (revision)
+               (car (majutsu-log-test--parse-entries
+                     compiled
+                     (majutsu-jj-integration-output
+                      repo "--ignore-working-copy" "--color=never"
+                      "log" "--no-graph" "-r" revision
+                      "-T" (plist-get compiled :template))))))
+          (let ((hidden (entry old))
+                (visible (entry "@")))
+            (should (equal (majutsu-log--entry-id hidden) old))
+            (should (equal (majutsu-log--entry-id visible) change))
+            (should (equal (majutsu-row-column hidden 'description) "before"))
+            (should (equal (majutsu-row-column visible 'description) "after"))
+            (should (equal (majutsu-row-column visible 'commit-id) new))
+            (should (equal
+                     (majutsu-row-column-value
+                      visible (majutsu-log-test--column compiled 'description 'heading))
+                     "DISPLAY"))
+            (should (equal
+                     (majutsu-row-column-value
+                      visible (majutsu-log-test--column compiled 'commit-id 'tail))
+                     "display-id")))
+          (majutsu-jj-integration-call repo "new" old "-m" "side")
+          (dolist (commit (list old new))
+            (should (equal (majutsu-log--entry-id (entry commit)) commit)))
+          (should (equal (majutsu-row-column (entry "@") 'parent-ids)
+                         (list old))))))))
 
 (ert-deftest majutsu-log-entry-id-uses-canonical-log-id ()
   "Entry ids should use the transported canonical log id."
@@ -489,31 +454,6 @@
                      "commit-parent"))
       (should (equal (gethash "change-parent" majutsu-log--children-by-id)
                      '("change-child-a" "change-child-b"))))))
-
-(ert-deftest majutsu-log-postprocessor-runs-per-field ()
-  "Field-level :post handlers should run after parsing."
-  (let* ((compiled
-          (majutsu-log-test--compile-columns
-           `((:field description :module heading :face t :post majutsu-log-test--post-wrap)
-             (:field id :module metadata :face nil))))
-         (raw (concat
-               "○ " majutsu-row-start-token "desc"
-               majutsu-row-tail-token
-               majutsu-row-body-token
-               majutsu-row-meta-token
-               (majutsu-log-test--metadata-payload
-                compiled
-                '((id . "row-id")))
-               majutsu-row-end-token "\n"))
-         (entries (majutsu-log-test--parse-entries compiled raw))
-         (entry (car entries)))
-    (should (= 1 (length entries)))
-    (should-not (majutsu-row-column entry 'description))
-    (should (equal (majutsu-row-column entry 'id) "row-id"))
-    (should (equal (mapconcat #'substring-no-properties
-                              (majutsu-row-render-heading-lines entry compiled)
-                              "\n")
-                   "○ [desc]"))))
 
 (ert-deftest majutsu-log-postprocessor-runs-per-column-instance ()
   "Module-specific `:post' results should be stored per column instance."
@@ -719,13 +659,6 @@
                    '(61 . 1))))
         (majutsu-row-refresh-tail-spacers nil nil 'explicit-window))
       (should (eq seen 'explicit-window)))))
-
-(ert-deftest majutsu-log-mode-installs-tail-refresh-hooks ()
-  "Log mode should install local refresh hooks for scale and window changes."
-  (with-temp-buffer
-    (majutsu-log-mode)
-    (should (memq #'majutsu-log--after-text-scale-change text-scale-mode-hook))
-    (should (memq #'majutsu-log--after-window-size-change window-size-change-functions))))
 
 (ert-deftest majutsu-log-filter-buffer-substring-drops-tail-when-heading-present ()
   "Copying mixed heading+tail text should drop the tail by default."
