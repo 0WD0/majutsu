@@ -21,6 +21,7 @@
 (require 'majutsu-remote)
 (require 'majutsu-row)
 (require 'majutsu-template)
+(require 'majutsu-jjosh)
 
 (require 'cl-lib)
 (require 'seq)
@@ -102,11 +103,13 @@ SCOPE should be one of the scopes accepted by
            (majutsu--get-bookmark-names scope))))
 
 (defun majutsu--bookmark-forget-name-candidates ()
-  "Return bookmark name candidates for `jj bookmark forget'.
-Includes local names and remote refs such as NAME@REMOTE."
-  (delete-dups
-   (append (majutsu--get-bookmark-names 'local)
-           (majutsu--get-bookmark-names 'remote))))
+  "Return bookmark candidates for this build's `jj bookmark forget'.
+The jjosh build also offers exact remote refs."
+  (if (majutsu-jjosh t)
+      (delete-dups
+       (append (majutsu--get-bookmark-names 'local)
+               (majutsu--get-bookmark-names 'remote)))
+    (majutsu--get-bookmark-names 'local)))
 
 (defun majutsu--bookmark-track-name-candidates ()
   "Return bookmark name candidates for `jj bookmark track'."
@@ -216,9 +219,8 @@ bookmark(s) at point."
 ;;;###autoload
 (defun majutsu-bookmark-forget (names)
   "Forget bookmarks or bookmark patterns NAMES without recording a deletion.
-Each NAME may be a local name pattern or an exact remote bookmark
-`NAME@REMOTE'.  Forgetting a local bookmark untracks corresponding
-remotes; forgetting `NAME@REMOTE' drops that remote bookmark until the
+Forgetting a local bookmark untracks corresponding remotes.  In the jjosh
+build, NAMES may also contain exact NAME@REMOTE refs to forget until the
 next fetch."
   (interactive (list (majutsu-read-bookmark-patterns
                       "Forget bookmark(s)/pattern(s)"
@@ -272,14 +274,15 @@ REF is one exact NAME@REMOTE, not a bookmark or remote pattern."
   (interactive (list (majutsu-read-string "Remote bookmark")))
   (majutsu-bookmark--track-ref ref t))
 
-(defun majutsu-bookmark-forget-ref (ref)
-  "Forget one exact remote bookmark REF.
+(majutsu-jjosh
+  (defun majutsu-bookmark-forget-ref (ref)
+    "Forget one exact remote bookmark REF using the jjosh extension.
 REF is one exact NAME@REMOTE, including Git-tracking NAME@git."
-  (interactive (list (majutsu-read-string "Remote bookmark")))
-  (pcase-let ((`(,name . ,remote) (majutsu--bookmark-split-remote-ref ref)))
-    (unless remote
-      (user-error "Expected a remote bookmark"))
-    (majutsu-start-jj (list "bookmark" "forget" (concat name "@" remote)))))
+    (interactive (list (majutsu-read-string "Remote bookmark")))
+    (pcase-let ((`(,name . ,remote) (majutsu--bookmark-split-remote-ref ref)))
+      (unless remote
+        (user-error "Expected a remote bookmark"))
+      (majutsu-start-jj (list "bookmark" "forget" (concat name "@" remote))))))
 
 (defvar-local majutsu-bookmark--list-remotes nil
   "Remote metadata for the current bookmark list refresh.")

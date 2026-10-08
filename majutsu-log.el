@@ -20,6 +20,7 @@
 
 (require 'majutsu)
 (require 'majutsu-jj)
+(require 'majutsu-jjosh)
 (require 'majutsu-row)
 (require 'majutsu-file-tree)
 
@@ -127,45 +128,47 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
   "Machine template for the canonical one-line description.")
 
 (defcustom majutsu-log-commit-columns
-  '((:field change-id :module heading
-     :template majutsu-log-template-change-id :face t)
-    (:field bookmarks :module heading
-     :template majutsu-log-template-bookmarks :face magit-branch-local)
-    (:field tags :module heading
-     :template majutsu-log-template-tags :face magit-tag)
-    (:field working-copies :module heading
-     :template majutsu-log-template-working-copies :face magit-branch-remote)
-    (:field empty :module heading
-     :template majutsu-log-template-empty :face t)
-    (:field git-head :module heading
-     :template majutsu-log-template-git-head :face t)
-    (:field touched-projects :module heading
-     :template majutsu-log-template-touched-projects :face font-lock-type-face)
-    (:field description :module heading
-     :template majutsu-log-template-description :face t)
-    (:field commit-id :module tail
-     :template majutsu-log-template-commit-id :face t)
-    (:field author :module tail
-     :template majutsu-log-template-author :face magit-log-author)
-    (:field timestamp :module tail
-     :template majutsu-log-template-timestamp :face magit-log-date)
-    (:field long-desc :module body
-     :template majutsu-log-template-long-desc :face t)
-    (:field id :module metadata
-     :template majutsu-log-template-id :face nil)
-    (:field commit-id :module metadata
-     :template majutsu-log--canonical-commit-id-template :face nil)
-    (:field parent-ids :module metadata
-     :template majutsu-log-template-parent-ids :face nil)
-    (:field flags :module metadata
-     :template majutsu-log-template-flags :face nil)
-    (:field description :module metadata
-     :template majutsu-log--canonical-description-template :face nil))
+  (eval-when-compile
+    `((:field change-id :module heading
+       :template majutsu-log-template-change-id :face t)
+      (:field bookmarks :module heading
+       :template majutsu-log-template-bookmarks :face magit-branch-local)
+      (:field tags :module heading
+       :template majutsu-log-template-tags :face magit-tag)
+      (:field working-copies :module heading
+       :template majutsu-log-template-working-copies :face magit-branch-remote)
+      (:field empty :module heading
+       :template majutsu-log-template-empty :face t)
+      (:field git-head :module heading
+       :template majutsu-log-template-git-head :face t)
+      ,@(majutsu-jjosh
+          '((:field touched-projects :module heading
+             :template majutsu-log-template-touched-projects :face font-lock-type-face)))
+      (:field description :module heading
+       :template majutsu-log-template-description :face t)
+      (:field commit-id :module tail
+       :template majutsu-log-template-commit-id :face t)
+      (:field author :module tail
+       :template majutsu-log-template-author :face magit-log-author)
+      (:field timestamp :module tail
+       :template majutsu-log-template-timestamp :face magit-log-date)
+      (:field long-desc :module body
+       :template majutsu-log-template-long-desc :face t)
+      (:field id :module metadata
+       :template majutsu-log-template-id :face nil)
+      (:field commit-id :module metadata
+       :template majutsu-log--canonical-commit-id-template :face nil)
+      (:field parent-ids :module metadata
+       :template majutsu-log-template-parent-ids :face nil)
+      (:field flags :module metadata
+       :template majutsu-log-template-flags :face nil)
+      (:field description :module metadata
+       :template majutsu-log--canonical-description-template :face nil)))
   "Flat row columns controlling log transport and rendering.
 Only metadata occurrences become semantic entry fields; visible occurrences
 remain available through point-local row copy commands.
-The touched-projects field is omitted unless jj supports the jjosh
-`touched_projects()' commit method.  Remove that column to disable it."
+The touched-projects column is included only in the jjosh build.
+Remove a column to disable it."
   :type 'sexp
   :group 'majutsu
   :set (lambda (symbol value)
@@ -233,15 +236,15 @@ Also registers a variable watcher to invalidate the template cache."
   [:tags]
   "Template for the tags column.")
 
-;; An optional native method, not an alias inferred from the binary's name.
-(majutsu-template-defkeyword touched_projects Commit
-  (:returns (:list String) :doc "Subprojects touched by this commit (jjosh)."))
+(majutsu-jjosh
+  (majutsu-template-defkeyword touched_projects Commit
+    (:returns (:list String) :doc "Subprojects touched by this commit (jjosh)."))
 
-(majutsu-log-define-column touched-projects
-  [:surround "[" "]" [:touched_projects :join ", "]]
-  "Template for the optional jjosh project summary column.
+  (majutsu-log-define-column touched-projects
+    [:surround "[" "]" [:touched_projects :join ", "]]
+    "Template for the optional jjosh project summary column.
 Names come from the loaded operation's project layout, not bookmark names.
-Empty summaries produce no brackets.  Ordinary jj omits this column.")
+Empty summaries produce no brackets.  Only available in the jjosh build."))
 
 (majutsu-log-define-column working-copies
   [:working_copies]
@@ -348,76 +351,11 @@ Empty summaries produce no brackets.  Ordinary jj omits this column.")
    :section-value-function 'majutsu-log--entry-id
    :tail-align t))
 
-(defvar majutsu-log--touched-projects-support-cache
-  (make-hash-table :test #'equal)
-  "Template capability results keyed by repository and executable identity.
-Only cache a rejection if a baseline template parses successfully.")
-
-(defun majutsu-log--template-program-key ()
-  "Identify the configured jj program in this directory and host.
-Include the target binary's timestamp and size so an in-place jjosh upgrade
-is detected without restarting Emacs.  Resolve remote executables on their
-own host, not against the local PATH."
-  (when-let* ((program (executable-find (majutsu-jj--executable) t))
-              (path (file-truename
-                     (majutsu-jj-expand-filename-from-jj program)))
-              (attrs (file-attributes path)))
-    (list default-directory (majutsu-jj--executable) path
-          (file-attribute-modification-time attrs)
-          (file-attribute-size attrs)
-          (copy-sequence majutsu-jj-global-arguments))))
-
-(defun majutsu-log--touched-projects-supported-p ()
-  "Whether the active jj accepts the `touched_projects()' commit method.
-Probe an empty revset without snapshotting, merging operations, or reading
-commit trees.  Do not turn repository/process failures into cached absence;
-the actual log command remains responsible for reporting those failures."
-  (condition-case nil
-      (when-let* ((key (majutsu-log--template-program-key)))
-        (let ((cached (gethash key majutsu-log--touched-projects-support-cache
-                               'unknown)))
-          (when (eq cached 'unknown)
-            (let ((args '("--ignore-working-copy" "--at-op=@"
-                          "log" "--no-graph" "-r" "none()" "-T")))
-              (setq cached
-                    (cond
-                     ((eq 0 (majutsu-process-jj
-                             nil args "self.touched_projects()"))
-                      'supported)
-                     ((eq 0 (majutsu-process-jj nil args "\"\""))
-                      'unsupported)
-                     (t 'unknown)))
-              (unless (eq cached 'unknown)
-                (puthash key cached majutsu-log--touched-projects-support-cache))))
-          (eq cached 'supported)))
-    (error nil)))
-
-(defun majutsu-log--compile-columns (&optional touched-projects)
-  "Compile log columns, including the optional project field if TOUCHED-PROJECTS.
-Filter unsupported columns before building both the template and parser
-metadata so field offsets and canonical entry ids always stay in sync."
-  (let ((majutsu-log-commit-columns
-         (if touched-projects
-             majutsu-log-commit-columns
-           (seq-remove (lambda (column)
-                         (eq (plist-get column :field) 'touched-projects))
-                       majutsu-log-commit-columns))))
-    (plist-put (majutsu-row-compile (majutsu-log--row-profile))
-               :touched-projects touched-projects)))
-
 (defun majutsu-log--ensure-template ()
-  "Return a compiled template appropriate for the active jj capabilities."
-  (let ((touched-projects
-         (and (seq-some (lambda (column)
-                          (eq (plist-get column :field) 'touched-projects))
-                        majutsu-log-commit-columns)
-              (majutsu-log--touched-projects-supported-p))))
-    (if (and majutsu-log--compiled-template-cache
-             (eq (plist-get majutsu-log--compiled-template-cache :touched-projects)
-                 touched-projects))
-        majutsu-log--compiled-template-cache
+  "Return the compiled template for the configured log columns."
+  (or majutsu-log--compiled-template-cache
       (setq majutsu-log--compiled-template-cache
-            (majutsu-log--compile-columns touched-projects)))))
+            (majutsu-row-compile (majutsu-log--row-profile)))))
 
 (defun majutsu-log--build-args ()
   "Build argument list for `jj log' using current log variables."
