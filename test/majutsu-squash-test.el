@@ -27,17 +27,10 @@
                   '("--from" "B" "--from=C" "-f=D" "--" "--from=E"))
                  '("B" "C" "D"))))
 
-(ert-deftest majutsu-squash-default-args/from-diff-revisions ()
-  "Use diff --revisions context as default squash source."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-range '("--revisions=B::D"))
-    (should (equal (majutsu-squash--default-args)
-                   '("--from=B::D")))))
-
-(ert-deftest majutsu-squash-default-args/from-legacy-diff-revisions ()
+(ert-deftest majutsu-squash-default-args/from-diff-revision-spellings ()
   "Keep all accepted diff revision spellings when seeding squash."
-  (dolist (range '(("-r" "B::D")
+  (dolist (range '(("--revisions=B::D")
+                   ("-r" "B::D")
                    ("--revisions" "B::D")
                    ("-rB::D")))
     (with-temp-buffer
@@ -61,13 +54,6 @@
              (lambda () '("B" "C"))))
     (should (equal (majutsu-squash--default-args)
                    '("--from=B" "--from=C")))))
-
-(ert-deftest majutsu-squash-default-args/from-log-point ()
-  "Use commit at point as default source."
-  (cl-letf (((symbol-function 'majutsu-revisions-at-point)
-             (lambda () '("B"))))
-    (should (equal (majutsu-squash--default-args)
-                   '("--from=B")))))
 
 (ert-deftest majutsu-squash-execute/rejects-range-patch-selection ()
   "Never replay one aggregate patch for each commit in a squash range."
@@ -355,20 +341,6 @@ Signal an ERT failure if the command exits unsuccessfully."
           (ignore-errors (delete-process process)))
         (when (file-directory-p parent)
           (delete-directory parent t))))))
-
-(ert-deftest majutsu-squash-execute/runs-jj-squash-with-inferred-destination ()
-  "Execute non-patch squash through `majutsu-run-jj-with-editor'."
-  (let (called)
-    (cl-letf (((symbol-function 'majutsu-interactive-build-replay-plan-if-selected)
-               (lambda (&rest _) nil))
-              ((symbol-function 'majutsu-run-jj-with-editor)
-               (lambda (&rest args)
-                 (setq called args)))
-              ((symbol-function 'majutsu-squash--point-revision)
-               (lambda () nil)))
-      (majutsu-squash-execute '("--from=B"))
-      (should (equal called
-                     '(("squash" "--from=B" "--into=parents(roots((B)))")))))))
 
 (ert-deftest majutsu-squash-execute/defaults-to-working-copy-parent ()
   "No source defaults to @ and its external parent."

@@ -19,10 +19,6 @@
 (require 'majutsu-log)
 (require 'majutsu-section)
 
-(defun majutsu-section-test--log-entry (&rest kvs)
-  "Build a log entry plist from KVS."
-  kvs)
-
 (ert-deftest majutsu-section-hide/preserves-final-newline-for-commit-sections ()
   "Hiding a commit section should keep the final newline visible."
   (let* ((majutsu-log-commit-columns
@@ -35,14 +31,14 @@
             (:field id :module metadata :face nil
              :template majutsu-log-template-id)))
          (compiled (majutsu-row-compile (majutsu-log--row-profile)))
-         (entry-1 (majutsu-section-test--log-entry
+         (entry-1 (list
                    :id "id-1"
                    :indent 2
                    :columns '((change-id . "chg1")
                               (description . "Title")
                               (long-desc . "Body line 1\nBody line 2"))
                    :heading-prefixes '("○ ")))
-         (entry-2 (majutsu-section-test--log-entry
+         (entry-2 (list
                    :id "id-2"
                    :indent 2
                    :columns '((change-id . "chg2")
