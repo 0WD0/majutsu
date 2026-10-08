@@ -80,18 +80,6 @@
       (should (equal called
                      '(("split" "--revision=@" "--" "src/a.el")))))))
 
-(ert-deftest majutsu-split-default-args/resolves-single-diff-revision ()
-  "A single diff revision becomes split's resolved --revision target."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-range '("--revisions=mine()"))
-    (cl-letf (((symbol-function 'majutsu-jj-resolve-single-commit)
-               (lambda (revset)
-                 (should (equal revset "mine()"))
-                 "abc123")))
-      (should (equal (majutsu-split--default-args)
-                     '("--revision=abc123"))))))
-
 (ert-deftest majutsu-split-default-args/from-log-point ()
   "A log revision at point seeds interactive split."
   (with-temp-buffer
@@ -102,7 +90,8 @@
 
 (ert-deftest majutsu-split-default-args/accepts-supported-revision-spellings ()
   "Resolve each supported spelling, including short attached equals."
-  (dolist (range '(("--revisions" "mine()")
+  (dolist (range '(("--revisions=mine()")
+                   ("--revisions" "mine()")
                    ("-r" "mine()")
                    ("-rmine()")
                    ("-r=mine()")))

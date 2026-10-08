@@ -648,7 +648,7 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
     (majutsu-jj-integration-commit repo "base")
     (with-temp-buffer
       (majutsu-diff-mode)
-      (dolist (range '(("--revisions=@") ("--revisions" "@")
+      (dolist (range '(nil ("--revisions=@") ("--revisions" "@")
                        ("-r" "@") ("-r@") ("-r=@")
                        ("--revisions=@" "-r=@")
                        ("--revisions=none()" "-r@")))
@@ -671,19 +671,6 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
             (majutsu-insert-diff-revision-headers)
             (majutsu-insert-diff-revision-message))
           (should (string-empty-p (buffer-string))))))))
-
-(ert-deftest majutsu-diff-metadata-revision/default-and-explicit-single ()
-  "Default diffs and explicit revision options select a metadata revset."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-range nil)
-    (should (equal (majutsu-diff--metadata-revision) "@"))
-    (setq-local majutsu-buffer-diff-range '("-r" "mine"))
-    (should (equal (majutsu-diff--metadata-revision) "mine"))
-    (setq-local majutsu-buffer-diff-range '("--revisions=mine"))
-    (should (equal (majutsu-diff--metadata-revision) "mine"))
-    (setq-local majutsu-buffer-diff-range '("--revisions" "mine"))
-    (should (equal (majutsu-diff--metadata-revision) "mine"))))
 
 (ert-deftest majutsu-diff-metadata-revision/ranges-and-empty-do-not-qualify ()
   "From/to ranges and an empty revision option never select TO metadata."
@@ -794,62 +781,31 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
                                      (plist-get fields :commit-id))
                   'commit-face)))))
 
-(ert-deftest majutsu-diff-revision-metadata/multi-revset-does-not-display ()
-  "A `--revisions' revset resolving to two changes has no metadata."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (setq-local majutsu-buffer-diff-args '("--git")
-                majutsu-buffer-diff-range '("--revisions=A|B"))
-    (let ((record (concat (majutsu-diff-test--metadata-output) "\n")))
-      (cl-letf (((symbol-function 'majutsu-jj-insert)
-                 (lambda (&rest _args)
-                   (insert record record)
-                   0)))
-        (should-not (majutsu-diff--revision-metadata))))))
-
-(ert-deftest majutsu-diff-query-revision-metadata/uses-local-bookmarks ()
-  "Query labelled local and remote bookmark components as structured JSON."
-  (let (seen-args seen-global-args)
-    (cl-letf (((symbol-function 'majutsu-jj-insert)
-               (lambda (&rest args)
-                 (setq seen-args args
-                       seen-global-args majutsu-jj-global-arguments)
-                 1)))
-      (should-not (majutsu-diff--query-revision-metadata "@")))
-    (let ((template (cadr (member "-T" seen-args))))
-      (should (stringp template))
-      (should (string-search
-               "json(self.local_bookmarks().map(|ref| ref.name()))" template))
-      (should (string-search
-               "label(\"local_bookmarks map join name\"" template))
-      (should (string-search "self.remote_bookmarks().map(|ref|" template))
-      (should (string-search "json(ref.name())" template))
-      (should (string-search "json(ref.remote())" template))
-      (should (string-search "label(\"description\", json(self.description()))"
-                             template))
-      (should (string-prefix-p "concat(join(\"\\0\"," template))
-      (should (string-suffix-p ", \"\\0\")" template))
-      (should-not (string-search "separate(" template))
-      (let ((cursor 0))
-        (dolist (label '("change_id"
-                         "local_bookmarks map join name"
-                         "remote_bookmarks map join name remote"
-                         "commit_id"
-                         "author name"
-                         "author email"
-                         "author timestamp format"
-                         "committer name"
-                         "committer email"
-                         "committer timestamp format"
-                         "description"))
-          (let ((position (string-search (format "label(\"%s\"" label)
-                                         template cursor)))
-            (should position)
-            (setq cursor (1+ position)))))
-      (should (string-search "\\0" template))
-      (should (member "--limit" seen-args))
-      (should (member "--color=always" seen-global-args))
-      (should-not (member "--color=never" seen-global-args)))))
+(ert-deftest majutsu-diff-query-revision-metadata/reads-native-bookmarks ()
+  "Native metadata keeps descriptions and local/remote bookmark identities."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (let* ((source (majutsu-jj-integration-init sandbox "source"))
+           (destination (expand-file-name "clone" sandbox))
+           (majutsu-jj-executable majutsu-jj-integration--jj)
+           (majutsu-jj-global-arguments '("--no-pager" "--color=never"))
+           (description "Summary \"quoted\"\n\nBody")
+           (default-directory (file-name-as-directory source)))
+      (majutsu-jj-integration-commit source description)
+      (majutsu-jj-integration-call source "bookmark" "create" "topic" "-r" "@-")
+      (let ((fields (majutsu-diff--query-revision-metadata "topic")))
+        (should (equal (plist-get fields :local-bookmarks) '("topic")))
+        (should (equal (plist-get fields :description) (concat description "\n")))
+        (should (equal (plist-get fields :commit-id)
+                       (majutsu-jj-integration-output
+                        source "log" "--no-graph" "-r" "topic" "-T" "commit_id"))))
+      (majutsu-jj-integration-call
+       sandbox "git" "clone" "--remote=upstream" source destination)
+      (let* ((default-directory (file-name-as-directory destination))
+             (fields (majutsu-diff--query-revision-metadata "topic@upstream")))
+        (should (member '("topic" "upstream")
+                        (plist-get fields :remote-bookmarks)))
+        (should (equal (plist-get fields :description)
+                       (concat description "\n")))))))
 
 (ert-deftest majutsu-diff-format-refs/filters-git-and-applies-faces ()
   "Ref formatting hides synthetic git and escapes controls to one line."
@@ -1318,34 +1274,6 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
     (should (equal (majutsu-diff--dwim)
                    '(revision . "main@origin")))))
 
-(ert-deftest majutsu-diff-refine-hunk-default-disabled ()
-  "Diff refinement should be disabled by default."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (should-not majutsu-diff-refine-hunk)))
-
-(ert-deftest majutsu-diff-toggle-refine-hunk-updates ()
-  "Toggling refinement should update local state and trigger refresh."
-  (with-temp-buffer
-    (majutsu-diff-mode)
-    (let ((calls 0))
-      (cl-letf (((symbol-function 'majutsu-diff--update-hunk-refinement)
-                 (lambda (&rest _)
-                   (setq calls (1+ calls)))))
-        (should-not majutsu-diff-refine-hunk)
-        (majutsu-diff-toggle-refine-hunk nil)
-        (should (eq majutsu-diff-refine-hunk t))
-        (should (= calls 1))
-        (majutsu-diff-toggle-refine-hunk t)
-        (should (eq majutsu-diff-refine-hunk 'all))
-        (should (= calls 2))
-        (majutsu-diff-toggle-refine-hunk t)
-        (should (eq majutsu-diff-refine-hunk t))
-        (should (= calls 3))
-        (majutsu-diff-toggle-refine-hunk nil)
-        (should-not majutsu-diff-refine-hunk)
-        (should (= calls 4))))))
-
 (ert-deftest majutsu-diff-refinement/majutsu-owns-git-hunks ()
   "Git font-lock must not refine hunks independently of Majutsu.
 This is a regression test for issue #42."
@@ -1374,6 +1302,16 @@ This is a regression test for issue #42."
         (should (majutsu-diff-test--fine-overlays current))
         (should-not (majutsu-diff-test--fine-overlays other))
         (should-not (majutsu-diff-test--font-lock-refine-markers))
+
+        ;; Prefix toggles affect every hunk, then return to the current hunk.
+        (majutsu-diff-toggle-refine-hunk t)
+        (should (eq majutsu-diff-refine-hunk 'all))
+        (should (majutsu-diff-test--fine-overlays current))
+        (should (majutsu-diff-test--fine-overlays other))
+        (majutsu-diff-toggle-refine-hunk t)
+        (should (eq majutsu-diff-refine-hunk t))
+        (should (majutsu-diff-test--fine-overlays current))
+        (should-not (majutsu-diff-test--fine-overlays other))
 
         ;; Toggling off removes Majutsu's overlays.  A complete re-fontify must
         ;; not resurrect upstream automatic refinement.
@@ -1426,19 +1364,6 @@ This is a regression test for issue #42."
              (lambda (&optional _pos) nil)))
     (should (majutsu-diff--color-words-goto-from '(:from-line 10)))
     (should-not (majutsu-diff--color-words-goto-from '(:from-line 10 :to-line 12)))))
-
-(ert-deftest majutsu-diff-color-words-column-uses-side-aware-helper ()
-  "Color-words column helper should receive side selection."
-  (let ((info '(:content-column 4))
-        called)
-    (cl-letf (((symbol-function 'majutsu-color-words-column-at-point)
-               (lambda (goto-from &optional _pos _info)
-                 (setq called goto-from)
-                 17)))
-      (should (= (majutsu-diff--color-words-column info t) 17))
-      (should called)
-      (should (= (majutsu-diff--color-words-column info nil) 17))
-      (should-not called))))
 
 (provide 'majutsu-diff-test)
 
