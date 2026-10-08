@@ -54,10 +54,16 @@
   Failed or unverified writes retain drafts and block blind retries. Existing
   Ediff commands remain available; structural and cross-path edits are not supported.
 
-- jjosh project summaries in log headings ::
-  The optional ~touched-projects~ column shows the subprojects changed by a
-  revision. It is enabled only when the configured jj supports the template
-  method; ordinary jj and older jjosh versions keep the existing layout.
+- Compile-time jjosh declarations ::
+  ~majutsu-jjosh~ marks arbitrary fork-specific definitions and expressions,
+  including the project-summary column and remote bookmark Forget. Set
+  ~MAJUTSU_BACKEND~ to ~jj~ (default) or ~jjosh~ in the package builder's
+  environment. Builders compile Lisp directly and manage their own output
+  directories; the package-specific Makefile has been removed.
+  The selected backend is fixed in bytecode and applies to local and remote
+  executables alike.
+  There are no runtime capability probes, backend checks, or support caches.
+  Switching variants requires a full rebuild and an Emacs restart.
 
 - Tag management ::
   The ~t~ dispatcher entry opens ~majutsu-tag~ to list, create, move, and

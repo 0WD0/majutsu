@@ -379,15 +379,15 @@ description), that content forms the foldable section body; its current
 visibility follows the section state instead of being forced closed on every
 refresh.
 
-With a jjosh version supporting ~touched_projects()~, the default heading
-includes a separate ~touched-projects~ column, for example =[appkit, chidu]=.
-It summarizes changed paths using the loaded operation's project layout;
-it does not change the revision ID or description. Empty summaries show no
-brackets. Ordinary jj and older jjosh versions omit the column automatically.
-Customize ~majutsu-log-template-touched-projects~ to change its template, or
-remove the column from ~majutsu-log-commit-columns~ to disable it. Custom
-column lists can add ~(:field touched-projects :module heading :template
-majutsu-log-template-touched-projects :face font-lock-type-face)~.
+The jjosh build includes a separate ~touched-projects~ heading column, for
+example =[appkit, chidu]=. It summarizes changed paths using the loaded
+operation's project layout; it does not change the revision ID or description.
+Empty summaries show no brackets. The upstream jj build omits the column and
+its template definition at compile time.
+Customize ~majutsu-log-template-touched-projects~ in the jjosh build to change
+its template, or remove the column from ~majutsu-log-commit-columns~ to disable
+it. Custom jjosh column lists can add ~(:field touched-projects :module heading
+:template majutsu-log-template-touched-projects :face font-lock-type-face)~.
 
 #+attr_reference: :kind command-binding :interface "Log buffer" :mode majutsu-log-mode :scope Vanilla
 - Key: n (majutsu-goto-next-revision) :: Move to the next revision in display order.
@@ -1710,11 +1710,18 @@ Transient actions:
   deletion for propagation on a later push; this command does not contact a
   remote itself.
 - Key: f (majutsu-bookmark-forget) :: Forget a bookmark without recording a
-  deletion to push.  A local name untracks corresponding remotes; an exact
-  =NAME@REMOTE= (including =@git=) forgets that remote bookmark until the next
-  fetch.
+  deletion to push. A local name untracks corresponding remotes. In the
+  jjosh build, an exact =NAME@REMOTE= forgets that remote bookmark until the
+  next fetch, without forgetting the local bookmark. Git-tracking =NAME@git=
+  is also supported in that build; its recreation depends on Git
+  import/export and colocation.
 - Key: t (majutsu-bookmark-track) :: Track a remote bookmark to create a local one.
 - Key: u (majutsu-bookmark-untrack) :: Untrack a remote bookmark.
+
+Remote forget is not an upstream jj capability. Only the jjosh build includes
+remote refs in Forget completion, the remote Embark =f= action, and
+~majutsu-bookmark-forget-ref~. The upstream build does not define that command.
+Local Forget remains available in both builds.
 
 Bookmark lists nest tracked remote bookmarks under their local bookmark.
 When a bookmark target is conflicted, its removed and added targets appear as
@@ -2068,6 +2075,69 @@ When Evil integration is enabled, the dispatcher displays and accepts the same
 Evil-facing top-level keys used in Majutsu buffers, including =x=, =L=, =_=,
 =*=, =u=, =C-r=, and =`=. The global Evil =v= binding remains Visual state;
 open evolog from the dispatcher with =? v=.
+
+** jjosh Extensions
+Majutsu has two fixed build variants: upstream ~jj~ (the default) and ~jjosh~.
+The build parameter decides which code is included; the executable's name,
+version, and capabilities do not select or change the variant at runtime.
+
+*** Building a variant
+Compile Majutsu directly with your Emacs package manager or build system; no
+package-specific make step is required. Set ~MAJUTSU_BACKEND~ to ~jj~ or
+~jjosh~ in the compiler environment before any Majutsu library is loaded.
+An unset value selects upstream ~jj~; invalid values are rejected. Use the
+same setting for byte and native compilation.
+
+The builder owns dependency ~load-path~ entries and output directories.
+Keep generated files outside the source checkout and separate the variants.
+For a direct byte-compilation invocation, start a fresh Emacs process in a
+clean, builder-owned staging directory containing the Majutsu sources. With
+dependencies installed through package.el:
+#+begin_src sh
+MAJUTSU_BACKEND=jjosh emacs -Q --batch \
+  --eval '(package-initialize)' \
+  -L . -l majutsu-jjosh.el -f batch-byte-compile majutsu*.el
+#+end_src
+
+Use ~MAJUTSU_BACKEND=jj~ for the upstream variant. For dependencies supplied
+by another build system, replace ~package-initialize~ with its dependency
+~load-path~ setup. Put only the selected build directory on the runtime
+~load-path~, ahead of the source checkout or an installed copy.
+For source-only development, set ~MAJUTSU_BACKEND~ before the first Majutsu
+load.
+
+~majutsu-build-backend~ records the selected variant in bytecode. It is not a
+runtime customization option: changing the environment or setting the variable
+after compilation does not change the generated code. Rebuild the entire
+package and restart Emacs when switching variants; do not mix their libraries.
+
+Executable paths remain separate configuration:
+~majutsu-jj-executable~ selects the local program and
+~majutsu-remote-jj-executable~ selects the program on remote hosts. One build
+applies to both. The jjosh build requires executables implementing its jjosh
+extensions, including ~touched_projects()~ and remote bookmark forget; there is
+no older-version fallback or automatic capability probing. The upstream build
+can use a jjosh executable, but still exposes only upstream functionality.
+
+*** Marking fork-specific code
+Wrap jjosh-specific definitions or expressions in ~majutsu-jjosh~:
+#+begin_src emacs-lisp
+(majutsu-jjosh
+  (keymap-set majutsu-embark-git-bookmark-map "f"
+              #'majutsu-bookmark-forget-ref))
+#+end_src
+
+The macro expands to a ~progn~ containing its body in the jjosh build and to
+~nil~ in the upstream build. It works for commands, parameters, UI bindings,
+templates, and ordinary expressions; it is not part of the template DSL.
+Conditional expressions can use ~(if (majutsu-jjosh t) FORK COMMON)~: the
+byte compiler eliminates the unused branch. Lists such as the default log
+columns use ~eval-when-compile~ and splice optional declarations into a constant
+layout, keeping the transport template and parser schema aligned.
+
+No runtime backend checks, subprocess probes, binary timestamp checks, or
+capability caches are generated. The upstream build omits the project column
+and remote Forget command/action rather than defining disabled placeholders.
 
 * Template DSL
 :PROPERTIES:

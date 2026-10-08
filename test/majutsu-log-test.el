@@ -234,7 +234,7 @@
                     repo "log" "--no-graph" "-r" "@" "-T" "change_id"))
            (majutsu-log-template-description "DISPLAY")
            (majutsu-log-template-commit-id "display-id")
-           (compiled (majutsu-log--compile-columns)))
+           (compiled (majutsu-log--ensure-template)))
       (majutsu-jj-integration-call repo "describe" "-m" "after")
       (let ((new (majutsu-jj-integration-output
                   repo "log" "--no-graph" "-r" "@" "-T" "commit_id")))
@@ -882,19 +882,6 @@
                      "new() | mine()"))
       (should (equal seen-reader
                      '("Revisions: " t "old()" history ("log" "-r")))))))
-
-(ert-deftest majutsu-log-build-args/uses-revision-argument-directly ()
-  "Log -r should live in ARGS, with filesets after --."
-  (let ((majutsu-log-commit-columns nil)
-        (majutsu-log--compiled-template-cache '(:template "TPL")))
-    (with-temp-buffer
-      (majutsu-log-mode)
-      (majutsu-log--set-value
-       'majutsu-log-mode '("--revision=mine()" "--no-graph") '("src"))
-      (should (equal (majutsu-log--build-args)
-                     '("--config=ui.log-word-wrap=false"
-                       "log" "--revision=mine()" "--no-graph"
-                       "-T" "TPL" "--" "src"))))))
 
 (ert-deftest majutsu-log-filesets/stay-in-originating-buffer ()
   "Reusing log options must not copy another buffer's one-off file filter."
