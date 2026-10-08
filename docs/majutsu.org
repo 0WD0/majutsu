@@ -389,6 +389,10 @@ remove the column from ~majutsu-log-commit-columns~ to disable it. Custom
 column lists can add ~(:field touched-projects :module heading :template
 majutsu-log-template-touched-projects :face font-lock-type-face)~.
 
+#+attr_reference: :kind command-binding :interface "Log buffer" :mode majutsu-log-mode :scope Vanilla
+- Key: n (majutsu-goto-next-revision) :: Move to the next revision in display order.
+- Key: p (majutsu-goto-prev-revision) :: Move to the previous revision in display order.
+
 Press =[= to jump to a visible parent and =]= to jump to a visible child. When
 more than one target is visible, completion returns the canonical revision id
 while displaying its description as an annotation.
@@ -793,7 +797,7 @@ the annotate-mode keys:
 - Key: gf (majutsu-blob-visit-file) :: Visit the workspace version of the file.
 - Key: gr :: Revert or reload the blob content.
 - Key: q :: Bury the blob buffer.
-- Key: RET (majutsu-edit-changeset) :: Edit the blob's revision.
+- Key: RET (majutsu-edit) :: Edit the blob's revision.
 
 *** Annotate (Blame)
 Majutsu annotate is implemented by =majutsu-annotate= and uses
@@ -958,7 +962,7 @@ Runs: =jj commit=
 
 ** Editing Changes
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
-- Key: e (majutsu-edit-changeset) :: Move the working copy (@) to the revision
+- Key: e (majutsu-edit) :: Move the working copy (@) to the revision
   at point. Supports =--ignore-immutable= for immutable revisions.
 Runs: =jj edit REV=
 

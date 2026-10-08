@@ -25,14 +25,14 @@
 
 ;;;###autoload
 (defun majutsu-abandon ()
-  "Abandon the changeset at point or in region."
+  "Abandon the revisions at point or in the region."
   (interactive)
   (let ((revsets (majutsu-revisions-at-point)))
     (if (not revsets)
-        (message "No changeset at point to abandon")
+        (message "No revision at point to abandon")
       (let ((prompt (if (= (length revsets) 1)
-                        (format "Abandon changeset %s? " (car revsets))
-                      (format "Abandon %d changesets? " (length revsets)))))
+                        (format "Abandon revision %s? " (car revsets))
+                      (format "Abandon %d revisions? " (length revsets)))))
         (if (not (majutsu-confirm 'abandon prompt))
             (message "Abandon canceled")
           (majutsu-run-jj "abandon" revsets))))))

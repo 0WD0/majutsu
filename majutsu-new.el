@@ -26,8 +26,8 @@
 
 ;;;###autoload
 (defun majutsu-new-dwim (arg)
-  "Create a new changeset.
-Without prefix ARG, use the changeset at point (or `@` when unavailable).
+  "Create a new change.
+Without prefix ARG, use the revision at point (or `@` when unavailable).
 With prefix ARG, open the new transient for interactive selection."
   (interactive "P")
   (if arg
@@ -39,7 +39,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 ;;;###autoload
 (defun majutsu-new-with-after ()
-  "Create a new changeset with the commit at point as --after."
+  "Create a new change with the revision at point as --after."
   (interactive)
   (if-let* ((after (majutsu-revision-at-point)))
       (majutsu-new--run-command (list "new" "--insert-after" after))
@@ -47,7 +47,7 @@ With prefix ARG, open the new transient for interactive selection."
 
 ;;;###autoload
 (defun majutsu-new-with-before ()
-  "Create a new changeset with the commit at point as --before."
+  "Create a new change with the revision at point as --before."
   (interactive)
   (if-let* ((before (majutsu-revision-at-point)))
       (majutsu-new--run-command (list "new" "--insert-before" before))
@@ -112,7 +112,7 @@ When called from a blob buffer, also visit the workspace file."
     (let ((exit (apply #'majutsu-call-jj args)))
       (if (zerop exit)
           (progn
-            (message "Created new changeset")
+            (message "Created new change")
             (majutsu-refresh)
             ;; Visit workspace file when in blob buffer
             (when in-blob

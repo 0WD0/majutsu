@@ -27,7 +27,7 @@
 
 (defvar-keymap majutsu-commit-section-map
   :doc "Keymap for `jj-commit' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit-changeset
+  "<remap> <majutsu-visit-thing>" #'majutsu-edit
   "<remap> <majutsu-delete-thing>" 'majutsu-abandon)
 
 ;;; Log State
@@ -480,7 +480,7 @@ metadata so field offsets and canonical entry ids always stay in sync."
 (defun majutsu-log--current-entry-id ()
   "Return current `jj-commit' section id or signal a user error."
   (or (magit-section-value-if 'jj-commit)
-      (user-error "No changeset at point")))
+      (user-error "No revision at point")))
 
 (defun majutsu-log--visible-parent-ids (entry)
   "Return visible parent ids for ENTRY in current buffer order."
@@ -634,35 +634,35 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
     (string-trim output)))
 
 (defun majutsu-log-goto-@ ()
-  "Jump to the current changeset (@)."
+  "Jump to the working-copy revision (@)."
   (interactive)
   (majutsu--goto-log-entry (majutsu-current-id)))
 
 (defun majutsu-log-goto-parent ()
-  "Jump to a parent of the changeset at point.
+  "Jump to a parent of the revision at point.
 
-When the current changeset has multiple visible parents, prompt for which
+When the current revision has multiple visible parents, prompt for which
 parent to visit."
   (interactive)
   (majutsu--assert-mode 'majutsu-log-mode)
   (let* ((entry-id (majutsu-log--current-entry-id))
          (entry (or (majutsu-log--entry-for-id entry-id)
-                    (user-error "Changeset %s is not available in the current log" entry-id))))
+                    (user-error "Revision %s is not available in the current log" entry-id))))
     (majutsu-log--goto-related
      (majutsu-log--visible-parent-ids entry)
      "Go to parent: "
      "No parent revisions visible in the current log")))
 
 (defun majutsu-log-goto-child ()
-  "Jump to a child of the changeset at point.
+  "Jump to a child of the revision at point.
 
-When the current changeset has multiple visible children, prompt for which
+When the current revision has multiple visible children, prompt for which
 child to visit."
   (interactive)
   (majutsu--assert-mode 'majutsu-log-mode)
   (let* ((entry-id (majutsu-log--current-entry-id))
          (entry (or (majutsu-log--entry-for-id entry-id)
-                    (user-error "Changeset %s is not available in the current log" entry-id))))
+                    (user-error "Revision %s is not available in the current log" entry-id))))
     (majutsu-log--goto-related
      (majutsu-log--visible-child-ids entry)
      "Go to child: "
@@ -699,8 +699,8 @@ Return non-nil when the section could be located."
     t))
 
 ;;;###autoload
-(defun majutsu-goto-next-changeset ()
-  "Navigate to the next changeset in the log."
+(defun majutsu-goto-next-revision ()
+  "Navigate to the next revision in the log."
   (interactive)
   (let ((pos (point))
         found)
@@ -713,11 +713,11 @@ Return non-nil when the section could be located."
           (setq found t))))
     (unless found
       (goto-char pos)
-      (message "No more changesets"))))
+      (message "No more revisions"))))
 
 ;;;###autoload
-(defun majutsu-goto-prev-changeset ()
-  "Navigate to the previous changeset in the log."
+(defun majutsu-goto-prev-revision ()
+  "Navigate to the previous revision in the log."
   (interactive)
   (let ((pos (point))
         found)
@@ -730,7 +730,7 @@ Return non-nil when the section could be located."
           (setq found t))))
     (unless found
       (goto-char pos)
-      (message "No more changesets"))))
+      (message "No more revisions"))))
 
 ;;; Log Mode
 
@@ -743,8 +743,8 @@ Return non-nil when the section could be located."
 (defvar-keymap majutsu-log-mode-map
   :doc "Keymap for `majutsu-log-mode'."
   :parent majutsu-mode-map
-  "n" 'majutsu-goto-next-changeset
-  "p" 'majutsu-goto-prev-changeset
+  "n" 'majutsu-goto-next-revision
+  "p" 'majutsu-goto-prev-revision
   "[" 'majutsu-log-goto-parent
   "]" 'majutsu-log-goto-child
   "O" 'majutsu-new-dwim
