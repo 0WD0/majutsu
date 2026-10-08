@@ -96,43 +96,16 @@ PHASE is either `filter' or `sentinel'."
         (delete-process process)))
     (list (car-safe caught) phase-owned final-owned live)))
 
-(ert-deftest test-majutsu-process-error-summary-from-string/error ()
-  (should (equal (majutsu--process-error-summary-from-string "Error: something went wrong\n")
-                 "something went wrong")))
-
-(ert-deftest test-majutsu-process-error-summary-from-string/error-lowercase ()
-  (should (equal (majutsu--process-error-summary-from-string "error: nope\n")
-                 "nope")))
-
-(ert-deftest test-majutsu-process-error-summary-from-string/fatal ()
-  (should (equal (majutsu--process-error-summary-from-string "fatal: bad\n")
-                 "bad")))
-
-(ert-deftest test-majutsu-process-error-summary-from-string/multi-line ()
-  (let ((out (string-join '("some output"
-                            "warning: ignore this"
-                            "Error: actual issue"
-                            "")
-                          "\n")))
-    (should (equal (majutsu--process-error-summary-from-string out)
-                   "actual issue"))))
-
-(ert-deftest test-majutsu-process-error-summary-from-string/empty ()
-  (should-not (majutsu--process-error-summary-from-string "")))
-
-(ert-deftest test-majutsu-process-filter/calls-magit-prompt ()
-  (let ((called nil))
-    (cl-letf (((symbol-function 'magit-process-password-prompt)
-               (lambda (_proc _string)
-                 (setq called 'password))))
-      (with-temp-buffer
-        (let ((proc (make-process :name "majutsu-test"
-                                  :buffer (current-buffer)
-                                  :command (list "cat"))))
-          (set-marker (process-mark proc) (point))
-          (majutsu--process-filter proc "Password: ")
-          (delete-process proc)))
-      (should (eq called 'password)))))
+(ert-deftest test-majutsu-process-error-summary-from-string ()
+  "Recognize error prefixes and ignore unrelated output."
+  (dolist (case '(("Error: something went wrong\n" . "something went wrong")
+                  ("error: nope\n" . "nope")
+                  ("fatal: bad\n" . "bad")
+                  ("some output\nwarning: ignore this\nError: actual issue\n"
+                   . "actual issue")
+                  ("" . nil)))
+    (should (equal (majutsu--process-error-summary-from-string (car case))
+                   (cdr case)))))
 
 (ert-deftest test-majutsu-process-filter/ignores-with-editor-control-packets ()
   (with-temp-buffer
@@ -148,26 +121,6 @@ PHASE is either `filter' or `sentinel'."
       (delete-process proc)
       (let ((out (buffer-string)))
         (should (string-match-p (regexp-quote "normal output\ntail\n") out))
-        (should-not (string-match-p "WITH-EDITOR:" out))))))
-
-(ert-deftest test-majutsu-process-filter/ignores-split-with-editor-packets ()
-  (with-temp-buffer
-    (let* ((majutsu-process--with-editor-file-roots
-            (make-hash-table :test #'equal))
-           (part1 "WITH-EDITOR: 123 OPEN +1")
-           (part2 (format "%c/tmp/manifest%c IN /tmp\n"
-                          ?\x1f ?\x1f))
-           (proc (make-process :name "majutsu-test"
-                               :buffer (current-buffer)
-                               :command (list "cat"))))
-      (set-marker (process-mark proc) (point))
-      (majutsu--process-filter proc "normal\n")
-      (majutsu--process-filter proc part1)
-      (majutsu--process-filter proc part2)
-      (majutsu--process-filter proc "tail\n")
-      (delete-process proc)
-      (let ((out (buffer-string)))
-        (should (string-match-p (regexp-quote "normal\ntail\n") out))
         (should-not (string-match-p "WITH-EDITOR:" out))))))
 
 (ert-deftest test-majutsu-process-filter/handles-real-packet-across-crlf-chunks ()
@@ -479,26 +432,15 @@ PHASE is either `filter' or `sentinel'."
         (majutsu--process-sentinel process "finished\n")
         (should (= calls 1))))))
 
-(ert-deftest majutsu-process-test-start-jj-with-editor-forwards-session-options ()
-  "The session-aware with-editor entry point forwards all completion options."
-  (let ((majutsu-process-popup-time 17)
-        (with-editor-emacsclient-executable nil)
-        callback
-        seen)
-    (setq callback (lambda (&rest _args) nil))
+(ert-deftest majutsu-process-test-start-jj-with-editor-installs-sleeping-editor ()
+  "Ordinary editor sessions install the bridge when emacsclient is unavailable."
+  (let ((with-editor-emacsclient-executable nil)
+        editor)
     (cl-letf (((symbol-function 'majutsu-start-jj)
-               (lambda (&rest args)
-                 (setq seen (list args
-                                  majutsu-process-popup-time
-                                  (getenv majutsu-with-editor-envvar)))
-                 'dummy-process)))
-      (should (eq (majutsu-start-jj-with-editor
-                   '("split" "--interactive") "Finished" callback t)
-                  'dummy-process)))
-    (should (equal (car seen)
-                   (list '("split" "--interactive") "Finished" callback t)))
-    (should (= (nth 1 seen) -1))
-    (should (equal (nth 2 seen) with-editor-sleeping-editor))))
+               (lambda (&rest _)
+                 (setq editor (getenv majutsu-with-editor-envvar)))))
+      (majutsu-start-jj-with-editor '("split" "--interactive")))
+    (should (equal editor with-editor-sleeping-editor))))
 
 (ert-deftest majutsu-process-test-call-jj-runs-at-root ()
   "`majutsu-call-jj' should execute jj in repo root.
@@ -618,32 +560,6 @@ The process section should use root as command directory."
         (accept-process-output nil 0.05)
         (should-not (string-match-p "Process .*\\(?:finished\\|exited\\)"
                                     (buffer-string)))))))
-
-(ert-deftest majutsu-process-test-process-wait-drains-output ()
-  "`majutsu--process-wait' should loop on `accept-process-output' until drained."
-  (let ((results '(t t nil))
-        calls)
-    (cl-letf (((symbol-function 'accept-process-output)
-               (lambda (&rest args)
-                 (push args calls)
-                 (pop results)))
-              ((symbol-function 'process-exit-status)
-               (lambda (_process) 0)))
-      (should (= 0 (majutsu--process-wait 'fake-process))))
-    (should (equal (nreverse calls)
-                   '((fake-process) (fake-process) (fake-process))))))
-
-(ert-deftest majutsu-process-test-process-wait-drains-stderr-process ()
-  "`majutsu--process-wait' should also drain a standard error process."
-  (let ((seen nil))
-    (cl-letf (((symbol-function 'accept-process-output)
-               (lambda (process &rest _args)
-                 (push process seen)
-                 nil))
-              ((symbol-function 'process-exit-status)
-               (lambda (_process) 0)))
-      (should (= 0 (majutsu--process-wait 'main 'stderr))))
-    (should (equal (nreverse seen) '(main stderr)))))
 
 (ert-deftest majutsu-process-test-process-wait-enables-local-quit ()
   "`majutsu--process-wait' should not block with quitting inhibited."

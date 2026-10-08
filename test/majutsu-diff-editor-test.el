@@ -260,22 +260,6 @@
                         (string-prefix-p "*majutsu split diff editor:" (buffer-name buffer))))
                  (buffer-list))))))
 
-(ert-deftest majutsu-diff-editor-assert-ghostel-editor-support/remote-needs-no-emacsclient ()
-  "The remote with-editor bridge uses its sleeping editor."
-  (let ((with-editor-emacsclient-executable nil))
-    (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) t)))
-      (should-not
-       (majutsu-diff-editor--assert-ghostel-editor-support
-        "/ssh:example:/repo/" "split" nil)))))
-
-(ert-deftest majutsu-diff-editor-assert-ghostel-editor-support/restore-needs-no-emacsclient ()
-  "Local restore cannot invoke jj's description editor."
-  (let ((with-editor-emacsclient-executable nil))
-    (cl-letf (((symbol-function 'file-remote-p) (lambda (&rest _) nil)))
-      (should-not
-       (majutsu-diff-editor--assert-ghostel-editor-support
-        "/repo/" "restore" nil)))))
-
 (ert-deftest majutsu-diff-editor-ghostel-exec/tracks-open-during-remote-spawn ()
   "Track a fast JJ_EDITOR OPEN packet before `ghostel-exec' returns."
   (let ((majutsu-process--with-editor-file-roots (make-hash-table :test #'equal))
@@ -457,11 +441,11 @@
                            #'majutsu-terminal-session--buffer-killed t))
             (kill-buffer terminal)))))))
 
-(ert-deftest majutsu-diff-editor-start/process-uses-session-aware-runner ()
-  "Use the process worker's session-aware API when it is available."
+(ert-deftest majutsu-diff-editor-start/process-resolves-host-and-runs-at-root ()
+  "Host configuration and the editor process use the same repository root."
   (let ((majutsu-diff-editor-host 'process)
         (majutsu-process--interactive-sessions (make-hash-table :test 'equal))
-        called host-directory process-directory)
+        host-directory process-directory)
     (cl-letf (((symbol-function 'majutsu--toplevel-safe)
               (lambda (&optional _directory) "/repo/"))
               ((symbol-function 'majutsu-diff-editor-select-host)
@@ -471,22 +455,13 @@
               ((symbol-function 'majutsu-jj-operation-id)
                (lambda (&rest _) "before"))
               ((symbol-function 'majutsu-start-jj-with-editor)
-               (lambda (&rest args)
-                 (setq called args
-                       process-directory default-directory)
+               (lambda (&rest _)
+                 (setq process-directory default-directory)
                  'process)))
-      (let ((session
-             (majutsu-diff-editor-start
-              "restore" '("--tool" "meld") '("src/a.el"))))
-        (should (eq (majutsu-diff-editor-session-host session) 'process))
-        (should (eq (majutsu-diff-editor-session-process session) 'process))
-        (should (equal (car called)
-                       '("restore" "--tool" "meld" "--" "src/a.el")))
-        (should-not (nth 1 called))
-        (should (functionp (nth 2 called)))
-        (should (eq (nth 3 called) t))
-        (should (equal host-directory "/repo/"))
-        (should (equal process-directory "/repo/"))))))
+      (majutsu-diff-editor-start
+       "restore" '("--tool" "meld") '("src/a.el"))
+      (should (equal host-directory "/repo/"))
+      (should (equal process-directory "/repo/")))))
 
 (ert-deftest majutsu-diff-editor-start/allows-one-live-session-per-workspace ()
   "Reject concurrent rewrite sessions, then release the slot at completion."

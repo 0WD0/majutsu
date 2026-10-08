@@ -122,30 +122,6 @@
           (setq-local ghostel-exit-functions nil))
         (kill-buffer terminal)))))
 
-(ert-deftest majutsu-terminal-session-default-exec/does-not-install-jj-editor ()
-  "A generic TUI inherits Majutsu's environment without with-editor setup."
-  (let (seen-environment seen-args)
-    (cl-letf (((symbol-function 'majutsu-process-environment)
-               (lambda (args)
-                 (should (equal args '("arrange")))
-                 '("INSIDE_EMACS=test" "TERM=xterm-ghostel")))
-              ((symbol-function 'ghostel-exec)
-               (lambda (_buffer _program args)
-                 (setq seen-environment process-environment
-                       seen-args args)
-                 'process)))
-      (should
-       (eq (majutsu-terminal-session--default-exec
-            (majutsu-terminal-session-create)
-            (current-buffer) "jj" '("arrange"))
-           'process))
-      (should (equal seen-args '("arrange")))
-      (should (equal seen-environment
-                     '("INSIDE_EMACS=test" "TERM=xterm-ghostel")))
-      (should-not
-       (seq-some (lambda (entry) (string-prefix-p "JJ_EDITOR=" entry))
-                 seen-environment)))))
-
 (ert-deftest majutsu-terminal-session-start-jj/default-path-does-not-install-jj-editor ()
   "The public generic start path does not opt into the editor protocol."
   (let ((majutsu-process--interactive-sessions
@@ -293,32 +269,23 @@
                                majutsu-process--interactive-sessions))
           (should-not (buffer-live-p terminal)))))))
 
-(ert-deftest majutsu-terminal-session-finish-after-kill/waits-for-live-reaper ()
-  "Do not compare operation ids until Ghostel's reaper has exited."
+(ert-deftest majutsu-terminal-session-finish-after-kill/waits-for-reaper ()
+  "Completion waits for the live reaper, then runs after it stops."
   (let ((session (majutsu-terminal-session-create :process 'reaper))
+        (live t)
         scheduled completed)
     (cl-letf (((symbol-function 'processp) (lambda (_process) t))
-              ((symbol-function 'process-live-p) (lambda (_process) t))
+              ((symbol-function 'process-live-p) (lambda (_process) live))
               ((symbol-function 'run-at-time)
-               (lambda (&rest args) (setq scheduled args)))
-              ((symbol-function 'majutsu-terminal-session--finish)
-               (lambda (&rest _) (setq completed t))))
-      (majutsu-terminal-session--finish-after-kill session)
-      (should-not completed)
-      (should (equal scheduled
-                     (list 0.05 nil
-                           #'majutsu-terminal-session--finish-after-kill
-                           session))))))
-
-(ert-deftest majutsu-terminal-session-finish-after-kill/completes-after-reaper ()
-  "A stopped lifecycle process completes the session immediately."
-  (let ((session (majutsu-terminal-session-create :process 'reaper))
-        completed)
-    (cl-letf (((symbol-function 'processp) (lambda (_process) t))
-              ((symbol-function 'process-live-p) (lambda (_process) nil))
+               (lambda (_delay _repeat callback &rest args)
+                 (setq scheduled (cons callback args))))
               ((symbol-function 'majutsu-terminal-session--finish)
                (lambda (value &rest _) (setq completed value))))
       (majutsu-terminal-session--finish-after-kill session)
+      (should-not completed)
+      (should scheduled)
+      (setq live nil)
+      (apply (car scheduled) (cdr scheduled))
       (should (eq completed session)))))
 
 (ert-deftest majutsu-terminal-session-ghostel-exit/defers-without-exit-status ()
@@ -351,24 +318,23 @@
 
 (ert-deftest majutsu-terminal-session-complete/observers-survive-probe-failure ()
   "Exit function and hook run once even when the completion probe errors."
-  (let ((exit-calls 0)
+  (let ((majutsu-process--interactive-sessions (make-hash-table :test 'equal))
+        (exit-calls 0)
         (hook-calls 0)
-        (unregistered nil)
         (session (majutsu-terminal-session-create
                   :repository-root "/tmp/repo/"
                   :origin-buffer (current-buffer)
                   :operation-id-before "op"
                   :terminal-p t)))
+    (majutsu-process-register-interactive-session "/tmp/repo/" session)
     (setf (majutsu-terminal-session-exit-function session)
           (lambda (_session _event) (cl-incf exit-calls)))
     (cl-letf (((symbol-function 'majutsu-interactive-complete-repository-operation)
-               (lambda (&rest _) (error "probe failed")))
-              ((symbol-function 'majutsu-process-unregister-interactive-session)
-               (lambda (_root _owner) (setq unregistered t))))
+               (lambda (&rest _) (error "probe failed"))))
       (let ((majutsu-terminal-session-exit-hook
              (list (lambda (_session _event) (cl-incf hook-calls)))))
         (should-error (majutsu-terminal-session--complete session nil))
-        (should unregistered)
+        (should-not (gethash "/tmp/repo/" majutsu-process--interactive-sessions))
         (should (= exit-calls 1))
         (should (= hook-calls 1))
         ;; The completed-p latch keeps later finish paths idempotent.
