@@ -697,11 +697,13 @@ custom template DSL that mirrors the @samp{jj log} output but adds interactivity
 Each revision in the log is a section. The visible anchor line is built from
 fields assigned to the @code{heading} module plus any auxiliary fields assigned to
 the @code{tail} module in @code{majutsu-log-commit-columns} (for example@comma{} author and
-timestamp). Within revision sections@comma{} graph prefixes and indentation are
+timestamp). Graph prefixes@comma{} indentation@comma{} and inter-record graph lines are
 display-only decoration@comma{} so copying text does not include them. Both heading
 and body lines participate in jj's graph rendering. Folding hides the body
 text but preserves its graph-only structure@comma{} collapsing consecutive identical
-prefixes without rerunning jj. Visibility survives refresh.
+prefixes without rerunning jj. Empty body lines retain the record's text
+column: missing alignment spaces are restored without adding graph edges.
+Visibility survives refresh.
 
 The jjosh build includes a separate @code{touched-projects} heading column@comma{} for
 example @samp{[appkit@comma{} chidu]}. It summarizes changed paths using the loaded
@@ -817,9 +819,12 @@ backslashes@comma{} colors@comma{} and multiline headings and bodies remain disp
 
 Parsing requires the declared field counts@comma{} valid string metadata@comma{} and a
 complete record ending on its last physical line. Invalid records do not
-create actionable sections. Lines between records@comma{} including @samp{(elided
-revisions)} and graph connections@comma{} remain plain lines outside revision
-sections. They neither fold with an adjacent revision nor inherit its ID@.
+create actionable sections. Lines between records@comma{} including
+@samp{(elided revisions)} and graph connections@comma{} are rendered as display-only
+overlays@comma{} not buffer text or sections. Cursor movement skips them@comma{} and mouse
+clicks on them do not select or toggle a section. They remain visible when
+an adjacent revision is folded@comma{} without inheriting its identity. They are
+excluded from text search and copying.
 
 @node @code{majutsu-log-commit-columns}
 @subsection @code{majutsu-log-commit-columns}

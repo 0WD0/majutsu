@@ -24,7 +24,10 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
           heading
           majutsu-row-tail-token
           majutsu-row-body-token
-          (subst-char-in-string ?\n ?\x1f (or conflict-details ""))
+          (if (and conflict-details
+                   (not (string-blank-p conflict-details)))
+              (concat "\n" conflict-details)
+            "")
           majutsu-row-meta-token
           (mapconcat #'json-serialize
                      (list name (or remote "")

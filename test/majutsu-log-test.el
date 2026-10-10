@@ -287,7 +287,7 @@
                "○ " majutsu-row-start-token "chg" majutsu-row-field-separator
                "Title line 1\n│ Title line 2" majutsu-row-tail-token
                majutsu-row-body-token
-               "body line 1\u001fbody line 2"
+               "\n│ body line 1\n│ body line 2"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -318,7 +318,7 @@
          (raw (concat
                majutsu-row-start-token "chg" majutsu-row-field-separator
                "Top\nTail" majutsu-row-tail-token
-               majutsu-row-body-token "payload"
+               majutsu-row-body-token "\npayload"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -347,7 +347,7 @@
                majutsu-row-tail-token
                "Alice" majutsu-row-field-separator "2m ago"
                majutsu-row-body-token
-               "body line 1\u001fbody line 2"
+               "\n│ body line 1\n│ body line 2"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -363,7 +363,7 @@
     (should (equal (majutsu-row-render-tail entry compiled) "Alice 2m"))))
 
 (ert-deftest majutsu-log-parse-entry-preserves-between-entry-lines ()
-  "Lines between E of one entry and S of next entry stay with previous entry."
+  "Raw lines remain ordered events outside both adjacent entries."
   (let* ((compiled (majutsu-log-test--base-compiled))
          (raw (concat
                "○ " majutsu-row-start-token "chg1" majutsu-row-field-separator "Title1"
@@ -383,14 +383,20 @@
                 compiled
                 '((id . "id-2")))
                majutsu-row-end-token "\n"))
-         (entries (majutsu-log-test--parse-entries compiled raw))
+         (parsed (with-temp-buffer
+                   (insert raw)
+                   (majutsu-row-read-buffer compiled)))
+         (entries (plist-get parsed :entries))
          (first (nth 0 entries))
          (second (nth 1 entries)))
     (should (= 2 (length entries)))
     (should (equal (majutsu-row-column first 'id) "id-1"))
     (should (equal (majutsu-row-column second 'id) "id-2"))
-    (should (equal (plist-get first :suffix-lines) '("│ carry-line")))
-    (should (null (plist-get second :suffix-lines)))))
+    (should (equal (plist-get parsed :events)
+                   (list first "│ carry-line\n" second)))
+    (should (equal (plist-get parsed :roots) entries))
+    (should (= (plist-get first :end)
+               (1+ (string-match (regexp-quote "│ carry-line\n") raw))))))
 
 (ert-deftest majutsu-log-parse-entry-records-raw-region ()
   "Parser should record the raw entry region for streaming washing."
@@ -403,9 +409,8 @@
                      (majutsu-log-test--metadata-payload
                       compiled
                       '((id . "id-1")))
-                     majutsu-row-end-token "\n"
-                     "│ carry-line\n"))
-         (raw (concat first-raw
+                     majutsu-row-end-token "\n"))
+         (raw (concat first-raw "│ carry-line\n"
                       "○ " majutsu-row-start-token "chg2" majutsu-row-field-separator "Title2"
                       majutsu-row-tail-token
                       majutsu-row-body-token
@@ -465,7 +470,7 @@
          (raw (concat
                "○ " majutsu-row-start-token "desc"
                majutsu-row-tail-token
-               majutsu-row-body-token "desc"
+               majutsu-row-body-token "\n│ desc"
                majutsu-row-meta-token
                (majutsu-log-test--metadata-payload
                 compiled
@@ -1139,5 +1144,77 @@
               (search-forward "Title")
               (should (equal (majutsu-revision-at-point) id))
               (should (equal (magit-section-value-if 'jj-commit) id)))))))))
+
+(ert-deftest majutsu-log/real-jj-multiline-body-retains-merge-geometry ()
+  "Physical body lines survive template transport and washing with jj's graph."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-call repo "describe" "-m" "Left")
+    (let ((left (majutsu-jj-integration-output
+                 repo "log" "--no-graph" "-r" "@" "-T" "commit_id")))
+      (majutsu-jj-integration-call repo "new" "root()" "-m" "Right")
+      (majutsu-jj-integration-call repo "new" left "@" "-m" "Merge"))
+    (let* ((body "BODY one\n\nBODY three\nBODY four")
+           (compiled
+            (majutsu-log-test--compile-columns
+             '((:field description :module heading :face nil)
+               (:field long-desc :module body
+                :template "BODY one\n\nBODY three" :face nil)
+               (:field blank :module body :template " \t\n " :face nil)
+               (:field last :module body :template "BODY four" :face nil))))
+           (majutsu-log-commit-columns nil)
+           (majutsu-log--compiled-template-cache compiled)
+           (id (majutsu-jj-integration-output
+                repo "log" "--no-graph" "-r" "@" "-T" "change_id"))
+           (raw (apply #'majutsu-jj-integration-output repo
+                       (append majutsu-row-protocol-global-args
+                               (list "--color=never" "log" "-r" "ancestors(@)"
+                                     "-T" (plist-get compiled :template)))))
+           expected-prefixes)
+      ;; Read prefixes directly from jj's physical output, independently of
+      ;; row parsing, so a renderer that guesses a carry prefix cannot pass.
+      (with-temp-buffer
+        (insert raw)
+        (goto-char (point-min))
+        (search-forward majutsu-row-body-token)
+        (forward-line)
+        (dolist (text (split-string body "\n" nil))
+          (let ((beg (point)))
+            (if (string-empty-p text)
+                (end-of-line)
+              (search-forward text (line-end-position))
+              (backward-char (length text)))
+            (push (buffer-substring-no-properties beg (point))
+                  expected-prefixes))
+          (forward-line)))
+      (setq expected-prefixes (nreverse expected-prefixes))
+      (should (> (length (delete-dups
+                         (mapcar #'string-trim-right expected-prefixes)))
+                 1))
+      (with-temp-buffer
+        (majutsu-log-mode)
+        (let ((inhibit-read-only t))
+          (magit-insert-section (lograph)
+            (insert raw)
+            (goto-char (point-min))
+            (majutsu-log--wash-logs nil)))
+        (should (majutsu--goto-log-entry id))
+        (let* ((entry (majutsu-row-entry-at-point))
+               (section (magit-current-section)))
+          (should (equal (plist-get entry :body-prefixes) expected-prefixes))
+          (should (equal (majutsu-row-render-body entry compiled) body))
+          (goto-char (oref section content))
+          (dolist (prefix expected-prefixes)
+            (let ((display (get-text-property (point) 'line-prefix)))
+              (should (equal (string-trim-right display)
+                             (string-trim-right prefix)))
+              (should (= (string-width display)
+                         (string-width (car (plist-get entry :heading-prefixes))))))
+            (forward-line))
+          (let ((copied (filter-buffer-substring
+                         (oref section content) (oref section end))))
+            (should (equal copied (concat body "\n")))
+            (should-not (text-property-not-all
+                         0 (length copied) 'line-prefix nil copied))))
+        (should (equal (length majutsu-row-cached-entries) 4))))))
 
 ;;; majutsu-log-test.el ends here

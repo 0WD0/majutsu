@@ -50,16 +50,15 @@
   "Join visible operation log row FIELDS."
   (mapconcat
    (lambda (field)
-     (subst-char-in-string
-      ?\n ?\x1f
-      (replace-regexp-in-string
-       "[\x1d-\x1f]" (lambda (s) (substring (json-serialize s) 1 -1))
-       field t t)))
+     (replace-regexp-in-string
+      "[\x1d-\x1f]" (lambda (s) (substring (json-serialize s) 1 -1))
+      field t t))
    fields majutsu-row-field-separator))
 
 (defun majutsu-op-test--log-raw-entry (&rest kvs)
   "Return one row encoded operation log entry from KVS."
   (let* ((graph-prefix (or (plist-get kvs :graph-prefix) ""))
+         (body-prefix (or (plist-get kvs :body-prefix) ""))
          (op-id (or (plist-get kvs :op-id) "full-id"))
          (op-id-short (or (plist-get kvs :op-id-short) "short-id"))
          (root-marker (or (plist-get kvs :root-marker) ""))
@@ -80,7 +79,15 @@
              op-id-short root-marker user workspace time-range)
             majutsu-row-tail-token
             majutsu-row-body-token
-            (majutsu-op-test--log-payload desc attributes)
+            (mapconcat
+             (lambda (field)
+               (if (string-blank-p field) ""
+                 (concat "\n" body-prefix
+                         (replace-regexp-in-string
+                          "\n" (concat "\n" body-prefix)
+                          (majutsu-op-test--log-payload field)
+                          t t))))
+             (list desc attributes) majutsu-row-field-separator)
             majutsu-row-meta-token
             (mapconcat #'json-serialize
                        (list op-id op-id-short kind current user workspace
@@ -101,7 +108,7 @@
   (let* ((attributes (concat "args: jj op" majutsu-row-field-separator
                              "log\nclient: test"))
          (raw (majutsu-op-test--log-raw-entry
-               :graph-prefix "@  "
+               :graph-prefix "@  " :body-prefix "│  "
                :op-id (propertize "full-operation-id" 'font-lock-face 'error)
                :op-id-short (propertize "short-id" 'font-lock-face 'success)
                :kind "snapshot"
@@ -146,16 +153,22 @@
     (should (equal (majutsu-row-column entry 'kind) "root"))))
 
 (ert-deftest majutsu-op-parse-log-entries/preserves-graph-transitions ()
-  "Graph-only transition lines should remain suffixes between operation rows."
+  "Graph-only transitions remain plain events between operation rows."
   (let* ((raw (concat
                (majutsu-op-test--log-raw-entry
-                :graph-prefix "@    " :op-id "current" :op-id-short "cur")
+                :graph-prefix "@    " :body-prefix "│    "
+                :op-id "current" :op-id-short "cur")
                "├─╮\n"
                (majutsu-op-test--log-raw-entry
-                :graph-prefix "○ │  " :op-id "parent" :op-id-short "par")))
-         (entries (majutsu-op-test--parse-log-entries raw)))
+                :graph-prefix "○ │  " :body-prefix "│ │  "
+                :op-id "parent" :op-id-short "par")))
+         (parsed (with-temp-buffer
+                   (insert raw)
+                   (majutsu-row-read-buffer (majutsu-op-log--ensure-template))))
+         (entries (plist-get parsed :entries)))
     (should (= (length entries) 2))
-    (should (equal (plist-get (car entries) :suffix-lines) '("├─╮")))
+    (should (equal (plist-get parsed :events)
+                   (list (car entries) "├─╮\n" (cadr entries))))
     (should (equal (plist-get (cadr entries) :heading-prefixes) '("○ │  ")))
     (should (equal (mapcar (lambda (entry)
                              (majutsu-row-column entry 'op-id))
