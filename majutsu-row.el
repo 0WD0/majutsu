@@ -25,7 +25,7 @@
   "Separator inserted between fields inside one module payload.")
 
 (defconst majutsu-row-line-separator "\x1f"
-  "Transport newline for visible fields outside the graph heading.
+  "Transport newline for tail fields, which do not occupy graph lines.
 Literal occurrences in display text are escaped before newlines are encoded.")
 
 (defconst majutsu-row-protocol-global-args
@@ -71,6 +71,7 @@ Literal occurrences in display text are escaped before newlines are encoded.")
     majutsu-row-decoration
     majutsu-row-profile
     majutsu-row-tail-spacer
+    majutsu-section-collapsed-graph
     line-prefix
     wrap-prefix
     display)
@@ -92,6 +93,9 @@ Literal occurrences in display text are escaped before newlines are encoded.")
 
 (defvar-local majutsu-row-section-ident-index nil
   "Hash table mapping Magit section identities to cached entries.")
+
+(defvar-local majutsu-row--graph-overlays nil
+  "Display-only graph decorations, including overlays at end of buffer.")
 
 ;;; Compiled helpers
 
@@ -246,7 +250,8 @@ INSTANCE is a compiler-assigned column occurrence id, not a layout key."
 (defun majutsu-row-module-template-form (compiled module)
   "Return a transport template for the fields of COMPILED MODULE.
 Metadata uses JSON strings.  Visible fields keep jj's labels and escape
-protocol delimiters as printable text; only heading newlines reach the graph."
+protocol delimiters as printable text.  Heading and body newlines reach jj's
+graph renderer.  Each nonblank body field starts with a boundary newline."
   (majutsu-row-build-module-template-form
    (mapcar
     (lambda (column)
@@ -259,16 +264,21 @@ protocol delimiters as printable text; only heading newlines reach the graph."
                 (format
                  "replace(regex:'[\\x1d-\\x1f]', %s, |c| json(stringify(c.get(0))).substr(1, -1))"
                  template))))
-        `[:raw ,(if (memq module '(tail body))
-                    (format "replace(\"\\n\", %s, |_| \"\\x1f\")" escaped)
-                  escaped)
+        `[:raw ,(pcase module
+                  ('tail
+                   (format "replace(\"\\n\", %s, |_| \"\\x1f\")" escaped))
+                  ('body
+                   (format
+                    "surround(\"\\n\", \"\", replace(regex:'\\A[ \\t\\r\\n]*\\z', %s, |_| \"\"))"
+                    escaped))
+                  (_ escaped))
                :Template]))
     (majutsu-row-module-columns compiled module))))
 
 (defun majutsu-row-template-form (compiled)
   "Return one row template form for COMPILED.
-This constructs the complete flat S/T/B/M/E transport record and appends a
-physical newline for the next graph node."
+This constructs the S/T/B/M/E transport record, including physical body
+lines, and appends a newline for the next graph node."
   `[:concat
     ,majutsu-row-start-token
     ,(majutsu-row-module-template-form compiled 'heading)
@@ -341,48 +351,11 @@ When MAX-FIELDS is non-nil, leave remaining separators in the last field."
 
 (defun majutsu-row-join-lines (lines)
   "Join LINES with literal newlines, preserving string properties."
-  (if (null lines)
-      ""
-    (let ((out (car lines)))
-      (dolist (line (cdr lines) out)
-        (setq out (concat out "\n" line))))))
+  (mapconcat #'identity lines "\n"))
 
 ;;; Parse helpers
 
-(defun majutsu-row-line-token-position (token bol eol &optional start)
-  "Return start position of TOKEN between BOL and EOL, or nil."
-  (save-excursion
-    (goto-char (or start bol))
-    (when (search-forward token eol t)
-      (- (point) (length token)))))
 
-(defun majutsu-row-parse-trailing-payloads (_compiled tail-pos eol)
-  "Parse tail, body, and metadata from the current line.
-TAIL-POS points at the tail token and EOL is the end of the physical line
-containing the row.  Return a plist with module payloads and :record-end when
-the row is well-formed."
-  (save-excursion
-    (goto-char tail-pos)
-    (when (majutsu-row--looking-at-token-p majutsu-row-tail-token)
-      (let* ((tail-start (+ tail-pos (length majutsu-row-tail-token)))
-             (body-pos (majutsu-row-line-token-position
-                        majutsu-row-body-token tail-start eol tail-start)))
-        (when body-pos
-          (let* ((body-start (+ body-pos (length majutsu-row-body-token)))
-                 (meta-pos (majutsu-row-line-token-position
-                            majutsu-row-meta-token
-                            body-start eol body-start))
-                 (meta-end (and meta-pos
-                                (+ meta-pos (length majutsu-row-meta-token))))
-                 (end-pos (and meta-end
-                               (majutsu-row-line-token-position
-                                majutsu-row-end-token meta-end eol meta-end))))
-            (when (and meta-pos end-pos
-                       (= (+ end-pos (length majutsu-row-end-token)) eol))
-              (list :tail (buffer-substring tail-start body-pos)
-                    :body (buffer-substring body-start meta-pos)
-                    :metadata (buffer-substring meta-end end-pos)
-                    :record-end (+ end-pos (length majutsu-row-end-token))))))))))
 
 (defun majutsu-row-split-module-values (payload count)
   "Split PAYLOAD into exactly COUNT fields, or reject the record."
@@ -399,10 +372,17 @@ the row is well-formed."
   "Decode MODULE's VALUE, then apply PROFILE's optional value decoder."
   (let ((decoded
          (condition-case nil
-             (if (eq module 'metadata)
-                 (json-parse-string value)
-               (subst-char-in-string
-                (aref majutsu-row-line-separator 0) ?\n value))
+             (pcase module
+               ('metadata (json-parse-string value))
+               ('tail
+                (subst-char-in-string
+                 (aref majutsu-row-line-separator 0) ?\n value))
+               ('body
+                (cond ((string-empty-p value) "")
+                      ((string-prefix-p "\n" value) (substring value 1))
+                      (t (signal 'majutsu-row-invalid-record
+                                 '("Body field lacks its boundary newline")))))
+               (_ value))
            (json-error (signal 'majutsu-row-invalid-record nil)))))
     (unless (stringp decoded)
       (signal 'majutsu-row-invalid-record nil))
@@ -443,6 +423,13 @@ the row is well-formed."
       (setq entry (plist-put entry :column-values column-values)))
     entry))
 
+(defun majutsu-row--body-line-count (value)
+  "Return the number of graph lines occupied by body VALUE."
+  (let ((text (majutsu-row-display-string value)))
+    (if (string-empty-p (string-trim text))
+        0
+      (1+ (cl-count ?\n text)))))
+
 (defun majutsu-row-record-module-fields (entry module payload compiled)
   "Record MODULE PAYLOAD values into ENTRY using COMPILED layout."
   (let* ((profile (majutsu-row--profile compiled))
@@ -461,6 +448,12 @@ the row is well-formed."
                                        :raw-value decoded))
                        (out (majutsu-row-apply-postprocessors
                              decoded (plist-get column :post) base-ctx)))
+                  (when (and (eq module 'body)
+                             (/= (majutsu-row--body-line-count decoded)
+                                 (majutsu-row--body-line-count out)))
+                    (signal 'majutsu-row-invalid-record
+                            (list (format "Body postprocessor changes line count for %s"
+                                          field))))
                   (when (eq module 'metadata)
                     (setq entry (majutsu-row-record-canonical-field
                                  entry field out)))
@@ -479,13 +472,6 @@ the row is well-formed."
   (and (stringp token)
        (looking-at-p (regexp-quote token))))
 
-(defun majutsu-row--event-at-point ()
-  "Return (KIND . TOKEN) for the row protocol event at point."
-  (seq-some
-   (pcase-lambda (`(,token . ,kind))
-     (and (majutsu-row--looking-at-token-p token)
-          (cons kind token)))
-   `((,majutsu-row-start-token . row))))
 
 (defun majutsu-row--next-marker-position (start end)
   "Return next row marker position between START and END, or nil."
@@ -494,165 +480,121 @@ the row is well-formed."
     (when-let* ((found (search-forward majutsu-row-record-marker end t)))
       (1- found))))
 
-(defun majutsu-row--suffix-lines-from-region (beg end)
-  "Return suffix lines represented by raw text from BEG to END."
-  (when (< beg end)
-    (let ((text (buffer-substring beg end)))
-      (when (string-match-p "\n" text)
-        (when (string-prefix-p "\n" text)
-          (setq text (substring text 1)))
-        (when (string-suffix-p "\n" text)
-          (setq text (substring text 0 -1)))
-        (unless (string-empty-p text)
-          (majutsu-row-split-by-separator text "\n"))))))
+(defun majutsu-row--read-payload (token indent multiline)
+  "Read a module through TOKEN, removing graph prefixes of width INDENT.
+MULTILINE permits physical newlines.  Return (PAYLOAD . PREFIXES), where
+PREFIXES contains the prefixes of continuation lines, not the initial line.
+Leave point immediately after TOKEN, or reject malformed framing."
+  (let (segments prefixes done)
+    (while (not done)
+      (let* ((eol (line-end-position))
+             (marker (majutsu-row--next-marker-position (point) eol)))
+        (push (buffer-substring (point) (or marker eol)) segments)
+        (cond
+         (marker
+          (goto-char marker)
+          (unless (majutsu-row--looking-at-token-p token)
+            (signal 'majutsu-row-invalid-record
+                    '("Unexpected row protocol marker")))
+          (forward-char (length token))
+          (setq done t))
+         ((or (not multiline) (= eol (point-max)))
+          (signal 'majutsu-row-invalid-record '("Incomplete row record")))
+         (t
+          (forward-line 1)
+          (let* ((bol (point))
+                 (prefix-end (min (+ bol indent) (line-end-position)))
+                 (prefix (buffer-substring bol prefix-end)))
+            (when (majutsu-row--next-marker-position bol prefix-end)
+              (signal 'majutsu-row-invalid-record
+                      '("Row marker interrupts graph prefix")))
+            (push prefix prefixes)
+            (goto-char prefix-end))))))
+    (cons (majutsu-row-join-lines (nreverse segments))
+          (nreverse prefixes))))
 
-(defun majutsu-row--append-suffix-lines (entry lines)
-  "Append LINES to ENTRY's suffix lines."
-  (when lines
-    (plist-put entry :suffix-lines
-               (append (plist-get entry :suffix-lines) lines)))
-  entry)
+(defun majutsu-row--parse-entry-record-at-point (compiled)
+  "Read a complete record starting at the start token using COMPILED.
+Leave point after its final newline, if any.  Reject incomplete records and
+body transformations which do not match the graph's physical line count."
+  (unless (majutsu-row--looking-at-token-p majutsu-row-start-token)
+    (signal 'majutsu-row-invalid-record '("Unknown row protocol marker")))
+  (let* ((entry-beg (line-beginning-position))
+         (indent (- (point) entry-beg))
+         (first-prefix (buffer-substring entry-beg (point))))
+    (forward-char (length majutsu-row-start-token))
+    (let* ((heading (majutsu-row--read-payload majutsu-row-tail-token indent t))
+           (tail (majutsu-row--read-payload majutsu-row-body-token indent nil))
+           (body (majutsu-row--read-payload majutsu-row-meta-token indent t))
+           (metadata (majutsu-row--read-payload majutsu-row-end-token indent nil))
+           (record-end (point)))
+      (unless (= record-end (line-end-position))
+        (signal 'majutsu-row-invalid-record '("Trailing data after row record")))
+      (when (eq (char-after) ?\n)
+        (forward-char))
+      (let ((entry (list :beg entry-beg
+                         :record-end record-end
+                         :end (point)
+                         :row-profile (plist-get (majutsu-row--profile compiled) :name)
+                         :indent indent
+                         :columns nil
+                         :column-values nil
+                         :modules nil
+                         :heading-prefixes (cons first-prefix (cdr heading))
+                         :body-prefixes (cdr body)
+                         :parent nil
+                         :depth 0)))
+        (cl-loop for module in majutsu-row-module-order
+                 for payload in (list heading tail body metadata)
+                 do (setq entry (majutsu-row-record-module-fields
+                                 entry module (car payload) compiled)))
+        (unless (= (length (cdr body))
+                   (cl-loop for column in (majutsu-row-module-columns compiled 'body)
+                            sum (majutsu-row--body-line-count
+                                 (majutsu-row-column-value entry column))))
+          (signal 'majutsu-row-invalid-record
+                  '("Body fields do not match their graph line count")))
+        entry))))
 
-(defun majutsu-row--finalize-entry-gap (entry gap-beg gap-end next-marker)
-  "Finalize ENTRY's inter-event text from GAP-BEG to GAP-END.
-When NEXT-MARKER is non-nil, exclude the graph/carrier prefix before that
-marker from ENTRY's source span and suffix lines."
-  (when entry
-    (let* ((entry-end
-            (if next-marker
-                (let ((line-beg (save-excursion
-                                  (goto-char next-marker)
-                                  (line-beginning-position))))
-                  (if (> line-beg gap-beg)
-                      line-beg
-                    next-marker))
-              gap-end))
-           (suffix-lines (majutsu-row--suffix-lines-from-region
-                          gap-beg entry-end)))
-      (majutsu-row--append-suffix-lines entry suffix-lines)
-      (plist-put entry :end entry-end)))
-  entry)
-
-(defun majutsu-row--parse-entry-record-at-point (compiled &optional stream-start)
-  "Parse one row record at point using COMPILED.
-When STREAM-START is non-nil, treat it as the current stream origin for prefix
-calculation while keeping the physical line end as the record boundary.
-Return (ENTRY . RECORD-END), where RECORD-END is just after the end token."
-  (let* ((entry-beg (or stream-start (line-beginning-position)))
-         (bol entry-beg)
-         (eol (line-end-position))
-         (start-pos (if (majutsu-row--looking-at-token-p
-                         majutsu-row-start-token)
-                        (point)
-                      (majutsu-row-line-token-position
-                       majutsu-row-start-token bol eol))))
-    (when start-pos
-      (let* ((indent (- start-pos bol))
-             (heading-prefixes nil)
-             (heading-segments nil)
-             (record-end nil)
-             (done nil)
-             (first-line t))
-        (save-excursion
-          (goto-char start-pos)
-          (while (and (not done) (not (eobp)))
-            (setq bol (line-beginning-position)
-                  eol (line-end-position))
-            (let* ((prefix-end (min (+ bol indent) eol))
-                   (prefix (buffer-substring bol prefix-end))
-                   (content-start (if first-line
-                                      (+ start-pos
-                                         (length majutsu-row-start-token))
-                                    prefix-end)))
-              (let ((segment-pos (majutsu-row-line-token-position
-                                  majutsu-row-tail-token
-                                  bol eol content-start)))
-                (if segment-pos
-                    (progn
-                      (push prefix heading-prefixes)
-                      (push (buffer-substring content-start segment-pos)
-                            heading-segments)
-                      (if-let* ((payloads (majutsu-row-parse-trailing-payloads
-                                           compiled segment-pos eol)))
-                          (setq record-end (plist-get payloads :record-end)
-                                done payloads)
-                        (setq done :incomplete)))
-                  (push prefix heading-prefixes)
-                  (push (buffer-substring content-start eol) heading-segments)
-                  (forward-line 1)
-                  (when (eobp)
-                    (setq done :incomplete)))))
-            (setq first-line nil)))
-        (when (plistp done)
-          (let* ((profile (majutsu-row--profile compiled))
-                 (entry (list :beg entry-beg
-                              :record-end record-end
-                              :end record-end
-                              :row-profile (plist-get profile :name)
-                              :indent indent
-                              :columns nil
-                              :column-values nil
-                              :modules nil
-                              :heading-prefixes (nreverse heading-prefixes)
-                              :suffix-lines nil
-                              :parent nil
-                              :depth 0))
-                 (heading-payload
-                  (majutsu-row-join-lines
-                   (nreverse heading-segments))))
-            (condition-case nil
-                (progn
-                  (setq entry (majutsu-row-record-module-fields
-                               entry 'heading heading-payload compiled))
-                  (setq entry (majutsu-row-record-module-fields
-                               entry 'tail (plist-get done :tail) compiled))
-                  (setq entry (majutsu-row-record-module-fields
-                               entry 'body (plist-get done :body) compiled))
-                  (setq entry (majutsu-row-record-module-fields
-                               entry 'metadata (plist-get done :metadata) compiled))
-                  (cons entry record-end))
-              (majutsu-row-invalid-record nil))))))))
+(defun majutsu-row--recover-record (start)
+  "Skip a malformed record at START to the next record's physical line.
+Never expose its unframed body as ordinary graph text."
+  (goto-char start)
+  (forward-line 1)
+  (if (search-forward majutsu-row-start-token nil t)
+      (beginning-of-line)
+    (goto-char (point-max))))
 
 (defun majutsu-row-read-region (compiled beg end &optional _options)
   "Read row protocol events between BEG and END using COMPILED.
-Return a plist with :roots, :entries, and :diagnostics."
-  (let (roots entries diagnostics suffix-owner)
+Return :entries and :roots containing only records, :diagnostics, and
+:events containing records and plain strings in source order.  Plain
+strings retain their newlines and never belong to the preceding record."
+  (let (entries events diagnostics)
     (save-excursion
-      (let ((cursor beg))
-        (while (< cursor end)
-          (if-let* ((marker (majutsu-row--next-marker-position cursor end)))
-              (progn
-                (majutsu-row--finalize-entry-gap
-                 suffix-owner cursor marker marker)
-                (goto-char marker)
-                (pcase-let ((`(,kind . ,token)
-                             (or (majutsu-row--event-at-point)
-                                 (cons 'unknown majutsu-row-record-marker))))
-                  (pcase kind
-                    ('row
-                     (if-let* ((parsed (majutsu-row--parse-entry-record-at-point
-                                        compiled)))
-                         (let ((entry (car parsed))
-                               (record-end (cdr parsed)))
-                           (push entry roots)
-                           (push entry entries)
-                           (setq suffix-owner entry
-                                 cursor record-end))
-                       (push (list :position marker
-                                   :message "Incomplete row record")
-                             diagnostics)
-                       (setq suffix-owner nil
-                             cursor (+ marker (length token)))))
-                    (_
-                     (push (list :position marker
-                                 :message "Unknown row protocol marker")
-                           diagnostics)
-                     (setq suffix-owner nil
-                           cursor (min end (1+ marker)))))))
-            (majutsu-row--finalize-entry-gap suffix-owner cursor end nil)
-            (setq cursor end)))))
-    (list :roots (nreverse roots)
-          :entries (nreverse entries)
+      (save-restriction
+        (narrow-to-region beg end)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (if-let* ((marker (majutsu-row--next-marker-position
+                            (point) (line-end-position))))
+              (condition-case err
+                  (progn
+                    (goto-char marker)
+                    (let ((entry (majutsu-row--parse-entry-record-at-point compiled)))
+                      (push entry entries)
+                      (push entry events)))
+                (majutsu-row-invalid-record
+                 (push (list :position marker :message (error-message-string err))
+                       diagnostics)
+                 (majutsu-row--recover-record marker)))
+            (let ((start (point)))
+              (forward-line 1)
+              (push (buffer-substring start (point)) events))))))
+    (setq entries (nreverse entries))
+    (list :roots entries
+          :entries entries
+          :events (nreverse events)
           :diagnostics (nreverse diagnostics))))
 
 (defun majutsu-row--diagnostic-position (diagnostic)
@@ -684,24 +626,19 @@ Return a plist with :roots, :entries, and :diagnostics."
   (majutsu-row-read-region compiled (point-min) (point-max) options))
 
 (defun majutsu-row-parse-at-point (compiled &optional end)
-  "Parse one sequentially encoded row entry at point using COMPILED.
-When END is non-nil, do not read beyond END while attaching suffix lines."
-  (let* ((entry-beg (line-beginning-position))
-         (limit (or end (point-max)))
-         (start-pos (majutsu-row-line-token-position
-                     majutsu-row-start-token entry-beg (line-end-position))))
-    (when start-pos
-      (save-excursion
-        (goto-char entry-beg)
-        (when-let* ((parsed (majutsu-row--parse-entry-record-at-point compiled)))
-          (let* ((entry (car parsed))
-                 (record-end (cdr parsed))
-                 (next-marker (and (< record-end limit)
-                                   (majutsu-row--next-marker-position
-                                    record-end limit))))
-            (majutsu-row--finalize-entry-gap entry record-end
-                                             (or next-marker limit)
-                                             next-marker)))))))
+  "Parse the record on the current line using COMPILED.
+When END is non-nil, do not read beyond END.  Following plain graph lines
+are not part of the record.  Return nil for malformed or absent records."
+  (save-excursion
+    (save-restriction
+      (when end
+        (narrow-to-region (line-beginning-position) end))
+      (when-let* ((marker (majutsu-row--next-marker-position
+                          (line-beginning-position) (line-end-position))))
+        (goto-char marker)
+        (condition-case nil
+            (majutsu-row--parse-entry-record-at-point compiled)
+          (majutsu-row-invalid-record nil))))))
 
 (defun majutsu-row-parse-buffer (compiled)
   "Parse all sequentially encoded row entries in current buffer."
@@ -724,12 +661,57 @@ When END is non-nil, do not read beyond END while attaching suffix lines."
     (insert (or content "") "\n")
     (majutsu-row-apply-line-prefix-span start (point) prefix)))
 
-(defun majutsu-row-split-prefix-line (line prefix-width)
-  "Split LINE into (PREFIX . CONTENT) using PREFIX-WIDTH characters."
-  (let* ((width (max 0 (min (or prefix-width 0) (length (or line "")))))
-         (text (or line "")))
-    (cons (substring text 0 width)
-          (substring text width))))
+(defun majutsu-row--align-prefix (prefix width)
+  "Pad PREFIX to the record's text column WIDTH without adding graph edges.
+jj trims trailing spaces on empty physical lines; that must not move the
+display-only gutter's boundary into the body."
+  (let ((padding (- width (string-width prefix))))
+    (if (> padding 0)
+        (concat prefix (make-string padding ?\s))
+      prefix)))
+
+(defvar-keymap majutsu-row--graph-map
+  :doc "Mouse events on graph decorations do not select or toggle sections."
+  "<down-mouse-1>" #'ignore
+  "<mouse-1>" #'ignore
+  "<double-mouse-1>" #'ignore
+  "<triple-mouse-1>" #'ignore
+  "<drag-mouse-1>" #'ignore
+  "<down-mouse-2>" #'ignore
+  "<mouse-2>" #'ignore
+  "<down-mouse-3>" #'ignore
+  "<mouse-3>" #'ignore)
+
+(defun majutsu-row--clear-graph-overlays ()
+  "Remove graph decorations, including zero-width terminal overlays."
+  (mapc #'delete-overlay majutsu-row--graph-overlays)
+  (setq majutsu-row--graph-overlays nil))
+
+(defun majutsu-row--display-graph-lines (lines position)
+  "Display graph LINES before POSITION without inserting buffer text.
+LINES is in reverse source order.  The anchor is the next record's first
+character, or the end of the stream for terminal decorations."
+  (let* ((text (apply #'concat (nreverse lines)))
+         (prefix (get-text-property position 'line-prefix))
+         (overlay (make-overlay position (min (1+ position) (point-max))
+                                nil nil t)))
+    (majutsu-row-cleanup-copied-string text)
+    (unless (string-suffix-p "\n" text)
+      (setq text (concat text "\n")))
+    (add-text-properties
+     0 (length text)
+     (list 'line-prefix "" 'wrap-prefix ""
+           'keymap majutsu-row--graph-map 'pointer 'arrow)
+     text)
+    ;; Redisplay emits the anchor's line-prefix before its before-string.
+    ;; Move that prefix after the decoration instead, without changing the
+    ;; record's buffer text, graph geometry, or section identity.
+    (overlay-put overlay 'line-prefix "")
+    (overlay-put overlay 'before-string (concat text prefix))
+    (when (< (overlay-start overlay) (overlay-end overlay))
+      (overlay-put overlay 'evaporate t))
+    (push overlay majutsu-row--graph-overlays)))
+
 
 ;;; Column access
 
@@ -1040,71 +1022,87 @@ When PLAIN is non-nil, omit faces and text properties."
       (let ((magit-section-show-child-count policy))
         (funcall thunk))))))
 
+(defun majutsu-row--collapsed-graph (heading-prefix body-prefixes)
+  "Return the graph-only projection of BODY-PREFIXES after HEADING-PREFIX.
+Collapse only consecutive equal geometries, ignoring trailing alignment
+spaces and text properties when comparing.  Nil means no remaining lines;
+an empty string represents one blank graph line."
+  (let ((previous (string-trim-right (substring-no-properties heading-prefix)))
+        lines)
+    (dolist (prefix body-prefixes)
+      (let ((geometry (string-trim-right (substring-no-properties prefix))))
+        (unless (equal geometry previous)
+          (push prefix lines)
+          (setq previous geometry))))
+    (when lines
+      (majutsu-row-join-lines (nreverse lines)))))
+
 (defun majutsu-row-insert-entry
     (entry compiled &optional body-inserter omit-body)
   "Insert parsed ENTRY as a Magit section using COMPILED.
-When BODY-INSERTER is non-nil, call it after the ordinary body inside the
-section body.  When OMIT-BODY is non-nil, only BODY-INSERTER supplies body
-content."
+Body lines retain their jj-rendered graph prefixes, including when folded.
+When BODY-INSERTER is non-nil, call it after the ordinary body.  When
+OMIT-BODY is non-nil, only BODY-INSERTER supplies body content."
   (let* ((id (majutsu-row-entry-id entry compiled))
          (section-class (majutsu-row-entry-section-class entry compiled))
          (section-value (majutsu-row-section-value entry compiled))
          (section-hide (majutsu-row-entry-section-hide entry compiled))
-         (indent (or (plist-get entry :indent) 0))
          (prefixes (or (plist-get entry :heading-prefixes) (list "")))
          (last-prefix (or (car (last prefixes)) ""))
+         (prefix-width (string-width (car prefixes)))
          (content-lines (majutsu-row-render-heading-content-lines
                          entry compiled t))
          (count (max (length content-lines) (length prefixes)))
          (heading-lines nil)
          (tail (majutsu-row-render-tail entry compiled t))
-         (suffix-lines (plist-get entry :suffix-lines))
          (body (majutsu-row-render-body entry compiled t))
          (has-body (and (not omit-body)
                         (stringp body)
-                        (not (string-empty-p (string-trim body))))))
+                        (not (string-empty-p (string-trim body)))))
+         (body-lines (and has-body (majutsu-row-split-by-separator body "\n")))
+         (body-prefixes (and has-body (plist-get entry :body-prefixes)))
+         (collapsed-graph (majutsu-row--collapsed-graph last-prefix body-prefixes)))
+    (unless (= (length body-lines) (length body-prefixes))
+      (error "Row body does not match its graph prefixes"))
     (cl-loop for idx below count
              do (let ((prefix (majutsu-row-propertize-decoration
-                               (or (nth idx prefixes) last-prefix)
+                               (majutsu-row--align-prefix
+                                (or (nth idx prefixes) last-prefix) prefix-width)
                                compiled id 'heading
                                (if (= idx 0) 'graph-prefix 'graph-carry)))
                       (line (or (nth idx content-lines) "")))
                   (push (cons prefix line) heading-lines)))
     (setq heading-lines (nreverse heading-lines))
-    (majutsu-row--call-with-child-count-policy
-     compiled
-     (lambda ()
-       (magit-insert-section ((eval section-class) section-value section-hide)
-         (when heading-lines
-           (majutsu-row--insert-heading-anchor-line
-            (cdar heading-lines) tail id (caar heading-lines) compiled))
-         (dolist (line (cdr heading-lines))
-           (majutsu-row-insert-prefixed-line (cdr line) (car line)))
-         (dolist (suffix-line suffix-lines)
-           (pcase-let* ((`(,prefix . ,content)
-                         (majutsu-row-split-prefix-line suffix-line indent))
-                        (decorated-prefix
-                         (majutsu-row-propertize-decoration
-                          prefix compiled id 'heading 'graph-carry))
-                        (decorated-content
-                         (majutsu-row-propertize-content
-                          content compiled id 'heading)))
-             (majutsu-row-insert-prefixed-line
-              decorated-content decorated-prefix)))
-         (when (or has-body body-inserter)
-           (magit-insert-heading)
-           (magit-insert-section-body
-             (when has-body
-               (let ((body-prefix (majutsu-row-propertize-decoration
-                                   (make-string indent ?\s)
-                                   compiled id 'body 'body-prefix))
-                     (start (point)))
-                 (insert body)
-                 (insert "\n")
-                 (majutsu-row-apply-line-prefix-span
-                  start (point) body-prefix)))
-             (when body-inserter
-               (funcall body-inserter)))))))))
+    (let ((section
+           (majutsu-row--call-with-child-count-policy
+            compiled
+            (lambda ()
+              (let ((start (point)))
+                (magit-insert-section ((eval section-class) section-value section-hide)
+                  (when heading-lines
+                    (majutsu-row--insert-heading-anchor-line
+                     (cdar heading-lines) tail id (caar heading-lines) compiled))
+                  (dolist (line (cdr heading-lines))
+                    (majutsu-row-insert-prefixed-line (cdr line) (car line)))
+                  (when (stringp collapsed-graph)
+                    (put-text-property start (1+ start)
+                                       'majutsu-section-collapsed-graph collapsed-graph))
+                  (when (or has-body body-inserter)
+                    (magit-insert-heading)
+                    ;; Materialize the parsed body even when initially hidden:
+                    ;; its graph projection needs real fold bounds.
+                    (cl-loop for line in body-lines
+                             for prefix in body-prefixes
+                             do (majutsu-row-insert-prefixed-line
+                                 line
+                                 (majutsu-row-propertize-decoration
+                                  (majutsu-row--align-prefix prefix prefix-width)
+                                  compiled id 'body 'graph-carry)))
+                    (when body-inserter
+                      (funcall body-inserter)))))))))
+      (when (oref section hidden)
+        (majutsu-section-hide section))
+      section)))
 
 (defun majutsu-row-insert-forest (entries compiled)
   "Insert row ENTRIES recursively as Magit sections using COMPILED."
@@ -1113,70 +1111,29 @@ content."
 
 ;;; Wash
 
-(defun majutsu-row--diagnostic-for-current-line ()
-  "Return a parser diagnostic for the current physical line, or nil."
-  (let* ((bol (line-beginning-position))
-         (eol (line-end-position))
-         (marker (majutsu-row--next-marker-position bol eol)))
-    (when marker
-      (save-excursion
-        (goto-char marker)
-        (pcase-let ((`(,kind . ,_token)
-                     (or (majutsu-row--event-at-point)
-                         (cons 'unknown majutsu-row-record-marker))))
-          (when-let* ((message (pcase kind
-                                 ('row "Incomplete row record")
-                                 (_ "Unknown row protocol marker"))))
-            (list :position marker
-                  :message message)))))))
-
-(defun majutsu-row--delete-current-line ()
-  "Delete the current physical line and leave point at its old start."
-  (let ((beg (line-beginning-position))
-        (end (save-excursion
-               (forward-line 1)
-               (point))))
-    (delete-region beg end)
-    (goto-char beg)))
-
-(defun majutsu-row-wash-entry (compiled &optional end)
-  "Wash the entry at point using COMPILED.
-When END is non-nil, do not read beyond END while attaching suffix lines."
-  (when-let* ((entry (save-excursion
-                       (majutsu-row-parse-at-point compiled end))))
-    (let ((beg (plist-get entry :beg))
-          (entry-end (plist-get entry :end)))
-      (delete-region beg entry-end)
-      (goto-char beg)
-      (majutsu-row-insert-entry entry compiled)
-      entry)))
 
 (defun majutsu-row-wash-buffer (compiled)
-  "Wash all row entries in the current narrowed buffer.
-This consumes one root row at a time in Magit wash style."
-  (let ((inhibit-read-only t)
-        roots
-        entries
-        diagnostics)
-    (goto-char (point-min))
-    (magit-wash-sequence
-     (lambda ()
-       (cond
-        ((eobp) nil)
-        ((when-let* ((entry (majutsu-row-wash-entry compiled (point-max))))
-           (push entry roots)
-           (push entry entries)
-           t))
-        (t
-         (when-let* ((diagnostic (majutsu-row--diagnostic-for-current-line)))
-           (push diagnostic diagnostics))
-         (majutsu-row--delete-current-line)
-         (not (eobp))))))
-    (setq roots (nreverse roots)
-          entries (nreverse entries)
-          diagnostics (nreverse diagnostics))
-    (majutsu-row-report-diagnostics diagnostics)
-    (majutsu-row-set-buffer-data compiled entries roots)
+  "Wash the narrowed row stream into records and display-only graph lines.
+Only records occupy buffer text and create entry sections.  Unframed graph
+lines are decorations, not cursor stops or targets for section commands."
+  (let* ((parsed (majutsu-row-read-buffer compiled))
+         (entries (plist-get parsed :entries))
+         (inhibit-read-only t)
+         graph-lines)
+    (majutsu-row--clear-graph-overlays)
+    (delete-region (point-min) (point-max))
+    (dolist (event (plist-get parsed :events))
+      (if (stringp event)
+          (push event graph-lines)
+        (let ((start (point)))
+          (majutsu-row-insert-entry event compiled)
+          (when graph-lines
+            (majutsu-row--display-graph-lines graph-lines start)
+            (setq graph-lines nil)))))
+    (when graph-lines
+      (majutsu-row--display-graph-lines graph-lines (point)))
+    (majutsu-row-report-diagnostics (plist-get parsed :diagnostics))
+    (majutsu-row-set-buffer-data compiled entries)
     entries))
 
 ;;; Copy property cleanup
@@ -1288,6 +1245,7 @@ Drops tail text when both heading and tail are present in the copied region."
 
 (defun majutsu-row-clear-buffer-data ()
   "Clear current buffer row data."
+  (majutsu-row--clear-graph-overlays)
   (setq-local majutsu-row-buffer-compiled nil)
   (setq-local majutsu-row-cached-entries nil)
   (setq-local majutsu-row-cached-roots nil)
@@ -1316,7 +1274,7 @@ Drops tail text when both heading and tail are present in the copied region."
 (defun majutsu-row-entry-at-point ()
   "Return cached row entry at point, or nil."
   (or (when-let* ((entry-id (majutsu-text-property-near-point
-                             'majutsu-row-entry-id)))
+                           'majutsu-row-entry-id)))
         (majutsu-row-entry-for-id entry-id))
       (majutsu-row--entry-at-current-section)))
 

@@ -371,11 +371,13 @@ custom template DSL that mirrors the =jj log= output but adds interactivity.
 Each revision in the log is a section. The visible anchor line is built from
 fields assigned to the ~heading~ module plus any auxiliary fields assigned to
 the ~tail~ module in ~majutsu-log-commit-columns~ (for example, author and
-timestamp). Within revision sections, graph prefixes and indentation are
+timestamp). Graph prefixes, indentation, and inter-record graph lines are
 display-only decoration, so copying text does not include them. Both heading
 and body lines participate in jj's graph rendering. Folding hides the body
 text but preserves its graph-only structure, collapsing consecutive identical
-prefixes without rerunning jj. Visibility survives refresh.
+prefixes without rerunning jj. Empty body lines retain the record's text
+column: missing alignment spaces are restored without adding graph edges.
+Visibility survives refresh.
 
 The jjosh build includes a separate ~touched-projects~ heading column, for
 example =[appkit, chidu]=. It summarizes changed paths using the loaded
@@ -452,9 +454,12 @@ backslashes, colors, and multiline headings and bodies remain display text.
 
 Parsing requires the declared field counts, valid string metadata, and a
 complete record ending on its last physical line. Invalid records do not
-create actionable sections. Lines between records, including =(elided
-revisions)= and graph connections, remain plain lines outside revision
-sections. They neither fold with an adjacent revision nor inherit its ID.
+create actionable sections. Lines between records, including
+=(elided revisions)= and graph connections, are rendered as display-only
+overlays, not buffer text or sections. Cursor movement skips them, and mouse
+clicks on them do not select or toggle a section. They remain visible when
+an adjacent revision is folded, without inheriting its identity. They are
+excluded from text search and copying.
 
 *** ~majutsu-log-commit-columns~
 ~majutsu-log-commit-columns~ is a flat list of column plists.  Each plist

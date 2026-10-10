@@ -194,8 +194,12 @@
 - Log graph rendering ::
   Multiline descriptions now participate directly in jj's graph rendering.
   Folding preserves graph structure while hiding body text, without rerunning
-  jj. Elided-revision and other inter-record graph lines stay outside revision
-  sections, so they neither fold with nor target the preceding revision.
+  jj. Blank body lines retain the record's gutter width, avoiding ragged
+  highlight boundaries. Elided-revision and other inter-record graph lines
+  are display-only overlays, not buffer text or sections: cursor movement
+  skips them, and clicks do not select or toggle a section. Decorations cannot
+  target or fold the enclosing log graph and remain outside revision folding,
+  text search, and copying.
 
 - Conflict file trees ::
   The log's unresolved conflicts are grouped into collapsible directories,

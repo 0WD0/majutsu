@@ -12,9 +12,9 @@
 ;;; Commentary:
 
 ;; This library adapts Magit's section visibility commands for Majutsu.
-;; The only behavioral change is a slightly shifted invisible range when a
-;; section body ends with a newline, which keeps Majutsu's row/graph layouts
-;; stable when collapsing sections.
+;; Shifted invisible ranges keep the final body newline visible.  Rows can
+;; also supply a graph-only projection to display in place of their hidden
+;; body, including when Magit's native visibility commands are used.
 
 ;;; Code:
 
@@ -38,6 +38,31 @@ shifting the invisible range one character earlier as well."
              (eq (char-before end) ?\n))
         (cons (1- beg) (1- end))
       (cons beg end))))
+
+(defun majutsu-section--collapsed-graph (section)
+  "Return SECTION's graph-only projection, or nil for ordinary sections.
+The heading property `majutsu-section-collapsed-graph' contains graph lines
+joined by newlines, without a leading or trailing newline.  An empty string
+represents one blank graph line and is distinct from no projection."
+  (get-text-property (oref section start) 'majutsu-section-collapsed-graph))
+
+(defun majutsu-section--graph-tree-p (section)
+  "Return non-nil if SECTION or a descendant supplies a graph projection."
+  (or (majutsu-section--collapsed-graph section)
+      (seq-some #'majutsu-section--graph-tree-p (oref section children))))
+
+(defun majutsu-section--graph-display (section beg projection)
+  "Return a replacement for SECTION's hidden body starting at BEG.
+PROJECTION contains graph-only lines.  With shifted bounds the final body
+newline remains visible; otherwise the replacement must supply its own."
+  (let ((display (if (< beg (oref section content))
+                     (concat "\n" projection)
+                   (concat projection "\n"))))
+    ;; Empty prefixes override properties inherited from the buffer, unlike
+    ;; simply removing these properties from the graph string.
+    (add-text-properties 0 (length display)
+                         '(line-prefix "" wrap-prefix "") display)
+    display))
 
 (defun majutsu-section-show (section)
   "Show the body of SECTION."
@@ -75,9 +100,30 @@ shifting the invisible range one character earlier as well."
         (let ((overlay (make-overlay beg end)))
           (overlay-put overlay 'evaporate t)
           (overlay-put overlay 'invisible t)
-          (overlay-put overlay 'cursor-intangible t))))
+          (overlay-put overlay 'cursor-intangible t)
+          (when-let* ((projection (majutsu-section--collapsed-graph section)))
+            (overlay-put overlay 'before-string
+                         (majutsu-section--graph-display
+                          section beg projection))))))
     (magit-section-maybe-update-visibility-indicator section)
     (magit-section-maybe-cache-visibility section)))
+
+(define-advice magit-section-show (:around (show section) majutsu-graph)
+  "Restore graph sections and their parents using compatible overlay bounds.
+An ordinary parent can itself have shifted bounds from a Majutsu hide;
+native show would otherwise leave its heading newline invisible."
+  (if (or (majutsu-section--collapsed-graph section)
+          (and (derived-mode-p 'majutsu-mode)
+               (seq-some #'majutsu-section--graph-tree-p
+                         (oref section children))))
+      (majutsu-section-show section)
+    (funcall show section)))
+
+(define-advice magit-section-hide (:around (hide section) majutsu-graph)
+  "Preserve graph projections when native reveal/isearch changes visibility."
+  (if (majutsu-section--collapsed-graph section)
+      (majutsu-section-hide section)
+    (funcall hide section)))
 
 (defun majutsu-section-toggle (section)
   "Toggle visibility of SECTION."
