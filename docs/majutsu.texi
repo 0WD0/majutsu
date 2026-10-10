@@ -697,13 +697,11 @@ custom template DSL that mirrors the @samp{jj log} output but adds interactivity
 Each revision in the log is a section. The visible anchor line is built from
 fields assigned to the @code{heading} module plus any auxiliary fields assigned to
 the @code{tail} module in @code{majutsu-log-commit-columns} (for example@comma{} author and
-timestamp). Graph prefixes and graph-related indentation are rendered as
-display-only prefix decoration rather than real buffer text@comma{} so they do not get
-copied accidentally and point does not land on them as editable text. When a
-revision has @code{body} module content (for example@comma{} continuation lines from a long
-description)@comma{} that content forms the foldable section body; its current
-visibility follows the section state instead of being forced closed on every
-refresh.
+timestamp). Within revision sections@comma{} graph prefixes and indentation are
+display-only decoration@comma{} so copying text does not include them. Both heading
+and body lines participate in jj's graph rendering. Folding hides the body
+text but preserves its graph-only structure@comma{} collapsing consecutive identical
+prefixes without rerunning jj. Visibility survives refresh.
 
 The jjosh build includes a separate @code{touched-projects} heading column@comma{} for
 example @samp{[appkit@comma{} chidu]}. It summarizes changed paths using the loaded
@@ -797,11 +795,15 @@ separated by @samp{\x1e}.
 
 @itemize
 @item
-@strong{Heading fields} retain jj labels and physical newlines@comma{} so jj draws the
-continuation graph.
+@strong{Heading fields} retain jj labels and physical newlines.
 @item
-@strong{Tail and body fields} retain labels but carry logical newlines as @samp{\x1f};
-these become newlines again before column postprocessing.
+@strong{Body fields} also retain labels and physical newlines@comma{} so jj draws each
+body's graph. The compiler prefixes each nonblank field with one boundary
+newline@comma{} removed when decoding the field. Empty or whitespace-only fields
+occupy no body lines; intentional blank lines within other fields survive.
+@item
+@strong{Tail fields} carry logical newlines as @samp{\x1f}; these become newlines again
+before column postprocessing.
 @item
 @strong{Metadata fields} are JSON strings@comma{} decoded without display properties.
 Their declared template values remain lossless and are the only source of
@@ -811,12 +813,13 @@ canonical entry fields.
 In display fields@comma{} literal @samp{\x1d}@comma{} @samp{\x1e}@comma{} and @samp{\x1f} are rendered as the
 printable escapes @samp{\u001d}@comma{} @samp{\u001e}@comma{} and @samp{\u001f}. This is intentional display
 normalization@comma{} not a lossless control-character round trip. Ordinary quotes@comma{}
-backslashes@comma{} colors@comma{} and multiline headings remain display text.
+backslashes@comma{} colors@comma{} and multiline headings and bodies remain display text.
 
 Parsing requires the declared field counts@comma{} valid string metadata@comma{} and a
-complete record ending on its physical line. Invalid records do not create
-actionable sections. Graph lines between records remain attached to the
-preceding section.
+complete record ending on its last physical line. Invalid records do not
+create actionable sections. Lines between records@comma{} including @samp{(elided
+revisions)} and graph connections@comma{} remain plain lines outside revision
+sections. They neither fold with an adjacent revision nor inherit its ID@.
 
 @node @code{majutsu-log-commit-columns}
 @subsection @code{majutsu-log-commit-columns}
@@ -925,6 +928,11 @@ spec.
 Postprocessors run per column instance@comma{} so the same field can appear in
 multiple modules and project to different values. Transport decoding (for
 example@comma{} turning @samp{\x1f} back into @samp{\n}) happens before @code{:post} runs.
+
+Body postprocessors must preserve the displayed line count and whether a field
+is empty. Put layout-changing transformations in the template instead: jj must
+see every displayed body line to draw its graph. A violation rejects the row
+with a parser diagnostic rather than attaching incorrect graph prefixes.
 
 When you provide a function or function list in @code{:post}@comma{} Majutsu appends it
 after the field's default postprocessors.
