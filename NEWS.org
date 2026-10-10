@@ -29,6 +29,8 @@
   with ~heading~, ~tail~, ~body~, or ~metadata~ instead of ~:align~ / ~:visible~.
   Columns support ~:template~, ~:face~, and ~:post~; move settings from the
   removed ~majutsu-log-field-faces~ option into each column's ~:face~.
+  Body postprocessors must now preserve the displayed line count and whether a
+  field is empty; move layout-changing transformations into ~:template~.
 
 - Diffedit option renamed ::
   Rename ~majutsu-edit-finish-on-save~ to ~majutsu-diffedit-finish-on-save~
@@ -188,6 +190,12 @@
   revision files in another window or frame.
 
 ** Changed
+
+- Log graph rendering ::
+  Multiline descriptions now participate directly in jj's graph rendering.
+  Folding preserves graph structure while hiding body text, without rerunning
+  jj. Elided-revision and other inter-record graph lines stay outside revision
+  sections, so they neither fold with nor target the preceding revision.
 
 - Conflict file trees ::
   The log's unresolved conflicts are grouped into collapsible directories,
