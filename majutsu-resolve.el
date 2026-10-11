@@ -90,7 +90,7 @@ renames, and new paths are not supported."
    ["Navigate"
     ("RET" "Edit / jump" majutsu-resolve-visit-file
      :if-derived majutsu-resolve-mode)
-    ("TAB" "Fold / unfold" majutsu-section-toggle
+    ("TAB" "Fold / unfold" magit-section-toggle
      :if-derived majutsu-resolve-mode)
     ("n" "Next conflicted file" majutsu-resolve-next-file)
     ("g" "Refresh workbench" majutsu-resolve-show)]
