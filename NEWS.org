@@ -199,7 +199,8 @@
   are display-only overlays, not buffer text or sections: cursor movement
   skips them, and clicks do not select or toggle a section. Decorations cannot
   target or fold the enclosing log graph and remain outside revision folding,
-  text search, and copying.
+  text search, and copying. Native graph colors and styles are preserved
+  without inheriting the adjacent revision's foreground, weight, or highlight.
 
 - Conflict file trees ::
   The log's unresolved conflicts are grouped into collapsible directories,
