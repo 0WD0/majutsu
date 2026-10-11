@@ -152,14 +152,14 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
                   (majutsu-bookmark-test--ref
                    "dev" "origin" t
                    "  @origin (+2/-10+): sxwtxlqt/1 4bb5dd3b (hidden) summary")))
-         parsed roots dev origin)
+         parsed entries dev origin)
     (with-temp-buffer
       (insert output)
       (setq parsed (majutsu-row-read-buffer compiled)))
-    (setq roots (plist-get parsed :roots)
-          dev (car roots)
-          origin (cadr roots))
-    (should (= (length roots) 2))
+    (setq entries (plist-get parsed :entries)
+          dev (car entries)
+          origin (cadr entries))
+    (should (= (length entries) 2))
     (should (equal (majutsu-row-column dev 'name) "dev"))
     (should (equal (majutsu-row-column origin 'remote) "origin"))
     (should (majutsu-row-column origin 'tracked))))

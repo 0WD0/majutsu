@@ -394,7 +394,6 @@
     (should (equal (majutsu-row-column second 'id) "id-2"))
     (should (equal (plist-get parsed :events)
                    (list first "│ carry-line\n" second)))
-    (should (equal (plist-get parsed :roots) entries))
     (should (= (plist-get first :end)
                (1+ (string-match (regexp-quote "│ carry-line\n") raw))))))
 
@@ -477,25 +476,36 @@
                 '((id . "row-id")))
                majutsu-row-end-token "\n"))
          (entry (car (majutsu-log-test--parse-entries compiled raw))))
-    (should (equal (mapconcat #'substring-no-properties
-                              (majutsu-row-render-heading-lines entry compiled)
-                              "\n")
-                   "○ [desc]"))
-    (should (equal (majutsu-row-render-body entry compiled) "DESC"))))
+    (with-temp-buffer
+      (magit-section-mode)
+      (let ((inhibit-read-only t))
+        (majutsu-row-insert-entry entry compiled))
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "[desc]\nDESC\n"))
+      (should (equal (get-text-property (point-min) 'line-prefix) "○ "))
+      (goto-char (point-min))
+      (forward-line)
+      (should (equal (get-text-property (point) 'line-prefix) "│ ")))))
 
-(ert-deftest majutsu-log-render-heading-lines-with-auxiliary-heading-fields ()
-  "Heading rendering should include additional heading fields in order."
+(ert-deftest majutsu-log-insert-entry-with-auxiliary-heading-fields ()
+  "Real section headings include additional heading fields in order."
   (let* ((compiled (majutsu-log-test--heading-aux-compiled))
          (entry (list :columns '((change-id . "chg")
                                  (id . "id-123")
                                  (description . "Title")
                                  (author . "Very\nLong")
                                  (timestamp . "2m"))
-                      :heading-prefixes '("" "")))
-         (heading (mapconcat #'substring-no-properties
-                             (majutsu-row-render-heading-lines entry compiled)
-                             "\n")))
-    (should (equal heading "chg Title Very\nLong 2m"))))
+                      :heading-prefixes '("○ " "│ "))))
+    (with-temp-buffer
+      (magit-section-mode)
+      (let ((inhibit-read-only t))
+        (majutsu-row-insert-entry entry compiled))
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "chg Title Very\nLong 2m\n"))
+      (should (equal (get-text-property (point-min) 'line-prefix) "○ "))
+      (goto-char (point-min))
+      (forward-line)
+      (should (equal (get-text-property (point) 'line-prefix) "│ ")))))
 
 (ert-deftest majutsu-log-insert-entry-renders-tail-on-anchor-line ()
   "Tail rendering should stay on the anchor line and use align-to spacing."

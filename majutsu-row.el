@@ -85,9 +85,6 @@ Literal occurrences in display text are escaped before newlines are encoded.")
 (defvar-local majutsu-row-cached-entries nil
   "Parsed row entries for the current buffer.")
 
-(defvar-local majutsu-row-cached-roots nil
-  "Parsed top-level row entries for the current buffer.")
-
 (defvar-local majutsu-row-entry-index nil
   "Hash table mapping stable entry ids to cached entries.")
 
@@ -434,8 +431,7 @@ When MAX-FIELDS is non-nil, leave remaining separators in the last field."
   "Record MODULE PAYLOAD values into ENTRY using COMPILED layout."
   (let* ((profile (majutsu-row--profile compiled))
          (columns (majutsu-row-module-columns compiled module))
-         (values (majutsu-row-split-module-values payload (length columns)))
-         (stored nil))
+         (values (majutsu-row-split-module-values payload (length columns))))
     (cl-loop for column in columns
              for raw-value in values
              do (let* ((field (plist-get column :field))
@@ -458,11 +454,7 @@ When MAX-FIELDS is non-nil, leave remaining separators in the last field."
                     (setq entry (majutsu-row-record-canonical-field
                                  entry field out)))
                   (setq entry (majutsu-row-record-column-value
-                               entry column out))
-                  (push out stored)))
-    (let ((modules (plist-get entry :modules)))
-      (setf (alist-get module modules nil nil #'eq) (nreverse stored))
-      (setq entry (plist-put entry :modules modules)))
+                               entry column out))))
     entry))
 
 ;;; Parse
@@ -539,7 +531,6 @@ body transformations which do not match the graph's physical line count."
                          :indent indent
                          :columns nil
                          :column-values nil
-                         :modules nil
                          :heading-prefixes (cons first-prefix (cdr heading))
                          :body-prefixes (cdr body)
                          :parent nil
@@ -567,9 +558,9 @@ Never expose its unframed body as ordinary graph text."
 
 (defun majutsu-row-read-region (compiled beg end &optional _options)
   "Read row protocol events between BEG and END using COMPILED.
-Return :entries and :roots containing only records, :diagnostics, and
-:events containing records and plain strings in source order.  Plain
-strings retain their newlines and never belong to the preceding record."
+Return :entries containing only records, :diagnostics, and :events
+containing records and plain strings in source order.  Plain strings
+retain their newlines and never belong to the preceding record."
   (let (entries events diagnostics)
     (save-excursion
       (save-restriction
@@ -592,8 +583,7 @@ strings retain their newlines and never belong to the preceding record."
               (forward-line 1)
               (push (buffer-substring start (point)) events))))))
     (setq entries (nreverse entries))
-    (list :roots entries
-          :entries entries
+    (list :entries entries
           :events (nreverse events)
           :diagnostics (nreverse diagnostics))))
 
@@ -683,18 +673,49 @@ display-only gutter's boundary into the body."
   "<mouse-3>" #'ignore)
 
 (defun majutsu-row--clear-graph-overlays ()
-  "Remove graph decorations, including zero-width terminal overlays."
+  "Remove graph decorations and any pending terminal anchor."
+  (remove-hook 'pre-redisplay-functions
+               #'majutsu-row--finish-graph-anchor t)
   (mapc #'delete-overlay majutsu-row--graph-overlays)
   (setq majutsu-row--graph-overlays nil))
 
-(defun majutsu-row--display-graph-lines (lines position)
-  "Display graph LINES before POSITION without inserting buffer text.
-LINES is in reverse source order.  The anchor is the next record's first
-character, or the end of the stream for terminal decorations."
+(defun majutsu-row--anchor-graph-lines (overlay text)
+  "Anchor graph TEXT before OVERLAY's following buffer character."
+  (let ((position (overlay-start overlay)))
+    (move-overlay overlay position (1+ position))
+    ;; Redisplay emits the anchor's line-prefix before its before-string.
+    ;; Relocate it after the graph, limiting suppression to one character.
+    (overlay-put overlay 'line-prefix "")
+    (overlay-put overlay 'after-string nil)
+    (overlay-put overlay 'before-string
+                 (concat text (get-text-property position 'line-prefix)))
+    (overlay-put overlay 'evaporate t)))
+
+(defun majutsu-row--finish-graph-anchor (_window)
+  "Bind the terminal graph after following text has its display properties."
+  ;; A wash owns all graph overlays and inserts its terminal block last.
+  ;; Wait for redisplay: subsequent section insertion can still be assigning
+  ;; prefixes, and even a zero-width after-string inherits its anchor's prefix.
+  (let* ((overlay (car majutsu-row--graph-overlays))
+         (text (and overlay (overlay-get overlay 'after-string)))
+         (position (and overlay (overlay-start overlay))))
+    (cond
+     ((and text position
+           (<= (point-min) position) (< position (point-max)))
+      (majutsu-row--anchor-graph-lines overlay text)
+      (remove-hook 'pre-redisplay-functions
+                   #'majutsu-row--finish-graph-anchor t))
+     ((not (and text position))
+      (remove-hook 'pre-redisplay-functions
+                   #'majutsu-row--finish-graph-anchor t)))))
+
+(defun majutsu-row--display-graph-lines (lines position &optional terminal)
+  "Display graph LINES at POSITION without inserting buffer text.
+LINES is in reverse source order.  Unless TERMINAL is non-nil, anchor
+before the next record's first character and relocate its line prefix.
+Terminal decorations wait until following text has its display properties."
   (let* ((text (apply #'concat (nreverse lines)))
-         (prefix (get-text-property position 'line-prefix))
-         (overlay (make-overlay position (min (1+ position) (point-max))
-                                nil nil t)))
+         (overlay (make-overlay position position nil nil nil)))
     (majutsu-row-cleanup-copied-string text)
     (unless (string-suffix-p "\n" text)
       (setq text (concat text "\n")))
@@ -704,13 +725,12 @@ character, or the end of the stream for terminal decorations."
            'keymap majutsu-row--graph-map 'pointer 'arrow)
      text)
     (majutsu-section--isolate-graph-faces text)
-    ;; Redisplay emits the anchor's line-prefix before its before-string.
-    ;; Move that prefix after the decoration instead, without changing the
-    ;; record's buffer text, graph geometry, or section identity.
-    (overlay-put overlay 'line-prefix "")
-    (overlay-put overlay 'before-string (concat text prefix))
-    (when (< (overlay-start overlay) (overlay-end overlay))
-      (overlay-put overlay 'evaporate t))
+    (if terminal
+        (progn
+          (overlay-put overlay 'after-string text)
+          (add-hook 'pre-redisplay-functions
+                    #'majutsu-row--finish-graph-anchor nil t))
+      (majutsu-row--anchor-graph-lines overlay text))
     (push overlay majutsu-row--graph-overlays)))
 
 
@@ -873,20 +893,6 @@ When PLAIN is non-nil, omit faces and text properties."
   (majutsu-row-split-by-separator
    (majutsu-row-render-heading-content entry compiled annotate plain)
    "\n"))
-
-(defun majutsu-row-render-heading-lines (entry compiled)
-  "Render ENTRY heading module as visible lines with graph prefixes."
-  (let* ((content-lines (majutsu-row-render-heading-content-lines
-                         entry compiled))
-         (prefixes (or (plist-get entry :heading-prefixes) (list "")))
-         (last-prefix (or (car (last prefixes)) ""))
-         (count (max (length content-lines) (length prefixes)))
-         out)
-    (cl-loop for idx below count
-             do (let ((prefix (or (nth idx prefixes) last-prefix))
-                      (line (or (nth idx content-lines) "")))
-                  (push (concat prefix line) out)))
-    (nreverse out)))
 
 (defun majutsu-row-render-tail (entry compiled &optional annotate plain)
   "Render ENTRY tail module as a single-line auxiliary string."
@@ -1106,11 +1112,6 @@ OMIT-BODY is non-nil, only BODY-INSERTER supplies body content."
         (majutsu-section-hide section))
       section)))
 
-(defun majutsu-row-insert-forest (entries compiled)
-  "Insert row ENTRIES recursively as Magit sections using COMPILED."
-  (dolist (entry entries)
-    (majutsu-row-insert-entry entry compiled)))
-
 ;;; Wash
 
 
@@ -1133,7 +1134,7 @@ lines are decorations, not cursor stops or targets for section commands."
             (majutsu-row--display-graph-lines graph-lines start)
             (setq graph-lines nil)))))
     (when graph-lines
-      (majutsu-row--display-graph-lines graph-lines (point)))
+      (majutsu-row--display-graph-lines graph-lines (point) t))
     (majutsu-row-report-diagnostics (plist-get parsed :diagnostics))
     (majutsu-row-set-buffer-data compiled entries)
     entries))
@@ -1236,12 +1237,11 @@ Drops tail text when both heading and tail are present in the copied region."
 
 ;;; Copy buffer data management
 
-(defun majutsu-row-set-buffer-data (compiled entries &optional roots)
-  "Set current buffer row COMPILED, ENTRIES, and optional ROOTS."
+(defun majutsu-row-set-buffer-data (compiled entries)
+  "Set current buffer row COMPILED and ENTRIES."
   (let ((indexes (majutsu-row-build-indexes compiled entries)))
     (setq-local majutsu-row-buffer-compiled compiled)
     (setq-local majutsu-row-cached-entries entries)
-    (setq-local majutsu-row-cached-roots (or roots entries))
     (setq-local majutsu-row-entry-index (car indexes))
     (setq-local majutsu-row-section-ident-index (cdr indexes))))
 
@@ -1250,7 +1250,6 @@ Drops tail text when both heading and tail are present in the copied region."
   (majutsu-row--clear-graph-overlays)
   (setq-local majutsu-row-buffer-compiled nil)
   (setq-local majutsu-row-cached-entries nil)
-  (setq-local majutsu-row-cached-roots nil)
   (setq-local majutsu-row-entry-index nil)
   (setq-local majutsu-row-section-ident-index nil))
 

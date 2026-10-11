@@ -380,7 +380,7 @@
              (string-match-p (regexp-quote source)
                              (buffer-substring-no-properties
                               (oref stat content) (oref stat end))))
-            (majutsu-section-toggle stat)
+            (magit-section-toggle stat)
             (should-not (invisible-p (oref stat content)))
             ;; Commands on the expanded detail still act on the target file.
             (goto-char (oref stat content)))
@@ -391,7 +391,7 @@
           (majutsu-jump-to-diffstat-or-diff)
           (should (eq (magit-current-section) stat))
           (when source
-            (majutsu-section-toggle stat)
+            (magit-section-toggle stat)
             (should (oref stat hidden))
             (should (invisible-p (oref stat content))))))
       (goto-char (oref (majutsu-diff--stat-file-section "dst/new.rs") start))
