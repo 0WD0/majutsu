@@ -201,6 +201,9 @@
   target or fold the enclosing log graph and remain outside revision folding,
   text search, and copying. Native graph colors and styles are preserved
   without inheriting the adjacent revision's foreground, weight, or highlight.
+  Native Magit visibility commands share Majutsu's fold bounds, including rows
+  requiring no folded graph projection. Terminal decorations do not duplicate
+  or suppress the prefixes of subsequently inserted sections.
 
 - Conflict file trees ::
   The log's unresolved conflicts are grouped into collapsible directories,

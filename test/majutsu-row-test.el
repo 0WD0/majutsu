@@ -286,13 +286,11 @@
     (with-temp-buffer
       (setq-local majutsu-row-buffer-compiled compiled)
       (setq-local majutsu-row-cached-entries '(entry))
-      (setq-local majutsu-row-cached-roots '(root))
       (setq-local majutsu-row-entry-index (make-hash-table))
       (setq-local majutsu-row-section-ident-index (make-hash-table))
       (majutsu-row-clear-buffer-data)
       (should-not majutsu-row-buffer-compiled)
       (should-not majutsu-row-cached-entries)
-      (should-not majutsu-row-cached-roots)
       (should-not majutsu-row-entry-index)
       (should-not majutsu-row-section-ident-index))))
 
@@ -417,7 +415,6 @@
         (insert raw)
         (let ((parsed (majutsu-row-read-buffer compiled)))
           (should-not (plist-get parsed :entries))
-          (should-not (plist-get parsed :roots))
           (should-not (plist-get parsed :events))
           (should (plist-get parsed :diagnostics)))))))
 
@@ -555,7 +552,8 @@
                        '("first" "second")))
         (should (equal (mapcar (lambda (overlay)
                                 (substring-no-properties
-                                 (overlay-get overlay 'before-string)))
+                                 (or (overlay-get overlay 'before-string)
+                                     (overlay-get overlay 'after-string))))
                               decorations)
                        (list "╭─\n│ " (concat middle "│ ") "╯\n")))
         (should (eq (get-text-property
@@ -579,6 +577,73 @@
         (goto-char (oref second start))
         (forward-line -1)
         (should (eq (magit-current-section) first))))))
+
+(ert-deftest majutsu-row-terminal-graph-keeps-following-section-prefix ()
+  "Appending sections cannot turn terminal graph into prefix suppression."
+  (let* ((compiled
+          (majutsu-row-test--compiled
+           '((:field title :module heading :template "Title" :face nil)
+             (:field body :module body :template "Body" :face nil)
+             (:field id :module metadata :template "id" :face nil))))
+         (record (majutsu-row-test--graph-record "First" "first"))
+         (following (list :heading-prefixes '(">> ")
+                          :columns '((title . "Following") (id . "following")))))
+    ;; Cover a completed record, an all-raw stream, and an empty stream.
+    ;; Log refresh appends separators, while other consumers append sections.
+    (dolist (stream (list (concat record "╯") "╯" ""))
+      (dolist (separator '("" "\n" "\n\n"))
+        (with-temp-buffer
+          (majutsu-mode)
+          (let (boundary first next)
+            (let ((inhibit-read-only t))
+              (magit-insert-section (root)
+                (insert stream)
+                (goto-char (point-min))
+                (majutsu-row-wash-buffer compiled)
+                (setq boundary (point))
+                (insert separator)
+                (setq next (majutsu-row-insert-entry following compiled))))
+            (majutsu-row--finish-graph-anchor nil)
+            (when (string-prefix-p record stream)
+              (setq first (car (oref magit-root-section children))))
+            (should (= (length (oref magit-root-section children))
+                       (if first 2 1)))
+            (let ((decoration (car majutsu-row--graph-overlays)))
+              (if (string-empty-p stream)
+                  (should-not decoration)
+                ;; Redisplay emits the anchor prefix before display strings.
+                ;; The graph must precede that prefix, not inherit or lose it.
+                (should
+                 (equal
+                  (concat (get-char-property boundary 'line-prefix)
+                          (or (overlay-get decoration 'before-string)
+                              (overlay-get decoration 'after-string)))
+                  (concat "╯\n" (get-text-property boundary 'line-prefix))))
+                (should (<= (overlay-end decoration) (1+ boundary)))
+                (let ((text (or (overlay-get decoration 'before-string)
+                                (overlay-get decoration 'after-string))))
+                  (should (eq (lookup-key (get-text-property 0 'keymap text)
+                                          (kbd "<mouse-1>"))
+                              'ignore))
+                  (should (equal (ensure-list (get-text-property 0 'face text))
+                                 '(default))))))
+            (should (equal (get-char-property (1+ (oref next start)) 'line-prefix)
+                           ">> "))
+            (goto-char (oref next start))
+            (should (eq (magit-current-section) next))
+            (should (= (current-column) 0))
+            (when first
+              (magit-section-hide first)
+              (should (oref first hidden))
+              (magit-section-show first)
+              (goto-char (oref first start))
+              (forward-line (+ 2 (length separator)))
+              (should (= (point) (oref next start))))
+            (should (equal (filter-buffer-substring (point-min) (point-max))
+                           (concat (when first "First\nBody First\n")
+                                   separator "Following\n")))
+            (goto-char (point-min))
+            (should-not (search-forward "╯" nil t))))))))
 
 (ert-deftest majutsu-row-graph-decorations-do-not-survive-refresh ()
   "Refreshing removes old graph strings, including a terminal anchor at EOF."
