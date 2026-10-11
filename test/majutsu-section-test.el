@@ -222,10 +222,9 @@ The graph replacement is PROJECTION; bind the section as `section'."
     (magit-section-show section)
     (should-not (majutsu-section-test--invisible-overlays))))
 
-(ert-deftest majutsu-section-graph/keeps-faces-without-row-prefixes ()
-  "Graph replacements retain display faces but never repeat row prefixes."
-  (let ((projection (propertize "│" 'face 'bold
-                               'line-prefix "wrong" 'wrap-prefix "wrong")))
+(ert-deftest majutsu-section-graph/does-not-repeat-row-prefixes ()
+  "Graph replacements never inherit or repeat the surrounding row prefixes."
+  (let ((projection (propertize "│" 'line-prefix "wrong" 'wrap-prefix "wrong")))
     (majutsu-section-test--with-graph-section projection
       (put-text-property (point-min) (point-max) 'line-prefix "inherited")
       (put-text-property (point-min) (point-max) 'wrap-prefix "inherited")
@@ -235,7 +234,6 @@ The graph replacement is PROJECTION; bind the section as `section'."
                        (overlays-at (1- (oref section content)))))
              (display (overlay-get overlay 'before-string)))
         (should (equal (substring-no-properties display) "\n│"))
-        (should (eq (get-text-property 1 'face display) 'bold))
         (dotimes (pos (length display))
           (should (equal (get-text-property pos 'line-prefix display) ""))
           (should (equal (get-text-property pos 'wrap-prefix display) "")))

@@ -51,6 +51,21 @@ represents one blank graph line and is distinct from no projection."
   (or (majutsu-section--collapsed-graph section)
       (seq-some #'majutsu-section--graph-tree-p (oref section children))))
 
+(defun majutsu-section--isolate-graph-faces (string)
+  "Give owned graph STRING complete display faces, modifying it in place.
+Display strings otherwise inherit unspecified attributes from their buffer
+anchor.  Retain explicit faces and ANSI font-lock faces, but use `default'
+for remaining attributes rather than the adjacent revision's color or weight."
+  (let ((pos 0)
+        (end (length string)))
+    (while (< pos end)
+      (let ((next (next-single-property-change pos 'font-lock-face string end)))
+        (when-let* ((face (get-text-property pos 'font-lock-face string)))
+          (add-face-text-property pos next face t string))
+        (setq pos next)))
+    (add-face-text-property 0 end 'default t string))
+  string)
+
 (defun majutsu-section--graph-display (section beg projection)
   "Return a replacement for SECTION's hidden body starting at BEG.
 PROJECTION contains graph-only lines.  With shifted bounds the final body
@@ -62,7 +77,7 @@ newline remains visible; otherwise the replacement must supply its own."
     ;; simply removing these properties from the graph string.
     (add-text-properties 0 (length display)
                          '(line-prefix "" wrap-prefix "") display)
-    display))
+    (majutsu-section--isolate-graph-faces display)))
 
 (defun majutsu-section-show (section)
   "Show the body of SECTION."

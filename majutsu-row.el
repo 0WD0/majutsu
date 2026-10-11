@@ -703,6 +703,7 @@ character, or the end of the stream for terminal decorations."
      (list 'line-prefix "" 'wrap-prefix ""
            'keymap majutsu-row--graph-map 'pointer 'arrow)
      text)
+    (majutsu-section--isolate-graph-faces text)
     ;; Redisplay emits the anchor's line-prefix before its before-string.
     ;; Move that prefix after the decoration instead, without changing the
     ;; record's buffer text, graph geometry, or section identity.
@@ -816,10 +817,11 @@ character, or the end of the stream for terminal decorations."
     (text compiled entry-id module decoration)
   "Return TEXT tagged as MODULE DECORATION for ENTRY-ID."
   (if (stringp text)
-      (apply #'propertize
-             text
-             (majutsu-row-decoration-properties
-              compiled entry-id module decoration))
+      (majutsu-section--isolate-graph-faces
+       (apply #'propertize
+              text
+              (majutsu-row-decoration-properties
+               compiled entry-id module decoration)))
     text))
 
 ;;; Column text rendering

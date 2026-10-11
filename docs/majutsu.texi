@@ -703,7 +703,9 @@ and body lines participate in jj's graph rendering. Folding hides the body
 text but preserves its graph-only structure@comma{} collapsing consecutive identical
 prefixes without rerunning jj. Empty body lines retain the record's text
 column: missing alignment spaces are restored without adding graph edges.
-Visibility survives refresh.
+Visibility survives refresh. Graph decorations retain jj's colors and styles@comma{}
+using the default face for unspecified attributes instead of inheriting
+adjacent revision text's foreground@comma{} weight@comma{} or highlighting.
 
 The jjosh build includes a separate @code{touched-projects} heading column@comma{} for
 example @samp{[appkit@comma{} chidu]}. It summarizes changed paths using the loaded
