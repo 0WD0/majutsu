@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'ansi-color)
 (require 'magit-section)
 (require 'majutsu-row)
 (require 'majutsu-mode)
@@ -605,6 +606,73 @@
           (should-not majutsu-row--graph-overlays)
           (should (equal (filter-buffer-substring (point-min) (point-max))
                          "First\nBody First\n")))))))
+
+(ert-deftest majutsu-row-graph-colors-do-not-inherit-the-anchor ()
+  "ANSI graph colors survive display strings without leaking heading styles."
+  (let* ((compiled
+          (majutsu-row-test--compiled
+           '((:field title :module heading :template "Title" :face t)
+             (:field body :module body :template "Body" :face t)
+             (:field id :module metadata :template "id" :face nil))))
+         (raw (concat "│  \e[34m(elided revisions)\e[0m\n"
+                      "\e[1;32m○\e[0m " majutsu-row-start-token
+                      "\e[1;35mHeading\e[0m"
+                      majutsu-row-tail-token majutsu-row-body-token
+                      "\n\e[36m│\e[0m \e[1;35mBody\e[0m"
+                      majutsu-row-meta-token "\"id\"" majutsu-row-end-token "\n"))
+         caption-face node-face edge-face heading-face)
+    (with-temp-buffer
+      (majutsu-mode)
+      (let ((inhibit-read-only t))
+        (magit-insert-section (root)
+          (insert raw)
+          (let ((ansi-color-apply-face-function
+                 #'ansi-color-apply-text-property-face))
+            (ansi-color-apply-on-region (point-min) (point-max)))
+          (goto-char (point-min))
+          (search-forward "(elided")
+          (setq caption-face (get-text-property (1- (point)) 'font-lock-face))
+          (search-forward "○")
+          (setq node-face (get-text-property (1- (point)) 'font-lock-face))
+          (search-forward "Heading")
+          (setq heading-face (get-text-property (1- (point)) 'font-lock-face))
+          (search-forward "│")
+          (setq edge-face (get-text-property (1- (point)) 'font-lock-face))
+          (goto-char (point-min))
+          (majutsu-row-wash-buffer compiled)))
+      (let* ((section (car (oref magit-root-section children)))
+             (prefix (get-text-property (oref section start) 'line-prefix))
+             (body-prefix (get-text-property (oref section content) 'line-prefix))
+             (decoration (overlay-get (car majutsu-row--graph-overlays)
+                                      'before-string)))
+        ;; Nil is not a neutral face on a display string: it inherits the
+        ;; anchor's magenta foreground and bold weight.  `default' resets both.
+        (should (equal (ensure-list (get-text-property 0 'face decoration))
+                       '(default)))
+        (should (equal (get-text-property 3 'face decoration)
+                       (list caption-face 'default)))
+        (should (equal (get-text-property 0 'face prefix)
+                       (append node-face '(default))))
+        (should (equal (ensure-list (get-text-property 1 'face prefix))
+                       '(default)))
+        (should (equal (get-text-property (- (length decoration) 2)
+                                          'face decoration)
+                       (append node-face '(default))))
+        (should (equal (get-text-property 0 'face body-prefix)
+                       (list edge-face 'default)))
+        (should (equal (ensure-list (get-text-property 1 'face body-prefix))
+                       '(default)))
+        (should (equal (get-text-property (oref section start) 'font-lock-face)
+                       heading-face))
+        (should-not (get-text-property (oref section start) 'face))
+        (majutsu-section-hide section)
+        (let* ((overlay (seq-find (lambda (ov) (overlay-get ov 'invisible))
+                                 (overlays-at (1- (oref section content)))))
+               (folded (overlay-get overlay 'before-string)))
+          (should (equal (get-text-property 1 'face folded)
+                         (list edge-face 'default)))
+          (should (equal (ensure-list (get-text-property 2 'face folded))
+                         '(default))))))))
 
 (provide 'majutsu-row-test)
 
