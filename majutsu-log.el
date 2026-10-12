@@ -493,7 +493,7 @@ disappear again."
 When WINDOW is nil, use the current row tail owner window."
   (when (derived-mode-p 'majutsu-log-mode)
     (setq window (or window (majutsu-row--tail-owner-window)))
-    (majutsu-row-refresh-tail-spacers nil nil window)
+    (majutsu-row-refresh-tail-spacers)
     (when window
       (force-window-update window))))
 
