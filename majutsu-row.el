@@ -992,10 +992,7 @@ redisplay to resolve separately in each window."
              (majutsu-row-tail-spacer-display tail window))))
       (insert tail))
     (insert "\n")
-    (majutsu-row-apply-line-prefix-span start (point) prefix)
-    (when (and spacer-pos tail-align)
-      (majutsu-row-refresh-tail-spacers spacer-pos (1+ spacer-pos)
-                                        window))))
+    (majutsu-row-apply-line-prefix-span start (point) prefix)))
 
 (defun majutsu-row-entry-section-class (entry compiled)
   "Return the Magit section class for ENTRY using COMPILED."
