@@ -108,6 +108,14 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
       (evil-insert-state)
     (majutsu-blob-edit-start)))
 
+(defun majutsu-evil-section-edit ()
+  "Start editing section fields and enter Evil Insert state.
+Like `evil-collection-grep' binding `i' to the editable wgrep/grep
+mode, this is the run-of-the-mill way to start editing result text."
+  (interactive)
+  (majutsu-section-edit)
+  (evil-insert-state))
+
 (defun majutsu-evil--set-initial-state ()
   "Register initial Evil states for Majutsu modes."
   (when (and majutsu-evil-initial-state
@@ -178,6 +186,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "~") #'majutsu-diff-default-context
     (kbd "g d") #'majutsu-jump-to-diffstat-or-diff
     (kbd "C-<return>") #'majutsu-diff-visit-workspace-file)
+  (majutsu-evil--define-keys 'normal 'majutsu-diff-mode-map
+    "i" #'majutsu-evil-section-edit)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-resolve-mode-map
     (kbd "RET") #'majutsu-resolve-visit-file
@@ -245,6 +255,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "O") #'majutsu-new-dwim
     (kbd "I") #'majutsu-new-with-before
     (kbd "A") #'majutsu-new-with-after)
+  (majutsu-evil--define-keys 'normal 'majutsu-log-mode-map
+    "i" #'majutsu-evil-section-edit)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-log-mode-map
     (kbd "d") #'majutsu-op-diff-transient

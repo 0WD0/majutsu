@@ -145,6 +145,11 @@ BEG and END default to the accessible range."
 (defvar-local majutsu-section-edit--saved-local-map nil
   "Local map replaced by `majutsu-section-edit-local-map' for the session.")
 
+(defvar-local majutsu-section-edit--undo-was-disabled nil
+  "Non-nil when the buffer had undo disabled before the session.
+Magit section buffers call `buffer-disable-undo'; the session enables undo
+so that in-place edits can be reverted, then restores the disabled state")
+
 (defun majutsu-section-edit--enter-editing-state ()
   "Replace the major mode's local map for the session.
 The map is restored by `majutsu-section-edit--leave-editing-state'."
@@ -163,27 +168,28 @@ Insertion before a read-only character inherits that property by default,
 so the protected character preceding the field is made rear-nonsticky for
 `read-only'.  This is what lets point type at the very start of a field
 in the middle of a line."
-  (let* ((beg (marker-position (plist-get entry :beg)))
-         (end (marker-position (plist-get entry :end)))
-         (inhibit-read-only t))
+  (let ((beg (marker-position (plist-get entry :beg)))
+        (end (marker-position (plist-get entry :end))))
     (when (and beg end (< beg end))
-      (remove-text-properties beg end '(read-only nil)))
+      (with-silent-modifications
+        (remove-text-properties beg end '(read-only nil))))
     (when (and beg (> beg (point-min)) (not (plist-get entry :sticky)))
       (let ((old (get-text-property (1- beg) 'rear-nonsticky)))
         (plist-put entry :sticky (copy-marker (1- beg) nil))
         (plist-put entry :sticky-old old)
-        (put-text-property
-         (1- beg) beg 'rear-nonsticky
-         (cond ((eq old t) t)
-               ((listp old) (cons 'read-only old))
-               (t '(read-only))))))))
+        (with-silent-modifications
+          (put-text-property
+           (1- beg) beg 'rear-nonsticky
+           (cond ((eq old t) t)
+                 ((listp old) (cons 'read-only old))
+                 (t '(read-only)))))))))
 
 (defun majutsu-section-edit--expose ()
   "Make the session's fields writable while protecting everything else.
 The whole accessible buffer gets the `read-only' text property; the
 fields are holes in it.  Unlike a buffer-wide `buffer-read-only', this
 permits insertion exactly at a field's boundaries."
-  (let ((inhibit-read-only t))
+  (with-silent-modifications
     (put-text-property (point-min) (point-max) 'read-only t)
     ;; With no character on the left, insertion at the start of the buffer
     ;; would otherwise not inherit `read-only'; make the first character
@@ -191,6 +197,9 @@ permits insertion exactly at a field's boundaries."
     (unless (get-text-property (point-min) majutsu-section-edit-property)
       (put-text-property (point-min) (1+ (point-min))
                          'front-sticky '(read-only))))
+  (setq majutsu-section-edit--undo-was-disabled (eq buffer-undo-list t))
+  (buffer-enable-undo)
+  (setq buffer-undo-list nil)
   (setq majutsu-section-edit--saved-read-only buffer-read-only)
   (setq buffer-read-only nil)
   (majutsu-section-edit--enter-editing-state)
@@ -200,13 +209,13 @@ permits insertion exactly at a field's boundaries."
 (defun majutsu-section-edit--flatten-entry (entry)
   "Replace newlines inside a single-line ENTRY with spaces."
   (let ((beg (marker-position (plist-get entry :beg)))
-        (end (marker-position (plist-get entry :end)))
-        (inhibit-read-only t))
+        (end (marker-position (plist-get entry :end))))
     (when (and beg end (< beg end))
-      (save-excursion
-        (goto-char beg)
-        (while (search-forward "\n" end t)
-          (replace-match " " t t))))))
+      (with-silent-modifications
+        (save-excursion
+          (goto-char beg)
+          (while (search-forward "\n" end t)
+            (replace-match " " t t)))))))
 
 (defun majutsu-section-edit--overlapping (beg end)
   "Return session entries overlapping the change BEG..END."
@@ -238,7 +247,7 @@ to be flattened."
 
 (defun majutsu-section-edit--stop ()
   "Leave the current edit session without touching repository state."
-  (let ((inhibit-read-only t))
+  (with-silent-modifications
     (dolist (entry majutsu-section-edit--entries)
       (when-let* ((sticky (plist-get entry :sticky)))
         (let ((pos (marker-position sticky))
@@ -256,6 +265,8 @@ to be flattened."
     (remove-text-properties (point-min) (1+ (point-min)) '(front-sticky nil)))
   (majutsu-section-edit--leave-editing-state)
   (setq buffer-read-only majutsu-section-edit--saved-read-only)
+  (when majutsu-section-edit--undo-was-disabled
+    (buffer-disable-undo))
   (setq majutsu-section-edit--entries nil)
   (remove-hook 'after-change-functions #'majutsu-section-edit--after-change t)
   (majutsu-section-edit-mode -1))

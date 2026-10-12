@@ -161,6 +161,23 @@ The protected text after it must stay untouchable."
         (majutsu-section-edit-finish)
         (should (equal (cdr (car captured)) "FIELD1X"))))))
 
+(ert-deftest majutsu-section-edit/undo-reverts-edits ()
+  "Undo must be enabled for the session and revert in-place edits."
+  (majutsu-section-edit-test--with-buffer
+   (setq-local majutsu-section-edit-apply-function (lambda (_) t))
+   (cl-letf (((symbol-function 'message) #'ignore))
+     (should (eq buffer-undo-list t))
+     (majutsu-section-edit)
+     (should-not (eq buffer-undo-list t))
+     (undo-boundary)
+     (goto-char 10)
+     (insert-and-inherit "X")
+     (should (equal (buffer-substring-no-properties 4 11) "FIELD1X"))
+     (primitive-undo 1 buffer-undo-list)
+     (should (equal (buffer-substring-no-properties 4 10) "FIELD1"))
+     (majutsu-section-edit--stop)
+     (should (eq buffer-undo-list t)))))
+
 (ert-deftest majutsu-section-edit/stop-restores-read-only ()
   "Leaving a session must restore the buffer's read-only state."
   (majutsu-section-edit-test--with-buffer
@@ -229,9 +246,11 @@ Otherwise typing a description that contains `k' or `e' would run
   "Editing the summary should preserve each description's body."
   (let (captured
         (field-a (majutsu-section-edit-make-field
-                  :data '(:commit-id "aaaaaaaaaaaa" :body "\nbody-a")))
+                  :data '(:commit-id "aaaaaaaaaaaa" :part :first
+                          :first "summary-a" :body "\nbody-a")))
         (field-b (majutsu-section-edit-make-field
-                  :data '(:commit-id "bbbbbbbbbbbb" :body ""))))
+                  :data '(:commit-id "bbbbbbbbbbbb" :part :first
+                          :first "summary-b" :body ""))))
     (cl-letf (((symbol-function 'majutsu-jjdescription-apply-descriptions)
                (lambda (descriptions)
                  (setq captured descriptions)
@@ -242,6 +261,25 @@ Otherwise typing a description that contains `k' or `e' would run
       (should (equal captured
                      '(("aaaaaaaaaaaa" . "new-a\n\nbody-a")
                        ("bbbbbbbbbbbb" . "new-b")))))))
+
+(ert-deftest majutsu-log-apply-descriptions/merges-summary-and-body ()
+  "A commit whose summary and long description both changed is described once."
+  (let (captured
+        (first-field (majutsu-section-edit-make-field
+                      :data '(:commit-id "aaaaaaaaaaaa" :part :first
+                              :first "old summary" :body "\nold body")))
+        (body-field (majutsu-section-edit-make-field
+                     :data '(:commit-id "aaaaaaaaaaaa" :part :body
+                             :first "old summary" :body "\nold body"))))
+    (cl-letf (((symbol-function 'majutsu-jjdescription-apply-descriptions)
+               (lambda (descriptions)
+                 (setq captured descriptions)
+                 t)))
+      (should (majutsu-log--apply-description-changes
+               (list (cons first-field "new summary")
+                     (cons body-field "\nnew body"))))
+      (should (equal captured
+                     '(("aaaaaaaaaaaa" . "new summary\n\nnew body")))))))
 
 (provide 'majutsu-section-edit-test)
 ;;; majutsu-section-edit-test.el ends here

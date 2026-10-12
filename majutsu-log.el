@@ -518,33 +518,76 @@ up through COMPILED rather than the canonical metadata fields."
       (if (stringp body) body ""))))
 
 (defun majutsu-log--description-field (entry compiled)
-  "Return an editable description field for log ENTRY using COMPILED.
+  "Return an editable summary field for log ENTRY using COMPILED.
 The root commit has no immutable description to edit, so it is skipped."
   (let ((commit-id (majutsu-row-column entry 'commit-id)))
     (when (and (stringp commit-id)
                (not (string-match-p "\\`0+\\'" commit-id)))
       (majutsu-section-edit-make-field
-       :key (list 'description commit-id)
+       :key (list 'first commit-id)
        :multiline nil
        :data (list :commit-id commit-id
+                   :part :first
+                   :first (or (majutsu-row-column entry 'description) "")
                    :body (majutsu-log--description-body entry compiled))))))
 
+(defun majutsu-log--body-field (commit-id first body)
+  "Return an editable long-description field for COMMIT-ID.
+FIRST and BODY are the original summary and remaining lines."
+  (majutsu-section-edit-make-field
+   :key (list 'body commit-id)
+   :multiline t
+   :data (list :commit-id commit-id
+               :part :body
+               :first first
+               :body body)))
+
 (defun majutsu-log--apply-description-changes (changes)
-  "Apply CHANGES, a list of (FIELD . NEW-FIRST-LINE) from the log buffer.
-All edits become one bulk `jj describe' transaction.  The stored body of
-each description is preserved after the edited first line."
-  (majutsu-jjdescription-apply-descriptions
-   (mapcar (lambda (change)
-             (let* ((field (car change))
-                    (new (cdr change))
-                    (data (majutsu-section-edit-field-data field))
-                    (body (plist-get data :body))
-                    (description (if (and (stringp body)
-                                          (not (string-empty-p body)))
-                                     (concat new "\n" body)
-                                   new)))
-               (cons (plist-get data :commit-id) description)))
-           changes)))
+  "Apply CHANGES from the log buffer in one bulk `jj describe'.
+CHANGES is a list of (FIELD . NEW-TEXT).  A commit can contribute both an
+edited summary and an edited long-description body; group by commit and
+reassemble the full description before describing."
+  (let (grouped)
+    (dolist (change changes)
+      (let* ((field (car change))
+             (data (majutsu-section-edit-field-data field))
+             (commit-id (plist-get data :commit-id))
+             (cell (assoc commit-id grouped)))
+        (unless cell
+          (setq cell (cons commit-id
+                           (list :first (plist-get data :first)
+                                 :body (plist-get data :body))))
+          (push cell grouped))
+        (plist-put (cdr cell) (plist-get data :part) (cdr change))))
+    (majutsu-jjdescription-apply-descriptions
+     (mapcar (lambda (cell)
+               (let* ((entry (cdr cell))
+                      (first (or (plist-get entry :first) ""))
+                      (body (or (plist-get entry :body) "")))
+                 (cons (car cell)
+                       (if (string-empty-p body)
+                           first
+                         (concat first "\n" body)))))
+             (nreverse grouped)))))
+
+(defun majutsu-log--annotate-entry-description (beg end entry compiled)
+  "Mark ENTRY's summary in BEG..END and its long description as editable."
+  (let* ((commit-id (majutsu-row-column entry 'commit-id))
+         (first (or (majutsu-row-column entry 'description) ""))
+         (body (majutsu-log--description-body entry compiled)))
+    (when (and (stringp commit-id)
+               (not (string-match-p "\\`0+\\'" commit-id)))
+      (majutsu-section-edit-put
+       beg end
+       (majutsu-log--description-field entry compiled))
+      (let ((section (save-excursion (goto-char beg) (magit-current-section))))
+        (when (and section (not (string-empty-p body)))
+          (let ((body-beg (oref section content))
+                (body-end (+ (oref section content) (length body))))
+            (when (and body-beg body-end (<= body-end (oref section end)))
+              (majutsu-section-edit-put
+               body-beg body-end
+               (majutsu-log--body-field commit-id first body)))))))))
 
 (defun majutsu-log--annotate-description-fields (beg end compiled)
   "Mark visible description columns in BEG..END as editable.
@@ -556,11 +599,9 @@ COMPILED is the row layout used to resolve each entry's description body."
                    (point) 'majutsu-row-field nil end)))
         (when (eq (get-text-property (point) 'majutsu-row-field) 'description)
           (when-let* ((id (get-text-property (point) 'majutsu-row-entry-id))
-                      (entry (majutsu-log--entry-for-id id))
-                      (field (majutsu-log--description-field entry compiled)))
-            (majutsu-section-edit-put (point) next field)))
+                      (entry (majutsu-log--entry-for-id id)))
+            (majutsu-log--annotate-entry-description (point) next entry compiled)))
         (goto-char next)))))
-
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
 
