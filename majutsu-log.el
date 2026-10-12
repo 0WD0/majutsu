@@ -23,6 +23,7 @@
 (require 'majutsu-jjosh)
 (require 'majutsu-row)
 (require 'majutsu-file-tree)
+(require 'majutsu-section-edit)
 
 ;;; Section Keymaps
 
@@ -506,16 +507,74 @@ When WINDOW is nil, use the current row tail owner window."
   (when (eq (window-buffer window) (current-buffer))
     (majutsu-log--refresh-tail-window window)))
 
+(defun majutsu-log--description-body (entry compiled)
+  "Return the description lines after the first for log ENTRY.
+The `long-desc' body field is only stored per column instance, so look it
+up through COMPILED rather than the canonical metadata fields."
+  (let ((column (seq-find (lambda (column)
+                            (eq (plist-get column :field) 'long-desc))
+                          (majutsu-row-module-columns compiled 'body))))
+    (let ((body (and column (majutsu-row-column-value entry column))))
+      (if (stringp body) body ""))))
+
+(defun majutsu-log--description-field (entry compiled)
+  "Return an editable description field for log ENTRY using COMPILED.
+The root commit has no immutable description to edit, so it is skipped."
+  (let ((commit-id (majutsu-row-column entry 'commit-id)))
+    (when (and (stringp commit-id)
+               (not (string-match-p "\\`0+\\'" commit-id)))
+      (majutsu-section-edit-make-field
+       :key (list 'description commit-id)
+       :multiline nil
+       :data (list :commit-id commit-id
+                   :body (majutsu-log--description-body entry compiled))))))
+
+(defun majutsu-log--apply-description-changes (changes)
+  "Apply CHANGES, a list of (FIELD . NEW-FIRST-LINE) from the log buffer.
+All edits become one bulk `jj describe' transaction.  The stored body of
+each description is preserved after the edited first line."
+  (majutsu-jjdescription-apply-descriptions
+   (mapcar (lambda (change)
+             (let* ((field (car change))
+                    (new (cdr change))
+                    (data (majutsu-section-edit-field-data field))
+                    (body (plist-get data :body))
+                    (description (if (and (stringp body)
+                                          (not (string-empty-p body)))
+                                     (concat new "\n" body)
+                                   new)))
+               (cons (plist-get data :commit-id) description)))
+           changes)))
+
+(defun majutsu-log--annotate-description-fields (beg end compiled)
+  "Mark visible description columns in BEG..END as editable.
+COMPILED is the row layout used to resolve each entry's description body."
+  (save-excursion
+    (goto-char beg)
+    (while (< (point) end)
+      (let ((next (next-single-property-change
+                   (point) 'majutsu-row-field nil end)))
+        (when (eq (get-text-property (point) 'majutsu-row-field) 'description)
+          (when-let* ((id (get-text-property (point) 'majutsu-row-entry-id))
+                      (entry (majutsu-log--entry-for-id id))
+                      (field (majutsu-log--description-field entry compiled)))
+            (majutsu-section-edit-put (point) next field)))
+        (goto-char next)))))
+
 (defun majutsu-log--wash-logs (_args)
   "Wash jj log output in the current (narrowed) buffer region.
 
 This function is meant to be used as a WASHER for `majutsu-jj-wash'."
-  (let* ((compiled (majutsu-log--ensure-template)))
+  (let* ((compiled (majutsu-log--ensure-template))
+         (beg (point-min)))
     (majutsu-row-clear-buffer-data)
     (setq majutsu-log--entry-by-id nil)
     (setq majutsu-log--children-by-id nil)
     (majutsu-log--rebuild-relation-indexes
      (majutsu-row-wash-buffer compiled))
+    (setq-local majutsu-section-edit-apply-function
+                #'majutsu-log--apply-description-changes)
+    (majutsu-log--annotate-description-fields beg (point-max) compiled)
     (insert "\n")))
 
 (defun majutsu-log-insert-logs ()
@@ -688,7 +747,8 @@ Return non-nil when the section could be located."
   "O" 'majutsu-new-dwim
   "D" 'majutsu-diff-dwim
   "B" 'majutsu-new-with-before
-  "A" 'majutsu-new-with-after)
+  "A" 'majutsu-new-with-after
+  "w" 'majutsu-section-edit)
 
 (define-derived-mode majutsu-log-mode majutsu-mode "Majutsu Log"
   "Major mode for interacting with jj version control system."

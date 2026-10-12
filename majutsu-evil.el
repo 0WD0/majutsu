@@ -228,6 +228,16 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     "ZQ" #'majutsu-blob-edit-abort
     (kbd "<escape>") #'majutsu-blob-edit-exit)
 
+  ;; Editable section fields mirror the Wdired/Wgrep flow: normal state
+  ;; motions stay available, and the session keys finish or abort.
+  (add-hook 'majutsu-section-edit-mode-hook #'evil-normalize-keymaps)
+  (majutsu-evil--define-keys nil 'majutsu-section-edit-mode-map
+    [remap evil-write] #'majutsu-section-edit-finish)
+  (majutsu-evil--define-keys 'normal 'majutsu-section-edit-mode-map
+    "ZZ" #'majutsu-section-edit-finish
+    "ZQ" #'majutsu-section-edit-abort
+    (kbd "<escape>") #'majutsu-section-edit-exit)
+
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
     (kbd "[") #'majutsu-log-goto-parent

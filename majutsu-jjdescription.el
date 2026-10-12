@@ -17,13 +17,14 @@
 (require 'majutsu-mode)
 (require 'majutsu-process)
 
+(require 'cl-lib)
 (require 'log-edit)
 (require 'ring)
+(require 'seq)
 (require 'subr-x)
 (require 'with-editor)
 (require 'server)
 (require 'git-commit nil t)
-(require 'cl-lib)
 
 (autoload 'majutsu-diff-revset "majutsu-diff" nil t)
 (declare-function majutsu-process-remember-with-editor-file-root
@@ -430,6 +431,73 @@ Added to `font-lock-extend-region-functions'."
   (if majutsu-jjdescription-mode
       (majutsu-jjdescription--refresh-font-lock)
     (majutsu-jjdescription-mode 1)))
+
+;;; Programmatic describe
+
+(defconst majutsu-jjdescription--short-commit-id-length 12
+  "Length of the commit id prefix in `JJ: describe' bulk headers.
+This mirrors jj's `short_commit_hash', which always truncates to 12 hex
+characters regardless of uniqueness.")
+
+(defun majutsu-jjdescription--describe-payload (descriptions)
+  "Return a `jj describe' editor payload for DESCRIPTIONS.
+DESCRIPTIONS is an alist of (COMMIT-ID . TEXT).  A single entry uses the
+single-description format.  Several entries use jj's bulk format with
+`JJ: describe <12-char-commit-id> -------' headers, which jj parses and
+matches back to the commits passed on the command line."
+  (if (null (cdr descriptions))
+      (concat (cdar descriptions) "\n")
+    (concat
+     "JJ: Enter or edit commit descriptions after the `JJ: describe` lines.\n"
+     "JJ: Warning:\n"
+     "JJ: - The text you enter will be lost on a syntax error.\n"
+     "JJ: - The syntax of the separator lines may change in the future.\n"
+     "JJ:\n"
+     (mapconcat
+      (lambda (description)
+        (format "JJ: describe %s -------\n%s\n\n"
+                (substring (car description) 0
+                           majutsu-jjdescription--short-commit-id-length)
+                (cdr description)))
+      descriptions
+      "")
+     "JJ: Lines starting with \"JJ:\" (like this one) will be removed.\n")))
+
+(defun majutsu-jjdescription-apply-descriptions (descriptions &optional extra-args)
+  "Rewrite DESCRIPTIONS with a single `jj describe' invocation.
+DESCRIPTIONS is an alist of (COMMIT-ID . TEXT).  EXTRA-ARGS are prepended
+to the `jj describe' arguments.
+
+Instead of passing `-m' once per revision, this installs the prepared
+payload through jj's own editor path using a copying editor command.  jj
+then parses the bulk headers, validates that every requested commit was
+described exactly once, normalizes each description, and rewrites all of
+them in one transaction (rebasing descendants only once).  Return
+non-nil on success; Majutsu buffers are not refreshed here."
+  (unless descriptions
+    (user-error "No descriptions to apply"))
+  (when (cl-some (lambda (description)
+                   (not (and (stringp (car description))
+                             (>= (length (car description))
+                                 majutsu-jjdescription--short-commit-id-length))))
+                 descriptions)
+    (user-error "Cannot describe without a full commit id"))
+  (let ((file (make-temp-file "majutsu-describe-" nil ".jjdescription")))
+    (unwind-protect
+        (progn
+          (write-region (majutsu-jjdescription--describe-payload descriptions)
+                        nil file nil 'silent)
+          (zerop (apply #'majutsu-call-jj
+                        (append extra-args
+                                (list "describe")
+                                (mapcan (lambda (description)
+                                          (list "-r" (car description)))
+                                        descriptions)
+                                (list "--config"
+                                      (majutsu-jj--editor-command-config
+                                       "ui.editor" "$path"
+                                       (list "cp" file)))))))
+      (ignore-errors (delete-file file)))))
 
 ;;; History Support
 

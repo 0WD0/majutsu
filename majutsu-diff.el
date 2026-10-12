@@ -31,6 +31,7 @@
 (require 'majutsu-selection)
 (require 'majutsu-file-tree)
 (require 'majutsu-template)
+(require 'majutsu-section-edit)
 (require 'json)
 (require 'magit-diff)      ; for faces/font-lock keywords
 (require 'diff-mode)
@@ -1111,13 +1112,28 @@ The synthetic `git' remote used by jj's Git backend is omitted."
               " <" (plist-get fields :committer-email) ">\n"
               "CommitDate: " (plist-get fields :committer-date) "\n\n"))))
 
+(defun majutsu-diff--apply-description-changes (changes)
+  "Apply CHANGES, a list of (FIELD . NEW-DESCRIPTION) from the diff buffer.
+A diff buffer describes one revision, so this is the single-description
+form of `jj describe'."
+  (majutsu-jjdescription-apply-descriptions
+   (mapcar (lambda (change)
+             (cons (plist-get (majutsu-section-edit-field-data (car change))
+                              :commit-id)
+                   (cdr change)))
+           changes)))
+
 (defun majutsu-insert-diff-revision-message ()
-  "Insert a collapsible revision message for a single-change diff."
+  "Insert a collapsible revision message for a single-change diff.
+The whole message, summary line included, is made editable in place."
   (when-let* ((fields (majutsu-diff--revision-metadata)))
-    (let ((message (plist-get fields :description)))
+    (let ((message (plist-get fields :description))
+          (commit-id (plist-get fields :commit-id))
+          beg)
       (magit-insert-section
           (commit-message nil nil
                           :heading-highlight-face 'magit-diff-revision-summary-highlight)
+        (setq beg (point))
         (if (string-empty-p message)
             (progn
               (magit-insert-heading "(no description)")
@@ -1130,6 +1146,19 @@ The synthetic `git' remote used by jj's Git backend is omitted."
            'magit-diff-revision-summary t)
           (magit-insert-heading)
           (goto-char (point-max)))
+        ;; Exclude the filler newline that keeps the section readable.
+        (let ((end (if (and (> (point) beg) (eq (char-before (point)) ?\n))
+                       (1- (point))
+                     (point))))
+          (when (and (stringp commit-id) (< beg end))
+            (setq-local majutsu-section-edit-apply-function
+                        #'majutsu-diff--apply-description-changes)
+            (majutsu-section-edit-put
+             beg end
+             (majutsu-section-edit-make-field
+              :key (list 'diff-description commit-id)
+              :multiline t
+              :data (list :commit-id commit-id)))))
         (insert "\n")))))
 
 (defun majutsu-insert-diff ()
@@ -2070,7 +2099,8 @@ With prefix STYLE, cycle between `all' and `t'."
   "+" #'majutsu-diff-more-context
   "-" #'majutsu-diff-less-context
   "0" #'majutsu-diff-default-context
-  "j" #'majutsu-jump-to-diffstat-or-diff)
+  "j" #'majutsu-jump-to-diffstat-or-diff
+  "w" #'majutsu-section-edit)
 
 (define-derived-mode majutsu-diff-mode majutsu-mode "Majutsu Diff"
   "Major mode for viewing jj diffs."

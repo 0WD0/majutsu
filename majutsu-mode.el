@@ -476,6 +476,10 @@ The returned value is a list of entries of the form:
   "Refresh the current Majutsu buffer.
 
 CREATED, INITIAL-SECTION, and SELECT-SECTION are for internal use."
+  ;; A section-edit session owns the buffer text until it is finished or
+  ;; aborted; rebuilding underneath it would silently discard the edit.
+  (when (bound-and-true-p majutsu-section-edit-mode)
+    (user-error "Finish or abort the active section edit first"))
   ;; The synchronous jj waits inside a rebuild service other processes'
   ;; sentinels, whose refreshes may target this very buffer.  Rebuilding
   ;; it out from under the ongoing wash would corrupt the section tree,
