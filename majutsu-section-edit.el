@@ -150,6 +150,51 @@ BEG and END default to the accessible range."
 Magit section buffers call `buffer-disable-undo'; the session enables undo
 so that in-place edits can be reverted, then restores the disabled state")
 
+(defcustom majutsu-section-edit-cursor-type 'hollow
+  "Cursor type used while `majutsu-section-edit-mode' is active.
+A hollow cursor distinguishes an editable session from the read-only
+buffer it was started in, mirroring `majutsu-blob-edit-cursor-type'."
+  :group 'majutsu
+  :type 'symbol)
+
+(defvar-local majutsu-section-edit--saved-cursor-type nil
+  "Cursor type before entering `majutsu-section-edit-mode'.")
+
+(defvar-local majutsu-section-edit--saved-evil-normal-state-cursor nil
+  "Saved `evil-normal-state-cursor' before the session.")
+
+(defvar-local majutsu-section-edit--saved-evil-normal-state-cursor-valid nil
+  "Whether `majutsu-section-edit--saved-evil-normal-state-cursor' is valid.")
+
+(defun majutsu-section-edit--set-cursor-hint (cursor)
+  "Set the session cursor hint to CURSOR.
+When Evil is active, also update `evil-normal-state-cursor' so the hint is
+visible while the session sits in Normal state."
+  (setq-local cursor-type cursor)
+  (when (and (bound-and-true-p evil-local-mode)
+             (boundp 'evil-normal-state-cursor))
+    (setq-local evil-normal-state-cursor cursor)))
+
+(defun majutsu-section-edit--save-cursor-state ()
+  "Save current cursor state before entering the session."
+  (setq-local majutsu-section-edit--saved-cursor-type cursor-type)
+  (if (and (bound-and-true-p evil-local-mode)
+           (boundp 'evil-normal-state-cursor))
+      (progn
+        (setq-local majutsu-section-edit--saved-evil-normal-state-cursor
+                    evil-normal-state-cursor)
+        (setq-local majutsu-section-edit--saved-evil-normal-state-cursor-valid t))
+    (setq-local majutsu-section-edit--saved-evil-normal-state-cursor-valid nil)))
+
+(defun majutsu-section-edit--restore-cursor-state ()
+  "Restore cursor state after leaving the session."
+  (setq-local cursor-type majutsu-section-edit--saved-cursor-type)
+  (when (and majutsu-section-edit--saved-evil-normal-state-cursor-valid
+             (boundp 'evil-normal-state-cursor))
+    (setq-local evil-normal-state-cursor
+                majutsu-section-edit--saved-evil-normal-state-cursor)
+    (setq-local majutsu-section-edit--saved-evil-normal-state-cursor-valid nil)))
+
 (defun majutsu-section-edit--enter-editing-state ()
   "Replace the major mode's local map for the session.
 The map is restored by `majutsu-section-edit--leave-editing-state'."
@@ -343,7 +388,12 @@ While this mode is active the buffer becomes writable, but everything
 except the marked fields carries the `read-only' text property, so only
 those fields can be changed."
   :lighter " SectionEdit"
-  :keymap majutsu-section-edit-mode-map)
+  :keymap majutsu-section-edit-mode-map
+  (if majutsu-section-edit-mode
+      (progn
+        (majutsu-section-edit--save-cursor-state)
+        (majutsu-section-edit--set-cursor-hint majutsu-section-edit-cursor-type))
+    (majutsu-section-edit--restore-cursor-state)))
 
 ;;; _
 (provide 'majutsu-section-edit)

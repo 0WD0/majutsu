@@ -192,6 +192,18 @@ The protected text after it must stay untouchable."
      (should buffer-read-only)
      (should-not (text-property-any (point-min) (point-max) 'read-only t)))))
 
+(ert-deftest majutsu-section-edit/cursor-hint-restored ()
+  "The session hint cursor is set on entry and restored on exit."
+  (majutsu-section-edit-test--with-buffer
+   (setq-local majutsu-section-edit-apply-function (lambda (_) t))
+   (setq-local cursor-type 'box)
+   (cl-letf (((symbol-function 'majutsu-refresh) (lambda (&rest _) nil))
+             ((symbol-function 'message) #'ignore))
+     (majutsu-section-edit)
+     (should (eq cursor-type majutsu-section-edit-cursor-type))
+     (majutsu-section-edit--stop)
+     (should (eq cursor-type 'box)))))
+
 (ert-deftest majutsu-section-edit/smoke-blocks-majutsu-command-keys ()
   "A session must shadow Majutsu's single-letter command bindings.
 Otherwise typing a description that contains `k' or `e' would run
