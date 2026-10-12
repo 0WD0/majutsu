@@ -917,7 +917,7 @@ When PLAIN is non-nil, omit faces and text properties."
         selected
       (get-buffer-window (current-buffer) 0))))
 
-(defun majutsu-row-tail-align-to-width (width &optional _window)
+(defun majutsu-row-tail-align-to-width (width)
   "Return a window-relative display target right-aligning content of WIDTH.
 The target is shared buffer text, so leave the right edge symbolic for
 redisplay to resolve separately in each window."
@@ -925,35 +925,29 @@ redisplay to resolve separately in each window."
       `(- right (,width))
     `(- right ,(+ width majutsu-row--tail-terminal-padding))))
 
-(defun majutsu-row-tail-spacer-display (tail &optional window)
+(defun majutsu-row-tail-spacer-display (tail)
   "Return the spacer display spec used to right-align TAIL."
-  (setq window (or window (majutsu-row--tail-owner-window)))
   `(space :align-to
     ,(majutsu-row-tail-align-to-width
       (if (display-graphic-p)
-          (string-pixel-width tail)
-        (string-width tail))
-      window)))
-
-(defun majutsu-row--tail-width-at (pos &optional window)
-  "Return displayed width of tail text following spacer at POS."
-  (let ((tail (save-excursion
-                (goto-char pos)
-                (buffer-substring (1+ pos) (line-end-position))))
-        (window (or window (majutsu-row--tail-owner-window))))
-    (if (and (display-graphic-p) window)
-        (save-excursion
-          (goto-char (1+ pos))
-          (car (window-text-pixel-size window (point) (line-end-position) t)))
-      (if (display-graphic-p)
-          (save-excursion
-            (goto-char pos)
-            (string-pixel-width tail))
+          (string-pixel-width tail (current-buffer))
         (string-width tail)))))
 
-(defun majutsu-row-refresh-tail-spacers (&optional beg end window)
+(defun majutsu-row--tail-width-at (pos)
+  "Return displayed width of tail text following spacer at POS.
+Measure the tail string instead of the rendered window text so that
+alignment is independent of any particular window and stays cheap to
+recompute; `string-pixel-width' honors the buffer's face remappings, so
+text scaling is reflected without measuring every line in the window."
+  (let ((tail (save-excursion
+                (goto-char pos)
+                (buffer-substring (1+ pos) (line-end-position)))))
+    (if (display-graphic-p)
+        (string-pixel-width tail (current-buffer))
+      (string-width tail))))
+
+(defun majutsu-row-refresh-tail-spacers (&optional beg end)
   "Recompute right-alignment display specs in BEG..END."
-  (setq window (or window (majutsu-row--tail-owner-window)))
   (with-silent-modifications
     (let ((inhibit-read-only t))
       (save-excursion
@@ -966,8 +960,7 @@ redisplay to resolve separately in each window."
              pos (1+ pos) 'display
              `(space :align-to
                ,(majutsu-row-tail-align-to-width
-                 (majutsu-row--tail-width-at pos window)
-                 window)))
+                 (majutsu-row--tail-width-at pos))))
             (setq pos (1+ pos))))))))
 
 ;;; Entry insertion
@@ -978,8 +971,7 @@ redisplay to resolve separately in each window."
   (let* ((profile (majutsu-row--profile compiled))
          (tail-align (plist-get profile :tail-align))
          (start (point))
-         (spacer-pos nil)
-         (window (majutsu-row--tail-owner-window)))
+         (spacer-pos nil))
     (insert anchor-left)
     (when (and (stringp tail) (not (string-empty-p tail)))
       (setq spacer-pos (point))
@@ -989,7 +981,7 @@ redisplay to resolve separately in each window."
        (majutsu-row-tail-spacer-properties
         entry-id
         (and tail-align
-             (majutsu-row-tail-spacer-display tail window))))
+             (majutsu-row-tail-spacer-display tail))))
       (insert tail))
     (insert "\n")
     (majutsu-row-apply-line-prefix-span start (point) prefix)))
