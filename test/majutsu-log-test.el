@@ -556,7 +556,7 @@
             ((symbol-function 'string-pixel-width) (lambda (_string &optional _buffer) 37))
             ((symbol-function 'window-body-width) (lambda (&optional _window pixelwise) (if pixelwise 200 80))))
     (with-temp-buffer
-      (should (equal (majutsu-row-tail-spacer-display "tail" 'fake-window)
+      (should (equal (majutsu-row-tail-spacer-display "tail")
                      '(space :align-to (- right (37))))))))
 
 (ert-deftest majutsu-log-tail-spacer-display-uses-columns-on-terminal ()
@@ -564,7 +564,7 @@
   (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _display) nil))
             ((symbol-function 'window-body-width) (lambda (&optional _window &rest _args) 80)))
     (with-temp-buffer
-      (should (equal (majutsu-row-tail-spacer-display "tail" 'fake-window)
+      (should (equal (majutsu-row-tail-spacer-display "tail")
                      '(space :align-to (- right 5)))))))
 
 (ert-deftest majutsu-log-refresh-tail-spacers-recomputes-display ()
@@ -594,18 +594,11 @@
         (setq buffer-read-only t)
         (cl-letf (((symbol-function 'display-graphic-p)
                    (lambda (&optional _display) t))
-                  ((symbol-function 'get-buffer-window)
-                   (lambda (&rest _args) 'fake-window))
-                  ((symbol-function 'window-body-width)
-                   (lambda (&optional _window pixelwise)
-                     (if pixelwise 200 80)))
-                  ((symbol-function 'window-text-pixel-size)
-                   (lambda (_window _from _to
-                                    &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
-                     '(61 . 1))))
+                  ((symbol-function 'string-pixel-width)
+                   (lambda (_string &optional _buffer) 31)))
           (majutsu-row-refresh-tail-spacers))
         (should (equal (get-text-property spacer-pos 'display)
-                       '(space :align-to (- right (61)))))))))
+                       '(space :align-to (- right (31)))))))))
 
 (ert-deftest majutsu-log-refresh-tail-spacers-uses-terminal-columns ()
   "Refreshing tail spacers should use column targets on terminal frames."
@@ -637,43 +630,6 @@
           (majutsu-row-refresh-tail-spacers))
         (should (equal (get-text-property spacer-pos 'display)
                        '(space :align-to (- right 9))))))))
-
-(ert-deftest majutsu-log-refresh-tail-spacers-prefers-explicit-window ()
-  "Refreshing tail spacers should use the explicitly provided window."
-  (let* ((compiled (majutsu-log-test--tail-compiled))
-         (entry (list :id "id-123"
-                      :columns '((change-id . "chg")
-                                 (id . "id-123")
-                                 (description . "Title")
-                                 (author . "Alice")
-                                 (timestamp . "2m"))
-                      :heading-prefixes '("○ ")))
-         seen)
-    (with-temp-buffer
-      (require 'magit-section)
-      (majutsu-log-mode)
-      (setq buffer-read-only nil)
-      (cl-letf (((symbol-function 'display-graphic-p)
-                 (lambda (&optional _display) t))
-                ((symbol-function 'string-pixel-width)
-                 (lambda (_string &optional _buffer) 25)))
-        (majutsu-row-insert-entry entry compiled))
-      (cl-letf (((symbol-function 'display-graphic-p)
-                 (lambda (&optional _display) t))
-                ((symbol-function 'majutsu-row--tail-owner-window)
-                 (lambda ()
-                   (error "should not resolve tail owner when WINDOW is explicit")))
-                ((symbol-function 'window-body-width)
-                 (lambda (&optional window pixelwise)
-                   (setq seen window)
-                   (if pixelwise 200 80)))
-                ((symbol-function 'window-text-pixel-size)
-                 (lambda (window _from _to
-                                 &optional _x-limit _y-limit _mode-lines _ignore-line-at-end)
-                   (setq seen window)
-                   '(61 . 1))))
-        (majutsu-row-refresh-tail-spacers nil nil 'explicit-window))
-      (should (eq seen 'explicit-window)))))
 
 (ert-deftest majutsu-log-tail-alignment-is-shared-safely-by-unequal-windows ()
   "Resizing either log window must not impose its width on the other one."
