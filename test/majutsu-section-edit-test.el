@@ -161,6 +161,87 @@ The protected text after it must stay untouchable."
         (majutsu-section-edit-finish)
         (should (equal (cdr (car captured)) "FIELD1X"))))))
 
+(ert-deftest majutsu-section-edit/keeps-field-prefix-at-start ()
+  "Text inserted at a field start keeps the field's own display prefix.
+The preceding heading line has a different gutter, which must not leak in."
+  (with-temp-buffer
+    (insert "head\n")
+    (let ((beg (point)))
+      (insert "field\n")
+      (majutsu-row-apply-line-prefix-span 1 beg "A-")
+      (majutsu-row-apply-line-prefix-span beg (point) "B-")
+      (majutsu-section-edit-put
+       beg (point)
+       (majutsu-section-edit-make-field
+        :key 'm :multiline nil :data '(:id "m"))))
+    (setq buffer-read-only t)
+    (goto-char (point-min))
+    (setq-local majutsu-section-edit-apply-function (lambda (_) t))
+    (cl-letf (((symbol-function 'majutsu-refresh) (lambda (&rest _) nil))
+              ((symbol-function 'message) #'ignore))
+      (majutsu-section-edit)
+      (goto-char (point-min))
+      (search-forward "field")
+      (goto-char (match-beginning 0))
+      (let ((field-beg (point)))
+        (let ((last-command-event ?x))
+          (call-interactively #'self-insert-command))
+        (should (equal (buffer-substring-no-properties field-beg (1+ field-beg))
+                       "x"))
+        (should (equal (get-text-property field-beg 'line-prefix) "B-")))
+      (majutsu-section-edit--stop))))
+
+(ert-deftest majutsu-section-edit/opening-a-line-keeps-field-prefix ()
+  "An inherited newline opened below keeps the field's display prefix.
+This is what a fixed `evil-insert-newline-below' now does."
+  (with-temp-buffer
+    (insert "head\n")
+    (let ((beg (point)))
+      (insert "body one\nbody two\n")
+      (majutsu-row-apply-line-prefix-span 1 beg "A-")
+      (majutsu-row-apply-line-prefix-span beg (point) "B-")
+      (majutsu-section-edit-put
+       beg (point)
+       (majutsu-section-edit-make-field
+        :key 'm :multiline t :data '(:id "m"))))
+    (setq buffer-read-only t)
+    (goto-char (point-min))
+    (setq-local majutsu-section-edit-apply-function (lambda (_) t))
+    (cl-letf (((symbol-function 'majutsu-refresh) (lambda (&rest _) nil))
+              ((symbol-function 'message) #'ignore))
+      (majutsu-section-edit)
+      (goto-char (point-min))
+      (search-forward "body one")
+      (goto-char (line-end-position))
+      (insert-and-inherit "\n")
+      (should (equal (get-text-property (1- (point)) 'line-prefix) "B-"))
+      (majutsu-section-edit--stop))))
+
+(ert-deftest majutsu-section-edit/stop-restores-boundary-stickiness ()
+  "Leaving a session restores `front-sticky'/`rear-nonsticky'."
+  (with-temp-buffer
+    (insert "head\n")
+    (let ((beg (point)))
+      (insert "field\n")
+      (majutsu-row-apply-line-prefix-span 1 beg "A-")
+      (majutsu-row-apply-line-prefix-span beg (point) "B-")
+      (majutsu-section-edit-put
+       beg (point)
+       (majutsu-section-edit-make-field
+        :key 'm :multiline nil :data '(:id "m"))))
+    (setq buffer-read-only t)
+    (goto-char (point-min))
+    (setq-local majutsu-section-edit-apply-function (lambda (_) t))
+    (cl-letf (((symbol-function 'majutsu-refresh) (lambda (&rest _) nil))
+              ((symbol-function 'message) #'ignore))
+      (majutsu-section-edit)
+      (should (memq 'read-only (get-text-property 5 'rear-nonsticky)))
+      (should (memq 'line-prefix (get-text-property 5 'rear-nonsticky)))
+      (should (memq 'line-prefix (get-text-property 6 'front-sticky)))
+      (majutsu-section-edit--stop)
+      (should-not (get-text-property 5 'rear-nonsticky))
+      (should-not (get-text-property 6 'front-sticky)))))
+
 (ert-deftest majutsu-section-edit/undo-reverts-edits ()
   "Undo must be enabled for the session and revert in-place edits."
   (majutsu-section-edit-test--with-buffer

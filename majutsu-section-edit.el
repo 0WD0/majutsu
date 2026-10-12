@@ -131,6 +131,8 @@ BEG and END default to the accessible range."
                       :beg (copy-marker pos nil)
                       :end (copy-marker next t)
                       :original (buffer-substring-no-properties pos next)
+                      :line-prefix (get-text-property pos 'line-prefix)
+                      :wrap-prefix (get-text-property pos 'wrap-prefix)
                       :sticky nil
                       :sticky-old nil)
                 entries))
@@ -207,14 +209,32 @@ The map is restored by `majutsu-section-edit--leave-editing-state'."
     (use-local-map majutsu-section-edit--saved-local-map)
     (setq majutsu-section-edit--saved-local-map nil)))
 
+(defun majutsu-section-edit--add-sticky (old props)
+  "Return stickiness list merging OLD with PROPS.
+OLD may be t, meaning every property is sticky."
+  (if (eq old t)
+      t
+    (delete-dups (append props (if (listp old) old nil)))))
+
 (defun majutsu-section-edit--expose-entry (entry)
   "Clear the `read-only' property over session ENTRY.
 Insertion before a read-only character inherits that property by default,
 so the protected character preceding the field is made rear-nonsticky for
-`read-only'.  This is what lets point type at the very start of a field
-in the middle of a line."
+`read-only'.
+
+The same boundary handling keeps the field's own display prefix.  By
+default a text property is rear-sticky but not front-sticky, so text
+inserted at the field start would otherwise take the preceding line's
+`line-prefix' instead of the field's.  Make the preceding character
+rear-nonsticky for the prefix properties and the field's first character
+front-sticky for them."
   (let ((beg (marker-position (plist-get entry :beg)))
-        (end (marker-position (plist-get entry :end))))
+        (end (marker-position (plist-get entry :end)))
+        (prefixes (delq nil
+                        (list (and (plist-get entry :line-prefix)
+                                   'line-prefix)
+                              (and (plist-get entry :wrap-prefix)
+                                   'wrap-prefix)))))
     (when (and beg end (< beg end))
       (with-silent-modifications
         (remove-text-properties beg end '(read-only nil))))
@@ -225,9 +245,17 @@ in the middle of a line."
         (with-silent-modifications
           (put-text-property
            (1- beg) beg 'rear-nonsticky
-           (cond ((eq old t) t)
-                 ((listp old) (cons 'read-only old))
-                 (t '(read-only)))))))))
+           (majutsu-section-edit--add-sticky
+            old (cons 'read-only prefixes))))))
+    (when (and beg end (< beg end) prefixes
+               (not (plist-get entry :front-sticky)))
+      (let ((old (get-text-property beg 'front-sticky)))
+        (plist-put entry :front-sticky (copy-marker beg nil))
+        (plist-put entry :front-sticky-old old)
+        (with-silent-modifications
+          (put-text-property
+           beg (1+ beg) 'front-sticky
+           (majutsu-section-edit--add-sticky old prefixes)))))))
 
 (defun majutsu-section-edit--expose ()
   "Make the session's fields writable while protecting everything else.
@@ -274,7 +302,9 @@ permits insertion exactly at a field's boundaries."
   "Keep edited fields single-line after a change.
 The read-only protection is self-maintaining: insertions outside a field
 are refused (or inherit `read-only'), so only newlines inside fields need
-to be flattened."
+to be flattened.  Display prefixes need no repair here because the
+boundary stickiness makes insertion inherit the field's own
+`line-prefix'/`wrap-prefix'."
   (unless majutsu-section-edit--inhibit-change
     (let ((majutsu-section-edit--inhibit-change t))
       (dolist (entry (majutsu-section-edit--overlapping beg end))
@@ -304,6 +334,16 @@ to be flattened."
                 (t
                  (remove-text-properties pos (1+ pos) '(rear-nonsticky nil)))))
         (set-marker sticky nil))
+      (when-let* ((front (plist-get entry :front-sticky)))
+        (let ((pos (marker-position front))
+              (old (plist-get entry :front-sticky-old)))
+          (cond ((eq old t)
+                 (put-text-property pos (1+ pos) 'front-sticky t))
+                (old
+                 (put-text-property pos (1+ pos) 'front-sticky old))
+                (t
+                 (remove-text-properties pos (1+ pos) '(front-sticky nil)))))
+        (set-marker front nil))
       (set-marker (plist-get entry :beg) nil)
       (set-marker (plist-get entry :end) nil))
     (remove-text-properties (point-min) (point-max) '(read-only nil))
