@@ -109,12 +109,14 @@ If KEYMAP is not yet bound, defer binding until it becomes available."
     (majutsu-blob-edit-start)))
 
 (defun majutsu-evil-section-edit ()
-  "Start editing section fields and enter Evil Insert state.
-Like `evil-collection-grep' binding `i' to the editable wgrep/grep
-mode, this is the run-of-the-mill way to start editing result text."
+  "Start editing section fields, or enter Insert state when already editing.
+Mirrors `majutsu-evil-blob-insert-dwim': the first `i' starts the session
+and leaves Normal state in place so fields can still be navigated, and a
+second `i' enters Insert state."
   (interactive)
-  (majutsu-section-edit)
-  (evil-insert-state))
+  (if (bound-and-true-p majutsu-section-edit-mode)
+      (evil-insert-state)
+    (majutsu-section-edit)))
 
 (defun majutsu-evil--set-initial-state ()
   "Register initial Evil states for Majutsu modes."
@@ -244,6 +246,7 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
   (majutsu-evil--define-keys nil 'majutsu-section-edit-mode-map
     [remap evil-write] #'majutsu-section-edit-finish)
   (majutsu-evil--define-keys 'normal 'majutsu-section-edit-mode-map
+    "i" #'majutsu-evil-section-edit
     "ZZ" #'majutsu-section-edit-finish
     "ZQ" #'majutsu-section-edit-abort
     (kbd "<escape>") #'majutsu-section-edit-exit)

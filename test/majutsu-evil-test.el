@@ -9,10 +9,12 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'majutsu-conflict)
 (require 'majutsu-evil)
 (require 'majutsu-file)
 (require 'majutsu-jj-integration)
+(require 'majutsu-section-edit)
 
 (defvar evil-local-mode)
 (defvar evil-state)
@@ -59,6 +61,35 @@
             (evil-local-mode -1)
             (set-buffer-modified-p nil))
           (kill-buffer buffer))))))
+
+(ert-deftest majutsu-evil/section-edit-i-dwim ()
+  "First `i' starts a section-edit session; the next `i' inserts."
+  (skip-unless (require 'evil nil t))
+  (with-temp-buffer
+    (let (started inserted)
+      (cl-letf (((symbol-function 'majutsu-section-edit)
+                 (lambda () (setq started t)))
+                ((symbol-function 'evil-insert-state)
+                 (lambda () (setq inserted t))))
+        (majutsu-section-edit-mode 1)
+        (call-interactively #'majutsu-evil-section-edit)
+        (should inserted)
+        (should-not started)
+        (setq started nil inserted nil)
+        (majutsu-section-edit-mode -1)
+        (call-interactively #'majutsu-evil-section-edit)
+        (should started)
+        (should-not inserted)))))
+
+(ert-deftest majutsu-evil/section-edit-i-is-bound ()
+  "`i' resolves to the section-edit command in every relevant Normal map."
+  (skip-unless (require 'evil nil t))
+  (require 'majutsu-section-edit)
+  (majutsu-evil-setup)
+  (dolist (map '(majutsu-log-mode-map majutsu-diff-mode-map
+                 majutsu-section-edit-mode-map))
+    (let ((aux (evil-get-auxiliary-keymap (symbol-value map) 'normal)))
+      (should (eq (lookup-key aux (kbd "i")) #'majutsu-evil-section-edit)))))
 
 (provide 'majutsu-evil-test)
 ;;; majutsu-evil-test.el ends here
