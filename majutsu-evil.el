@@ -32,6 +32,7 @@
 
 (declare-function evil-define-key* "evil-core" (state keymap key def &rest bindings))
 (declare-function evil-set-initial-state "evil-core" (mode state))
+(declare-function evil-set-command-property "evil-common" (command property value))
 
 (defgroup majutsu-evil nil
   "Customization group for Majutsu's Evil integration."
@@ -145,6 +146,14 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
   "Install Evil keybindings for Majutsu maps."
   ;; Unbind C-j from section maps first.
   (majutsu-evil--adjust-section-bindings)
+  ;; Section movement must keep Visual state; Evil's visual pre/post-command
+  ;; hooks would otherwise rewrite the cursor position.
+  (dolist (command '(magit-section-forward
+                     magit-section-backward
+                     magit-section-forward-sibling
+                     magit-section-backward-sibling
+                     magit-section-up))
+    (evil-set-command-property command :keep-visual t))
   ;; Normal/visual/motion share the same bindings for navigation commands.
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-mode-map
     (kbd "C-j") #'magit-section-forward

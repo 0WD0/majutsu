@@ -91,5 +91,46 @@
     (let ((aux (evil-get-auxiliary-keymap (symbol-value map) 'normal)))
       (should (eq (lookup-key aux (kbd "i")) #'majutsu-evil-section-edit)))))
 
+(ert-deftest majutsu-evil/section-forward-preserves-visual-position ()
+  "`magit-section-forward' from Visual state must keep Normal's position.
+Evil's visual pre/post-command hooks otherwise expand and then contract
+the region around the command, leaving point one step short."
+  (skip-unless (require 'evil nil t))
+  (majutsu-evil-setup)
+  (with-temp-buffer
+    (majutsu-mode)
+    (let ((inhibit-read-only t))
+      (magit-insert-section (root)
+        (magit-insert-heading "root\n")
+        (magit-insert-section (aaa "A")
+          (magit-insert-heading "A heading\n")
+          (insert "A body\n"))
+        (magit-insert-section (bbb "B")
+          (magit-insert-heading "B heading\n")
+          (insert "B body\n"))
+        (magit-insert-section (ccc "C")
+          (magit-insert-heading "C heading\n")
+          (insert "C body\n"))))
+    (goto-char (point-min))
+    (magit-section-show magit-root-section)
+    (evil-local-mode 1)
+    (evil-normal-state)
+    (let ((heading (save-excursion
+                     (goto-char (point-min))
+                     (search-forward "A heading")
+                     (line-beginning-position))))
+      (goto-char heading)
+      (magit-section-forward)
+      (let ((normal-target (point)))
+        (goto-char heading)
+        (evil-visual-state)
+        (evil-visual-char)
+        ;; Reproduce the command loop around the section command.
+        (evil-visual-pre-command 'magit-section-forward)
+        (magit-section-forward)
+        (evil-visual-post-command 'magit-section-forward)
+        (should (evil-visual-state-p))
+        (should (= (point) normal-target))))))
+
 (provide 'majutsu-evil-test)
 ;;; majutsu-evil-test.el ends here
