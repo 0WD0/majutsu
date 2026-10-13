@@ -159,4 +159,7 @@ state."
 (with-eval-after-load 'embark
   (require 'majutsu-embark))
 
+(with-eval-after-load 'org
+  (require 'majutsu-org))
+
 ;;; majutsu.el ends here
