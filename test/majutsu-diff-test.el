@@ -1154,8 +1154,8 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
         (should (member "--revisions=abc123" value))
         (should-not (member "--revisions=--revisions=abc123" value))))))
 
-(ert-deftest majutsu-diff-revset-preserves-empty-args ()
-  "Explicitly empty formatting args must not be replaced by builtins."
+(ert-deftest majutsu-diff-revset-falls-back-to-default-args-when-nil ()
+  "`majutsu-diff-revset' uses default formatting args when ARGS is nil."
   (let (captured-args
         captured-range)
     (cl-letf (((symbol-function 'majutsu-setup-buffer-internal)
@@ -1169,7 +1169,7 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
       (let ((buffer (majutsu-diff-revset "abc123")))
         (unwind-protect
             (progn
-              (should-not captured-args)
+              (should (equal captured-args '("--git" "--stat")))
               (should (equal captured-range '("--revisions=abc123"))))
           (when (buffer-live-p buffer)
             (kill-buffer buffer)))))))

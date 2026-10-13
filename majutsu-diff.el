@@ -2163,9 +2163,15 @@ With prefix STYLE, cycle between `all' and `t'."
 (defun majutsu-diff-revset (revset &optional args _range filesets)
   "Show changes for a REVSET.
 
-REVSET is passed to jj diff using `--revisions='."
+REVSET is passed to jj diff using `--revisions='.  When ARGS is nil,
+fall back to the default diff arguments, as the interactive command does."
   (interactive (cons (majutsu-read-revset "Diff revset")
                      (majutsu-diff-arguments)))
+  (unless args
+    (pcase-let ((`(,default-args ,_default-range ,default-filesets)
+                 (majutsu-diff-arguments)))
+      (setq args default-args
+            filesets (or filesets default-filesets))))
   (let ((range (list (concat "--revisions=" (substring-no-properties revset)))))
     (majutsu-diff-setup-buffer args range filesets)))
 
