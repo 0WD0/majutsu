@@ -91,6 +91,47 @@ to a single base line."
       (goto-char (oref side start))
       side)))
 
+(ert-deftest majutsu-resolve/highlight-keeps-semantic-body-faces ()
+  "The current-section highlight must not paint over body backgrounds."
+  (majutsu-resolve-test--with-repo repo
+    (let* ((path "conflict.txt")
+           (pin (majutsu-resolve-test--conflict repo (list path)))
+           (workbench (majutsu-resolve-setup-buffer pin)))
+      (with-current-buffer workbench
+        (magit-section-show-children magit-root-section)
+        (cl-labels
+            ((find-class (section class)
+               (if (eq (eieio-object-class section) class)
+                   section
+                 (cl-some (lambda (child) (find-class child class))
+                          (oref section children))))
+             (semantic-face-p (position)
+               (memq (get-text-property position 'font-lock-face)
+                     (append majutsu-conflict-side-faces
+                             '(majutsu-conflict-base-face
+                               smerge-base diff-added diff-removed))))
+             (highlighted-p (position)
+               (cl-some (lambda (overlay)
+                          (and (<= (overlay-start overlay) position)
+                               (< position (overlay-end overlay))))
+                        magit-section-highlight-overlays)))
+          (dolist (class '(majutsu-file-section
+                           majutsu-resolve-conflict-section
+                           majutsu-resolve-change-section
+                           majutsu-resolve-side-section))
+            (let ((section (find-class magit-root-section class)))
+              (should section)
+              (goto-char (oref section start))
+              (magit-section-update-highlight t)
+              (let ((position (point-min))
+                    (checked 0))
+                (while (< position (point-max))
+                  (when (semantic-face-p position)
+                    (setq checked (1+ checked))
+                    (should-not (highlighted-p position)))
+                  (setq position (1+ position)))
+                (should (> checked 0))))))))))
+
 (ert-deftest majutsu-resolve/integration-conflict-tree-navigation-and-scope ()
   "Nested entries navigate safely after edits and apply only their own file."
   (majutsu-resolve-test--with-repo repo

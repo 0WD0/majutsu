@@ -35,6 +35,22 @@
 (defclass majutsu-resolve-change-section (majutsu-resolve-side-section) ()
   "A before/after change whose value identifies its positive term.")
 
+(defun majutsu-resolve--highlight-heading (section)
+  "Highlight SECTION's heading, then recurse into its children.
+The default current-section highlight paints the whole subtree, replacing the
+conflict side and diff backgrounds in the body.  Paint headings only so the
+semantic faces remain visible."
+  (magit-section-highlight-range
+   (oref section start)
+   (or (oref section content) (oref section end)))
+  (mapc #'magit-section-highlight (oref section children)))
+
+(cl-defmethod magit-section-highlight ((section majutsu-resolve-conflict-section))
+  (majutsu-resolve--highlight-heading section))
+
+(cl-defmethod magit-section-highlight ((section majutsu-resolve-side-section))
+  (majutsu-resolve--highlight-heading section))
+
 (defvar-local majutsu-resolve--commit nil)
 (defvar-local majutsu-resolve--change nil)
 (defvar-local majutsu-resolve--records nil)
@@ -360,11 +376,21 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
                'face 'error)))
     (insert "\n")
     (if majutsu-resolve--records
-        (majutsu-file-tree-insert
-         (majutsu-file-tree-build (mapcar #'cdr majutsu-resolve--records)
-                                  #'majutsu-resolve--file-path)
-         #'majutsu-resolve--insert-file)
+        (progn
+          (majutsu-file-tree-insert
+           (majutsu-file-tree-build (mapcar #'cdr majutsu-resolve--records)
+                                    #'majutsu-resolve--file-path)
+           #'majutsu-resolve--insert-file)
+          (majutsu-resolve--selective-file-tree magit-root-section))
       (insert (propertize "No conflicted files.\n" 'font-lock-face 'success)))))
+
+(defun majutsu-resolve--selective-file-tree (section)
+  "Make shared file-tree ancestors highlight headings only.
+Conflict and side sections have their own highlighting methods; files and
+directories come from the shared tree and must not paint over their bodies."
+  (when (magit-section-match '(jj-file jj-directory) section)
+    (oset section selective-highlight t))
+  (mapc #'majutsu-resolve--selective-file-tree (oref section children)))
 
 ;;;###autoload
 (defun majutsu-resolve-setup-buffer (revision)
