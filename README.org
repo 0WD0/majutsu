@@ -71,7 +71,7 @@ move, rename, delete, or forget the selected bookmark, including exact
 | ~C~                    | Commit                    |
 | ~d~                    | Diff                      |
 | ~E~                    | Ediff                     |
-| ~? M~ / ~M~            | Text conflict workbench   |
+| ~? M~                  | Text conflict workbench   |
 | ~e~                    | Edit change               |
 | ~G~ / ~? G~              | Git                       |
 | ~k~ / ~x~                | Abandon                   |

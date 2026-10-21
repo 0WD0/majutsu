@@ -844,10 +844,8 @@ read-only snapshots.
   down if it is already open.
 
 *** Ediff and Diffedit
-#+attr_reference: :kind command-binding :interface "Majutsu dispatcher / buffer" :mode majutsu-mode
-- Key: ? E (Vanilla) (majutsu-ediff) ::
-  Open the Ediff transient.
-- Key: E (Evil) (majutsu-ediff) ::
+#+attr_reference: :kind command-binding :interface "Majutsu buffer / dispatcher" :mode majutsu-mode
+- Key: E (majutsu-ediff) ::
   Open the Ediff transient.
 
 Selection: choose revisions via =--revisions= or =--from= / =--to= (with
@@ -1499,8 +1497,7 @@ shows each exact conflicted path together with its conflict side count.
 ** Text Conflict Workbench
 #+attr_reference: :kind command-binding :interface "Majutsu dispatcher"
 - Key: ? M (majutsu-resolve) :: Open a directory-tree workbench for the revision
-  at point, or =@=. Evil users can press ~M~ directly. With a prefix argument,
-  choose a revision explicitly.
+  at point, or =@=. With a prefix argument, choose a revision explicitly.
 
 The workbench pins an exact commit, including historical revisions and
 inherited multi-sided conflicts with no changes-in diff. The main view keeps
@@ -2085,10 +2082,10 @@ newlines or other control characters are preserved as complete values.
 - User Option: majutsu-evil-initial-state :: The Evil state to start in (default:
   =normal=).
 
-When Evil integration is enabled, the dispatcher displays and accepts the same
-Evil-facing top-level keys used in Majutsu buffers, including =x=, =L=, =_=,
-=*=, =u=, =C-r=, and =`=. The global Evil =v= binding remains Visual state;
-open evolog from the dispatcher with =? v=.
+When Evil integration is enabled, the dispatcher follows the invoking
+buffer's Evil state: Normal, Visual, and Motion use the Evil keys, other
+states use the Vanilla keys.  The global Evil =v= binding remains Visual
+state; open evolog from the dispatcher with =? v=.
 
 ** jjosh Extensions
 Majutsu has two fixed build variants: upstream ~jj~ (the default) and ~jjosh~.
