@@ -132,5 +132,38 @@ the region around the command, leaving point one step short."
         (should (evil-visual-state-p))
         (should (= (point) normal-target))))))
 
+(defvar majutsu-evil-test-prefix-mode-map (make-sparse-keymap))
+
+(define-minor-mode majutsu-evil-test-prefix-mode
+  "Test-only global minor mode claiming `[' and `]' as Evil prefixes."
+  :global t
+  :lighter nil)
+
+(ert-deftest majutsu-evil/log-navigation-outranks-global-prefixes ()
+  "`[' and `]' navigate the log despite global Evil prefix minor modes."
+  (skip-unless (require 'evil nil t))
+  (majutsu-evil-setup)
+  (evil-define-key* 'normal majutsu-evil-test-prefix-mode-map
+    (kbd "[") (make-sparse-keymap)
+    (kbd "]") (make-sparse-keymap))
+  (unwind-protect
+      (with-temp-buffer
+        (majutsu-log-mode)
+        (evil-local-mode 1)
+        (evil-normal-state)
+        (majutsu-evil-test-prefix-mode 1)
+        ;; The simulated global prefix must be able to shadow the old
+        ;; auxiliary bindings, otherwise this test proves nothing.
+        (majutsu-evil-log-navigation-mode -1)
+        (evil-normalize-keymaps)
+        (should-not (eq (key-binding (kbd "[")) #'majutsu-log-goto-parent))
+        (majutsu-evil-log-navigation-mode 1)
+        (evil-normalize-keymaps)
+        (should (eq (key-binding (kbd "[")) #'majutsu-log-goto-parent))
+        (should (eq (key-binding (kbd "]")) #'majutsu-log-goto-child)))
+    (majutsu-evil-test-prefix-mode -1)
+    (define-key majutsu-evil-test-prefix-mode-map (kbd "[") nil)
+    (define-key majutsu-evil-test-prefix-mode-map (kbd "]") nil)))
+
 (provide 'majutsu-evil-test)
 ;;; majutsu-evil-test.el ends here

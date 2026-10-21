@@ -284,6 +284,11 @@
 
 ** Fixed
 
+- Evil log navigation keys ::
+  ~[~ and ~]~ reach ~majutsu-log-goto-parent~ and ~majutsu-log-goto-child~
+  even when a global Evil minor mode such as ~evil-collection-unimpaired-mode~
+  claims those single keys as prefixes.
+
 - Split, Squash, and Restore defaults ::
   Split and Restore use the log revision at point when no source is supplied.
   Split inherits only single-change diff sources.  Squash retains its diff

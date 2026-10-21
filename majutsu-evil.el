@@ -31,6 +31,8 @@
 (declare-function evil-insert-state "evil-states" (&optional count vcount skip-hook))
 
 (declare-function evil-define-key* "evil-core" (state keymap key def &rest bindings))
+(declare-function evil-define-minor-mode-key "evil-core"
+                  (state mode key def &rest bindings))
 (declare-function evil-set-initial-state "evil-core" (mode state))
 (declare-function evil-set-command-property "evil-common" (command property value))
 
@@ -56,6 +58,16 @@ When nil, Majutsu leaves Evil's state untouched."
           (const :tag "Replace" replace)
           (symbol :tag "Custom state"))
   :group 'majutsu-evil)
+
+(define-minor-mode majutsu-evil-log-navigation-mode
+  "Use `[' and `]' for log parent/child navigation under Evil.
+Global Evil minor modes such as `evil-collection-unimpaired-mode' claim
+those single keys as prefixes from their own auxiliary keymaps.  Evil
+consults active minor-mode maps before major-mode auxiliary maps, so the
+log bindings live in this buffer-local mode instead of only on
+`majutsu-log-mode-map'."
+  :lighter nil
+  :keymap nil)
 
 (defun majutsu-evil--bind-conflict-side-keys (map before)
   "Bind 1-9 in MAP to conflict side commands.
@@ -262,13 +274,19 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-log-mode-map
     (kbd ".") #'majutsu-log-goto-@
-    (kbd "[") #'majutsu-log-goto-parent
-    (kbd "]") #'majutsu-log-goto-child
     (kbd "O") #'majutsu-new-dwim
     (kbd "I") #'majutsu-new-with-before
     (kbd "A") #'majutsu-new-with-after)
   (majutsu-evil--define-keys 'normal 'majutsu-log-mode-map
     "i" #'majutsu-evil-section-edit)
+  ;; `[' and `]' must outrank global prefix minor modes, so bind them in a
+  ;; buffer-local Evil minor-mode map rather than the mode's auxiliary map.
+  (when (fboundp 'evil-define-minor-mode-key)
+    (evil-define-minor-mode-key '(normal visual motion)
+      'majutsu-evil-log-navigation-mode
+      (kbd "[") #'majutsu-log-goto-parent
+      (kbd "]") #'majutsu-log-goto-child))
+  (add-hook 'majutsu-log-mode-hook #'majutsu-evil-log-navigation-mode)
 
   (majutsu-evil--define-keys '(normal visual motion) 'majutsu-op-log-mode-map
     (kbd "d") #'majutsu-op-diff-transient
