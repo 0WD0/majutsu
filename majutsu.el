@@ -34,11 +34,27 @@ Instead of invoking this alias for `majutsu-log' using
 
 ;;; Dispatch Popup
 
+(defun majutsu-dispatch--evil-keys-p ()
+  "Return non-nil when `majutsu-dispatch' should offer Evil-facing keys.
+Evil integration must be enabled, and the buffer from which the
+dispatcher is invoked must be in Evil's Normal, Visual, or Motion
+state."
+  (and (bound-and-true-p evil-local-mode)
+       (bound-and-true-p majutsu-evil-enable-integration)
+       (memq (bound-and-true-p evil-state) '(normal visual motion))))
+
+(defun majutsu-dispatch--vanilla-keys-p ()
+  "Return non-nil when `majutsu-dispatch' should offer Vanilla keys."
+  (not (majutsu-dispatch--evil-keys-p)))
+
 ;;;###autoload(autoload 'majutsu-dispatch "majutsu" nil t)
 (transient-define-prefix majutsu-dispatch ()
   "Top-level Majutsu command dispatcher."
   ["Transient and dwim commands"
-   [("k" "Abandon"           majutsu-abandon)
+   [("k" "Abandon"           majutsu-abandon
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("x" "Abandon"           majutsu-abandon
+     :if majutsu-dispatch--evil-keys-p)
     ("b" "Bookmarks"         majutsu-bookmark)
     ("t" "Tags"              majutsu-tag)
     ("c" "Describe"          majutsu-describe)
@@ -52,12 +68,18 @@ Instead of invoking this alias for `majutsu-log' using
     ("M" "Resolve conflicts" majutsu-resolve)]
    [("G" "Git"               majutsu-git-transient)
     ("!" "Run"               majutsu-command)
-    ("l" "Log options"       majutsu-log-transient)
+    ("l" "Log options"       majutsu-log-transient
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("L" "Log options"       majutsu-log-transient
+     :if majutsu-dispatch--evil-keys-p)
     ("o" "New"               majutsu-new)
     ("O" "New (dwim)"        majutsu-new-dwim)
     ("r" "Rebase"            majutsu-rebase)
     ("P" "Simplify parents"  majutsu-simplify-parents)
-    ("V" "Revert"            majutsu-revert)
+    ("V" "Revert"            majutsu-revert
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("_" "Revert"            majutsu-revert
+     :if majutsu-dispatch--evil-keys-p)
     ("R" "Restore"           majutsu-restore)]
    [("s" "Squash"            majutsu-squash)
     ("S" "Split"             majutsu-split)
@@ -67,16 +89,28 @@ Instead of invoking this alias for `majutsu-log' using
     ("j" "Sign"              majutsu-sign)
     ("J" "Unsign"            majutsu-unsign)
     (">" "Sparse"            majutsu-sparse)
-    ("Z" "Workspaces"        majutsu-workspace)
+    ("Z" "Workspaces"        majutsu-workspace
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("*" "Workspaces"        majutsu-workspace
+     :if majutsu-dispatch--evil-keys-p)
     ("X" "Operations"        majutsu-op-transient)
-    ("C-/" "Undo"            majutsu-undo)
-    ("C-?" "Redo"            majutsu-redo)]]
+    ("C-/" "Undo"            majutsu-undo
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("u" "Undo"              majutsu-undo
+     :if majutsu-dispatch--evil-keys-p)
+    ("C-?" "Redo"            majutsu-redo
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("C-r" "Redo"            majutsu-redo
+     :if majutsu-dispatch--evil-keys-p)]]
   ["Essential commands"
    :if-derived majutsu-mode
    [("g" "Refresh"           majutsu-refresh)
     ("q" "Quit"              majutsu-mode-bury-buffer)]
    [("?" "Help"              transient-help)
-    ("$" "Process buffer"    majutsu-process-buffer)]
+    ("$" "Process buffer"    majutsu-process-buffer
+     :if majutsu-dispatch--vanilla-keys-p)
+    ("`" "Process buffer"    majutsu-process-buffer
+     :if majutsu-dispatch--evil-keys-p)]
    [("C-x m"    "Show all key bindings"    describe-mode)]]
   ["Copy commands"
    :if-derived (majutsu-log-mode majutsu-evolog-mode majutsu-op-log-mode)

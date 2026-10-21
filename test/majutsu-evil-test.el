@@ -14,6 +14,9 @@
 (require 'majutsu-file)
 (require 'majutsu-jj-integration)
 
+(defvar evil-local-mode)
+(defvar evil-state)
+
 (ert-deftest majutsu-evil-test-conflict-side-bindings ()
   "Evil digit bindings resolve the selected side or base of a conflict."
   (pcase-dolist (`(,map ,key ,expected)
