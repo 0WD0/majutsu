@@ -94,7 +94,7 @@ Directory compaction and indentation match `majutsu-file-tree-insert'."
            maximum)))
     (width tree 0)))
 
-(defun majutsu-file-tree-insert (tree insert-file &optional directory-face)
+(defun majutsu-file-tree-insert (tree insert-file &optional directory-face display-prefix)
   "Insert TREE, using INSERT-FILE to render its leaf entries.
 INSERT-FILE receives ENTRY, HEADING-PREFIX, and BODY-PREFIX.  It owns the leaf
 section and its contents; navigable files use a `jj-file' section whose value
@@ -102,7 +102,9 @@ is the unmodified repository-relative path.
 
 Directories use `jj-directory' sections with complete paths ending in /.
 Single-child directory chains share one heading.  DIRECTORY-FACE defaults
-to `magit-section-heading'.  The caller supplies the enclosing root section."
+to `magit-section-heading'.  When DISPLAY-PREFIX is non-nil, directory
+headings render their tree prefix with `line-prefix' instead of inserting
+it as buffer text.  The caller supplies the enclosing root section."
   (cl-labels
       ((visit (node prefix)
          (let ((children (majutsu-file-tree--node-children node))
@@ -117,12 +119,24 @@ to `magit-section-heading'.  The caller supplies the enclosing root section."
                  (let* ((directory (majutsu-file-tree--compact-directory child))
                         (path (majutsu-file-tree--node-path directory))
                         (label (majutsu-file-tree-escape-label
-                                (substring path parent-length))))
+                                (substring path parent-length)))
+                        (face (or directory-face 'magit-section-heading)))
                    (magit-insert-section (jj-directory path)
-                     (magit-insert-heading
-                       (propertize (concat heading-prefix label "\n")
-                                   'font-lock-face
-                                   (or directory-face 'magit-section-heading)))
+                     (if display-prefix
+                         (let ((start (point)))
+                           (magit-insert-heading
+                            (propertize label 'font-lock-face face))
+                           (add-text-properties
+                            start (point)
+                            (list 'line-prefix
+                                  (propertize heading-prefix
+                                              'font-lock-face face)
+                                  'wrap-prefix
+                                  (propertize heading-prefix
+                                              'font-lock-face face))))
+                       (magit-insert-heading
+                        (propertize (concat heading-prefix label "\n")
+                                    'font-lock-face face)))
                      (visit directory body-prefix)))))))))
     (visit tree "")))
 

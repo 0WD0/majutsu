@@ -78,6 +78,13 @@ to a single base line."
     (cl-loop for child in (oref section children)
              thereis (majutsu-resolve-test--section child type value))))
 
+(defun majutsu-resolve-test--find-class (section class)
+  "Return the first descendant of SECTION having CLASS."
+  (if (eq (eieio-object-class section) class)
+      section
+    (cl-some (lambda (child) (majutsu-resolve-test--find-class child class))
+             (oref section children))))
+
 (defun majutsu-resolve-test--select-side (workbench path conflict kind index)
   "Select a KIND term at zero-based INDEX under numbered CONFLICT in PATH."
   (with-current-buffer workbench
@@ -100,12 +107,7 @@ to a single base line."
       (with-current-buffer workbench
         (magit-section-show-children magit-root-section)
         (cl-labels
-            ((find-class (section class)
-               (if (eq (eieio-object-class section) class)
-                   section
-                 (cl-some (lambda (child) (find-class child class))
-                          (oref section children))))
-             (semantic-face-p (position)
+            ((semantic-face-p (position)
                (memq (get-text-property position 'font-lock-face)
                      (append majutsu-conflict-side-faces
                              '(majutsu-conflict-base-face
@@ -119,7 +121,8 @@ to a single base line."
                            majutsu-resolve-conflict-section
                            majutsu-resolve-change-section
                            majutsu-resolve-side-section))
-            (let ((section (find-class magit-root-section class)))
+            (let ((section (majutsu-resolve-test--find-class
+                            magit-root-section class)))
               (should section)
               (goto-char (oref section start))
               (magit-section-update-highlight t)
@@ -131,6 +134,35 @@ to a single base line."
                     (should-not (highlighted-p position)))
                   (setq position (1+ position)))
                 (should (> checked 0))))))))))
+
+(ert-deftest majutsu-resolve/tree-prefixes-are-display-only ()
+  "Tree decoration must not be buffer text or cursor positions."
+  (majutsu-resolve-test--with-repo repo
+    (let* ((path "src/conflict.txt")
+           (pin (majutsu-resolve-test--conflict repo (list path)))
+           (workbench (majutsu-resolve-setup-buffer pin)))
+      (with-current-buffer workbench
+        (magit-section-show-children magit-root-section)
+        (dolist (class '(majutsu-file-section
+                         majutsu-resolve-conflict-section
+                         majutsu-resolve-change-section
+                         majutsu-resolve-side-section))
+          (let ((section (majutsu-resolve-test--find-class
+                          magit-root-section class)))
+            (should section)
+            (should-not (string-match-p
+                         "[│├└]"
+                         (buffer-substring-no-properties
+                          (oref section start) (oref section content))))))
+        (let ((side (majutsu-resolve-test--find-class
+                     magit-root-section 'majutsu-resolve-side-section)))
+          (should (string-match-p
+                   "[│├└]" (get-text-property (oref side start) 'line-prefix)))
+          (goto-char (oref side start))
+          (let ((copied (filter-buffer-substring
+                         (line-beginning-position) (line-end-position))))
+            (should-not (get-text-property 0 'line-prefix copied))
+            (should-not (string-match-p "[│├└]" copied))))))))
 
 (ert-deftest majutsu-resolve/integration-conflict-tree-navigation-and-scope ()
   "Nested entries navigate safely after edits and apply only their own file."

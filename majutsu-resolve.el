@@ -60,6 +60,14 @@ semantic faces remain visible."
 (defvar-local majutsu-resolve--workbench nil)
 (defvar-local majutsu-resolve--path nil)
 
+(defun majutsu-resolve--filter-buffer-substring (beg end &optional delete)
+  "Copy workbench text between BEG and END without display-only prefixes."
+  (let ((string (buffer-substring--filter beg end delete)))
+    (when (stringp string)
+      (remove-list-of-text-properties
+       0 (length string) '(line-prefix wrap-prefix display) string))
+    string))
+
 (defvar majutsu-resolve-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map majutsu-mode-map)
@@ -76,6 +84,8 @@ semantic faces remain visible."
 Only UTF-8 text content updates are supported, not structural choices.
 \\<majutsu-resolve-mode-map>Use \\[majutsu-resolve-dispatch] for workbench actions."
   :group 'majutsu
+  (setq-local filter-buffer-substring-function
+              #'majutsu-resolve--filter-buffer-substring)
   (add-hook 'kill-buffer-query-functions #'majutsu-resolve--can-close nil t)
   (add-hook 'kill-buffer-hook #'majutsu-resolve--cleanup nil t))
 
@@ -222,24 +232,41 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
                   (majutsu-resolve--file-path record)))
     (cons text conflicts)))
 
+(defun majutsu-resolve--insert-heading (prefix text &optional face)
+  "Insert TEXT as a section heading with display-only tree PREFIX.
+PREFIX is rendered with `line-prefix', so point never enters the tree
+decoration and copying the heading yields only TEXT."
+  (let ((start (point))
+        (line-prefix (if (and face (not (string-empty-p prefix)))
+                         (propertize prefix 'font-lock-face face)
+                       prefix)))
+    (magit-insert-heading text)
+    (when (not (string-empty-p line-prefix))
+      (add-text-properties start (point)
+                           (list 'line-prefix line-prefix
+                                 'wrap-prefix line-prefix)))))
+
 (defun majutsu-resolve--insert-side (kind index cell prefix last role)
   "Insert term CELL as ROLE, with its lazily expanded snapshot."
   (let* ((label (car cell))
          (text (cdr cell))
+         (connector (if last "└── " "├── "))
          (body-prefix (concat prefix (if last "    " "│   ")))
          (face (if (eq kind 'add)
                    (majutsu-conflict--side-face index)
                  'smerge-base)))
     (magit-insert-section
         (majutsu-resolve-side-section (list :kind kind :index index) t)
-      (magit-insert-heading
-        (format "%s%s%s%s%s\n"
-                prefix (if last "└── " "├── ") role
-                (if (or (null label) (string-empty-p label)) ""
-                  (concat ": " (majutsu-file-tree-escape-label label)))
-                (cond ((string-empty-p text) " [empty text]")
-                      ((not (string-suffix-p "\n" text)) " [no final newline]")
-                      (t ""))))
+      (majutsu-resolve--insert-heading
+       (concat prefix connector)
+       (format "%s%s%s\n"
+               role
+               (if (or (null label) (string-empty-p label)) ""
+                 (concat ": " (majutsu-file-tree-escape-label label)))
+               (cond ((string-empty-p text) " [empty text]")
+                     ((not (string-suffix-p "\n" text)) " [no final newline]")
+                     (t "")))
+       'magit-section-heading)
       (magit-insert-section-body
         (let ((start (point)))
           (insert (if (string-empty-p text) "(empty text)\n" text))
@@ -264,13 +291,16 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
            (after (plist-get part :after))
            (index (plist-get after :index))
            (label (car (majutsu-conflict-term-cell conflict after)))
+           (connector (if last "└── " "├── "))
            (body-prefix (concat prefix (if last "    " "│   "))))
       (magit-insert-section (majutsu-resolve-change-section after t)
-        (magit-insert-heading
-          (format "%s%sChanges to Side %d%s\n"
-                  prefix (if last "└── " "├── ") (1+ index)
-                  (if (or (null label) (string-empty-p label)) ""
-                    (concat ": " (majutsu-file-tree-escape-label label)))))
+        (majutsu-resolve--insert-heading
+         (concat prefix connector)
+         (format "Changes to Side %d%s\n"
+                 (1+ index)
+                 (if (or (null label) (string-empty-p label)) ""
+                   (concat ": " (majutsu-file-tree-escape-label label))))
+         'magit-section-heading)
         (magit-insert-section-body
           (when-let* ((begin (plist-get part :diff-begin)))
             (let ((start (point)) end)
@@ -302,13 +332,13 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
     (magit-insert-section section (majutsu-resolve-conflict-section index)
       (oset section conflict conflict)
       (oset section source text)
-      (magit-insert-heading
-        (propertize (concat prefix (if last "└── " "├── "))
-                    'font-lock-face 'shadow)
-        (format "Conflict %d" index)
-        (propertize (format "  %d sides\n"
-                            (length (majutsu-conflict-adds conflict)))
-                    'font-lock-face 'shadow))
+      (majutsu-resolve--insert-heading
+       (concat prefix (if last "└── " "├── "))
+       (concat (format "Conflict %d" index)
+               (propertize (format "  %d sides\n"
+                                   (length (majutsu-conflict-adds conflict)))
+                           'font-lock-face 'shadow))
+       'shadow)
       (cl-loop for tail on (cdr entry)
                do (majutsu-resolve--insert-part
                    conflict (car tail) text body-prefix (null (cdr tail)))))))
@@ -323,8 +353,9 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
          (text (car data))
          (conflicts (cdr data)))
     (magit-insert-section (jj-file path)
-      (magit-insert-heading
-        (propertize prefix 'font-lock-face 'shadow)
+      (majutsu-resolve--insert-heading
+       prefix
+       (concat
         (propertize
          (majutsu-file-tree-escape-label (file-name-nondirectory path))
          'font-lock-face 'default)
@@ -338,6 +369,7 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
               ((majutsu-resolve--file-applied record)
                (propertize "  ·  applied" 'font-lock-face 'shadow)))
         "\n")
+       'shadow)
       (cond
        (problem
         (insert body-prefix "└── "
@@ -380,7 +412,7 @@ Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
           (majutsu-file-tree-insert
            (majutsu-file-tree-build (mapcar #'cdr majutsu-resolve--records)
                                     #'majutsu-resolve--file-path)
-           #'majutsu-resolve--insert-file)
+           #'majutsu-resolve--insert-file nil t)
           (majutsu-resolve--selective-file-tree magit-root-section))
       (insert (propertize "No conflicted files.\n" 'font-lock-face 'success)))))
 
