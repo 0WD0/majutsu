@@ -43,16 +43,12 @@ state."
        (bound-and-true-p majutsu-evil-enable-integration)
        (memq (bound-and-true-p evil-state) '(normal visual motion))))
 
-(defun majutsu-dispatch--vanilla-keys-p ()
-  "Return non-nil when `majutsu-dispatch' should offer Vanilla keys."
-  (not (majutsu-dispatch--evil-keys-p)))
-
 ;;;###autoload(autoload 'majutsu-dispatch "majutsu" nil t)
 (transient-define-prefix majutsu-dispatch ()
   "Top-level Majutsu command dispatcher."
   ["Transient and dwim commands"
    [("k" "Abandon"           majutsu-abandon
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("x" "Abandon"           majutsu-abandon
      :if majutsu-dispatch--evil-keys-p)
     ("b" "Bookmarks"         majutsu-bookmark)
@@ -69,7 +65,7 @@ state."
    [("G" "Git"               majutsu-git-transient)
     ("!" "Run"               majutsu-command)
     ("l" "Log options"       majutsu-log-transient
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("L" "Log options"       majutsu-log-transient
      :if majutsu-dispatch--evil-keys-p)
     ("o" "New"               majutsu-new)
@@ -77,7 +73,7 @@ state."
     ("r" "Rebase"            majutsu-rebase)
     ("P" "Simplify parents"  majutsu-simplify-parents)
     ("V" "Revert"            majutsu-revert
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("_" "Revert"            majutsu-revert
      :if majutsu-dispatch--evil-keys-p)
     ("R" "Restore"           majutsu-restore)]
@@ -90,16 +86,16 @@ state."
     ("J" "Unsign"            majutsu-unsign)
     (">" "Sparse"            majutsu-sparse)
     ("Z" "Workspaces"        majutsu-workspace
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("*" "Workspaces"        majutsu-workspace
      :if majutsu-dispatch--evil-keys-p)
     ("X" "Operations"        majutsu-op-transient)
     ("C-/" "Undo"            majutsu-undo
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("u" "Undo"              majutsu-undo
      :if majutsu-dispatch--evil-keys-p)
     ("C-?" "Redo"            majutsu-redo
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("C-r" "Redo"            majutsu-redo
      :if majutsu-dispatch--evil-keys-p)]]
   ["Essential commands"
@@ -108,7 +104,7 @@ state."
     ("q" "Quit"              majutsu-mode-bury-buffer)]
    [("?" "Help"              transient-help)
     ("$" "Process buffer"    majutsu-process-buffer
-     :if majutsu-dispatch--vanilla-keys-p)
+     :if-not majutsu-dispatch--evil-keys-p)
     ("`" "Process buffer"    majutsu-process-buffer
      :if majutsu-dispatch--evil-keys-p)]
    [("C-x m"    "Show all key bindings"    describe-mode)]]
