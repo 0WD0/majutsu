@@ -1161,10 +1161,26 @@ lines are decorations, not cursor stops or targets for section commands."
         (setq pos next)))
     (apply #'concat (nreverse parts))))
 
+(defun majutsu-row--visible-substring (beg end)
+  "Return text between BEG and END, omitting invisible runs.
+Collapsed section bodies are hidden by overlays, but line-wise yanks span
+them; copy what the window shows instead of the hidden descriptions."
+  (let ((pos beg)
+        parts)
+    (while (< pos end)
+      (let ((next (next-single-char-property-change pos 'invisible nil end)))
+        (unless (invisible-p pos)
+          (push (buffer-substring--filter pos next) parts))
+        (setq pos next)))
+    (apply #'concat (nreverse parts))))
+
 (defun majutsu-row-filter-buffer-substring (beg end &optional delete)
   "Filter copied row text between BEG and END.
-Drops tail text when both heading and tail are present in the copied region."
-  (let ((string (buffer-substring--filter beg end delete))
+Omits text hidden by collapsed sections.  Drops tail text when both heading
+and tail are present in the copied region."
+  (let ((string (if delete
+                    (buffer-substring--filter beg end delete)
+                  (majutsu-row--visible-substring beg end)))
         (trim-tail nil))
     (when (and (stringp string)
                (majutsu-row-string-has-module-p string 'heading)
