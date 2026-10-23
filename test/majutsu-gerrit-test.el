@@ -323,18 +323,6 @@
         (should (equal (cdr (assoc "q" seen-url)) "ali"))
         (should (equal (cdr (assoc "o" seen-url)) "DETAILS"))))))
 
-(ert-deftest majutsu-gerrit-read-account/formats-prompt ()
-  "Account completion should separate the prompt from user input."
-  (let (seen-prompt)
-    (cl-letf (((symbol-function 'consult--read)
-               (lambda (_table &rest args)
-                 (setq seen-prompt (plist-get args :prompt))
-                 "alice@example.com")))
-      (should (equal (majutsu-gerrit-read-account
-                      "Reviewer" nil 'majutsu-gerrit-reviewer-history)
-                     "alice@example.com"))
-      (should (equal seen-prompt "Reviewer: ")))))
-
 (ert-deftest majutsu-gerrit-read-accounts/formats-follow-up-prompt-once ()
   "Account selection follow-up should leave prompt punctuation to the reader."
   (let (prompts

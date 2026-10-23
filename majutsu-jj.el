@@ -377,7 +377,7 @@ the revision at point and then `@'."
                    (majutsu-jj-revset-candidate-data)
                    'majutsu-revision)))
          (value (completing-read
-                 (format-prompt prompt default)
+                 (majutsu--format-prompt prompt default)
                  table nil nil initial-input
                  (or history 'majutsu-read-revset-history)
                  (and (not allow-empty) default))))
@@ -401,7 +401,7 @@ the same meaning as in `majutsu-read-revision'."
     (let ((value (minibuffer-with-setup-hook
                      #'majutsu-jj--revset-minibuffer-setup
                    (read-from-minibuffer
-                    (format-prompt prompt default)
+                    (majutsu--format-prompt prompt default)
                     initial-input
                     majutsu-read-revset-map
                     nil
