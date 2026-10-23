@@ -519,7 +519,7 @@ requests, which we cancel on new input.  Candidates are parsed with
        (lambda (input)
          (majutsu-gerrit--account-request input remote)))
       (consult--async-transform #'majutsu-gerrit--account-transform))
-     :prompt (format-prompt prompt nil)
+     :prompt (majutsu--format-prompt prompt nil)
      :initial initial-input
      :history history
      :require-match nil

@@ -254,6 +254,10 @@ end with a question mark and space."
 
 ;;; Selection readers
 
+(defun majutsu--format-prompt (prompt default)
+  "Format a minibuffer PROMPT with DEFAULT."
+  (format-prompt (string-remove-suffix ": " prompt) default))
+
 (defun majutsu-completing-read (prompt collection &optional predicate require-match
                                        initial-input hist def category)
   "Read a choice with completion, preserving CATEGORY metadata.
@@ -267,7 +271,7 @@ is `any', require non-empty input without requiring a candidate match."
           (if (listp collection)
               (majutsu-completion-items-properties collection category)
             (majutsu-completion-properties category)))
-         (value (completing-read (format-prompt prompt def)
+         (value (completing-read (majutsu--format-prompt prompt def)
                                  collection predicate
                                  (if (eq require-match 'any) nil require-match)
                                  initial-input hist def)))
@@ -290,7 +294,7 @@ REQUIRE-MATCH follows `majutsu-completing-read'."
          (completion-extra-properties
           (majutsu-completion-payload-properties payload category))
          (collection (plist-get payload :candidates))
-         (value (completing-read (format-prompt prompt def)
+         (value (completing-read (majutsu--format-prompt prompt def)
                                  collection predicate
                                  (if (eq require-match 'any) nil require-match)
                                  initial-input hist def)))
@@ -313,7 +317,7 @@ requiring a candidate match."
           (if (listp collection)
               (majutsu-completion-items-properties collection category)
             (majutsu-completion-properties category)))
-         (values (completing-read-multiple (format-prompt prompt def)
+         (values (completing-read-multiple (majutsu--format-prompt prompt def)
                                            collection predicate
                                            (if (eq require-match 'any) nil require-match)
                                            initial-input hist def)))
@@ -334,7 +338,7 @@ REQUIRE-MATCH follows `majutsu-completing-read-multiple'."
          (completion-extra-properties
           (majutsu-completion-payload-properties payload category))
          (collection (plist-get payload :candidates))
-         (values (completing-read-multiple (format-prompt prompt def)
+         (values (completing-read-multiple (majutsu--format-prompt prompt def)
                                            collection predicate
                                            (if (eq require-match 'any) nil require-match)
                                            initial-input hist def)))
@@ -346,7 +350,7 @@ REQUIRE-MATCH follows `majutsu-completing-read-multiple'."
   "Read a string from the minibuffer, prompting with PROMPT.
 Uses `format-prompt' for consistent formatting.  Empty input returns
 DEFAULT-VALUE if non-nil, otherwise signals an error."
-  (let ((val (read-string (format-prompt prompt default-value)
+  (let ((val (read-string (majutsu--format-prompt prompt default-value)
                           initial-input history default-value)))
     (if (string-empty-p val)
         (if default-value
