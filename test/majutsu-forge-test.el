@@ -11,6 +11,19 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'majutsu-forge)
+(require 'majutsu-jj-integration)
+
+(defvar majutsu-forge-test--suffix-context nil)
+
+(defun majutsu-forge-test--git-suffix (root)
+  "Record the Git ROOT read by a suffix's interactive argument reader."
+  (interactive (list (magit-toplevel)))
+  (setq majutsu-forge-test--suffix-context (list root default-directory)))
+
+(transient-define-prefix forge-majutsu-test--dispatch ()
+  "Exercise Forge-style suffix execution without a Forge database."
+  ["Git context"
+   ("x" "Read Git repository" majutsu-forge-test--git-suffix)])
 
 (ert-deftest majutsu-forge-section-hooks/adds-and-removes-default-hooks ()
   (let ((original (default-value 'majutsu-log-sections-hook))
@@ -68,6 +81,143 @@
           (should-not majutsu-forge--installed-section-hooks))
       (majutsu-forge--cleanup-installation)
       (set-default 'majutsu-log-sections-hook original))))
+
+(ert-deftest majutsu-forge-git-worktree/caches-per-workspace ()
+  (with-temp-buffer
+    (let ((default-directory "/workspace-a/")
+          (queries 0))
+      (cl-letf (((symbol-function 'majutsu-jj-lines)
+                 (lambda (&rest _)
+                   (cl-incf queries)
+                   (list (concat default-directory ".git"))))
+                ((symbol-function 'majutsu-jj-expand-directory-from-jj)
+                 (lambda (path &optional _) (file-name-as-directory path)))
+                ((symbol-function 'file-directory-p) (lambda (_) t))
+                ((symbol-function 'magit-bare-repo-p) (lambda () nil))
+                ((symbol-function 'magit-toplevel)
+                 (lambda ()
+                   (file-name-directory (directory-file-name default-directory)))))
+        (should (equal (majutsu-forge--git-worktree) "/workspace-a/"))
+        (should (equal (majutsu-forge--git-worktree) "/workspace-a/"))
+        (should (= queries 1))
+        (setq default-directory "/workspace-b/")
+        (should (equal (majutsu-forge--git-worktree) "/workspace-b/"))
+        (should (= queries 2))))))
+
+(ert-deftest majutsu-forge-git-worktree/retries-failed-lookups ()
+  (with-temp-buffer
+    (let ((queries 0))
+      (cl-letf (((symbol-function 'majutsu-jj-lines)
+                 (lambda (&rest _)
+                   (cl-incf queries)
+                   (error "Repository temporarily unavailable"))))
+        (should-not (majutsu-forge--git-worktree))
+        (should-not (majutsu-forge--git-worktree))
+        (should (= queries 2))))))
+
+(ert-deftest majutsu-forge-git-worktree/integration-git-layouts ()
+  "Resolve both ordinary Git repositories and linked Git worktrees."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (let* ((git (magit-git-executable))
+           (root (expand-file-name "git" sandbox))
+           (linked (expand-file-name "linked" sandbox)))
+      (skip-unless (executable-find git))
+      ;; Set up Git before attaching any JJ repository to it.
+      (should (zerop (call-process git nil nil nil "init" root)))
+      (let ((default-directory (file-name-as-directory root)))
+        (should (zerop (call-process git nil nil nil
+                                    "-c" "user.name=Majutsu Test"
+                                    "-c" "user.email=majutsu@example.invalid"
+                                    "-c" "commit.gpgsign=false"
+                                    "commit" "--allow-empty" "-m" "base")))
+        (should (zerop (call-process git nil nil nil
+                                    "worktree" "add" "--detach" linked))))
+      (should (file-regular-p (expand-file-name ".git" linked)))
+      (dolist (git-root (list root linked))
+        (let ((workspace (concat git-root "-jj")))
+          (majutsu-jj-integration-call sandbox "git" "init"
+                                      "--git-repo" git-root workspace)
+          (with-temp-buffer
+            (let ((default-directory (file-name-as-directory workspace))
+                  (majutsu-jj-executable majutsu-jj-integration--jj))
+              (should-not (file-exists-p (expand-file-name ".git" workspace)))
+              (should (equal (file-truename (majutsu-forge--git-worktree))
+                             (file-truename (file-name-as-directory git-root)))))))))))
+
+(ert-deftest majutsu-forge-git-worktree/integration-bare-backend ()
+  "An internal bare Git backend must not be mistaken for a worktree."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (let ((workspace (expand-file-name "jj" sandbox)))
+      (majutsu-jj-integration-call sandbox "git" "init" "--no-colocate" workspace)
+      (with-temp-buffer
+        (let ((default-directory (file-name-as-directory workspace))
+              (majutsu-jj-executable majutsu-jj-integration--jj))
+          (should-not (majutsu-forge--git-worktree)))))))
+
+(ert-deftest majutsu-forge-buffer-setup/uses-git-worktree ()
+  (let ((real-featurep (symbol-function 'featurep))
+        (git-root "/git-worktree/")
+        directories)
+    (with-temp-buffer
+      (let ((default-directory "/jj-workspace/"))
+        (cl-letf (((symbol-function 'featurep)
+                   (lambda (feature)
+                     (or (eq feature 'forge) (funcall real-featurep feature))))
+                  ((symbol-function 'majutsu-forge--git-worktree)
+                   (lambda () git-root))
+                  ((symbol-function 'forge--init-buffer-topics-spec)
+                   (lambda () (push default-directory directories)))
+                  ((symbol-function 'forge-set-buffer-repository)
+                   (lambda () (push default-directory directories))))
+          (majutsu-forge--init-buffer)))
+    (should (equal directories (list git-root git-root))))))
+
+(ert-deftest majutsu-forge-dispatch/uses-git-worktree ()
+  (let ((git-root "/git-worktree/")
+        directory)
+    (with-temp-buffer
+      (let ((default-directory "/jj-workspace/"))
+        (cl-letf (((symbol-function 'majutsu-forge--require) (lambda () t))
+                  ((symbol-function 'majutsu-forge--git-worktree)
+                   (lambda () git-root))
+                  ((symbol-function 'forge-dispatch)
+                   (lambda () (interactive) (setq directory default-directory))))
+          (majutsu-forge-dispatch)))
+    (should (equal directory git-root)))))
+
+(ert-deftest majutsu-forge-dispatch/integration-suffix-uses-git-worktree ()
+  "A suffix must retain Git context after the dispatch command returns."
+  (majutsu-jj-integration-with-sandbox sandbox
+    (let ((root (expand-file-name "main" sandbox))
+          (workspace (expand-file-name "sibling" sandbox))
+          (majutsu-forge--installed-advices nil)
+          (majutsu-forge-test--suffix-context nil)
+          (transient-show-popup nil))
+      (majutsu-jj-integration-call sandbox "git" "init" "--colocate" root)
+      (majutsu-jj-integration-call root "workspace" "add" workspace)
+      (unwind-protect
+          (save-window-excursion
+            (with-temp-buffer
+              (switch-to-buffer (current-buffer))
+              (majutsu-log-mode)
+              (setq default-directory (file-name-as-directory workspace))
+              (let ((majutsu-jj-executable majutsu-jj-integration--jj))
+                (cl-letf (((symbol-function 'majutsu-forge--require) (lambda () t))
+                          ((symbol-function 'forge-dispatch)
+                           #'forge-majutsu-test--dispatch))
+                  (majutsu-forge--add-advices)
+                  (majutsu-forge-dispatch)
+                  (should (equal default-directory
+                                 (file-name-as-directory workspace)))
+                  (execute-kbd-macro (kbd "x"))
+                  (should (equal majutsu-forge-test--suffix-context
+                                 (list (file-name-as-directory root)
+                                       (file-name-as-directory root))))
+                  (should (equal default-directory
+                                 (file-name-as-directory workspace)))))))
+        (when transient--prefix
+          (transient--emergency-exit))
+        (majutsu-forge--remove-advices)))))
 
 (ert-deftest majutsu-forge-insert-pullreq-commits/uses-placeholder ()
   (with-temp-buffer
