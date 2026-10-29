@@ -350,7 +350,7 @@
       (should (eq (get-text-property (1- (point)) 'majutsu-row-field) 'last)))))
 
 (ert-deftest majutsu-row-body-prefix-projection-preserves-successive-states ()
-  "Collapse compares geometry, not faces or padding, and retains A/B/A."
+  "Omit padding while preserving junction order, faces and terminal blanks."
   (let* ((compiled (majutsu-row-test--compiled))
          (prefixes (list (propertize "│   " 'font-lock-face 'warning)
                          (propertize "├─╮ " 'font-lock-face 'success)
@@ -370,7 +370,7 @@
       (let ((projection (get-text-property
                          (point-min) 'majutsu-section-collapsed-graph)))
         (should (equal (substring-no-properties projection)
-                       "├─╮ \n│ \n╰─╯ \n    "))
+                       "├─╮ \n╰─╯ \n    "))
         (should (eq (get-text-property 0 'font-lock-face projection) 'success))
         (should-not (text-property-not-all
                      0 (length projection) 'line-prefix nil projection))
@@ -683,7 +683,7 @@
                       "\e[1;32m○\e[0m " majutsu-row-start-token
                       "\e[1;35mHeading\e[0m"
                       majutsu-row-tail-token majutsu-row-body-token
-                      "\n\e[36m│\e[0m \e[1;35mBody\e[0m"
+                      "\n\e[36m╷\e[0m \e[1;35mBody\e[0m"
                       majutsu-row-meta-token "\"id\"" majutsu-row-end-token "\n"))
          caption-face node-face edge-face heading-face)
     (with-temp-buffer
@@ -701,7 +701,7 @@
           (setq node-face (get-text-property (1- (point)) 'font-lock-face))
           (search-forward "Heading")
           (setq heading-face (get-text-property (1- (point)) 'font-lock-face))
-          (search-forward "│")
+          (search-forward "╷")
           (setq edge-face (get-text-property (1- (point)) 'font-lock-face))
           (goto-char (point-min))
           (majutsu-row-wash-buffer compiled)))
