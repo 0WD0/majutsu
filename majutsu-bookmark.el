@@ -535,7 +535,7 @@ Return nil when ENTRY has no conflict target data."
                      (gethash remote majutsu-bookmark--list-remotes)))
          (fetch (plist-get entry :fetch-url))
          (push (plist-get entry :push-url)))
-    (concat (propertize remote 'font-lock-face 'magit-branch-remote)
+    (concat (propertize remote 'font-lock-face 'majutsu-bookmark-remote)
             (and fetch (concat "  " fetch))
             (and push (not (equal push fetch))
                  (format " (push: %s)" push)))))

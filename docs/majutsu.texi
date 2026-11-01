@@ -960,9 +960,9 @@ after the field's default postprocessors.
           (:field description :module heading
            :template majutsu-log-template-description :face t)
           (:field author :module tail
-           :template majutsu-log-template-author :face magit-log-author)
+           :template majutsu-log-template-author :face majutsu-log-author)
           (:field timestamp :module tail
-           :template majutsu-log-template-timestamp :face magit-log-date)
+           :template majutsu-log-template-timestamp :face majutsu-log-date)
           (:field long-desc :module body
            :template majutsu-log-template-long-desc :face t)
           (:field id :module metadata

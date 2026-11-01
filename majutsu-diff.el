@@ -1083,7 +1083,7 @@ The synthetic `git' remote used by jj's Git backend is omitted."
    (delete-dups
     (append
      (mapcar (lambda (ref)
-               (majutsu-diff--propertize-ref ref 'magit-branch-local))
+               (majutsu-diff--propertize-ref ref 'majutsu-bookmark-local))
              (plist-get fields :local-bookmarks))
      (delq nil
            (mapcar
@@ -1092,7 +1092,7 @@ The synthetic `git' remote used by jj's Git backend is omitted."
                 (unless (string= remote "git")
                   (majutsu-diff--propertize-ref
                    (format "%s/%s" remote name)
-                   'magit-branch-remote))))
+                   'majutsu-bookmark-remote))))
             (plist-get fields :remote-bookmarks)))))
    " "))
 
@@ -1104,7 +1104,7 @@ The synthetic `git' remote used by jj's Git backend is omitted."
         (magit-insert-heading
           (unless (string-empty-p refs) (concat refs " "))
           (majutsu-diff--with-fallback-face
-           (plist-get fields :commit-id) 'magit-hash)))
+           (plist-get fields :commit-id) 'majutsu-hash)))
       (insert "Author:     " (plist-get fields :author-name)
               " <" (plist-get fields :author-email) ">\n"
               "AuthorDate: " (plist-get fields :author-date) "\n"
@@ -1240,7 +1240,7 @@ first \"diff --git\" header."
                                   (string-match-p " => " file)))
                          file
                        (file-name-nondirectory path))
-                     'magit-filename))
+                       'majutsu-filename))
                    (body (and source (concat "Renamed from: " source))))
               (majutsu-diff--delete-line)
               (setq label (majutsu-file-tree-escape-label label)

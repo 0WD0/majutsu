@@ -215,7 +215,7 @@ default.  The pull-request section itself remains visitable."
   "Placeholder used instead of Forge's Magit-specific PR commit renderer."
   (let ((inhibit-read-only t))
     (insert (propertize "Commit list is not shown in Majutsu Forge sections.\n"
-                        'font-lock-face 'magit-dimmed))))
+                        'font-lock-face 'shadow))))
 
 (defun majutsu-forge--insert-pullreq-commits-around (fn pullreq &rest args)
   "Call FN with PULLREQ and ARGS unless Majutsu should hide its commit list."

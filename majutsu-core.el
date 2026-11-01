@@ -37,11 +37,6 @@
   :group 'majutsu
   :group 'majutsu-modes)
 
-(defgroup majutsu-faces nil
-  "Faces used by Majutsu."
-  :group 'majutsu
-  :group 'faces)
-
 (defgroup majutsu-extensions nil
   "Extensions to Majutsu."
   :group 'majutsu)

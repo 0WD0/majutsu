@@ -35,6 +35,52 @@
   "Interface to jj version control system."
   :group 'tools)
 
+(defgroup majutsu-faces nil
+  "Faces used by Majutsu."
+  :group 'majutsu
+  :group 'faces)
+
+(defface majutsu-bookmark-local
+  '((t :inherit font-lock-variable-name-face))
+  "Face for local bookmarks and workspace names."
+  :group 'majutsu-faces)
+
+(defface majutsu-bookmark-remote
+  '((t :inherit font-lock-string-face))
+  "Face for remote bookmarks and working copies."
+  :group 'majutsu-faces)
+
+(defface majutsu-workspace-current
+  '((((supports (:box t))) :inherit majutsu-bookmark-local :box t)
+    (t :inherit majutsu-bookmark-local :inverse-video t))
+  "Face for the current workspace name."
+  :group 'majutsu-faces)
+
+(defface majutsu-tag
+  '((t :inherit font-lock-constant-face))
+  "Face for tags."
+  :group 'majutsu-faces)
+
+(defface majutsu-log-author
+  '((t :inherit font-lock-comment-face))
+  "Face for log authors."
+  :group 'majutsu-faces)
+
+(defface majutsu-log-date
+  '((t :inherit shadow))
+  "Face for log dates."
+  :group 'majutsu-faces)
+
+(defface majutsu-hash
+  '((t :inherit shadow))
+  "Face used for hash identifiers."
+  :group 'majutsu-faces)
+
+(defface majutsu-filename
+  '((t :weight normal))
+  "Face for file names."
+  :group 'majutsu-faces)
+
 (defcustom majutsu-debug nil
   "Enable debug logging for jj operations."
   :type 'boolean

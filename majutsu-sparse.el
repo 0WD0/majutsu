@@ -224,14 +224,14 @@ This opens your configured editor with the current patterns."
          (unless (string-empty-p trimmed)
            (setq count (1+ count))
            (magit-insert-section (jj-sparse-pattern trimmed t)
-             (insert (propertize trimmed 'font-lock-face 'magit-filename))
+             (insert (propertize trimmed 'font-lock-face 'majutsu-filename))
              (insert "\n")))
          t)))
     (if (zerop count)
         (progn
           (magit-cancel-section)
           (insert (propertize "No patterns (should not happen)\n"
-                              'font-lock-face 'magit-dimmed)))
+                              'font-lock-face 'shadow)))
       (insert "\n"))))
 
 (defun majutsu-sparse-list-refresh-buffer ()

@@ -587,16 +587,16 @@ ROOT should be a normalized directory path or nil."
          (commit-id (plist-get entry :commit-id))
          (desc (plist-get entry :desc))
          (root (plist-get entry :root))
-         (name-face (if current 'magit-branch-current 'magit-branch-local))
+         (name-face (if current 'majutsu-workspace-current 'majutsu-bookmark-local))
          (name-str (majutsu-workspace--with-fallback-face name name-face))
          (pad (make-string (max 0 (- name-width (string-width name))) ?\s))
          (marker (if current "@ " "  ")))
     (concat marker
             name-str pad
             " "
-            (majutsu-workspace--with-fallback-face change-id 'magit-hash)
+            (majutsu-workspace--with-fallback-face change-id 'majutsu-hash)
             " "
-            (majutsu-workspace--with-fallback-face commit-id 'magit-hash)
+            (majutsu-workspace--with-fallback-face commit-id 'majutsu-hash)
             (when (and desc (not (string-empty-p desc)))
               (concat " " desc))
             " "

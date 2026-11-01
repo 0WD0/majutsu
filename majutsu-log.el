@@ -133,11 +133,11 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
     `((:field change-id :module heading
        :template majutsu-log-template-change-id :face t)
       (:field bookmarks :module heading
-       :template majutsu-log-template-bookmarks :face magit-branch-local)
+       :template majutsu-log-template-bookmarks :face majutsu-bookmark-local)
       (:field tags :module heading
-       :template majutsu-log-template-tags :face magit-tag)
+       :template majutsu-log-template-tags :face majutsu-tag)
       (:field working-copies :module heading
-       :template majutsu-log-template-working-copies :face magit-branch-remote)
+       :template majutsu-log-template-working-copies :face majutsu-bookmark-remote)
       (:field empty :module heading
        :template majutsu-log-template-empty :face t)
       (:field git-head :module heading
@@ -150,9 +150,9 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
       (:field commit-id :module tail
        :template majutsu-log-template-commit-id :face t)
       (:field author :module tail
-       :template majutsu-log-template-author :face magit-log-author)
+       :template majutsu-log-template-author :face majutsu-log-author)
       (:field timestamp :module tail
-       :template majutsu-log-template-timestamp :face magit-log-date)
+       :template majutsu-log-template-timestamp :face majutsu-log-date)
       (:field long-desc :module body
        :template majutsu-log-template-long-desc :face t)
       (:field id :module metadata

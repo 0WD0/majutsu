@@ -823,10 +823,10 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
                            "up\\rstream/remote only@mark")))
     (should-not (string-match-p "[\n\r]" refs))
     (should (eq (get-text-property 0 'font-lock-face refs)
-                'magit-branch-local))
+                'majutsu-bookmark-local))
     (should (eq (get-text-property (string-match "origin" refs)
                                    'font-lock-face refs)
-                'magit-branch-remote))))
+                'majutsu-bookmark-remote))))
 
 (ert-deftest majutsu-diff-format-refs/preserves-native-faces ()
   "Native bookmark presentation should take precedence over fallback faces."

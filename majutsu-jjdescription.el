@@ -197,11 +197,6 @@ in that case the buffer's existing `fill-column' is left unchanged."
   (concat (majutsu-jjdescription--comment-prefix-re)
           "\\(ignore-rest\\)\\b"))
 
-(defface majutsu-hash
-  '((t :inherit magit-hash))
-  "Face used for hash identifiers."
-  :group 'majutsu-faces)
-
 (defcustom majutsu-jjdescription-change-id-face
   'majutsu-hash
   "Face used for JJ Change ID values."

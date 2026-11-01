@@ -288,7 +288,7 @@ When NEWLINE is non-nil or omitted, append a trailing newline."
       (goto-char (point-min))
       (search-forward "origin  https://example.org/repo (push: ssh://example.org/repo)")
       (beginning-of-line)
-      (should (eq (get-text-property (point) 'font-lock-face) 'magit-branch-remote))
+      (should (eq (get-text-property (point) 'font-lock-face) 'majutsu-bookmark-remote))
       (should (equal (majutsu-remote-at-point) "origin"))
       (search-forward "https://")
       (should-not (get-text-property (point) 'font-lock-face))
