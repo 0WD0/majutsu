@@ -12,11 +12,7 @@
 *-pkg.el
 *.tar
 packages/
-dist/
 archive/
-node_modules
-.astro/
-.pagefind/
 
 # 依赖与构建工具目录
 .log/
