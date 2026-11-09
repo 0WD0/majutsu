@@ -609,7 +609,7 @@ available to `majutsu-jjdescription-setup' in `find-file-hook'."
   (let ((default-directory
          (or (majutsu-jjdescription--bind-repository-root)
              (user-error "No repository associated with this JJ description buffer"))))
-    (majutsu-diff-revset (or (majutsu-jjdescription--change-id) "@"))))
+    (majutsu-diff-revset (or (majutsu-jjdescription--change-id) "@") '("--stat" "--git"))))
 
 (defvar-keymap majutsu-jjdescription-mode-map
   :doc "Keymap used by `majutsu-jjdescription-mode'."
