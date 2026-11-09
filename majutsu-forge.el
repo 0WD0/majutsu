@@ -14,9 +14,9 @@
 ;; Optional integration between Majutsu and Forge.
 ;;
 ;; This library reuses Forge's topic database, commands, and section
-;; renderers in Majutsu log buffers.  The first implementation targets
-;; colocated jj/Git repositories, where Forge's Magit-backed repository
-;; detection can still see a Git repository and Git remotes.
+;; renderers in Majutsu log buffers.  In a colocated jj workspace, Forge is
+;; initialized from the underlying Git worktree so sibling JJ workspaces need
+;; not contain a `.git' directory.
 
 ;;; Code:
 
@@ -26,6 +26,7 @@
 (require 'majutsu-log)
 (require 'majutsu-mode)
 (require 'magit-section)
+(require 'magit-git)
 
 (declare-function forge-db "forge-db" (&optional livep))
 (declare-function forge-dispatch "forge-commands")
@@ -140,6 +141,36 @@ default.  The pull-request section itself remains visitable."
 
 ;;; Buffer setup
 
+(defvar-local majutsu-forge--git-worktree-cache nil
+  "Workspace directory and successfully resolved Git worktree.")
+
+(defun majutsu-forge--git-worktree ()
+  "Return the Git worktree paired with the current JJ workspace, if any.
+Cache successful lookups for this buffer's workspace directory.  Failed
+lookups are retried so a temporarily unavailable repository can recover."
+  (if (equal (car majutsu-forge--git-worktree-cache) default-directory)
+      (cdr majutsu-forge--git-worktree-cache)
+    (let ((directory default-directory)
+          (worktree
+           (ignore-errors
+             (when-let* ((git-dir (car (majutsu-jj-lines "git" "root")))
+                         (git-dir (majutsu-jj-expand-directory-from-jj
+                                   git-dir default-directory))
+                         ((file-directory-p git-dir)))
+               (let ((default-directory git-dir))
+                 (unless (magit-bare-repo-p)
+                   (magit-toplevel)))))))
+      (when worktree
+        (setq majutsu-forge--git-worktree-cache (cons directory worktree)))
+      worktree)))
+
+(defmacro majutsu-forge--with-git-worktree (&rest body)
+  "Evaluate BODY from the current workspace's underlying Git worktree."
+  (declare (indent 0) (debug (body)))
+  `(let ((default-directory (or (majutsu-forge--git-worktree)
+                                default-directory)))
+     ,@body))
+
 (defun majutsu-forge--connect-database-once ()
   "Connect the Forge database the first time a Majutsu log buffer is used."
   (remove-hook 'majutsu-log-mode-hook #'majutsu-forge--connect-database-once)
@@ -167,10 +198,11 @@ default.  The pull-request section itself remains visitable."
   "Initialize Forge buffer-local state for the current Majutsu buffer."
   (when (featurep 'forge)
     (setq-local magit--right-margin-config (majutsu-forge--margin-config))
-    (when (fboundp 'forge--init-buffer-topics-spec)
-      (ignore-errors (forge--init-buffer-topics-spec)))
-    (when (fboundp 'forge-set-buffer-repository)
-      (ignore-errors (forge-set-buffer-repository)))))
+    (majutsu-forge--with-git-worktree
+      (when (fboundp 'forge--init-buffer-topics-spec)
+        (ignore-errors (forge--init-buffer-topics-spec)))
+      (when (fboundp 'forge-set-buffer-repository)
+        (ignore-errors (forge-set-buffer-repository))))))
 
 (defun majutsu-forge--ensure-buffer ()
   "Initialize Forge state needed by topic section insertion."
@@ -386,7 +418,8 @@ default.  The pull-request section itself remains visitable."
   "Dispatch a Forge command from Majutsu."
   (interactive)
   (majutsu-forge--require)
-  (call-interactively #'forge-dispatch))
+  (majutsu-forge--with-git-worktree
+    (call-interactively #'forge-dispatch)))
 
 (defun majutsu-forge--add-mode-bindings ()
   "Add Forge bindings to `majutsu-mode-map'."
@@ -470,6 +503,35 @@ made during that supplemental pass are deliberately dropped."
 
 ;;; Advice
 
+(defun majutsu-forge--call-suffix (directory advice fn &rest args)
+  "Call FN with ARGS in DIRECTORY, preserving existing suffix ADVICE."
+  (let ((default-directory directory))
+    (if advice
+        (apply advice fn args)
+      (apply fn args))))
+
+(defun majutsu-forge--wrap-transient-command (fn)
+  "Let FN wrap a Forge suffix with its Git worktree context.
+Use a private copy of the suffix so its interactive argument reader and
+command body run in the worktree without modifying Forge's menu objects."
+  (if-let* (((derived-mode-p 'majutsu-mode))
+            (prefix transient--prefix)
+            ((string-prefix-p "forge-" (symbol-name (oref prefix command))))
+            (directory (majutsu-forge--git-worktree))
+            (suffix (transient-suffix-object this-command)))
+      (let* ((copy (clone suffix))
+             (group (oref suffix parent))
+             (advice* (or (oref suffix advice*) (oref group advice*)))
+             (advice (or (oref suffix advice) (oref suffix advice*)
+                         (oref group advice) (oref group advice*))))
+        (oset copy advice*
+              (apply-partially #'majutsu-forge--call-suffix directory advice*))
+        (oset copy advice
+              (apply-partially #'majutsu-forge--call-suffix directory advice))
+        (let ((transient--current-suffix copy))
+          (funcall fn)))
+    (funcall fn)))
+
 (defun majutsu-forge--add-owned-advice (symbol where function)
   "Advise SYMBOL at WHERE with FUNCTION and record Majutsu ownership."
   (unless (advice-member-p function symbol)
@@ -484,6 +546,8 @@ made during that supplemental pass are deliberately dropped."
 
 (defun majutsu-forge--add-advices ()
   "Install Forge advice used by `majutsu-forge-mode'."
+  (majutsu-forge--add-owned-advice
+   'transient--wrap-command :around #'majutsu-forge--wrap-transient-command)
   (when (fboundp 'forge-refresh-buffer)
     (majutsu-forge--add-owned-advice
      'forge-refresh-buffer :after #'majutsu-forge--after-forge-refresh))
