@@ -88,6 +88,13 @@ afterward."
   "Z"   'majutsu-workspace
   "%"   'majutsu-workspace
   "a"   'majutsu-absorb
+  "t"   'majutsu-tag
+  "m"   'majutsu-metaedit
+  "E"   'majutsu-ediff
+  "P"   'majutsu-simplify-parents
+  "y"   'majutsu-duplicate
+  "j"   'majutsu-sign
+  "J"   'majutsu-unsign
   "k"   'majutsu-delete-thing
   ">"   'majutsu-sparse
   "C-/" 'majutsu-undo
