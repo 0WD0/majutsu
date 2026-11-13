@@ -39,6 +39,24 @@
   "<remap> <majutsu-delete-thing>" #'majutsu-bookmark-delete)
 
 ;;; majutsu-bookmark
+
+(defcustom majutsu-bookmark-name-prefix nil
+  "Text to start new bookmark names with, e.g. \"alice/\".
+A string, or a function returning a string or nil."
+  :group 'majutsu
+  :type '(choice (const :tag "None" nil)
+                 (string :tag "Prefix")
+                 (function :tag "Function returning a prefix"))
+  :safe #'string-or-null-p)
+
+(defun majutsu-bookmark-name-prefix ()
+  "Return the prefix for new bookmark names, or nil.
+See `majutsu-bookmark-name-prefix'."
+  (let ((prefix (if (functionp majutsu-bookmark-name-prefix)
+                    (funcall majutsu-bookmark-name-prefix)
+                  majutsu-bookmark-name-prefix)))
+    (and (stringp prefix) (not (string-empty-p prefix)) prefix)))
+
 (defun majutsu--extract-bookmark-names (text)
   "Extract bookmark names from jj command output TEXT."
   (let ((names '())
@@ -151,17 +169,18 @@ require an existing local bookmark name."
                       default (or require-match 'any)
                       default-directory)))
 
-(defun majutsu-read-bookmark-names (prompt &optional candidates default require-match)
+(defun majutsu-read-bookmark-names
+    (prompt &optional candidates default require-match initial-input)
   "Read exact bookmark names with PROMPT.
 CANDIDATES defaults to local bookmark names.  DEFAULT is preselected when
 non-nil.  If REQUIRE-MATCH is non-nil, require existing local bookmark
-names."
+names.  INITIAL-INPUT is inserted into the minibuffer."
   (let ((default (or default (majutsu-bookmark-at-point)))
         (payload (majutsu-bookmark-candidate-data candidates default-directory)))
     (majutsu-ref-read-multiple 'bookmark prompt payload
                                'majutsu-bookmark-name-history
                                default (or require-match 'any)
-                               default-directory)))
+                               default-directory initial-input)))
 
 (defun majutsu-read-bookmark-pattern (prompt &optional default)
   "Read one bookmark name pattern using PROMPT.
@@ -189,7 +208,9 @@ bookmark(s) at point."
 ;;;###autoload
 (defun majutsu-bookmark-create (&optional names)
   "Create bookmarks NAMES at the current contextual revision."
-  (interactive (list (majutsu-read-bookmark-names "Bookmark name(s)" nil nil nil)))
+  (interactive (list (majutsu-read-bookmark-names
+                      "Bookmark name(s)" nil nil nil
+                      (majutsu-bookmark-name-prefix))))
   (let ((revset (or (magit-section-value-if 'jj-commit) "@"))
         (names (cond
                 ((null names) nil)
@@ -677,7 +698,9 @@ With optional ALLOW-BACKWARDS, pass `--allow-backwards' to jj."
   "Create or update bookmarks NAMES to point to COMMIT."
   (interactive
    (let* ((at (or (magit-section-value-if 'jj-commit) "@"))
-          (names (majutsu-read-bookmark-names "Set bookmark(s)"))
+          (names (majutsu-read-bookmark-names
+                  "Set bookmark(s)" nil nil nil
+                  (majutsu-bookmark-name-prefix)))
           (rev (majutsu-read-revset "Target revision" :default at)))
      (list names rev)))
   (when (and names (zerop (majutsu-run-jj "bookmark" "set" names (list "-r" commit))))

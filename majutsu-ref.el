@@ -238,13 +238,15 @@ DIRECTORY are forwarded to `majutsu-completing-read-payload'."
      (majutsu-ref--category kind) nil default-directory)))
 
 (defun majutsu-ref-read-multiple
-    (kind prompt payload history &optional default require-match directory)
+    (kind prompt payload history &optional default require-match directory
+          initial-input)
   "Read multiple refs of KIND with PROMPT from structured PAYLOAD.
-HISTORY is the minibuffer history variable.  DEFAULT, REQUIRE-MATCH, and
-DIRECTORY are forwarded to `majutsu-completing-read-multiple-payload'."
+HISTORY is the minibuffer history variable.  DEFAULT, REQUIRE-MATCH,
+DIRECTORY, and INITIAL-INPUT are forwarded to
+`majutsu-completing-read-multiple-payload'."
   (let ((default-directory (or directory default-directory)))
     (majutsu-completing-read-multiple-payload
-     prompt payload nil require-match nil history default
+     prompt payload nil require-match initial-input history default
      (majutsu-ref--category kind) nil default-directory)))
 
 (provide 'majutsu-ref)

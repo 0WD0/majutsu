@@ -42,6 +42,10 @@
 
 ** Added
 
+- Bookmark name prefix ::
+  ~majutsu-bookmark-name-prefix~ starts new bookmark names in Create and Set
+  with a prefix such as =alice/=.
+
 - Text conflict workbench ::
   ~? M~ (Evil ~M~) opens a pinned directory tree with private UTF-8 drafts.
   Saving a draft leaves jj untouched; explicit apply writes a file or folded
