@@ -1132,11 +1132,20 @@ The synthetic `git' remote used by jj's Git backend is omitted."
           (goto-char (point-max)))
         (insert "\n")))))
 
+(defun majutsu-diff--with-format (args)
+  "Ensure jj args include \"--git\" if no other output is selected.
+Otherwise jj will use its default format (color-words) which
+doesn't parse."
+  (if (seq-intersection args '("--git" "--color-words" "--stat" "--summary"
+                               "-s" "--types" "--name-only"))
+      args
+    (cons "--git" args)))
+
 (defun majutsu-insert-diff ()
   "Insert a diff section and wash it."
   (let* ((args (majutsu-jj-append-filesets
                 (append (list "diff")
-                        majutsu-buffer-diff-args
+                        (majutsu-diff--with-format majutsu-buffer-diff-args)
                         majutsu-buffer-diff-range)
                 majutsu-buffer-diff-filesets))
          (backend (majutsu-diff--sync-backend args))

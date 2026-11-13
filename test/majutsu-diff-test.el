@@ -1186,6 +1186,20 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
       (majutsu-diff-refresh-buffer)
       (should (equal (buffer-string) "diff contents\n")))))
 
+(ert-deftest majutsu-diff-empty-args/real-jj-renders-git-format ()
+  "Without any format argument jj should still render the diff."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-write-text
+     (majutsu-jj-integration-file repo "a.txt") "x\n")
+    (with-current-buffer (majutsu-diff-revset "@")
+      (unwind-protect
+          (progn
+            (should-not majutsu-buffer-diff-args)
+            (goto-char (point-min))
+            (should (re-search-forward "^\\+x$" nil t))
+            (should (magit-section-match 'jj-hunk (magit-current-section))))
+        (kill-buffer)))))
+
 (ert-deftest majutsu-diff-empty-args/inherit-from-selected-buffer ()
   "Empty buffer options must not fall through to stored defaults."
   (with-temp-buffer
