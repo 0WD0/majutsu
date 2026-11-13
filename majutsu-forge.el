@@ -50,9 +50,14 @@
 (defvar forge-pullreqs-section-map)
 (defvar forge-repository-section-map)
 (defvar magit--right-margin-config)
+(defvar magit-buffer-file-name)
+(defvar magit-buffer-revision)
 (defvar magit-root-section)
 (defvar magit-section-initial-visibility-alist)
 (defvar magit-status-margin)
+(defvar majutsu-buffer-blob-commit-id)
+(defvar majutsu-buffer-blob-path)
+(defvar majutsu-buffer-blob-root)
 
 (defvar majutsu-forge--sections-installed nil
   "Non-nil when `majutsu-forge-mode' completed section hook setup.")
@@ -468,6 +473,20 @@ made during that supplemental pass are deliberately dropped."
     (when-let* ((root (majutsu-forge--buffer-root)))
       (majutsu-forge--request-majutsu-refresh root))))
 
+;;; Blobs
+
+(defun majutsu-forge--with-blob-context (fn &rest args)
+  "Call FN with ARGS, describing a Majutsu blob buffer to Forge."
+  (if (and (bound-and-true-p majutsu-blob-mode)
+           majutsu-buffer-blob-root
+           majutsu-buffer-blob-path
+           majutsu-buffer-blob-commit-id)
+      (let ((magit-buffer-file-name
+             (expand-file-name majutsu-buffer-blob-path majutsu-buffer-blob-root))
+            (magit-buffer-revision majutsu-buffer-blob-commit-id))
+        (apply fn args))
+    (apply fn args)))
+
 ;;; Advice
 
 (defun majutsu-forge--add-owned-advice (symbol where function)
@@ -490,7 +509,10 @@ made during that supplemental pass are deliberately dropped."
   (when (fboundp 'forge--insert-pullreq-commits)
     (majutsu-forge--add-owned-advice
      'forge--insert-pullreq-commits :around
-     #'majutsu-forge--insert-pullreq-commits-around)))
+     #'majutsu-forge--insert-pullreq-commits-around))
+  (when (fboundp 'forge--browse-target)
+    (majutsu-forge--add-owned-advice
+     'forge--browse-target :around #'majutsu-forge--with-blob-context)))
 
 (defun majutsu-forge--remove-advices ()
   "Remove Forge advice installed by `majutsu-forge-mode'."
