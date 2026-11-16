@@ -1,45 +1,52 @@
-;;; majutsu-resolve.el --- Pinned text conflict workbench -*- lexical-binding: t; -*-
+;;; majutsu-resolve.el --- Conflicts of a revision, as a section -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-;; Drafts are private text files, not working-copy files.  Saving a draft does
-;; not run jj.  Only explicit apply rewrites the pinned revision.  Structural
-;; choices, path creation/deletion and whole-side selection are not supported.
+;; A conflicted revision gets a Conflicts section wherever it is shown: its
+;; files and each file's conflicts.  A conflict is shown as jj records it, a
+;; snapshot and changes from one text to another, each term under the label
+;; jj gave it.  Resolving there is one `jj resolve'; `jj undo' takes it back.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'seq)
-(require 'transient)
+(require 'magit-section)
 (require 'majutsu-mode)
 (require 'majutsu-file)
 (require 'majutsu-file-tree)
 (require 'majutsu-conflict)
-(require 'majutsu-interactive)
 
-(declare-function majutsu-file-apply-contents "majutsu-file" (commit change contents))
+(declare-function majutsu-diff--metadata-revision "majutsu-diff" ())
+(declare-function majutsu-diff-revset "majutsu-diff"
+                  (revset &optional args range filesets))
+(declare-function majutsu-blob-edit-start "majutsu-file" ())
 
-(cl-defstruct (majutsu-resolve--file (:constructor majutsu-resolve--make-file))
-  path conflict baseline contents buffer temporary applied)
+;;; Sections
+
+(defvar-keymap majutsu-resolve-section-map
+  :doc "Keymap for the sections of a revision's conflicts."
+  "<remap> <majutsu-visit-thing>" #'majutsu-resolve-visit)
+
+(defclass majutsu-resolve-conflicts-section (magit-section)
+  ((keymap :initform 'majutsu-resolve-section-map))
+  "The conflicts of one commit; the value is its commit id.")
 
 (defclass majutsu-resolve-conflict-section (magit-section)
-  ((conflict :initform nil)
-   (source :initform nil))
-  "A parsed conflict and the exact text from which its positions came.")
+  ((keymap :initform 'majutsu-resolve-section-map))
+  "One conflict of a file; the value is its number, from one.")
 
-(defclass majutsu-resolve-side-section (magit-section) ()
-  "A snapshot of a positive or negative conflict term.")
-
-(defclass majutsu-resolve-change-section (majutsu-resolve-side-section) ()
-  "A before/after change whose value identifies its positive term.")
+(defclass majutsu-resolve-term-section (magit-section)
+  ((keymap :initform 'majutsu-resolve-section-map))
+  "A term of a conflict; the value is a term plist accepted by
+`majutsu-conflict-term-cell'.")
 
 (defun majutsu-resolve--highlight-heading (section)
-  "Highlight SECTION's heading, then recurse into its children.
-The default current-section highlight paints the whole subtree, replacing the
-conflict side and diff backgrounds in the body.  Paint headings only so the
-semantic faces remain visible."
+  "Highlight SECTION's heading only, then its children.
+The default highlight paints the whole subtree and so replaces the faces
+that tell the sides apart."
   (magit-section-highlight-range
    (oref section start)
    (or (oref section content) (oref section end)))
@@ -48,707 +55,509 @@ semantic faces remain visible."
 (cl-defmethod magit-section-highlight ((section majutsu-resolve-conflict-section))
   (majutsu-resolve--highlight-heading section))
 
-(cl-defmethod magit-section-highlight ((section majutsu-resolve-side-section))
+(cl-defmethod magit-section-highlight ((section majutsu-resolve-term-section))
   (majutsu-resolve--highlight-heading section))
 
-(defvar-local majutsu-resolve--commit nil)
-(defvar-local majutsu-resolve--change nil)
-(defvar-local majutsu-resolve--records nil)
-(defvar-local majutsu-resolve--directory nil)
-(defvar-local majutsu-resolve--unverified nil)
-(defvar-local majutsu-resolve--closing nil)
-(defvar-local majutsu-resolve--workbench nil)
-(defvar-local majutsu-resolve--path nil)
+;;; Reading
 
-(defun majutsu-resolve--filter-buffer-substring (beg end &optional delete)
-  "Copy workbench text between BEG and END without display-only prefixes."
-  (let ((string (buffer-substring--filter beg end delete)))
-    (when (stringp string)
-      (remove-list-of-text-properties
-       0 (length string) '(line-prefix wrap-prefix display) string))
-    string))
+(defun majutsu-resolve--lines (&rest args)
+  "Return the lines jj prints for ARGS, or nil when it fails."
+  (majutsu--with-no-color
+    (with-temp-buffer
+      (when (eq 0 (apply #'majutsu--jj-insert nil args))
+        (split-string (buffer-string) "\n" t)))))
 
-(defvar majutsu-resolve-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map majutsu-mode-map)
-    (define-key map (kbd "RET") #'majutsu-resolve-visit-file)
-    (define-key map (kbd "?") #'majutsu-resolve-dispatch)
-    (define-key map (kbd "C-c ?") #'majutsu-resolve-dispatch)
-    (define-key map (kbd "C-c C-c") #'majutsu-resolve-apply)
-    (define-key map (kbd "C-c C-k") #'majutsu-resolve-discard)
-    (define-key map (kbd "C-c C-n") #'majutsu-resolve-next-file)
-    map))
+(defun majutsu-resolve--commit (revset)
+  "Return the commit id of REVSET if it names one conflicted commit."
+  (pcase (majutsu-resolve--lines
+          "log" "--no-graph" "-r" revset
+          "-T" "commit_id ++ if(conflict, \" conflict\") ++ \"\\n\"")
+    (`(,line) (and (string-suffix-p " conflict" line)
+                   (car (split-string line " "))))))
 
-(define-derived-mode majutsu-resolve-mode majutsu-mode "Majutsu Resolve"
-  "Review backend conflicts separately from private pending drafts.
-Only UTF-8 text content updates are supported, not structural choices.
-\\<majutsu-resolve-mode-map>Use \\[majutsu-resolve-dispatch] for workbench actions."
-  :group 'majutsu
-  (setq-local filter-buffer-substring-function
-              #'majutsu-resolve--filter-buffer-substring)
-  (add-hook 'kill-buffer-query-functions #'majutsu-resolve--can-close nil t)
-  (add-hook 'kill-buffer-hook #'majutsu-resolve--cleanup nil t))
+(defun majutsu-resolve--origins (commit)
+  "Return a line for each earlier change COMMIT's conflicts come from.
+These are the first conflicted commits of the conflicted history COMMIT
+belongs to; a commit that introduces its conflicts has none."
+  (majutsu-resolve--lines
+   "log" "--no-graph"
+   "-r" (format "roots(reachable(%s, conflicts())) ~ %s" commit commit)
+   "-T" "change_id.shortest(8) ++ \" \" ++ description.first_line() ++ \"\\n\""))
 
-(cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-resolve-mode))
-  majutsu-resolve--commit)
+(defconst majutsu-resolve--files-template
+  (let ((types "%s.map(|value| if(value, value.file_type(), \"absent\")).join(\",\")"))
+    (concat "if(self.conflict(), concat("
+            (format types "self.added_values()") ", \"\\x1F\", "
+            (format types "self.removed_values()") ", \"\\x1F\", "
+            "self.path(), \"\\0\"))"))
+  "Template listing the conflicted files of a commit with their terms.")
 
-(defvar majutsu-resolve-draft-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'majutsu-resolve-apply)
-    (define-key map (kbd "C-c C-k") #'majutsu-resolve-discard)
-    (define-key map (kbd "C-c C-o") #'majutsu-resolve-show)
-    (define-key map (kbd "C-c C-n") #'majutsu-resolve-next-file)
-    (define-key map (kbd "C-c ?") #'majutsu-resolve-dispatch)
-    map))
+(defun majutsu-resolve--files (commit &optional path)
+  "Return the conflicted files of COMMIT, or only PATH, as plists.
+`:adds' and `:removes' hold for each term what it is, in the order jj
+records them: \"file\", \"symlink\", ..., or \"absent\"."
+  (majutsu--with-no-color
+    (with-temp-buffer
+      (unless (eq 0 (apply #'majutsu--jj-insert nil
+                           "file" "list" "-r" commit
+                           "-T" majutsu-resolve--files-template
+                           (and path (list "--" (majutsu-jj-fileset-quote path)))))
+        (user-error "Cannot list the conflicts of %s" commit))
+      (mapcar (lambda (record)
+                (pcase-let ((`(,adds ,removes ,path)
+                             (majutsu--split-fields record "\x1f" 3)))
+                  (list :path path
+                        :adds (split-string adds ",")
+                        :removes (split-string removes ","))))
+              (split-string (buffer-string) "\0" t)))))
 
-(define-minor-mode majutsu-resolve-draft-mode
-  "Private conflict draft: save locally, apply explicitly with C-c C-c.
-\\<majutsu-resolve-draft-mode-map>Use \\[majutsu-resolve-dispatch] for workbench actions."
-  :lighter " Resolve draft"
-  :keymap majutsu-resolve-draft-mode-map)
-
-(transient-define-prefix majutsu-resolve-dispatch ()
-  "Actions for the text conflict workbench and its private drafts.
-Saving never changes jj.  Apply writes existing UTF-8 file contents;
-empty text means an empty file, not deletion.  Structural choices,
-renames, and new paths are not supported."
-  ["Private drafts: save locally, apply explicitly"
-   ["Navigate"
-    ("RET" "Edit / jump" majutsu-resolve-visit-file
-     :if-derived majutsu-resolve-mode)
-    ("TAB" "Fold / unfold" magit-section-toggle
-     :if-derived majutsu-resolve-mode)
-    ("n" "Next conflicted file" majutsu-resolve-next-file)
-    ("g" "Refresh workbench" majutsu-resolve-show)]
-   ["Apply"
-    ("a" "File / directory" majutsu-resolve-apply)
-    ("A" "All drafts"
-     (lambda () (interactive)
-       (let ((current-prefix-arg '(4)))
-         (call-interactively #'majutsu-resolve-apply))))]
-   ["Discard"
-    ("k" "File / directory" majutsu-resolve-discard)
-    ("K" "All drafts"
-     (lambda () (interactive)
-       (let ((current-prefix-arg '(4)))
-         (call-interactively #'majutsu-resolve-discard))))]]
-  ["Help"
-   ("?" "Command help" transient-help)
-   ("m" "Majutsu commands" majutsu-dispatch)])
-
-(defun majutsu-resolve--output (&rest args)
-  "Return exact stdout bytes for ARGS, signaling on command failure."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (let ((coding-system-for-read 'no-conversion)
-          (coding-system-for-write 'utf-8-unix))
-      (unless (zerop (apply #'majutsu-jj-insert "--color=never" args))
-        (user-error "Cannot read jj resolve state (%s); drafts retained"
-                    (car args))))
-    (buffer-string)))
-
-(defun majutsu-resolve--validate-text (text)
-  "Reject TEXT containing NUL, raw bytes or non-Unicode characters."
-  (when (seq-some (lambda (char)
-                    (or (= char 0) (> char #x10ffff)
-                        (and (not (multibyte-string-p text)) (> char 127))
-                        (<= #xd800 char #xdfff)))
-                  text)
-    (user-error "Resolve supports Unicode text only (no NUL or binary bytes)"))
-  text)
-
-(defun majutsu-resolve--read-text (commit path)
-  "Read PATH at COMMIT without losing invalid UTF-8 bytes."
-  (let* ((bytes (majutsu-resolve--output
-                 "file" "show" "-T" "" "-r" commit "--"
-                 (majutsu-jj-fileset-quote path)))
+(defun majutsu-resolve--text (commit path)
+  "Return PATH at COMMIT with jj's conflict markers, or nil if not text.
+The markers are snapshots, which show every term as it is and in the
+order jj records them; its diff markers pair them by a heuristic."
+  (let* ((bytes (with-temp-buffer
+                  (set-buffer-multibyte nil)
+                  (let ((coding-system-for-read 'no-conversion))
+                    (unless (eq 0 (majutsu-jj-insert
+                                   "--color=never"
+                                   "--config" "ui.conflict-marker-style=snapshot"
+                                   "file" "show" "-T" ""
+                                   "-r" commit "--"
+                                   (majutsu-jj-fileset-quote path)))
+                      (user-error "Cannot read %s at %s" path commit)))
+                  (buffer-string)))
          (text (decode-coding-string bytes 'utf-8-unix)))
-    (majutsu-resolve--validate-text text)
-    (unless (equal bytes (encode-coding-string text 'utf-8-unix))
-      (user-error "Cannot edit %s: content is not valid UTF-8" path))
-    text))
+    (and (not (string-search "\0" text))
+         (equal bytes (encode-coding-string text 'utf-8-unix))
+         text)))
 
-(defun majutsu-resolve--owner ()
-  "Return the live workbench owning the current buffer."
-  (cond ((derived-mode-p 'majutsu-resolve-mode) (current-buffer))
-        ((buffer-live-p majutsu-resolve--workbench) majutsu-resolve--workbench)
-        (t (user-error "This buffer has no live resolve workbench"))))
+(defmacro majutsu-resolve--with-text (text &rest body)
+  "Run BODY in a buffer holding TEXT, with its conflicts bound to `conflicts'."
+  (declare (indent 1) (debug (form body)))
+  `(with-temp-buffer
+     (insert ,text)
+     (let ((conflicts (majutsu-conflict-parse-buffer)))
+       ,@body)))
 
-(defun majutsu-resolve--text (record)
-  "Return current draft text in RECORD, including unsaved edits."
-  (if (buffer-live-p (majutsu-resolve--file-buffer record))
-      (with-current-buffer (majutsu-resolve--file-buffer record)
-        (save-restriction
-          (widen)
-          (buffer-substring-no-properties (point-min) (point-max))))
-    (majutsu-resolve--file-contents record)))
+(defun majutsu-resolve--diff (from to)
+  "Return the lines of TO compared with those of FROM.
+Each is a cons of ?+, ?- or a space, and the line."
+  (let* ((old (vconcat (split-string from "\n" t)))
+         (new (vconcat (split-string to "\n" t)))
+         (head 0)
+         (old-end (length old))
+         (new-end (length new))
+         lines)
+    ;; What the two share at either end needs no table.
+    (while (and (< head old-end) (< head new-end)
+                (equal (aref old head) (aref new head)))
+      (setq head (1+ head)))
+    (while (and (> old-end head) (> new-end head)
+                (equal (aref old (1- old-end)) (aref new (1- new-end))))
+      (setq old-end (1- old-end) new-end (1- new-end)))
+    (let* ((rows (- old-end head))
+           (columns (- new-end head))
+           ;; common[i][j]: longest common subsequence of what follows.
+           (common (make-vector (1+ rows) nil))
+           (i 0) (j 0))
+      (dotimes (row (1+ rows))
+        (aset common row (make-vector (1+ columns) 0)))
+      (cl-loop for row downfrom (1- rows) to 0
+               do (cl-loop for column downfrom (1- columns) to 0
+                           do (aset (aref common row) column
+                                    (if (equal (aref old (+ head row))
+                                               (aref new (+ head column)))
+                                        (1+ (aref (aref common (1+ row)) (1+ column)))
+                                      (max (aref (aref common (1+ row)) column)
+                                           (aref (aref common row) (1+ column)))))))
+      (dotimes (index head)
+        (push (cons ?\s (aref old index)) lines))
+      (while (or (< i rows) (< j columns))
+        (cond ((and (< i rows) (< j columns)
+                    (equal (aref old (+ head i)) (aref new (+ head j))))
+               (push (cons ?\s (aref old (+ head i))) lines)
+               (setq i (1+ i) j (1+ j)))
+              ((and (< i rows)
+                    (or (= j columns)
+                        (>= (aref (aref common (1+ i)) j)
+                            (aref (aref common i) (1+ j)))))
+               (push (cons ?- (aref old (+ head i))) lines)
+               (setq i (1+ i)))
+              (t
+               (push (cons ?+ (aref new (+ head j))) lines)
+               (setq j (1+ j)))))
+      (cl-loop for index from old-end below (length old)
+               do (push (cons ?\s (aref old index)) lines)))
+    (nreverse lines)))
 
-(defun majutsu-resolve--pending-p (record &optional text)
-  "Whether RECORD has content changes, using TEXT when already available."
-  (and (majutsu-resolve--file-baseline record)
-       (not (equal (majutsu-resolve--file-baseline record)
-                   (or text (majutsu-resolve--text record))))))
+;;; Inserting
 
-(defun majutsu-resolve--update-conflicts (entries)
-  "Update backend status from successfully queried ENTRIES, retaining drafts."
-  (dolist (cell majutsu-resolve--records)
-    (setf (majutsu-resolve--file-conflict (cdr cell)) nil))
-  (dolist (entry entries)
-    (let* ((path (plist-get entry :path))
-           (record (cdr (assoc path majutsu-resolve--records))))
-      (unless record
-        (setq record (majutsu-resolve--make-file :path path))
-        (setq majutsu-resolve--records
-              (append majutsu-resolve--records (list (cons path record)))))
-      (setf (majutsu-resolve--file-conflict record) entry))))
-
-(defun majutsu-resolve--parse-tree-conflicts ()
-  "Parse conflicts together with their materialized snapshot/change groups."
-  (mapcar (lambda (conflict)
-            (cons conflict (majutsu-conflict-display-parts conflict)))
-          (majutsu-conflict-parse-buffer)))
-
-(defun majutsu-resolve--file-data (record)
-  "Return (TEXT . ENTRIES) without creating or saving a draft.
-Each entry is (CONFLICT . PARTS), preserving jj's display grouping."
-  (let* ((text (if (majutsu-resolve--file-baseline record)
-                   (majutsu-resolve--text record)
-                 (majutsu-resolve--read-text
-                  majutsu-resolve--commit (majutsu-resolve--file-path record))))
-         (buffer (majutsu-resolve--file-buffer record))
-         (conflicts
-          (if (buffer-live-p buffer)
-              (with-current-buffer buffer
-                (save-restriction
-                  (widen)
-                  (majutsu-resolve--parse-tree-conflicts)))
-            (with-temp-buffer
-              (insert text)
-              (majutsu-resolve--parse-tree-conflicts)))))
-    (when (and (not (majutsu-resolve--file-baseline record))
-               (majutsu-resolve--file-conflict record)
-               (null conflicts))
-      (user-error "Cannot edit %s: not a supported text marker conflict (structural/binary choices are unsupported)"
-                  (majutsu-resolve--file-path record)))
-    (cons text conflicts)))
-
-(defun majutsu-resolve--insert-heading (prefix text &optional face)
-  "Insert TEXT as a section heading with display-only tree PREFIX.
-PREFIX is rendered with `line-prefix', so point never enters the tree
-decoration and copying the heading yields only TEXT."
-  (let ((start (point))
-        (line-prefix (if (and face (not (string-empty-p prefix)))
-                         (propertize prefix 'font-lock-face face)
-                       prefix)))
+(defun majutsu-resolve--insert-heading (prefix text)
+  "Insert TEXT as a section heading behind the display-only PREFIX.
+Point never enters the prefix and copying the heading yields TEXT."
+  (let ((start (point)))
     (magit-insert-heading text)
-    (when (not (string-empty-p line-prefix))
-      (add-text-properties start (point)
-                           (list 'line-prefix line-prefix
-                                 'wrap-prefix line-prefix)))))
+    (add-text-properties start (point)
+                         (list 'line-prefix prefix 'wrap-prefix prefix))))
 
-(defun majutsu-resolve--insert-side (kind index cell prefix last role)
-  "Insert term CELL as ROLE, with its lazily expanded snapshot."
-  (let* ((label (car cell))
-         (text (cdr cell))
-         (connector (if last "└── " "├── "))
-         (body-prefix (concat prefix (if last "    " "│   ")))
-         (face (if (eq kind 'add)
-                   (majutsu-conflict--side-face index)
-                 'smerge-base)))
-    (magit-insert-section
-        (majutsu-resolve-side-section (list :kind kind :index index) t)
+(defun majutsu-resolve--label (conflict term)
+  "Return what jj calls the TERM of CONFLICT.
+jj labels a term with the revision it is from and what that revision was
+to the command which made the conflict.  A conflict from before jj wrote
+labels has none; then a term goes by its number, as in jj's messages."
+  (let ((label (car (majutsu-conflict-term-cell conflict term))))
+    (if (or (null label) (string-empty-p label))
+        (format (if (eq (plist-get term :kind) 'add) "side #%d" "base #%d")
+                (1+ (plist-get term :index)))
+      (majutsu-file-tree-escape-label label))))
+
+(defun majutsu-resolve--insert-term (conflict term what entry prefix &optional from)
+  "Insert the TERM of CONFLICT behind PREFIX.
+WHAT says how: `snapshot' shows its text, `from' names it as where a
+change starts and keeps its text folded, and `to' shows its text as a
+change from the term FROM.  ENTRY is the file's, and tells whether the
+term has a file at all."
+  (let* ((text (cdr (majutsu-conflict-term-cell conflict term)))
+         (body (concat prefix "  "))
+         (properties (list 'line-prefix body 'wrap-prefix body)))
+    (magit-insert-section (majutsu-resolve-term-section term (eq what 'from))
       (majutsu-resolve--insert-heading
-       (concat prefix connector)
-       (format "%s%s%s\n"
-               role
-               (if (or (null label) (string-empty-p label)) ""
-                 (concat ": " (majutsu-file-tree-escape-label label)))
-               (cond ((string-empty-p text) " [empty text]")
-                     ((not (string-suffix-p "\n" text)) " [no final newline]")
-                     (t "")))
-       'magit-section-heading)
-      (magit-insert-section-body
+       prefix
+       (concat (pcase what ('from "from ") ('to "to ") (_ ""))
+               (majutsu-resolve--label conflict term)
+               (propertize
+                (cond ((equal "absent"
+                              (nth (plist-get term :index)
+                                   (plist-get entry
+                                              (if (eq (plist-get term :kind) 'add)
+                                                  :adds
+                                                :removes))))
+                       "  (no file)")
+                      ((string-empty-p text) "  (empty)")
+                      ((not (string-suffix-p "\n" text)) "  (no final newline)")
+                      (t ""))
+                'font-lock-face 'shadow)))
+      (if (eq what 'to)
+          (pcase-dolist (`(,sign . ,line)
+                         (majutsu-resolve--diff
+                          (cdr (majutsu-conflict-term-cell conflict from)) text))
+            (insert (apply #'propertize (format "%c%s\n" sign line)
+                           'font-lock-face (pcase sign
+                                             (?+ 'diff-added)
+                                             (?- 'diff-removed)
+                                             (_ 'diff-context))
+                           properties)))
         (let ((start (point)))
-          (insert (if (string-empty-p text) "(empty text)\n" text))
+          (insert text)
           (unless (bolp) (insert "\n"))
           (add-text-properties
            start (point)
-           (list 'line-prefix body-prefix 'wrap-prefix body-prefix
-                 'font-lock-face face)))))))
+           (append properties '(font-lock-face diff-context))))))))
 
-(defun majutsu-resolve--insert-part (conflict part text prefix last)
-  "Insert PART of CONFLICT as a snapshot or a paired before/after change."
-  (if (eq (plist-get part :kind) 'snapshot)
-      (let* ((term (plist-get part :term))
-             (kind (plist-get term :kind))
-             (index (plist-get term :index)))
-        (majutsu-resolve--insert-side
-         kind index (majutsu-conflict-term-cell conflict term) prefix last
-         (if (eq kind 'add)
-             (format "Snapshot (+), Side %d" (1+ index))
-           (format "Subtract (-), term %d" (1+ index)))))
-    (let* ((before (plist-get part :before))
-           (after (plist-get part :after))
-           (index (plist-get after :index))
-           (label (car (majutsu-conflict-term-cell conflict after)))
-           (connector (if last "└── " "├── "))
-           (body-prefix (concat prefix (if last "    " "│   "))))
-      (magit-insert-section (majutsu-resolve-change-section after t)
-        (majutsu-resolve--insert-heading
-         (concat prefix connector)
-         (format "Changes to Side %d%s\n"
-                 (1+ index)
-                 (if (or (null label) (string-empty-p label)) ""
-                   (concat ": " (majutsu-file-tree-escape-label label))))
-         'magit-section-heading)
-        (magit-insert-section-body
-          (when-let* ((begin (plist-get part :diff-begin)))
-            (let ((start (point)) end)
-              (insert (substring text (1- begin) (1- (plist-get part :diff-end))))
-              (setq end (point))
-              (add-text-properties start end
-                                   (list 'line-prefix body-prefix
-                                         'wrap-prefix body-prefix))
-              (save-excursion
-                (goto-char start)
-                (while (< (point) end)
-                  (add-text-properties
-                   (point) (line-end-position)
-                   (list 'font-lock-face
-                         (pcase (char-after)
-                           (?+ 'diff-added) (?- 'diff-removed) (_ 'diff-context))))
-                  (forward-line 1)))))
-          (majutsu-resolve--insert-side
-           'remove (plist-get before :index)
-           (majutsu-conflict-term-cell conflict before) body-prefix nil "Before (-)")
-          (majutsu-resolve--insert-side
-           'add index (majutsu-conflict-term-cell conflict after) body-prefix t
-           (format "After (+), Side %d" (1+ index))))))))
+(defun majutsu-resolve--insert-conflict (conflict number total entry prefix)
+  "Insert CONFLICT, the NUMBER-th of TOTAL in the file of ENTRY, behind PREFIX.
+jj records a conflict as a snapshot and then changes, each from one term
+to the next.  Where there is one such change, the snapshot is a change
+from the same term, and both are shown as that: what each did to the
+text they started from."
+  (magit-insert-section (majutsu-resolve-conflict-section number)
+    (majutsu-resolve--insert-heading
+     prefix
+     (propertize (format "Conflict %d of %d" number total)
+                 'font-lock-face 'magit-section-secondary-heading))
+    (cl-flet ((insert-term (kind index what &optional from)
+                (majutsu-resolve--insert-term
+                 conflict (list :kind kind :index index) what entry
+                 (concat prefix "  ")
+                 (and from (list :kind 'remove :index from)))))
+      (if (cdr (majutsu-conflict-removes conflict))
+          (progn
+            (insert-term 'add 0 'snapshot)
+            (cl-loop for _ in (majutsu-conflict-removes conflict) for index from 0
+                     do (insert-term 'remove index 'from)
+                     do (insert-term 'add (1+ index) 'to index)))
+        (insert-term 'remove 0 'from)
+        (insert-term 'add 0 'to 0)
+        (insert-term 'add 1 'to 0)))))
 
-(defun majutsu-resolve--insert-conflict (entry index text prefix last)
-  "Insert conflict ENTRY with its snapshots and before/after changes."
-  (let ((conflict (car entry))
-        (body-prefix (concat prefix (if last "    " "│   "))))
-    (magit-insert-section section (majutsu-resolve-conflict-section index)
-      (oset section conflict conflict)
-      (oset section source text)
+(defun majutsu-resolve--insert-file (commit entry heading-prefix body-prefix)
+  "Insert the conflicted file ENTRY of COMMIT as a leaf of the file tree.
+HEADING-PREFIX and BODY-PREFIX are the tree's decoration."
+  (let* ((path (plist-get entry :path))
+         (text (majutsu-resolve--text commit path))
+         (conflicts (and text (majutsu-resolve--with-text text conflicts))))
+    (magit-insert-section section (jj-file path)
+      (oset section keymap 'majutsu-resolve-section-map)
       (majutsu-resolve--insert-heading
-       (concat prefix (if last "└── " "├── "))
-       (concat (format "Conflict %d" index)
-               (propertize (format "  %d sides\n"
-                                   (length (majutsu-conflict-adds conflict)))
-                           'font-lock-face 'shadow))
-       'shadow)
-      (cl-loop for tail on (cdr entry)
-               do (majutsu-resolve--insert-part
-                   conflict (car tail) text body-prefix (null (cdr tail)))))))
+       heading-prefix
+       (concat (propertize (majutsu-file-tree-escape-label
+                            (file-name-nondirectory path))
+                           'font-lock-face 'magit-diff-file-heading
+                           'help-echo path)
+               (propertize
+                (format "  %d sides%s" (length (plist-get entry :adds))
+                        (if conflicts "" ", not text"))
+                'font-lock-face 'shadow)))
+      (cl-loop for conflict in conflicts for number from 1
+               do (majutsu-resolve--insert-conflict
+                   conflict number (length conflicts) entry body-prefix)))))
 
-(defun majutsu-resolve--insert-file (record prefix body-prefix)
-  "Insert RECORD's file heading, parsed conflicts, and side snapshots."
-  (let* ((path (majutsu-resolve--file-path record))
-         problem
-         (data (condition-case err
-                   (majutsu-resolve--file-data record)
-                 (user-error (setq problem (error-message-string err)) nil)))
-         (text (car data))
-         (conflicts (cdr data)))
-    (magit-insert-section (jj-file path)
-      (majutsu-resolve--insert-heading
-       prefix
-       (concat
-        (propertize
-         (majutsu-file-tree-escape-label (file-name-nondirectory path))
-         'font-lock-face 'default)
-        "  "
-        (if-let* ((conflict (majutsu-resolve--file-conflict record)))
-            (propertize (format "%d-sided conflict" (plist-get conflict :sides))
-                        'font-lock-face 'warning)
-          (propertize "resolved" 'font-lock-face 'success))
-        (cond ((majutsu-resolve--pending-p record text)
-               (propertize "  ·  draft pending" 'font-lock-face 'font-lock-keyword-face))
-              ((majutsu-resolve--file-applied record)
-               (propertize "  ·  applied" 'font-lock-face 'shadow)))
-        "\n")
-       'shadow)
-      (cond
-       (problem
-        (insert body-prefix "└── "
-                (propertize (majutsu-file-tree-escape-label problem) 'face 'warning)
-                "\n"))
-       ((null conflicts)
-        (insert (propertize (concat body-prefix "└── No conflict markers\n")
-                            'font-lock-face 'shadow)))
-       (t
-        (cl-loop for tail on conflicts for index from 1
-                 do (majutsu-resolve--insert-conflict
-                     (car tail) index text body-prefix (null (cdr tail)))))))))
+;;;###autoload
+(defun majutsu-resolve-insert-conflicts (&optional revset)
+  "Insert the conflicts of REVSET, if it names one conflicted commit.
+REVSET defaults to the single revision a diff buffer shows, or to `@'."
+  (when-let* ((revset (or revset
+                          (if (derived-mode-p 'majutsu-diff-mode)
+                              (majutsu-diff--metadata-revision)
+                            "@")))
+              (commit (majutsu-resolve--commit revset))
+              (files (majutsu-resolve--files commit)))
+    (magit-insert-section section (majutsu-resolve-conflicts-section commit)
+      (magit-insert-heading
+        (concat
+         (format "Conflicts (%d %s)" (length files)
+                 (if (cdr files) "files" "file"))
+         (when-let* ((origins (majutsu-resolve--origins commit)))
+           (propertize (concat "  from " (string-join origins ", "))
+                       'font-lock-face 'shadow))))
+      (majutsu-file-tree-insert
+       (majutsu-file-tree-build files (lambda (entry) (plist-get entry :path)))
+       (apply-partially #'majutsu-resolve--insert-file commit)
+       nil t)
+      ;; Files and directories would otherwise paint over the changes.
+      (magit-map-sections
+       (lambda (child)
+         (when (magit-section-match '(jj-file jj-directory) child)
+           (oset child selective-highlight t)))
+       section)
+      (insert "\n"))))
 
-(defun majutsu-resolve--ancestor (type)
-  "Return the nearest section at point matching TYPE, including ancestors."
+;;; Point
+
+(defun majutsu-resolve--ancestor (class)
+  "Return the section at point or its nearest ancestor of CLASS."
   (let ((section (magit-current-section)))
-    (while (and section (not (magit-section-match type section)))
+    (while (and section (not (cl-typep section class)))
       (setq section (oref section parent)))
     section))
 
-(defun majutsu-resolve-refresh-buffer ()
-  "Refresh the exact pin and show current draft conflicts without replacing text."
-  (majutsu-resolve--update-conflicts
-   (majutsu-jj-conflicted-files majutsu-resolve--commit))
-  (magit-insert-section (resolve)
-    (magit-insert-heading "Text conflict workbench\n")
-    (insert (propertize "Commit: " 'font-lock-face 'shadow)
-            (propertize majutsu-resolve--commit 'font-lock-face 'font-lock-constant-face)
-            "\n"
-            (propertize "Change: " 'font-lock-face 'shadow)
-            (propertize majutsu-resolve--change 'font-lock-face 'font-lock-constant-face)
-            "\n")
-    (when majutsu-resolve--unverified
-      (insert (propertize
-               "UNVERIFIED: drafts retained; discard/close and reopen before applying.\n"
-               'face 'error)))
-    (insert "\n")
-    (if majutsu-resolve--records
+(defun majutsu-resolve--at-point ()
+  "Return what point is on in a Conflicts section, as a plist.
+The keys are `:commit', `:path', `:number' and `:term'; those below the
+section at point are nil.  Return nil outside such a section."
+  (when-let* ((root (majutsu-resolve--ancestor 'majutsu-resolve-conflicts-section)))
+    (let ((file (majutsu-resolve--ancestor 'majutsu-file-section))
+          (conflict (majutsu-resolve--ancestor 'majutsu-resolve-conflict-section))
+          (term (majutsu-resolve--ancestor 'majutsu-resolve-term-section)))
+      (list :commit (oref root value)
+            :path (and file (oref file value))
+            :number (and conflict (oref conflict value))
+            :term (and term (oref term value))))))
+
+;;; Writing
+
+(defun majutsu-resolve--run (commit &rest args)
+  "Run `jj resolve' on COMMIT with ARGS, then refresh.
+COMMIT must still be visible: resolving a commit that was rewritten since
+it was shown would bring it back as a divergent change."
+  (unless (eq 0 (apply #'majutsu-call-jj "resolve"
+                       "-r" (format "%s & ::visible_heads()" commit)
+                       args))
+    (majutsu-refresh)
+    (user-error "jj did not resolve; see the process buffer"))
+  (majutsu-refresh))
+
+(defun majutsu-resolve--write (commit path text)
+  "Make TEXT the contents of the conflicted PATH at COMMIT.
+Conflict markers left in TEXT stay conflicts."
+  (let ((file (make-nearby-temp-file "majutsu-resolve-"))
+        (coding-system-for-write 'utf-8-unix))
+    (unwind-protect
         (progn
-          (majutsu-file-tree-insert
-           (majutsu-file-tree-build (mapcar #'cdr majutsu-resolve--records)
-                                    #'majutsu-resolve--file-path)
-           #'majutsu-resolve--insert-file nil t)
-          (majutsu-resolve--selective-file-tree magit-root-section))
-      (insert (propertize "No conflicted files.\n" 'font-lock-face 'success)))))
+          (write-region text nil file nil 'silent)
+          ;; jj hands its editor the file to edit as the last argument.
+          (majutsu-resolve--run
+           commit "--tool" ":editor"
+           "--config" (majutsu-jj--toml-array-config
+                       "ui.editor"
+                       (list "cp" (majutsu-convert-filename-for-jj file)))
+           "--" (majutsu-jj-fileset-quote path)))
+      (delete-file file))))
 
-(defun majutsu-resolve--selective-file-tree (section)
-  "Make shared file-tree ancestors highlight headings only.
-Conflict and side sections have their own highlighting methods; files and
-directories come from the shared tree and must not paint over their bodies."
-  (when (magit-section-match '(jj-file jj-directory) section)
-    (oset section selective-highlight t))
-  (mapc #'majutsu-resolve--selective-file-tree (oref section children)))
+(defun majutsu-resolve--choices (conflict)
+  "Return an alist from descriptions to what CONFLICT can become."
+  (append
+   (cl-loop for kind in '(add remove)
+            for cells in (list (majutsu-conflict-adds conflict)
+                               (majutsu-conflict-removes conflict))
+            append (cl-loop for cell in cells for index from 0
+                            collect (cons (majutsu-resolve--label
+                                           conflict (list :kind kind :index index))
+                                          (cdr cell))))
+   '(("All sides, one after the other" . all))))
 
-;;;###autoload
-(defun majutsu-resolve-setup-buffer (revision)
-  "Open a workbench pinned to the single REVISION and return its buffer."
-  (let* ((default-directory (file-name-as-directory (majutsu-file--root)))
-         (ids (split-string
-               (majutsu-resolve--output
-                "log" "--no-graph" "-r" (format "exactly(%s, 1)" revision)
-                "-T" (majutsu-tpl
-                      [:concat [:commit_id] "\n" [:change_id] "\n"]
-                      'Commit))
-               "\n" t))
-         (commit (car ids))
-         (change (cadr ids)))
-    (unless (and (= (length ids) 2)
-                 (string-match-p "\\`[0-9a-f]+\\'" commit)
-                 (string-match-p "\\`[k-z]+\\'" change))
-      (user-error "Revision must identify exactly one commit"))
-    (if-let* ((existing (majutsu-get-mode-buffer 'majutsu-resolve-mode commit)))
-        (progn (majutsu-display-buffer existing) existing)
-      (majutsu-setup-buffer 'majutsu-resolve-mode t
-        (majutsu-resolve--commit commit)
-        (majutsu-resolve--change change)))))
+(defun majutsu-resolve--take-in-conflict (commit path number term)
+  "Settle conflict NUMBER of PATH at COMMIT with TERM, or ask with what."
+  (let ((text (majutsu-resolve--text commit path)))
+    (majutsu-resolve--write
+     commit path
+     (majutsu-resolve--with-text text
+       (let* ((conflict (or (nth (1- number) conflicts)
+                            (user-error "%s has no conflict %d any more"
+                                        path number)))
+              (choice (if term
+                          (cdr (majutsu-conflict-term-cell conflict term))
+                        (let ((choices (majutsu-resolve--choices conflict)))
+                          (cdr (assoc (completing-read
+                                       (format "Conflict %d becomes: " number)
+                                       choices nil t)
+                                      choices))))))
+         (goto-char (majutsu-conflict-begin-pos conflict))
+         (if (eq choice 'all)
+             (majutsu-conflict-keep-all)
+           (majutsu-conflict-resolve-with conflict choice))
+         (buffer-string))))))
+
+(defun majutsu-resolve--sides (commit path count)
+  "Return what jj calls each of the COUNT sides of PATH at COMMIT.
+Every file of a commit has the same sides, so where PATH is not text the
+labels come from a file that is."
+  (or (seq-some
+       (lambda (path)
+         (when-let* ((text (majutsu-resolve--text commit path))
+                     (conflict (car (majutsu-resolve--with-text text conflicts))))
+           (cl-loop for index below count
+                    collect (majutsu-resolve--label
+                             conflict (list :kind 'add :index index)))))
+       (cons path (mapcar (lambda (entry) (plist-get entry :path))
+                          (majutsu-resolve--files commit))))
+      (cl-loop for index from 1 to count collect (format "side #%d" index))))
+
+(defun majutsu-resolve--take-file (commit path)
+  "Settle every conflict of PATH at COMMIT with one of its sides."
+  (let* ((count (length (plist-get (car (majutsu-resolve--files commit path))
+                                   :adds)))
+         (sides (majutsu-resolve--sides commit path count))
+         (side (seq-position
+                sides
+                (completing-read (format "%s becomes: " path) sides nil t))))
+    (if (= count 2)
+        ;; jj can take a whole side, also of a file that is not text or
+        ;; that one side lacks, but only where there are two.
+        (majutsu-resolve--run commit "--tool" (if (= side 0) ":ours" ":theirs")
+                              "--" (majutsu-jj-fileset-quote path))
+      (let ((text (or (majutsu-resolve--text commit path)
+                      (user-error "jj takes a whole side only of a two-sided conflict"))))
+        (majutsu-resolve--write
+         commit path
+         (majutsu-resolve--with-text text
+           (while conflicts
+             (majutsu-conflict-resolve-with
+              (car conflicts)
+              (cdr (nth side (majutsu-conflict-adds (car conflicts)))))
+             (setq conflicts (majutsu-conflict-parse-buffer)))
+           (buffer-string)))))))
+
+;;; Commands
+
+(defun majutsu-resolve--goto-conflicts ()
+  "Move to the Conflicts section of the current buffer, if it has one."
+  (when-let* ((section (seq-find
+                        (lambda (child)
+                          (cl-typep child 'majutsu-resolve-conflicts-section))
+                        (oref magit-root-section children))))
+    (goto-char (oref section start))
+    (magit-section-update-highlight)
+    section))
 
 ;;;###autoload
 (defun majutsu-resolve (&optional revision)
-  "Open the text conflict workbench for REVISION or the revision at point."
+  "Resolve at point, or show the conflicts of REVISION.
+On a term of a conflict, the conflict becomes that text.  On a conflict,
+ask what it becomes; on a file, ask which side all of it becomes.  Each
+is one jj operation.  On the heading of conflicts that come from an
+earlier change, show that change at its conflicts.
+
+Anywhere else, show REVISION, the revision at point or `@', at its
+conflicts.  With a prefix argument, read the revision."
   (interactive
-   (let ((revision
-          (or majutsu-resolve--commit
-              (and (buffer-live-p majutsu-resolve--workbench)
-                   (buffer-local-value 'majutsu-resolve--commit
-                                       majutsu-resolve--workbench))
-              (bound-and-true-p majutsu-buffer-blob-commit-id)
-              (majutsu-revision-at-point)
-              "@")))
-     (list (if current-prefix-arg
-               (majutsu-read-revset "Resolve revision" :default revision)
-             revision))))
-  (majutsu-resolve-setup-buffer (or revision "@")))
+   (list (and (or current-prefix-arg (not (majutsu-resolve--at-point)))
+              (let ((default (or (bound-and-true-p majutsu-buffer-blob-commit-id)
+                                 (majutsu-revision-at-point)
+                                 "@")))
+                (if current-prefix-arg
+                    (majutsu-read-revset "Resolve revision" :default default)
+                  default)))))
+  (if revision
+      (progn
+        (unless (majutsu-resolve--commit revision)
+          (user-error "%s is not one conflicted revision" revision))
+        (majutsu-diff-revset revision)
+        (majutsu-resolve--goto-conflicts))
+    (pcase-let (((map :commit :path :number :term)
+                 (majutsu-resolve--at-point)))
+      (cond (number (majutsu-resolve--take-in-conflict commit path number term)
+                    (majutsu-resolve--goto-rest path))
+            (path (majutsu-resolve--take-file commit path)
+                  (majutsu-resolve--goto-rest path))
+            (t (majutsu-resolve (majutsu-resolve--read-origin commit)))))))
 
-(defun majutsu-resolve--save ()
-  "Save only this draft's private file, never its repository path."
-  (let* ((owner (majutsu-resolve--owner))
-         (path majutsu-resolve--path)
-         (record (with-current-buffer owner
-                   (cdr (assoc path majutsu-resolve--records))))
-         (text (majutsu-resolve--validate-text (majutsu-resolve--text record)))
-         (coding-system-for-write 'utf-8-unix))
-    (unless (equal buffer-file-name (majutsu-resolve--file-temporary record))
-      (user-error "Drafts can only be saved to their private file"))
-    (write-region text nil (majutsu-resolve--file-temporary record) nil 'silent)
-    (setf (majutsu-resolve--file-contents record) text)
-    (set-visited-file-modtime)
-    (set-buffer-modified-p nil)
-    t))
+(defun majutsu-resolve--goto-rest (path)
+  "Move to what is left to resolve: in PATH, or else in the revision."
+  (when-let* ((root (majutsu-resolve--goto-conflicts)))
+    (magit-map-sections
+     (lambda (section)
+       (when (and (cl-typep section 'majutsu-file-section)
+                  (equal (oref section value) path))
+         (goto-char (oref (or (car (oref section children)) section) start))))
+     root)
+    (magit-section-update-highlight)))
 
-(defun majutsu-resolve--remember-draft ()
-  "Keep killed draft text in its workbench, including saved pending changes."
-  (when (buffer-live-p majutsu-resolve--workbench)
-    (let* ((path majutsu-resolve--path)
-           (record (with-current-buffer majutsu-resolve--workbench
-                     (cdr (assoc path majutsu-resolve--records)))))
-      (when record
-        (setf (majutsu-resolve--file-contents record) (majutsu-resolve--text record)
-              (majutsu-resolve--file-buffer record) nil)))))
+(defun majutsu-resolve--read-origin (commit)
+  "Return the change COMMIT's conflicts come from, asking if there are several."
+  (let ((origins (or (majutsu-resolve--origins commit)
+                     (user-error "Move to a file, a conflict or one of its terms"))))
+    (car (split-string
+          (if (cdr origins)
+              (completing-read "Conflicts come from: " origins nil t)
+            (car origins))
+          " "))))
 
-(defun majutsu-resolve--no-revert (&rest _args)
-  "Require explicit discard instead of losing unsaved draft changes."
-  (user-error "Use C-c C-k to discard this private draft explicitly"))
+(defvar-local majutsu-resolve--shown-in nil
+  "The buffer whose Conflicts section this file was visited from.")
 
-(defun majutsu-resolve-visit-file (&optional path)
-  "Open PATH's private draft, or visit the file, conflict, or side at point.
-PATH is a raw repository-relative path.  A side entry navigates to its
-materialized marker region; it does not select that side as a resolution."
+(defun majutsu-resolve--refresh-shown ()
+  "Refresh the conflicts this file was visited from, which saving it changed."
+  (when (buffer-live-p majutsu-resolve--shown-in)
+    (with-current-buffer majutsu-resolve--shown-in
+      (majutsu-refresh))))
+
+(defun majutsu-resolve-visit ()
+  "Visit the conflicted file at point to edit its markers.
+The working copy's file is visited as it is; another revision's opens as
+an editable blob, and saving that resolves the conflict there.  Saving
+either refreshes the conflicts shown here."
   (interactive)
-  (let* ((owner (majutsu-resolve--owner))
-         (conflict-section
-          (and (not path)
-               (majutsu-resolve--ancestor 'majutsu-resolve-conflict-section)))
-         (term (and conflict-section
-                    (magit-section-value-if 'majutsu-resolve-side-section)))
-         (path (or path majutsu-resolve--path
-                   (when-let* ((section (majutsu-resolve--ancestor 'jj-file)))
-                     (oref section value))
-                   (with-current-buffer owner
-                     (completing-read "Conflict file: " majutsu-resolve--records nil t))))
-         buffer)
-    (with-current-buffer owner
-      (let ((record (cdr (assoc path majutsu-resolve--records))))
-        (unless record (user-error "Path is not in this workbench: %s" path))
-        (unless (majutsu-resolve--file-baseline record)
-          (let ((text (car (majutsu-resolve--file-data record))))
-            (setf (majutsu-resolve--file-baseline record) text
-                  (majutsu-resolve--file-contents record) text)))
-        (when (and conflict-section
-                   (not (equal (oref conflict-section source)
-                               (majutsu-resolve--text record))))
-          (majutsu-refresh-buffer)
-          (user-error "Draft changed; tree refreshed, select the conflict or side again"))
-        (setq buffer (majutsu-resolve--file-buffer record))
-        (unless (buffer-live-p buffer)
-          (unless majutsu-resolve--directory
-            (setq majutsu-resolve--directory (make-temp-file "majutsu-resolve-" t)))
-          (let* ((temporary
-                  (or (majutsu-resolve--file-temporary record)
-                      (make-temp-file
-                       (expand-file-name "draft-" majutsu-resolve--directory)
-                       nil (concat "-" (file-name-nondirectory path)))))
-                 (root default-directory)
-                 (coding-system-for-write 'utf-8-unix))
-            (write-region (majutsu-resolve--file-contents record) nil temporary nil 'silent)
-            (setq buffer (generate-new-buffer (format "*resolve: %s*" path)))
-            (setf (majutsu-resolve--file-temporary record) temporary
-                  (majutsu-resolve--file-buffer record) buffer)
-            (with-current-buffer buffer
-              (insert (majutsu-resolve--file-contents record))
-              (setq buffer-file-name temporary)
-              (let ((enable-local-variables nil)) (set-auto-mode))
-              (setq-local default-directory root
-                          majutsu-resolve--workbench owner
-                          majutsu-resolve--path path
-                          buffer-file-coding-system 'utf-8-unix
-                          make-backup-files nil
-                          auto-save-default nil
-                          revert-buffer-function #'majutsu-resolve--no-revert
-                          header-line-format
-                          (list " " '(:propertize "Private draft" face mode-line-emphasis)
-                                "  " (replace-regexp-in-string
-                                      "%" "%%"
-                                      (majutsu-file-tree-escape-label path))))
-              (auto-save-mode -1)
-              (add-hook 'write-contents-functions #'majutsu-resolve--save nil t)
-              (add-hook 'kill-buffer-hook #'majutsu-resolve--remember-draft nil t)
-              (majutsu-conflict-mode 1)
-              (majutsu-resolve-draft-mode 1)
-              (set-visited-file-modtime)
-              (set-buffer-modified-p nil)
-              (goto-char (point-min)))))))
-    (pop-to-buffer buffer)
-    (when conflict-section
-      (with-current-buffer buffer
-        (widen)
-        (majutsu-conflict--goto-term (oref conflict-section conflict) term)))
-    buffer))
+  (pcase-let (((map :commit :path :number :term) (majutsu-resolve--at-point))
+              (shown-in (current-buffer)))
+    (unless path
+      (user-error "Move to a file, a conflict or one of its terms"))
+    (let ((buffer
+           (if (equal commit (car (majutsu-resolve--lines
+                                   "log" "--no-graph" "-r" "@" "-T" "commit_id")))
+               (find-file-noselect (expand-file-name path (majutsu-file--root)))
+             (majutsu-find-file-noselect commit path))))
+      (pop-to-buffer buffer)
+      (setq majutsu-resolve--shown-in shown-in)
+      (add-hook 'after-save-hook #'majutsu-resolve--refresh-shown nil t)
+      (when majutsu-buffer-blob-path
+        (majutsu-blob-edit-start))
+      (majutsu-conflict-ensure-mode)
+      (if-let* ((conflict (and number
+                               (nth (1- number) (majutsu-conflict-parse-buffer)))))
+          (majutsu-conflict--goto-term conflict term)
+        (majutsu-conflict-goto-nearest)))))
 
-(defun majutsu-resolve-show ()
-  "Return to this draft's workbench without changing its pin."
-  (interactive)
-  (let ((owner (majutsu-resolve--owner)))
-    (majutsu-display-buffer owner)
-    (with-current-buffer owner (majutsu-refresh-buffer))
-    owner))
-
-(defun majutsu-resolve--scope (all)
-  "Return records in the current scope, or every record when ALL."
-  (let* ((owner (majutsu-resolve--owner))
-         (paths (unless all
-                  (if majutsu-resolve--path (list majutsu-resolve--path)
-                    (let ((section (majutsu-resolve--ancestor '(jj-file jj-directory))))
-                      (cond ((magit-section-match 'jj-file section)
-                             (list (oref section value)))
-                            ((magit-section-match 'jj-directory section)
-                             (majutsu-file-tree-files section))
-                            (t (user-error "Select a file/directory, or use a prefix for all drafts"))))))))
-    (with-current-buffer owner
-      (if all (mapcar #'cdr majutsu-resolve--records)
-        (mapcar (lambda (path) (cdr (assoc path majutsu-resolve--records))) paths)))))
-
-(defun majutsu-resolve--assert-visible ()
-  "Refuse applying a pin no longer in the visible change-id set."
-  (unless (member majutsu-resolve--commit
-                  (split-string
-                   (majutsu-resolve--output
-                    "log" "--no-graph" "-r"
-                    (format "change_id(%s)" majutsu-resolve--change)
-                    "-T" "commit_id ++ \"\\n\"") "\n" t))
-    (user-error "Pinned commit is no longer visible; drafts retained, close and reopen")))
-
-(defun majutsu-resolve--assert-workspace-clean (records)
-  "Reject unsaved real workspace buffers for the paths in RECORDS."
-  (let ((files (mapcar (lambda (record)
-                         (expand-file-name (majutsu-resolve--file-path record)
-                                           default-directory)) records)))
-    (dolist (buffer (buffer-list))
-      (with-current-buffer buffer
-        (when (and buffer-file-name (buffer-modified-p)
-                   (seq-some (lambda (file)
-                               (or (equal file buffer-file-name)
-                                   (file-equal-p file buffer-file-name))) files))
-          (user-error "Save or revert workspace buffer %s before applying" (buffer-name)))))))
-
-(defun majutsu-resolve--write-private (record text)
-  "Write TEXT to RECORD's existing private file."
-  (when (majutsu-resolve--file-temporary record)
-    (let ((coding-system-for-write 'utf-8-unix))
-      (write-region text nil (majutsu-resolve--file-temporary record) nil 'silent))))
-
-(defun majutsu-resolve--install-text (record text &optional written)
-  "Install verified TEXT as RECORD's baseline; WRITTEN skips disk writing."
-  (unless written (majutsu-resolve--write-private record text))
-  (setf (majutsu-resolve--file-baseline record) text
-        (majutsu-resolve--file-contents record) text)
-  (when (buffer-live-p (majutsu-resolve--file-buffer record))
-    (with-current-buffer (majutsu-resolve--file-buffer record)
-      (save-restriction
-        (widen)
-        (unless (equal text (buffer-substring-no-properties (point-min) (point-max)))
-          (let ((position (point))
-                (inhibit-read-only t)
-                (inhibit-modification-hooks t))
-            (erase-buffer)
-            (insert text)
-            (goto-char (min position (point-max))))))
-      (majutsu-conflict-mode 1)
-      (set-visited-file-modtime)
-      (set-buffer-modified-p nil))))
-
-(defun majutsu-resolve-apply (&optional all)
-  "Apply pending drafts in scope in one operation; ALL applies every draft.
-Return the verified resulting full commit id.  Failures retain drafts and
-block blind retries; closing and reopening is required after uncertainty."
-  (interactive "P")
-  (let ((owner (majutsu-resolve--owner))
-        (records (seq-filter #'majutsu-resolve--pending-p (majutsu-resolve--scope all))))
-    (with-current-buffer owner
-      (when majutsu-resolve--unverified
-        (user-error "Previous apply is unverified; discard/close and reopen before retrying"))
-      (when records
-        (let ((contents (mapcar (lambda (record)
-                                  (cons (majutsu-resolve--file-path record)
-                                        (majutsu-resolve--validate-text
-                                         (majutsu-resolve--text record)))) records))
-              (root default-directory)
-              (coding-system-for-write 'utf-8-unix)
-              before attempted verified)
-          (majutsu-process-register-interactive-session root owner)
-          (unwind-protect
-              (progn
-                (majutsu-resolve--assert-workspace-clean records)
-                (setq before (majutsu-jj-operation-id root t))
-                (unless before (user-error "Cannot read repository operation; drafts retained"))
-                (majutsu-resolve--assert-visible)
-                (setq attempted t
-                      majutsu-resolve--unverified t)
-                (let* ((old majutsu-resolve--commit)
-                       (result (majutsu-file-apply-contents old majutsu-resolve--change contents))
-                       (conflicts (majutsu-jj-conflicted-files result))
-                       readback)
-                  (dolist (cell contents)
-                    (let* ((path (car cell))
-                           (text (majutsu-resolve--read-text result path)))
-                      (when (string-empty-p
-                             (majutsu-resolve--output
-                              "diff" "--from" old "--to" result "--summary" "--"
-                              (majutsu-jj-fileset-quote path)))
-                        (user-error "jj did not change %s (structural or marker-only no-op); drafts retained, result unverified" path))
-                      (unless (or (seq-find (lambda (entry) (equal path (plist-get entry :path))) conflicts)
-                                  (equal text (cdr cell)))
-                        (user-error "Readback differs for %s; drafts retained, result unverified" path))
-                      (push (cons path text) readback)))
-                  ;; All backend checks succeed before any draft is replaced.
-                  ;; Disk errors must not discard any in-memory draft.
-                  (dolist (record records)
-                    (majutsu-resolve--write-private
-                     record (cdr (assoc (majutsu-resolve--file-path record) readback))))
-                  (dolist (record records)
-                    (majutsu-resolve--install-text
-                     record (cdr (assoc (majutsu-resolve--file-path record) readback)) t)
-                    (setf (majutsu-resolve--file-applied record) t))
-                  (setq majutsu-resolve--commit result)
-                  (majutsu-resolve--update-conflicts conflicts)
-                  (setq majutsu-resolve--unverified nil verified t)))
-            (majutsu-process-unregister-interactive-session root owner)
-            (when attempted
-              (majutsu-interactive-complete-repository-operation root owner before))
-            (when verified (majutsu-refresh-buffer)))))
-      majutsu-resolve--commit)))
-
-(defun majutsu-resolve-discard (&optional all)
-  "Discard un-applied draft changes in scope, or all with ALL.
-This never undoes a jj operation, including an unverified apply."
-  (interactive "P")
-  (let ((owner (majutsu-resolve--owner))
-        (records (seq-filter #'majutsu-resolve--pending-p (majutsu-resolve--scope all))))
-    (when (and records
-               (or (not (called-interactively-p 'interactive))
-                   (yes-or-no-p "Discard these private drafts? This does not undo jj operations. ")))
-      (dolist (record records)
-        (majutsu-resolve--install-text record (majutsu-resolve--file-baseline record))))
-    (with-current-buffer owner (majutsu-refresh-buffer))))
-
-(defun majutsu-resolve-next-file ()
-  "Visit the next backend-conflicted file, wrapping around the workbench."
-  (interactive)
-  (let* ((owner (majutsu-resolve--owner))
-         (path (or majutsu-resolve--path
-                   (when-let* ((section (majutsu-resolve--ancestor 'jj-file)))
-                     (oref section value))))
-         (paths (with-current-buffer owner
-                  (mapcar #'car
-                          (seq-filter (lambda (cell) (majutsu-resolve--file-conflict (cdr cell)))
-                                      majutsu-resolve--records))))
-         (next (or (cadr (member path paths)) (car paths))))
-    (unless next (user-error "No remaining backend conflicts"))
-    (with-current-buffer owner (majutsu-resolve-visit-file next))))
-
-(defun majutsu-resolve--can-close ()
-  "Ask before closing a workbench with pending or unverified drafts."
-  (or majutsu-resolve--closing
-      (and (not majutsu-resolve--unverified)
-           (not (seq-some (lambda (cell) (majutsu-resolve--pending-p (cdr cell)))
-                          majutsu-resolve--records)))
-      (yes-or-no-p "Discard private resolve drafts and close? This cannot undo jj operations. ")))
-
-(defun majutsu-resolve--cleanup ()
-  "Clean private files only after the workbench close query has succeeded."
-  (setq majutsu-resolve--closing t)
-  (dolist (cell majutsu-resolve--records)
-    (when-let* ((buffer (majutsu-resolve--file-buffer (cdr cell)))
-                ((buffer-live-p buffer)))
-      (with-current-buffer buffer
-        (set-buffer-modified-p nil)
-        (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
-  (when majutsu-resolve--directory
-    (delete-directory majutsu-resolve--directory t)))
-
+;;; _
 (provide 'majutsu-resolve)
 ;;; majutsu-resolve.el ends here

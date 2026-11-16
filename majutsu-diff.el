@@ -50,12 +50,15 @@
 (declare-function majutsu-color-words--collect-debug-token-spans "majutsu-color-words" (beg end))
 (declare-function majutsu-color-words--group-change-pairs "majutsu-color-words" (spans))
 
+(autoload 'majutsu-resolve-insert-conflicts "majutsu-resolve")
+
 ;;; Options
 ;;;; Diff Mode
 
 (defcustom majutsu-diff-sections-hook
   (list #'majutsu-insert-diff-revision-headers
         #'majutsu-insert-diff-revision-message
+        #'majutsu-resolve-insert-conflicts
         #'majutsu-insert-diff
         ;; #'majutsu-insert-xref-buttons
   )

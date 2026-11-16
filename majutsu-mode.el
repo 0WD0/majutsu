@@ -84,6 +84,7 @@ afterward."
   "v"   'majutsu-evolog
   "e"   'majutsu-edit
   "E"   'majutsu-ediff
+  "M"   'majutsu-resolve
   "r"   'majutsu-rebase
   "V"   'majutsu-revert
   "b"   'majutsu-bookmark

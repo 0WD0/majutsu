@@ -165,9 +165,13 @@
 (ert-deftest majutsu-log-insert-conflicts/escapes-labels-without-changing-targets ()
   "Control characters cannot split headings or alter file action targets."
   (let ((path "dir\nname/sub\tfolder/file\rname.el"))
-    (cl-letf (((symbol-function 'majutsu-jj-conflicted-files)
-               (lambda (&optional _rev _filesets)
-                 (list (list :path path :sides 3)))))
+    (cl-letf (((symbol-function 'majutsu-resolve--files)
+               (lambda (&rest _)
+                 (list (list :path path :adds '("file" "file" "file")
+                             :removes '("file" "file")))))
+              ((symbol-function 'majutsu-resolve--commit) (lambda (_) "commit"))
+              ((symbol-function 'majutsu-resolve--origins) #'ignore)
+              ((symbol-function 'majutsu-resolve--text) #'ignore))
       (with-temp-buffer
         (majutsu-log-mode)
         (let ((inhibit-read-only t))
