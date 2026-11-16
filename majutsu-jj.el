@@ -208,7 +208,7 @@ Each returned item is a string or (CANDIDATE . HELP)."
   (condition-case nil
       (with-temp-buffer
         (let* ((process-environment (cons "COMPLETE=fish" process-environment))
-               (exit (majutsu-process-jj t "--" "jj" args)))
+               (exit (majutsu-process-jj '(t nil) "--" "jj" args)))
           (when (zerop exit)
             (delq nil
                   (mapcar #'majutsu-jj--parse-completion-line
@@ -643,7 +643,8 @@ trailing slash) or nil if not inside a JJ workspace."
       (with-temp-buffer
         (let ((coding-system-for-read 'utf-8-unix)
               (coding-system-for-write 'utf-8-unix)
-              (exit (majutsu-process-jj t "workspace" "root")))
+              ;; jj reports deprecated configuration on stderr.
+              (exit (majutsu-process-jj '(t nil) "workspace" "root")))
           (when (zerop exit)
             (let ((out (string-trim (buffer-string))))
               (unless (string-empty-p out)

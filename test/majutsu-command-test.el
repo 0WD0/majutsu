@@ -55,7 +55,7 @@
                  (setq seen-program program)
                  (setq seen-args args)
                  (setq seen-complete (getenv "COMPLETE"))
-                 (when (eq destination t)
+                 (when (equal destination '(t nil))
                    (insert "log\tShow revision history\n"))
                  0)))
       (should (equal (majutsu--jj-completion-items "jj l")

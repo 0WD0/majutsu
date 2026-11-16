@@ -18,6 +18,7 @@
 (require 'ert)
 (require 'majutsu-jj)
 (require 'majutsu-process)
+(require 'majutsu-jj-integration)
 
 (ert-deftest majutsu-jj-fileset-quote-single-quote ()
   "Single quotes should be preserved inside fileset strings."
@@ -427,7 +428,7 @@
                    "/ssh:demo:")))
               ((symbol-function 'majutsu--process-file-responsive)
                (lambda (_program _infile destination &rest _args)
-                 (should (eq destination t))
+                 (should (equal destination '(t nil)))
                  (should (equal default-directory "/ssh:demo:/tmp/"))
                  (insert "/home/demo/repo\n")
                  0))
@@ -495,7 +496,7 @@ This mirrors Magit's behavior."
                  (setq seen-program program
                        seen-args args
                        seen-complete (getenv "COMPLETE"))
-                 (when (eq destination t)
+                 (when (equal destination '(t nil))
                    (insert "main\tMain bookmark\n"))
                  0)))
       (should (equal (majutsu-jj-completion-items '("log" "-r" "ma"))
@@ -844,5 +845,16 @@ This mirrors Magit's behavior."
                  "")))
       (should (equal (majutsu-read-revset "Rev") "main@origin"))
       (should (equal seen-default "main@origin")))))
+
+;; jj reports deprecated configuration on stderr with every command.
+(ert-deftest majutsu-toplevel/real-jj-ignores-warnings ()
+  (majutsu-jj-integration-with-repo repo
+    (let* ((config (make-temp-file "majutsu-jj-config" nil ".toml"
+                                   "[git]\nsign-on-push = true\n"))
+           (process-environment
+            (cons (concat "JJ_CONFIG=" config) process-environment)))
+      (unwind-protect
+          (should (equal (majutsu-toplevel) (file-name-as-directory repo)))
+        (delete-file config)))))
 
 (provide 'majutsu-jj-test)
