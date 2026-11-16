@@ -246,6 +246,10 @@
   and Log completes one directory level at a time.  The whole repository
   is no longer listed, which took seconds in a large one.
 
+- Diffs from a limited log ::
+  A diff opened from a log that is limited to filesets has the same limit,
+  whether through ~RET~ or the Diff menu, where it can be removed.
+
 - Evil ::
   Blob buffers keep the normal text motions and paste: ~gj~ / ~gk~ (or
   ~C-j~ / ~C-k~) move between revisions, ~gb~ annotates, ~gf~ visits the

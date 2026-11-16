@@ -411,7 +411,7 @@ The columns are configurable; see [[#log-columns][Log Columns]].
 - Key: -G :: Toggle the graph.
 - Key: -- :: Show only revisions that touch the given
   [[#filesets][filesets]].  Completion offers any path, one directory level
-  at a time.
+  at a time.  Diffs opened from the log are limited to the same filesets.
 - Key: g :: Apply the options to the log.
 - Key: s :: Apply them and keep them for this workspace until Emacs exits.
 - Key: w :: Save them as defaults; see [[#saved-defaults][Saved Defaults]].
@@ -463,7 +463,9 @@ These commands start from a revision, usually the one at point in the log.
 - Key: f / t :: Select the =--from= and =--to= revisions.
 - Key: -- :: Limit the diff to [[#filesets][filesets]].  Completion offers
   the paths changed by the selected revisions; without a selection, by the
-  revisions in the region, the revision at point, or =@=.
+  revisions in the region, the revision at point, or =@=.  Opened from a
+  log that is limited to filesets, the menu starts with the same limit, and
+  so does ~RET~ on a revision there.
 - Key: -g :: Toggle Git-style diff output.
 - Key: -W :: Toggle color-words diff output.
 - Key: -S :: Toggle stat output.

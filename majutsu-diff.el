@@ -418,9 +418,10 @@ list of filesets (path filters)."
 (defun majutsu-diff--get-value (mode &optional use-buffer-args)
   "Get diff arguments for MODE.
 
-  Returns (args range filesets) triple.  USE-BUFFER-ARGS follows
+Return (ARGS RANGE FILESETS).  USE-BUFFER-ARGS follows
 `majutsu-prefix-use-buffer-arguments' or
-`majutsu-direct-use-buffer-arguments'."
+`majutsu-direct-use-buffer-arguments'.  From a log buffer, FILESETS are
+the log's own."
   (setq use-buffer-args
         (pcase-exhaustive use-buffer-args
           ('prefix majutsu-prefix-use-buffer-arguments)
@@ -441,7 +442,11 @@ list of filesets (path filters)."
                  (majutsu-transient-default-value
                   'majutsu-diff mode 'majutsu-diff-default-arguments)))
          (range (and use-current majutsu-buffer-diff-range))
-         (filesets (and use-current majutsu-buffer-diff-filesets)))
+         ;; A log limited to filesets shows revisions for what they did to
+         ;; those files, so a diff opened from it starts with the same limit.
+         (filesets (cond (use-current majutsu-buffer-diff-filesets)
+                         ((derived-mode-p 'majutsu-log-mode)
+                          majutsu-buffer-log-filesets))))
     (list args range filesets)))
 
 (defun majutsu-diff--set-value (mode args range filesets)

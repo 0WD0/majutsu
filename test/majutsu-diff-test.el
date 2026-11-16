@@ -1246,6 +1246,27 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
         (should (equal called-range '("--from=main" "--to=dev")))
         (should (equal called-files '("foo" "bar")))))))
 
+(ert-deftest majutsu-diff-dwim-inherits-filesets-of-the-log ()
+  "A diff opened from a log limited to filesets has the same limit."
+  (let ((majutsu-direct-use-buffer-arguments 'never)
+        called-files
+        called-range)
+    (with-temp-buffer
+      (majutsu-log-mode)
+      (setq-local majutsu-buffer-log-filesets '("src" "glob:\"*.org\""))
+      (cl-letf (((symbol-function 'majutsu-diff-setup-buffer)
+                 (lambda (_args range filesets &rest _)
+                   (setq called-range range
+                         called-files filesets)))
+                ((symbol-function 'majutsu-diff--dwim)
+                 (lambda () '(commit . "abc123"))))
+        (call-interactively #'majutsu-diff-dwim)
+        (should (equal called-range '("--revisions=abc123")))
+        (should (equal called-files '("src" "glob:\"*.org\"")))
+        (should (equal (nth 2 (majutsu-diff--get-value 'majutsu-diff-mode
+                                                       'prefix))
+                       '("src" "glob:\"*.org\"")))))))
+
 (ert-deftest majutsu-diff-dwim-does-not-inherit-range-from-other-buffer ()
   "DWIM should not reuse range or filesets from other diff buffers."
   (let ((majutsu-direct-use-buffer-arguments 'always)

@@ -837,7 +837,7 @@ Toggle the graph.
 @kindex --
 Show only revisions that touch the given
   @ref{Filesets, , filesets}.  Completion offers any path@comma{} one directory level
-  at a time.
+  at a time.  Diffs opened from the log are limited to the same filesets.
 @item @kbd{g}
 @kindex g
 Apply the options to the log.
@@ -939,7 +939,9 @@ Select the @samp{--from} and @samp{--to} revisions.
 @kindex --
 Limit the diff to @ref{Filesets, , filesets}.  Completion offers
   the paths changed by the selected revisions; without a selection@comma{} by the
-  revisions in the region@comma{} the revision at point@comma{} or @samp{@@}.
+  revisions in the region@comma{} the revision at point@comma{} or @samp{@@}.  Opened from a
+  log that is limited to filesets@comma{} the menu starts with the same limit@comma{} and
+  so does @code{RET} on a revision there.
 @item @kbd{-g}
 @kindex -g
 Toggle Git-style diff output.
