@@ -49,13 +49,15 @@ binary instead of skipping."
 (defmacro majutsu-jj-integration-with-sandbox (sandbox &rest body)
   "Skip unless a pinned jj is available, then run BODY with SANDBOX bound.
 SANDBOX is a temporary directory that is deleted after BODY.  Inside BODY,
-`majutsu-jj-integration--jj' is bound to the pinned executable."
+`majutsu-jj-integration--jj' and `majutsu-jj-executable' are bound to the
+pinned executable."
   (declare (indent 1) (debug (symbol body)))
   (let ((jj (make-symbol "jj")))
     `(let ((,jj (majutsu-jj-integration-executable)))
        (skip-unless ,jj)
        (let ((,sandbox (make-temp-file "majutsu-jj-" t))
              (majutsu-jj-integration--jj ,jj)
+             (majutsu-jj-executable ,jj)
              (process-environment
               (append '("JJ_CONFIG="
                         "JJ_USER=Majutsu Test"
@@ -68,14 +70,12 @@ SANDBOX is a temporary directory that is deleted after BODY.  Inside BODY,
 
 (defmacro majutsu-jj-integration-with-repo (repo &rest body)
   "Like `majutsu-jj-integration-with-sandbox', but also initialize one repo.
-REPO is bound to the repository path.  BODY runs with `default-directory'
-and `majutsu-jj-executable' pointed at that repository."
+REPO is bound to the repository path and is BODY's `default-directory'."
   (declare (indent 1) (debug (symbol body)))
   (let ((sandbox (make-symbol "sandbox")))
     `(majutsu-jj-integration-with-sandbox ,sandbox
       (let* ((,repo (majutsu-jj-integration-init ,sandbox))
-             (default-directory (file-name-as-directory ,repo))
-             (majutsu-jj-executable majutsu-jj-integration--jj))
+             (default-directory (file-name-as-directory ,repo)))
         ,@body))))
 
 (defun majutsu-jj-integration-init (sandbox &optional name)
