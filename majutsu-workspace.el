@@ -500,8 +500,8 @@ targets even after a failure."
                 (plist-get failure :reason)))
       failures "\n"))))
 
-(defun majutsu-workspace--trash-target-label (target)
-  "Return a confirmation label for TARGET."
+(defun majutsu-workspace--target-label (target)
+  "Return a confirmation label for TARGET, a plist with `:name' and `:root'."
   (let ((name (plist-get target :name))
         (root (plist-get target :root)))
     (if (and root (not (string-empty-p root)))
@@ -751,7 +751,7 @@ workspace roots only."
                                        (if trash "Forget and trash" "Forget")
                                        (if trash
                                            (mapconcat
-                                            #'majutsu-workspace--trash-target-label
+                                            #'majutsu-workspace--target-label
                                             trash-targets ", ")
                                          (string-join names ", "))))
         (user-error "Forget canceled"))
@@ -764,6 +764,34 @@ workspace roots only."
                          "Workspace(s) forgotten; available directories trashed"
                        "Workspace(s) forgotten")))
         (message "Workspace forget failed")))))
+
+;;;###autoload
+(defun majutsu-workspace-remove (names)
+  "Remove workspaces NAMES and delete their directories from disk.
+
+jj first snapshots each working copy into a commit, so tracked changes
+stay in the repository; untracked and ignored files are deleted with the
+directory.  jj refuses the workspace that holds the repository."
+  (interactive
+   (list (majutsu-completing-read-multiple
+          "Remove workspace(s)" (majutsu-workspace--names) nil t nil
+          'majutsu-workspace-name-history (majutsu-workspace--section-name)
+          'majutsu-workspace)))
+  (when names
+    (unless (majutsu-confirm
+             'workspace-remove
+             (format "Remove workspace(s) %s and delete the directories? "
+                     (mapconcat
+                      (pcase-lambda (`(,name . ,root))
+                        (majutsu-workspace--target-label
+                         (list :name name :root root)))
+                      (majutsu-workspace--roots-for-names
+                       names (majutsu--toplevel-safe))
+                      ", ")))
+      (user-error "Remove canceled"))
+    (if (zerop (apply #'majutsu-run-jj "workspace" "remove" names))
+        (message "Workspace(s) removed")
+      (message "Workspace remove failed"))))
 
 (defun majutsu-workspace--read-add-destination (root name)
   "Read a sibling destination for a new workspace named NAME at ROOT.
@@ -838,6 +866,7 @@ Optional NAME, REVISION (revset), and SPARSE-PATTERNS correspond to
    ["Manage"
     ("a" "Add" majutsu-workspace-add)
     ("f" "Forget" majutsu-workspace-forget)
+    ("k" "Remove" majutsu-workspace-remove)
     ("n" "Rename" majutsu-workspace-rename)
     ("u" "Update stale (current)" majutsu-workspace-update-stale)]])
 

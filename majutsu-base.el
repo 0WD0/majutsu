@@ -135,7 +135,8 @@ which in turn uses the function specified here."
     (const rebase)
     (const restore)
     (const workspace-forget)
-    (const workspace-trash))
+    (const workspace-trash)
+    (const workspace-remove))
   "Actions that may require confirmation.")
 
 (defcustom majutsu-no-confirm nil

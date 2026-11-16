@@ -192,8 +192,11 @@
   ~majutsu-conflict-auto-leave~.
 
 - Workspaces ::
-  Forget with =--trash= moves the workspace directories to the system trash,
-  and refuses a directory that owns the shared repository store.
+  ~majutsu-workspace-remove~ (~k~ in the Workspace transient) runs
+  =jj workspace remove=: jj snapshots the working copy into a commit and
+  deletes the directory.  Forget with the transient's =-t= option moves the
+  directories to the system trash instead, and refuses a directory that owns
+  the shared repository store.
 
 - Template DSL ::
   Anonymous functions, the ~[:|arg| body]~ form, and syntax forms defined

@@ -926,5 +926,27 @@ The Emacs-facing path remains unchanged for visiting the new workspace."
         (should (equal (plist-get current :root)
                        (file-name-as-directory repo)))))))
 
+;; jj keeps the tracked changes of a removed workspace in a snapshot commit.
+(ert-deftest majutsu-workspace-remove/real-jj-deletes-directory-and-keeps-changes ()
+  (majutsu-jj-integration-with-repo repo
+    (let ((second (expand-file-name
+                   "second" (file-name-directory (directory-file-name repo))))
+          prompt)
+      (majutsu-jj-integration-call repo "workspace" "add" second)
+      (write-region "tracked\n" nil (expand-file-name "new.txt" second))
+      (cl-letf (((symbol-function 'majutsu-confirm)
+                 (lambda (action text)
+                   (should (eq action 'workspace-remove))
+                   (setq prompt text)
+                   t)))
+        (majutsu-workspace-remove '("second")))
+      (should (string-search (file-name-as-directory second) prompt))
+      (should-not (file-exists-p second))
+      (should (equal (majutsu-workspace--names) '("default")))
+      (should (equal (majutsu-jj-integration-output
+                      repo "log" "--no-graph" "-r" "files(\"new.txt\")"
+                      "-T" "description.first_line()")
+                     "SNAPSHOT OF REMOVED WORKSPACE `second`")))))
+
 (provide 'majutsu-workspace-test)
 ;;; majutsu-workspace-test.el ends here

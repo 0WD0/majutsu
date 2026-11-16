@@ -3446,6 +3446,14 @@ Forget a workspace. With @samp{-t} enabled@comma{}
   Majutsu verifies that the path still identifies the directory the user
   confirmed and does not own the shared @samp{.jj/repo} store. It checks all selected
   workspaces and reports all paths requiring manual cleanup together.
+@item @kbd{k} (@code{majutsu-workspace-remove})
+@kindex k
+@findex majutsu-workspace-remove
+Remove a workspace with
+  @samp{jj workspace remove}@comma{} which deletes its directory. jj first snapshots the
+  working copy into a commit@comma{} so tracked changes stay in the repository;
+  untracked and ignored files are deleted. The workspace at point is the
+  default@comma{} and the workspace that holds the repository cannot be removed.
 @item @kbd{u} (@code{majutsu-workspace-update-stale})
 @kindex u
 @findex majutsu-workspace-update-stale
@@ -3536,7 +3544,7 @@ If non-nil@comma{} prompt for
 A list of symbols for actions Majutsu
   should not confirm@comma{} or @samp{t} to never confirm. Valid symbols: @samp{undo}@comma{} @samp{redo}@comma{}
   @samp{abandon}@comma{} @samp{bookmark-delete}@comma{} @samp{tag-delete}@comma{} @samp{git-remote-remove}@comma{} @samp{rebase}@comma{}
-  @samp{restore}@comma{} @samp{workspace-forget}@comma{} and @samp{workspace-trash}.
+  @samp{restore}@comma{} @samp{workspace-forget}@comma{} @samp{workspace-trash}@comma{} and @samp{workspace-remove}.
 @end defopt
 
 @defopt majutsu-slow-confirm

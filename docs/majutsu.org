@@ -2006,6 +2006,11 @@ More transient actions:
   Majutsu verifies that the path still identifies the directory the user
   confirmed and does not own the shared =.jj/repo= store. It checks all selected
   workspaces and reports all paths requiring manual cleanup together.
+- Key: k (majutsu-workspace-remove) :: Remove a workspace with
+  =jj workspace remove=, which deletes its directory. jj first snapshots the
+  working copy into a commit, so tracked changes stay in the repository;
+  untracked and ignored files are deleted. The workspace at point is the
+  default, and the workspace that holds the repository cannot be removed.
 - Key: u (majutsu-workspace-update-stale) :: Update a stale workspace.
 - Key: n (majutsu-workspace-rename) :: Rename a workspace.
 - Key: r (majutsu-workspace-root) :: Show and copy the current workspace root.
@@ -2049,7 +2054,7 @@ newlines or other control characters are preserved as complete values.
 - User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu
   should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=,
   =abandon=, =bookmark-delete=, =tag-delete=, =git-remote-remove=, =rebase=,
-  =restore=, =workspace-forget=, and =workspace-trash=.
+  =restore=, =workspace-forget=, =workspace-trash=, and =workspace-remove=.
 - User Option: majutsu-slow-confirm :: A list from the same action set that
   should use =yes-or-no-p= instead of =y-or-n-p=, or =t= for all of them.
 
