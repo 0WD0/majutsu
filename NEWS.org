@@ -9,6 +9,13 @@
   Majutsu needs Jujutsu 0.47.0, Magit 4.4.0 and Transient 0.13.0 or later.
   Compat 31.0.0.1, Consult 1.0 and plz 0.9.1 are new dependencies.
 
+- ~RET~ shows a diff ::
+  ~RET~ on a revision, bookmark or tag shows its diff; it used to run
+  =jj edit=, which is rarely what a look at a revision calls for and
+  silently redirects later changes into that revision.  ~e~ edits.  ~D~,
+  which showed the same diff, is gone, also from the dispatcher and the
+  Embark maps.
+
 - Renamed commands and options ::
   The edit-at-point command is ~majutsu-edit~; sequential log navigation is
   ~majutsu-goto-next-revision~ and ~majutsu-goto-prev-revision~.
@@ -229,8 +236,15 @@
 
 - Revision prompts ::
   The log's revset filter is an ordinary =-r= argument, and empty input
-  clears it.  Revision prompts prefer the reference at point, and file
-  completion in Diff follows the selected revisions.
+  clears it.  Revision prompts prefer the reference at point.
+
+- Fileset prompts ::
+  The =--= entries read fileset expressions.  Completion applies to the
+  path being typed inside an expression and offers pattern kinds such as
+  =glob:=; commas inside quotes no longer split a pattern.  Diff, Split,
+  Squash, Absorb and Restore complete the paths their revisions change,
+  and Log completes one directory level at a time.  The whole repository
+  is no longer listed, which took seconds in a large one.
 
 - Evil ::
   Blob buffers keep the normal text motions and paste: ~gj~ / ~gk~ (or

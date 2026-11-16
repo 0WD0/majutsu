@@ -139,13 +139,11 @@ collapses the section at point, while ~[~ and ~]~ move to a visible parent or
 child.
 
 Point is significant: commands opened from the log use the revision under
-point as their default.  In particular, ~RET~ on a revision runs =jj edit=; it
-changes which revision the workspace edits, so do not use it merely to inspect
-a revision.
+point as their default.
 
-To inspect without running a history-rewriting command, put point on =@= and
-press ~D~ (~majutsu-diff-dwim~).  The resulting diff buffer shows the current
-change.
+Press ~RET~ on a revision to see its diff.  Looking never changes anything;
+moving the working copy to another revision is the explicit ~e~
+(=jj edit=).
 
 #+attr_keymap: :scope Vanilla
 *Vanilla:* ~TAB~ folds files or hunks, ~n~ and ~p~ move through sections, and
@@ -219,9 +217,9 @@ What visiting and deleting mean depends on the section at point:
 
 | At point                  | Visit                         | Delete             |
 |---------------------------+-------------------------------+--------------------|
-| Revision in the log       | Edit it (=jj edit=)           | Abandon it         |
-| Bookmark                  | Edit its revision             | Delete the bookmark |
-| Tag                       | Edit its revision             | Delete the tag     |
+| Revision in the log       | Show its diff                 | Abandon it         |
+| Bookmark                  | Show the diff of its revision | Delete the bookmark |
+| Tag                       | Show the diff of its revision | Delete the tag     |
 | Remote                    |                               | Remove the remote  |
 | Workspace                 | Visit the workspace           |                    |
 | File or hunk in a diff    | Visit the file                |                    |
@@ -292,6 +290,28 @@ Majutsu passes revisions, not expressions: it does not turn a region into
 
 Without a selection, a command uses the revision at point, or the default
 its own section of this manual names.
+
+** Filesets
+:PROPERTIES:
+:CUSTOM_ID: filesets
+:END:
+The =--= entry of a menu limits the command to some files.  It reads jj
+fileset expressions, several separated by commas:
+
+#+begin_example
+src/main.el, docs
+glob:"**/*.org"
+src & ~glob:"**/*-test.el"
+#+end_example
+
+Completion works on the path being typed, wherever it is in the expression,
+and offers the pattern kinds, such as =glob:= and =root:=, where a pattern
+can start.  Anything you type is accepted.
+
+Diff, Split, Squash, Absorb, and Restore complete the paths that the menu's
+revisions change, since those are the only ones the command can act on.
+Log completes any path, one directory level at a time, so a large
+repository is never listed whole.
 
 ** Completion and Confirmation
 Prompts use Emacs' completion, so Vertico, Ivy, and similar interfaces
@@ -389,7 +409,9 @@ The columns are configurable; see [[#log-columns][Log Columns]].
 - Key: -n :: Limit the number of revisions shown.
 - Key: -v :: Toggle reverse order.
 - Key: -G :: Toggle the graph.
-- Key: -- :: Show only revisions that touch the given files or filesets.
+- Key: -- :: Show only revisions that touch the given
+  [[#filesets][filesets]].  Completion offers any path, one directory level
+  at a time.
 - Key: g :: Apply the options to the log.
 - Key: s :: Apply them and keep them for this workspace until Emacs exits.
 - Key: w :: Save them as defaults; see [[#saved-defaults][Saved Defaults]].
@@ -432,15 +454,15 @@ These commands start from a revision, usually the one at point in the log.
 **** Diff Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: d (majutsu-diff) :: Open the Diff transient.
-- Key: D (majutsu-diff-dwim) :: Show the diff of the revision at point, or
-  of =@=, without the menu.  Vanilla binds it in the log only.
+- Key: RET (majutsu-diff-dwim) :: On a revision, bookmark, or tag, show its
+  diff without the menu.
 
 #+attr_reference: :kind transient-argument :interface "Diff transient"
 - Key: r :: Select revisions to diff (=--revisions=): several revisions, or
   a revset like =B::D=.
 - Key: f / t :: Select the =--from= and =--to= revisions.
-- Key: -- :: Limit the diff to files or filesets.  Completion offers the
-  paths changed by the selected revisions; without a selection, by the
+- Key: -- :: Limit the diff to [[#filesets][filesets]].  Completion offers
+  the paths changed by the selected revisions; without a selection, by the
   revisions in the region, the revision at point, or =@=.
 - Key: -g :: Toggle Git-style diff output.
 - Key: -W :: Toggle color-words diff output.
@@ -622,7 +644,7 @@ the annotate-mode keys:
 - Key: gf (majutsu-blob-visit-file) :: Visit the workspace version of the file.
 - Key: gr :: Revert or reload the blob content.
 - Key: q :: Bury the blob buffer.
-- Key: RET (majutsu-edit) :: Edit the blob's revision.
+- Key: RET (majutsu-diff-dwim) :: Show the diff of the blob's revision.
 
 *** Annotate (Blame)
 Majutsu annotate is implemented by =majutsu-annotate= and uses
@@ -826,7 +848,9 @@ Runs: =jj commit=
 ** Editing Changes
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: e (majutsu-edit) :: Move the working copy (@) to the revision
-  at point. Supports =--ignore-immutable= for immutable revisions.
+  at point.  From then on, changes to the files amend that revision and
+  rewrite its descendants.  Supports =--ignore-immutable= for immutable
+  revisions.
 Runs: =jj edit REV=
 
 ** Abandoning
@@ -854,7 +878,7 @@ Transient arguments:
 - Key: ~=t~ :: Choose jj's diff editor with =--tool=NAME=.
 - Key: -o :: Onto destination.
 - Key: -A / -B :: Insert after or before constraints.
-- Key: -- :: Limit squash to specific filesets.
+- Key: -- :: Limit squash to [[#filesets][filesets]].
 - Key: -k :: Keep commits that become empty after squashing.
 - Key: -u :: Use the destination revision's description and discard source
   descriptions (=--use-destination-message=).
@@ -878,7 +902,7 @@ Transient arguments:
 - Key: -A / -B :: Insert after or before constraints.
 - Key: -m :: Set a message for the first part.
 - Key: -p :: Parallel split mode.
-- Key: -- :: Limit split to selected files or filesets.
+- Key: -- :: Limit split to [[#filesets][filesets]].
 When opened from a log buffer, =-r= defaults to the revision at point before
 the jj diff editor is started.
 
@@ -894,7 +918,7 @@ Transient arguments:
 - Key: -t :: Destination revset filters (=--into=, repeatable, default =mutable()=).
 - Key: -i :: Open jj's configured diff editor for partial selection.
 - Key: ~=t~ :: Choose jj's diff editor with =--tool=NAME= (implies interactive).
-- Key: -- :: Limit absorb to specific filesets.
+- Key: -- :: Limit absorb to [[#filesets][filesets]].
 Runs: =jj absorb --from REV --into REVSETS... [FILESETS...]=
 
 From a single-revision Diff buffer, use ~H~ to select a hunk, ~F~ for a file
@@ -921,7 +945,7 @@ Transient arguments:
 - Key: ~=t~ :: Choose jj's diff editor with =--tool=NAME=.
 - Key: -c :: Undo changes introduced by a revision (=--changes-in=).
 - Key: -d :: Preserve descendant content while rebasing (=--restore-descendants=).
-- Key: -- :: Limit restore to selected files or filesets.
+- Key: -- :: Limit restore to [[#filesets][filesets]].
 When opened from a log buffer, =-c= defaults to the revision at point before
 the jj diff editor is started.
 
@@ -1073,7 +1097,7 @@ menu is open.  The selection belongs to that menu and ends with it; it is
 not a staging area.
 
 *** Selecting
-Open the diff of the revision (~D~), then the menu of the command (~S~,
+Open the diff of the revision (~RET~), then the menu of the command (~S~,
 ~s~, ~a~, or ~R~).  A Patch Selection group appears:
 
 | Key | Command                             | Toggles                                            |
@@ -1104,7 +1128,7 @@ Absorb leaves selected changes that jj cannot assign in the source too;
 A selection cannot be carried to another command; clear it first.
 
 For example, to squash only the changes to one file into the parent: open
-the revision's diff with ~D~, press ~s~, press ~F~ on the file, and run the
+the revision's diff with ~RET~, press ~s~, press ~F~ on the file, and run the
 squash.
 
 *** Which Diffs Work
@@ -1347,7 +1371,7 @@ Synchronized and untracked states use a muted color; local-only and
 remote-only counts use distinct colors.  Hover over a row for the symbol
 legend.  Folding is retained on refresh.
 
-~RET~ on a bookmark edits its revision, and ~k~ (~x~ in Evil) deletes the
+~RET~ on a bookmark shows the diff of its revision, and ~k~ (~x~ in Evil) deletes the
 bookmark.  ~majutsu-bookmark-list~ moves to the local bookmark of the
 bookmark at point, so from a remote bookmark in the remote list it leads to
 its local row.  ~majutsu-bookmark-list-columns~ customizes the rows; it has
@@ -1459,7 +1483,7 @@ tags. Majutsu wraps =jj tag set/list/delete= and follows jj semantics where
 creating and moving tags both use =tag set= (moving requires =--allow-move=).
 
 ** Tag Transient
-In the tag list, ~RET~ on a tag edits its revision and ~k~ (~x~ in Evil)
+In the tag list, ~RET~ on a tag shows the diff of its revision and ~k~ (~x~ in Evil)
 deletes the tag.
 
 #+attr_reference: :kind command-binding :interface "Majutsu dispatcher"
@@ -1894,7 +1918,7 @@ Majutsu binds no key for it; use your Embark key.
 
 | Target            | Actions                                                           |
 |-------------------+-------------------------------------------------------------------|
-| Revision          | ~RET~ / ~D~ show its diff, ~e~ edits it                           |
+| Revision          | ~RET~ shows its diff, ~e~ edits it                                |
 | Local bookmark    | the same, and ~s~ set, ~m~ / ~M~ move, ~p~ advance, ~r~ rename, ~d~ delete, ~f~ forget |
 | Remote bookmark   | the same as a revision, and ~t~ track or ~u~ untrack              |
 | Remote            | ~f~ fetch, ~r~ rename, ~d~ remove                                 |

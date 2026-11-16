@@ -29,8 +29,7 @@ Read the manual at [[https://majutsu.org][majutsu.org]], or its source in [[file
   ~[~ and ~]~ jump to a parent or a child.
 - ~TAB~ folds the section at point.
 - ~?~ lists every command.
-- ~D~ shows the diff of the revision at point.
-- ~RET~ on a revision edits it (=jj edit=); in a diff it visits the file.
+- ~RET~ on a revision shows its diff; in a diff it visits the file.
 - ~$~ (Evil: ~`~) shows what jj printed.
 
 Commands open a menu in which you set options and pick revisions

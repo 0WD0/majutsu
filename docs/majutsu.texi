@@ -79,6 +79,7 @@ Interface Concepts
 * Sections::
 * Transient Menus::
 * Selecting Revisions::
+* Filesets::
 * Completion and Confirmation::
 * Running jj::
 
@@ -409,13 +410,11 @@ collapses the section at point@comma{} while @code{[} and @code{]} move to a vis
 child.
 
 Point is significant: commands opened from the log use the revision under
-point as their default.  In particular@comma{} @code{RET} on a revision runs @samp{jj edit}; it
-changes which revision the workspace edits@comma{} so do not use it merely to inspect
-a revision.
+point as their default.
 
-To inspect without running a history-rewriting command@comma{} put point on @samp{@@} and
-press @code{D} (@code{majutsu-diff-dwim}).  The resulting diff buffer shows the current
-change.
+Press @code{RET} on a revision to see its diff.  Looking never changes anything;
+moving the working copy to another revision is the explicit @code{e}
+(@samp{jj edit}).
 
 @strong{Vanilla:} @code{TAB} folds files or hunks@comma{} @code{n} and @code{p} move through sections@comma{} and
 @code{q} returns to the log.
@@ -453,6 +452,7 @@ confirmation.
 * Sections::
 * Transient Menus::
 * Selecting Revisions::
+* Filesets::
 * Completion and Confirmation::
 * Running jj::
 @end menu
@@ -526,18 +526,18 @@ Bury the buffer.
 
 What visiting and deleting mean depends on the section at point:
 
-@multitable {aaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaa}
 @headitem At point
 @tab Visit
 @tab Delete
 @item Revision in the log
-@tab Edit it (@samp{jj edit})
+@tab Show its diff
 @tab Abandon it
 @item Bookmark
-@tab Edit its revision
+@tab Show the diff of its revision
 @tab Delete the bookmark
 @item Tag
-@tab Edit its revision
+@tab Show the diff of its revision
 @tab Delete the tag
 @item Remote
 @tab 
@@ -638,6 +638,27 @@ Majutsu passes revisions@comma{} not expressions: it does not turn a region into
 
 Without a selection@comma{} a command uses the revision at point@comma{} or the default
 its own section of this manual names.
+
+@node Filesets
+@section Filesets
+
+The @samp{--} entry of a menu limits the command to some files.  It reads jj
+fileset expressions@comma{} several separated by commas:
+
+@example
+src/main.el@comma{} docs
+glob:"**/*.org"
+src & ~glob:"**/*-test.el"
+@end example
+
+Completion works on the path being typed@comma{} wherever it is in the expression@comma{}
+and offers the pattern kinds@comma{} such as @samp{glob:} and @samp{root:}@comma{} where a pattern
+can start.  Anything you type is accepted.
+
+Diff@comma{} Split@comma{} Squash@comma{} Absorb@comma{} and Restore complete the paths that the menu's
+revisions change@comma{} since those are the only ones the command can act on.
+Log completes any path@comma{} one directory level at a time@comma{} so a large
+repository is never listed whole.
 
 @node Completion and Confirmation
 @section Completion and Confirmation
@@ -814,7 +835,9 @@ Toggle reverse order.
 Toggle the graph.
 @item @kbd{--}
 @kindex --
-Show only revisions that touch the given files or filesets.
+Show only revisions that touch the given
+  @ref{Filesets, , filesets}.  Completion offers any path@comma{} one directory level
+  at a time.
 @item @kbd{g}
 @kindex g
 Apply the options to the log.
@@ -897,11 +920,11 @@ These commands start from a revision@comma{} usually the one at point in the log
 @kindex d
 @findex majutsu-diff
 Open the Diff transient.
-@item @kbd{D} (@code{majutsu-diff-dwim})
-@kindex D
+@item @kbd{@key{RET}} (@code{majutsu-diff-dwim})
+@kindex RET
 @findex majutsu-diff-dwim
-Show the diff of the revision at point@comma{} or
-  of @samp{@@}@comma{} without the menu.  Vanilla binds it in the log only.
+On a revision@comma{} bookmark@comma{} or tag@comma{} show its
+  diff without the menu.
 @end table
 
 @table @asis
@@ -914,8 +937,8 @@ Select revisions to diff (@samp{--revisions}): several revisions@comma{} or
 Select the @samp{--from} and @samp{--to} revisions.
 @item @kbd{--}
 @kindex --
-Limit the diff to files or filesets.  Completion offers the
-  paths changed by the selected revisions; without a selection@comma{} by the
+Limit the diff to @ref{Filesets, , filesets}.  Completion offers
+  the paths changed by the selected revisions; without a selection@comma{} by the
   revisions in the region@comma{} the revision at point@comma{} or @samp{@@}.
 @item @kbd{-g}
 @kindex -g
@@ -1230,10 +1253,10 @@ Revert or reload the blob content.
 @item @kbd{q}
 @kindex q
 Bury the blob buffer.
-@item @kbd{@key{RET}} (@code{majutsu-edit})
+@item @kbd{@key{RET}} (@code{majutsu-diff-dwim})
 @kindex RET
-@findex majutsu-edit
-Edit the blob's revision.
+@findex majutsu-diff-dwim
+Show the diff of the blob's revision.
 @end table
 
 @node Annotate (Blame)
@@ -1638,7 +1661,9 @@ Runs: @samp{jj commit}
 @kindex e
 @findex majutsu-edit
 Move the working copy (@@) to the revision
-  at point. Supports @samp{--ignore-immutable} for immutable revisions.
+  at point.  From then on@comma{} changes to the files amend that revision and
+  rewrite its descendants.  Supports @samp{--ignore-immutable} for immutable
+  revisions.
 @end table
 Runs: @samp{jj edit REV}
 
@@ -1696,7 +1721,7 @@ Onto destination.
 Insert after or before constraints.
 @item @kbd{--}
 @kindex --
-Limit squash to specific filesets.
+Limit squash to @ref{Filesets, , filesets}.
 @item @kbd{-k}
 @kindex -k
 Keep commits that become empty after squashing.
@@ -1747,7 +1772,7 @@ Set a message for the first part.
 Parallel split mode.
 @item @kbd{--}
 @kindex --
-Limit split to selected files or filesets.
+Limit split to @ref{Filesets, , filesets}.
 @end table
 When opened from a log buffer@comma{} @samp{-r} defaults to the revision at point before
 the jj diff editor is started.
@@ -1780,7 +1805,7 @@ Open jj's configured diff editor for partial selection.
 Choose jj's diff editor with @samp{--tool=NAME} (implies interactive).
 @item @kbd{--}
 @kindex --
-Limit absorb to specific filesets.
+Limit absorb to @ref{Filesets, , filesets}.
 @end table
 Runs: @samp{jj absorb --from REV --into REVSETS... [FILESETS...]}
 
@@ -1828,7 +1853,7 @@ Undo changes introduced by a revision (@samp{--changes-in}).
 Preserve descendant content while rebasing (@samp{--restore-descendants}).
 @item @kbd{--}
 @kindex --
-Limit restore to selected files or filesets.
+Limit restore to @ref{Filesets, , filesets}.
 @end table
 When opened from a log buffer@comma{} @samp{-c} defaults to the revision at point before
 the jj diff editor is started.
@@ -2121,7 +2146,7 @@ not a staging area.
 @node Selecting
 @subsection Selecting
 
-Open the diff of the revision (@code{D})@comma{} then the menu of the command (@code{S}@comma{}
+Open the diff of the revision (@code{RET})@comma{} then the menu of the command (@code{S}@comma{}
 @code{s}@comma{} @code{a}@comma{} or @code{R}).  A Patch Selection group appears:
 
 @multitable {aaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
@@ -2174,7 +2199,7 @@ Absorb leaves selected changes that jj cannot assign in the source too;
 A selection cannot be carried to another command; clear it first.
 
 For example@comma{} to squash only the changes to one file into the parent: open
-the revision's diff with @code{D}@comma{} press @code{s}@comma{} press @code{F} on the file@comma{} and run the
+the revision's diff with @code{RET}@comma{} press @code{s}@comma{} press @code{F} on the file@comma{} and run the
 squash.
 
 @node Which Diffs Work
@@ -2568,7 +2593,7 @@ Synchronized and untracked states use a muted color; local-only and
 remote-only counts use distinct colors.  Hover over a row for the symbol
 legend.  Folding is retained on refresh.
 
-@code{RET} on a bookmark edits its revision@comma{} and @code{k} (@code{x} in Evil) deletes the
+@code{RET} on a bookmark shows the diff of its revision@comma{} and @code{k} (@code{x} in Evil) deletes the
 bookmark.  @code{majutsu-bookmark-list} moves to the local bookmark of the
 bookmark at point@comma{} so from a remote bookmark in the remote list it leads to
 its local row.  @code{majutsu-bookmark-list-columns} customizes the rows; it has
@@ -2732,7 +2757,7 @@ creating and moving tags both use @samp{tag set} (moving requires @samp{--allow-
 @node Tag Transient
 @section Tag Transient
 
-In the tag list@comma{} @code{RET} on a tag edits its revision and @code{k} (@code{x} in Evil)
+In the tag list@comma{} @code{RET} on a tag shows the diff of its revision and @code{k} (@code{x} in Evil)
 deletes the tag.
 
 @table @asis
@@ -3506,7 +3531,7 @@ Majutsu binds no key for it; use your Embark key.
 @headitem Target
 @tab Actions
 @item Revision
-@tab @code{RET} / @code{D} show its diff@comma{} @code{e} edits it
+@tab @code{RET} shows its diff@comma{} @code{e} edits it
 @item Local bookmark
 @tab the same@comma{} and @code{s} set@comma{} @code{m} / @code{M} move@comma{} @code{p} advance@comma{} @code{r} rename@comma{} @code{d} delete@comma{} @code{f} forget
 @item Remote bookmark
