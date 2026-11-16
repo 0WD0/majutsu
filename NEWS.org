@@ -2,6 +2,14 @@
 #+AUTHOR: 0WD0
 
 * [Unreleased]
+** Upcoming
+
+- Resolving with Ediff ::
+  We plan to deprecate ~majutsu-ediff-resolve~ (~E m~) in 0.8.
+  The Conflicts section resolves conflicts with any number
+  of sides.  The other Ediff commands stay.
+
+* [0.7.0] - 2026-11-17
 
 ** Breaking changes
 
@@ -48,17 +56,8 @@
 
 - Saved transient defaults ::
   ~w~ opens a transient: ~w u~ saves user defaults, ~w r~ repository defaults and
-  ~w w~ workspace defaults; the uppercase keys clear them.  This replaces the
-  standalone ~w~ / ~W~ actions.  Existing saved values remain readable.
-  Buffers no longer reuse options across workspaces, and ~0~ in the log resets
-  the current options without deleting saved defaults.
-
-** Upcoming
-
-- Resolving with Ediff ::
-  We plan to deprecate ~majutsu-ediff-resolve~ (~E m~) in 0.8; it works as
-  before in this release.  The Conflicts section resolves conflicts with
-  any number of sides.  The other Ediff commands stay.
+  ~w w~ workspace defaults; the uppercase keys clear them. This replaces the
+  standalone ~w~ / ~W~ actions.
 
 ** Added
 

@@ -6,7 +6,7 @@
 ;; Maintainer: 0WD0 <me@0wd0.com>
 ;; Keywords: tools, vc
 ;; URL: https://github.com/0WD0/majutsu
-;; Version: 0.6.0
+;; Version: 0.7.0
 ;; Package-Requires: ((emacs "29.1") (compat "31.0.0.1") (transient "0.13.0") (magit "4.4.0") (consult "1.0") (plz "0.9.1"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
