@@ -280,6 +280,16 @@ in the minibuffer, and ~r~ toggles the revision at point.  Selected
 revisions stay highlighted, one color per role, until the command runs or
 ~c~ clears them.
 
+For example, to rebase a change onto another:
+#+attr_demo: :capture rebase-in-log
+- ~n n~ :: Move to the change to rebase.
+- ~r~ :: Open the Rebase transient.  The log stays live under it.
+- ~s~ :: Mark the revision at point as the source.
+- ~n n~ :: Move to where it should go.
+- ~o~ :: Mark that revision as the destination.
+- ~RET~ :: Run the rebase; Majutsu asks first.
+- ~y~ :: The change and its descendants now sit on the destination.
+
 With an active region, an argument that can be repeated takes every
 revision in the region; an argument that takes one value uses one revision.
 Majutsu passes revisions, not expressions: it does not turn a region into

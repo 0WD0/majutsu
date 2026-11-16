@@ -628,6 +628,24 @@ in the minibuffer@comma{} and @code{r} toggles the revision at point.  Selected
 revisions stay highlighted@comma{} one color per role@comma{} until the command runs or
 @code{c} clears them.
 
+For example@comma{} to rebase a change onto another:
+@table @asis
+@item @code{n n}
+Move to the change to rebase.
+@item @code{r}
+Open the Rebase transient.  The log stays live under it.
+@item @code{s}
+Mark the revision at point as the source.
+@item @code{n n}
+Move to where it should go.
+@item @code{o}
+Mark that revision as the destination.
+@item @code{RET}
+Run the rebase; Majutsu asks first.
+@item @code{y}
+The change and its descendants now sit on the destination.
+@end table
+
 With an active region@comma{} an argument that can be repeated takes every
 revision in the region; an argument that takes one value uses one revision.
 Majutsu passes revisions@comma{} not expressions: it does not turn a region into
