@@ -92,13 +92,9 @@
    'Commit)
   "Template injected as `templates.commit_summary' for operation diffs.")
 
-(defun majutsu-op--machine-field (field)
-  "Return FIELD without text properties or surrounding whitespace."
-  (string-trim (substring-no-properties (or field ""))))
-
 (defun majutsu-op--row-machine-field (value &optional _ctx)
   "Row postprocessor returning VALUE as a machine field."
-  (majutsu-op--machine-field value))
+  (string-trim (substring-no-properties (or value ""))))
 
 (defun majutsu-op--split-record (line expected)
   "Split LINE into EXPECTED fields, or return nil when malformed."
@@ -177,14 +173,6 @@
   "Return non-nil when PLAIN-LINE is an op-diff from/to header."
   (string-match-p "\\`\\(?:From\\|To\\) operation:" (string-trim-left plain-line)))
 
-(defun majutsu-op--diff-elision-line-p (plain-line)
-  "Return non-nil when PLAIN-LINE is an op-diff elision line."
-  (string-match-p "\\`(Elided " (string-trim plain-line)))
-
-(defun majutsu-op--diff-warning-line-p (plain-line)
-  "Return non-nil when PLAIN-LINE is a jj warning."
-  (string-prefix-p "Warning:" (string-trim-left plain-line)))
-
 (defun majutsu-op--diff-ref-header-p (plain-line group-kind)
   "Return non-nil when PLAIN-LINE names a ref in GROUP-KIND."
   (and (majutsu-op--diff-ref-group-p group-kind)
@@ -218,10 +206,6 @@
                     :text colored-line
                     :value (append base summary))
             (list :type 'raw-line :text colored-line)))))))
-
-(defun majutsu-op--commit-summary-config-arg ()
-  "Return a jj --config argument for operation commit summaries."
-  (concat "templates.commit_summary=" majutsu-op--commit-summary-template))
 
 (defclass majutsu-op-option (majutsu-selection-option) ())
 
@@ -445,15 +429,11 @@ transported separately, with complete encoded attributes as the last field."
    :section-class 'jj-op
    :section-value-function 'majutsu-op-log--entry-id))
 
-(defun majutsu-op-log--compile-columns ()
-  "Compile operation log columns into row metadata."
-  (majutsu-row-compile (majutsu-op-log--row-profile)))
-
 (defun majutsu-op-log--ensure-template ()
   "Return cached compiled operation log template metadata."
   (or majutsu-op-log--compiled-template-cache
       (setq majutsu-op-log--compiled-template-cache
-            (majutsu-op-log--compile-columns))))
+            (majutsu-row-compile (majutsu-op-log--row-profile)))))
 
 (defun majutsu-op-log-arguments ()
   "Return active transient arguments or scoped operation log defaults."
@@ -743,13 +723,10 @@ An explicitly nil ARGS means no options."
   "Return line-safe jj arguments for operation diff ARGS."
   (append majutsu-op--read-only-global-args
           majutsu-row-protocol-global-args
-          (list "--config" (majutsu-op--commit-summary-config-arg)
+          (list "--config" (concat "templates.commit_summary="
+                                   majutsu-op--commit-summary-template)
                 "op" "diff" "--no-graph")
           args))
-
-(defun majutsu-op--diff-line-marker (marker)
-  "Return display text for diff line MARKER."
-  (propertize marker 'face (if (string= marker "+") 'diff-added 'diff-removed)))
 
 (defun majutsu-op--diff-line-flags (value)
   "Return display flag text for parsed diff line VALUE."
@@ -762,8 +739,10 @@ An explicitly nil ARGS means no options."
 
 (defun majutsu-op--format-diff-line (value)
   "Return display text for parsed operation diff line VALUE."
-  (let ((prefix (plist-get value :prefix)))
-    (concat (majutsu-op--diff-line-marker (plist-get value :marker))
+  (let ((prefix (plist-get value :prefix))
+        (marker (plist-get value :marker)))
+    (concat (propertize marker 'face
+                        (if (string= marker "+") 'diff-added 'diff-removed))
             " "
             (when prefix
               (concat (propertize prefix 'face 'font-lock-keyword-face) " "))
@@ -845,10 +824,10 @@ An explicitly nil ARGS means no options."
     (cond
      ((string-empty-p trimmed)
       (majutsu-op--delete-line))
-     ((majutsu-op--diff-warning-line-p plain-line)
+     ((string-prefix-p "Warning:" trimmed)
       (majutsu-op--delete-line)
       (majutsu-op--insert-diff-node (list :type 'warning :text colored-line)))
-     ((majutsu-op--diff-elision-line-p plain-line)
+     ((string-prefix-p "(Elided " trimmed)
       (majutsu-op--delete-line)
       (majutsu-op--insert-diff-node (list :type 'elision :text colored-line)))
      ((majutsu-op--parse-diff-marker-line

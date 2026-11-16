@@ -17,15 +17,10 @@
 
 (require 'majutsu)
 
-(defun majutsu-metaedit--default-revisions ()
-  "Return default revisions for `jj metaedit'."
-  (or (majutsu-revisions-at-point)
-      '("@")))
-
 (defun majutsu-metaedit--default-args ()
   "Return default arguments for `jj metaedit'."
   (mapcar (lambda (revision) (concat "-r=" revision))
-          (majutsu-metaedit--default-revisions)))
+          (or (majutsu-revisions-at-point) '("@"))))
 
 (defun majutsu-metaedit-arguments ()
   "Return the current metaedit arguments.

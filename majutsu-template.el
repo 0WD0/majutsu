@@ -48,11 +48,6 @@ Set it to nil to disable top-level keyword rewriting unless explicitly bound."
   "Return the current implicit `self' binding, or nil when none exists."
   (car majutsu-template--self-stack))
 
-(defun majutsu-template--self-binding-at-depth (depth)
-  "Return implicit `self' binding at DEPTH, or nil when it doesn't exist.
-DEPTH 0 means the current binding, 1 the immediately outer binding, and so on."
-  (nth depth majutsu-template--self-stack))
-
 (defun majutsu-template--resolve-self-node (&optional depth)
   "Return the implicit `self' node at DEPTH.
 DEPTH defaults to 0. Signal a `user-error' if DEPTH is invalid or no such
@@ -61,7 +56,7 @@ binding exists."
   (unless (and (integerp depth) (>= depth 0))
     (user-error "majutsu-template: :self expects a non-negative integer depth, got %S"
                 depth))
-  (let ((binding (majutsu-template--self-binding-at-depth depth)))
+  (let ((binding (nth depth majutsu-template--self-stack)))
     (unless binding
       (user-error "majutsu-template: :self depth %d is out of range (have %d self bindings)"
                   depth (length majutsu-template--self-stack)))

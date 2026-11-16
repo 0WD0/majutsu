@@ -92,19 +92,10 @@ Return a normalized directory path, or nil when jj reported an error."
      :parse majutsu-workspace--parse-root))
   "Field metadata for structured workspace list parsing.")
 
-(defun majutsu-workspace--field-key (field)
-  "Return plist key symbol for FIELD."
-  (intern (concat ":" (symbol-name field))))
-
 (defun majutsu-workspace--field-spec (field)
   "Return normalized spec plist for FIELD."
   (or (cdr (assq field majutsu-workspace--field-specs))
       (user-error "Unknown workspace field %S" field)))
-
-(defun majutsu-workspace--normalize-fields (&optional fields)
-  "Return normalized workspace field list.
-When FIELDS is nil, use `majutsu-workspace--default-fields'."
-  (or fields majutsu-workspace--default-fields))
 
 (defun majutsu-workspace--build-row-template-form (fields)
   "Return a row template form for FIELDS."
@@ -123,7 +114,7 @@ When FIELDS is nil, use `majutsu-workspace--default-fields'."
 
 (defun majutsu-workspace--compile-fields (&optional fields)
   "Compile workspace FIELDS into a template plan plist."
-  (let* ((normalized (majutsu-workspace--normalize-fields fields))
+  (let* ((normalized (or fields majutsu-workspace--default-fields))
          (specs (mapcar #'majutsu-workspace--field-spec normalized))
          (row-form (majutsu-workspace--build-row-template-form normalized))
          (template (majutsu-template-compile
@@ -142,10 +133,6 @@ When FIELDS is nil, use `majutsu-workspace--default-fields'."
   majutsu-workspace--template-plan)
 
 ;;; Parsing
-
-(defun majutsu-workspace--split-fields (value)
-  "Split VALUE by `majutsu-workspace--field-separator', preserving empties."
-  (majutsu--split-fields value majutsu-workspace--field-separator))
 
 (defun majutsu-workspace--decode-json-field (value)
   "Decode JSON string field VALUE, returning nil for invalid data.
@@ -174,7 +161,7 @@ Return an entry plist, or nil if the record has no workspace name."
              do (setq entry
                       (plist-put
                        entry
-                       (majutsu-workspace--field-key field)
+                       (intern (concat ":" (symbol-name field)))
                        (funcall (plist-get spec :parse)
                                 (if (plist-get spec :json)
                                     (majutsu-workspace--decode-json-field value)
@@ -199,7 +186,8 @@ Each entry contains:
                        #'ansi-color-apply-text-property-face))
                   (ansi-color-apply (or output "")))))
     (let* ((width (length (plist-get plan :fields)))
-           (values (majutsu-workspace--split-fields output)))
+           (values (majutsu--split-fields
+                    output majutsu-workspace--field-separator)))
       (while (>= (length values) width)
         (when-let* ((entry (majutsu-workspace--parse-record
                             (cl-subseq values 0 width) plan)))

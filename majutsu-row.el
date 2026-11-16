@@ -1326,17 +1326,13 @@ and tail are present in the copied region."
   (when (and ident (hash-table-p majutsu-row-section-ident-index))
     (gethash ident majutsu-row-section-ident-index)))
 
-(defun majutsu-row--entry-at-current-section ()
-  "Return row entry matching the current Magit section."
-  (when-let* ((section (magit-current-section)))
-    (majutsu-row-entry-for-section-ident (magit-section-ident section))))
-
 (defun majutsu-row-entry-at-point ()
   "Return cached row entry at point, or nil."
   (or (when-let* ((entry-id (majutsu-text-property-near-point
                            'majutsu-row-entry-id)))
         (majutsu-row-entry-for-id entry-id))
-      (majutsu-row--entry-at-current-section)))
+      (when-let* ((section (magit-current-section)))
+        (majutsu-row-entry-for-section-ident (magit-section-ident section)))))
 
 ;;; Copy field value access
 

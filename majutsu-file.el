@@ -475,13 +475,10 @@ Results are cached in `majutsu-file--list-cache`."
      " ++ \"\\n\""))
   "Template used to collect file completion metadata.")
 
-(defun majutsu-file--split-completion-fields (value)
-  "Split file completion VALUE by `majutsu-file--completion-field-separator'."
-  (majutsu--split-fields value majutsu-file--completion-field-separator))
-
 (defun majutsu-file--parse-completion-line (line)
   "Parse one file completion LINE into a plist."
-  (let* ((fields (majutsu-file--split-completion-fields (or line "")))
+  (let* ((fields (majutsu--split-fields
+                  (or line "") majutsu-file--completion-field-separator))
          (path (nth 0 fields)))
     (when (and (stringp path) (not (string-empty-p path)))
       (list :path path

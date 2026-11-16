@@ -315,10 +315,6 @@ refs (`<workspace>@'), bookmarks, and tags."
     (list :category 'majutsu-revision
           :candidates (nreverse candidates))))
 
-(defun majutsu-jj--revset-minibuffer-input ()
-  "Return revset minibuffer contents before point."
-  (buffer-substring-no-properties (minibuffer-prompt-end) (point)))
-
 (defun majutsu-jj--revset-completion-payload (input)
   "Return completion payload for revset INPUT."
   (if majutsu-jj--revset-completion-args
@@ -329,7 +325,8 @@ refs (`<workspace>@'), bookmarks, and tags."
 
 (defun majutsu-jj-revset-completion-at-point ()
   "Return completion data for the revset expression at point."
-  (let* ((input (majutsu-jj--revset-minibuffer-input))
+  (let* ((input (buffer-substring-no-properties
+                 (minibuffer-prompt-end) (point)))
          (payload (majutsu-jj--revset-completion-payload input))
          (annotations (plist-get payload :annotations))
          (table (majutsu-completion-payload-table payload 'majutsu-revision)))

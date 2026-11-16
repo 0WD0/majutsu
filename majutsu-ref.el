@@ -114,13 +114,10 @@ KIND is `bookmark' or `tag'.  SCOPE is one of `local', `remote',
                        (list "-T" (majutsu-ref--names-template scope)))))
     (delete-dups (apply #'majutsu-jj-lines args))))
 
-(defun majutsu-ref--split-completion-fields (value)
-  "Split structured CommitRef completion VALUE into fields."
-  (majutsu--split-fields value majutsu-ref--completion-field-separator))
-
 (defun majutsu-ref--parse-completion-line (line)
   "Parse one structured CommitRef completion LINE into a plist."
-  (let* ((fields (majutsu-ref--split-completion-fields (or line "")))
+  (let* ((fields (majutsu--split-fields
+                  (or line "") majutsu-ref--completion-field-separator))
          (name (nth 0 fields))
          (remote (nth 1 fields)))
     (when (and (stringp name) (not (string-empty-p name)))

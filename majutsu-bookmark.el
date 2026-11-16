@@ -486,15 +486,11 @@ the jjosh build."
    :section-hide t
    :show-child-count nil))
 
-(defun majutsu-bookmark--compile-list-columns ()
-  "Compile bookmark-list columns into row metadata."
-  (majutsu-row-compile (majutsu-bookmark--row-profile)))
-
 (defun majutsu-bookmark--ensure-list-template ()
   "Return cached row metadata for `jj bookmark list'."
   (or majutsu-bookmark--compiled-template-cache
       (setq majutsu-bookmark--compiled-template-cache
-            (majutsu-bookmark--compile-list-columns))))
+            (majutsu-row-compile (majutsu-bookmark--row-profile)))))
 
 (defun majutsu-bookmark--list-template ()
   "Return cached row template used by `jj bookmark list'."

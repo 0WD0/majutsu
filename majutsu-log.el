@@ -98,10 +98,6 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
         (format "%s (%s)" prefix (string-join args " "))
       prefix)))
 
-(defun majutsu-log--heading-string ()
-  "Return heading string for the log section."
-  (majutsu-log--format-summary "Log Graph"))
-
 (defun majutsu-log--transient-description ()
   "Return description string for the log transient."
   (majutsu-log--format-summary "JJ Log"))
@@ -622,7 +618,7 @@ This function is meant to be used as a WASHER for `majutsu-jj-wash'."
 (defun majutsu-log-insert-logs ()
   "Insert jj log graph into current buffer."
   (magit-insert-section (lograph)
-    (magit-insert-heading (majutsu-log--heading-string))
+    (magit-insert-heading (majutsu-log--format-summary "Log Graph"))
     (majutsu-jj-wash #'majutsu-log--wash-logs nil (majutsu-log--build-args))
     (insert "\n")))
 
