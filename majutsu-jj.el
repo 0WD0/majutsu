@@ -786,6 +786,21 @@ return nil or partial output depending on what was produced."
       (apply #'majutsu-jj-insert args)
       (split-string (buffer-string) "\n" t))))
 
+(majutsu-jjosh
+  (defun majutsu-jj-projects ()
+    "Return the registered projects of the repository as plists.
+Each has `:id', `:name', `:path', `:labels' and `:remotes', as jj prints
+them.  A project whose definition is unresolved has no name."
+    (mapcan (lambda (line)
+              ;; Metadata problems follow the projects as plain text.
+              (and (string-prefix-p "{" line)
+                   (list (json-parse-string line :object-type 'plist
+                                            :array-type 'list
+                                            :null-object nil))))
+            ;; Projects belong to the operation; a snapshot adds none.
+            (majutsu-jj-lines "--ignore-working-copy" "project" "list"
+                              "-T" (majutsu-tpl [:concat [:json [:self]] "\n"])))))
+
 (defun majutsu-jj-buffer-string (&rest args)
   "Run jj with ARGS and return the full plain-text output string."
   (majutsu--with-no-color

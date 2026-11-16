@@ -59,13 +59,10 @@
 The project at point is the default.  Projects whose definition is
 unresolved have no name to select."
     (let ((projects
-           ;; Metadata problems follow the projects as lines without a tab.
-           (mapcan (lambda (line)
-                     (pcase (split-string line "\t")
-                       (`(,name ,path) (list (cons name path)))))
-                   (majutsu-jj-lines
-                    "project" "list" "-T"
-                    "if(!conflict, name ++ \"\t\" ++ path ++ \"\n\")"))))
+           (mapcan (lambda (project)
+                     (and-let* ((name (plist-get project :name)))
+                       (list (cons name (plist-get project :path)))))
+                   (majutsu-jj-projects))))
       (unless projects
         (user-error "No registered projects"))
       (majutsu-completing-read prompt projects nil t nil

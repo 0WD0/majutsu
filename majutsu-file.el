@@ -121,9 +121,11 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
                  (majutsu-file--jj-output
                   "--ignore-working-copy" "--at-op" "@"
                   "op" "log" "--no-graph" "-n" "1" "-T"
-                  (concat "id ++ \"\\n\" ++ "
-                          "parents.map(|p| p.id()).join(\" \") ++ \"\\n\" ++ "
-                          "attributes"))
+                  (majutsu-tpl
+                   [:concat [:id] "\n"
+                            [:method [:map [:parents] parent [:id]] :join " "]
+                            "\n" [:attributes]]
+                   'Operation))
                  "\n"))
          (after (car state)))
     (cond
@@ -149,8 +151,12 @@ and MARKER uniquely identifies this invocation in jj's operation arguments."
                   (majutsu-file--jj-output
                    "--at-op" after "evolog" "-r" candidate
                    "--no-graph" "-n" "1" "-T"
-                   (concat "operation.id() ++ \"\\n\" ++ "
-                           "predecessors.map(|p| p.commit_id()).join(\" \")"))
+                   (majutsu-tpl
+                    [:concat [:operation :id] "\n"
+                             [:method [:map [:predecessors] predecessor
+                                            [:commit_id]]
+                                      :join " "]]
+                    'CommitEvolutionEntry))
                   (concat after "\n" commit)))
                candidates)))
         (if (length= successors 1)
@@ -417,7 +423,9 @@ Return nil when REVSET does not resolve to a single revision.
 The returned plist contains :change-id and :commit-id."
   (let* ((normalized (majutsu-file--normalize-revset revset))
          (lines (majutsu-jj-lines "log" "-r" normalized
-                                  "-T" "change_id ++ \"\\n\" ++ commit_id"
+                                  "-T" (majutsu-tpl
+                                        [:concat [:change_id] "\n" [:commit_id]]
+                                        'Commit)
                                   "--no-graph" "--limit" "1"))
          (change-id (string-trim (or (car lines) "")))
          (commit-id (string-trim (or (cadr lines) ""))))
@@ -986,7 +994,10 @@ DIRECTION should be either \='prev or \='next."
   "Return commit info (description and age) for REVSET."
   (let* ((lines (majutsu-jj-lines
                  "log" "-r" revset "--no-graph" "-T"
-                 "coalesce(description.first_line(), \"(no desc)\") ++ \"\\n\" ++ committer.timestamp().ago()")))
+                 (majutsu-tpl
+                  [:concat [:coalesce [:description :first_line] "(no desc)"]
+                           "\n" [:committer :timestamp :ago]]
+                  'Commit))))
     (when (>= (length lines) 2)
       (let* ((summary (car lines))
              (timestamp (cadr lines)))

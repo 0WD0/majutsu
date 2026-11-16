@@ -431,7 +431,9 @@ directories come from the shared tree and must not paint over their bodies."
          (ids (split-string
                (majutsu-resolve--output
                 "log" "--no-graph" "-r" (format "exactly(%s, 1)" revision)
-                "-T" "commit_id ++ \"\\n\" ++ change_id ++ \"\\n\"")
+                "-T" (majutsu-tpl
+                      [:concat [:commit_id] "\n" [:change_id] "\n"]
+                      'Commit))
                "\n" t))
          (commit (car ids))
          (change (cadr ids)))

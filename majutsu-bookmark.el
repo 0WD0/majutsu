@@ -909,28 +909,21 @@ The jjosh build groups them by scope."
 (majutsu-jjosh
   (defun majutsu-bookmark--read-projects ()
     "Return the repository's registered projects with their remotes."
-    (let (projects)
-      (dolist (line (majutsu-jj-lines "project" "list"
-                                      "-T" "json(self) ++ \"\\n\""))
-        ;; Metadata problems follow the projects as plain text.
-        (when (string-prefix-p "{" line)
-          (let ((project (json-parse-string line :object-type 'plist
-                                            :array-type 'list
-                                            :null-object nil)))
-            (plist-put
-             project :remotes
-             (mapcar (lambda (remote)
-                       (cl-flet ((text (key)
-                                   (majutsu-bookmark--row-empty-to-nil
-                                    (plist-get remote key))))
-                         (list :name (plist-get remote :name)
-                               :value (plist-get remote :qualified_name)
-                               :url (text :url)
-                               :push-url (text :push_url)
-                               :representation (text :representation))))
-                     (plist-get project :remotes)))
-            (push project projects))))
-      (nreverse projects)))
+    (mapcar
+     (lambda (project)
+       (plist-put
+        project :remotes
+        (mapcar (lambda (remote)
+                  (cl-flet ((text (key)
+                              (majutsu-bookmark--row-empty-to-nil
+                               (plist-get remote key))))
+                    (list :name (plist-get remote :name)
+                          :value (plist-get remote :qualified_name)
+                          :url (text :url)
+                          :push-url (text :push_url)
+                          :representation (text :representation))))
+                (plist-get project :remotes))))
+     (majutsu-jj-projects)))
 
   (defun majutsu-bookmark--repository-remotes (remotes projects)
     "Return those of REMOTES that belong to no project of PROJECTS."

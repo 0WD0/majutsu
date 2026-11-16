@@ -582,15 +582,8 @@ for the tracker behind the remotes of the repository itself.")
 
   (defun majutsu-bug-reference--read-forges ()
     "Return the value of `majutsu-bug-reference--forges' for the repository."
-    (let* ((projects
-            ;; Metadata problems follow the projects as plain text.
-            (mapcan (lambda (line)
-                      (and (string-prefix-p "{" line)
-                           (list (json-parse-string line :object-type 'plist
-                                                    :array-type 'list
-                                                    :null-object nil))))
-                    (majutsu-jj-lines "--ignore-working-copy" "project" "list"
-                                      "-T" "json(self) ++ \"\\n\"")))
+    (let* ((projects (seq-filter (lambda (project) (plist-get project :name))
+                                 (majutsu-jj-projects)))
            (owned (mapcan (lambda (project)
                             (mapcar (lambda (remote)
                                       (plist-get remote :qualified_name))
