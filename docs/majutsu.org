@@ -1940,7 +1940,7 @@ Transient actions:
 - Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote as
   =jj git remote add [OPTIONS] REMOTE URL=. Majutsu prompts for a new remote
   name, rejects names that already exist, prompts for the URL/path positional,
-  and exposes =--fetch-tags= and =--push-url=.
+  and exposes =--push-url=.
 - Key: d (majutsu-git-remote-remove) :: Remove an existing remote. In the
   remote list buffer, the remote at point is used as the default.
 - Key: r (majutsu-git-remote-rename) :: Rename a remote.
@@ -1952,7 +1952,7 @@ Transient actions:
 ** Clone and Init
 #+attr_reference: :kind command-binding :interface "Git transient"
 - Key: c (majutsu-git-clone-transient) :: Clone a Git repository into a jj repo.
-  Source may be a URL or path; =--branch= can be repeated.
+  Source may be a URL or path; =--branch= and =--tag= can be repeated.
 - Key: i (majutsu-git-init-transient) :: Initialize a new Git-backed jj repository.
 
 ** Export and Import

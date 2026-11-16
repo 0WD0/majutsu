@@ -314,6 +314,14 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :multi-value 'repeat
   :prompt "Branch: ")
 
+(transient-define-argument majutsu-git-clone:--tag ()
+  :description "Tag"
+  :class 'transient-option
+  :key "-T"
+  :argument "--tag="
+  :multi-value 'repeat
+  :prompt "Tag: ")
+
 (transient-define-argument majutsu-git:--bookmark ()
   :description "Bookmark"
   :class 'transient-option
@@ -445,8 +453,6 @@ Prompts for SOURCE and optional DEST; uses ARGS."
   :man-page "jj-git-remote-add"
   :description "JJ Git Remote Add"
   [["Arguments"
-    ("-T" "Fetch tags" "--fetch-tags="
-     :choices ("all" "included" "none"))
     (majutsu-git-remote-add:--push-url)]
    [("a" "Add" majutsu-git-remote-add)]])
 
@@ -480,8 +486,8 @@ Prompts for SOURCE and optional DEST; uses ARGS."
     ("-C" "Colocate" "--colocate")
     ("-x" "No colocate" "--no-colocate")
     ("-d" "Depth" "--depth=" :reader #'transient-read-number-N+)
-    ("-T" "Fetch tags" "--fetch-tags=" :choices ("all" "included" "none"))
-    (majutsu-git:--branch)]
+    (majutsu-git:--branch)
+    (majutsu-git-clone:--tag)]
    [("c" "Clone" majutsu-git-clone)]])
 
 (transient-define-prefix majutsu-git-init-transient ()
