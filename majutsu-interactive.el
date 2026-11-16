@@ -38,17 +38,20 @@
   :group 'majutsu)
 
 (defface majutsu-interactive-selected-hunk
-  '((t :background "#3a5f3a"))
+  '((((class color) (background light)) :background "#cfe8cf")
+    (t :background "#3a5f3a"))
   "Face for selected hunks."
   :group 'majutsu-interactive)
 
 (defface majutsu-interactive-selected-region
-  '((t :background "#5f3a5f"))
+  '((((class color) (background light)) :background "#e8cfe8")
+    (t :background "#5f3a5f"))
   "Face for selected regions within hunks."
   :group 'majutsu-interactive)
 
 (defface majutsu-interactive-selected-file
-  '((t :background "#3a4f5f"))
+  '((((class color) (background light)) :background "#cfdde8")
+    (t :background "#3a4f5f"))
   "Face for selected whole-file changes."
   :group 'majutsu-interactive)
 
