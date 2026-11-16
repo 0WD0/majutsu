@@ -406,11 +406,15 @@ the remotes of the repository scope here.")
          [:separate "\n"
                     [:method [:removed_targets]
                      :map [:lambda (target)
-                                   [:concat "  - " [:majutsu-bookmark-list-commit-summary]]]
+                                   [:concat "  - " [:if target
+                                                    [:majutsu-bookmark-list-commit-summary]
+                                                  "(absent)"]]]
                      :join "\n"]
                     [:method [:added_targets]
                      :map [:lambda (target)
-                                   [:concat "  + " [:majutsu-bookmark-list-commit-summary]]]
+                                   [:concat "  + " [:if target
+                                                    [:majutsu-bookmark-list-commit-summary]
+                                                  "(absent)"]]]
                      :join "\n"]]
        ""]
      :face t)
@@ -430,18 +434,19 @@ the remotes of the repository scope here.")
           (:field project :module metadata
            :template [:if [:project] [:method [:project] :id] ""] :face nil
            :post majutsu-bookmark--row-empty-to-nil)))
-    ;; A deleted bookmark has one absent target, which has no commit id.
+    ;; An absent conflict target has no commit id; it keeps its place in
+    ;; the list as "-".  A deleted bookmark is one absent target.
     (:field removed-target-ids :module metadata
      :template [:if [:conflict]
                    [:method [:removed_targets]
-                    :map [:lambda (target) [:commit_id]]
+                    :map [:lambda (target) [:if target [:commit_id] "-"]]
                     :join "\n"]
                  ""]
      :face nil :post majutsu-bookmark--row-lines)
     (:field added-target-ids :module metadata
      :template [:if [:conflict]
                    [:method [:added_targets]
-                    :map [:lambda (target) [:commit_id]]
+                    :map [:lambda (target) [:if target [:commit_id] "-"]]
                     :join "\n"]
                  ""]
      :face nil :post majutsu-bookmark--row-lines))
@@ -616,10 +621,15 @@ Return nil when ENTRY has no conflict target data."
      (t :invalid))))
 
 (defun majutsu-bookmark--insert-conflict-target (target indent)
-  "Insert one bookmark conflict TARGET after INDENT as a commit section."
-  (magit-insert-section (jj-commit (car target) t)
-    (majutsu-bookmark--insert-heading
-     indent (majutsu-bookmark--target-heading (cdr target)))))
+  "Insert one bookmark conflict TARGET after INDENT.
+A target is a commit section, except an absent one, which names no commit."
+  (let ((heading (majutsu-bookmark--target-heading (cdr target))))
+    (if (equal (car target) "-")
+        (let ((start (point)))
+          (insert heading "\n")
+          (majutsu-row-apply-line-prefix-span start (point) indent))
+      (magit-insert-section (jj-commit (car target) t)
+        (majutsu-bookmark--insert-heading indent heading)))))
 
 (defun majutsu-bookmark--insert-list-entry (entry compiled indent &optional remotes)
   "Insert bookmark ENTRY after INDENT using COMPILED.

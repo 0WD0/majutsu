@@ -890,4 +890,29 @@ With REMOTES non-nil, render it as the remote list does."
                        "--remote" "origin"
                        "--remote" "upstream"))))))
 
+;; A bookmark deleted on one side of a conflict has an absent target.
+(ert-deftest majutsu-bookmark-list/real-jj-conflict-with-absent-target ()
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-call repo "describe" "-m" "one")
+    (majutsu-jj-integration-call repo "bookmark" "create" "topic" "-r" "@")
+    (majutsu-jj-integration-call repo "new" "-m" "two")
+    (let ((op (majutsu-jj-integration-output
+               repo "op" "log" "--no-graph" "-n1" "-T" "id.short()")))
+      (majutsu-jj-integration-call repo "bookmark" "delete" "topic")
+      (majutsu-jj-integration-call
+       repo (concat "--at-op=" op) "bookmark" "move" "topic" "--to" "@"))
+    (save-window-excursion
+      (with-current-buffer (majutsu-bookmark-list)
+        (magit-section-show-level-4-all)
+        (let ((targets nil))
+          (goto-char (point-min))
+          (while (re-search-forward
+                  "^  \\([-+]\\) .*?\\((absent)\\|one\\|two\\)$" nil t)
+            (push (list (match-string-no-properties 1)
+                        (match-string-no-properties 2)
+                        (and (magit-section-match 'jj-commit) t))
+                  targets))
+          (should (equal (nreverse targets)
+                         '(("-" "one" t) ("+" "(absent)" nil) ("+" "two" t)))))))))
+
 ;;; majutsu-bookmark-test.el ends here
