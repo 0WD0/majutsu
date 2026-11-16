@@ -47,7 +47,7 @@
         (should-not (text-properties-at 0 value))))))
 
 (ert-deftest majutsu-tag-candidate-data/builds-structured-entries ()
-  (let ((sep majutsu-tag--completion-field-separator))
+  (let ((sep majutsu-ref--completion-field-separator))
     (cl-letf (((symbol-function 'majutsu-jj-lines)
                (lambda (&rest _args)
                  (list (concat "v1.0" sep "" sep "" sep "t" sep "" sep "t")
@@ -139,8 +139,8 @@
              (remote-id (majutsu-jj-integration-output
                          repo "log" "--no-graph" "-r" "moved@origin" "-T" "commit_id")))
         (should-not (equal local-id remote-id))
-        (should (equal (majutsu--get-tag-names 'local) '("moved")))
-        (let ((names (majutsu--get-tag-names 'remote)))
+        (should (equal (majutsu-ref-names 'tag 'local) '("moved")))
+        (let ((names (majutsu-ref-names 'tag 'remote)))
           (should (member "deleted@origin" names))
           (should (member "moved@origin" names))
           (should-not (member "moved" names)))

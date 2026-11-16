@@ -124,26 +124,6 @@
         (should-error (majutsu-read-new-remote-name "Remote name")
                       :type 'user-error)))))
 
-(ert-deftest majutsu-read-remote-pattern/uses-remote-history-and-category ()
-  (let (seen-history seen-category seen-require-match seen-initial)
-    (cl-letf (((symbol-function 'majutsu-remote-candidate-data)
-               (lambda (&optional _directory)
-                 (list :candidates '("origin" "upstream")
-                       :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt collection _predicate require-match initial hist _default)
-                 (setq seen-history hist
-                       seen-require-match require-match
-                       seen-initial initial
-                       seen-category (plist-get completion-extra-properties :category))
-                 (should (equal collection '("origin" "upstream")))
-                 "glob:*")))
-      (should (equal (majutsu-read-remote-pattern "Remote" "orig") "glob:*"))
-      (should-not seen-require-match)
-      (should (equal seen-initial "orig"))
-      (should (eq seen-history 'majutsu-remote-pattern-history))
-      (should (eq seen-category 'majutsu-remote)))))
-
 (ert-deftest majutsu-read-remote-patterns/uses-remote-history ()
   (let (seen-history seen-category)
     (cl-letf (((symbol-function 'majutsu-remote-candidate-data)

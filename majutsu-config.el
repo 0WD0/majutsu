@@ -63,34 +63,5 @@ configuration.  Return nil when the identity does not exist."
     (when lines
       (string-trim (car lines)))))
 
-(defun majutsu-set (key value &optional scope)
-  "Set config KEY to VALUE in SCOPE (user/repo/workspace).
-SCOPE defaults to user."
-  (let ((args (list "config" "set"
-                    (pcase scope
-                      ('repo "--repo")
-                      ('workspace "--workspace")
-                      (_ "--user"))
-                    key value)))
-    (majutsu-run-jj args)))
-
-(defun majutsu-list (&optional prefix scope)
-  "List config variables matching PREFIX in SCOPE.
-Returns alist of (name . value) pairs."
-  (let* ((args (append '("config" "list")
-                       (when scope
-                         (list (pcase scope
-                                 ('repo "--repo")
-                                 ('workspace "--workspace")
-                                 ('user "--user"))))
-                       (when prefix (list prefix))))
-         (lines (majutsu-jj-lines args)))
-    (when lines
-      (mapcar (lambda (line)
-                (when (string-match "^\\([^=]+\\)=\"?\\(.*?\\)\"?$" line)
-                  (cons (match-string 1 line)
-                        (match-string 2 line))))
-              lines))))
-
 (provide 'majutsu-config)
 ;;; majutsu-config.el ends here

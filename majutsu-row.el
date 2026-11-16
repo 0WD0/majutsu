@@ -1505,15 +1505,6 @@ When the region is active, copy it literally using `copy-region-as-kill'."
             (field (majutsu-row-read-entry-field entry compiled)))
        (majutsu-row-entry-field-value-to-kill entry field)))))
 
-(defun majutsu-row-copy-entry-field-at-point (field &optional no-entry-message)
-  "Copy canonical FIELD from the current entry.
-When the region is active, copy it literally using `copy-region-as-kill'."
-  (majutsu-row--copy-region-or
-   (lambda ()
-     (majutsu-row-entry-field-value-to-kill
-      (majutsu-row-current-entry no-entry-message)
-      field))))
-
 ;;; Copy transient
 
 ;;;###autoload(autoload 'majutsu-row-copy-transient "majutsu-row" nil t)

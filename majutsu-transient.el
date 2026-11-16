@@ -382,7 +382,7 @@ instead, while Transient still owns infix values, history and menu lifetime.")
             (oref obj defaults-key)
             (oref obj command))))
 
-(cl-defmethod clone ((obj majutsu-defaults-prefix) &rest params)
+(cl-defmethod clone ((_obj majutsu-defaults-prefix) &rest params)
   ;; Transient resumes its stack by cloning with :value.  EIEIO maps that
   ;; initarg to default-value, but scoped initialization must treat it as
   ;; the live value rather than consulting workspace defaults again.

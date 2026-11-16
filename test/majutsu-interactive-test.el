@@ -159,8 +159,7 @@ COMMAND identifies the transient whose whole-file selections are toggled."
       (setq-local majutsu-interactive--selections table)
       (setq-local majutsu-interactive--selection-operation 'majutsu-split)
       (should-error
-       (majutsu-interactive-build-patch-if-selected
-        nil nil nil 'majutsu-restore)
+       (majutsu-interactive--assert-selection-context 'majutsu-restore)
        :type 'user-error))))
 
 (ert-deftest majutsu-interactive-complete-patch-operation/retains-cancelled-selection ()
@@ -1160,7 +1159,7 @@ Selecting only the first added line leaves the unselected line in place."
                 ((symbol-function 'majutsu-jj-operation-id)
                  (lambda (&rest _) "after")))
         (should-error
-         (majutsu-interactive-build-patch-if-selected nil nil nil 'majutsu-split)
+         (majutsu-interactive--assert-selection-context 'majutsu-split)
          :type 'user-error)
         (should-not majutsu-interactive--selections)
         (should-not majutsu-interactive--selection-context)))))

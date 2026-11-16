@@ -650,12 +650,6 @@ When REMOTE is non-nil, only branches from that remote are returned."
               (majutsu-completion-entry-suffix-function
                entries #'majutsu-gerrit--remote-branch-suffix))))))
 
-(defun majutsu-gerrit--remote-branch-names (&optional remote)
-  "Return a list of remote branch names for REMOTE.
-If REMOTE is nil, return branches from all remotes."
-  (plist-get (majutsu-gerrit-remote-branch-candidate-data remote)
-             :candidates))
-
 (provide 'majutsu-gerrit)
 
 ;;; majutsu-gerrit.el ends here

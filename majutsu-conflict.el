@@ -53,34 +53,6 @@ Undoing the resolution re-enables the mode."
   "^\\(<\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
   "Regexp matching conflict start marker.")
 
-(defconst majutsu-conflict-end-re
-  "^\\(>\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
-  "Regexp matching conflict end marker.")
-
-(defconst majutsu-conflict-add-re
-  "^\\(\\+\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
-  "Regexp matching add (side) marker in JJ-style.")
-
-(defconst majutsu-conflict-remove-re
-  "^\\(-\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
-  "Regexp matching remove (base) marker in JJ-style.")
-
-(defconst majutsu-conflict-diff-re
-  "^\\(%\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
-  "Regexp matching diff marker in JJ-style.")
-
-(defconst majutsu-conflict-note-re
-  "^\\(\\\\\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
-  "Regexp matching note (label continuation) marker.")
-
-(defconst majutsu-conflict-git-ancestor-re
-  "^\\(|\\{7,\\}\\)\\(?: \\(.*\\)\\)?$"
-  "Regexp matching Git-style ancestor (base) marker.")
-
-(defconst majutsu-conflict-git-separator-re
-  "^\\(=\\{7,\\}\\)$"
-  "Regexp matching Git-style separator marker.")
-
 (defconst majutsu-conflict-label-re
   "^\\([[:alnum:]]+\\) \\([[:xdigit:]]+\\)\\(?: \"\\(.*\\)\"\\)?\\(?: ([^)]*)\\)?$"
   "Regexp matching metadata for a single revision in a JJ conflict label.")
@@ -119,18 +91,6 @@ Return nil for nil or empty LABEL, or when LABEL does not match."
       (list :change-id (match-string 1 label)
             :commit-id (match-string 2 label)
             :description "absorbed changes")))))
-
-(defun majutsu-conflict-label-change-id (label)
-  "Return the change-id from LABEL, or nil when unavailable."
-  (plist-get (majutsu-conflict-parse-label label) :change-id))
-
-(defun majutsu-conflict-label-commit-id (label)
-  "Return the commit-id from LABEL, or nil when unavailable."
-  (plist-get (majutsu-conflict-parse-label label) :commit-id))
-
-(defun majutsu-conflict-label-description (label)
-  "Return the description from LABEL, or nil when unavailable."
-  (plist-get (majutsu-conflict-parse-label label) :description))
 
 (defun majutsu-conflict--parse-marker-line (line expected-len)
   "Parse LINE as a conflict marker of at least EXPECTED-LEN.
@@ -965,13 +925,6 @@ C-c ^ M-1 to M-9 - keep base N"
 (majutsu-conflict--bind-side-keys majutsu-conflict-mode-map "C-c ^ " nil)
 (majutsu-conflict--bind-side-keys majutsu-conflict-mode-map "C-c ^ M-" t)
 
-(defun majutsu-conflict--git-style-only-p ()
-  "Return non-nil if buffer only contains Git-style conflicts."
-  (let ((conflicts (majutsu-conflict-parse-buffer)))
-    (and conflicts
-         (cl-every (lambda (c) (eq (majutsu-conflict-style c) 'git))
-                   conflicts))))
-
 (defun majutsu-conflict--clear-overlays ()
   "Remove all conflict overlays."
   (mapc #'delete-overlay majutsu-conflict--overlays)
@@ -1319,15 +1272,6 @@ Intended for `context-menu-functions'."
               (when (car cell)
                 (concat ": " (car cell)))))))
 
-(defun majutsu-conflict--add-overlay (beg end face)
-  "Add refine overlay from BEG to END with FACE."
-  (let ((ov (make-overlay beg end)))
-    (overlay-put ov 'face face)
-    (overlay-put ov 'majutsu-conflict t)
-    (overlay-put ov 'evaporate t)
-    (overlay-put ov 'priority 100)
-    (push ov majutsu-conflict--overlays)))
-
 (defun majutsu-conflict--clear-refine-overlays (beg end)
   "Remove refinement overlays between BEG and END."
   (remove-overlays beg end 'majutsu-conflict-refine t))
@@ -1595,11 +1539,6 @@ markers are present, enable `smerge-mode'."
       (when (bound-and-true-p majutsu-conflict-mode)
         (majutsu-conflict-mode -1))
       (smerge-mode 1)))))
-
-;;;###autoload
-(defun majutsu-conflict-check-enable ()
-  "Enable conflict mode if buffer has conflict markers."
-  (majutsu-conflict-ensure-mode))
 
 ;;; _
 (provide 'majutsu-conflict)

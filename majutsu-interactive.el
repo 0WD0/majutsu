@@ -234,11 +234,6 @@ current diff rendering as stale."
   "Return unique identifier for hunk SECTION."
   (oref section value))
 
-(defun majutsu-interactive--file-for-hunk (section)
-  "Return the file name for hunk SECTION."
-  (let ((val (oref section value)))
-    (if (consp val) (car val) val)))
-
 (defun majutsu-interactive--file-id (file)
   "Return FILE's whole-file content ID, independent of mode metadata."
   (list :file file))
@@ -277,17 +272,6 @@ current diff rendering as stale."
   "Return non-nil if BUFFER has interactive selections."
   (with-current-buffer (or buffer (current-buffer))
     (majutsu-interactive--has-selections-p)))
-
-(defun majutsu-interactive-build-patch-if-selected
-    (&optional buffer invert include-all-files operation)
-  "Return patch for BUFFER if there are selections, otherwise nil.
-When INVERT is non-nil, invert the selection within each hunk.
-When INCLUDE-ALL-FILES is non-nil, include hunks from all files in invert mode.
-OPERATION, when non-nil, must own BUFFER's patch selection."
-  (with-current-buffer (or buffer (current-buffer))
-    (majutsu-interactive--assert-selection-context operation)
-    (when (majutsu-interactive--has-selections-p)
-      (majutsu-interactive--build-patch invert include-all-files))))
 
 ;;; Selection Functions
 

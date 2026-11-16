@@ -111,13 +111,6 @@ the repository scope."
      lines)
    "\n"))
 
-(ert-deftest majutsu-bookmark-extract-names/from-command-output ()
-  "Test bookmark name extraction from command output."
-  (should (equal (majutsu--extract-bookmark-names "bookmark: main") '("main")))
-  (should (equal (majutsu--extract-bookmark-names "bookmark: feature-1\nbookmark: feature-2") '("feature-1" "feature-2")))
-  (should (equal (majutsu--extract-bookmark-names "no bookmarks here") nil))
-  (should (equal (majutsu--extract-bookmark-names "bookmark: dev, bookmark: test") '("dev" "test"))))
-
 (ert-deftest majutsu-bookmark-split-remote-ref/basic ()
   (should (equal (majutsu--bookmark-split-remote-ref "main@origin")
                  '("main" . "origin"))))
@@ -715,7 +708,7 @@ With REMOTES non-nil, render it as the remote list does."
                               (buffer-string))))))
 
 (ert-deftest majutsu-bookmark-candidate-data/aggregates-local-and-remote-state ()
-  (let ((sep majutsu-bookmark--completion-field-separator))
+  (let ((sep majutsu-ref--completion-field-separator))
     (cl-letf (((symbol-function 'majutsu-jj-lines)
                (lambda (&rest _args)
                  (list (concat "main" sep "" sep "" sep "t" sep "" sep "t")

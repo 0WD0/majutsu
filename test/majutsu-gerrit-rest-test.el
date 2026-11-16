@@ -29,13 +29,6 @@
                     ("o" . "LABELS") ("raw" . t)))
                  "q=is%3Aopen&q=owner%3Aself&o=LABELS&raw")))
 
-(ert-deftest majutsu-gerrit-rest-encode-id/encodes-path-as-one-segment ()
-  "File paths must be encoded as one path segment."
-  (should (equal (majutsu-gerrit-rest-encode-id "/COMMIT_MSG")
-                 "%2FCOMMIT_MSG"))
-  (should (equal (majutsu-gerrit-rest-encode-id "src/foo bar.el")
-                 "src%2Ffoo%20bar.el")))
-
 (ert-deftest majutsu-gerrit-rest-json/builds-compact-json-request ()
   "JSON helpers should add Accept and pp=0 while preserving repeated params."
   (let (seen)
@@ -79,7 +72,7 @@
                (lambda (_method _url &rest args)
                  (setq seen-headers (plist-get args :headers))
                  (majutsu-gerrit-rest-test--mock-plz-response 200 ")]}'\n\"3.14\""))))
-      (should (equal (majutsu-gerrit-rest-config-version
+      (should (equal (majutsu-gerrit-rest-json "GET" "/config/server/version" nil
                       majutsu-gerrit-rest-test--spec)
                      "3.14"))
       (should (member '("Authorization" . "Basic YWxpY2U6c2VjcmV0")
@@ -123,22 +116,6 @@ instead of propagating a raw error, so callers get a uniform plist."
       (should (equal (plist-get response :url)
                      "http://example.com:8080/a/config/server/version")))))
 
-(ert-deftest majutsu-gerrit-rest-text/does-not-json-parse ()
-  "Text helpers should return raw bodies unchanged."
-  (let (seen-url)
-    (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _args) nil))
-              ((symbol-function 'plz)
-               (lambda (_method url &rest _args)
-                 (setq seen-url url)
-                 (majutsu-gerrit-rest-test--mock-plz-response
-                  200 "diff --git a/x b/x\n"))))
-      (should (equal (majutsu-gerrit-rest-text
-                      "GET" "/plain" nil majutsu-gerrit-rest-test--spec
-                      '(("raw" . t)))
-                     "diff --git a/x b/x\n"))
-      (should (equal seen-url
-                     "http://example.com:8080/a/plain?raw")))))
-
 (ert-deftest majutsu-gerrit-rest-normalize-spec/from-shared-spec ()
   "Shared majutsu-gerrit specs should split web path from the /a prefix."
   (should (equal (majutsu-gerrit-rest-normalize-spec
@@ -159,7 +136,9 @@ instead of propagating a raw error, so callers get a uniform plist."
                  (lambda (_method url &rest _)
                    (setq seen-url url)
                    (majutsu-gerrit-rest-test--mock-plz-response 200 "text"))))
-        (should (equal (majutsu-gerrit-rest-text "GET" "/plain" nil (car case))
+        (should (equal (plist-get (majutsu-gerrit-rest-request
+                                   "GET" "/plain" nil (car case))
+                                  :body)
                        "text"))
         (should (equal seen-url (concat (cdr case) "://example.com/a/plain")))))))
 

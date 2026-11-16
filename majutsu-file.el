@@ -444,22 +444,6 @@ the change's newest visible version and say so."
   "Return the full commit id of the snapshot shown in this blob."
   majutsu-buffer-blob-commit-id)
 
-(defun majutsu-file--resolve-single-rev (revset)
-  "Resolve REVSET to a single revision string.
-Uses `latest` and `exactly` to enforce a single target."
-  (plist-get (majutsu-file--resolve-single-rev-info revset) :change-id))
-
-(defun majutsu-file--resolve-single-commit (revset)
-  "Resolve REVSET to a single commit string."
-  (let* ((normalized (majutsu-file--normalize-revset revset))
-         (result (string-trim
-                  (or (majutsu-jj-string "log" "-r" normalized
-                                         "-T" "commit_id" "--no-graph" "--limit" "1")
-                      ""))))
-    ;; Return nil when revset yields no result.
-    (unless (string-empty-p result)
-      result)))
-
 (defun majutsu-file--list (revset root)
   "Return list of file paths for REVSET in ROOT.
 Results are cached in `majutsu-file--list-cache`."

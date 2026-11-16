@@ -85,10 +85,6 @@ they mark fields with `majutsu-section-edit-put'.")
 
 ;;; Field lookup and marking
 
-(defun majutsu-section-edit-field-at (&optional pos)
-  "Return the editable field at POS, or nil."
-  (get-text-property (or pos (point)) majutsu-section-edit-property))
-
 (defun majutsu-section-edit-put (beg end field)
   "Mark BEG..END as editable FIELD."
   (put-text-property beg end majutsu-section-edit-property field))

@@ -624,12 +624,6 @@ TYPE may be a symbol, keyword, or string."
             (when canonical
               (gethash canonical majutsu-template--function-registry)))))))
 
-(defun majutsu-template--lookup-function-name (key)
-  "Return registered template name string for KEY, or nil if unknown."
-  (let ((meta (majutsu-template--lookup-function-meta key)))
-    (when meta
-      (majutsu-template--fn-name meta))))
-
 (defun majutsu-template--lookup-method-dispatch (receiver-type name)
   "Return `(SEMANTIC-TYPE . META)' for method NAME on RECEIVER-TYPE."
   (cl-loop for (semantic-type . dispatch-kind)
@@ -638,17 +632,6 @@ TYPE may be a symbol, keyword, or string."
                                majutsu-template--method-registry)
            when meta
            return (cons semantic-type meta)))
-
-(defun majutsu-template--lookup-method (owner name)
-  "Return metadata for method NAME on OWNER type.
-OWNER may be a nominal type symbol or a richer normalized type ref."
-  (cdr-safe (majutsu-template--lookup-method-dispatch owner name)))
-
-(defun majutsu-template--lookup-keyword (owner name)
-  "Return metadata for keyword NAME on OWNER type (alias of method lookup)."
-  (let ((meta (majutsu-template--lookup-method owner name)))
-    (when (and meta (majutsu-template--fn-keyword meta))
-      meta)))
 
 (defun majutsu-template--register-function (meta)
   "Register custom function described by META (a `majutsu-template--fn')."
@@ -1775,16 +1758,6 @@ Return `majutsu-template--no-special-expansion' when OP is not shorthand."
 (eval-and-compile
   (majutsu-template-define-special-resolver
    #'majutsu-template--expand-lambda-shorthand-special))
-
-(defun majutsu-template--ensure-lambda-node (value &optional context)
-  "Return VALUE normalized as a lambda node.
-CONTEXT is used in error messages."
-  (let ((node (majutsu-template--rewrite value)))
-    (if (eq (majutsu-template-node-kind node) :lambda)
-        node
-      (user-error "majutsu-template: expected lambda%s, got %S"
-                  (if context (format " for %s" context) "")
-                  value))))
 
 (defun majutsu-template--substitute-var (node name replacement)
   "Replace lexical variable NAME in NODE with REPLACEMENT node."

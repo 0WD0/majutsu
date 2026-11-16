@@ -113,20 +113,6 @@ returned by `majutsu-gerrit--shared-spec'."
 
 ;;;; URL and request construction
 
-(defun majutsu-gerrit-rest-encode-id (id)
-  "URL-encode ID for use as a single Gerrit REST path segment."
-  (url-hexify-string (format "%s" id)))
-
-(defun majutsu-gerrit-rest--path (&rest segments)
-  "Build a Gerrit REST path from SEGMENTS.
-String SEGMENTS are URL-encoded; symbol SEGMENTS are inserted verbatim
-as fixed path components (e.g. `comments')."
-  (mapconcat (lambda (segment)
-               (concat "/" (if (symbolp segment)
-                               (symbol-name segment)
-                             (majutsu-gerrit-rest-encode-id segment))))
-             segments ""))
-
 (defun majutsu-gerrit-rest--repeat-params (key values)
   "Return alist params repeating KEY for each of VALUES."
   (mapcar (lambda (value) (cons key value)) values))
@@ -278,48 +264,7 @@ HEADERS is a list of strings or (NAME . VALUE) cons cells."
                          :null-object :json-null
                          :false-object :json-false))))
 
-(defun majutsu-gerrit-rest-text (method endpoint &optional data spec params headers)
-  "Perform METHOD request to ENDPOINT and return the raw text body."
-  (plist-get (majutsu-gerrit-rest--check-response
-              (majutsu-gerrit-rest-request method endpoint data spec params headers))
-             :body))
-
 ;;;; Endpoint helpers
-
-(defun majutsu-gerrit-rest-config-version (&optional spec verbose)
-  "Return Gerrit server version for SPEC.
-If VERBOSE is non-nil, return the verbose VersionInfo object."
-  (majutsu-gerrit-rest-json "GET" "/config/server/version" nil spec
-                            (when verbose '(("verbose" . t)))))
-
-(defun majutsu-gerrit-rest-config-info (&optional spec)
-  "Return Gerrit ServerInfo for SPEC."
-  (majutsu-gerrit-rest-json "GET" "/config/server/info" nil spec))
-
-(defun majutsu-gerrit-rest-account-query (query &optional limit start options spec)
-  "Query accounts matching QUERY.
-LIMIT, START and OPTIONS map to Gerrit's n, S and repeated o params."
-  (majutsu-gerrit-rest-json
-   "GET" "/accounts/" nil spec
-   (append `(("q" . ,query))
-           (and limit `(("n" . ,limit)))
-           (and start `(("S" . ,start)))
-           (majutsu-gerrit-rest--repeat-params "o" options))))
-
-(defun majutsu-gerrit-rest-account-query-with-details (query &optional limit spec)
-  "Query accounts matching QUERY, asking for detailed account info."
-  (majutsu-gerrit-rest-account-query query limit nil '(DETAILS) spec))
-
-(defun majutsu-gerrit-rest-account-suggest (seed &optional limit spec)
-  "Return account suggestions for SEED."
-  (majutsu-gerrit-rest-json
-   "GET" "/accounts/" nil spec
-   (append `(("suggest" . t) ("q" . ,seed))
-           (and limit `(("n" . ,limit))))))
-
-(defun majutsu-gerrit-rest-account-self (&optional spec)
-  "Return AccountInfo for the calling user."
-  (majutsu-gerrit-rest-json "GET" "/accounts/self" nil spec))
 
 (defun majutsu-gerrit-rest--change-query-params (queries limit start options)
   "Build repeated query params for change QUERIES."

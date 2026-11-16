@@ -35,23 +35,6 @@
 (defvar-local majutsu-tag--list-all-remotes nil
   "Non-nil when the tag list includes remote tags.")
 
-(defun majutsu--get-tag-names (&optional scope)
-  "Return tag names for completion.
-
-SCOPE controls what to return:
-
-- nil or `local': local tag names (e.g. \"v1.0\")
-- t or `remote': remote tag refs (e.g. \"v1.0@git\")"
-  (majutsu-ref-names 'tag scope))
-
-(defconst majutsu-tag--completion-field-separator
-  majutsu-ref--completion-field-separator
-  "Separator inserted between tag completion fields.")
-
-(defconst majutsu-tag--completion-template
-  majutsu-ref--completion-template
-  "Template used to collect tag completion metadata.")
-
 (defun majutsu-tag-candidate-data (&optional directory)
   "Return completion payload for local tags in DIRECTORY."
   (majutsu-ref-candidate-data 'tag nil directory))
@@ -98,10 +81,6 @@ If REQUIRE-MATCH is non-nil, require existing local tag names."
 
 (defun majutsu-read-tag-patterns (prompt &optional _initial-input _history)
   "Read tag name patterns with PROMPT for a transient option."
-  (majutsu-tag--read-patterns prompt))
-
-(defun majutsu-tag--read-names (prompt)
-  "Compatibility wrapper around `majutsu-tag--read-patterns'."
   (majutsu-tag--read-patterns prompt))
 
 (defun majutsu-tag--list-args ()

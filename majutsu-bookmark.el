@@ -39,15 +39,6 @@
   "<remap> <majutsu-delete-thing>" #'majutsu-bookmark-delete)
 
 ;;; majutsu-bookmark
-(defun majutsu--extract-bookmark-names (text)
-  "Extract bookmark names from jj command output TEXT."
-  (let ((names '())
-        (start 0))
-    (while (string-match "bookmark[: ]+\\([^ \n,]+\\)" text start)
-      (push (match-string 1 text) names)
-      (setq start (match-end 0)))
-    (nreverse names)))
-
 (defun majutsu--bookmark-split-remote-ref (ref)
   "Split remote bookmark REF like NAME@REMOTE into (NAME . REMOTE).
 
@@ -79,14 +70,6 @@ SCOPE controls what to return:
 
 (defvar majutsu-bookmark-pattern-history nil
   "Minibuffer history for bookmark name-pattern input.")
-
-(defconst majutsu-bookmark--completion-field-separator
-  majutsu-ref--completion-field-separator
-  "Separator inserted between bookmark completion fields.")
-
-(defconst majutsu-bookmark--completion-template
-  majutsu-ref--completion-template
-  "Template used to collect bookmark completion metadata.")
 
 (defun majutsu-bookmark-candidate-data (&optional candidates directory)
   "Return completion payload for bookmark CANDIDATES in DIRECTORY."
@@ -162,17 +145,6 @@ names."
                                'majutsu-bookmark-name-history
                                default (or require-match 'any)
                                default-directory)))
-
-(defun majutsu-read-bookmark-pattern (prompt &optional default)
-  "Read one bookmark name pattern using PROMPT.
-DEFAULT is preselected when non-nil."
-  (let ((default (or default
-                     (majutsu-bookmark-at-point)
-                     (majutsu--bookmark-patterns-for-revision-at-point)))
-        (payload (majutsu-bookmark-candidate-data nil default-directory)))
-    (majutsu-ref-read 'bookmark prompt payload
-                      'majutsu-bookmark-pattern-history
-                      default 'any default-directory)))
 
 (defun majutsu-read-bookmark-patterns (prompt &optional _init-input _history candidates default)
   "Read bookmark name patterns with PROMPT.

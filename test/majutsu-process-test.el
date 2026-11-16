@@ -96,17 +96,6 @@ PHASE is either `filter' or `sentinel'."
         (delete-process process)))
     (list (car-safe caught) phase-owned final-owned live)))
 
-(ert-deftest test-majutsu-process-error-summary-from-string ()
-  "Recognize error prefixes and ignore unrelated output."
-  (dolist (case '(("Error: something went wrong\n" . "something went wrong")
-                  ("error: nope\n" . "nope")
-                  ("fatal: bad\n" . "bad")
-                  ("some output\nwarning: ignore this\nError: actual issue\n"
-                   . "actual issue")
-                  ("" . nil)))
-    (should (equal (majutsu--process-error-summary-from-string (car case))
-                   (cdr case)))))
-
 (ert-deftest test-majutsu-process-filter/ignores-with-editor-control-packets ()
   (with-temp-buffer
     (let* ((majutsu-process--with-editor-file-roots

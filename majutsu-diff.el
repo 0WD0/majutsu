@@ -216,7 +216,8 @@ inserters during the same refresh.")
 
 (defvar-local majutsu-diff--source-commit-cache nil
   "Cached single source as ((RANGE . TEXT-TICK) . COMMIT).
-A nil COMMIT is cached too.  Patch-selection commands share this per-rendering value.")
+A nil COMMIT is cached too.  Patch-selection commands share this
+per-rendering value.")
 
 (defun majutsu-diff--backend-from-args (args)
   "Return diff backend inferred from ARGS."
@@ -1905,13 +1906,6 @@ FROM-REV is the old/left side, TO-REV is the new/right side."
       (cons (or from "@") (or to "@")))
      ;; Default: working copy changes (parent to @)
      (t (cons "@-" "@")))))
-
-(defun majutsu-diff--default-revset ()
-  "Return the revset implied by the current diff buffer.
-If on a removed line, return the from-rev; otherwise return the to-rev."
-  (let* ((revs (majutsu-diff--revisions))
-         (removed (majutsu-diff--on-removed-line-p)))
-    (if removed (car revs) (cdr revs))))
 
 (defun majutsu-diff--hunk-line (section goto-from)
   "Return the line number in SECTION for GOTO-FROM side."

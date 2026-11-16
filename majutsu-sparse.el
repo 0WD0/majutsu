@@ -87,13 +87,6 @@ key bindings for finishing (C-c C-c) or canceling (C-c C-k) the edit.
   "Return list of current sparse patterns."
   (majutsu-jj-lines "sparse" "list"))
 
-(defun majutsu-sparse-enabled-p ()
-  "Return non-nil if working tree is using sparse patterns.
-This checks if patterns differ from the default '.' (all files)."
-  (let ((patterns (majutsu-sparse-patterns)))
-    (not (and (= (length patterns) 1)
-              (string= (car patterns) ".")))))
-
 (defun majutsu-sparse--available-paths ()
   "Return available paths in the working copy commit for completion."
   ;; Get all files from the working copy commit (@)
@@ -251,23 +244,6 @@ This opens your configured editor with the current patterns."
   :group 'majutsu
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer))
-
-;;; Miscellaneous
-
-(defun majutsu-sparse-insert-header ()
-  "Insert header line with sparse patterns information.
-This header is not inserted by default. To enable it, add it to
-`magit-status-headers-hook'."
-  (when (majutsu-sparse-enabled-p)
-    (insert (propertize (format "%-10s" "Sparse: ")
-                        'font-lock-face 'magit-section-heading))
-    (insert
-     (let ((patterns (majutsu-sparse-patterns)))
-       (pcase (length patterns)
-         (0 "empty (error)")
-         (1 (car patterns))
-         (n (format "%d patterns" n)))))
-    (insert ?\n)))
 
 ;;; Transient
 

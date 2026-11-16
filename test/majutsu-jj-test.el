@@ -160,24 +160,6 @@
       (should (member "--color=never" seen-args))
       (should-not (member "--color=always" (cdr seen-args))))))
 
-;; Tests for majutsu-jj-items
-
-(ert-deftest majutsu-jj-items/splits-by-null-bytes ()
-  "majutsu-jj-items should split output by null bytes."
-  (cl-letf (((symbol-function 'majutsu--jj-insert)
-             (lambda (_return-error &rest _args)
-               (insert "item1\0item2\0item3") 0)))
-    (should (equal (majutsu-jj-items "file" "list" "-z")
-                   '("item1" "item2" "item3")))))
-
-(ert-deftest majutsu-jj-items/omits-empty-items ()
-  "majutsu-jj-items should omit empty items from result."
-  (cl-letf (((symbol-function 'majutsu--jj-insert)
-             (lambda (_return-error &rest _args)
-               (insert "item1\0\0item2\0") 0)))
-    (should (equal (majutsu-jj-items "file" "list" "-z")
-                   '("item1" "item2")))))
-
 (ert-deftest majutsu-jj-conflicted-files/parses-structured-records ()
   "Conflicted files should retain exact paths and conflict side counts."
   (cl-letf (((symbol-function 'majutsu--jj-insert)
@@ -498,7 +480,7 @@ This mirrors Magit's behavior."
                  (`("bookmark" "list" "--quiet" "-T" "name ++ \"\\n\"") '("main" "feature"))
                  (`("tag" "list" "--quiet" "-T" "name ++ \"\\n\"") '("v1.0" "main"))
                  (_ nil)))))
-    (should (equal (majutsu-jj-revset-candidates)
+    (should (equal (plist-get (majutsu-jj-revset-candidate-data) :candidates)
                    '("ws-a@" "ws-b@" "main" "feature" "v1.0")))))
 
 (ert-deftest majutsu-jj-completion-items/uses-native-complete-env ()

@@ -101,7 +101,7 @@
                    "--notify=owner"
                    "--ignore-attention-set"))))
 
-(ert-deftest majutsu-gerrit--remote-branch-names/parses-single-remote ()
+(ert-deftest majutsu-gerrit-remote-branch-candidate-data/parses-single-remote ()
   "Should extract remote bookmark names from `jj bookmark list --remote'."
   (cl-letf (((symbol-function 'majutsu-jj-lines)
              (lambda (&rest args)
@@ -110,17 +110,19 @@
                '("feat/tramp\tgerrit" "" "main\tgerrit" "" "")))
             ((symbol-function 'majutsu--toplevel-safe)
              (lambda () "/repo")))
-    (should (equal (majutsu-gerrit--remote-branch-names "gerrit")
+    (should (equal (plist-get (majutsu-gerrit-remote-branch-candidate-data "gerrit")
+                              :candidates)
                    '("feat/tramp" "main")))))
 
-(ert-deftest majutsu-gerrit--remote-branch-names/dedupes-across-remotes ()
+(ert-deftest majutsu-gerrit-remote-branch-candidate-data/dedupes-across-remotes ()
   "When no remote is given, should dedupe names from all remotes."
   (cl-letf (((symbol-function 'majutsu-jj-lines)
              (lambda (&rest _args)
                '("main\tgerrit" "dev\tgerrit" "main\torigin" "feat/tramp\torigin" "")))
             ((symbol-function 'majutsu--toplevel-safe)
              (lambda () "/repo")))
-    (should (equal (majutsu-gerrit--remote-branch-names)
+    (should (equal (plist-get (majutsu-gerrit-remote-branch-candidate-data)
+                              :candidates)
                    '("dev" "feat/tramp" "main")))))
 
 (ert-deftest majutsu-gerrit--remote-branch-candidate-data/provides-source-metadata ()
@@ -141,14 +143,15 @@
       (should (string-match-p "remote branch" (funcall suffix-function "main")))
       (should (string-match-p "gerrit,origin" (funcall suffix-function "main"))))))
 
-(ert-deftest majutsu-gerrit--remote-branch-names/returns-nil-on-error ()
+(ert-deftest majutsu-gerrit-remote-branch-candidate-data/returns-nil-on-error ()
   "Should return nil when jj command fails."
   (cl-letf (((symbol-function 'majutsu-jj-lines)
              (lambda (&rest _args)
                (error "jj error")))
             ((symbol-function 'majutsu--toplevel-safe)
              (lambda () "/repo")))
-    (should-not (majutsu-gerrit--remote-branch-names "origin"))))
+    (should-not (plist-get (majutsu-gerrit-remote-branch-candidate-data "origin")
+                              :candidates))))
 
 (ert-deftest majutsu-gerrit-upload-read-remote-branch/extracts-remote-from-transient ()
   "Reader should extract --remote from current transient args."

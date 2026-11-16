@@ -332,34 +332,6 @@ it."
                       (throw 'found match)))
                   nil))))))
 
-(defun majutsu--process-error-summary-from-string (output)
-  "Return a one-line error summary extracted from OUTPUT."
-  (when (and (stringp output) (not (string-empty-p output)))
-    (with-temp-buffer
-      (insert output)
-      (goto-char (point-max))
-      (catch 'found
-        (dolist (re majutsu-process-error-message-regexps)
-          (when-let* ((match (save-excursion
-                               (when (re-search-backward re nil t)
-                                 (string-trim (match-string 1))))))
-            (throw 'found match)))
-        nil))))
-
-(defun majutsu--process-section-output (process)
-  "Return the complete output for PROCESS from the process buffer."
-  (when-let* ((buf (process-buffer process))
-              (section (process-get process 'section))
-              (_ (buffer-live-p buf)))
-    (with-current-buffer buf
-      (let* ((beg (oref section content))
-             (end (oref section end)))
-        (cond
-         ((and beg end)
-          (string-trim-right
-           (buffer-substring-no-properties beg end)))
-         (t ""))))))
-
 (defun majutsu--process-finish-section (section exit-code)
   (let ((inhibit-read-only t)
         (buffer (current-buffer))

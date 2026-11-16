@@ -176,23 +176,6 @@ used as the default.  Existing remote names are rejected."
       (user-error "Remote already exists: %s" remote))
     remote))
 
-(defun majutsu-read-remote-pattern (prompt &optional initial-input history default candidates)
-  "Read one remote name pattern with PROMPT.
-INITIAL-INPUT is inserted for editing.  HISTORY defaults to
-`majutsu-remote-pattern-history'.  DEFAULT is preselected when non-nil.
-CANDIDATES defaults to known Git remote names."
-  (let ((payload (majutsu-remote-candidate-data default-directory)))
-    (unless (plist-get payload :candidates)
-      (setq payload (plist-put payload :candidates candidates)))
-    (majutsu-completing-read-payload
-     prompt payload
-     nil 'any initial-input (or history 'majutsu-remote-pattern-history)
-     default 'majutsu-remote nil default-directory)))
-
-(defun majutsu-transient-read-remote-pattern (prompt initial-input _history)
-  "Read a Git remote name pattern for a transient option."
-  (majutsu-read-remote-pattern prompt initial-input nil initial-input))
-
 (defun majutsu-read-remote-patterns (prompt &optional candidates default initial-input history)
   "Read remote name patterns with PROMPT.
 CANDIDATES defaults to known Git remote names.  DEFAULT is preselected when

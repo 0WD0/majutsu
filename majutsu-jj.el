@@ -39,8 +39,6 @@
       (append args (cons "--" filesets))
     args))
 
-(defvar corfu-margin-formatters)
-
 ;;; Options
 
 (defcustom majutsu-jj-executable "jj"
@@ -316,12 +314,6 @@ refs (`<workspace>@'), bookmarks, and tags."
         (add name)))
     (list :category 'majutsu-revision
           :candidates (nreverse candidates))))
-
-(defun majutsu-jj-revset-candidates ()
-  "Return completion candidates for revset prompts.
-Candidates are repository references: other workspaces' working-copy
-refs (`<workspace>@'), bookmarks, and tags."
-  (plist-get (majutsu-jj-revset-candidate-data) :candidates))
 
 (defun majutsu-jj--revset-minibuffer-input ()
   "Return revset minibuffer contents before point."
@@ -802,17 +794,6 @@ return nil or partial output depending on what was produced."
     (with-temp-buffer
       (apply #'majutsu-jj-insert args)
       (buffer-string))))
-
-(defun majutsu-jj-items (&rest args)
-  "Run jj with ARGS and return output split by null bytes.
-
-Color output is disabled so that return values are plain text.
-This is useful for commands that use -z/--null flag.
-Empty items are omitted from the result."
-  (majutsu--with-no-color
-    (with-temp-buffer
-      (apply #'majutsu-jj-insert args)
-      (split-string (buffer-string) "\0" t))))
 
 (defconst majutsu-jj--conflicted-file-field-separator (string 31)
   "Separator inserted between conflicted-file machine fields.")
