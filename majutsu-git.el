@@ -26,7 +26,7 @@
 
 (autoload 'majutsu-gerrit-upload-transient "majutsu-gerrit-upload" nil t)
 
-(declare-function majutsu-bookmark-list "majutsu-bookmark" ())
+(autoload 'majutsu-git-remote-list "majutsu-bookmark" nil t)
 
 (declare-function majutsu-defaults-prefix "majutsu-transient")
 (declare-function majutsu-transient-read-remote-patterns "majutsu-remote")
@@ -96,16 +96,6 @@
   (majutsu--message-with-log "Fetching from remote...")
   (majutsu-git--start (append '("fetch") args) "Fetched from remote"))
 
-(defun majutsu-git-remote-list ()
-  "Show Git remotes in the bookmark list."
-  (interactive)
-  (require 'majutsu-bookmark)
-  (pop-to-buffer (majutsu-bookmark-list))
-  (when-let* ((section (magit-get-section
-                       '((bookmark-group . remote) (bookmark-list)))))
-    (magit-section-show section)
-    (goto-char (oref section start))))
-
 (defun majutsu-git-fetch-from (remote)
   "Fetch from exactly one named REMOTE."
   (interactive (list (majutsu-read-remote-name "Fetch remote" t)))
@@ -116,6 +106,14 @@
   (interactive)
   (majutsu-git-fetch-from (or (majutsu-remote-at-point)
                              (user-error "No Git remote at point"))))
+
+(majutsu-jjosh
+  (defun majutsu-git-fetch-project (project)
+    "Fetch PROJECT from its default remotes.
+Interactively, use the project at point in the bookmark list."
+    (interactive (list (or (majutsu-project-at-point)
+                           (majutsu-read-project-name "Fetch project"))))
+    (majutsu-git-fetch (list "--project" project))))
 
 (defun majutsu-git-remote-add (args)
   "Add a Git remote. Prompts for name and URL; respects ARGS from transient."

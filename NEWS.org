@@ -196,6 +196,23 @@
 
 ** Changed
 
+- Bookmark list and remote list ::
+  The bookmark list no longer has =Local bookmarks=, =Remote bookmarks= and
+  =Git tracking bookmarks= sections.  It lists the local bookmarks; each shows
+  the state of its remotes on its own line and holds the remote bookmarks of
+  its name as children, and =@git= appears only when it differs.  Remotes moved
+  to a list of their own, ~majutsu-git-remote-list~: each remote unfolds to the
+  bookmarks it holds, including those that exist on the remote only.  Either
+  command moves to the counterpart of the bookmark or remote at point.  The
+  deleted-locally marker is now =×=.
+  The jjosh build divides both lists by scope, =Repository= and one section per
+  project, and adds a =≈= state for project bookmarks that differ from their
+  remote in history only, and ~majutsu-git-fetch-project~.
+  ~majutsu-bookmark-list-template-heading~ is
+  gone: customize the =ref=, =tracking= and =summary= columns of
+  ~majutsu-bookmark-list-columns~ instead.  Deleted bookmarks, previously
+  dropped from the list with a parser diagnostic, are shown again.
+
 - Log graph rendering ::
   Multiline descriptions now participate directly in jj's graph rendering.
   Folding preserves graph structure while hiding body text, without rerunning

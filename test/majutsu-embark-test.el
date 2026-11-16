@@ -25,11 +25,12 @@
 
 (ert-deftest majutsu-embark-empty-remote-has-remote-actions ()
   (with-temp-buffer
-    (majutsu-bookmark-list-mode)
-    (let ((inhibit-read-only t)
-          (majutsu-bookmark--list-remotes (make-hash-table :test #'equal)))
-      (puthash "origin" '(:fetch-url "https://example.org/repo") majutsu-bookmark--list-remotes)
-      (magit-insert-section (bookmark-list) (majutsu-bookmark--wash-list nil)))
+    (majutsu-git-remote-list-mode)
+    (setq majutsu-bookmark--list-remotes
+          '((:name "origin" :value "origin" :url "https://example.org/repo")))
+    (let ((inhibit-read-only t))
+      (magit-insert-section (remote-list)
+        (majutsu-bookmark--wash-remote-list nil)))
     (goto-char (point-min))
     (search-forward "https://")
     (should (equal (majutsu-embark-target-section)

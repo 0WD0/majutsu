@@ -11,12 +11,14 @@
 
 ;;; Commentary:
 
-;; Shared readers and completion payloads for jj Git remote names.
+;; Shared readers and completion payloads for jj Git remote names.  The
+;; jjosh build adds the projects that own remotes of their own.
 
 ;;; Code:
 
 (require 'majutsu)
 (require 'majutsu-completion)
+(require 'majutsu-jjosh)
 
 (require 'subr-x)
 
@@ -37,6 +39,39 @@
   "<remap> <majutsu-delete-thing>" #'majutsu-git-remote-remove
   "r" #'majutsu-git-remote-transient
   "f" #'majutsu-git-fetch-remote)
+
+(majutsu-jjosh
+  (defvar-keymap majutsu-project-section-map
+    :doc "Keymap for `jj-project' sections in the bookmark list.")
+
+  (defun majutsu-project-at-point ()
+    "Return the name of the project whose section contains point, or nil."
+    (let ((section (magit-current-section)))
+      (while (and section (not (magit-section-match 'jj-project section)))
+        (setq section (oref section parent)))
+      (and section (oref section value))))
+
+  (defvar majutsu-project-name-history nil
+    "Minibuffer history for project-name input.")
+
+  (defun majutsu-read-project-name (prompt)
+    "Read the name of a registered project with PROMPT.
+The project at point is the default.  Projects whose definition is
+unresolved have no name to select."
+    (let ((projects
+           ;; Metadata problems follow the projects as lines without a tab.
+           (mapcan (lambda (line)
+                     (pcase (split-string line "\t")
+                       (`(,name ,path) (list (cons name path)))))
+                   (majutsu-jj-lines
+                    "project" "list" "-T"
+                    "if(!conflict, name ++ \"\t\" ++ path ++ \"\n\")"))))
+      (unless projects
+        (user-error "No registered projects"))
+      (majutsu-completing-read prompt projects nil t nil
+                               'majutsu-project-name-history
+                               (majutsu-project-at-point)
+                               'majutsu-project))))
 
 (defun majutsu-remote--validate-new-name (remote)
   "Signal a user error if REMOTE is not a valid new jj Git remote name."

@@ -26,6 +26,7 @@
 (require 'eieio)
 (require 'magit-section)
 (require 'majutsu-completion)
+(require 'majutsu-jjosh)
 
 (declare-function majutsu-save-window-configuration "majutsu-mode" ())
 
@@ -212,6 +213,11 @@ for a class of actions that would normally ask for confirmation."
 (setf (alist-get 'jj-hunk         magit--section-type-alist) 'majutsu-hunk-section)
 (setf (alist-get 'jj-git-remote   magit--section-type-alist) 'majutsu-git-remote-section)
 (setf (alist-get 'jj-workspace    magit--section-type-alist) 'majutsu-workspace-section)
+
+(majutsu-jjosh
+  (defclass majutsu-project-section (magit-section)
+    ((keymap :initform 'majutsu-project-section-map)))
+  (setf (alist-get 'jj-project magit--section-type-alist) 'majutsu-project-section))
 
 ;;; Utilities
 

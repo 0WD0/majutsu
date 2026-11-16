@@ -15,26 +15,6 @@
 (require 'majutsu-git)
 (require 'majutsu-jj-integration)
 
-(ert-deftest majutsu-git-remote-list/reuses-bookmark-buffer ()
-  (require 'majutsu-bookmark)
-  (save-window-excursion
-    (with-temp-buffer
-      (majutsu-bookmark-list-mode)
-      (let ((buffer (current-buffer))
-            (inhibit-read-only t))
-        (magit-insert-section (bookmark-list)
-          (magit-insert-section (bookmark-group 'local)
-            (magit-insert-heading "Local bookmarks"))
-          (magit-insert-section (bookmark-group 'remote)
-            (magit-insert-heading "Remote bookmarks")
-            (insert "body\n")))
-        (magit-section-hide (cadr (oref magit-root-section children)))
-        (cl-letf (((symbol-function 'majutsu-bookmark-list) (lambda () buffer)))
-          (majutsu-git-remote-list))
-        (should (eq (current-buffer) buffer))
-        (should (eq (oref (magit-current-section) value) 'remote))
-        (should-not (oref (magit-current-section) hidden))))))
-
 (ert-deftest majutsu-git-fetch-remote/selects-only-current-remote ()
   (let (args)
     (cl-letf (((symbol-function 'majutsu-remote-at-point) (lambda () "fork*"))

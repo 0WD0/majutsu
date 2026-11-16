@@ -1651,34 +1651,91 @@ bookmark normally targets one revision and may explicitly track a remote
 bookmark; concurrent moves can also leave a bookmark with conflicted targets.
 
 ** Bookmark List
-The bookmark list always includes local and remote bookmarks, including
-synchronized and untracked remote bookmarks.  No prefix argument is needed.
+The bookmark list shows the local bookmarks, each with the state of its
+remotes on its own line.
 
-=Local bookmarks= and =Remote bookmarks= are separate sections;
-remote bookmarks are grouped by remote name, with fetch URLs and distinct
-push URLs shown in the remote headings.  Configured remotes without bookmarks
-show =No bookmarks=.  On a remote heading, =r= opens remote management,
-=f= fetches only that remote, and the delete action removes the remote.  Both sections remain visible
-when empty.  Git's special =@git= references appear separately under
-=Git tracking bookmarks= when present.
+#+begin_example
+main  ≡ origin            kzvx 1f2c first line of the description
+topic ↑2 origin, ○ fork   qpwm 8a01 first line of the description
+#+end_example
 
-Remote rows show their relationship immediately after the bookmark name,
-before revision descriptions:
+Unfold a bookmark for its remote bookmarks and, when its target is
+conflicted, the conflicting revisions.  Git's special =@git= reference
+appears under its bookmark only when it differs from the local target.
+Bookmarks that exist on a remote only are in the [[*Remote List][remote list]].
+
 - =≡= means the tracked reference is synchronized with the local bookmark.
 - =○= means the reference is not tracked.
 - =↑N= counts commits only in the local bookmark; =↓N= counts commits only
   in the remote reference.  Zero counts are omitted.  A lower bound is
   shown as =↑≥N= or =↓≥N= rather than an exact count.
-- =× local= means the tracked local bookmark has been deleted while the
-  remote reference remains.  The deleted local bookmark stays visible too.
+- =×= means the local bookmark has been deleted while the tracked remote
+  reference remains.  The deleted local bookmark stays visible.
 
 Synchronized and untracked states use a muted color; local-only and
-remote-only counts use distinct colors.  Hover over a remote row for the
-symbol legend.  Conflict targets appear beneath their own bookmark.
-Sections initially open and retain their folding state on refresh.
+remote-only counts use distinct colors.  Hover over a row for the symbol
+legend.  Folding is retained on refresh.
+
+~majutsu-bookmark-list~ moves to the local bookmark of the bookmark at point,
+so from a remote bookmark in the remote list it leads to its local row.
+
+** Remote List
+~majutsu-git-remote-list~ shows the Git remotes with their fetch URL, a
+distinct push URL, and how many of their bookmarks are tracked.
+
+#+begin_example
+origin  git@example.org:me/repo.git  2 tracked
+fork  git@example.org:you/repo.git  1 tracked, 12 untracked
+#+end_example
+
+Unfold a remote for the bookmarks it holds, tracked or not, with the same
+state symbols as the bookmark list.  This is where a bookmark that exists on
+a remote only is found and tracked.  The bookmarks are rendered when the
+remote is first unfolded.
+
+On a remote line, =r= opens remote management, =f= fetches only that remote,
+and the delete action removes the remote.
+
+The command moves to the remote at point: from a remote bookmark in the
+bookmark list, it leads to the remote that holds it.
+
+** Projects in the jjosh build
+jjosh configures remotes per scope: the repository itself or one registered
+project.  Both lists therefore have one section per scope: =Repository=,
+then each project under a heading with its name and directory.  The bookmark
+list shows the scopes that have local bookmarks; the remote list shows every
+project, and the repository when it has remotes of its own.
+
+#+begin_example
+parser  packages/parser  1 unsynced
+  main  ≈ origin            kzvx 1f2c first line of the description
+  topic ↑2 origin           qpwm 8a01 first line of the description
+#+end_example
+
+#+begin_example
+parser  packages/parser
+  origin  git@example.org:me/parser.git  2 tracked
+vendor  third_party/vendor
+  origin  https://example.org/vendor.git  filter :/src  37 untracked
+#+end_example
+
+Bookmarks appear under their project without the =#label= suffix; commands
+still receive the full name.  Remotes act through their qualified name, such
+as =origin#parser=.
+
+In a repository of many projects, a tracked remote reference usually names
+another commit than the local bookmark merely because unrelated history was
+rewritten.  =≈= marks a project bookmark whose project directory is
+identical on both sides; commit distances are shown only when the content
+differs.  A push can still update the remote, because the history differs.
+A project heading counts the bookmarks whose content differs as =N unsynced=.
+
+~majutsu-git-fetch-project~ fetches the project at point from its default
+remotes, and ~majutsu-project-at-point~ returns its name for your own
+commands.  Neither has a default key binding.
 
 ** Embark Actions
-When Embark is loaded, =embark-act= recognizes bookmark list sections and
+When Embark is loaded, =embark-act= recognizes bookmark and remote list sections and
 completion candidates.  No additional Majutsu key binding is installed;
 use your configured Embark key in either Emacs or Evil.
 
@@ -1878,18 +1935,18 @@ completion.
 
 Transient actions:
 #+attr_reference: :kind command-binding :interface "Remote Management transient"
-- Key: l (majutsu-git-remote-list) :: Open the bookmark list at its Remote
-  bookmarks section. Configured remotes with no bookmarks are included.
+- Key: l (majutsu-git-remote-list) :: Open the remote list, at the remote at
+  point when there is one.
 - Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote as
   =jj git remote add [OPTIONS] REMOTE URL=. Majutsu prompts for a new remote
   name, rejects names that already exist, prompts for the URL/path positional,
   and exposes =--fetch-tags= and =--push-url=.
 - Key: d (majutsu-git-remote-remove) :: Remove an existing remote. In the
-  bookmark list buffer, the remote at point is used as the default.
+  remote list buffer, the remote at point is used as the default.
 - Key: r (majutsu-git-remote-rename) :: Rename a remote.
 - Key: u (majutsu-git-remote-set-url-transient) :: Set remote URLs. With no
   option, Majutsu prompts for the fetch URL/path positional; use =--fetch=
-  and/or =--push= to set them explicitly. In the bookmark list buffer, the remote
+  and/or =--push= to set them explicitly. In the remote list buffer, the remote
   at point is used as the default.
 
 ** Clone and Init

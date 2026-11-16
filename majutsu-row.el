@@ -748,6 +748,27 @@ Terminal decorations wait until following text has its display properties."
         (majutsu-row-column entry (plist-get column :field))
       value)))
 
+;;; Display overrides
+
+(defun majutsu-row-field-columns (compiled field)
+  "Return COMPILED's displayed column specs for FIELD."
+  (seq-filter (lambda (column)
+                (and (eq (plist-get column :field) field)
+                     (not (eq (plist-get column :module) 'metadata))))
+              (plist-get compiled :columns)))
+
+(defun majutsu-row-set-display-value (entry compiled field value)
+  "Display VALUE in every FIELD column of ENTRY and return ENTRY.
+COMPILED supplies the column layout.  Use this for text that only the
+front end can compute, such as a summary of related rows."
+  (dolist (column (majutsu-row-field-columns compiled field) entry)
+    (setq entry (majutsu-row-record-column-value entry column value))))
+
+(defun majutsu-row-display-value (entry compiled field)
+  "Return the rendered text of ENTRY's first FIELD column, or nil."
+  (when-let* ((column (car (majutsu-row-field-columns compiled field))))
+    (majutsu-row-render-column-text entry column)))
+
 ;;; Display helpers
 
 (defun majutsu-row-display-string (value)
