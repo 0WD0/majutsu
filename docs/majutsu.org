@@ -761,6 +761,37 @@ Direct log-buffer shortcuts:
 - Key: B (Vanilla) (majutsu-new-with-before) :: Create a new change before the revision at point.
 - Key: I (Evil) (majutsu-new-with-before) :: Create a new change before the revision at point.
 
+Where the new change goes, with the revision at point marked:
+#+attr_demo: :kind choices
+- On top (~O~) ::
+  #+begin_example
+  @  wqnwkozp (no description set)
+  │ ○  xzyvoorv Add the renderer
+  ├─╯
+  ○  mxtrukyy Polish the index  ← at point
+  ○  vzxpmxlw Import the parser core
+  #+end_example
+  The new change is a child of the revision at point.  Its other children
+  stay where they are.
+- After (~A~) ::
+  #+begin_example
+  ○  xzyvoorv Add the renderer  ← rebased
+  @  wqnwkozp (no description set)
+  ○  mxtrukyy Polish the index  ← at point
+  ○  vzxpmxlw Import the parser core
+  #+end_example
+  The new change goes between the revision at point and its children, which
+  are rebased onto it.
+- Before (~B~, Evil ~I~) ::
+  #+begin_example
+  ○  xzyvoorv Add the renderer  ← rebased
+  ○  mxtrukyy Polish the index  ← at point, rebased
+  @  wqnwkozp (no description set)
+  ○  vzxpmxlw Import the parser core
+  #+end_example
+  The new change goes between the revision at point and its parents.  The
+  revision at point and its descendants are rebased onto it.
+
 Useful transient entries include:
 #+attr_reference: :kind transient-argument :interface "New transient"
 - Key: -r :: Parent revisions.

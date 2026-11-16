@@ -1495,6 +1495,38 @@ Create a new change before the revision at point.
 Create a new change before the revision at point.
 @end table
 
+Where the new change goes@comma{} with the revision at point marked:
+@table @asis
+@item On top (@code{O})
+@example
+@@  wqnwkozp (no description set)
+│ ○  xzyvoorv Add the renderer
+├─╯
+○  mxtrukyy Polish the index  ← at point
+○  vzxpmxlw Import the parser core
+@end example
+The new change is a child of the revision at point.  Its other children
+stay where they are.
+@item After (@code{A})
+@example
+○  xzyvoorv Add the renderer  ← rebased
+@@  wqnwkozp (no description set)
+○  mxtrukyy Polish the index  ← at point
+○  vzxpmxlw Import the parser core
+@end example
+The new change goes between the revision at point and its children@comma{} which
+are rebased onto it.
+@item Before (@code{B}@comma{} Evil @code{I})
+@example
+○  xzyvoorv Add the renderer  ← rebased
+○  mxtrukyy Polish the index  ← at point@comma{} rebased
+@@  wqnwkozp (no description set)
+○  vzxpmxlw Import the parser core
+@end example
+The new change goes between the revision at point and its parents.  The
+revision at point and its descendants are rebased onto it.
+@end table
+
 Useful transient entries include:
 @table @asis
 @item @kbd{-r}
