@@ -7,10 +7,9 @@
 #+texinfo_header: @c GENERATED—DO NOT EDIT. Edit majutsu.org and run make -C docs majutsu.texi.
 #+options: broken-links:mark
 
-Majutsu is a Magit-inspired Emacs interface for the Jujutsu (jj) version
-control system. It provides a powerful, interactive log viewer and a
-comprehensive set of commands for manipulating revision history with the
-efficiency and comfort Emacs users expect.
+Majutsu is an Emacs interface for the Jujutsu (jj) version control system,
+modeled on Magit: a log you can act on, diffs you can select from, and
+transients for jj's commands.
 
 * Introduction
 :PROPERTIES:
@@ -19,10 +18,11 @@ efficiency and comfort Emacs users expect.
 :DESCRIPTION: Understand Majutsu's purpose, Jujutsu model, and project origins.
 :END:
 ** About Majutsu
-Majutsu is a Magit-inspired Emacs interface for Jujutsu. It provides an
-interactive log viewer and commands for inspecting and rewriting revision
-history. It uses Magit's section and transient systems and provides visual
-workflows for operations such as rebasing, squashing, and conflict resolution.
+Majutsu shows a Jujutsu repository in Emacs buffers: the log, diffs, files
+as of a revision, bookmarks, operations.  Commands start from what is at
+point, and most open a transient in which you pick revisions from the log
+before anything runs.  It is built on Magit's sections and on the Transient
+package, so it will feel familiar to Magit users.
 
 ** About Jujutsu
 Jujutsu (jj) is a version control system whose working copy is represented by a
@@ -32,11 +32,9 @@ commands. Mutable history and conflicts are first-class parts of Jujutsu's
 model, making rebasing, squashing, and conflict resolution ordinary operations.
 
 ** Acknowledgments
-Majutsu stands on the shoulders of giants. We are grateful to:
-- The Jujutsu community for creating a revolutionary VCS.
-- The Magit authors and contributors for defining the gold standard of VCS
-  interfaces.
-- Brandon Olivier for the initial codebase of =jj-mode.el=.
+- Majutsu began as a fork of =jj-mode.el= by Brandon Olivier.
+- Its interface, and much of its code, follows Magit.
+- It exists because of Jujutsu and the people who build it.
 
 * Installation
 :PROPERTIES:
@@ -52,15 +50,14 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit
   completion).
 - =transient= 0.13.0 or later (popup menus).
-- =with-editor= (for descriptive message editing).
+- =with-editor= (for editing descriptions).
 - =ghostel= (optional; runs terminal programs such as =jj arrange= and jj's
   built-in diff editor).
 - Evil, Embark, Forge, and Org are supported when present; see
   [[#integrations][Integrations]].
 
 ** Installing from Git
-Majutsu is currently available via GitHub. You can install it using your
-preferred Emacs package manager.
+Majutsu is installed from its GitHub repository.
 
 *** Doom Emacs
 Add the following to your =packages.el=:
@@ -124,8 +121,8 @@ directory is outside a repository, Majutsu asks which directory to use.  If
 that directory is not a repository either, it asks before running =jj git
 init=; declining leaves the directory unchanged.
 
-The log buffer is the safest place to learn the interface.  Find the working
-copy revision, marked =@=.
+The log shows the revision graph.  The working copy is the revision marked
+=@=.
 
 #+attr_keymap: :scope Vanilla
 *Vanilla:* Use ~n~ and ~p~ to move by revision section.  ~TAB~ expands or
@@ -173,9 +170,8 @@ process buffer and read its complete output.
 diff, return with ~q~, and refresh with ~g r~.  If a jj command fails, press
 ~`~ to open the process buffer and read its complete output.
 
-Only after this loop is familiar should you move on to commands in
-/Manipulating/, which can rewrite repository history and may ask for
-confirmation.
+The commands in [[#manipulating][Manipulating]] rewrite history; the
+destructive ones ask first, and ~C-/~ (Evil: ~u~) undoes the last operation.
 
 * Interface Concepts
 :PROPERTIES:
@@ -239,19 +235,20 @@ diff.
 *Evil:* ~C-j~ and ~C-k~ move forward and backward through sections in Normal,
 Visual, and Motion states; ~g j~ and ~g k~ move between siblings.
 
-** Transient Menus
-Commands are grouped into transient menus: popups in which you set options
-before running a command.  ~r~, for example, opens the Rebase menu.
+** Transients
+Commands are grouped into transients: popup menus, built with Emacs'
+Transient package, in which you set options before running a command.
+~r~, for example, opens the Rebase transient.
 
-The main action of a menu has its own key and also runs on ~RET~; customize
-~majutsu-transient-default-action~ to use another key.
+The main action of a transient has its own key and also runs on ~RET~;
+customize ~majutsu-transient-default-action~ to use another key.
 
 *** Saved Defaults
 :PROPERTIES:
 :CUSTOM_ID: saved-defaults
 :END:
-The Log, Diff, operation log, Fetch, Push, and Gerrit Upload menus can
-remember their options.  ~w~ opens the defaults menu:
+The Log, Diff, operation log, Fetch, Push, and Gerrit Upload transients can
+remember their options.  ~w~ opens the defaults transient:
 
 | Key   | Saves the options for | Cleared by |
 |-------+-----------------------+------------|
@@ -264,20 +261,20 @@ specific layer wins: session, workspace, repository, user, built-in.  A
 layer replaces the whole option list; layers are not merged.
 
 Saving does not run the command.  One-off values, such as the revisions of
-a diff or the bookmarks of a push, are not saved.  In the Log menu, ~0~
+a diff or the bookmarks of a push, are not saved.  In the Log transient, ~0~
 resets the options of the current buffer and leaves saved defaults alone.
 
 A log or diff buffer that is already open keeps its own options.
 ~majutsu-prefix-use-buffer-arguments~ and
-~majutsu-direct-use-buffer-arguments~ decide when a menu or a direct command
-starts from them.
+~majutsu-direct-use-buffer-arguments~ decide when a transient or a direct
+command starts from them.
 
 The defaults are stored in ~transient-values-file~, not in jj's
 configuration.  Additional workspaces share the repository layer and have
 their own workspace layer.
 
 ** Selecting Revisions
-Menus that take revisions, such as Rebase, Squash, or Diff, let you pick
+Transients that take revisions, such as Rebase, Squash, or Diff, let you pick
 them in the log.  An entry shown as =-r/r= has two keys: =-r= reads a revset
 in the minibuffer, and ~r~ toggles the revision at point.  Selected
 revisions stay highlighted, one color per role, until the command runs or
@@ -295,7 +292,7 @@ its own section of this manual names.
 :PROPERTIES:
 :CUSTOM_ID: filesets
 :END:
-The =--= entry of a menu limits the command to some files.  It reads jj
+The =--= entry of a transient limits the command to some files.  It reads jj
 fileset expressions, several separated by commas:
 
 #+begin_example
@@ -308,7 +305,7 @@ Completion works on the path being typed, wherever it is in the expression,
 and offers the pattern kinds, such as =glob:= and =root:=, where a pattern
 can start.  Anything you type is accepted.
 
-Diff, Split, Squash, Absorb, and Restore complete the paths that the menu's
+Diff, Split, Squash, Absorb, and Restore complete the paths that the transient's
 revisions change, since those are the only ones the command can act on.
 Log completes any path, one directory level at a time, so a large
 repository is never listed whole.
@@ -332,13 +329,13 @@ finish before control returns.
   ~k~ on a running command kills it.
 - Key: ` (Evil) (majutsu-process-buffer) :: Show the process buffer.
   ~x~ on a running command kills it.
-- Key: ! (majutsu-command) :: Open the Run menu.
+- Key: ! (majutsu-command) :: Open the Run transient.
 - Key: : (Vanilla) (majutsu-jj-command) :: Read a jj command line and run it
   in the current directory.
 - Key: | (Evil) (majutsu-jj-command) :: Read a jj command line and run it
   in the current directory.
 
-The Run menu runs any command in the background and shows its output in the
+The Run transient runs any command in the background and shows its output in the
 process buffer:
 
 #+attr_reference: :kind command-binding :interface "Run transient"
@@ -428,7 +425,7 @@ conflicts a merge inherited.  ~TAB~ folds a directory.
 #+end_src
 
 *** Copying
-The log, evolution log, and operation log share a copy menu.
+The log, evolution log, and operation log share a copy transient.
 
 #+attr_reference: :kind command-binding :interface "Copy dispatcher"
 - Key: ? w s (majutsu-copy-section-value) :: Copy the value of the current
@@ -455,7 +452,7 @@ These commands start from a revision, usually the one at point in the log.
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: d (majutsu-diff) :: Open the Diff transient.
 - Key: RET (majutsu-diff-dwim) :: On a revision, bookmark, or tag, show its
-  diff without the menu.
+  diff without the transient.
 
 #+attr_reference: :kind transient-argument :interface "Diff transient"
 - Key: r :: Select revisions to diff (=--revisions=): several revisions, or
@@ -464,7 +461,7 @@ These commands start from a revision, usually the one at point in the log.
 - Key: -- :: Limit the diff to [[#filesets][filesets]].  Completion offers
   the paths changed by the selected revisions; without a selection, by the
   revisions in the region, the revision at point, or =@=.  Opened from a
-  log that is limited to filesets, the menu starts with the same limit, and
+  log that is limited to filesets, the transient starts with the same limit, and
   so does ~RET~ on a revision there.
 - Key: -g :: Toggle Git-style diff output.
 - Key: -W :: Toggle color-words diff output.
@@ -529,14 +526,15 @@ the file's folded body.
   the workspace file, regardless of diff type.
 - Key: C-<return> (Evil) (majutsu-diff-visit-workspace-file) :: Visit the
   workspace file without conflicting with Evil's ~C-j~ section navigation.
-- Key: - (Vanilla) (majutsu-diff-less-context) :: Decrease the context for diff
-  hunks by COUNT lines.
-- Key: = (Evil) (majutsu-diff-less-context) :: Decrease the context for diff hunks by COUNT lines.
-- Key: + (majutsu-diff-more-context) :: Increase the context for diff hunks by COUNT lines.
-- Key: 0 (Vanilla) (majutsu-diff-default-context) :: Reset the context for diff
-  hunks to the default height.
-- Key: ~ (Evil) (majutsu-diff-default-context) :: Reset the context for diff
-  hunks to the default height.
+- Key: - (Vanilla) (majutsu-diff-less-context) :: Show fewer context lines
+  around hunks; a prefix argument says how many fewer.
+- Key: = (Evil) (majutsu-diff-less-context) :: Show fewer context lines
+  around hunks; a prefix argument says how many fewer.
+- Key: + (majutsu-diff-more-context) :: Show more context lines around hunks.
+- Key: 0 (Vanilla) (majutsu-diff-default-context) :: Reset the context to the
+  default.
+- Key: ~ (Evil) (majutsu-diff-default-context) :: Reset the context to the
+  default.
 - Key: t (Vanilla) (majutsu-diff-toggle-refine-hunk) :: Toggle word-level refinement.
 - Key: T (Vanilla) (majutsu-diff-toggle-fontify-hunk) :: Toggle syntax
   highlighting within diff hunks. With a prefix argument, cycle between
@@ -571,10 +569,8 @@ workspace file; ~C-j~ remains section navigation.  File visits use the same
 stored line/column metadata from the color-words backend.
 
 *** File and Blob Inspection
-Majutsu's file inspector is implemented by =majutsu-file= and can be used both
-from command prompts and with defaults derived from the current section context.
+A blob buffer shows one file as of one revision.
 
-Commands:
 - Command: majutsu-find-file :: Prompt for revset + path (defaulting from point
   when possible) and open that file as a blob.
 - Command: majutsu-find-file-other-window :: Like ~majutsu-find-file~, but
@@ -649,8 +645,8 @@ the annotate-mode keys:
 - Key: RET (majutsu-diff-dwim) :: Show the diff of the blob's revision.
 
 *** Annotate (Blame)
-Majutsu annotate is implemented by =majutsu-annotate= and uses
-=jj file annotate= under the hood.  The navigation bindings below belong to
+Annotate shows, for each line of a file, the revision that last changed it
+(=jj file annotate=).  The navigation bindings below belong to
 =majutsu-annotate-read-only-mode=, which is enabled by default through
 =majutsu-annotate-read-only=.  Setting that option to nil keeps ordinary file
 buffers editable with their editing bindings; revision blob buffers remain
@@ -704,19 +700,19 @@ jj records every change to the repository as an operation, and every
 rewrite of a change as a new version of it.
 
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
-- Key: X (majutsu-op-transient) :: Open the Operations menu: log, diff,
+- Key: X (majutsu-op-transient) :: Open the Operations transient: log, diff,
   restore, revert, undo, and redo.
 - Key: v (Vanilla) (majutsu-evolog) :: Open the evolution log of the revision
   at point.
 - Key: ? v (Evil) (majutsu-evolog) :: Open the evolution log of the revision
   at point.  Evil keeps ~v~ for Visual state.
 
-The operation log (~X l~) keeps jj's graph and compact format.  Its menu
+The operation log (~X l~) keeps jj's graph and compact format.  Its transient
 takes =--limit=, =--reversed=, and =--no-graph=.  Browsing does not snapshot
 the working copy.
 
 #+attr_reference: :kind command-binding :interface "Operation log" :mode majutsu-op-log-mode
-- Key: d (majutsu-op-diff-transient) :: Open the operation diff menu for the
+- Key: d (majutsu-op-diff-transient) :: Open the operation diff transient for the
   operation at point.
 - Key: u (majutsu-op-log-restore-at-point) :: Restore the repository to the
   operation at point, after confirmation.
@@ -746,7 +742,7 @@ including full ids that are not displayed.
 
 - Commands: majutsu-op-restore / majutsu-op-revert :: Restore the repository
   to an operation, or revert one operation, after confirmation.  Both are
-  in the Operations menu.
+  in the Operations transient.
 
 * Manipulating
 :PROPERTIES:
@@ -872,7 +868,7 @@ Runs: =jj abandon REV=
 - Key: s (majutsu-squash) :: Open the Squash transient. You can select multiple
   source revisions (=--from=) to squash into a destination (=--into=).
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Squash transient"
 - Key: -f :: Source revisions (=--from=).
 - Key: -t :: Destination revision (=--into=).
@@ -895,7 +891,7 @@ Runs: =jj squash --from SRC --into DEST [FILESETS...]=
 - Key: S (majutsu-split) :: Open the Split transient. This allows you to split a
   revision into multiple parts.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Split transient"
 - Key: -r :: Specify the revision to split.
 - Key: -o :: Specify the destination (=--onto=).
@@ -914,7 +910,7 @@ Runs: =jj split -r REV [FILESETS...]=
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: a (majutsu-absorb) :: Open the Absorb transient.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Absorb transient"
 - Key: -f :: Source revision (=--from=, default =@=).
 - Key: -t :: Destination revset filters (=--into=, repeatable, default =mutable()=).
@@ -939,7 +935,7 @@ changes jj cannot assign remain in the source revision.  Explicit =-i= or
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
 - Key: R (majutsu-restore) :: Open the Restore transient for undoing changes.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Restore transient"
 - Key: -f :: Restore from a specific revision (=--from=).
 - Key: -t :: Restore to a specific revision (=--to=).
@@ -956,11 +952,10 @@ Runs: =jj restore --from REV [FILESETS...]= or
 
 ** Rebasing
 #+attr_reference: :kind command-binding :interface "Majutsu buffer" :mode majutsu-mode
-- Key: r (majutsu-rebase) :: Open the Rebase transient. This is one of Majutsu's
-  most powerful features, allowing you to visually select sources and
-  destinations.
+- Key: r (majutsu-rebase) :: Open the Rebase transient, in which you select
+  sources and destinations in the log.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Rebase transient"
 - Key: -s :: Rebase a revision and its descendants (=--source=).
 - Key: -b :: Rebase a whole branch relative to the destination (=--branch=).
@@ -979,7 +974,7 @@ Runs: =jj rebase --source SRC --onto DEST=
 - Key: ? y (majutsu-duplicate) :: Open the Duplicate transient. Allows selecting
   source revisions and destination.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Duplicate transient"
 - Key: -r :: Source revisions to duplicate.
 - Key: -o :: Destination (=--onto=).
@@ -993,7 +988,7 @@ Runs: =jj duplicate -r REV=
 - Key: _ (Evil) (majutsu-revert) :: Open the Revert transient to apply reverse
   changes in one or more new revisions.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Revert transient"
 - Key: -r :: Source revisions to revert (=--revision=, repeatable).
 - Key: -o :: Apply reverse changes on top of revisions (=--onto=).
@@ -1006,7 +1001,7 @@ Runs: =jj revert --revision REV --onto DEST=
   active region are selected initially, followed by the revision at point, then
   =@= as fallbacks.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Metaedit transient"
 - Key: r / -r / c :: Toggle revisions at point or in the active region, read a
   revset, or clear the visual revision selections. Multiple revisions are
@@ -1024,7 +1019,7 @@ Runs: =jj metaedit [OPTIONS...] [REVSETS]...=
   fallbacks.
 - Key: ? J (majutsu-unsign) :: Open the Unsign transient with the same visual revision selection.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Sign and Unsign transients"
 - Key: r / -r / c :: Toggle revisions at point or in the active region, read a
   revset, or clear the visual revision selections.
@@ -1040,7 +1035,7 @@ Runs: =jj sign --revision REVSETS...= or =jj unsign --revision REVSETS...=
 #+attr_reference: :kind command-binding :interface "Majutsu dispatcher"
 - Key: ? P (majutsu-simplify-parents) :: Open the Simplify Parents transient.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Simplify Parents transient"
 - Key: -s :: Simplify specified revision(s) together with descendant trees (=--source=).
 - Key: -r :: Simplify specified revision(s) only (=--revision=).
@@ -1073,7 +1068,7 @@ Runs: =jj undo= or =jj redo=
 - Key: > (majutsu-sparse) :: Open the sparse working copy transient (set, add,
   remove, list, edit).
 
-Sparse transient actions:
+Actions:
 #+attr_reference: :kind command-binding :interface "Sparse transient"
 - Key: l (majutsu-sparse-list) :: List current sparse patterns in =*Majutsu Sparse*=.
 - Key: s / S (majutsu-sparse-set / majutsu-sparse-set-clear) :: Set patterns by
@@ -1095,11 +1090,11 @@ Notes:
 :END:
 Split, Squash, Absorb, and Restore can act on part of a change: selected
 hunks, files, or lines.  You select in a diff buffer while the command's
-menu is open.  The selection belongs to that menu and ends with it; it is
-not a staging area.
+transient is open.  The selection belongs to that transient and ends with
+it; it is not a staging area.
 
 *** Selecting
-Open the diff of the revision (~RET~), then the menu of the command (~S~,
+Open the diff of the revision (~RET~), then the transient of the command (~S~,
 ~s~, ~a~, or ~R~).  A Patch Selection group appears:
 
 | Key | Command                             | Toggles                                            |
@@ -1226,11 +1221,11 @@ commands in [[#conflict-markers][conflict-marker buffers]].
   all.  This does not undo anything already applied.
 - Key: C-c C-n (majutsu-resolve-next-file) :: Visit the next file that is
   still conflicted.
-- Key: ? (majutsu-resolve-dispatch) :: Show these actions as a menu: ~a~
+- Key: ? (majutsu-resolve-dispatch) :: Show these actions as a transient: ~a~
   applies and ~k~ discards at point, ~A~ and ~K~ act on all drafts, ~g~
   refreshes, and ~m~ opens the Majutsu dispatcher.
 
-In a draft, the same keys apply to that file, and ~C-c ?~ opens the menu.
+In a draft, the same keys apply to that file, and ~C-c ?~ opens the transient.
 ~C-x C-s~ saves the draft only.  ~C-c C-o~ returns to the workbench.
 
 Drafts live as long as the workbench buffer.  Refreshing keeps them;
@@ -1396,13 +1391,13 @@ state symbols as the bookmark list.  This is where a bookmark that exists on
 a remote only is found and tracked.  The bookmarks are rendered when the
 remote is first unfolded.
 
-On a remote, ~f~ fetches from it, ~r~ opens the Remotes menu, and ~k~ (~x~
+On a remote, ~f~ fetches from it, ~r~ opens the Remotes transient, and ~k~ (~x~
 in Evil) removes it.
 
 The command moves to the remote at point: from a remote bookmark in the
 bookmark list, it leads to the remote that holds it.
 
-** Projects in the jjosh build
+** Projects in the jjosh Build
 jjosh configures remotes per scope: the repository itself or one registered
 project.  Both lists therefore have one section per scope: =Repository=,
 then each project under a heading with its name and directory.  The bookmark
@@ -1442,7 +1437,7 @@ commands.  Neither has a default key binding.
 - Key: b (majutsu-bookmark) ::
   Open the bookmark transient.
 
-Transient actions:
+Actions:
 #+attr_reference: :kind command-binding :interface "Bookmark transient"
 - Key: l (majutsu-bookmark-list) :: List all bookmarks.
 - Key: c (majutsu-bookmark-create) :: Create a new bookmark at point.
@@ -1485,13 +1480,10 @@ tags. Majutsu wraps =jj tag set/list/delete= and follows jj semantics where
 creating and moving tags both use =tag set= (moving requires =--allow-move=).
 
 ** Tag Transient
-In the tag list, ~RET~ on a tag shows the diff of its revision and ~k~ (~x~ in Evil)
-deletes the tag.
-
 #+attr_reference: :kind command-binding :interface "Majutsu dispatcher"
 - Key: ? t (majutsu-tag) :: Open the tag transient.
 
-Transient actions:
+Actions:
 #+attr_reference: :kind command-binding :interface "Tag transient"
 - Key: l (majutsu-tag-list) :: List tags in a dedicated buffer.
 - Key: s (majutsu-tag-set) :: Set tag(s). Uses completion and allows new names.
@@ -1500,6 +1492,9 @@ Transient actions:
 
 Prompts complete existing tags; Set also accepts new names, and Set and
 Delete accept patterns.
+
+In the tag list, ~RET~ on a tag shows the diff of its revision and ~k~
+(~x~ in Evil) deletes the tag.
 
 * Git Integration
 :PROPERTIES:
@@ -1510,16 +1505,16 @@ Delete accept patterns.
 ** Git Transient
 #+attr_reference: :kind command-binding :interface "Majutsu buffer / dispatcher" :mode majutsu-mode
 - Key: G (Vanilla) (majutsu-git-transient) ::
-  Open the Git transient. Jujutsu can interact directly with Git remotes.
+  Open the Git transient: push, fetch, remotes, clone, and Gerrit upload.
 - Key: ? G (Evil) (majutsu-git-transient) ::
-  Open the Git transient. Jujutsu can interact directly with Git remotes.
+  Open the Git transient: push, fetch, remotes, clone, and Gerrit upload.
 
 ** Pushing
 #+attr_reference: :kind command-binding :interface "Git transient"
 - Key: p (majutsu-git-push-transient) :: Open the Push transient. You can push
   bookmarks, tags, revisions, or changes.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Push transient"
 - Key: -a :: Push all bookmarks and tags.
 - Key: -t :: Push tracked bookmarks and tags only.
@@ -1541,7 +1536,7 @@ Runs: =jj git push=
 - Key: f (majutsu-git-fetch-transient) :: Open the Fetch transient to pull
   changes from a remote.
 
-Transient arguments:
+Arguments:
 #+attr_reference: :kind transient-argument :interface "Fetch transient"
 - Key: -R :: Fetch from a specific remote; may be repeated.
 - Key: -b :: Fetch a specific branch; may be repeated.
@@ -1559,7 +1554,7 @@ Runs: =jj git fetch=
 #+attr_reference: :kind command-binding :interface "Git transient"
 - Key: u (majutsu-gerrit-upload-transient) :: Open the Gerrit upload transient.
 
-Transient arguments and selection controls:
+Arguments and selection controls:
 #+attr_reference: :kind transient-argument :interface "Gerrit upload transient"
 - Key: -r :: Upload specific revision(s).
 - Key: r :: Toggle the revision at point into or out of the upload selection.
@@ -1606,10 +1601,10 @@ completion.
 
 ** Remotes
 #+attr_reference: :kind command-binding :interface "Git transient"
-- Key: r (majutsu-git-remote-transient) :: Open the Remote Management transient.
+- Key: r (majutsu-git-remote-transient) :: Open the Remotes transient.
 
-Transient actions:
-#+attr_reference: :kind command-binding :interface "Remote Management transient"
+Actions:
+#+attr_reference: :kind command-binding :interface "Remotes transient"
 - Key: l (majutsu-git-remote-list) :: Open the [[#remote-list][remote list]],
   at the remote at point when there is one.
 - Key: a (majutsu-git-remote-add-transient) :: Add a new Git remote as
@@ -1657,7 +1652,7 @@ graph, and ~RET~ on one visits it.
 - Key: * (Evil) (majutsu-workspace) ::
   Open the workspace transient.
 
-Transient actions:
+Actions:
 #+attr_reference: :kind command-binding :interface "Workspace transient"
 - Key: l (majutsu-workspace-list) :: List all workspaces.
 - Key: v (majutsu-workspace-visit) :: Visit a workspace by changing
@@ -1696,9 +1691,8 @@ majutsu RET~ shows all of them.
   =jj diff --stat= (default: =80=). Set to =nil= to inherit terminal width.
   Raise it if you want more full path visibility; keep it near 80 if you prefer
   compact stat bars.
-- User Option: majutsu-transient-default-action :: Key used for primary/default
-  action suffixes in Majutsu transients (default: =RET=). Set it to another key
-  description, such as =.=, to move the default action key.
+- User Option: majutsu-transient-default-action :: The key that runs the main
+  action of a transient, besides its own key (default: =RET=).
 - User Option: majutsu-show-process-buffer-hint :: Whether to append a
   process-buffer hint to jj errors. The displayed key is resolved from the
   active bindings, so Vanilla normally shows ~$~ and Evil normally shows ~`~.
@@ -1985,7 +1979,9 @@ means the tracker of the project that its revision touches: =#123= in a
 revision of one project and in a revision of another lead to different
 trackers.  Of nested projects the innermost counts, and a merge that
 changes nothing stands for what its parents touch.  A reference that could
-mean several trackers, or none, is not a button.
+mean several trackers, or none, is not a button.  The log reads the
+projects from its ~projects~ metadata column; keep it when you replace
+~majutsu-log-commit-columns~.
 
 Remove ~bug-reference-mode~ from ~majutsu-log-mode-hook~ and
 ~majutsu-jjdescription-setup-hook~ to turn this off.

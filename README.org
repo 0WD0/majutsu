@@ -2,7 +2,7 @@
 
 Majutsu is a Magit-style interface for [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] in Emacs:
 a log you can act on, diffs you can select from,
-and menus for jj's commands.
+and transients for jj's commands.
 
 Read the manual at [[https://majutsu.org][majutsu.org]], or its source in [[file:docs/majutsu.org][docs/majutsu.org]].
 
@@ -32,7 +32,7 @@ Read the manual at [[https://majutsu.org][majutsu.org]], or its source in [[file
 - ~RET~ on a revision shows its diff; in a diff it visits the file.
 - ~$~ (Evil: ~`~) shows what jj printed.
 
-Commands open a menu in which you set options and pick revisions
+Commands open a transient in which you set options and pick revisions
 from the log before anything runs.
 
 | Vanilla | Evil    | Command                              |
@@ -104,7 +104,7 @@ All optional; see [[file:docs/majutsu.org::#integrations][Integrations]] in the 
 * Credits
 
 Majutsu began as a fork of [[https://github.com/bolivier/jj-mode.el][jj-mode.el]] by Brandon Olivier.
-It builds on [[https://magit.vc/][Magit]]'s sections and menus.
+It builds on [[https://magit.vc/][Magit]]'s sections and transients.
 
 * Contributing
 

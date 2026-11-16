@@ -35,6 +35,7 @@
   | ~majutsu-log-field-faces~           | ~:face~ of each log column                      |
   | Squash =-r/--revision=              | =-f/--from=                                     |
   | =--fetch-tags= (removed from jj)    | =--tag= when cloning                            |
+  | Log column ~git-head~               | nothing; jj dropped =git_head=                  |
   The dispatcher's ~m~ now opens Metaedit, and diff file sections no longer
   bind ~v~.
 
@@ -46,7 +47,7 @@
   in ~:template~.
 
 - Saved transient defaults ::
-  ~w~ opens a menu: ~w u~ saves user defaults, ~w r~ repository defaults and
+  ~w~ opens a transient: ~w u~ saves user defaults, ~w r~ repository defaults and
   ~w w~ workspace defaults; the uppercase keys clear them.  This replaces the
   standalone ~w~ / ~W~ actions.  Existing saved values remain readable.
   Buffers no longer reuse options across workspaces, and ~0~ in the log resets
@@ -100,7 +101,7 @@
 
 - Navigation and copying ::
   ~[~ and ~]~ in the log jump to visible parents and children.  The log,
-  evolution log and operation log share a ~? w~ menu that copies displayed
+  evolution log and operation log share a ~? w~ transient that copies displayed
   text or whole fields, including ids that are not displayed.
 
 - Blob buffers elsewhere ::
@@ -130,7 +131,7 @@
   command at hand.
 
 - Gerrit uploads ::
-  The Git menu offers =jj gerrit upload= with revisions, remote branch,
+  The Git transient offers =jj gerrit upload= with revisions, remote branch,
   review metadata and repository-local defaults.  Reviewer, CC and topic
   prompts complete against Gerrit.
 
@@ -216,11 +217,6 @@
   Anonymous functions, the ~[:|arg| body]~ form, and syntax forms defined
   with ~majutsu-template-defspecial~.
 
-- Manual ::
-  Rewritten around workflows, repository management, customization and
-  integrations, with a key and command reference and a searchable web
-  edition.
-
 ** Changed
 
 - Log graph ::
@@ -248,7 +244,7 @@
 
 - Diffs from a limited log ::
   A diff opened from a log that is limited to filesets has the same limit,
-  whether through ~RET~ or the Diff menu, where it can be removed.
+  whether through ~RET~ or the Diff transient, where it can be removed.
 
 - Evil ::
   Blob buffers keep the normal text motions and paste: ~gj~ / ~gk~ (or
@@ -286,6 +282,10 @@
   Blob editing, history navigation and annotation use commit ids, and
   saving follows the rewrite that save produced.  A save that cannot be
   verified keeps the edits in the buffer.
+
+- jj warnings ::
+  A warning that jj prints with every command, such as one about a
+  deprecated setting, no longer leaves every Majutsu buffer empty.
 
 - Paths ::
   File names with spaces or fileset metacharacters work in conflict
