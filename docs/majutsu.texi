@@ -3425,27 +3425,12 @@ Visit a workspace by changing
 @kindex a
 @findex majutsu-workspace-add
 Add a new workspace.
-@end table
-
-Forget option:
-@table @asis
-@item @kbd{-t}
-@kindex -t
-Toggle trashing workspace directories after forgetting them.
-@end table
-
-More transient actions:
-@table @asis
 @item @kbd{f} (@code{majutsu-workspace-forget})
 @kindex f
 @findex majutsu-workspace-forget
-Forget a workspace. With @samp{-t} enabled@comma{}
-  also move its local directory to the system trash after @samp{jj workspace forget}
-  succeeds; this trash step accepts local roots only@comma{} while plain forget can
-  still forget a remotely located workspace. Before moving a directory@comma{}
-  Majutsu verifies that the path still identifies the directory the user
-  confirmed and does not own the shared @samp{.jj/repo} store. It checks all selected
-  workspaces and reports all paths requiring manual cleanup together.
+Forget a workspace with
+  @samp{jj workspace forget}. Its directory stays on disk@comma{} and changes jj has not
+  snapshotted stay only there.
 @item @kbd{k} (@code{majutsu-workspace-remove})
 @kindex k
 @findex majutsu-workspace-remove
@@ -3544,7 +3529,7 @@ If non-nil@comma{} prompt for
 A list of symbols for actions Majutsu
   should not confirm@comma{} or @samp{t} to never confirm. Valid symbols: @samp{undo}@comma{} @samp{redo}@comma{}
   @samp{abandon}@comma{} @samp{bookmark-delete}@comma{} @samp{tag-delete}@comma{} @samp{git-remote-remove}@comma{} @samp{rebase}@comma{}
-  @samp{restore}@comma{} @samp{workspace-forget}@comma{} @samp{workspace-trash}@comma{} and @samp{workspace-remove}.
+  @samp{restore}@comma{} @samp{workspace-forget}@comma{} and @samp{workspace-remove}.
 @end defopt
 
 @defopt majutsu-slow-confirm

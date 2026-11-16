@@ -1992,20 +1992,9 @@ Transient actions:
 - Key: v (majutsu-workspace-visit) :: Visit a workspace by changing
   =default-directory= and refreshing Majutsu buffers.
 - Key: a (majutsu-workspace-add) :: Add a new workspace.
-
-Forget option:
-#+attr_reference: :kind transient-argument :interface "Workspace transient"
-- Key: -t :: Toggle trashing workspace directories after forgetting them.
-
-More transient actions:
-#+attr_reference: :kind command-binding :interface "Workspace transient"
-- Key: f (majutsu-workspace-forget) :: Forget a workspace. With =-t= enabled,
-  also move its local directory to the system trash after =jj workspace forget=
-  succeeds; this trash step accepts local roots only, while plain forget can
-  still forget a remotely located workspace. Before moving a directory,
-  Majutsu verifies that the path still identifies the directory the user
-  confirmed and does not own the shared =.jj/repo= store. It checks all selected
-  workspaces and reports all paths requiring manual cleanup together.
+- Key: f (majutsu-workspace-forget) :: Forget a workspace with
+  =jj workspace forget=. Its directory stays on disk, and changes jj has not
+  snapshotted stay only there.
 - Key: k (majutsu-workspace-remove) :: Remove a workspace with
   =jj workspace remove=, which deletes its directory. jj first snapshots the
   working copy into a commit, so tracked changes stay in the repository;
@@ -2054,7 +2043,7 @@ newlines or other control characters are preserved as complete values.
 - User Option: majutsu-no-confirm :: A list of symbols for actions Majutsu
   should not confirm, or =t= to never confirm. Valid symbols: =undo=, =redo=,
   =abandon=, =bookmark-delete=, =tag-delete=, =git-remote-remove=, =rebase=,
-  =restore=, =workspace-forget=, =workspace-trash=, and =workspace-remove=.
+  =restore=, =workspace-forget=, and =workspace-remove=.
 - User Option: majutsu-slow-confirm :: A list from the same action set that
   should use =yes-or-no-p= instead of =y-or-n-p=, or =t= for all of them.
 
