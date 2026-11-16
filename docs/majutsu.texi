@@ -646,6 +646,23 @@ Run the rebase; Majutsu asks first.
 The change and its descendants now sit on the destination.
 @end table
 
+@table @asis
+@item @code{j j}
+Move to the change to rebase.
+@item @code{r}
+Open the Rebase transient.  The log stays live under it.
+@item @code{s}
+Mark the revision at point as the source.
+@item @code{j j}
+Move to where it should go.
+@item @code{o}
+Mark that revision as the destination.
+@item @code{RET}
+Run the rebase; Majutsu asks first.
+@item @code{y}
+The change and its descendants now sit on the destination.
+@end table
+
 With an active region@comma{} an argument that can be repeated takes every
 revision in the region; an argument that takes one value uses one revision.
 Majutsu passes revisions@comma{} not expressions: it does not turn a region into
@@ -1667,6 +1684,25 @@ Apply.  One @samp{jj describe} rewords both changes.
 @end table
 
 @table @asis
+@item @code{j j}
+Move to a change.
+@item @code{i}
+Start editing.  Every description in the log is now a field.
+@item @code{i}
+Enter Insert state at the start of the description.
+@item @code{"Polish the "}
+Type.
+@item @code{ESC j}
+Back in Normal state@comma{} move down a line.
+@item @code{0 w i}
+Move to the description and enter Insert state.
+@item @code{"Hiccup "}
+Type.
+@item @code{ESC Z Z}
+Apply.  One @samp{jj describe} rewords both changes.
+@end table
+
+@table @asis
 @item @kbd{w (Vanilla)} (@code{majutsu-section-edit})
 @kindex w (Vanilla)
 @findex majutsu-section-edit
@@ -2277,6 +2313,21 @@ Select the file.
 Squash.  The fix is in the parent; the diff shows what stayed.
 @end table
 
+@table @asis
+@item @code{j}
+Move to the change.
+@item @code{RET}
+Show its diff.
+@item @code{s}
+Open the Squash transient.  In a diff it offers Patch Selection.
+@item @code{C-j C-j C-j C-j C-j}
+Move to the file in the summary.
+@item @code{F}
+Select the file.
+@item @code{RET}
+Squash.  The fix is in the parent; the diff shows what stayed.
+@end table
+
 A change made two unrelated fixes.  To split the first off into a change of
 its own@comma{} select its hunk:
 @table @asis
@@ -2298,6 +2349,23 @@ Finish.  The diff shows the first part: the selected hunk.
 Back in the log@comma{} the change has become two; the rest is in the second.
 @end table
 
+@table @asis
+@item @code{j}
+Move to the change.
+@item @code{RET}
+Show its diff.
+@item @code{S}
+Open the Split transient.
+@item @code{C-j C-j C-j C-j C-j C-j}
+Move to the first hunk.
+@item @code{H}
+Select the hunk.
+@item @code{RET}
+Split.  jj asks for the descriptions of both parts.
+@item @code{C-c C-c}
+Finish.  The diff shows the first part: the selected hunk; the rest is in a second change.
+@end table
+
 The working copy still has two lines of debugging among its changes.  To
 discard just those lines@comma{} select them as a region:
 @table @asis
@@ -2313,6 +2381,25 @@ Move to the hunk.
 Move to the first line to discard.
 @item @code{C-SPC C-n C-n}
 Mark the two lines as a region.
+@item @code{R}
+Select the lines of the region.
+@item @code{RET}
+Restore.  The two lines are gone; the rest of the hunk stays.
+@end table
+
+@table @asis
+@item @code{j}
+Move to the working copy.
+@item @code{RET}
+Show its diff.
+@item @code{R}
+Open the Restore transient.
+@item @code{C-j C-j C-j C-j C-j C-j}
+Move to the hunk.
+@item @code{j j j}
+Move to the first line to discard.
+@item @code{V j}
+Mark the two lines in Visual state.
 @item @code{R}
 Select the lines of the region.
 @item @code{RET}

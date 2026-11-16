@@ -281,11 +281,22 @@ revisions stay highlighted, one color per role, until the command runs or
 ~c~ clears them.
 
 For example, to rebase a change onto another:
+#+attr_keymap: :scope Vanilla
 #+attr_demo: :capture rebase-in-log
 - ~n n~ :: Move to the change to rebase.
 - ~r~ :: Open the Rebase transient.  The log stays live under it.
 - ~s~ :: Mark the revision at point as the source.
 - ~n n~ :: Move to where it should go.
+- ~o~ :: Mark that revision as the destination.
+- ~RET~ :: Run the rebase; Majutsu asks first.
+- ~y~ :: The change and its descendants now sit on the destination.
+
+#+attr_keymap: :scope Evil
+#+attr_demo: :capture rebase-in-log-evil
+- ~j j~ :: Move to the change to rebase.
+- ~r~ :: Open the Rebase transient.  The log stays live under it.
+- ~s~ :: Mark the revision at point as the source.
+- ~j j~ :: Move to where it should go.
 - ~o~ :: Mark that revision as the destination.
 - ~RET~ :: Run the rebase; Majutsu asks first.
 - ~y~ :: The change and its descendants now sit on the destination.
@@ -859,6 +870,7 @@ above the diff of one revision.  Like Wdired, a session makes every
 description in the buffer editable while the rest stays read-only, so
 several revisions can be reworded at once.
 
+#+attr_keymap: :scope Vanilla
 #+attr_demo: :capture edit-in-place
 - ~n n~ :: Move to a change.
 - ~w~ :: Start editing.  Every description in the log is now a field.
@@ -866,6 +878,17 @@ several revisions can be reworded at once.
 - ~C-n~ :: Move to the description below.
 - ~" in Hiccup"~ :: Add to its end.
 - ~C-c C-c~ :: Apply.  One =jj describe= rewords both changes.
+
+#+attr_keymap: :scope Evil
+#+attr_demo: :capture edit-in-place-evil
+- ~j j~ :: Move to a change.
+- ~i~ :: Start editing.  Every description in the log is now a field.
+- ~i~ :: Enter Insert state at the start of the description.
+- ~"Polish the "~ :: Type.
+- ~ESC j~ :: Back in Normal state, move down a line.
+- ~0 w i~ :: Move to the description and enter Insert state.
+- ~"Hiccup "~ :: Type.
+- ~ESC Z Z~ :: Apply.  One =jj describe= rewords both changes.
 
 #+attr_reference: :kind command-binding :interface "Log and diff buffers" :mode majutsu-log-mode
 - Key: w (Vanilla) (majutsu-section-edit) :: Start editing.
@@ -1175,6 +1198,7 @@ A selection cannot be carried to another command; clear it first.
 
 A change to the keystroke index also fixed the renderer.  To move the fix
 into the parent, where the renderer was added, squash that one file:
+#+attr_keymap: :scope Vanilla
 #+attr_demo: :capture select-file
 - ~n~ :: Move to the change.
 - ~RET~ :: Show its diff.
@@ -1183,8 +1207,18 @@ into the parent, where the renderer was added, squash that one file:
 - ~F~ :: Select the file.
 - ~RET~ :: Squash.  The fix is in the parent; the diff shows what stayed.
 
+#+attr_keymap: :scope Evil
+#+attr_demo: :capture select-file-evil
+- ~j~ :: Move to the change.
+- ~RET~ :: Show its diff.
+- ~s~ :: Open the Squash transient.  In a diff it offers Patch Selection.
+- ~C-j C-j C-j C-j C-j~ :: Move to the file in the summary.
+- ~F~ :: Select the file.
+- ~RET~ :: Squash.  The fix is in the parent; the diff shows what stayed.
+
 A change made two unrelated fixes.  To split the first off into a change of
 its own, select its hunk:
+#+attr_keymap: :scope Vanilla
 #+attr_demo: :capture select-hunk
 - ~n~ :: Move to the change.
 - ~RET~ :: Show its diff.
@@ -1195,8 +1229,19 @@ its own, select its hunk:
 - ~C-c C-c~ :: Finish.  The diff shows the first part: the selected hunk.
 - ~q~ :: Back in the log, the change has become two; the rest is in the second.
 
+#+attr_keymap: :scope Evil
+#+attr_demo: :capture select-hunk-evil
+- ~j~ :: Move to the change.
+- ~RET~ :: Show its diff.
+- ~S~ :: Open the Split transient.
+- ~C-j C-j C-j C-j C-j C-j~ :: Move to the first hunk.
+- ~H~ :: Select the hunk.
+- ~RET~ :: Split.  jj asks for the descriptions of both parts.
+- ~C-c C-c~ :: Finish.  The diff shows the first part: the selected hunk; the rest is in a second change.
+
 The working copy still has two lines of debugging among its changes.  To
 discard just those lines, select them as a region:
+#+attr_keymap: :scope Vanilla
 #+attr_demo: :capture select-region
 - ~n~ :: Move to the working copy.
 - ~RET~ :: Show its diff.
@@ -1204,6 +1249,17 @@ discard just those lines, select them as a region:
 - ~n n n n n n~ :: Move to the hunk.
 - ~C-n C-n C-n~ :: Move to the first line to discard.
 - ~C-SPC C-n C-n~ :: Mark the two lines as a region.
+- ~R~ :: Select the lines of the region.
+- ~RET~ :: Restore.  The two lines are gone; the rest of the hunk stays.
+
+#+attr_keymap: :scope Evil
+#+attr_demo: :capture select-region-evil
+- ~j~ :: Move to the working copy.
+- ~RET~ :: Show its diff.
+- ~R~ :: Open the Restore transient.
+- ~C-j C-j C-j C-j C-j C-j~ :: Move to the hunk.
+- ~j j j~ :: Move to the first line to discard.
+- ~V j~ :: Mark the two lines in Visual state.
 - ~R~ :: Select the lines of the region.
 - ~RET~ :: Restore.  The two lines are gone; the rest of the hunk stays.
 
