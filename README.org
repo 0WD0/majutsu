@@ -1,13 +1,12 @@
 #+html: <p align="center"><a href="https://majutsu.org"><img src="https://majutsu.org/og.png" alt="Majutsu — Shape history without leaving Emacs" width="720"></a></p>
 
-Majutsu provides a Magit-style interface for [[https://github.com/jj-vcs/jj][Jujutsu (jj)]], offering an
-efficient way to interact with JJ repositories from within Emacs.
+Majutsu is a Magit-style interface for [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] in Emacs:
+a log you can act on, diffs you can select from,
+and menus for jj's commands.
 
-[[file:docs/majutsu.org][Read the full manual]] for comprehensive documentation.
+Read the manual at [[https://majutsu.org][majutsu.org]], or its source in [[file:docs/majutsu.org][docs/majutsu.org]].
 
-* Quick Start
-
-** Installation
+* Installation
 
 #+begin_src emacs-lisp
 ;; Doom Emacs (packages.el)
@@ -17,100 +16,97 @@ efficient way to interact with JJ repositories from within Emacs.
 (use-package majutsu
   :straight (:host github :repo "0WD0/majutsu"))
 
-;; use-package + package-vc (Emacs 29+)
+;; use-package + package-vc (Emacs 30+)
 (use-package majutsu
-  :vc (:url "https://github.com/0WD0/majutsu"))
+  :vc (:url "https://github.com/0WD0/majutsu" :rev :newest))
 #+end_src
 
-** Usage
+* Usage
 
-1. Open a JJ repository: ~M-x majutsu~ (or ~majutsu-log~)
-2. Navigate: vanilla bindings use ~n~ / ~p~ for next/previous revision; Evil uses ~C-j~ / ~C-k~ or ~gj~ / ~gk~ for section navigation. In log buffers, ~[~ / ~]~ jump to visible parents/children
-3. Act: ~RET~ to visit, ~?~ for help
-4. In blob buffers, press ~e~ to enter editable mode; save applies via =jj diffedit= (~i~ in Evil also enters editable mode)
-5. In blob buffers, press ~b~ to annotate; ~C-c m~ opens the blob in Magit
+~M-x majutsu~ in a jj repository opens the log.
 
-** Optional Forge Integration
+- ~n~ / ~p~ move between revisions (Evil: ~C-j~ / ~C-k~);
+  ~[~ and ~]~ jump to a parent or a child.
+- ~TAB~ folds the section at point.
+- ~?~ lists every command.
+- ~D~ shows the diff of the revision at point.
+- ~RET~ on a revision edits it (=jj edit=); in a diff it visits the file.
+- ~$~ (Evil: ~`~) shows what jj printed.
 
-If [[https://github.com/magit/forge][Forge]] is installed, enable Majutsu integration with:
+Commands open a menu in which you set options and pick revisions
+from the log before anything runs.
 
-#+begin_src emacs-lisp
-(require 'majutsu-forge)
-(majutsu-forge-mode 1)
-#+end_src
+| Vanilla | Evil    | Command                              |
+|---------+---------+--------------------------------------|
+| ~o~     | ~o~     | New change                           |
+| ~c~     | ~c~     | Describe                             |
+| ~w~     | ~i~     | Edit descriptions in place           |
+| ~C~     | ~C~     | Commit                               |
+| ~e~     | ~e~     | Edit a revision                      |
+| ~k~     | ~x~     | Abandon                              |
+| ~s~     | ~s~     | Squash                               |
+| ~S~     | ~S~     | Split                                |
+| ~a~     | ~a~     | Absorb                               |
+| ~R~     | ~R~     | Restore                              |
+| ~r~     | ~r~     | Rebase                               |
+| ~V~     | ~_~     | Revert                               |
+| ~? y~   | ~? y~   | Duplicate                            |
+| ~d~     | ~d~     | Diff                                 |
+| ~E~     | ~E~     | Ediff                                |
+| ~? M~   | ~? M~   | Resolve conflicts                    |
+| ~b~     | ~b~     | Bookmarks                            |
+| ~? t~   | ~? t~   | Tags                                 |
+| ~G~     | ~? G~   | Git: fetch, push, remotes, Gerrit    |
+| ~Z~     | ~*~     | Workspaces                           |
+| ~l~     | ~L~     | Log options                          |
+| ~v~     | ~? v~   | Evolution log                        |
+| ~X~     | ~X~     | Operation log, restore, revert       |
+| ~C-/~   | ~u~     | Undo                                 |
+| ~C-?~   | ~C-r~   | Redo                                 |
+| ~!~     | ~!~     | Run a jj or shell command            |
+| ~g~     | ~g r~   | Refresh                              |
 
-This adds Forge issue, pull-request, and discussion sections to Majutsu log
-buffers and binds ~N~ / ~'~ in Majutsu buffers to ~forge-dispatch~.  The initial
-integration is intended for colocated jj/Git repositories, where Forge can still
-see a Git repository and remotes.  Forge sections also depend on a configured,
-tracked repository and populated Forge database.  Pull-request commit lists shown
-by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffers.
+In a diff, Split, Squash, Absorb, and Restore can take
+selected hunks, files, or lines instead of the whole change.
 
-** Optional Embark Integration
+* Integrations
 
-When [[https://github.com/oantolin/embark][Embark]] is loaded, =embark-act= works on bookmarks, revisions and remotes
-in Majutsu buffers and on bookmark and workspace completion candidates.
-Bookmarks can be inspected, edited, moved, renamed, deleted or forgotten,
-remote bookmarks tracked or untracked, remotes fetched, renamed or removed,
-and workspaces visited or opened in Dired.
+All optional; see [[file:docs/majutsu.org::#integrations][Integrations]] in the manual.
 
-** Essential Keybindings
-
-| Key (Vanilla / Evil) | Action                    |
-|----------------------+---------------------------|
-| ~n~ / ~C-j~              | Next revision/section     |
-| ~p~ / ~C-k~              | Previous revision/section |
-| ~[~                    | Go to parent              |
-| ~]~                    | Go to child               |
-| ~RET~                  | Visit thing at point      |
-| ~?~                    | Show all commands         |
-| ~g~ / ~g r~              | Refresh                   |
-| ~a~                    | Absorb                    |
-| ~b~                    | Bookmarks                 |
-| ~c~                    | Describe                  |
-| ~C~                    | Commit                    |
-| ~d~                    | Diff                      |
-| ~E~                    | Ediff                     |
-| ~? M~                  | Text conflict workbench   |
-| ~e~                    | Edit change               |
-| ~G~ / ~? G~              | Git                       |
-| ~k~ / ~x~                | Abandon                   |
-| ~o~                    | New                       |
-| ~r~                    | Rebase                    |
-| ~V~ / ~_~                | Revert                    |
-| ~R~                    | Restore                   |
-| ~s~                    | Squash                    |
-| ~S~                    | Split                     |
-| ~? y~                  | Duplicate                 |
-| ~Z~ / ~*~                | Workspaces                |
-| ~C-/~ / ~u~              | Undo                      |
-| ~C-?~ / ~C-r~            | Redo                      |
+- Evil :: Normal-state bindings are installed when Evil is present.
+- Embark :: =embark-act= works on bookmarks, revisions, remotes,
+  and workspaces.
+- Forge :: ~(majutsu-forge-mode 1)~ shows pull requests and issues
+  in the log of a colocated repository.
+- Org :: ~org-store-link~ in a Majutsu buffer stores a link
+  to a revision or a repository.
+- TRAMP :: Repositories on remote hosts work.
+- Ghostel :: Runs jj's terminal diff editor and =jj arrange= inside Emacs.
 
 * Requirements
 
 - Emacs 29.1+
-- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.47.0+
-- [[https://magit.vc/][magit]] 4.4.0+, [[https://github.com/magit/transient][transient]] 0.13.0+, [[https://github.com/emacs-compat/compat][compat]]
+- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] 0.47.0+
+- [[https://magit.vc/][magit]] 4.4.0+, [[https://github.com/magit/transient][transient]] 0.13.0+, [[https://github.com/emacs-compat/compat][compat]] 31.0.0.1+
 - [[https://github.com/minad/consult][consult]] 1.0+ and [[https://github.com/alphapapa/plz.el][plz]] 0.9.1+ (Gerrit completion)
-- [[https://github.com/magit/with-editor][with-editor]] (pulled in via magit; message editing)
+- [[https://github.com/magit/with-editor][with-editor]] (comes with magit)
 
 * Documentation
 
-- [[file:docs/majutsu.org][User Manual]] - Complete guide to all features
-- [[file:NEWS.org][NEWS]] - Version history and changelog
-- [[file:THIRD_PARTY_NOTICES.org][Third-Party Notices]] - Upstream adaptation and attribution map
-- [[file:LICENSE-MIT][Legacy MIT Notice]] - Retained MIT attribution text for pre-GPL code
+- [[file:docs/majutsu.org][User Manual]]
+- [[file:NEWS.org][NEWS]]: what changed in each release
+- [[file:THIRD_PARTY_NOTICES.org][Third-Party Notices]]: code adapted from other projects
 
 * License
 
-- Current: [[file:LICENSE][GNU GPL v3 or later]]
-- Historical notice: [[file:LICENSE-MIT][MIT notice text]] retained for pre-GPL distributions
+[[file:LICENSE][GNU GPL v3 or later]].
+[[file:LICENSE-MIT][LICENSE-MIT]] keeps the notice of the code from before the change of license.
 
 * Credits
 
-Majutsu began as a fork of [[https://github.com/bolivier/jj-mode.el][jj-mode.el]] by Brandon Olivier. It depends on
-and draws inspiration from [[https://magit.vc/][Magit]] and wraps the [[https://github.com/jj-vcs/jj][Jujutsu]] VCS.
+Majutsu began as a fork of [[https://github.com/bolivier/jj-mode.el][jj-mode.el]] by Brandon Olivier.
+It builds on [[https://magit.vc/][Magit]]'s sections and menus.
 
 * Contributing
 
-Issues and pull requests welcome at https://github.com/0WD0/majutsu
+Issues and pull requests are welcome at https://github.com/0WD0/majutsu

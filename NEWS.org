@@ -171,13 +171,22 @@
   track, fetch, visit.  The default action shows a diff; editing is an
   explicit action.
 
+- Org links ::
+  ~org-store-link~ in a Majutsu buffer stores a =majutsu-rev:= link to the
+  revision at point, or a =majutsu:= link to the repository.
+
 - Bug references ::
   Log and description buffers enable ~bug-reference-mode~ and can derive the
   issue links from the repository's Git remotes.
 
 *** Editing
 
-- Descriptions ::
+- Descriptions in place ::
+  ~w~ (~i~ in Evil) in the log, or above the diff of one revision, makes
+  the descriptions editable where they are shown, like Wdired.  ~C-c C-c~
+  applies every changed description in one =jj describe=.
+
+- Description buffers ::
   Description buffers save, recall and search earlier messages, and
   ~C-c C-d~ shows the diff being described.  Summary text beyond column 68
   is highlighted and the body fills at column 72
@@ -201,8 +210,9 @@
   with ~majutsu-template-defspecial~.
 
 - Manual ::
-  Reorganized into workflows, repository management, customization and
-  reference, with a searchable web edition.
+  Rewritten around workflows, repository management, customization and
+  integrations, with a key and command reference and a searchable web
+  edition.
 
 ** Changed
 
