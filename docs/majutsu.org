@@ -859,6 +859,14 @@ above the diff of one revision.  Like Wdired, a session makes every
 description in the buffer editable while the rest stays read-only, so
 several revisions can be reworded at once.
 
+#+attr_demo: :capture edit-in-place
+- ~n n~ :: Move to a change.
+- ~w~ :: Start editing.  Every description in the log is now a field.
+- ~"Polish the "~ :: Type at the start of the description.
+- ~C-n~ :: Move to the description below.
+- ~" in Hiccup"~ :: Add to its end.
+- ~C-c C-c~ :: Apply.  One =jj describe= rewords both changes.
+
 #+attr_reference: :kind command-binding :interface "Log and diff buffers" :mode majutsu-log-mode
 - Key: w (Vanilla) (majutsu-section-edit) :: Start editing.
 - Key: i (Evil) (majutsu-evil-section-edit) :: Start editing and stay in
@@ -1165,9 +1173,39 @@ Absorb leaves selected changes that jj cannot assign in the source too;
 
 A selection cannot be carried to another command; clear it first.
 
-For example, to squash only the changes to one file into the parent: open
-the revision's diff with ~RET~, press ~s~, press ~F~ on the file, and run the
-squash.
+A change to the keystroke index also fixed the renderer.  To move the fix
+into the parent, where the renderer was added, squash that one file:
+#+attr_demo: :capture select-file
+- ~n~ :: Move to the change.
+- ~RET~ :: Show its diff.
+- ~s~ :: Open the Squash transient.  In a diff it offers Patch Selection.
+- ~n n n n n~ :: Move to the file in the summary.
+- ~F~ :: Select the file.
+- ~RET~ :: Squash.  The fix is in the parent; the diff shows what stayed.
+
+A change made two unrelated fixes.  To split the first off into a change of
+its own, select its hunk:
+#+attr_demo: :capture select-hunk
+- ~n~ :: Move to the change.
+- ~RET~ :: Show its diff.
+- ~S~ :: Open the Split transient.
+- ~n n n n n n~ :: Move to the first hunk.
+- ~H~ :: Select the hunk.
+- ~RET~ :: Split.  jj asks for the descriptions of both parts.
+- ~C-c C-c~ :: Finish.  The diff shows the first part: the selected hunk.
+- ~q~ :: Back in the log, the change has become two; the rest is in the second.
+
+The working copy still has two lines of debugging among its changes.  To
+discard just those lines, select them as a region:
+#+attr_demo: :capture select-region
+- ~n~ :: Move to the working copy.
+- ~RET~ :: Show its diff.
+- ~R~ :: Open the Restore transient.
+- ~n n n n n n~ :: Move to the hunk.
+- ~C-n C-n C-n~ :: Move to the first line to discard.
+- ~C-SPC C-n C-n~ :: Mark the two lines as a region.
+- ~R~ :: Select the lines of the region.
+- ~RET~ :: Restore.  The two lines are gone; the rest of the hunk stays.
 
 *** Which Diffs Work
 The diff must show what the command acts on:

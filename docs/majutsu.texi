@@ -1652,6 +1652,21 @@ description in the buffer editable while the rest stays read-only@comma{} so
 several revisions can be reworded at once.
 
 @table @asis
+@item @code{n n}
+Move to a change.
+@item @code{w}
+Start editing.  Every description in the log is now a field.
+@item @code{"Polish the "}
+Type at the start of the description.
+@item @code{C-n}
+Move to the description below.
+@item @code{" in Hiccup"}
+Add to its end.
+@item @code{C-c C-c}
+Apply.  One @samp{jj describe} rewords both changes.
+@end table
+
+@table @asis
 @item @kbd{w (Vanilla)} (@code{majutsu-section-edit})
 @kindex w (Vanilla)
 @findex majutsu-section-edit
@@ -2245,9 +2260,64 @@ Absorb leaves selected changes that jj cannot assign in the source too;
 
 A selection cannot be carried to another command; clear it first.
 
-For example@comma{} to squash only the changes to one file into the parent: open
-the revision's diff with @code{RET}@comma{} press @code{s}@comma{} press @code{F} on the file@comma{} and run the
-squash.
+A change to the keystroke index also fixed the renderer.  To move the fix
+into the parent@comma{} where the renderer was added@comma{} squash that one file:
+@table @asis
+@item @code{n}
+Move to the change.
+@item @code{RET}
+Show its diff.
+@item @code{s}
+Open the Squash transient.  In a diff it offers Patch Selection.
+@item @code{n n n n n}
+Move to the file in the summary.
+@item @code{F}
+Select the file.
+@item @code{RET}
+Squash.  The fix is in the parent; the diff shows what stayed.
+@end table
+
+A change made two unrelated fixes.  To split the first off into a change of
+its own@comma{} select its hunk:
+@table @asis
+@item @code{n}
+Move to the change.
+@item @code{RET}
+Show its diff.
+@item @code{S}
+Open the Split transient.
+@item @code{n n n n n n}
+Move to the first hunk.
+@item @code{H}
+Select the hunk.
+@item @code{RET}
+Split.  jj asks for the descriptions of both parts.
+@item @code{C-c C-c}
+Finish.  The diff shows the first part: the selected hunk.
+@item @code{q}
+Back in the log@comma{} the change has become two; the rest is in the second.
+@end table
+
+The working copy still has two lines of debugging among its changes.  To
+discard just those lines@comma{} select them as a region:
+@table @asis
+@item @code{n}
+Move to the working copy.
+@item @code{RET}
+Show its diff.
+@item @code{R}
+Open the Restore transient.
+@item @code{n n n n n n}
+Move to the hunk.
+@item @code{C-n C-n C-n}
+Move to the first line to discard.
+@item @code{C-SPC C-n C-n}
+Mark the two lines as a region.
+@item @code{R}
+Select the lines of the region.
+@item @code{RET}
+Restore.  The two lines are gone; the rest of the hunk stays.
+@end table
 
 @node Which Diffs Work
 @subsection Which Diffs Work
