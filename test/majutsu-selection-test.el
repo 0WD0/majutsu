@@ -216,5 +216,20 @@
       (should (equal (transient-infix-value obj)
                      '("--revisions=@" "--revisions=@-"))))))
 
+(ert-deftest majutsu-revision-selection-option/shows-picked-ids-short ()
+  "A picked revision is shown by a short id and passed to jj in full."
+  (let* ((change "royxmykxtrkrqppotnrvutxlvrvqyxmy")
+         (commit "1442f5b4c0ffee00c0ffee00c0ffee00c0ffee00")
+         (obj (make-instance 'majutsu-revision-selection-option
+                             :argument "--revisions="
+                             :multi-value 'repeat)))
+    (oset obj value (list change commit "main..@"))
+    (let ((shown (substring-no-properties (transient-format-value obj))))
+      (should (string-match-p "royxmykx\\b" shown))
+      (should (string-match-p "1442f5b4\\b" shown))
+      (should (string-match-p "main\\.\\.@" shown))
+      (should-not (string-search change shown)))
+    (should (equal (oref obj value) (list change commit "main..@")))))
+
 (provide 'majutsu-selection-test)
 ;;; majutsu-selection-test.el ends here

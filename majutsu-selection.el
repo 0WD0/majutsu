@@ -352,6 +352,23 @@ If ID is non-nil, clear only that selection category."
                           value))
                     (oref obj value))))))
 
+;; A revision picked in the log is passed to jj by its full id, which no
+;; reader needs to see: the selection is already marked in the log.
+(defun majutsu-selection--short-id (value)
+  "Return VALUE cut to eight characters if it is a full change or commit id."
+  (if (and (stringp value)
+           (string-match-p "\\`\\(?:[k-z]\\{32\\}\\|[0-9a-f]\\{40\\}\\)\\'" value))
+      (substring value 0 8)
+    value))
+
+(cl-defmethod transient-format-value ((obj majutsu-revision-selection-option))
+  (let ((shown (clone obj))
+        (value (oref obj value)))
+    (oset shown value (if (listp value)
+                          (mapcar #'majutsu-selection--short-id value)
+                        (majutsu-selection--short-id value)))
+    (cl-call-next-method shown)))
+
 (cl-defmethod transient-infix-set ((_obj majutsu-selection-option) _value)
   (cl-call-next-method)
   (majutsu-selection-render))
