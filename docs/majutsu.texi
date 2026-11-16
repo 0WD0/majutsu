@@ -163,6 +163,8 @@ Bookmarks
 
 * Understanding Bookmarks::
 * Bookmark List::
+* Remote List::
+* Projects in the jjosh build::
 * Embark Actions::
 * Bookmark Transient::
 
@@ -293,7 +295,7 @@ Emacs 29.1 or later.
 @item
 @samp{compat} 31.0.0.1 or later.
 @item
-Jujutsu (jj) v0.41.0 or later installed and in your @samp{PATH}.
+Jujutsu (jj) v0.47.0 or later installed and in your @samp{PATH}.
 @item
 @samp{magit} 4.4.0 or later (for section management).
 @item
@@ -868,9 +870,10 @@ Visible anchor-line content on the left (can span physical lines
 before the tail segment begins).
 @item @code{tail}
 Single-line auxiliary content rendered on the anchor line with
-right alignment. It remains searchable as real text@comma{} but copying a mixed
-heading+tail region drops the tail text by default; copying the tail alone
-preserves it.
+right alignment. A description that would push it past the window edge is
+displayed with … (@code{majutsu-log-elide-description}). It remains searchable as
+real text@comma{} but copying a mixed heading+tail region drops the tail text by
+default; copying the tail alone preserves it.
 @item @code{body}
 Foldable section body.
 @item @code{metadata}
@@ -1456,12 +1459,8 @@ Scroll the diff window
 @subsection Ediff and Diffedit
 
 @table @asis
-@item @kbd{? E (Vanilla)} (@code{majutsu-ediff})
-@kindex ? E (Vanilla)
-@findex majutsu-ediff
-Open the Ediff transient.
-@item @kbd{E (Evil)} (@code{majutsu-ediff})
-@kindex E (Evil)
+@item @kbd{E} (@code{majutsu-ediff})
+@kindex E
 @findex majutsu-ediff
 Open the Ediff transient.
 @end table
@@ -2597,8 +2596,7 @@ shows each exact conflicted path together with its conflict side count.
 @kindex ? M
 @findex majutsu-resolve
 Open a directory-tree workbench for the revision
-  at point@comma{} or @samp{@@}. Evil users can press @code{M} directly. With a prefix argument@comma{}
-  choose a revision explicitly.
+  at point@comma{} or @samp{@@}. With a prefix argument@comma{} choose a revision explicitly.
 @end table
 
 The workbench pins an exact commit@comma{} including historical revisions and
@@ -2845,6 +2843,8 @@ resolving the last conflict in the buffer turns off
 @menu
 * Understanding Bookmarks::
 * Bookmark List::
+* Remote List::
+* Projects in the jjosh build::
 * Embark Actions::
 * Bookmark Transient::
 @end menu
@@ -2859,19 +2859,19 @@ bookmark; concurrent moves can also leave a bookmark with conflicted targets.
 @node Bookmark List
 @section Bookmark List
 
-The bookmark list always includes local and remote bookmarks@comma{} including
-synchronized and untracked remote bookmarks.  No prefix argument is needed.
+The bookmark list shows the local bookmarks@comma{} each with the state of its
+remotes on its own line.
 
-@samp{Local bookmarks} and @samp{Remote bookmarks} are separate sections;
-remote bookmarks are grouped by remote name@comma{} with fetch URLs and distinct
-push URLs shown in the remote headings.  Configured remotes without bookmarks
-show @samp{No bookmarks}.  On a remote heading@comma{} @samp{r} opens remote management@comma{}
-@samp{f} fetches only that remote@comma{} and the delete action removes the remote.  Both sections remain visible
-when empty.  Git's special @samp{@@git} references appear separately under
-@samp{Git tracking bookmarks} when present.
+@example
+main  ≡ origin            kzvx 1f2c first line of the description
+topic ↑2 origin@comma{} ○ fork   qpwm 8a01 first line of the description
+@end example
 
-Remote rows show their relationship immediately after the bookmark name@comma{}
-before revision descriptions:
+Unfold a bookmark for its remote bookmarks and@comma{} when its target is
+conflicted@comma{} the conflicting revisions.  Git's special @samp{@@git} reference
+appears under its bookmark only when it differs from the local target.
+Bookmarks that exist on a remote only are in the @ref{Remote List, , remote list}.
+
 @itemize
 @item
 @samp{≡} means the tracked reference is synchronized with the local bookmark.
@@ -2882,28 +2882,89 @@ before revision descriptions:
 in the remote reference.  Zero counts are omitted.  A lower bound is
 shown as @samp{↑≥N} or @samp{↓≥N} rather than an exact count.
 @item
-@samp{× local} means the tracked local bookmark has been deleted while the
-remote reference remains.  The deleted local bookmark stays visible too.
+@samp{×} means the local bookmark has been deleted while the tracked remote
+reference remains.  The deleted local bookmark stays visible.
 @end itemize
 
 Synchronized and untracked states use a muted color; local-only and
-remote-only counts use distinct colors.  Hover over a remote row for the
-symbol legend.  Conflict targets appear beneath their own bookmark.
-Sections initially open and retain their folding state on refresh.
+remote-only counts use distinct colors.  Hover over a row for the symbol
+legend.  Folding is retained on refresh.
+
+@code{majutsu-bookmark-list} moves to the local bookmark of the bookmark at point@comma{}
+so from a remote bookmark in the remote list it leads to its local row.
+
+@node Remote List
+@section Remote List
+
+@code{majutsu-git-remote-list} shows the Git remotes with their fetch URL@comma{} a
+distinct push URL@comma{} and how many of their bookmarks are tracked.
+
+@example
+origin  git@@example.org:me/repo.git  2 tracked
+fork  git@@example.org:you/repo.git  1 tracked@comma{} 12 untracked
+@end example
+
+Unfold a remote for the bookmarks it holds@comma{} tracked or not@comma{} with the same
+state symbols as the bookmark list.  This is where a bookmark that exists on
+a remote only is found and tracked.  The bookmarks are rendered when the
+remote is first unfolded.
+
+On a remote line@comma{} @samp{r} opens remote management@comma{} @samp{f} fetches only that remote@comma{}
+and the delete action removes the remote.
+
+The command moves to the remote at point: from a remote bookmark in the
+bookmark list@comma{} it leads to the remote that holds it.
+
+@node Projects in the jjosh build
+@section Projects in the jjosh build
+
+jjosh configures remotes per scope: the repository itself or one registered
+project.  Both lists therefore have one section per scope: @samp{Repository}@comma{}
+then each project under a heading with its name and directory.  The bookmark
+list shows the scopes that have local bookmarks; the remote list shows every
+project@comma{} and the repository when it has remotes of its own.
+
+@example
+parser  packages/parser  1 unsynced
+  main  ≈ origin            kzvx 1f2c first line of the description
+  topic ↑2 origin           qpwm 8a01 first line of the description
+@end example
+
+@example
+parser  packages/parser
+  origin  git@@example.org:me/parser.git  2 tracked
+vendor  third_party/vendor
+  origin  https://example.org/vendor.git  filter :/src  37 untracked
+@end example
+
+Bookmarks appear under their project without the @samp{#label} suffix; commands
+still receive the full name.  Remotes act through their qualified name@comma{} such
+as @samp{origin#parser}.
+
+In a repository of many projects@comma{} a tracked remote reference usually names
+another commit than the local bookmark merely because unrelated history was
+rewritten.  @samp{≈} marks a project bookmark whose project directory is
+identical on both sides; commit distances are shown only when the content
+differs.  A push can still update the remote@comma{} because the history differs.
+A project heading counts the bookmarks whose content differs as @samp{N unsynced}.
+
+@code{majutsu-git-fetch-project} fetches the project at point from its default
+remotes@comma{} and @code{majutsu-project-at-point} returns its name for your own
+commands.  Neither has a default key binding.
 
 @node Embark Actions
 @section Embark Actions
 
-When Embark is loaded@comma{} @samp{embark-act} recognizes bookmark list sections and
+When Embark is loaded@comma{} @samp{embark-act} recognizes bookmark and remote list sections and
 completion candidates.  No additional Majutsu key binding is installed;
 use your configured Embark key in either Emacs or Evil.
 
 Local bookmarks offer inspect@comma{} edit@comma{} move@comma{} rename@comma{} delete and forget actions.
-Remote bookmarks offer inspection@comma{} exactly scoped tracking@comma{} and forget: @samp{t}
-tracks an untracked reference@comma{} @samp{u} untracks a tracked reference@comma{} and @samp{f}
-forgets that remote bookmark until the next fetch.  The special @samp{@@git}
-records offer revision inspection and forget@comma{} without local bookmark mutation
-actions such as rename or delete.  Conflict children target their own commit@comma{}
+Remote bookmarks offer inspection and exactly scoped tracking: @samp{t} tracks an
+untracked reference and @samp{u} untracks a tracked one.  The special @samp{@@git}
+records offer revision inspection@comma{} without local bookmark mutation actions
+such as rename or delete.  In the jjosh build@comma{} @samp{f} forgets a remote or @samp{@@git}
+bookmark until the next fetch.  Conflict children target their own commit@comma{}
 not their parent bookmark.  Remote headings offer fetch@comma{} rename and remove@comma{}
 including remotes with no bookmarks.  Copying remains available through
 Embark's standard actions.
@@ -3250,20 +3311,20 @@ Transient actions:
 @item @kbd{l} (@code{majutsu-git-remote-list})
 @kindex l
 @findex majutsu-git-remote-list
-Open the bookmark list at its Remote
-  bookmarks section. Configured remotes with no bookmarks are included.
+Open the remote list@comma{} at the remote at
+  point when there is one.
 @item @kbd{a} (@code{majutsu-git-remote-add-transient})
 @kindex a
 @findex majutsu-git-remote-add-transient
 Add a new Git remote as
   @samp{jj git remote add [OPTIONS] REMOTE URL}. Majutsu prompts for a new remote
   name@comma{} rejects names that already exist@comma{} prompts for the URL/path positional@comma{}
-  and exposes @samp{--fetch-tags} and @samp{--push-url}.
+  and exposes @samp{--push-url}.
 @item @kbd{d} (@code{majutsu-git-remote-remove})
 @kindex d
 @findex majutsu-git-remote-remove
 Remove an existing remote. In the
-  bookmark list buffer@comma{} the remote at point is used as the default.
+  remote list buffer@comma{} the remote at point is used as the default.
 @item @kbd{r} (@code{majutsu-git-remote-rename})
 @kindex r
 @findex majutsu-git-remote-rename
@@ -3273,7 +3334,7 @@ Rename a remote.
 @findex majutsu-git-remote-set-url-transient
 Set remote URLs. With no
   option@comma{} Majutsu prompts for the fetch URL/path positional; use @samp{--fetch}
-  and/or @samp{--push} to set them explicitly. In the bookmark list buffer@comma{} the remote
+  and/or @samp{--push} to set them explicitly. In the remote list buffer@comma{} the remote
   at point is used as the default.
 @end table
 
@@ -3285,7 +3346,7 @@ Set remote URLs. With no
 @kindex c
 @findex majutsu-git-clone-transient
 Clone a Git repository into a jj repo.
-  Source may be a URL or path; @samp{--branch} can be repeated.
+  Source may be a URL or path; @samp{--branch} and @samp{--tag} can be repeated.
 @item @kbd{i} (@code{majutsu-git-init-transient})
 @kindex i
 @findex majutsu-git-init-transient
@@ -3663,10 +3724,10 @@ The Evil state to start in (default:
   @samp{normal}).
 @end defopt
 
-When Evil integration is enabled@comma{} the dispatcher displays and accepts the same
-Evil-facing top-level keys used in Majutsu buffers@comma{} including @samp{x}@comma{} @samp{L}@comma{} @samp{_}@comma{}
-@samp{*}@comma{} @samp{u}@comma{} @samp{C-r}@comma{} and @samp{`}. The global Evil @samp{v} binding remains Visual state;
-open evolog from the dispatcher with @samp{? v}.
+When Evil integration is enabled@comma{} the dispatcher follows the invoking
+buffer's Evil state: Normal@comma{} Visual@comma{} and Motion use the Evil keys@comma{} other
+states use the Vanilla keys.  The global Evil @samp{v} binding remains Visual
+state; open evolog from the dispatcher with @samp{? v}.
 
 @node jjosh Extensions
 @section jjosh Extensions

@@ -48,11 +48,11 @@ by Forge's Git-oriented renderer are replaced by a placeholder in Majutsu buffer
 
 ** Optional Embark Integration
 
-When [[https://github.com/oantolin/embark][Embark]] is loaded, Majutsu automatically adds actions for workspace
-and bookmark completion candidates.  Workspace actions can visit, open in
-Dired, or copy the root.  Bookmark actions can edit, diff, inspect evolution,
-move, rename, delete, or forget the selected bookmark, including exact
-=NAME@REMOTE= forget for tracked, untracked, and =@git= bookmarks.
+When [[https://github.com/oantolin/embark][Embark]] is loaded, =embark-act= works on bookmarks, revisions and remotes
+in Majutsu buffers and on bookmark and workspace completion candidates.
+Bookmarks can be inspected, edited, moved, renamed, deleted or forgotten,
+remote bookmarks tracked or untracked, remotes fetched, renamed or removed,
+and workspaces visited or opened in Dired.
 
 ** Essential Keybindings
 
@@ -89,7 +89,7 @@ move, rename, delete, or forget the selected bookmark, including exact
 * Requirements
 
 - Emacs 29.1+
-- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.41.0+
+- [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] v0.47.0+
 - [[https://magit.vc/][magit]] 4.4.0+, [[https://github.com/magit/transient][transient]] 0.13.0+, [[https://github.com/emacs-compat/compat][compat]]
 - [[https://github.com/minad/consult][consult]] 1.0+ and [[https://github.com/alphapapa/plz.el][plz]] 0.9.1+ (Gerrit completion)
 - [[https://github.com/magit/with-editor][with-editor]] (pulled in via magit; message editing)

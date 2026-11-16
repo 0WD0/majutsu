@@ -47,7 +47,7 @@ Majutsu stands on the shoulders of giants. We are grateful to:
 ** Requirements
 - Emacs 29.1 or later.
 - =compat= 31.0.0.1 or later.
-- Jujutsu (jj) v0.41.0 or later installed and in your =PATH=.
+- Jujutsu (jj) v0.47.0 or later installed and in your =PATH=.
 - =magit= 4.4.0 or later (for section management).
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit
   completion).
@@ -1740,11 +1740,11 @@ completion candidates.  No additional Majutsu key binding is installed;
 use your configured Embark key in either Emacs or Evil.
 
 Local bookmarks offer inspect, edit, move, rename, delete and forget actions.
-Remote bookmarks offer inspection, exactly scoped tracking, and forget: =t=
-tracks an untracked reference, =u= untracks a tracked reference, and =f=
-forgets that remote bookmark until the next fetch.  The special =@git=
-records offer revision inspection and forget, without local bookmark mutation
-actions such as rename or delete.  Conflict children target their own commit,
+Remote bookmarks offer inspection and exactly scoped tracking: =t= tracks an
+untracked reference and =u= untracks a tracked one.  The special =@git=
+records offer revision inspection, without local bookmark mutation actions
+such as rename or delete.  In the jjosh build, =f= forgets a remote or =@git=
+bookmark until the next fetch.  Conflict children target their own commit,
 not their parent bookmark.  Remote headings offer fetch, rename and remove,
 including remotes with no bookmarks.  Copying remains available through
 Embark's standard actions.
