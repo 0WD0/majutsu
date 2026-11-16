@@ -512,6 +512,8 @@ The root commit has no immutable description to edit, so it is skipped."
       (majutsu-section-edit-make-field
        :key (list 'first commit-id)
        :multiline nil
+       ;; Without a description the column shows "(no desc)".
+       :placeholder (string-empty-p (or (majutsu-row-column entry 'description) ""))
        :data (list :commit-id commit-id
                    :part :first
                    :first (or (majutsu-row-column entry 'description) "")

@@ -1169,6 +1169,7 @@ The whole message, summary line included, is made editable in place."
              (majutsu-section-edit-make-field
               :key (list 'diff-description commit-id)
               :multiline t
+              :placeholder (string-empty-p message)
               :data (list :commit-id commit-id)))))
         (insert "\n")))))
 

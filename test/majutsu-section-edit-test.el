@@ -103,6 +103,32 @@ Both `FIELD1' and `FIELD2' are editable single-line fields."
        (majutsu-section-edit-finish)
        (should (equal (cdr (car captured)) "FIELD1 "))))))
 
+(ert-deftest majutsu-section-edit/placeholder-is-not-content ()
+  "A field that shows a placeholder starts empty and gets it back if left so."
+  (let (captured)
+    (with-temp-buffer
+      (insert "aa (none) zz\n")
+      (majutsu-section-edit-put
+       4 10 (majutsu-section-edit-make-field :key 'one :placeholder t))
+      (setq buffer-read-only t)
+      (goto-char 4)
+      (setq-local majutsu-section-edit-apply-function
+                  (majutsu-section-edit-test--capture captured))
+      (cl-letf (((symbol-function 'majutsu-refresh) (lambda (&rest _) nil))
+                ((symbol-function 'message) #'ignore))
+        (majutsu-section-edit)
+        (should (equal (buffer-string) "aa  zz\n"))
+        (majutsu-section-edit-finish)
+        (should-not captured)
+        (should (equal (buffer-string) "aa (none) zz\n"))
+        (should (get-text-property 4 majutsu-section-edit-property))
+        (majutsu-section-edit)
+        (insert "x")
+        (should-error (progn (goto-char 2) (insert "y")))
+        (majutsu-section-edit-finish)
+        (should (equal (cdr (car captured)) "x"))
+        (should (equal (buffer-string) "aa x zz\n"))))))
+
 (ert-deftest majutsu-section-edit/no-change-skips-apply ()
   "Finishing without edits should not run the applier."
   (majutsu-section-edit-test--with-buffer

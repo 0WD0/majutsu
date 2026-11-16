@@ -63,10 +63,13 @@
 
 KEY is an arbitrary identity used to recognise the field.  MULTILINE
 controls whether newlines may be typed.  DATA is an arbitrary plist that
-the buffer's `majutsu-section-edit-apply-function' interprets."
+the buffer's `majutsu-section-edit-apply-function' interprets.
+PLACEHOLDER is non-nil when the region shows a stand-in for an empty
+value, such as \"(no desc)\"; a session then starts with the field empty."
   (key nil)
   (multiline nil)
-  (data nil))
+  (data nil)
+  (placeholder nil))
 
 ;;; Session state
 
@@ -316,10 +319,31 @@ boundary stickiness makes insertion inherit the field's own
            unless (equal new (plist-get entry :original))
            collect (cons (plist-get entry :field) new)))
 
+(defun majutsu-section-edit--hide-placeholders ()
+  "Empty the session's fields that only show a placeholder.
+The placeholder stands for an empty value; left in the field, it would be
+taken for text the user wants."
+  (let ((majutsu-section-edit--inhibit-change t))
+    (with-silent-modifications
+      (dolist (entry majutsu-section-edit--entries)
+        (when (majutsu-section-edit-field-placeholder (plist-get entry :field))
+          (let ((beg (plist-get entry :beg))
+                (end (plist-get entry :end)))
+            (plist-put entry :placeholder (buffer-substring beg end))
+            (plist-put entry :original "")
+            (delete-region beg end)))))))
+
 (defun majutsu-section-edit--stop ()
   "Leave the current edit session without touching repository state."
   (with-silent-modifications
     (dolist (entry majutsu-section-edit--entries)
+      ;; A field left empty shows its placeholder again.
+      (when-let* ((placeholder (plist-get entry :placeholder))
+                  (beg (marker-position (plist-get entry :beg)))
+                  ((= beg (marker-position (plist-get entry :end)))))
+        (save-excursion
+          (goto-char beg)
+          (insert placeholder)))
       (when-let* ((sticky (plist-get entry :sticky)))
         (let ((pos (marker-position sticky))
               (old (plist-get entry :sticky-old)))
@@ -370,6 +394,7 @@ Change any number of fields, then finish with
     (user-error "No editable fields in this buffer"))
   (when-let* ((pos (majutsu-section-edit--field-position)))
     (goto-char pos))
+  (majutsu-section-edit--hide-placeholders)
   (majutsu-section-edit--expose)
   (add-hook 'after-change-functions #'majutsu-section-edit--after-change nil t)
   (majutsu-section-edit-mode 1)
