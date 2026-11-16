@@ -195,7 +195,6 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     (kbd "_") #'majutsu-revert
     (kbd "V") nil
     (kbd "d") #'majutsu-diff
-    (kbd "D") #'majutsu-diff-dwim
     (kbd "X") #'majutsu-op-transient
     (kbd "*") #'majutsu-workspace
     (kbd "E") #'majutsu-ediff
@@ -249,8 +248,8 @@ This mirrors `evil-collection-magit-adjust-section-bindings'."
     "gr" #'revert-buffer
     (kbd "i") #'majutsu-evil-blob-insert-dwim
     (kbd "q") #'majutsu-bury-or-kill-buffer
-    ;; RET visits the revision (edit)
-    (kbd "RET") #'majutsu-edit)
+    ;; RET shows the blob's revision.
+    (kbd "RET") #'majutsu-diff-dwim)
 
   ;; Editable blob mode mirrors wdired-like finish/abort flow.
   (add-hook 'majutsu-blob-edit-mode-hook #'evil-normalize-keymaps)

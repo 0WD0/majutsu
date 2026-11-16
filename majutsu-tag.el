@@ -23,13 +23,13 @@
 (require 'subr-x)
 
 (declare-function majutsu-tag-at-point "majutsu-jj" ())
-(declare-function majutsu-edit "majutsu-edit" (&optional arg))
+(declare-function majutsu-diff-dwim "majutsu-diff" (&optional args range filesets))
 
 ;;; Section Keymaps
 
 (defvar-keymap majutsu-tag-section-map
   :doc "Keymap for `jj-tag' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit
+  "<remap> <majutsu-visit-thing>" #'majutsu-diff-dwim
   "<remap> <majutsu-delete-thing>" #'majutsu-tag-delete)
 
 (defvar-local majutsu-tag--list-all-remotes nil

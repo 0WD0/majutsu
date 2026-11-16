@@ -29,13 +29,13 @@
 
 (declare-function majutsu-bookmark-at-point "majutsu-jj" (&optional bookmark-type))
 (declare-function majutsu-revision-at-point "majutsu-jj" ())
-(declare-function majutsu-edit "majutsu-edit" (&optional arg))
+(declare-function majutsu-diff-dwim "majutsu-diff" (&optional args range filesets))
 
 ;;; Section Keymaps
 
 (defvar-keymap majutsu-bookmark-section-map
   :doc "Keymap for `jj-bookmark' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit
+  "<remap> <majutsu-visit-thing>" #'majutsu-diff-dwim
   "<remap> <majutsu-delete-thing>" #'majutsu-bookmark-delete)
 
 ;;; majutsu-bookmark

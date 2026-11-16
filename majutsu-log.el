@@ -29,7 +29,7 @@
 
 (defvar-keymap majutsu-commit-section-map
   :doc "Keymap for `jj-commit' sections."
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit
+  "<remap> <majutsu-visit-thing>" #'majutsu-diff-dwim
   "<remap> <majutsu-delete-thing>" 'majutsu-abandon)
 
 ;;; Log State
@@ -783,7 +783,6 @@ Return non-nil when the section could be located."
   "[" 'majutsu-log-goto-parent
   "]" 'majutsu-log-goto-child
   "O" 'majutsu-new-dwim
-  "D" 'majutsu-diff-dwim
   "B" 'majutsu-new-with-before
   "A" 'majutsu-new-with-after
   "w" 'majutsu-section-edit)

@@ -46,7 +46,6 @@
 ;; the parent map.  These keys mirror Majutsu's bookmark and revision commands.
 (keymap-set majutsu-embark-bookmark-map "RET" #'majutsu-diff-revset)
 (keymap-set majutsu-embark-bookmark-map "e" #'majutsu-edit-revision)
-(keymap-set majutsu-embark-bookmark-map "D" #'majutsu-diff-revset)
 (keymap-set majutsu-embark-bookmark-map "v" #'majutsu-evolog)
 (keymap-set majutsu-embark-bookmark-map "p" #'majutsu-bookmark-advance-patterns)
 (keymap-set majutsu-embark-bookmark-map "s" #'majutsu-bookmark-set)
@@ -59,7 +58,6 @@
 (defvar-keymap majutsu-embark-revision-map
   :doc "Inspect a revision without exposing local bookmark mutations."
   "RET" #'majutsu-diff-revset
-  "D" #'majutsu-diff-revset
   "e" #'majutsu-edit-revision
   "v" #'majutsu-evolog)
 

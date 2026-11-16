@@ -58,7 +58,6 @@ state."
     ("m" "Metaedit"          majutsu-metaedit)
     ("d" "Diff"              majutsu-diff)
     ("v" "Evolution log"     majutsu-evolog)
-    ("D" "Diff (dwim)"       majutsu-diff-dwim)
     ("e" "Edit revision"     majutsu-edit)
     ("E" "Ediff"             majutsu-ediff)
     ("M" "Resolve conflicts" majutsu-resolve)]

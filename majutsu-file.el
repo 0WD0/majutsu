@@ -1003,9 +1003,7 @@ DIRECTION should be either \='prev or \='next."
   "b" #'majutsu-annotate-addition
   "C-x C-q" #'majutsu-blob-edit-start
   "e" #'majutsu-blob-edit-start
-  "g" #'revert-buffer
-  ;; RET visits the revision (edit)
-  "<remap> <majutsu-visit-thing>" #'majutsu-edit)
+  "g" #'revert-buffer)
 
 (define-minor-mode majutsu-blob-mode
   "Enable Majutsu features in blob buffers.
