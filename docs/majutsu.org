@@ -195,7 +195,6 @@ from ~magit-section-mode~.
 | Workspace list       | The repository's workspaces                              |
 | Operation log        | What happened to the repository                          |
 | Evolution log        | Earlier versions of one change                           |
-| Conflict workbench   | The conflicted files of one revision                     |
 | Process              | Recent jj commands and their output                      |
 
 These keys work in all of them:
@@ -436,10 +435,9 @@ The columns are configurable; see [[#log-columns][Log Columns]].
 - Key: 0 :: Reset the options.
 
 *** Conflicts Section
-~majutsu-log-insert-conflicts~ is an optional log section,
-=Unresolved Conflicts=.  It lists the working copy's conflicted files as a
-directory tree, each with the number of sides of its conflict, including
-conflicts a merge inherited.  ~TAB~ folds a directory.
+~majutsu-log-insert-conflicts~ is an optional log section: the working
+copy's [[#conflicts-section][Conflicts section]], the one a conflicted
+revision has in its diff.
 
 #+begin_src emacs-lisp
 (add-hook 'majutsu-log-sections-hook #'majutsu-log-insert-conflicts t)
@@ -1205,7 +1203,10 @@ into the parent, where the renderer was added, squash that one file:
 - ~s~ :: Open the Squash transient.  In a diff it offers Patch Selection.
 - ~n n n n n~ :: Move to the file in the summary.
 - ~F~ :: Select the file.
-- ~RET~ :: Squash.  The fix is in the parent; the diff shows what stayed.
+- ~RET~ :: Squash.  The diff shows what stayed.
+- ~q~ :: Back in the log.
+- ~n n~ :: Move to the parent.
+- ~RET~ :: Its diff has the fix.
 
 #+attr_keymap: :scope Evil
 #+attr_demo: :capture select-file-evil
@@ -1214,7 +1215,10 @@ into the parent, where the renderer was added, squash that one file:
 - ~s~ :: Open the Squash transient.  In a diff it offers Patch Selection.
 - ~C-j C-j C-j C-j C-j~ :: Move to the file in the summary.
 - ~F~ :: Select the file.
-- ~RET~ :: Squash.  The fix is in the parent; the diff shows what stayed.
+- ~RET~ :: Squash.  The diff shows what stayed.
+- ~q~ :: Back in the log.
+- ~j j~ :: Move to the parent.
+- ~RET~ :: Its diff has the fix.
 
 A change made two unrelated fixes.  To split the first off into a change of
 its own, select its hunk:
@@ -1226,8 +1230,12 @@ its own, select its hunk:
 - ~n n n n n n~ :: Move to the first hunk.
 - ~H~ :: Select the hunk.
 - ~RET~ :: Split.  jj asks for the descriptions of both parts.
+- ~C-s "Trim" RET C-a C-k "Trim atoms"~ :: Describe the first part.
+- ~C-s "Trim" RET C-a C-k "Split the input"~ :: Describe the second.
 - ~C-c C-c~ :: Finish.  The diff shows the first part: the selected hunk.
-- ~q~ :: Back in the log, the change has become two; the rest is in the second.
+- ~q~ :: Back in the log, the change has become two.
+- ~n~ :: Move to the second.
+- ~RET~ :: Its diff has the rest.
 
 #+attr_keymap: :scope Evil
 #+attr_demo: :capture select-hunk-evil
@@ -1237,7 +1245,12 @@ its own, select its hunk:
 - ~C-j C-j C-j C-j C-j C-j~ :: Move to the first hunk.
 - ~H~ :: Select the hunk.
 - ~RET~ :: Split.  jj asks for the descriptions of both parts.
-- ~C-c C-c~ :: Finish.  The diff shows the first part: the selected hunk; the rest is in a second change.
+- ~/ "Trim" RET c c "Trim atoms" ESC~ :: Describe the first part.
+- ~n c c "Split the input" ESC~ :: Describe the second.
+- ~C-c C-c~ :: Finish.  The diff shows the first part: the selected hunk.
+- ~q~ :: Back in the log, the change has become two.
+- ~j~ :: Move to the second.
+- ~RET~ :: Its diff has the rest.
 
 The working copy still has two lines of debugging among its changes.  To
 discard just those lines, select them as a region:
@@ -1325,55 +1338,91 @@ There are three ways to resolve a conflict:
 
 | Way                     | Start with                    | Suits                                 |
 |-------------------------+-------------------------------+---------------------------------------|
-| Conflict workbench      | ~? M~                         | Several files, any revision           |
+| Conflicts section       | ~M~                           | Seeing what collided; taking one text |
 | Ediff                   | ~E m~                         | One file, at most two sides           |
 | Conflict markers        | ~E M~, or open the file       | Editing the markers by hand           |
 
-** Conflict Workbench
-#+attr_reference: :kind command-binding :interface "Majutsu dispatcher"
-- Key: ? M (majutsu-resolve) :: Open the workbench for the revision at point,
-  or =@=.  With a prefix argument, choose a revision.
+** Conflicts Section
+:PROPERTIES:
+:CUSTOM_ID: conflicts-section
+:END:
+The diff of a conflicted revision has a Conflicts section between its
+description and its changes.  It lists the conflicted files as a directory
+tree, and each file's conflicts.
 
-The workbench lists the conflicted files of one commit as a directory tree.
-It works on any revision, not only the working copy.  You edit private
-drafts of the files and apply them when you are satisfied; until then jj is
-untouched.
+jj records a conflict as a sum of terms: a snapshot, and changes that each
+lead from one text to another.  The section shows it that way.  Each term
+goes by the label jj gave it: the revision it is from and, after a rebase,
+a squash or a revert, what that revision was to the command.
 
-A file unfolds into its conflicts, and a conflict into jj's terms: a
-snapshot of one side, or a change with its /before/ and /after/.  ~TAB~
-shows the text of a term.  Side numbers match those of the keep-side
-commands in [[#conflict-markers][conflict-marker buffers]].
+- Most conflicts have three terms, and both changes start from the same
+  one.  After a rebase that is the old parents of the rebased revision:
+  one change leads =from= them =to= the destination, the other =to= the
+  rebased revision.  Each shows what it did to the text they share.
+- A conflict with more terms is shown in the order jj records them: the
+  snapshot, then for each change a =from= term and a =to= term.  Its labels
+  can contradict each other, since each still says what its revision was to
+  the command that made it.  Such a conflict usually builds on an earlier
+  one; resolve that first.
 
-#+attr_reference: :kind command-binding :interface "Conflict workbench" :mode majutsu-resolve-mode
-- Key: RET (majutsu-resolve-visit-file) :: Open the file's draft, at the
-  conflict or term at point.  The draft uses the file's usual major mode
-  with =majutsu-conflict-mode=.
-- Key: C-c C-c (majutsu-resolve-apply) :: Apply the drafts of the file or
-  directory at point in one jj operation.  With a prefix argument, apply all
-  drafts.
-- Key: C-c C-k (majutsu-resolve-discard) :: Discard the drafts of the file or
-  directory at point, after confirmation.  With a prefix argument, discard
-  all.  This does not undo anything already applied.
-- Key: C-c C-n (majutsu-resolve-next-file) :: Visit the next file that is
-  still conflicted.
-- Key: ? (majutsu-resolve-dispatch) :: Show these actions as a transient: ~a~
-  applies and ~k~ discards at point, ~A~ and ~K~ act on all drafts, ~g~
-  refreshes, and ~m~ opens the Majutsu dispatcher.
+A =from= term keeps its text folded.  A term whose side has no such file
+says so.
 
-In a draft, the same keys apply to that file, and ~C-c ?~ opens the transient.
-~C-x C-s~ saves the draft only.  ~C-c C-o~ returns to the workbench.
+A revision inherits the conflicts of its parents.  The heading then names
+the earlier change they come from; resolving them there settles the
+descendants too.
 
-Drafts live as long as the workbench buffer.  Refreshing keeps them;
-killing the workbench asks about pending drafts and then removes them.
+#+attr_reference: :kind command-binding :interface "Majutsu buffer / dispatcher" :mode majutsu-mode
+- Key: M (majutsu-resolve) :: In a Conflicts section, resolve at point:
+  on a term, the conflict becomes that text; on a conflict, choose among its
+  terms and all sides one after the other; on a file, choose the side all of
+  it becomes.  On the heading of conflicts that come from an earlier change,
+  show that change at its conflicts.  Anywhere else, show the revision at
+  point, or =@=, at its conflicts; with a prefix argument, choose a revision.
 
-After applying, Majutsu checks the new revision, the file contents, and the
-remaining conflicts.  If it cannot verify the result, it keeps the drafts and
-stops writing: look at what jj did, save any draft text you want, then kill
-the workbench and open the revision again.
+Each resolution is one jj operation and takes effect at once; ~C-/~ undoes
+it.  The conflicts you have not resolved stay conflicts.
 
-The workbench edits existing UTF-8 text files with conflict markers.  It
-does not handle binary files, deletions, renames, or taking a whole file
-from one side; use Ediff or edit the file for those.
+Taking a term drops what the other changes did.  Where both changes must
+survive, ~RET~ (~majutsu-resolve-visit~) visits the file at the conflict or
+term at point to edit it by hand: the working copy's file as it is, another
+revision's as an editable blob.  Saving it refreshes the section.
+
+A file that is not text has no conflicts to unfold, but a whole side of it
+can be taken, as of a file one side lacks.  jj does that only for a conflict
+with two sides.
+
+The first of three changes was edited after the others were made on it.
+The second edits the same two lines, so it is conflicted now, and the third
+inherits that.  In one line the second change's text is the one to keep; the
+other needs what both did:
+#+attr_keymap: :scope Vanilla
+#+attr_demo: :capture resolve-conflict
+- ~n~ :: Move to the working copy.  It and its parent are conflicted.
+- ~M~ :: Show it at its conflicts.  They come from the parent.
+- ~M~ :: On the heading, go there: the parent, at the same two conflicts.
+- ~n n n n n~ :: Move to what the parent did to the first line.
+- ~M~ :: Resolve with it.  One conflict is left.
+- ~RET~ :: Visit the file at that conflict, to keep both changes.
+- ~C-s "Goodbye, %s" RET "!"~ :: Give the parent's line what the other change added.
+- ~C-c ^ RET~ :: Keep that line.
+- ~C-c C-c~ :: Save it into the revision.
+- ~q~ :: Back in the diff, the conflicts are gone.
+- ~q~ :: Back in the log, neither change is conflicted.
+
+#+attr_keymap: :scope Evil
+#+attr_demo: :capture resolve-conflict-evil
+- ~j~ :: Move to the working copy.  It and its parent are conflicted.
+- ~M~ :: Show it at its conflicts.  They come from the parent.
+- ~M~ :: On the heading, go there: the parent, at the same two conflicts.
+- ~C-j C-j C-j C-j C-j~ :: Move to what the parent did to the first line.
+- ~M~ :: Resolve with it.  One conflict is left.
+- ~RET~ :: Visit the file at that conflict, to keep both changes.
+- ~/ "Goodbye, %s" RET f % l a "!" ESC~ :: Give the parent's line what the other change added.
+- ~g r RET~ :: Keep that line.
+- ~Z Z~ :: Save it into the revision.
+- ~q~ :: Back in the diff, the conflicts are gone.
+- ~q~ :: Back in the log, neither change is conflicted.
 
 ** Resolving with Ediff
 ~E m~ (~majutsu-ediff-resolve~) runs =jj resolve= with a three-way Ediff
@@ -1398,7 +1447,7 @@ markers.  It highlights the sides and has commands to keep one of them.
 ~E M~ (~majutsu-ediff-resolve-with-conflict~) opens a conflicted file with
 the mode enabled, at the first conflict.  For a revision other than the
 working copy, it opens an editable blob, and saving it resolves the conflict
-in that revision.  Workbench drafts use the mode too.
+in that revision.
 
 - Command: majutsu-conflict-ensure-mode :: Enable the mode in a buffer with
   conflict markers.  A buffer with only Git-style markers (=|||||||= /
@@ -1408,6 +1457,12 @@ All of jj's marker styles are recognized, including long markers and
 conflicts whose sides lack a final newline.
 
 *** Commands
+The keys that keep a term name it by number, as jj's own messages do.
+=side #N= is the N-th term jj adds and =base #N= the N-th it subtracts, in
+the order of the markers.  In the [[#conflicts-section][Conflicts section]]
+a =from= term is a base, and the snapshot and the =to= terms are the sides.
+The label after a marker says which revision a term is from.
+
 #+attr_keymap: :scope Vanilla
 Emacs bindings use the prefix ~C-c ^~:
 #+attr_keymap: :scope Vanilla
@@ -1416,8 +1471,8 @@ Emacs bindings use the prefix ~C-c ^~:
   next or previous conflict.
 - Key: RET (majutsu-conflict-keep-current) :: Keep the term at point, side or
   base.
-- Key: b (majutsu-conflict-keep-base) :: Keep the conflict base (the merge
-  ancestor: jj's first =-------= / "diff from" term).
+- Key: b (majutsu-conflict-keep-base) :: Keep base #1.  In a conflict with
+  two sides that is the text both changes start from.
 - Key: a (majutsu-conflict-keep-all) :: Concatenate every complete side
   snapshot in side order. Shared context is duplicated; conflicts with a
   nonempty base require confirmation.
@@ -1425,10 +1480,9 @@ Emacs bindings use the prefix ~C-c ^~:
   markers (diff -> snapshot, and snapshot <-> git for 2-sided conflicts). jj
   detects the marker style per conflict when parsing, so this only changes the
   presentation.
-- Key: 1..9 (majutsu-conflict-keep-side) :: Keep side N, matching jj's "side
-  #N" labels.
-- Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep base N (bases in
-  materialization order; they are not paired with side numbers).
+- Key: 1..9 (majutsu-conflict-keep-side) :: Keep side #N.
+- Key: M-1..M-9 (majutsu-conflict-keep-side) :: Keep base #N.  A base does
+  not belong to the side of the same number.
 - Key: R (majutsu-conflict-refine) :: Refine conflict regions with word-level
   highlighting.
 
@@ -1438,13 +1492,13 @@ Evil bindings are available in normal state:
 #+attr_reference: :kind command-binding :interface "Conflict buffer" :mode majutsu-conflict-mode :scope Evil :state Normal
 - Key: ]] / gj (majutsu-conflict-next) :: Jump to the next conflict.
 - Key: [[ / gk (majutsu-conflict-prev) :: Jump to the previous conflict.
-- Key: gb (majutsu-conflict-keep-base) :: Keep the base (the merge ancestor).
+- Key: gb (majutsu-conflict-keep-base) :: Keep base #1.
 - Key: gr RET (majutsu-conflict-keep-current) :: Keep the term at point.
 - Key: gr a (majutsu-conflict-keep-all) :: Concatenate all complete side
   snapshots, confirming when the base is nonempty.
 - Key: gr s (majutsu-conflict-restyle) :: Re-render with different markers.
-- Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side N.
-- Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base N.
+- Key: gr 1..9 (majutsu-conflict-keep-side) :: Keep side #N.
+- Key: gR 1..9 (majutsu-conflict-keep-side) :: Keep base #N.
 - Key: ge (majutsu-conflict-refine) :: Refine the conflict.
 
 *** Highlighting and Context Help
@@ -1458,7 +1512,8 @@ n-sided conflicts:
   ~majutsu-conflict-restyle~) are colored the same way. Buffers that contain
   only git-style conflicts are still handed to =smerge-mode= by
   ~majutsu-conflict-ensure-mode~; the two modes stay mutually exclusive.
-- Eldoc describes the term at point ("jj conflict side 2/3: ...").
+- Eldoc describes the term at point: its label, then its number, as in
+  =(side #2 of 3)=.
 - =mouse-3= on a conflict pops up a resolution menu listing every side and
   base with its revision label. With =context-menu-mode= enabled, the entries
   join the standard context menu instead of replacing it.

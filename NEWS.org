@@ -78,13 +78,12 @@
 - Tags ::
   ~majutsu-tag~ (~t~) lists, creates, moves and deletes tags.
 
-- Text conflict workbench ::
-  ~? M~ lists a revision's conflicted files as a directory tree.
-  Files unfold into conflict blocks with diff previews, and ~RET~ opens a
-  private draft at that block.  Saving a draft leaves jj untouched; applying
-  writes the file, or every draft below a directory, in one operation.  A
-  failed or unverified write keeps the drafts.  ~?~ lists the actions
-  (~C-c ?~ in a draft).  The Ediff commands remain available.
+- Conflicts section ::
+  The diff of a conflicted revision lists its conflicted files and their
+  conflicts, each as jj records it: changes from one text to another, under
+  jj's labels.  ~M~ on a term, a conflict or a file resolves with it in
+  one jj operation; elsewhere it shows a revision at its conflicts.  ~RET~
+  visits the file to edit the markers.  The Ediff commands remain available.
 
 - Revision information in diff buffers ::
   The diff of one revision starts with its metadata and full description,

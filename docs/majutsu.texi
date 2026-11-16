@@ -144,7 +144,7 @@ Interactive Patching
 Conflict Resolution
 
 * Finding Conflicts::
-* Conflict Workbench::
+* Conflicts Section: Conflicts Section (1). 
 * Resolving with Ediff::
 * Conflict Markers::
 
@@ -460,7 +460,7 @@ Majutsu buffers are generated from @samp{jj} output and are read-only.  Each
 kind has its own major mode@comma{} derived from @code{majutsu-mode} and through it
 from @code{magit-section-mode}.
 
-@multitable {aaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Buffer
 @tab Shows
 @item Log
@@ -481,8 +481,6 @@ from @code{magit-section-mode}.
 @tab What happened to the repository
 @item Evolution log
 @tab Earlier versions of one change
-@item Conflict workbench
-@tab The conflicted files of one revision
 @item Process
 @tab Recent jj commands and their output
 @end multitable
@@ -887,10 +885,9 @@ Reset the options.
 @node Conflicts Section
 @subsection Conflicts Section
 
-@code{majutsu-log-insert-conflicts} is an optional log section@comma{}
-@samp{Unresolved Conflicts}.  It lists the working copy's conflicted files as a
-directory tree@comma{} each with the number of sides of its conflict@comma{} including
-conflicts a merge inherited.  @code{TAB} folds a directory.
+@code{majutsu-log-insert-conflicts} is an optional log section: the working
+copy's @ref{Conflicts Section (1), , Conflicts section}@comma{} the one a conflicted
+revision has in its diff.
 
 @lisp
 (add-hook 'majutsu-log-sections-hook #'majutsu-log-insert-conflicts t)
@@ -2310,7 +2307,13 @@ Move to the file in the summary.
 @item @code{F}
 Select the file.
 @item @code{RET}
-Squash.  The fix is in the parent; the diff shows what stayed.
+Squash.  The diff shows what stayed.
+@item @code{q}
+Back in the log.
+@item @code{n n}
+Move to the parent.
+@item @code{RET}
+Its diff has the fix.
 @end table
 
 @table @asis
@@ -2325,7 +2328,13 @@ Move to the file in the summary.
 @item @code{F}
 Select the file.
 @item @code{RET}
-Squash.  The fix is in the parent; the diff shows what stayed.
+Squash.  The diff shows what stayed.
+@item @code{q}
+Back in the log.
+@item @code{j j}
+Move to the parent.
+@item @code{RET}
+Its diff has the fix.
 @end table
 
 A change made two unrelated fixes.  To split the first off into a change of
@@ -2343,10 +2352,18 @@ Move to the first hunk.
 Select the hunk.
 @item @code{RET}
 Split.  jj asks for the descriptions of both parts.
+@item @code{C-s "Trim" RET C-a C-k "Trim atoms"}
+Describe the first part.
+@item @code{C-s "Trim" RET C-a C-k "Split the input"}
+Describe the second.
 @item @code{C-c C-c}
 Finish.  The diff shows the first part: the selected hunk.
 @item @code{q}
-Back in the log@comma{} the change has become two; the rest is in the second.
+Back in the log@comma{} the change has become two.
+@item @code{n}
+Move to the second.
+@item @code{RET}
+Its diff has the rest.
 @end table
 
 @table @asis
@@ -2362,8 +2379,18 @@ Move to the first hunk.
 Select the hunk.
 @item @code{RET}
 Split.  jj asks for the descriptions of both parts.
+@item @code{/ "Trim" RET c c "Trim atoms" ESC}
+Describe the first part.
+@item @code{n c c "Split the input" ESC}
+Describe the second.
 @item @code{C-c C-c}
-Finish.  The diff shows the first part: the selected hunk; the rest is in a second change.
+Finish.  The diff shows the first part: the selected hunk.
+@item @code{q}
+Back in the log@comma{} the change has become two.
+@item @code{j}
+Move to the second.
+@item @code{RET}
+Its diff has the rest.
 @end table
 
 The working copy still has two lines of debugging among its changes.  To
@@ -2489,7 +2516,7 @@ stat-summary files and directories.
 
 @menu
 * Finding Conflicts::
-* Conflict Workbench::
+* Conflicts Section: Conflicts Section (1). 
 * Resolving with Ediff::
 * Conflict Markers::
 @end menu
@@ -2502,13 +2529,13 @@ jj labels a conflicted revision @samp{conflict} in the log.  The optional
 
 There are three ways to resolve a conflict:
 
-@multitable {aaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Way
 @tab Start with
 @tab Suits
-@item Conflict workbench
-@tab @code{? M}
-@tab Several files@comma{} any revision
+@item Conflicts section
+@tab @code{M}
+@tab Seeing what collided; taking one text
 @item Ediff
 @tab @code{E m}
 @tab One file@comma{} at most two sides
@@ -2517,73 +2544,116 @@ There are three ways to resolve a conflict:
 @tab Editing the markers by hand
 @end multitable
 
-@node Conflict Workbench
-@section Conflict Workbench
+@node Conflicts Section (1)
+@section Conflicts Section
+
+The diff of a conflicted revision has a Conflicts section between its
+description and its changes.  It lists the conflicted files as a directory
+tree@comma{} and each file's conflicts.
+
+jj records a conflict as a sum of terms: a snapshot@comma{} and changes that each
+lead from one text to another.  The section shows it that way.  Each term
+goes by the label jj gave it: the revision it is from and@comma{} after a rebase@comma{}
+a squash or a revert@comma{} what that revision was to the command.
+
+@itemize
+@item
+Most conflicts have three terms@comma{} and both changes start from the same
+one.  After a rebase that is the old parents of the rebased revision:
+one change leads @samp{from} them @samp{to} the destination@comma{} the other @samp{to} the
+rebased revision.  Each shows what it did to the text they share.
+@item
+A conflict with more terms is shown in the order jj records them: the
+snapshot@comma{} then for each change a @samp{from} term and a @samp{to} term.  Its labels
+can contradict each other@comma{} since each still says what its revision was to
+the command that made it.  Such a conflict usually builds on an earlier
+one; resolve that first.
+@end itemize
+
+A @samp{from} term keeps its text folded.  A term whose side has no such file
+says so.
+
+A revision inherits the conflicts of its parents.  The heading then names
+the earlier change they come from; resolving them there settles the
+descendants too.
 
 @table @asis
-@item @kbd{? M} (@code{majutsu-resolve})
-@kindex ? M
+@item @kbd{M} (@code{majutsu-resolve})
+@kindex M
 @findex majutsu-resolve
-Open the workbench for the revision at point@comma{}
-  or @samp{@@}.  With a prefix argument@comma{} choose a revision.
+In a Conflicts section@comma{} resolve at point:
+  on a term@comma{} the conflict becomes that text; on a conflict@comma{} choose among its
+  terms and all sides one after the other; on a file@comma{} choose the side all of
+  it becomes.  On the heading of conflicts that come from an earlier change@comma{}
+  show that change at its conflicts.  Anywhere else@comma{} show the revision at
+  point@comma{} or @samp{@@}@comma{} at its conflicts; with a prefix argument@comma{} choose a revision.
 @end table
 
-The workbench lists the conflicted files of one commit as a directory tree.
-It works on any revision@comma{} not only the working copy.  You edit private
-drafts of the files and apply them when you are satisfied; until then jj is
-untouched.
+Each resolution is one jj operation and takes effect at once; @code{C-/} undoes
+it.  The conflicts you have not resolved stay conflicts.
 
-A file unfolds into its conflicts@comma{} and a conflict into jj's terms: a
-snapshot of one side@comma{} or a change with its @emph{before} and @emph{after}.  @code{TAB}
-shows the text of a term.  Side numbers match those of the keep-side
-commands in @ref{Conflict Markers, , conflict-marker buffers}.
+Taking a term drops what the other changes did.  Where both changes must
+survive@comma{} @code{RET} (@code{majutsu-resolve-visit}) visits the file at the conflict or
+term at point to edit it by hand: the working copy's file as it is@comma{} another
+revision's as an editable blob.  Saving it refreshes the section.
+
+A file that is not text has no conflicts to unfold@comma{} but a whole side of it
+can be taken@comma{} as of a file one side lacks.  jj does that only for a conflict
+with two sides.
+
+The first of three changes was edited after the others were made on it.
+The second edits the same two lines@comma{} so it is conflicted now@comma{} and the third
+inherits that.  In one line the second change's text is the one to keep; the
+other needs what both did:
+@table @asis
+@item @code{n}
+Move to the working copy.  It and its parent are conflicted.
+@item @code{M}
+Show it at its conflicts.  They come from the parent.
+@item @code{M}
+On the heading@comma{} go there: the parent@comma{} at the same two conflicts.
+@item @code{n n n n n}
+Move to what the parent did to the first line.
+@item @code{M}
+Resolve with it.  One conflict is left.
+@item @code{RET}
+Visit the file at that conflict@comma{} to keep both changes.
+@item @code{C-s "Goodbye@comma{} %s" RET "!"}
+Give the parent's line what the other change added.
+@item @code{C-c ^ RET}
+Keep that line.
+@item @code{C-c C-c}
+Save it into the revision.
+@item @code{q}
+Back in the diff@comma{} the conflicts are gone.
+@item @code{q}
+Back in the log@comma{} neither change is conflicted.
+@end table
 
 @table @asis
-@item @kbd{@key{RET}} (@code{majutsu-resolve-visit-file})
-@kindex RET
-@findex majutsu-resolve-visit-file
-Open the file's draft@comma{} at the
-  conflict or term at point.  The draft uses the file's usual major mode
-  with @samp{majutsu-conflict-mode}.
-@item @kbd{C-c C-c} (@code{majutsu-resolve-apply})
-@kindex C-c C-c
-@findex majutsu-resolve-apply
-Apply the drafts of the file or
-  directory at point in one jj operation.  With a prefix argument@comma{} apply all
-  drafts.
-@item @kbd{C-c C-k} (@code{majutsu-resolve-discard})
-@kindex C-c C-k
-@findex majutsu-resolve-discard
-Discard the drafts of the file or
-  directory at point@comma{} after confirmation.  With a prefix argument@comma{} discard
-  all.  This does not undo anything already applied.
-@item @kbd{C-c C-n} (@code{majutsu-resolve-next-file})
-@kindex C-c C-n
-@findex majutsu-resolve-next-file
-Visit the next file that is
-  still conflicted.
-@item @kbd{?} (@code{majutsu-resolve-dispatch})
-@kindex ?
-@findex majutsu-resolve-dispatch
-Show these actions as a transient: @code{a}
-  applies and @code{k} discards at point@comma{} @code{A} and @code{K} act on all drafts@comma{} @code{g}
-  refreshes@comma{} and @code{m} opens the Majutsu dispatcher.
+@item @code{j}
+Move to the working copy.  It and its parent are conflicted.
+@item @code{M}
+Show it at its conflicts.  They come from the parent.
+@item @code{M}
+On the heading@comma{} go there: the parent@comma{} at the same two conflicts.
+@item @code{C-j C-j C-j C-j C-j}
+Move to what the parent did to the first line.
+@item @code{M}
+Resolve with it.  One conflict is left.
+@item @code{RET}
+Visit the file at that conflict@comma{} to keep both changes.
+@item @code{/ "Goodbye@comma{} %s" RET f % l a "!" ESC}
+Give the parent's line what the other change added.
+@item @code{g r RET}
+Keep that line.
+@item @code{Z Z}
+Save it into the revision.
+@item @code{q}
+Back in the diff@comma{} the conflicts are gone.
+@item @code{q}
+Back in the log@comma{} neither change is conflicted.
 @end table
-
-In a draft@comma{} the same keys apply to that file@comma{} and @code{C-c ?} opens the transient.
-@code{C-x C-s} saves the draft only.  @code{C-c C-o} returns to the workbench.
-
-Drafts live as long as the workbench buffer.  Refreshing keeps them;
-killing the workbench asks about pending drafts and then removes them.
-
-After applying@comma{} Majutsu checks the new revision@comma{} the file contents@comma{} and the
-remaining conflicts.  If it cannot verify the result@comma{} it keeps the drafts and
-stops writing: look at what jj did@comma{} save any draft text you want@comma{} then kill
-the workbench and open the revision again.
-
-The workbench edits existing UTF-8 text files with conflict markers.  It
-does not handle binary files@comma{} deletions@comma{} renames@comma{} or taking a whole file
-from one side; use Ediff or edit the file for those.
 
 @node Resolving with Ediff
 @section Resolving with Ediff
@@ -2609,7 +2679,7 @@ markers.  It highlights the sides and has commands to keep one of them.
 @code{E M} (@code{majutsu-ediff-resolve-with-conflict}) opens a conflicted file with
 the mode enabled@comma{} at the first conflict.  For a revision other than the
 working copy@comma{} it opens an editable blob@comma{} and saving it resolves the conflict
-in that revision.  Workbench drafts use the mode too.
+in that revision.
 
 @deffn Command majutsu-conflict-ensure-mode
 Enable the mode in a buffer with
@@ -2628,6 +2698,12 @@ conflicts whose sides lack a final newline.
 @node Commands
 @subsection Commands
 
+The keys that keep a term name it by number@comma{} as jj's own messages do.
+@samp{side #N} is the N-th term jj adds and @samp{base #N} the N-th it subtracts@comma{} in
+the order of the markers.  In the @ref{Conflicts Section (1), , Conflicts section}
+a @samp{from} term is a base@comma{} and the snapshot and the @samp{to} terms are the sides.
+The label after a marker says which revision a term is from.
+
 Emacs bindings use the prefix @code{C-c ^}:
 @table @asis
 @item @kbd{n / p} (@code{majutsu-conflict-next / majutsu-conflict-prev})
@@ -2643,8 +2719,8 @@ Keep the term at point@comma{} side or
 @item @kbd{b} (@code{majutsu-conflict-keep-base})
 @kindex b
 @findex majutsu-conflict-keep-base
-Keep the conflict base (the merge
-  ancestor: jj's first @samp{-------} / "diff from" term).
+Keep base #1.  In a conflict with
+  two sides that is the text both changes start from.
 @item @kbd{a} (@code{majutsu-conflict-keep-all})
 @kindex a
 @findex majutsu-conflict-keep-all
@@ -2661,13 +2737,12 @@ Re-render the conflict with different
 @item @kbd{1..9} (@code{majutsu-conflict-keep-side})
 @kindex 1..9
 @findex majutsu-conflict-keep-side
-Keep side N@comma{} matching jj's "side
-  #N" labels.
+Keep side #N@.
 @item @kbd{M-1..M-9} (@code{majutsu-conflict-keep-side})
 @kindex M-1..M-9
 @findex majutsu-conflict-keep-side
-Keep base N (bases in
-  materialization order; they are not paired with side numbers).
+Keep base #N@.  A base does
+  not belong to the side of the same number.
 @item @kbd{R} (@code{majutsu-conflict-refine})
 @kindex R
 @findex majutsu-conflict-refine
@@ -2688,7 +2763,7 @@ Jump to the previous conflict.
 @item @kbd{gb} (@code{majutsu-conflict-keep-base})
 @kindex gb
 @findex majutsu-conflict-keep-base
-Keep the base (the merge ancestor).
+Keep base #1.
 @item @kbd{gr @key{RET}} (@code{majutsu-conflict-keep-current})
 @kindex gr RET
 @findex majutsu-conflict-keep-current
@@ -2705,11 +2780,11 @@ Re-render with different markers.
 @item @kbd{gr 1..9} (@code{majutsu-conflict-keep-side})
 @kindex gr 1..9
 @findex majutsu-conflict-keep-side
-Keep side N@.
+Keep side #N@.
 @item @kbd{gR 1..9} (@code{majutsu-conflict-keep-side})
 @kindex gR 1..9
 @findex majutsu-conflict-keep-side
-Keep base N@.
+Keep base #N@.
 @item @kbd{ge} (@code{majutsu-conflict-refine})
 @kindex ge
 @findex majutsu-conflict-refine
@@ -2734,7 +2809,8 @@ Git-style (diff3) regions in mixed buffers (for example produced by
 only git-style conflicts are still handed to @samp{smerge-mode} by
 @code{majutsu-conflict-ensure-mode}; the two modes stay mutually exclusive.
 @item
-Eldoc describes the term at point ("jj conflict side 2/3: @dots{}").
+Eldoc describes the term at point: its label@comma{} then its number@comma{} as in
+@samp{(side #2 of 3)}.
 @item
 @samp{mouse-3} on a conflict pops up a resolution menu listing every side and
 base with its revision label. With @samp{context-menu-mode} enabled@comma{} the entries

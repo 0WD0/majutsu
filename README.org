@@ -52,7 +52,7 @@ from the log before anything runs.
 | ~? y~   | ~? y~   | Duplicate                            |
 | ~d~     | ~d~     | Diff                                 |
 | ~E~     | ~E~     | Ediff                                |
-| ~? M~   | ~? M~   | Resolve conflicts                    |
+| ~M~     | ~M~     | Resolve conflicts                    |
 | ~b~     | ~b~     | Bookmarks                            |
 | ~? t~   | ~? t~   | Tags                                 |
 | ~G~     | ~? G~   | Git: fetch, push, remotes, Gerrit    |
