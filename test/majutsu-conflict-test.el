@@ -1176,7 +1176,7 @@ apricot
                     menu)
         (should (seq-some (lambda (l) (string-match-p "Side #3: side-3-rev" l))
                           labels))
-        (should (seq-some (lambda (l) (string-match-p "Base 2: base-2" l))
+        (should (seq-some (lambda (l) (string-match-p "Base #2: base-2" l))
                           labels))))))
 
 (ert-deftest majutsu-conflict-test-eldoc-describes-term ()
@@ -1187,14 +1187,12 @@ apricot
     (let ((case-fold-search nil))
       (search-forward "grapefruit"))
     (let ((doc (majutsu-conflict--eldoc)))
-      (should (string-match-p "side 1/2" doc))
-      (should (string-match-p "commit A" doc)))
+      (should (string-match-p "commit A.*(side #1 of 2)\\'" doc)))
     (let ((case-fold-search nil))
       (search-forward "grape\n")
       (backward-char 2))
     (let ((doc (majutsu-conflict--eldoc)))
-      (should (string-match-p "base 1/1" doc))
-      (should (string-match-p "merge base" doc)))))
+      (should (string-match-p "merge base.*(base #1 of 1)\\'" doc)))))
 
 (ert-deftest majutsu-conflict-test-auto-leave ()
   "Resolving the last conflict turns the mode off; earlier ones do not."

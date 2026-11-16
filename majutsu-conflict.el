@@ -676,9 +676,10 @@ are not paired with the side numbers."
       (majutsu-conflict-resolve-with conflict content))))
 
 (defun majutsu-conflict-keep-base ()
-  "Keep the base of the conflict at point.
-The base is the first remove term (jj's merge base, or the
-ancestor section of a git-style conflict)."
+  "Keep base #1 of the conflict at point.
+A base is a term jj subtracts, the text a change starts from.  A
+conflict with two sides has one, which both changes start from; in a
+git-style conflict it is the ancestor section."
   (interactive)
   (let ((conflict (majutsu-conflict-at-point)))
     (unless conflict
@@ -908,7 +909,7 @@ When BEFORE is non-nil, keep the before side."
 \\[majutsu-conflict-next] - next conflict
 \\[majutsu-conflict-prev] - previous conflict
 \\[majutsu-conflict-keep-current] - keep the term at point
-\\[majutsu-conflict-keep-base] - keep base (the merge ancestor)
+\\[majutsu-conflict-keep-base] - keep base #1, the text the changes start from
 \\[majutsu-conflict-keep-all] - concatenate all side snapshots
 \\[majutsu-conflict-restyle] - re-render with different markers
 \\[majutsu-conflict-refine] - add word-level refinement
@@ -1213,7 +1214,7 @@ Sets match-data and updates state variables."
              for n from 1
              collect (let ((n n))
                        (vector (majutsu-conflict--menu-item-label
-                                (format "Keep Base %d" n) cell)
+                                (format "Keep Base #%d" n) cell)
                                (lambda ()
                                  (interactive)
                                  (majutsu-conflict-keep-side n t))
@@ -1262,15 +1263,17 @@ Intended for `context-menu-functions'."
   (when-let* ((conflict (majutsu-conflict-at-point))
               (term (majutsu-conflict--term-at-point conflict))
               (cell (majutsu-conflict-term-cell conflict term)))
+    ;; The label says which revision the term is from; the number is what
+    ;; the keys that keep a term go by.
     (let ((removep (eq (plist-get term :kind) 'remove)))
-      (concat (format "jj conflict %s %d/%d"
+      (concat (when (car cell)
+                (concat (car cell) "  "))
+              (format "(%s #%d of %d)"
                       (if removep "base" "side")
                       (1+ (plist-get term :index))
                       (length (if removep
                                   (majutsu-conflict-removes conflict)
-                                (majutsu-conflict-adds conflict))))
-              (when (car cell)
-                (concat ": " (car cell)))))))
+                                (majutsu-conflict-adds conflict))))))))
 
 (defun majutsu-conflict--clear-refine-overlays (beg end)
   "Remove refinement overlays between BEG and END."
