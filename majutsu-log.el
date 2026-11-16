@@ -136,8 +136,6 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
        :template majutsu-log-template-working-copies :face majutsu-bookmark-remote)
       (:field empty :module heading
        :template majutsu-log-template-empty :face t)
-      (:field git-head :module heading
-       :template majutsu-log-template-git-head :face t)
       ,@(majutsu-jjosh
           '((:field touched-projects :module heading
              :template majutsu-log-template-touched-projects :face font-lock-type-face)))
@@ -188,10 +186,6 @@ Also registers a variable watcher to invalidate the template cache."
          :group 'majutsu)
        (when (fboundp 'add-variable-watcher)
          (add-variable-watcher ',var-name #'majutsu-log--invalidate-template-cache)))))
-
-(majutsu-template-defkeyword git_head Commit
-  (:returns Boolean :doc "Deprecated alias for .contained_in('first_parent(@)')")
-  [:method [:self] :contained_in "first_parent(@)"])
 
 (majutsu-template-defkeyword canonical-log-id Commit
   (:returns Template :doc "Canonical log id.")
@@ -252,14 +246,9 @@ Empty summaries produce no brackets.  Only available in the jjosh build."))
              [:if [:current_working_copy] "@"]
              [:if [:immutable] "immutable" "mutable"]
              [:if [:conflict] [:label "conflict" "conflict"]]
-             [:if [:git_head] "git_head"]
              [:if [:root] "root"]
              [:if [:empty] "(empty)"]]
   "Template for the flags column.")
-
-(majutsu-log-define-column git-head
-  [:if [:git_head] [:label "git_head" "(git_head)"]]
-  "Template for the git-head column.")
 
 (majutsu-log-define-column signature
   [:if [:method [:call 'config "ui.show-cryptographic-signatures"] :as_boolean]
