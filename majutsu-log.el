@@ -160,7 +160,10 @@ rendered by `majutsu-log-insert-error-header' on the next refresh.")
       (:field flags :module metadata
        :template majutsu-log-template-flags :face nil)
       (:field description :module metadata
-       :template majutsu-log--canonical-description-template :face nil)))
+       :template majutsu-log--canonical-description-template :face nil)
+      ,@(majutsu-jjosh
+          '((:field projects :module metadata
+             :template majutsu-bug-reference-projects-template :face nil)))))
   "Flat row columns controlling log transport and rendering.
 Only metadata occurrences become semantic entry fields; visible occurrences
 remain available through point-local row copy commands.
@@ -234,9 +237,6 @@ Also registers a variable watcher to invalidate the template cache."
   "Template for the tags column.")
 
 (majutsu-jjosh
-  (majutsu-template-defkeyword touched_projects Commit
-    (:returns (:list String) :doc "Subprojects touched by this commit (jjosh)."))
-
   (majutsu-log-define-column touched-projects
     [:surround "[" "]" [:touched_projects :join ", "]]
     "Template for the optional jjosh project summary column.
@@ -793,6 +793,12 @@ Return non-nil when the section could be located."
   (setq-local line-number-mode nil)
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function #'majutsu-row-filter-buffer-substring)
+  (majutsu-jjosh
+    (setq-local majutsu-bug-reference-projects-function
+                (lambda ()
+                  (and-let* ((projects (majutsu-row-column
+                                        (majutsu-row-entry-at-point) 'projects)))
+                    (split-string projects "\n" t)))))
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t)
   (jit-lock-register #'majutsu-log--align-tails)
   (add-hook 'text-scale-mode-hook #'majutsu-log--realign-tails nil t)

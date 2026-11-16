@@ -1970,12 +1970,22 @@ link for each.  ~org-insert-link~ inserts them, and completes either type
 by asking for a repository and a revision.  Nothing needs to be enabled.
 
 ** Bug References
+:PROPERTIES:
+:CUSTOM_ID: bug-references
+:END:
 Log and description buffers turn on ~bug-reference-mode~, so issue
 references such as =#123= are buttons.  Majutsu derives the issue tracker
 from the repository's Git remotes.
 
 - User Option: majutsu-bug-reference-remote-names :: The remotes to try, in
   order (default: =upstream=, then =origin=).
+
+In the [[#jjosh-build][jjosh build]] each project has remotes of its own, so a reference
+means the tracker of the project that its revision touches: =#123= in a
+revision of one project and in a revision of another lead to different
+trackers.  Of nested projects the innermost counts, and a merge that
+changes nothing stands for what its parents touch.  A reference that could
+mean several trackers, or none, is not a button.
 
 Remove ~bug-reference-mode~ from ~majutsu-log-mode-hook~ and
 ~majutsu-jjdescription-setup-hook~ to turn this off.
@@ -1992,6 +2002,9 @@ Terminal programs, that is jj's built-in diff editor and Arrange, need
 Ghostel and a POSIX remote.
 
 ** jjosh Build
+:PROPERTIES:
+:CUSTOM_ID: jjosh-build
+:END:
 Majutsu can be compiled for the jjosh fork of jj.  The variant is chosen
 when the Lisp files are compiled, not at run time: set ~MAJUTSU_BACKEND~ to
 =jjosh= in the environment of the compiler.  Unset, or =jj=, builds for
@@ -2013,6 +2026,7 @@ The jjosh build adds:
 
 - project sections in the [[#bookmarks][bookmark and remote lists]],
 - the touched-projects column in the log,
+- [[#bug-references][bug references]] resolved for each project,
 - Forget for remote bookmarks,
 - ~majutsu-git-fetch-project~.
 

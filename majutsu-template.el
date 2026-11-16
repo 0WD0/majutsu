@@ -18,6 +18,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'majutsu-jjosh)
 
 (defgroup majutsu-template nil
   "Elisp wrapper for composing jj templates."
@@ -1355,6 +1356,8 @@ bare keyword self dispatch."
      (change_id :returns ChangeId :keyword t)
      (commit_id :returns CommitId :keyword t)
      (parents :returns (:list Commit) :keyword t)
+     ,@(majutsu-jjosh
+         '((touched_projects :returns (:list String) :keyword t)))
      (author :returns Signature :keyword t)
      (committer :returns Signature :keyword t)
      (signature :returns (:option CryptographicSignature) :keyword t)

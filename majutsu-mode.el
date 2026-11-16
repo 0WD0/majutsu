@@ -23,6 +23,7 @@
 (require 'majutsu-base)
 (require 'majutsu-jj)
 (require 'majutsu-section)
+(require 'majutsu-template)
 (require 'cl-lib)
 (require 'magit-section)
 (require 'seq)
@@ -38,7 +39,10 @@
 (defvar bug-reference-auto-setup-functions)
 (defvar bug-reference-map)
 (defvar bug-reference-setup-from-vc-alist)
+(defvar bug-reference-bug-regexp)
+(defvar bug-reference-url-format)
 (defvar majutsu-jjdescription-mode)
+(declare-function majutsu-jjdescription--change-id "majutsu-jjdescription" ())
 
 ;;; Options
 
@@ -171,51 +175,6 @@ ever displayed in the selected window, then delete that window."
       (quit-window kill-buffer)
       (when (window-live-p window)
         (delete-window window)))))
-
-;;; Bug references
-
-(defun majutsu-bug-reference--git-remote-alist (&optional directory)
-  "Return JJ Git remotes as (NAME . URL) pairs for DIRECTORY."
-  (let ((default-directory (or directory default-directory)))
-    (mapcar (lambda (line)
-              (pcase-let ((`(,name ,url . ,_)
-                           (split-string (string-trim line) "[ \t]+" t)))
-                (and name url (cons name url))))
-            (majutsu-jj-lines "git" "remote" "list"))))
-
-(defun majutsu-bug-reference--git-remote-urls (&optional directory)
-  "Return JJ Git remote URLs for DIRECTORY in preferred setup order."
-  (let* ((remotes (delq nil (majutsu-bug-reference--git-remote-alist directory)))
-         (preferred (delq nil (mapcar (lambda (name)
-                                        (cdr (assoc name remotes)))
-                                      majutsu-bug-reference-remote-names))))
-    (append preferred
-            (seq-remove (lambda (url) (member url preferred))
-                        (mapcar #'cdr remotes)))))
-
-(defun majutsu-bug-reference-try-setup (&optional _ignored)
-  "Try to set up `bug-reference-mode' from JJ Git remotes.
-
-This is used by `bug-reference-auto-setup-functions' for buffers managed
-by Majutsu, including JJ description buffers."
-  (when (or (derived-mode-p 'majutsu-mode)
-            (bound-and-true-p majutsu-jjdescription-mode))
-    (when-let* ((root (or majutsu--default-directory
-                          (majutsu-toplevel)))
-                (_ (file-directory-p root)))
-      (seq-some
-       (lambda (url)
-         (seq-some (lambda (config)
-                     (apply #'bug-reference-maybe-setup-from-vc url config))
-                   (append bug-reference-setup-from-vc-alist
-                           (bug-reference--setup-from-vc-alist))))
-       (majutsu-bug-reference--git-remote-urls root)))))
-
-(with-eval-after-load 'bug-reference
-  (add-hook 'bug-reference-auto-setup-functions
-            #'majutsu-bug-reference-try-setup t)
-  (keymap-set bug-reference-map "<remap> <majutsu-visit-thing>"
-              #'bug-reference-push-button))
 
 ;;; Visit
 
@@ -572,6 +531,180 @@ when the user has strict .dir-locals.el settings."
   (let ((ignored-local-variables
          (cons 'show-trailing-whitespace ignored-local-variables)))
     (hack-dir-local-variables-non-file-buffer)))
+
+;;; Bug references
+
+(defun majutsu-bug-reference--remotes ()
+  "Return the Git remotes of the repository as (NAME . URL) pairs."
+  (mapcar (lambda (line)
+            (pcase-let ((`(,name ,url) (split-string line "[ \t]+" t)))
+              (cons name url)))
+          ;; Remotes are configuration, which a snapshot cannot change.
+          (majutsu-jj-lines "--ignore-working-copy" "git" "remote" "list")))
+
+(defun majutsu-bug-reference--setup (remotes)
+  "Set up bug references for the first known forge behind REMOTES.
+REMOTES is an alist (NAME . URL).  The remotes named by
+`majutsu-bug-reference-remote-names' are tried first."
+  (let ((preferred (delq nil (mapcar (lambda (name) (assoc name remotes))
+                                     majutsu-bug-reference-remote-names))))
+    (seq-some
+     (pcase-lambda (`(,_ . ,url))
+       (seq-some (lambda (config)
+                   (apply #'bug-reference-maybe-setup-from-vc url config))
+                 (append bug-reference-setup-from-vc-alist
+                         (bug-reference--setup-from-vc-alist))))
+     (append preferred (seq-difference remotes preferred)))))
+
+;; In the jjosh build remotes belong to the repository or to one of its
+;; projects, so one buffer shows references to many trackers.  A reference
+;; is resolved where it is found, by the projects that its revision touches.
+
+(majutsu-jjosh
+  (defvar-local majutsu-bug-reference-projects-function #'ignore
+    "Function returning the projects of the bug reference before point.
+It is called without arguments and returns the names of the projects
+touched by the revision in whose description the reference appears.")
+
+  (defconst majutsu-bug-reference-projects-template
+    [:coalesce
+     [:touched_projects :join "\n"]
+     [:method [:map [:parents] parent [:touched_projects :join "\n"]]
+              :join "\n"]]
+    "Template listing the projects that a revision's bug references mean.
+These are the projects it touches.  A merge that changes nothing, such
+as that of a pull request, stands for what its parents touch.")
+
+  (defvar-local majutsu-bug-reference--forges nil
+    "Trackers of the repository, as (PROJECT PATH BUG-REGEXP . URL-FORMAT).
+PROJECT is the name of a project and PATH its directory.  Both are nil
+for the tracker behind the remotes of the repository itself.")
+
+  (defun majutsu-bug-reference--read-forges ()
+    "Return the value of `majutsu-bug-reference--forges' for the repository."
+    (let* ((projects
+            ;; Metadata problems follow the projects as plain text.
+            (mapcan (lambda (line)
+                      (and (string-prefix-p "{" line)
+                           (list (json-parse-string line :object-type 'plist
+                                                    :array-type 'list
+                                                    :null-object nil))))
+                    (majutsu-jj-lines "--ignore-working-copy" "project" "list"
+                                      "-T" "json(self) ++ \"\\n\"")))
+           (owned (mapcan (lambda (project)
+                            (mapcar (lambda (remote)
+                                      (plist-get remote :qualified_name))
+                                    (plist-get project :remotes)))
+                          projects)))
+      (cl-loop
+       for (name path . remotes)
+       in (cons `(nil nil ,@(seq-remove (lambda (remote)
+                                          (member (car remote) owned))
+                                        (majutsu-bug-reference--remotes)))
+                (mapcar (lambda (project)
+                          `(,(plist-get project :name)
+                            ,(plist-get project :path)
+                            ,@(mapcan (lambda (remote)
+                                        (and-let* ((url (plist-get remote :url)))
+                                          (list (cons (plist-get remote :name)
+                                                      url))))
+                                      (plist-get project :remotes))))
+                        projects))
+       ;; Emacs sets the variables of the current buffer for a forge.
+       for forge = (with-temp-buffer
+                     (and (majutsu-bug-reference--setup remotes)
+                          (cons bug-reference-bug-regexp
+                                bug-reference-url-format)))
+       when forge collect `(,name ,path ,@forge))))
+
+  (defun majutsu-bug-reference--scopes (projects)
+    "Return the trackers that a reference of a revision touching PROJECTS can mean.
+These belong to the innermost of PROJECTS, since a file inside a nested
+project is inside the enclosing ones too.  A revision touching no project
+with a tracker refers to the tracker of the repository."
+    (let ((forges (seq-filter (lambda (forge) (member (car forge) projects))
+                              majutsu-bug-reference--forges)))
+      (or (seq-remove
+           (pcase-lambda (`(,_ ,path . ,_))
+             (seq-some (pcase-lambda (`(,_ ,inner . ,_))
+                         (string-prefix-p (concat path "/") inner))
+                       forges))
+           forges)
+          (and-let* ((repository (assq nil majutsu-bug-reference--forges)))
+            (list repository)))))
+
+  (defun majutsu-bug-reference--url ()
+    "Return the URL of the bug reference that was just matched.
+When the trackers it can mean disagree, or there is none, it is not a
+reference: remove its button and return nil."
+    (let* ((beg (match-beginning 1))
+           (end (match-end 1))
+           (urls
+            (delete-dups
+             (delq nil
+                   (mapcar
+                    (pcase-lambda (`(,_ ,_ ,regexp . ,url-format))
+                      (save-excursion
+                        (goto-char beg)
+                        (and (looking-at regexp)
+                             (if (stringp url-format)
+                                 (format url-format
+                                         (match-string-no-properties 2))
+                               (funcall url-format)))))
+                    (majutsu-bug-reference--scopes
+                     (funcall majutsu-bug-reference-projects-function)))))))
+      (if (and urls (null (cdr urls)))
+          (car urls)
+        ;; `bug-reference-fontify' has made the button already.
+        (dolist (overlay (overlays-in beg end))
+          (when (eq (overlay-get overlay 'category) 'bug-reference)
+            (delete-overlay overlay)))
+        nil)))
+
+  (defun majutsu-bug-reference--setup-projects ()
+    "Set up bug references for the trackers of the repository and its projects."
+    (when-let* ((forges (majutsu-bug-reference--read-forges)))
+      (when (bound-and-true-p majutsu-jjdescription-mode)
+        (let ((projects
+               (and-let* ((change (majutsu-jjdescription--change-id)))
+                 (majutsu-jj-lines "--ignore-working-copy" "log" "--no-graph"
+                                   "-r" change
+                                   "-T" (majutsu-template-compile
+                                         majutsu-bug-reference-projects-template
+                                         'Commit)))))
+          (setq-local majutsu-bug-reference-projects-function
+                      (lambda () projects))))
+      (setq-local majutsu-bug-reference--forges forges)
+      ;; The trackers share one pattern unless they are of different kinds.
+      (setq-local bug-reference-bug-regexp
+                  (concat "\\("
+                          (mapconcat #'identity
+                                     (seq-uniq (mapcar #'caddr forges))
+                                     "\\|")
+                          "\\)"))
+      (setq-local bug-reference-url-format #'majutsu-bug-reference--url))))
+
+(defun majutsu-bug-reference-try-setup (&optional _ignored)
+  "Try to set up `bug-reference-mode' from JJ Git remotes.
+
+This is used by `bug-reference-auto-setup-functions' for buffers managed
+by Majutsu, including JJ description buffers."
+  (when (or (derived-mode-p 'majutsu-mode)
+            (bound-and-true-p majutsu-jjdescription-mode))
+    (when-let* ((default-directory (or majutsu--default-directory
+                                       (majutsu-toplevel)))
+                (_ (file-directory-p default-directory)))
+      (if (majutsu-jjosh t)
+          (majutsu-bug-reference--setup-projects)
+        (majutsu-bug-reference--setup (majutsu-bug-reference--remotes))))))
+
+(with-eval-after-load 'bug-reference
+  ;; Before `bug-reference-try-setup-from-vc', which knows the Git remotes
+  ;; of a colocated repository but not which of them Majutsu prefers.
+  (add-hook 'bug-reference-auto-setup-functions
+            #'majutsu-bug-reference-try-setup)
+  (keymap-set bug-reference-map "<remap> <majutsu-visit-thing>"
+              #'bug-reference-push-button))
 
 ;;; Mode definition
 

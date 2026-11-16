@@ -3617,6 +3617,13 @@ The remotes to try@comma{} in
   order (default: @samp{upstream}@comma{} then @samp{origin}).
 @end defopt
 
+In the @ref{jjosh Build, , jjosh build} each project has remotes of its own@comma{} so a reference
+means the tracker of the project that its revision touches: @samp{#123} in a
+revision of one project and in a revision of another lead to different
+trackers.  Of nested projects the innermost counts@comma{} and a merge that
+changes nothing stands for what its parents touch.  A reference that could
+mean several trackers@comma{} or none@comma{} is not a button.
+
 Remove @code{bug-reference-mode} from @code{majutsu-log-mode-hook} and
 @code{majutsu-jjdescription-setup-hook} to turn this off.
 
@@ -3662,6 +3669,8 @@ The jjosh build adds:
 project sections in the @ref{Bookmarks, , bookmark and remote lists}@comma{}
 @item
 the touched-projects column in the log@comma{}
+@item
+@ref{Bug References, , bug references} resolved for each project@comma{}
 @item
 Forget for remote bookmarks@comma{}
 @item

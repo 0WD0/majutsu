@@ -5,6 +5,8 @@
 ;;; Code:
 
 (require 'ert)
+(require 'bug-reference)
+(require 'majutsu-jjdescription)
 (require 'majutsu-log)
 (require 'majutsu-jj-integration)
 
@@ -97,6 +99,96 @@
         (majutsu-bookmark-forget '("main"))
         (should-not (member "main" (majutsu--get-bookmark-names 'local)))
         (should (member "main@origin" (majutsu--get-bookmark-names 'remote-untracked)))))))
+
+;;; Bug references
+
+(defun majutsu-jjosh-test--bug-references ()
+  "Return (TEXT . URL) for the bug references in the current buffer, by TEXT."
+  (bug-reference-fontify (point-min) (point-max))
+  (sort (mapcan (lambda (overlay)
+                  (and (eq (overlay-get overlay 'category) 'bug-reference)
+                       (list (cons (buffer-substring-no-properties
+                                    (overlay-start overlay) (overlay-end overlay))
+                                   (overlay-get overlay 'bug-reference-url)))))
+                (overlays-in (point-min) (point-max)))
+        (lambda (a b) (string< (car a) (car b)))))
+
+(ert-deftest majutsu-bug-reference/real-repository-prefers-named-remotes ()
+  "References mean the tracker behind the first preferred remote."
+  (majutsu-jj-integration-with-repo repo
+    (majutsu-jj-integration-call repo "git" "remote" "add" "fork"
+                                "git@github.com:me/thing.git")
+    (majutsu-jj-integration-call repo "git" "remote" "add" "upstream"
+                                "https://codeberg.org/them/thing.git")
+    (with-temp-buffer
+      (majutsu-mode)
+      (let ((inhibit-read-only t))
+        (insert "Fix #12 like other/tool#3\n"))
+      (bug-reference-mode 1)
+      (should (equal (majutsu-jjosh-test--bug-references)
+                     '(("#12" . "https://codeberg.org/them/thing/issues/12")
+                       ("other/tool#3"
+                        . "https://codeberg.org/other/tool/issues/3")))))))
+
+(ert-deftest majutsu-bug-reference/real-jjosh-resolves-by-project ()
+  "A reference means the tracker of the project that its revision touches."
+  (skip-unless (eq majutsu-build-backend 'jjosh))
+  (majutsu-jj-integration-with-repo repo
+    (pcase-dolist (`(,name ,path ,url)
+                   '(("outer" "outer" "https://github.com/acme/outer.git")
+                     ("inner" "outer/inner" "git@github.com:acme/inner.git")
+                     ("second" "second" "https://codeberg.org/acme/second.git")
+                     ("other" "other" "https://tracker.example/other")
+                     ("bare" "bare" nil)))
+      (make-directory (expand-file-name path repo) t)
+      (majutsu-jj-integration-call repo "project" "add" name "--path" path)
+      (when url
+        (majutsu-jj-integration-call repo "git" "remote" "add" "origin" url
+                                    "--project" name "--whole")))
+    (pcase-dolist (`(,message . ,files)
+                   '(("Inner #1" "outer/inner/file")
+                     ("Outer #2" "outer/file")
+                     ("Other T3, not #4" "other/file")
+                     ("Two trackers #5" "outer/file" "second/file")
+                     ("No tracker #6" "bare/file" "root")
+                     ("Tracker and none T7" "bare/file" "other/file")))
+      (dolist (file files)
+        (majutsu-jj-integration-write-text (expand-file-name file repo) message))
+      (majutsu-jj-integration-call repo "commit" "-m" message))
+    ;; A merge that changes nothing stands for what its parents touch.
+    (majutsu-jj-integration-call repo "new" "root()" "-m" "Side #8")
+    (majutsu-jj-integration-write-text (expand-file-name "side" repo) "side")
+    (majutsu-jj-integration-call
+     repo "new" "description(substring:'Inner #1')" "@" "-m" "Merge pull request #9")
+    (let ((majutsu-log-commit-columns
+           (eval (car (get 'majutsu-log-commit-columns 'standard-value)) t))
+          (majutsu-log--compiled-template-cache nil)
+          (majutsu-log-mode-hook '(bug-reference-mode))
+          ;; A tracker with a syntax of its own.
+          (bug-reference-setup-from-vc-alist
+           '(("tracker\\.example/" "\\(\\bT\\([0-9]+\\)\\)"
+              "https://tracker.example/T%s"))))
+      (save-window-excursion
+        (with-current-buffer (majutsu-log)
+          (unwind-protect
+              (should (equal (majutsu-jjosh-test--bug-references)
+                             '(("#1" . "https://github.com/acme/inner/issues/1")
+                               ("#2" . "https://github.com/acme/outer/issues/2")
+                               ("#9" . "https://github.com/acme/inner/issues/9")
+                               ("T3" . "https://tracker.example/T3")
+                               ("T7" . "https://tracker.example/T7"))))
+            (kill-buffer)))))
+    ;; A description buffer names its revision by change id.
+    (with-temp-buffer
+      (insert "Fixes #10\n\nJJ: Change ID: "
+              (string-trim (majutsu-jj-integration-output
+                            repo "log" "--no-graph" "-T" "change_id"
+                            "-r" "description(substring:'Outer #2')"))
+              "\n")
+      (majutsu-jjdescription-mode 1)
+      (bug-reference-mode 1)
+      (should (equal (majutsu-jjosh-test--bug-references)
+                     '(("#10" . "https://github.com/acme/outer/issues/10")))))))
 
 (provide 'majutsu-jjosh-test)
 ;;; majutsu-jjosh-test.el ends here
