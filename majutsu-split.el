@@ -144,8 +144,10 @@
   :class 'transient-files
   :key "--"
   :argument "--"
-  :prompt "Limit to file,s: "
-  :reader #'majutsu-read-files
+  :prompt "Limit to filesets"
+  :reader (lambda (prompt initial-input history)
+            (majutsu-diff-read-filesets prompt initial-input history
+                                        '(("--revision" . "--revisions"))))
   :multi-value t)
 
 ;;;; Prefix

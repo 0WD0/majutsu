@@ -29,9 +29,6 @@
 (defvar majutsu-find-file-hook nil
   "Hook run after creating a blob buffer.")
 
-(defvar majutsu-file--list-cache nil
-  "Alist cache of file lists keyed by revset string.")
-
 (defvar-local majutsu-buffer-blob-revset nil
   "Input revset string for this blob buffer.")
 (defvar-local majutsu-buffer-blob-change-id nil
@@ -445,20 +442,10 @@ the change's newest visible version and say so."
   majutsu-buffer-blob-commit-id)
 
 (defun majutsu-file--list (revset root)
-  "Return list of file paths for REVSET in ROOT.
-Results are cached in `majutsu-file--list-cache`."
-  (let* ((normalized (majutsu-file--normalize-revset revset))
-         (cache-key (cons root normalized))
-         (cached (assoc cache-key majutsu-file--list-cache)))
-    (if cached
-        (cdr cached)
-      (let* ((default-directory root)
-             (paths (majutsu-jj-lines "file" "list" "-r" normalized)))
-        paths))))
-
-(defun majutsu-file-list (&optional revset)
-  "Return list of file paths for REVSET (default \"@\")."
-  (majutsu-file--list (or revset "@") (majutsu-file--root)))
+  "Return the file paths of REVSET in ROOT."
+  (let ((default-directory root))
+    (majutsu-jj-lines "file" "list" "-r"
+                      (majutsu-file--normalize-revset revset))))
 
 (defconst majutsu-file--completion-field-separator (string 31)
   "Separator inserted between file completion fields.")
@@ -585,34 +572,110 @@ Results are cached in `majutsu-file--list-cache`."
 (defvar majutsu-file-path-history nil
   "Minibuffer history for repo-relative file path prompts.")
 
-(defun majutsu-read-files (prompt initial-input history &optional list-fn)
-  "Read multiple files with completion.
-PROMPT, INITIAL-INPUT, HISTORY are standard reader args.
-LIST-FN defaults to `majutsu-file-list'."
-  (let* ((root (majutsu-file--root))
-         (candidates (funcall (or list-fn #'majutsu-file-list)))
-         (payload (majutsu-file-candidate-data "@" root candidates)))
-    (majutsu-completing-read-multiple-payload
-     prompt payload
-     nil nil
-     (or initial-input (majutsu-file--path-at-point root))
-     (or history 'majutsu-file-path-history)
-     nil nil nil root)))
+(defconst majutsu-fileset-pattern-kinds
+  '("cwd:" "file:" "glob:" "glob-i:" "prefix-glob:" "prefix-glob-i:"
+    "root:" "root-file:" "root-glob:" "root-glob-i:"
+    "root-prefix-glob:" "root-prefix-glob-i:")
+  "Pattern kinds of jj's fileset language, offered where a pattern starts.")
 
-(defun majutsu-read-file-items (prompt initial-input history items)
-  "Read multiple files from completion ITEMS.
-PROMPT, INITIAL-INPUT, and HISTORY are standard reader arguments.
-ITEMS contains strings or (PATH . ANNOTATION) pairs."
+(defun majutsu-fileset--scan (string)
+  "Return (PATH-START . COMMAS) for the fileset input STRING.
+PATH-START is where the path being typed starts: after the last operator,
+pattern kind and opening quote.  COMMAS are the positions of the commas
+that separate filesets, last first.  Neither looks inside quoted text."
+  (let ((start 0) (index 0) quoted commas)
+    (while (< index (length string))
+      (let ((char (aref string index)))
+        (cond
+         ((and (eq quoted ?\") (eq char ?\\)) (cl-incf index))
+         (quoted (when (eq char quoted) (setq quoted nil)))
+         ((memq char '(?\" ?\')) (setq quoted char start (1+ index)))
+         ((eq char ?,) (push index commas) (setq start (1+ index)))
+         ((memq char '(?| ?& ?~ ?\( ?\) ?: ?\s ?\t)) (setq start (1+ index)))))
+      (cl-incf index))
+    (cons start commas)))
+
+(defun majutsu-fileset-completion-table (source)
+  "Return a completion table for a prompt that reads jj filesets.
+The input is an expression, so only the path being typed is completed;
+where a pattern can start, the pattern kinds are offered too.
+
+SOURCE names the paths.  A list of paths or (PATH . ANNOTATION) pairs is
+completed as a whole.  A function is called with a directory prefix and
+returns the same for the entries below it, with a trailing slash on
+directories; it lets a large tree be completed one level at a time."
+  (let* ((levels (make-hash-table :test #'equal))
+         (directory default-directory)
+         shown
+         (note (lambda (candidate) (cdr (assoc candidate shown))))
+         (metadata
+          (cons 'metadata
+                (majutsu-completion-payload-metadata
+                 (list :category 'majutsu-file
+                       :annotation-function
+                       (lambda (candidate)
+                         (when-let* ((note (funcall note candidate)))
+                           (concat " " note)))
+                       :annotation-suffix-function
+                       (lambda (candidate)
+                         (majutsu-completion-string-suffix
+                          (funcall note candidate))))))))
+    (lambda (string predicate action)
+      (let* ((start (car (majutsu-fileset--scan string)))
+             (path (substring string start))
+             (level (if (functionp source) (or (file-name-directory path) "") ""))
+             (prefix (+ start (length level))))
+        (pcase action
+          ('metadata metadata)
+          (`(boundaries . ,suffix)
+           `(boundaries ,prefix
+                        . ,(or (string-match-p "[\"',|&~() \t]" suffix)
+                               (length suffix))))
+          (_
+           (setq shown
+                 (append
+                  (with-memoization (gethash level levels)
+                    (mapcar (lambda (item)
+                              (cons (string-remove-prefix level (or (car-safe item) item))
+                                    (cdr-safe item)))
+                            (if (functionp source)
+                                (let ((default-directory directory))
+                                  (funcall source level))
+                              source)))
+                  (and (string-empty-p level)
+                       (not (memq (and (> start 0) (aref string (1- start)))
+                                  '(?: ?\" ?\')))
+                       (mapcar (lambda (kind) (cons kind "pattern"))
+                               majutsu-fileset-pattern-kinds))))
+           (completion-table-with-context
+            (substring string 0 prefix) shown
+            (substring string prefix) predicate action)))))))
+
+(defun majutsu-read-filesets (prompt initial-input history source)
+  "Read jj filesets with PROMPT and return them as a list.
+Several filesets are separated by commas.  SOURCE names the paths to
+complete, as for `majutsu-fileset-completion-table'.  INITIAL-INPUT
+defaults to the file at point.  Any input is accepted: completion helps
+with paths, it does not restrict the expression."
   (let* ((root (majutsu-file--root))
          (default-directory root)
-         (initial-input (or initial-input
-                            (majutsu-file--path-at-point root))))
-    (majutsu-completing-read-multiple
-     prompt
-     (majutsu-completion-table items 'majutsu-file)
-     nil nil initial-input
-     (or history 'majutsu-file-path-history)
-     nil 'majutsu-file)))
+         (input (completing-read
+                 (majutsu--format-prompt prompt nil)
+                 (majutsu-fileset-completion-table source)
+                 nil nil
+                 (or initial-input
+                     (when-let* ((path (majutsu-file--path-at-point root)))
+                       (if (string-match-p "\\`[[:alnum:]_./@+-]+\\'" path)
+                           path
+                         (majutsu-jj-fileset-quote path))))
+                 (or history 'majutsu-file-path-history)))
+         (end (length input))
+         filesets)
+    (dolist (comma (cdr (majutsu-fileset--scan input)))
+      (push (substring input (1+ comma) end) filesets)
+      (setq end comma))
+    (push (substring input 0 end) filesets)
+    (seq-remove #'string-empty-p (mapcar #'string-trim filesets))))
 
 (defun majutsu-file--buffer-name (revset path)
   "Return a blob buffer name for REVSET and PATH."

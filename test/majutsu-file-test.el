@@ -146,62 +146,88 @@
       (should (eq seen-history 'majutsu-file-path-history))
       (should (eq seen-category 'majutsu-file)))))
 
-(ert-deftest majutsu-read-files/uses-default-history-and-category ()
-  "File multi-reader should default to file-path history and category."
-  (let (seen-history seen-category)
-    (cl-letf (((symbol-function 'majutsu-file--root)
-               (lambda ()
-                 "/tmp/repo"))
-              ((symbol-function 'majutsu-file-candidate-data)
-               (lambda (_revset _root candidates)
-                 (list :category 'majutsu-file
-                       :candidates candidates
-                       :entries (make-hash-table :test #'equal))))
-              ((symbol-function 'majutsu-file--path-at-point)
-               (lambda (_root)
-                 "src/a.el"))
-              ((symbol-function 'completing-read-multiple)
-               (lambda (_prompt collection _predicate _require-match _initial history _default)
-                 (setq seen-history history
-                       seen-category (plist-get completion-extra-properties :category))
-                 (should (equal collection '("src/a.el" "src/b.el")))
-                 '("src/b.el"))))
-      (should (equal (majutsu-read-files "Files" nil nil
-                                         (lambda () '("src/a.el" "src/b.el")))
-                     '("src/b.el")))
-      (should (eq seen-history 'majutsu-file-path-history))
-      (should (eq seen-category 'majutsu-file)))))
+(ert-deftest majutsu-fileset--scan/finds-path-and-top-level-commas ()
+  "The path being typed starts after operators, kinds and quotes."
+  (should (equal (majutsu-fileset--scan "src/a") '(0)))
+  (should (equal (majutsu-fileset--scan "~src | doc/b") '(7)))
+  (should (equal (majutsu-fileset--scan "glob:\"src/*") '(6)))
+  ;; A comma in quotes belongs to the pattern; one outside separates.
+  (should (equal (majutsu-fileset--scan "glob:\"*.{el,org}\", src/a")
+                 '(19 17)))
+  ;; A backslash escapes in double quotes only.
+  (should (equal (majutsu-fileset--scan "\"a\\\", b") '(1)))
+  (should (equal (majutsu-fileset--scan "'a\\', b") '(6 4))))
 
-(ert-deftest majutsu-read-file-items/uses-file-category-and-defaults ()
-  "File item readers should preserve prompt defaults and metadata."
-  (let (seen-items seen-category seen-history seen-initial seen-directory)
+(ert-deftest majutsu-fileset-completion-table/completes-path-in-expression ()
+  "Only the path is completed, and kinds are offered where a pattern starts."
+  (let ((table (majutsu-fileset-completion-table
+                '(("src/a.el" . "modified") "doc/b.org"))))
+    (should (equal (try-completion "~sr" table) "~src/a.el"))
+    (should (equal (try-completion "x | glob:\"do" table) "x | glob:\"doc/b.org"))
+    (should (equal (completion-boundaries "~sr" table nil "c|d") '(1 . 1)))
+    (should (member "glob:" (all-completions "" table)))
+    (should (equal (all-completions "glob:" table) '("src/a.el" "doc/b.org")))
+    (all-completions "~" table)
+    ;; Annotations are aligned like those of the other Majutsu prompts, and
+    ;; candidates keep their order: paths first, then pattern kinds.
+    (let ((metadata (completion-metadata "~" table nil)))
+      (should (eq (completion-metadata-get metadata 'display-sort-function)
+                  #'identity))
+      (should (equal (funcall (completion-metadata-get metadata
+                                                       'affixation-function)
+                              '("src/a.el" "glob:" "doc/b.org"))
+                     '(("src/a.el" "" "   modified")
+                       ("glob:" "" "      pattern")
+                       ("doc/b.org" "" "")))))))
+
+(ert-deftest majutsu-fileset-completion-table/asks-for-one-level-at-a-time ()
+  "A function source is called per directory, once."
+  (let* (asked
+         (table (majutsu-fileset-completion-table
+                 (lambda (directory)
+                   (push directory asked)
+                   (pcase directory
+                     ("" '("src/" "README.org"))
+                     ("src/" '(("src/a.el" . "Modified") "src/lib/")))))))
+    (should (equal (all-completions "~" table)
+                   (append '("src/" "README.org") majutsu-fileset-pattern-kinds)))
+    (should (equal (try-completion "x | src/a" table) "x | src/a.el"))
+    (should (equal (all-completions "x | src/" table) '("a.el" "lib/")))
+    (should (equal (completion-boundaries "x | src/a" table nil "") '(8 . 0)))
+    (should (equal (reverse asked) '("" "src/")))))
+
+(ert-deftest majutsu-fileset-completion-table/real-jj-lists-log-paths-by-level ()
+  "jj's own completion, as used by the Log menu, names one level."
+  (majutsu-jj-integration-with-repo repo
+    (make-directory (expand-file-name "src/lib" repo) t)
+    (write-region "x" nil (expand-file-name "src/lib/a.el" repo))
+    (write-region "x" nil (expand-file-name "top.txt" repo))
+    (majutsu-jj-string "status")
+    (let ((table (majutsu-fileset-completion-table
+                  (lambda (directory)
+                    (majutsu-jj-completion-items
+                     (list "log" "--" directory))))))
+      (should (member "src/" (all-completions "" table)))
+      (should (member "top.txt" (all-completions "" table)))
+      (should (equal (all-completions "~src/" table) '("lib/")))
+      (should (equal (try-completion "src/lib/" table) "src/lib/a.el")))))
+
+(ert-deftest majutsu-read-filesets/splits-on-top-level-commas ()
+  "Several filesets are separated by commas outside quotes."
+  (let (seen-initial seen-directory)
     (cl-letf (((symbol-function 'majutsu-file--root)
                (lambda () "/tmp/repo/"))
               ((symbol-function 'majutsu-file--path-at-point)
-               (lambda (_root) "src/current.el"))
-              ((symbol-function 'majutsu-completion-table)
-               (lambda (items category)
-                 (setq seen-items items
-                       seen-category category)
-                 'file-table))
-              ((symbol-function 'majutsu-completing-read-multiple)
-               (lambda (_prompt collection _predicate _require-match
-                        initial-input history _default category)
-                 (should (eq collection 'file-table))
-                 (setq seen-initial initial-input
-                       seen-history history
+               (lambda (_root) "src/with space.el"))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _table _predicate _require-match initial
+                        &rest _)
+                 (setq seen-initial initial
                        seen-directory default-directory)
-                 (should (eq category 'majutsu-file))
-                 '("src/changed.el"))))
-      (should
-       (equal
-        (majutsu-read-file-items
-         "Files" nil nil '(("src/changed.el" . "Modified")))
-        '("src/changed.el")))
-      (should (equal seen-items '(("src/changed.el" . "Modified"))))
-      (should (eq seen-category 'majutsu-file))
-      (should (eq seen-history 'majutsu-file-path-history))
-      (should (equal seen-initial "src/current.el"))
+                 "glob:\"*.{el,org}\", src/a.el ,")))
+      (should (equal (majutsu-read-filesets "Files" nil nil nil)
+                     '("glob:\"*.{el,org}\"" "src/a.el")))
+      (should (equal seen-initial "file:\"src/with space.el\""))
       (should (equal seen-directory "/tmp/repo/")))))
 
 (ert-deftest majutsu-file-revert-buffer/detects-hidden-local-drift ()

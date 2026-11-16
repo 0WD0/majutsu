@@ -983,7 +983,11 @@ minibuffer for editing.  Empty input clears the filter."
   :argument "--"
   :unsavable t
   :prompt "Limit to filesets"
-  :reader #'majutsu-read-files
+  :reader (lambda (prompt initial-input history)
+            (majutsu-read-filesets
+             prompt initial-input history
+             (lambda (directory)
+               (majutsu-jj-completion-items (list "log" "--" directory)))))
   :multi-value t)
 
 ;;;###autoload(autoload 'majutsu-log-transient "majutsu-log" nil t)

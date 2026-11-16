@@ -1025,8 +1025,8 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
         (majutsu-diff--file-completion-items nil))
       (should (equal seen '((("--revisions=@") nil)))))))
 
-(ert-deftest majutsu-diff-read-files/uses-extant-range-without-existing-filesets ()
-  "The diff file reader should use live infixes but omit file filters."
+(ert-deftest majutsu-diff-read-filesets/uses-extant-range-without-existing-filesets ()
+  "The fileset reader should use live infixes but omit file filters."
   (let* ((transient--suffixes (transient-suffixes 'majutsu-diff))
          (to (seq-find (lambda (obj)
                          (eq (oref obj command) 'majutsu-diff:--to))
@@ -1051,12 +1051,16 @@ Use DESCRIPTION and CHANGE-ID when non-nil."
                (lambda (range)
                  (setq seen-range range)
                  '(("new.txt" . "Modified"))))
-              ((symbol-function 'majutsu-read-file-items)
+              ((symbol-function 'majutsu-read-filesets)
                (lambda (prompt initial-input history items)
                  (setq seen-reader
                        (list prompt initial-input history items))
                  '("new.txt"))))
-      (should (equal (majutsu-diff--read-files "Files" "src/" 'file-history)
+      (should (equal (majutsu-diff-read-filesets
+                      "Files" "src/" 'file-history
+                      '(("--revisions" . "--revisions")
+                        ("--from" . "--from")
+                        ("--to" . "--to")))
                      '("new.txt")))
       (should (equal seen-range '("--to=tip")))
       (should

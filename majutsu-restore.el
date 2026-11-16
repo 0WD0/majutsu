@@ -289,8 +289,12 @@ In diff buffer on a file section, restore only that file."
   :class 'transient-files
   :key "--"
   :argument "--"
-  :prompt "Limit to file,s: "
-  :reader #'majutsu-read-files
+  :prompt "Limit to filesets"
+  :reader (lambda (prompt initial-input history)
+            (majutsu-diff-read-filesets prompt initial-input history
+                                        '(("--changes-in" . "--revisions")
+                                          ("--from" . "--from")
+                                          ("--to" . "--to"))))
   :multi-value t)
 
 ;;; Prefix

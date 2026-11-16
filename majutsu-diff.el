@@ -40,7 +40,7 @@
 (declare-function majutsu-read-revset "majutsu-jj" (prompt &rest keys))
 (declare-function majutsu-find-file "majutsu-file" (revset path))
 (declare-function majutsu-find-file-noselect "majutsu-file" (rev file &optional revert))
-(declare-function majutsu-read-file-items "majutsu-file" (prompt initial-input history items))
+(declare-function majutsu-read-filesets "majutsu-file" (prompt initial-input history source))
 (declare-function majutsu-color-words-line-info-at-point "majutsu-color-words" ())
 (declare-function majutsu-color-words-side-at-point "majutsu-color-words" (&optional pos))
 (declare-function majutsu-color-words-column-at-point "majutsu-color-words" (goto-from &optional pos info))
@@ -357,18 +357,23 @@ Transient predicates share the query without re-resolving moving revsets."
             (add source status)))))
     (nreverse items)))
 
-(defun majutsu-diff--read-files (prompt initial-input history)
-  "Read diff file filters using the active revision or range."
+(defun majutsu-diff-read-filesets (prompt initial-input history options)
+  "Read filesets, completing the paths that the open menu's revisions change.
+OPTIONS maps the menu's revision options to those of `jj diff': each
+element is (OPTION . DIFF-OPTION), and every value of OPTION in the menu
+becomes a DIFF-OPTION argument of the diff that names the paths.  When the
+menu names no revision, the revisions at point are used."
   ;; Infix commands stay in the prefix without exporting
   ;; `transient-current-suffixes', so `transient-args' would fall back to
   ;; saved/default values instead of reading the live menu.
-  (pcase-let* ((`(,args ,_filesets)
-                (majutsu-filesets-split-transient-value
-                 (transient-get-value)))
-               (range (majutsu-diff--extract-range-args args)))
-    (majutsu-read-file-items
-     prompt initial-input history
-     (majutsu-diff--file-completion-items range))))
+  (let* ((args (car (majutsu-filesets-split-transient-value
+                     (transient-get-value))))
+         (range (cl-loop for (option . diff-option) in options
+                         nconc (mapcar (lambda (value)
+                                         (concat diff-option "=" value))
+                                       (majutsu-jj-option-values args option)))))
+    (majutsu-read-filesets prompt initial-input history
+                           (majutsu-diff--file-completion-items range))))
 
 ;;; Arguments
 ;;;; Prefix Classes
@@ -2264,8 +2269,12 @@ fall back to the default diff arguments, as the interactive command does."
   :key "--"
   :argument "--"
   :unsavable t
-  :prompt "Limit to file,s: "
-  :reader #'majutsu-diff--read-files
+  :prompt "Limit to filesets"
+  :reader (lambda (prompt initial-input history)
+            (majutsu-diff-read-filesets prompt initial-input history
+                                        '(("--revisions" . "--revisions")
+                                          ("--from" . "--from")
+                                          ("--to" . "--to"))))
   :multi-value t)
 
 (transient-define-argument majutsu-diff:-r ()

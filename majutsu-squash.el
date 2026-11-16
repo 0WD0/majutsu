@@ -225,8 +225,10 @@ return the same context defaults that execution would use."
   :class 'transient-files
   :key "--"
   :argument "--"
-  :prompt "Limit to file,s: "
-  :reader #'majutsu-read-files
+  :prompt "Limit to filesets"
+  :reader (lambda (prompt initial-input history)
+            (majutsu-diff-read-filesets prompt initial-input history
+                                        '(("--from" . "--revisions"))))
   :multi-value t)
 
 ;;;; Prefix
