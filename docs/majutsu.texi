@@ -1379,7 +1379,8 @@ Edit one file of a revision with
 @kindex m
 @findex majutsu-ediff-resolve
 Resolve a conflicted file in a three-way
-  Ediff session; see @ref{Conflict Resolution, , Conflict Resolution}.
+  Ediff session; see @ref{Conflict Resolution, , Conflict Resolution}.  To be
+  deprecated in Majutsu 0.8.
 @item @kbd{M} (@code{majutsu-ediff-resolve-with-conflict})
 @kindex M
 @findex majutsu-ediff-resolve-with-conflict
@@ -2669,6 +2670,9 @@ still reports them.
 
 A conflict with more than two sides cannot be shown in Ediff; Majutsu opens
 it with @samp{jj diffedit} instead.
+
+We plan to deprecate this command in Majutsu 0.8; the
+@ref{Conflicts Section (1), , Conflicts section} handles any number of sides.
 
 @node Conflict Markers
 @section Conflict Markers

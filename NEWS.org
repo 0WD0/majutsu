@@ -53,6 +53,13 @@
   Buffers no longer reuse options across workspaces, and ~0~ in the log resets
   the current options without deleting saved defaults.
 
+** Upcoming
+
+- Resolving with Ediff ::
+  We plan to deprecate ~majutsu-ediff-resolve~ (~E m~) in 0.8; it works as
+  before in this release.  The Conflicts section resolves conflicts with
+  any number of sides.  The other Ediff commands stay.
+
 ** Added
 
 *** Views
@@ -83,7 +90,7 @@
   conflicts, each as jj records it: changes from one text to another, under
   jj's labels.  ~M~ on a term, a conflict or a file resolves with it in
   one jj operation; elsewhere it shows a revision at its conflicts.  ~RET~
-  visits the file to edit the markers.  The Ediff commands remain available.
+  visits the file to edit the markers.
 
 - Revision information in diff buffers ::
   The diff of one revision starts with its metadata and full description,

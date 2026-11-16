@@ -710,7 +710,8 @@ transient.  From a diff buffer, its range is the default.
   hand the result back to jj.  With ~majutsu-diffedit-finish-on-save~,
   saving that file finishes the session.
 - Key: m (majutsu-ediff-resolve) :: Resolve a conflicted file in a three-way
-  Ediff session; see [[#conflict-resolution][Conflict Resolution]].
+  Ediff session; see [[#conflict-resolution][Conflict Resolution]].  To be
+  deprecated in Majutsu 0.8.
 - Key: M (majutsu-ediff-resolve-with-conflict) :: Open a conflicted file with
   its conflict markers; see [[#conflict-resolution][Conflict Resolution]].
 
@@ -1436,6 +1437,9 @@ still reports them.
 
 A conflict with more than two sides cannot be shown in Ediff; Majutsu opens
 it with =jj diffedit= instead.
+
+We plan to deprecate this command in Majutsu 0.8; the
+[[#conflicts-section][Conflicts section]] handles any number of sides.
 
 ** Conflict Markers
 :PROPERTIES:
