@@ -58,9 +58,6 @@ Literal occurrences in display text are escaped before newlines are encoded.")
 (defconst majutsu-row-module-order '(heading tail body metadata)
   "Module parse/render order for sequential row payloads.")
 
-(defconst majutsu-row--tail-terminal-padding 1
-  "Terminal columns reserved to the right of tail-aligned text.")
-
 ;;; UI text-property names (stripped during copy)
 
 (defconst majutsu-row--ui-properties
@@ -70,7 +67,7 @@ Literal occurrences in display text are escaped before newlines are encoded.")
     majutsu-row-entry-id
     majutsu-row-decoration
     majutsu-row-profile
-    majutsu-row-tail-spacer
+    majutsu-row-elided
     majutsu-section-collapsed-graph
     line-prefix
     wrap-prefix
@@ -123,8 +120,7 @@ Literal occurrences in display text are escaped before newlines are encoded.")
     :section-value-function nil
     :section-hide nil
     :section-hide-function nil
-    :show-child-count :inherit
-    :tail-align nil)
+    :show-child-count :inherit)
   "Shared defaults for row profiles.")
 
 (defun majutsu-row-make-profile (&rest properties)
@@ -813,14 +809,6 @@ Terminal decorations wait until following text has its display properties."
         'majutsu-row-entry-id entry-id
         'majutsu-row-decoration decoration))
 
-(defun majutsu-row-tail-spacer-properties (entry-id display)
-  "Return tail spacer properties for ENTRY-ID and DISPLAY."
-  (list 'majutsu-row-module 'tail
-        'majutsu-row-entry-id entry-id
-        'majutsu-row-decoration 'tail-spacer
-        'majutsu-row-tail-spacer t
-        'display display))
-
 ;;; Propertize helpers
 
 (defun majutsu-row-propertize-content
@@ -917,72 +905,117 @@ When PLAIN is non-nil, omit faces and text properties."
         selected
       (get-buffer-window (current-buffer) 0))))
 
+(defun majutsu-row--display-width (string)
+  "Return the displayed width of STRING in the current buffer.
+Pixels on graphical frames, columns on terminals.  `string-pixel-width'
+honors the buffer's face remappings, so text scaling is reflected."
+  (if (display-graphic-p)
+      (string-pixel-width string (current-buffer))
+    (string-width string)))
+
+(defun majutsu-row--right-padding ()
+  "Return the width kept free at a window's right edge.
+Terminals reserve their last column for the continuation glyph."
+  (if (display-graphic-p) 0 1))
+
 (defun majutsu-row-tail-align-to-width (width)
   "Return a window-relative display target right-aligning content of WIDTH.
 The target is shared buffer text, so leave the right edge symbolic for
 redisplay to resolve separately in each window."
-  (if (display-graphic-p)
-      `(- right (,width))
-    `(- right ,(+ width majutsu-row--tail-terminal-padding))))
-
-(defun majutsu-row-tail-spacer-display (tail)
-  "Return the spacer display spec used to right-align TAIL."
-  `(space :align-to
-    ,(majutsu-row-tail-align-to-width
-      (if (display-graphic-p)
-          (string-pixel-width tail (current-buffer))
-        (string-width tail)))))
-
-(defun majutsu-row--tail-width-at (pos)
-  "Return displayed width of tail text following spacer at POS.
-Measure the tail string instead of the rendered window text so that
-alignment is independent of any particular window and stays cheap to
-recompute; `string-pixel-width' honors the buffer's face remappings, so
-text scaling is reflected without measuring every line in the window."
-  (let ((tail (save-excursion
-                (goto-char pos)
-                (buffer-substring (1+ pos) (line-end-position)))))
+  (let ((width (+ width (majutsu-row--right-padding))))
     (if (display-graphic-p)
-        (string-pixel-width tail (current-buffer))
-      (string-width tail))))
+        `(- right (,width))
+      `(- right ,width))))
 
-(defun majutsu-row-refresh-tail-spacers (&optional beg end)
-  "Recompute right-alignment display specs in BEG..END."
-  (with-silent-modifications
-    (let ((inhibit-read-only t))
-      (save-excursion
-        (let ((pos (or beg (point-min)))
-              (end (or end (point-max))))
-          (while (and (< pos end)
-                      (setq pos (text-property-any
-                                 pos end 'majutsu-row-tail-spacer t)))
-            (put-text-property
-             pos (1+ pos) 'display
-             `(space :align-to
-               ,(majutsu-row-tail-align-to-width
-                 (majutsu-row--tail-width-at pos))))
-            (setq pos (1+ pos))))))))
+(defun majutsu-row--heading-room (window)
+  "Return the room WINDOW leaves for a heading line and its tail.
+One space keeps the heading off the tail."
+  (let ((graphic (display-graphic-p)))
+    (- (window-body-width window graphic)
+       (if display-line-numbers
+           (with-selected-window window
+             (line-number-display-width graphic))
+         0)
+       (majutsu-row--display-width " ")
+       (majutsu-row--right-padding))))
+
+(defun majutsu-row--elide-heading (bol spacer field room)
+  "Elide FIELD between BOL and SPACER so that the heading fits in ROOM.
+Keep at least one character of FIELD; a heading that overflows even then
+stays whole and its tail follows it."
+  (let ((prefix (get-text-property bol 'line-prefix)))
+    (when-let* (((> (majutsu-row--display-width
+                     (concat prefix (buffer-substring bol spacer)))
+                    room))
+                (beg (text-property-any bol spacer 'majutsu-row-field field)))
+      (let* ((end (next-single-property-change
+                   beg 'majutsu-row-field nil spacer))
+             (ellipsis (truncate-string-ellipsis))
+             (budget (- room (majutsu-row--display-width
+                              (concat prefix (buffer-substring bol beg)
+                                      ellipsis (buffer-substring end spacer)))))
+             (fits beg)
+             (overflows end))
+        ;; Widths grow with the kept length; bisect for the longest fit.
+        (while (> (- overflows fits) 1)
+          (let ((mid (/ (+ fits overflows) 2)))
+            (if (<= (majutsu-row--display-width (buffer-substring beg mid))
+                    budget)
+                (setq fits mid)
+              (setq overflows mid))))
+        (when (> fits beg)
+          (add-text-properties fits end
+                               (list 'display ellipsis
+                                     'majutsu-row-elided t)))))))
+
+(defun majutsu-row-align-tails (beg end &optional field)
+  "Right-align the tails anchored in BEG..END.
+With FIELD, also elide that heading field wherever it would push its tail
+past the edge of the window laying out the buffer.  Elision is a
+`display' property, so the buffer text stays whole for copying and
+editing; without FIELD every heading is shown in full.  Register this
+with `jit-lock-register': jit-lock measures only displayed rows and
+supplies the excursion and silent modifications.
+
+A chunk may begin inside a heading whose tail lies in it, and redisplay
+has already drawn that heading's start; the returned `jit-lock-bounds'
+reach back to it so that jit-lock draws it again."
+  (let* ((window (and field (majutsu-row--tail-owner-window)))
+         (room (and window (majutsu-row--heading-room window)))
+         (pos beg)
+         (from beg))
+    (while (setq pos (text-property-any
+                      pos end 'majutsu-row-decoration 'tail-spacer))
+      (let* ((bol (progn (goto-char pos) (pos-bol)))
+             (tail (majutsu-row--display-width
+                    (buffer-substring (1+ pos) (pos-eol))))
+             (elided (text-property-any bol pos 'majutsu-row-elided t)))
+        (when elided
+          (remove-list-of-text-properties
+           elided (next-single-property-change
+                   elided 'majutsu-row-elided nil pos)
+           '(display majutsu-row-elided)))
+        (put-text-property
+         pos (1+ pos) 'display
+         `(space :align-to ,(majutsu-row-tail-align-to-width tail)))
+        (when room
+          (majutsu-row--elide-heading bol pos field (- room tail)))
+        (setq from (min from bol)))
+      (setq pos (1+ pos)))
+    `(jit-lock-bounds ,from . ,end)))
 
 ;;; Entry insertion
 
 (defun majutsu-row--insert-heading-anchor-line
     (anchor-left tail entry-id prefix compiled)
   "Insert ANCHOR-LEFT and optional TAIL on one prefixed line."
-  (let* ((profile (majutsu-row--profile compiled))
-         (tail-align (plist-get profile :tail-align))
-         (start (point))
-         (spacer-pos nil))
+  (let ((start (point)))
     (insert anchor-left)
     (when (and (stringp tail) (not (string-empty-p tail)))
-      (setq spacer-pos (point))
-      (insert " ")
-      (add-text-properties
-       spacer-pos (point)
-       (majutsu-row-tail-spacer-properties
-        entry-id
-        (and tail-align
-             (majutsu-row-tail-spacer-display tail))))
-      (insert tail))
+      (insert (apply #'propertize " "
+                     (majutsu-row-decoration-properties
+                      compiled entry-id 'tail 'tail-spacer))
+              tail))
     (insert "\n")
     (majutsu-row-apply-line-prefix-span start (point) prefix)))
 

@@ -538,9 +538,7 @@
       (let ((spacer-pos (- (point) (length "Very Long 2m") 1)))
         (should (eq (get-text-property spacer-pos 'majutsu-row-module) 'tail))
         (should (eq (get-text-property spacer-pos 'majutsu-row-decoration)
-                    'tail-spacer))
-        (should (equal (get-text-property spacer-pos 'display)
-                       (majutsu-row-tail-spacer-display "Very Long 2m"))))
+                    'tail-spacer)))
       (forward-line 1)
       (should (equal (buffer-substring-no-properties
                       (line-beginning-position)
@@ -550,138 +548,102 @@
         (should (stringp prefix))
         (should (equal (substring-no-properties prefix) "│ "))))))
 
-(ert-deftest majutsu-log-tail-spacer-display-uses-pixels-on-gui ()
-  "Tail spacer display should use window-relative pixel targets on GUI."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _display) t))
-            ((symbol-function 'string-pixel-width) (lambda (_string &optional _buffer) 37))
-            ((symbol-function 'window-body-width) (lambda (&optional _window pixelwise) (if pixelwise 200 80))))
-    (with-temp-buffer
-      (should (equal (majutsu-row-tail-spacer-display "tail")
-                     '(space :align-to (- right (37))))))))
+;; Batch sessions never redisplay, so these tests ask jit-lock to lay out
+;; the rows the way redisplay would.
 
-(ert-deftest majutsu-log-tail-spacer-display-uses-columns-on-terminal ()
-  "Tail spacer display should use window-relative columns on terminals."
-  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _display) nil))
-            ((symbol-function 'window-body-width) (lambda (&optional _window &rest _args) 80)))
-    (with-temp-buffer
-      (should (equal (majutsu-row-tail-spacer-display "tail")
-                     '(space :align-to (- right 5)))))))
+(defun majutsu-log-test--insert-tail-row (description)
+  "Insert one tail-bearing row with DESCRIPTION into a fresh log buffer.
+Return the tail spacer position."
+  (let ((entry (list :id "id-123"
+                     :columns `((change-id . "chg")
+                                (id . "id-123")
+                                (description . ,description)
+                                (author . "Alice")
+                                (timestamp . "2m"))
+                     :heading-prefixes '("○ ")))
+        (inhibit-read-only t))
+    (majutsu-log-mode)
+    (majutsu-row-insert-entry entry (majutsu-log-test--tail-compiled))
+    (goto-char (point-min))
+    (text-property-any (point-min) (point-max)
+                       'majutsu-row-decoration 'tail-spacer)))
 
-(ert-deftest majutsu-log-refresh-tail-spacers-recomputes-display ()
-  "Refreshing tail spacers should recompute their align-to display specs."
-  (let* ((compiled (majutsu-log-test--tail-compiled))
-         (entry (list :id "id-123"
-                      :columns '((change-id . "chg")
-                                 (id . "id-123")
-                                 (description . "Title")
-                                 (author . "Alice")
-                                 (timestamp . "2m"))
-                      :heading-prefixes '("○ "))))
-    (with-temp-buffer
-      (require 'magit-section)
-      (majutsu-log-mode)
-      (setq buffer-read-only nil)
-      (cl-letf (((symbol-function 'display-graphic-p)
-                 (lambda (&optional _display) t))
-                ((symbol-function 'string-pixel-width)
-                 (lambda (_string &optional _buffer) 25)))
-        (majutsu-row-insert-entry entry compiled))
-      (goto-char (point-min))
-      (search-forward "Alice 2m")
-      (let ((spacer-pos (- (point) (length "Alice 2m") 1)))
-        (should (equal (get-text-property spacer-pos 'display)
-                       '(space :align-to (- right (25)))))
-        (setq buffer-read-only t)
+(defun majutsu-log-test--lay-out ()
+  "Realign the current log buffer as its next redisplay would."
+  (majutsu-log--realign-tails)
+  (jit-lock-fontify-now))
+
+(ert-deftest majutsu-log-align-tails-measures-pixels-on-gui ()
+  "Aligning tails should target the right edge minus the tail's pixels."
+  (with-temp-buffer
+    (let ((spacer (majutsu-log-test--insert-tail-row "Title")))
+      (dolist (width '(25 31))
         (cl-letf (((symbol-function 'display-graphic-p)
                    (lambda (&optional _display) t))
                   ((symbol-function 'string-pixel-width)
-                   (lambda (_string &optional _buffer) 31)))
-          (majutsu-row-refresh-tail-spacers))
-        (should (equal (get-text-property spacer-pos 'display)
-                       '(space :align-to (- right (31)))))))))
+                   (lambda (_string &optional _buffer) width)))
+          (majutsu-log-test--lay-out))
+        (should (equal (get-text-property spacer 'display)
+                       `(space :align-to (- right (,width)))))))))
 
-(ert-deftest majutsu-log-refresh-tail-spacers-uses-terminal-columns ()
-  "Refreshing tail spacers should use column targets on terminal frames."
-  (let* ((compiled (majutsu-log-test--tail-compiled))
-         (entry (list :id "id-123"
-                      :columns '((change-id . "chg")
-                                 (id . "id-123")
-                                 (description . "Title")
-                                 (author . "Alice")
-                                 (timestamp . "2m"))
-                      :heading-prefixes '("○ "))))
-    (with-temp-buffer
-      (require 'magit-section)
-      (majutsu-log-mode)
-      (setq buffer-read-only nil)
-      (cl-letf (((symbol-function 'display-graphic-p)
-                 (lambda (&optional _display) nil)))
-        (majutsu-row-insert-entry entry compiled))
-      (goto-char (point-min))
-      (search-forward "Alice 2m")
-      (let ((spacer-pos (- (point) (length "Alice 2m") 1)))
-        (setq buffer-read-only t)
-        (cl-letf (((symbol-function 'display-graphic-p)
-                   (lambda (&optional _display) nil))
-                  ((symbol-function 'get-buffer-window)
-                   (lambda (&rest _args) 'fake-window))
-                  ((symbol-function 'window-body-width)
-                   (lambda (&optional _window &rest _args) 80)))
-          (majutsu-row-refresh-tail-spacers))
-        (should (equal (get-text-property spacer-pos 'display)
-                       '(space :align-to (- right 9))))))))
+(ert-deftest majutsu-log-align-tails-uses-terminal-columns ()
+  "Terminal tails also keep the continuation column free."
+  (with-temp-buffer
+    (let ((spacer (majutsu-log-test--insert-tail-row "Title")))
+      (majutsu-log-test--lay-out)
+      (should (equal (get-text-property spacer 'display)
+                     '(space :align-to (- right 9)))))))
 
-(ert-deftest majutsu-log-tail-alignment-is-shared-safely-by-unequal-windows ()
-  "Resizing either log window must not impose its width on the other one."
+(ert-deftest majutsu-log-align-tails-reaches-back-into-the-heading ()
+  "A chunk that starts inside a heading has jit-lock redraw its start."
+  (with-temp-buffer
+    (majutsu-log-test--insert-tail-row "Title")
+    (should (equal (with-silent-modifications
+                     (majutsu-log--align-tails (+ (point-min) 2) (point-max)))
+                   `(jit-lock-bounds ,(point-min) . ,(point-max))))))
+
+(ert-deftest majutsu-log-elides-description-at-window-edge ()
+  "A long description is cut so the tail stays aligned; its text stays whole."
   (save-window-excursion
     (delete-other-windows)
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
-      (majutsu-log-mode)
-      (let* ((first (selected-window))
-             (second (split-window first 30 'right))
-             (compiled (majutsu-log-test--tail-compiled))
-             (entry (list :id "id-123"
-                          :columns '((change-id . "chg")
-                                     (id . "id-123")
-                                     (description . "Title")
-                                     (author . "Alice")
-                                     (timestamp . "2m"))
-                          :heading-prefixes '("○ "))))
-        (set-window-buffer second (current-buffer))
-        (should-not (= (window-body-width first) (window-body-width second)))
-        (cl-letf (((symbol-function 'display-graphic-p)
-                   (lambda (&optional _) nil)))
-          (let ((inhibit-read-only t))
-            (majutsu-row-insert-entry entry compiled))
-          (let ((spacer (text-property-any (point-min) (point-max)
-                                           'majutsu-row-tail-spacer t)))
-            (should spacer)
-            (majutsu-log--after-window-size-change first)
-            (let ((display (get-text-property spacer 'display)))
-              (should (equal display '(space :align-to (- right 9))))
-              (majutsu-log--after-window-size-change second)
-              (should (equal (get-text-property spacer 'display) display)))))))))
+      (let* ((description (make-string 200 ?d))
+             (spacer (majutsu-log-test--insert-tail-row description)))
+        (majutsu-log-test--lay-out)
+        (let* ((cut (text-property-any (point-min) spacer 'majutsu-row-elided t))
+               (shown (concat (get-text-property (point-min) 'line-prefix)
+                              (buffer-substring-no-properties (point-min) cut)
+                              (get-text-property cut 'display)))
+               (tail-column (- (window-body-width)
+                               (majutsu-row--right-padding)
+                               (string-width "Alice 2m"))))
+          (should (eq (get-text-property cut 'majutsu-row-field) 'description))
+          (should (= (1+ (string-width shown)) tail-column))
+          (should (equal (buffer-substring-no-properties (point-min) (pos-eol))
+                         (concat "chg " description " Alice 2m")))
+          (should (string-search description
+                                 (filter-buffer-substring (point-min) (pos-eol)))))
+        (let ((majutsu-section-edit-mode t))
+          (majutsu-log-test--lay-out))
+        (should-not (text-property-any (point-min) (point-max)
+                                       'majutsu-row-elided t))
+        (let ((majutsu-log-elide-description nil))
+          (majutsu-log-test--lay-out))
+        (should-not (text-property-any (point-min) (point-max)
+                                       'majutsu-row-elided t))))))
 
-(ert-deftest majutsu-log-window-size-change-refreshes-resized-log-window ()
-  "The buffer-local resize hook should refresh the window it receives."
-  (let (refreshed)
+(ert-deftest majutsu-log-short-description-is-not-elided ()
+  "Rows that already fit keep their whole description."
+  (save-window-excursion
+    (delete-other-windows)
     (with-temp-buffer
-      (majutsu-log-mode)
-      (cl-letf (((symbol-function 'window-buffer)
-                 (lambda (_window) (current-buffer)))
-                ((symbol-function 'majutsu-log--refresh-tail-window)
-                 (lambda (window) (setq refreshed window))))
-        (majutsu-log--after-window-size-change 'resized-log-window))
-      (should (eq refreshed 'resized-log-window))
-      ;; Unrelated windows (showing a different buffer) should be ignored.
-      (cl-letf (((symbol-function 'window-buffer)
-                 (lambda (_window) (get-buffer-create "majutsu-log-test-unrelated")))
-                ((symbol-function 'majutsu-log--refresh-tail-window)
-                 (lambda (window) (setq refreshed window))))
-        (setq refreshed nil)
-        (majutsu-log--after-window-size-change 'resized-log-window))
-      (should (null refreshed)))))
+      (switch-to-buffer (current-buffer))
+      (majutsu-log-test--insert-tail-row "Title")
+      (majutsu-log-test--lay-out)
+      (should-not (text-property-any (point-min) (point-max)
+                                     'majutsu-row-elided t)))))
+
 (ert-deftest majutsu-log-filter-buffer-substring-drops-tail-when-heading-present ()
   "Copying mixed heading+tail text should drop the tail by default."
   (let* ((compiled (majutsu-log-test--tail-compiled))

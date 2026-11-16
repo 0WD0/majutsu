@@ -349,8 +349,7 @@ Empty summaries produce no brackets.  Only available in the jjosh build."))
    :field-postprocessors majutsu-log--field-default-postprocessors
    :entry-id-function 'majutsu-log--entry-id
    :section-class 'jj-commit
-   :section-value-function 'majutsu-log--entry-id
-   :tail-align t))
+   :section-value-function 'majutsu-log--entry-id))
 
 (defun majutsu-log--ensure-template ()
   "Return the compiled template for the configured log columns."
@@ -489,23 +488,25 @@ disappear again."
       (insert ?\n))
     (setq majutsu-log--this-error nil)))
 
-(defun majutsu-log--refresh-tail-window (&optional window)
-  "Refresh tail alignment for the current log buffer using WINDOW.
-When WINDOW is nil, use the current row tail owner window."
-  (when (derived-mode-p 'majutsu-log-mode)
-    (setq window (or window (majutsu-row--tail-owner-window)))
-    (majutsu-row-refresh-tail-spacers)
-    (when window
-      (force-window-update window))))
+(defcustom majutsu-log-elide-description t
+  "Whether long descriptions are elided to keep log tails aligned.
+Elision follows the window that last laid out the log, so a second window
+of a different width shows the cut at the first one's edge.  Editing
+descriptions in place shows them in full."
+  :type 'boolean
+  :group 'majutsu)
 
-(defun majutsu-log--after-text-scale-change ()
-  "Refresh lightweight display alignment after text scaling changes."
-  (majutsu-log--refresh-tail-window (selected-window)))
+(defun majutsu-log--align-tails (beg end)
+  "Align the tails in BEG..END as `jit-lock' displays them."
+  (majutsu-row-align-tails
+   beg end
+   (and majutsu-log-elide-description
+        (not majutsu-section-edit-mode)
+        'description)))
 
-(defun majutsu-log--after-window-size-change (window)
-  "Refresh tail alignment after log WINDOW changes size."
-  (when (eq (window-buffer window) (current-buffer))
-    (majutsu-log--refresh-tail-window window)))
+(defun majutsu-log--realign-tails (&rest _)
+  "Realign every tail when it is next displayed."
+  (jit-lock-refontify))
 
 (defun majutsu-log--description-body (entry compiled)
   "Return the description lines after the first for log ENTRY.
@@ -798,8 +799,10 @@ Return non-nil when the section could be located."
   (setq-local revert-buffer-function #'majutsu-refresh-buffer)
   (setq-local filter-buffer-substring-function #'majutsu-row-filter-buffer-substring)
   (add-hook 'kill-buffer-hook #'majutsu-selection-session-end-if-owner nil t)
-  (add-hook 'text-scale-mode-hook #'majutsu-log--after-text-scale-change nil t)
-  (add-hook 'window-size-change-functions #'majutsu-log--after-window-size-change nil t))
+  (jit-lock-register #'majutsu-log--align-tails)
+  (add-hook 'text-scale-mode-hook #'majutsu-log--realign-tails nil t)
+  (add-hook 'window-size-change-functions #'majutsu-log--realign-tails nil t)
+  (add-hook 'majutsu-section-edit-mode-hook #'majutsu-log--realign-tails nil t))
 
 (cl-defmethod majutsu-buffer-value (&context (major-mode majutsu-log-mode))
   (list majutsu-buffer-log-args

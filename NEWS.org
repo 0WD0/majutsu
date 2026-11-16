@@ -42,6 +42,11 @@
 
 ** Added
 
+- Aligned log tails ::
+  Long descriptions are elided with … so commit ids, authors and dates stay
+  right-aligned. Only the display is cut: copying and in-place description
+  editing see the whole text. Disable with ~majutsu-log-elide-description~.
+
 - Text conflict workbench ::
   ~? M~ (Evil ~M~) opens a pinned directory tree with private UTF-8 drafts.
   Saving a draft leaves jj untouched; explicit apply writes a file or folded

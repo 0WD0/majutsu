@@ -487,9 +487,10 @@ when replacing the entire column list.
 - ~heading~ :: Visible anchor-line content on the left (can span physical lines
   before the tail segment begins).
 - ~tail~ :: Single-line auxiliary content rendered on the anchor line with
-  right alignment. It remains searchable as real text, but copying a mixed
-  heading+tail region drops the tail text by default; copying the tail alone
-  preserves it.
+  right alignment. A description that would push it past the window edge is
+  displayed with … (~majutsu-log-elide-description~). It remains searchable as
+  real text, but copying a mixed heading+tail region drops the tail text by
+  default; copying the tail alone preserves it.
 - ~body~ :: Foldable section body.
 - ~metadata~ :: Parsed/stored for behavior and lookup; not directly shown by default.
 
