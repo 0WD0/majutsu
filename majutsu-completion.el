@@ -21,7 +21,6 @@
 
 ;;; Code:
 
-(require 'compat)
 (require 'subr-x)
 
 (defgroup majutsu-completion nil

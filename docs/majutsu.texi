@@ -290,9 +290,7 @@ It exists because of Jujutsu and the people who build it.
 
 @itemize
 @item
-Emacs 29.1 or later.
-@item
-@samp{compat} 31.0.0.1 or later.
+Emacs 31.1 or later.
 @item
 Jujutsu (jj) 0.47.0 or later@comma{} in your @samp{PATH}.
 @item

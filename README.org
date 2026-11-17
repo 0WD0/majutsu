@@ -84,9 +84,9 @@ All optional; see [[file:docs/majutsu.org::#integrations][Integrations]] in the 
 
 * Requirements
 
-- Emacs 29.1+
+- Emacs 31.1+
 - [[https://github.com/jj-vcs/jj][Jujutsu (jj)]] 0.47.0+
-- [[https://magit.vc/][magit]] 4.4.0+, [[https://github.com/magit/transient][transient]] 0.13.0+, [[https://github.com/emacs-compat/compat][compat]] 31.0.0.1+
+- [[https://magit.vc/][magit]] 4.4.0+, [[https://github.com/magit/transient][transient]] 0.13.0+
 - [[https://github.com/minad/consult][consult]] 1.0+ and [[https://github.com/alphapapa/plz.el][plz]] 0.9.1+ (Gerrit completion)
 - [[https://github.com/magit/with-editor][with-editor]] (comes with magit)
 

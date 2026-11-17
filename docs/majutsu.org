@@ -43,8 +43,7 @@ model, making rebasing, squashing, and conflict resolution ordinary operations.
 :DESCRIPTION: Install Majutsu and verify its Emacs, Jujutsu, and package requirements.
 :END:
 ** Requirements
-- Emacs 29.1 or later.
-- =compat= 31.0.0.1 or later.
+- Emacs 31.1 or later.
 - Jujutsu (jj) 0.47.0 or later, in your =PATH=.
 - =magit= 4.4.0 or later (for section management).
 - =consult= 1.0 or later and =plz= 0.9.1 or later (for native Gerrit

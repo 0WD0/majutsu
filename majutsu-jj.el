@@ -21,7 +21,6 @@
 ;;; Code:
 
 (require 'ansi-color)
-(require 'compat)
 (require 'cl-lib)
 (require 'magit-section)
 (require 'seq)
