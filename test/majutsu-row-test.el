@@ -184,6 +184,11 @@
                    "Body 1\nBody 2"))
     (should (equal (majutsu-row-column entry 'id) "id-1"))))
 
+(ert-deftest majutsu-row-single-line-string-keeps-padding ()
+  "Flattening a tail value drops line breaks but keeps template padding."
+  (should (equal (majutsu-row-single-line-string "Al      ") "Al      "))
+  (should (equal (majutsu-row-single-line-string "\n  a\nb  \n") "  a b  ")))
+
 (ert-deftest majutsu-row-metadata-is-the-only-entry-field-source ()
   "Visible occurrences must not overwrite semantic metadata fields."
   (let* ((compiled

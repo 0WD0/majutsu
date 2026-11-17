@@ -780,9 +780,11 @@ front end can compute, such as a summary of related rows."
    (t (format "%s" value))))
 
 (defun majutsu-row-single-line-string (value)
-  "Return VALUE flattened to a single display line."
+  "Return VALUE flattened to a single display line.
+Only line breaks are dropped at the ends, so template padding survives."
   (if (stringp value)
-      (string-trim (replace-regexp-in-string "[\n\r]+" " " value nil t))
+      (replace-regexp-in-string
+       "[\n\r]+" " " (string-trim value "[\n\r]+" "[\n\r]+") nil t)
     value))
 
 (defun majutsu-row-concat-heading-parts (parts)
